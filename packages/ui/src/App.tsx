@@ -107,14 +107,25 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // apply theme: explicit dark/light, or follow system preference
+  // apply theme with a smooth color transition (no flash between themes)
   useEffect(() => {
     const theme = settings.data?.theme ?? "system";
+    const root = document.documentElement;
+    let firstApply = true;
     const apply = () => {
       const dark =
         theme === "dark" ||
         (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      document.documentElement.classList.toggle("dark", dark);
+      const switching = root.classList.contains("dark") !== dark;
+      if (switching && !firstApply) {
+        // enable global color transition just for this switch, then release it
+        root.classList.add("theme-transition");
+        root.classList.toggle("dark", dark);
+        window.setTimeout(() => root.classList.remove("theme-transition"), 400);
+      } else {
+        root.classList.toggle("dark", dark);
+      }
+      firstApply = false;
     };
     apply();
     if (theme === "system") {
