@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "~/lib/utils";
 import { BTN, INPUT } from "~/lib/design-system";
+import { SparklesIcon } from "~/components/ui/icons.js";
 import type { ChatTurn, ExtractCandidate, GapCandidate } from "@tomrade/core";
 
 type Msg =

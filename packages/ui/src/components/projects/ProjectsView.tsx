@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "~/lib/utils";
-import { BTN, INPUT, SURFACE, TEXT } from "~/lib/design-system";
+import { BTN, INPUT, TEXT } from "~/lib/design-system";
+import { PlusIcon, SettingsIcon, TrashIcon } from "~/components/ui/icons.js";
 import type { Project } from "@tomrade/core";
 
 function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => void }) {
@@ -38,8 +39,13 @@ export function ProjectsView({ mcpUrl, onOpen, onOpenSettings }: { mcpUrl: strin
       <header className="app-drag flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-3 pl-20 pr-6">
         <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">Tomrade</h1>
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className={cn(BTN.ghost, "app-no-drag !px-2")} onClick={onOpenSettings} title="Settings">⚙</button>
-          <button type="button" className={cn(BTN.primary, "app-no-drag")} onClick={() => setShowNew(true)}>+ New Project</button>
+          <button type="button" className={cn(BTN.ghost, "app-no-drag inline-flex !px-2 py-1.5")} onClick={onOpenSettings} title="Settings">
+            <SettingsIcon className="h-4 w-4" />
+          </button>
+          <button type="button" className={cn(BTN.primary, "app-no-drag inline-flex items-center gap-1.5")} onClick={() => setShowNew(true)}>
+            <PlusIcon className="h-3.5 w-3.5" />
+            New Project
+          </button>
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -53,14 +59,15 @@ export function ProjectsView({ mcpUrl, onOpen, onOpenSettings }: { mcpUrl: strin
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{p.name}</h3>
                 <button
                   type="button"
-                  className="rounded px-1.5 text-xs text-slate-500 opacity-0 transition-opacity hover:bg-red-950 hover:text-red-300 group-hover:opacity-100"
+                  className="rounded p-1 text-slate-400 opacity-0 transition-opacity hover:bg-red-100 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950 dark:hover:text-red-300"
+                  title="Delete project"
                   onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete project and all its items?")) remove.mutate(p.id); }}
                 >
-                  ✕
+                  <TrashIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
               {p.description && <p className="line-clamp-2 text-xs text-slate-500">{p.description}</p>}
-              <span className="mt-2 text-[10px] uppercase tracking-wide text-slate-600">Open →</span>
+              <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-sky-600 dark:text-sky-400">Open</span>
             </div>
           ))}
           {projects.data?.length === 0 && <p className="col-span-full text-sm text-slate-500">No projects yet — create your first one.</p>}

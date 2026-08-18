@@ -96,7 +96,7 @@ app.whenReady().then(async () => {
   check('card click opens detail modal', detailOpen);
 
   // create via + Ticket button
-  await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find((b) => b.textContent.includes('+ Ticket'))?.click()");
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Ticket') && b.textContent.includes('+') === false && b.textContent.trim().startsWith('Ticket'))?.click()");
   await sleep(400);
   await win.webContents.executeJavaScript("(() => { const input = document.querySelector('input[placeholder*=\"Ticket title\"]'); if (input) { const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; s.call(input, 'Dark mode toggle'); input.dispatchEvent(new Event('input', { bubbles: true })); } [...document.querySelectorAll('button')].find((b) => b.textContent === 'Create')?.click() })()");
   await sleep(900);
