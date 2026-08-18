@@ -116,6 +116,9 @@ export class ItemsRepository {
     if (!existing) throw new NotFoundError(id);
 
     const isAi = by.startsWith("ai:");
+    if (isAi && "humanLocked" in patch) {
+      throw new HumanLockedError(id, ["humanLocked"]);
+    }
     if (isAi) {
       const conflicting = LOCKED_FIELDS.filter((f) => f in patch);
       if (existing.humanLocked && conflicting.length > 0) {

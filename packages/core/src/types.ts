@@ -23,8 +23,8 @@ export interface Item {
   humanLocked: boolean;
 }
 
-/** Fields an AI writer may propose. */
-export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "parentId" | "rank">>;
+/** Fields an AI writer may propose. humanLocked is human-only (guarded in the repository). */
+export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "parentId" | "rank" | "humanLocked">>;
 
 export type OplogOp = "create" | "update" | "delete";
 

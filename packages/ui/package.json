@@ -3,22 +3,30 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "React UI (TanStack Query), rendered in the Electron webview",
+  "description": "React UI (TanStack Query + dnd-kit board), rendered in the Electron webview",
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dnd-kit/abstract": "^0.5.0",
+    "@dnd-kit/dom": "^0.5.0",
+    "@dnd-kit/helpers": "^0.5.0",
+    "@dnd-kit/react": "^0.5.0",
     "@tanstack/react-query": "^5.101.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "clsx": "^2.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
     "@tomrade/core": "workspace:*",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.3.0",
     "typescript": "^6.0.0",
     "vite": "^6.0.0"
   }

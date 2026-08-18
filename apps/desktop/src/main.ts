@@ -34,7 +34,7 @@ function createWindow(): void {
 function registerIpc(): void {
   ipcMain.handle("tomrade:list", (_e, filter: ListItemsFilter = {}) => repo.list(filter));
   ipcMain.handle("tomrade:get", (_e, id: string) => repo.get(id));
-  ipcMain.handle("tomrade:create", (_e, input: Omit<CreateItemInput, "by">) => repo.create({ ...input, by: "ai:mcp" }));
+  ipcMain.handle("tomrade:create", (_e, input: Omit<CreateItemInput, "by">) => repo.create({ ...input, by: "human" }));
   ipcMain.handle("tomrade:update", (_e, id: string, patch: Patch, baseVersion: number) => repo.update(id, patch, "human", { baseVersion }));
   ipcMain.handle("tomrade:delete", (_e, id: string) => repo.delete(id, "human"));
   ipcMain.handle("tomrade:undo", (_e, entityId?: string) => repo.undo(entityId));

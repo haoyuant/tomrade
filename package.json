@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@11.17.0",
   "scripts": {
+    "dev": "pnpm dev:desktop",
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "dev:desktop": "pnpm --filter @tomrade/desktop dev",
     "build": "pnpm -r build",

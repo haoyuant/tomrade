@@ -1,102 +1,82 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Item, ItemStatus, OplogEntry } from "@tomrade/core";
+import { useQuery } from "@tanstack/react-query";
+import { AppShell } from "./components/shell/AppShell.js";
+import { Board } from "./components/board/Board.js";
+import { ItemDetail } from "./components/detail/ItemDetail.js";
+import { INPUT, BTN } from "./lib/design-system.js";
+import { useCreateItem, useItems, useUndo } from "./lib/queries.js";
+import type { Item } from "@tomrade/core";
 
-const STATUSES: ItemStatus[] = ["backlog", "todo", "doing", "verifying", "done", "cancelled"];
+function NewItemModal({
+  defaultKind,
+  onClose,
+}: {
+  defaultKind: "ticket" | "epic";
+  onClose: () => void;
+}) {
+  const create = useCreateItem();
+  const { data } = useItems();
+  const [title, setTitle] = useState("");
+  const [parentId, setParentId] = useState<string>("");
 
-function StatusBadge({ item }: { item: Item }) {
+  const submit = () => {
+    if (!title.trim()) return;
+    create.mutate(
+      { title: title.trim(), kind: defaultKind, parentId: parentId || null },
+      { onSuccess: onClose }
+    );
+  };
+
   return (
-    <span style={{
-      background: item.humanLocked ? "#fff3cd" : "#e7f3ff",
-      color: item.humanLocked ? "#8a6d00" : "#1a5f9e",
-      borderRadius: 4,
-      padding: "2px 8px",
-      fontSize: 12,
-      marginLeft: 8
-    }}>
-      {item.status} · v{item.version} · {item.updatedBy}
-      {item.humanLocked ? " · 🔒" : ""}
-    </span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-sm font-semibold text-slate-100">
+          New {defaultKind === "epic" ? "Epic" : "Ticket"}
+        </h2>
+        <input
+          autoFocus
+          className={INPUT}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder={defaultKind === "epic" ? "Epic title…" : "Ticket title (one PR)…"}
+        />
+        {defaultKind === "ticket" && (
+          <label className="flex flex-col gap-1 text-xs text-slate-400">
+            Parent epic
+            <select className={INPUT} value={parentId} onChange={(e) => setParentId(e.target.value)}>
+              <option value="">(none)</option>
+              {(data ?? []).filter((i) => i.kind === "epic").map((e) => (
+                <option key={e.id} value={e.id}>{e.title}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" className={BTN.secondary} onClick={onClose}>Cancel</button>
+          <button type="button" className={BTN.primary} onClick={submit}>Create</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function App() {
-  const queryClient = useQueryClient();
-  const [title, setTitle] = useState("");
-
-  const items = useQuery({ queryKey: ["items"], queryFn: () => window.tomrade.list() });
-  const oplog = useQuery({ queryKey: ["oplog"], queryFn: () => window.tomrade.recentOplog(10) });
+  const undo = useUndo();
   const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
-
-  const create = useMutation({
-    mutationFn: (t: string) => window.tomrade.create({ title: t }),
-    onSuccess: () => { setTitle(""); void queryClient.invalidateQueries({ queryKey: ["items"] }); void queryClient.invalidateQueries({ queryKey: ["oplog"] }); }
-  });
-
-  const setStatus = useMutation({
-    mutationFn: ({ item, status }: { item: Item; status: ItemStatus }) =>
-      window.tomrade.update(item.id, { status }, item.version),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["items"] }); void queryClient.invalidateQueries({ queryKey: ["oplog"] }); },
-    onError: (e: unknown) => alert(e instanceof Error ? e.message : String(e))
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => window.tomrade.remove(id),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["items"] }); void queryClient.invalidateQueries({ queryKey: ["oplog"] }); }
-  });
-
-  const undo = useMutation({
-    mutationFn: () => window.tomrade.undo(),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["items"] }); void queryClient.invalidateQueries({ queryKey: ["oplog"] }); }
-  });
+  const [selected, setSelected] = useState<Item | null>(null);
+  const [newKind, setNewKind] = useState<"ticket" | "epic" | null>(null);
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto", padding: 24 }}>
-      <h1>Tomrade</h1>
-      {mcp.data && (
-        <p style={{ fontSize: 13, color: "#2a7a2a", background: "#eef7ee", padding: "6px 12px", borderRadius: 6 }}>
-          🤖 MCP server: <code>{mcp.data}</code> — connect VS Code agents here
-        </p>
-      )}
-
-      <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) create.mutate(title.trim()); }}>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="New ticket title…"
-          style={{ padding: 8, width: 300 }}
-        />
-        <button type="submit" disabled={create.isPending}>Add</button>
-        <button type="button" onClick={() => undo.mutate()} disabled={undo.isPending}>↩ Undo</button>
-      </form>
-
-      {items.isLoading && <p>Loading…</p>}
-      {items.error && <p style={{ color: "red" }}>{String(items.error)}</p>}
-
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {(items.data ?? []).map((item) => (
-          <li key={item.id} style={{ borderBottom: "1px solid #eee", padding: "10px 0" }}>
-            <strong>{item.title}</strong>
-            <StatusBadge item={item} />
-            <div style={{ marginTop: 6 }}>
-              <select
-                value={item.status}
-                onChange={(e) => setStatus.mutate({ item, status: e.target.value as ItemStatus })}
-              >
-                {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <button onClick={() => remove.mutate(item.id)} style={{ marginLeft: 8 }}>Delete</button>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <h2>Recent operations</h2>
-      <ul style={{ fontSize: 13, color: "#555" }}>
-        {(oplog.data ?? []).map((op: OplogEntry) => (
-          <li key={op.seq}>{op.op} · {op.entityId.slice(0, 8)} · by {op.by}</li>
-        ))}
-      </ul>
-    </div>
+    <AppShell
+      mcpUrl={mcp.data ?? null}
+      onUndo={() => undo.mutate()}
+      onNewTicket={() => setNewKind("ticket")}
+      onNewEpic={() => setNewKind("epic")}
+    >
+      <Board onCardClick={setSelected} />
+      {selected && <ItemDetail item={selected} onClose={() => setSelected(null)} />}
+      {newKind && <NewItemModal defaultKind={newKind} onClose={() => setNewKind(null)} />}
+    </AppShell>
   );
 }
