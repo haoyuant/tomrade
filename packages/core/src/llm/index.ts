@@ -6,3 +6,5 @@ export { checkDuplicate } from "./dedup.js";
 export type { DedupInput, DedupResult } from "./dedup.js";
 export { gapAnalysis } from "./gap.js";
 export type { GapCandidate } from "./gap.js";
+export { routeIntent } from "./assistant.js";
+export type { AssistantRoute, ChatTurn, ToolName } from "./assistant.js";

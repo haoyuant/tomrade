@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
-import type { CreateItemInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, ProviderConfig } from "@tomrade/core";
+import type { ChatTurn, CreateItemInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, ProviderConfig } from "@tomrade/core";
+
+type AiChatResult =
+  | { kind: "text"; reply: string }
+  | { kind: "tool"; tool: string; result: unknown; reply?: string }
+  | { kind: "error"; tool?: string; error: string };
 
 interface AiExtractResult {
   candidates: ExtractCandidate[];
@@ -23,6 +28,7 @@ declare global {
       aiExtract: (text: string) => Promise<AiExtractResult>;
       aiGap: (requirement: string) => Promise<GapCandidate[]>;
       aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null) => Promise<Item>;
+      aiChat: (text: string, history: ChatTurn[]) => Promise<AiChatResult>;
     };
   }
 }

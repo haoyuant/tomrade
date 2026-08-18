@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "./components/shell/AppShell.js";
 import { Board } from "./components/board/Board.js";
 import { ItemDetail } from "./components/detail/ItemDetail.js";
-import { AiPanel } from "./components/ai/AiPanel.js";
+import { AiAssistant } from "./components/ai/AiAssistant.js";
 import { INPUT, BTN } from "./lib/design-system.js";
 import { useCreateItem, useItems, useUndo } from "./lib/queries.js";
 import type { Item } from "@tomrade/core";
@@ -67,7 +67,7 @@ export function App() {
   const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
   const [selected, setSelected] = useState<Item | null>(null);
   const [newKind, setNewKind] = useState<"ticket" | "epic" | null>(null);
-  const [aiOpen, setAiOpen] = useState(false);
+
 
   return (
     <AppShell
@@ -76,17 +76,14 @@ export function App() {
       onNewTicket={() => setNewKind("ticket")}
       onNewEpic={() => setNewKind("epic")}
     >
-      <Board onCardClick={setSelected} />
-      <button
-        type="button"
-        onClick={() => setAiOpen(true)}
-        className="fixed bottom-5 right-5 z-40 rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-sky-500"
-      >
-        ✨ AI
-      </button>
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1">
+          <Board onCardClick={setSelected} />
+        </div>
+        <AiAssistant />
+      </div>
       {selected && <ItemDetail item={selected} onClose={() => setSelected(null)} />}
       {newKind && <NewItemModal defaultKind={newKind} onClose={() => setNewKind(null)} />}
-      {aiOpen && <AiPanel onClose={() => setAiOpen(false)} />}
     </AppShell>
   );
 }

@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CreateItemInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, ProviderConfig } from "@tomrade/core";
+import type { ChatTurn, CreateItemInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, ProviderConfig } from "@tomrade/core";
+
+export type AiChatResult =
+  | { kind: "text"; reply: string }
+  | { kind: "tool"; tool: string; result: unknown; reply?: string }
+  | { kind: "error"; tool?: string; error: string };
 
 export interface AiExtractResult {
   candidates: ExtractCandidate[];
@@ -19,7 +24,8 @@ const api = {
   settingsSet: (s: ProviderConfig): Promise<ProviderConfig> => ipcRenderer.invoke("tomrade:settings:set", s),
   aiExtract: (text: string): Promise<AiExtractResult> => ipcRenderer.invoke("tomrade:ai:extract", text),
   aiGap: (requirement: string): Promise<GapCandidate[]> => ipcRenderer.invoke("tomrade:ai:gap", requirement),
-  aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null): Promise<Item> => ipcRenderer.invoke("tomrade:ai:createFromCandidate", c, parentId)
+  aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null): Promise<Item> => ipcRenderer.invoke("tomrade:ai:createFromCandidate", c, parentId),
+  aiChat: (text: string, history: ChatTurn[]): Promise<AiChatResult> => ipcRenderer.invoke("tomrade:ai:chat", text, history)
 };
 
 contextBridge.exposeInMainWorld("tomrade", api);
