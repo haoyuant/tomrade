@@ -62,7 +62,7 @@ function createWindow(): void {
     height: 800,
     title: "Tomrade",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false
     }
