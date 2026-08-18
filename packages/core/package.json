@@ -3,12 +3,24 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "In-process backend: LLMProvider, AgentExecutor, write path, SQLite repository",
+  "description": "In-process backend: SQLite repository (version/human_locked/oplog), write path",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "typescript": "^6.0.0"
   }
 }

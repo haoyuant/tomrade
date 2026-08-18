@@ -2,10 +2,12 @@
   "name": "tomrade-next",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@11.17.0",
   "scripts": {
-    "dev": "pnpm --filter @tomrade/desktop dev",
+    "dev:ui": "pnpm --filter @tomrade/ui dev",
+    "dev:desktop": "pnpm --filter @tomrade/desktop dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "rebuild:desktop": "pnpm --filter @tomrade/desktop exec electron-rebuild -f -w better-sqlite3"
   }
 }

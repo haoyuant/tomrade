@@ -3,15 +3,26 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Electron shell: window, lifecycle, packaging",
-  "main": "src/main.ts",
+  "description": "Electron shell: window, lifecycle, in-process backend, IPC bridge",
+  "main": "dist/main.js",
   "scripts": {
-    "dev": "electron .",
-    "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "pnpm --filter @tomrade/core build && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "pnpm --filter @tomrade/core build && tsc -p tsconfig.json && concurrently -k \"pnpm dev:ui\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev:ui": "pnpm --filter @tomrade/ui dev",
+    "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "@tomrade/core": "workspace:*"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "typescript": "^6.0.0"
+    "@electron/rebuild": "^4.2.0",
+    "@types/node": "^26.2.0",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^43.4.0",
+    "typescript": "^6.0.0",
+    "wait-on": "^8.0.1"
   }
 }
