@@ -32,7 +32,7 @@ export function Column({
   return (
     <div
       className={cn(
-        "flex w-72 shrink-0 flex-col rounded-lg border border-slate-800 bg-slate-900 transition-shadow",
+        "flex h-full w-72 shrink-0 flex-col rounded-lg border border-slate-800 bg-slate-900 transition-shadow",
         isTarget && "ring-2 ring-sky-500",
       )}
     >
@@ -44,7 +44,8 @@ export function Column({
           {cards.length}
         </span>
       </div>
-      <div ref={ref} className="flex min-h-2 flex-col gap-2 overflow-y-auto p-3">
+      {/* flex-1 min-h-0: column fills the screen height; too many cards scroll inside */}
+      <div ref={ref} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
         {cards.map((card, index) => (
           <BoardCard
             key={card.id}

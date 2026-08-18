@@ -110,8 +110,10 @@ async function extractWithDedup(text: string): Promise<{ candidates: ExtractCand
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 820,
+    minWidth: 900,
+    minHeight: 600,
     title: "Tomrade",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

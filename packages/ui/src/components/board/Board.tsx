@@ -75,7 +75,7 @@ export function Board({ onCardClick }: { onCardClick: (card: Item) => void }) {
   const filteredEpic = filterEpicId ? epics.find((e) => e.id === filterEpicId) : undefined;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {conflict && (
         <div className="m-3 flex items-center justify-between rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
           <span>
@@ -88,8 +88,8 @@ export function Board({ onCardClick }: { onCardClick: (card: Item) => void }) {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        {/* Left rail: epics filter the board */}
-        <div className="flex w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-slate-800 bg-slate-900/50 p-3">
+        {/* Left rail: epics filter the board (hidden on narrow windows) */}
+        <div className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-slate-800 bg-slate-900/50 p-3 lg:flex">
           <button
             type="button"
             onClick={() => setFilterEpicId(null)}

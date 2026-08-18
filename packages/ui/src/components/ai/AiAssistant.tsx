@@ -127,7 +127,7 @@ export function AiAssistant() {
   };
 
   return (
-    <aside className="flex h-full w-[380px] shrink-0 flex-col border-l border-slate-800 bg-slate-900">
+    <aside className="flex w-[380px] shrink-0 flex-col border-l border-slate-800 bg-slate-900">
       <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-2.5">
         <h2 className="text-sm font-bold text-slate-100">✨ AI Assistant</h2>
         <details className="ml-auto text-[10px] text-slate-400">

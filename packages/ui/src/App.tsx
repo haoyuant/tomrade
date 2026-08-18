@@ -77,7 +77,7 @@ export function App() {
       onNewEpic={() => setNewKind("epic")}
     >
       <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Board onCardClick={setSelected} />
         </div>
         <AiAssistant />
