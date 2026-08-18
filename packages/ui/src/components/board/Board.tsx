@@ -37,8 +37,8 @@ function rankBetween(prev: number | undefined, next: number | undefined): number
   return (prev + next) / 2;
 }
 
-export function Board({ onCardClick }: { onCardClick: (card: Item) => void }) {
-  const { data, isLoading, error, refetch } = useItems();
+export function Board({ projectId, onCardClick }: { projectId: string; onCardClick: (card: Item) => void }) {
+  const { data, isLoading, error, refetch } = useItems(projectId);
   const patch = usePatchItem();
   const [conflict, setConflict] = useState<string | null>(null);
   const [filterEpicId, setFilterEpicId] = useState<string | null>(null);

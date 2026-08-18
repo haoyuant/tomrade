@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ChatTurn, CreateItemInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, ProviderConfig } from "@tomrade/core";
+import type { ChatTurn, CreateItemInput, CreateProjectInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, Project, ProviderConfig } from "@tomrade/core";
 
 export type AiChatResult =
   | { kind: "text"; reply: string }
@@ -25,7 +25,10 @@ const api = {
   aiExtract: (text: string): Promise<AiExtractResult> => ipcRenderer.invoke("tomrade:ai:extract", text),
   aiGap: (requirement: string): Promise<GapCandidate[]> => ipcRenderer.invoke("tomrade:ai:gap", requirement),
   aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null): Promise<Item> => ipcRenderer.invoke("tomrade:ai:createFromCandidate", c, parentId),
-  aiChat: (text: string, history: ChatTurn[]): Promise<AiChatResult> => ipcRenderer.invoke("tomrade:ai:chat", text, history)
+  aiChat: (text: string, history: ChatTurn[], projectId?: string): Promise<AiChatResult> => ipcRenderer.invoke("tomrade:ai:chat", text, history, projectId),
+  projectsList: (): Promise<Project[]> => ipcRenderer.invoke("tomrade:projects:list"),
+  projectsCreate: (input: CreateProjectInput): Promise<Project> => ipcRenderer.invoke("tomrade:projects:create", input),
+  projectsRemove: (id: string): Promise<void> => ipcRenderer.invoke("tomrade:projects:remove", id)
 };
 
 contextBridge.exposeInMainWorld("tomrade", api);

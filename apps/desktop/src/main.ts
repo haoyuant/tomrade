@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
-import { openDb, ItemsRepository, OpenAICompatibleProvider, checkDuplicate, extractTickets, gapAnalysis, routeIntent } from "@tomrade/core";
+import { openDb, ItemsRepository, ProjectsRepository, OpenAICompatibleProvider, checkDuplicate, extractTickets, gapAnalysis, routeIntent } from "@tomrade/core";
 import type { ChatTurn, ExtractCandidate, GapCandidate, Item, ItemKind, ItemStatus, ProviderConfig, ToolName } from "@tomrade/core";
 import { startTomradeMcpServer } from "@tomrade/mcp";
 import type { Author, CreateItemInput, ListItemsFilter, Patch } from "@tomrade/core";
@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
 let repo: ItemsRepository;
+let projectsRepo: ProjectsRepository;
 let mcpUrl: string | null = null;
 let settingsPath = "";
 let settings: ProviderConfig = {
@@ -38,10 +39,11 @@ function existingSummary() {
   return repo.list().map((i) => ({ id: i.id, title: i.title, body: i.body }));
 }
 
-async function executeTool(tool: ToolName, args: Record<string, unknown>): Promise<unknown> {
+async function executeTool(tool: ToolName, args: Record<string, unknown>, projectId?: string): Promise<unknown> {
   switch (tool) {
     case "list_items": {
       const items = repo.list({
+        projectId,
         status: typeof args.status === "string" ? (args.status as ItemStatus) : undefined,
         kind: typeof args.kind === "string" ? (args.kind as ItemKind) : undefined,
         parentId: typeof args.parentId === "string" || args.parentId === null ? (args.parentId as string | null) : undefined
@@ -57,6 +59,7 @@ async function executeTool(tool: ToolName, args: Record<string, unknown>): Promi
         body: typeof args.body === "string" ? args.body : null,
         kind: args.kind === "epic" ? "epic" : "ticket",
         parentId: typeof args.parentId === "string" ? args.parentId : null,
+        projectId,
         by: "ai:assistant"
       });
     }
@@ -140,6 +143,11 @@ function registerIpc(): void {
   ipcMain.handle("tomrade:recentOplog", (_e, limit?: number) => repo.recentOplog(limit ?? 20));
   ipcMain.handle("tomrade:mcpUrl", () => mcpUrl);
 
+  ipcMain.handle("tomrade:projects:list", () => projectsRepo.list());
+  ipcMain.handle("tomrade:projects:create", (_e, input: { name: string; description?: string | null }) => projectsRepo.create(input));
+  ipcMain.handle("tomrade:projects:rename", (_e, id: string, name: string) => projectsRepo.rename(id, name));
+  ipcMain.handle("tomrade:projects:remove", (_e, id: string) => projectsRepo.remove(id));
+
   ipcMain.handle("tomrade:settings:get", () => settings);
   ipcMain.handle("tomrade:settings:set", (_e, next: ProviderConfig) => {
     saveSettings(next);
@@ -150,14 +158,14 @@ function registerIpc(): void {
   ipcMain.handle("tomrade:ai:createFromCandidate", (_e, candidate: ExtractCandidate | GapCandidate, parentId: string | null) =>
     repo.create({ title: candidate.title, body: candidate.body, kind: candidate.kind, parentId, by: "ai:extraction" })
   );
-  ipcMain.handle("tomrade:ai:chat", async (_e, text: string, history: ChatTurn[] = []) => {
+  ipcMain.handle("tomrade:ai:chat", async (_e, text: string, history: ChatTurn[] = [], projectId?: string) => {
     const turns: ChatTurn[] = [...history, { role: "user", content: text }];
     const route = await routeIntent(provider, turns);
     if (!route.needsTool || !route.tool) {
       return { kind: "text", reply: route.reply ?? "I don't need a tool for that." };
     }
     try {
-      const result = await executeTool(route.tool, route.args ?? {});
+      const result = await executeTool(route.tool, route.args ?? {}, projectId);
       return { kind: "tool", tool: route.tool, result, reply: route.reply };
     } catch (err) {
       return { kind: "error", tool: route.tool, error: err instanceof Error ? err.message : String(err) };
@@ -169,7 +177,10 @@ app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath("userData"), "tomrade.db");
   settingsPath = path.join(app.getPath("userData"), "settings.json");
   loadSettings();
-  repo = new ItemsRepository(openDb(dbPath));
+  const db = openDb(dbPath);
+  repo = new ItemsRepository(db);
+  projectsRepo = new ProjectsRepository(db);
+  projectsRepo.ensureDefault();
   try {
     const mcp = await startTomradeMcpServer(repo);
     mcpUrl = mcp.url;

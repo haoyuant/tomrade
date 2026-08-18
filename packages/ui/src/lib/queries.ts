@@ -1,18 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateItemInput, Item, Patch } from "@tomrade/core";
 
-export function useItems() {
+export function useItems(projectId?: string) {
   return useQuery({
-    queryKey: ["items"],
-    queryFn: () => window.tomrade.list()
+    queryKey: ["items", projectId],
+    queryFn: () => window.tomrade.list(projectId ? { projectId } : undefined)
   });
 }
 
-export function useCreateItem() {
+export function useCreateItem(projectId?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Omit<CreateItemInput, "by">) => window.tomrade.create(input),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["items"] })
+    mutationFn: (input: Omit<CreateItemInput, "by">) => window.tomrade.create({ ...input, projectId }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["items", projectId] })
   });
 }
 

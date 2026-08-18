@@ -4,21 +4,24 @@ import { AppShell } from "./components/shell/AppShell.js";
 import { Board } from "./components/board/Board.js";
 import { ItemDetail } from "./components/detail/ItemDetail.js";
 import { AiAssistant } from "./components/ai/AiAssistant.js";
+import { ProjectsView } from "./components/projects/ProjectsView.js";
 import { INPUT, BTN } from "./lib/design-system.js";
 import { useCreateItem, useItems, useUndo } from "./lib/queries.js";
-import type { Item } from "@tomrade/core";
+import type { Item, Project } from "@tomrade/core";
 
 function NewItemModal({
+  projectId,
   defaultKind,
   onClose,
 }: {
+  projectId: string;
   defaultKind: "ticket" | "epic";
   onClose: () => void;
 }) {
-  const create = useCreateItem();
-  const { data } = useItems();
+  const create = useCreateItem(projectId);
+  const { data } = useItems(projectId);
   const [title, setTitle] = useState("");
-  const [parentId, setParentId] = useState<string>("");
+  const [parentId, setParentId] = useState("");
 
   const submit = () => {
     if (!title.trim()) return;
@@ -31,9 +34,7 @@ function NewItemModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold text-slate-100">
-          New {defaultKind === "epic" ? "Epic" : "Ticket"}
-        </h2>
+        <h2 className="text-sm font-semibold text-slate-100">New {defaultKind === "epic" ? "Epic" : "Ticket"}</h2>
         <input
           autoFocus
           className={INPUT}
@@ -62,28 +63,46 @@ function NewItemModal({
   );
 }
 
-export function App() {
+function Workspace({
+  project,
+  onBack,
+  mcpUrl,
+}: {
+  project: Project;
+  onBack: () => void;
+  mcpUrl: string | null;
+}) {
   const undo = useUndo();
-  const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
   const [selected, setSelected] = useState<Item | null>(null);
   const [newKind, setNewKind] = useState<"ticket" | "epic" | null>(null);
 
-
   return (
     <AppShell
-      mcpUrl={mcp.data ?? null}
+      projectName={project.name}
+      onBack={onBack}
+      mcpUrl={mcpUrl}
       onUndo={() => undo.mutate()}
       onNewTicket={() => setNewKind("ticket")}
       onNewEpic={() => setNewKind("epic")}
     >
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <Board onCardClick={setSelected} />
+          <Board projectId={project.id} onCardClick={setSelected} />
         </div>
-        <AiAssistant />
+        <AiAssistant projectId={project.id} />
       </div>
       {selected && <ItemDetail item={selected} onClose={() => setSelected(null)} />}
-      {newKind && <NewItemModal defaultKind={newKind} onClose={() => setNewKind(null)} />}
+      {newKind && <NewItemModal projectId={project.id} defaultKind={newKind} onClose={() => setNewKind(null)} />}
     </AppShell>
   );
+}
+
+export function App() {
+  const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
+  const [project, setProject] = useState<Project | null>(null);
+
+  if (!project) {
+    return <ProjectsView mcpUrl={mcp.data ?? null} onOpen={setProject} />;
+  }
+  return <Workspace project={project} onBack={() => setProject(null)} mcpUrl={mcp.data ?? null} />;
 }

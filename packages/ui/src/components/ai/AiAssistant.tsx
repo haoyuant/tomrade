@@ -83,7 +83,7 @@ function CandidateList({ candidates }: { candidates: Candidate[] }) {
   );
 }
 
-export function AiAssistant() {
+export function AiAssistant({ projectId }: { projectId?: string }) {
   const qc = useQueryClient();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -110,7 +110,7 @@ export function AiAssistant() {
     setMessages((p) => [...p, userMsg]);
     setBusy(true);
     try {
-      const res = await window.tomrade.aiChat(text, history);
+      const res = await window.tomrade.aiChat(text, history, projectId);
       const assistantMsg: Msg =
         res.kind === "text"
           ? { id: nextId++, role: "assistant", kind: "text", reply: res.reply }

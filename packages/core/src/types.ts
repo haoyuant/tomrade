@@ -57,3 +57,15 @@ export interface ListItemsFilter {
   kind?: ItemKind;
   parentId?: string | null;
 }
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  description?: string | null;
+}

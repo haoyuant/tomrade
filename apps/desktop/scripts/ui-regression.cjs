@@ -21,7 +21,8 @@ const epic = add({ title: 'Reporting', kind: 'epic' });
 add({ title: 'Export report as PDF', parentId: epic.id, rank: 0 });
 add({ title: 'Schedule recurring reports', parentId: epic.id, rank: 1 });
 
-const calls = { update: [], create: [], remove: [], undo: [] };
+const calls = { update: [], create: [], remove: [], undo: [], projectsCreate: [] };
+const projects = [{ id: 'default', name: 'Default Project', description: null, createdAt: Date.now(), updatedAt: Date.now() }];
 const results = [];
 function check(name, cond) { results.push({ name, pass: !!cond }); console.log((cond ? 'PASS' : 'FAIL') + ': ' + name); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -40,6 +41,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('tomrade:delete', (_e, id) => { calls.remove.push(id); const idx = items.findIndex((i) => i.id === id); if (idx >= 0) items.splice(idx, 1); });
   ipcMain.handle('tomrade:undo', () => { calls.undo.push(1); return null; });
   ipcMain.handle('tomrade:recentOplog', () => []);
+  ipcMain.handle('tomrade:projects:list', () => projects.map((p) => ({ ...p })));
+  ipcMain.handle('tomrade:projects:create', (_e, input) => { calls.projectsCreate.push(input); const p = { id: 'p-' + (projects.length + 1), name: input.name, description: null, createdAt: Date.now(), updatedAt: Date.now() }; projects.push(p); return p; });
+  ipcMain.handle('tomrade:projects:remove', (_e, id) => { const i = projects.findIndex((p) => p.id === id); if (i >= 0) projects.splice(i, 1); });
   ipcMain.handle('tomrade:settings:get', () => ({ apiKey: '', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat' }));
   ipcMain.handle('tomrade:mcpUrl', () => 'http://127.0.0.1:19090/mcp');
   ipcMain.handle('tomrade:settings:set', (_e, s) => s);
@@ -51,6 +55,13 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { preload, contextIsolation: true, sandbox: true } });
   await win.loadURL(DEV_URL);
   await sleep(4000);
+
+  // 0. home grid renders project cards; click into the project
+  await sleep(500);
+  const gridCards = await win.webContents.executeJavaScript("[...document.querySelectorAll('main h3')].map((h) => h.textContent)");
+  check('home grid shows projects', gridCards.length >= 1 && gridCards.includes('Default Project'));
+  await win.webContents.executeJavaScript("[...document.querySelectorAll('main h3')].find((h) => h.textContent === 'Default Project')?.parentElement?.parentElement?.click()");
+  await sleep(1200);
 
   const COL_QUERY = "[...document.querySelectorAll('.board-scroll > div')].map((c) => ({ header: c.querySelector('h2')?.textContent, cards: c.querySelectorAll('.cursor-grab').length }))";
   const colInfo = await win.webContents.executeJavaScript(COL_QUERY);
