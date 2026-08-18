@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "~/lib/utils";
 import { BTN, INPUT } from "~/lib/design-system";
-import type { ChatTurn, ExtractCandidate, GapCandidate, ProviderConfig } from "@tomrade/core";
+import type { ChatTurn, ExtractCandidate, GapCandidate } from "@tomrade/core";
 
 type Msg =
   | { id: number; role: "user"; text: string }
@@ -88,12 +88,8 @@ export function AiAssistant({ projectId }: { projectId?: string }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [settings, setSettings] = useState<ProviderConfig | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    void window.tomrade.settingsGet().then(setSettings);
-  }, []);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
@@ -130,17 +126,7 @@ export function AiAssistant({ projectId }: { projectId?: string }) {
     <aside className="flex w-[380px] shrink-0 flex-col border-l border-slate-800 bg-slate-900">
       <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-2.5">
         <h2 className="text-sm font-bold text-slate-100">✨ AI Assistant</h2>
-        <details className="ml-auto text-[10px] text-slate-400">
-          <summary className="cursor-pointer hover:text-slate-200">settings</summary>
-          {settings && (
-            <div className="absolute right-0 top-full z-10 flex w-72 flex-col gap-1.5 rounded border border-slate-700 bg-slate-900 p-2 shadow-xl">
-              <input className={INPUT} value={settings.apiKey} onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })} placeholder="API key" />
-              <input className={INPUT} value={settings.baseURL} onChange={(e) => setSettings({ ...settings, baseURL: e.target.value })} placeholder="Base URL" />
-              <input className={INPUT} value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value })} placeholder="Model" />
-              <button type="button" className={cn(BTN.secondary, "text-xs")} onClick={() => void window.tomrade.settingsSet(settings)}>Save</button>
-            </div>
-          )}
-        </details>
+        <span className="ml-auto text-[10px] text-slate-500" title="LLM settings live in ⚙ Settings">⚙ in Settings</span>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">

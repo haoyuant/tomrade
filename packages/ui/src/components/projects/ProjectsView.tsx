@@ -20,7 +20,7 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   );
 }
 
-export function ProjectsView({ mcpUrl, onOpen }: { mcpUrl: string | null; onOpen: (project: Project) => void }) {
+export function ProjectsView({ mcpUrl, onOpen, onOpenSettings }: { mcpUrl: string | null; onOpen: (project: Project) => void; onOpenSettings: () => void }) {
   const qc = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => window.tomrade.projectsList() });
   const create = useMutation({
@@ -38,7 +38,10 @@ export function ProjectsView({ mcpUrl, onOpen }: { mcpUrl: string | null; onOpen
       <header className="app-drag flex items-center gap-3 border-b border-slate-800 bg-slate-900 py-3 pl-20 pr-6">
         <h1 className="text-base font-bold text-slate-100">Tomrade</h1>
         {mcpUrl && <span className="rounded-full border border-emerald-800 bg-emerald-950 px-2 py-0.5 text-[10px] text-emerald-300">● MCP</span>}
-        <button type="button" className={cn(BTN.primary, "app-no-drag ml-auto")} onClick={() => setShowNew(true)}>+ New Project</button>
+        <div className="ml-auto flex items-center gap-2">
+          <button type="button" className={cn(BTN.ghost, "app-no-drag !px-2")} onClick={onOpenSettings} title="Settings">⚙</button>
+          <button type="button" className={cn(BTN.primary, "app-no-drag")} onClick={() => setShowNew(true)}>+ New Project</button>
+        </div>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
         <h2 className={cn(TEXT.muted, "mb-4 text-sm font-medium")}>Projects</h2>

@@ -5,6 +5,7 @@ import { Board } from "./components/board/Board.js";
 import { ItemDetail } from "./components/detail/ItemDetail.js";
 import { AiAssistant } from "./components/ai/AiAssistant.js";
 import { ProjectsView } from "./components/projects/ProjectsView.js";
+import { SettingsModal } from "./components/settings/SettingsModal.js";
 import { INPUT, BTN } from "./lib/design-system.js";
 import { useCreateItem, useItems, useUndo } from "./lib/queries.js";
 import type { Item, Project } from "@tomrade/core";
@@ -67,10 +68,12 @@ function Workspace({
   project,
   onBack,
   mcpUrl,
+  onOpenSettings,
 }: {
   project: Project;
   onBack: () => void;
   mcpUrl: string | null;
+  onOpenSettings: () => void;
 }) {
   const undo = useUndo();
   const [selected, setSelected] = useState<Item | null>(null);
@@ -84,6 +87,7 @@ function Workspace({
       onUndo={() => undo.mutate()}
       onNewTicket={() => setNewKind("ticket")}
       onNewEpic={() => setNewKind("epic")}
+      onOpenSettings={onOpenSettings}
     >
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -100,9 +104,20 @@ function Workspace({
 export function App() {
   const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
   const [project, setProject] = useState<Project | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (!project) {
-    return <ProjectsView mcpUrl={mcp.data ?? null} onOpen={setProject} />;
+    return (
+      <>
+        <ProjectsView mcpUrl={mcp.data ?? null} onOpen={setProject} onOpenSettings={() => setSettingsOpen(true)} />
+        {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      </>
+    );
   }
-  return <Workspace project={project} onBack={() => setProject(null)} mcpUrl={mcp.data ?? null} />;
+  return (
+    <>
+      <Workspace project={project} onBack={() => setProject(null)} mcpUrl={mcp.data ?? null} onOpenSettings={() => setSettingsOpen(true)} />
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+    </>
+  );
 }

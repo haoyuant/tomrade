@@ -8,6 +8,7 @@ export function AppShell({
   onUndo,
   onNewTicket,
   onNewEpic,
+  onOpenSettings,
   children,
 }: {
   projectName: string;
@@ -16,6 +17,7 @@ export function AppShell({
   onUndo: () => void;
   onNewTicket: () => void;
   onNewEpic: () => void;
+  onOpenSettings: () => void;
   children: ReactNode;
 }) {
   return (
@@ -32,6 +34,7 @@ export function AppShell({
           <button type="button" className={BTN.secondary + " app-no-drag"} onClick={onUndo}>↩ Undo</button>
           <button type="button" className={BTN.secondary + " app-no-drag"} onClick={onNewEpic}>+ Epic</button>
           <button type="button" className={BTN.primary + " app-no-drag"} onClick={onNewTicket}>+ Ticket</button>
+          <button type="button" className={BTN.ghost + " app-no-drag !px-2"} onClick={onOpenSettings} title="Settings">⚙</button>
         </div>
       </header>
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
