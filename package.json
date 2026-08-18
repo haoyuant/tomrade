@@ -9,6 +9,8 @@
     "dev:desktop": "pnpm --filter @tomrade/desktop dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "rebuild:desktop": "pnpm --filter @tomrade/desktop exec electron-rebuild -f -w better-sqlite3"
+    "rebuild:desktop": "pnpm --filter @tomrade/desktop exec electron-rebuild -f -w better-sqlite3",
+    "test": "pnpm --filter @tomrade/core test",
+    "test:ui": "pnpm --filter @tomrade/desktop test:ui"
   }
 }
