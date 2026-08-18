@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ChatTurn, CreateItemInput, CreateProjectInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, Project, ProviderConfig } from "@tomrade/core";
+import type { AppSettings, ChatTurn, CreateItemInput, CreateProjectInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, Project } from "@tomrade/core";
 
 export type AiChatResult =
   | { kind: "text"; reply: string }
@@ -20,8 +20,8 @@ const api = {
   undo: (entityId?: string): Promise<Item | null> => ipcRenderer.invoke("tomrade:undo", entityId),
   recentOplog: (limit?: number): Promise<OplogEntry[]> => ipcRenderer.invoke("tomrade:recentOplog", limit),
   mcpUrl: (): Promise<string | null> => ipcRenderer.invoke("tomrade:mcpUrl"),
-  settingsGet: (): Promise<ProviderConfig> => ipcRenderer.invoke("tomrade:settings:get"),
-  settingsSet: (s: ProviderConfig): Promise<ProviderConfig> => ipcRenderer.invoke("tomrade:settings:set", s),
+  settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke("tomrade:settings:get"),
+  settingsSet: (s: AppSettings): Promise<AppSettings> => ipcRenderer.invoke("tomrade:settings:set", s),
   aiExtract: (text: string): Promise<AiExtractResult> => ipcRenderer.invoke("tomrade:ai:extract", text),
   aiGap: (requirement: string): Promise<GapCandidate[]> => ipcRenderer.invoke("tomrade:ai:gap", requirement),
   aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null): Promise<Item> => ipcRenderer.invoke("tomrade:ai:createFromCandidate", c, parentId),

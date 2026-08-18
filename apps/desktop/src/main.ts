@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { openDb, ItemsRepository, ProjectsRepository, OpenAICompatibleProvider, checkDuplicate, extractTickets, gapAnalysis, routeIntent } from "@tomrade/core";
-import type { ChatTurn, ExtractCandidate, GapCandidate, Item, ItemKind, ItemStatus, ProviderConfig, ToolName } from "@tomrade/core";
+import type { AppSettings, ChatTurn, ExtractCandidate, GapCandidate, Item, ItemKind, ItemStatus, ToolName } from "@tomrade/core";
 import { startTomradeMcpServer } from "@tomrade/mcp";
 import type { Author, CreateItemInput, ListItemsFilter, Patch } from "@tomrade/core";
 
@@ -14,23 +14,29 @@ let repo: ItemsRepository;
 let projectsRepo: ProjectsRepository;
 let mcpUrl: string | null = null;
 let settingsPath = "";
-let settings: ProviderConfig = {
-  apiKey: process.env.LLM_API_KEY ?? "",
-  baseURL: process.env.LLM_BASE_URL ?? "https://api.deepseek.com",
-  model: process.env.LLM_MODEL ?? "deepseek-chat"
+let settings: AppSettings = {
+  llm: {
+    apiKey: process.env.LLM_API_KEY ?? "",
+    baseURL: process.env.LLM_BASE_URL ?? "https://api.deepseek.com",
+    model: process.env.LLM_MODEL ?? "deepseek-chat"
+  },
+  theme: "system"
 };
-const provider = new OpenAICompatibleProvider(() => settings);
+const provider = new OpenAICompatibleProvider(() => settings.llm);
 
 function loadSettings(): void {
   try {
-    const raw = fs.readFileSync(settingsPath, "utf8");
-    settings = { ...settings, ...(JSON.parse(raw) as Partial<ProviderConfig>) };
+    const raw = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as Partial<AppSettings>;
+    settings = {
+      llm: { ...settings.llm, ...(raw.llm ?? {}) },
+      theme: raw.theme ?? "system"
+    };
   } catch {
     // first run: defaults
   }
 }
 
-function saveSettings(next: ProviderConfig): void {
+function saveSettings(next: AppSettings): void {
   settings = next;
   fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2), "utf8");
 }
@@ -151,7 +157,7 @@ function registerIpc(): void {
   ipcMain.handle("tomrade:projects:remove", (_e, id: string) => projectsRepo.remove(id));
 
   ipcMain.handle("tomrade:settings:get", () => settings);
-  ipcMain.handle("tomrade:settings:set", (_e, next: ProviderConfig) => {
+  ipcMain.handle("tomrade:settings:set", (_e, next: AppSettings) => {
     saveSettings(next);
     return settings;
   });

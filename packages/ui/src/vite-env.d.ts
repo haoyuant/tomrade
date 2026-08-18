@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { ChatTurn, CreateItemInput, CreateProjectInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, Project, ProviderConfig } from "@tomrade/core";
+import type { AppSettings, ChatTurn, CreateItemInput, CreateProjectInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, Project } from "@tomrade/core";
 
 type AiChatResult =
   | { kind: "text"; reply: string }
@@ -23,8 +23,8 @@ declare global {
       undo: (entityId?: string) => Promise<Item | null>;
       recentOplog: (limit?: number) => Promise<OplogEntry[]>;
       mcpUrl: () => Promise<string | null>;
-      settingsGet: () => Promise<ProviderConfig>;
-      settingsSet: (s: ProviderConfig) => Promise<ProviderConfig>;
+      settingsGet: () => Promise<AppSettings>;
+      settingsSet: (s: AppSettings) => Promise<AppSettings>;
       aiExtract: (text: string) => Promise<AiExtractResult>;
       aiGap: (requirement: string) => Promise<GapCandidate[]>;
       aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null) => Promise<Item>;

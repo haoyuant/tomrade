@@ -32,7 +32,7 @@ export function Column({
   return (
     <div
       className={cn(
-        "flex h-full w-72 shrink-0 flex-col rounded-lg border border-slate-800 bg-slate-900 transition-shadow",
+        "flex h-full w-72 shrink-0 flex-col rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-shadow",
         isTarget && "ring-2 ring-sky-500",
       )}
     >
@@ -40,7 +40,7 @@ export function Column({
         <h2 className={cn("text-sm font-semibold", meta?.color)}>
           {meta?.label ?? status}
         </h2>
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+        <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">
           {cards.length}
         </span>
       </div>

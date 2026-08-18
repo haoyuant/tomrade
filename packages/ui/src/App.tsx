@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "./components/shell/AppShell.js";
 import { Board } from "./components/board/Board.js";
@@ -34,8 +34,8 @@ function NewItemModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold text-slate-100">New {defaultKind === "epic" ? "Epic" : "Ticket"}</h2>
+      <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">New {defaultKind === "epic" ? "Epic" : "Ticket"}</h2>
         <input
           autoFocus
           className={INPUT}
@@ -45,7 +45,7 @@ function NewItemModal({
           placeholder={defaultKind === "epic" ? "Epic title…" : "Ticket title (one PR)…"}
         />
         {defaultKind === "ticket" && (
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-slate-500 dark:text-slate-400">
             Parent epic
             <select className={INPUT} value={parentId} onChange={(e) => setParentId(e.target.value)}>
               <option value="">(none)</option>
@@ -103,8 +103,26 @@ function Workspace({
 
 export function App() {
   const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => window.tomrade.settingsGet() });
   const [project, setProject] = useState<Project | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // apply theme: explicit dark/light, or follow system preference
+  useEffect(() => {
+    const theme = settings.data?.theme ?? "system";
+    const apply = () => {
+      const dark =
+        theme === "dark" ||
+        (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+    };
+    apply();
+    if (theme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }
+  }, [settings.data?.theme]);
 
   if (!project) {
     return (

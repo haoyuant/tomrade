@@ -44,7 +44,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('tomrade:projects:list', () => projects.map((p) => ({ ...p })));
   ipcMain.handle('tomrade:projects:create', (_e, input) => { calls.projectsCreate.push(input); const p = { id: 'p-' + (projects.length + 1), name: input.name, description: null, createdAt: Date.now(), updatedAt: Date.now() }; projects.push(p); return p; });
   ipcMain.handle('tomrade:projects:remove', (_e, id) => { const i = projects.findIndex((p) => p.id === id); if (i >= 0) projects.splice(i, 1); });
-  ipcMain.handle('tomrade:settings:get', () => ({ apiKey: '', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat' }));
+  ipcMain.handle('tomrade:settings:get', () => ({ llm: { apiKey: '', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat' }, theme: 'system' }));
   ipcMain.handle('tomrade:mcpUrl', () => 'http://127.0.0.1:19090/mcp');
   ipcMain.handle('tomrade:settings:set', (_e, s) => s);
   ipcMain.handle('tomrade:ai:chat', async () => ({ kind: 'text', reply: 'ok' }));

@@ -46,10 +46,10 @@ export function ItemDetail({ item, onClose }: { item: Item; onClose: () => void 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-xl"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-slate-800 px-5 py-3">
+        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-5 py-3">
           <span className={cn("text-[10px] font-semibold uppercase", TYPE_COLORS[kind]?.color)}>
             {TYPE_COLORS[kind]?.label}
           </span>
@@ -57,7 +57,7 @@ export function ItemDetail({ item, onClose }: { item: Item; onClose: () => void 
           <span className="text-xs text-slate-500">
             v{item.version} · {item.updatedBy} · #{item.id.slice(0, 8)}
           </span>
-          <button type="button" onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-200">✕</button>
+          <button type="button" onClick={onClose} className="ml-auto text-slate-500 dark:text-slate-400 hover:text-slate-200">✕</button>
         </div>
 
         <div className="flex flex-col gap-4 overflow-y-auto p-5">
@@ -74,13 +74,13 @@ export function ItemDetail({ item, onClose }: { item: Item; onClose: () => void 
             placeholder="Body (markdown)"
           />
           <div className="grid grid-cols-2 gap-4">
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-500 dark:text-slate-400">
               Status
               <select className={INPUT} value={status} onChange={(e) => setStatus(e.target.value as ItemStatus)}>
                 {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{WORKFLOW_STATUS[s]?.label ?? s}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
+            <label className="flex flex-col gap-1 text-xs text-slate-500 dark:text-slate-400">
               Kind
               <select className={INPUT} value={kind} onChange={(e) => setKind(e.target.value as ItemKind)}>
                 {KIND_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
@@ -89,8 +89,8 @@ export function ItemDetail({ item, onClose }: { item: Item; onClose: () => void 
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-slate-800 px-5 py-3">
-          {message && <span className="text-xs text-slate-400">{message}</span>}
+        <div className="flex items-center gap-2 border-t border-slate-200 dark:border-slate-800 px-5 py-3">
+          {message && <span className="text-xs text-slate-500 dark:text-slate-400">{message}</span>}
           <button type="button" className={cn(BTN.secondary, "ml-auto")} onClick={toggleLock}>
             {item.humanLocked ? "Unlock (human)" : "Lock (human)"}
           </button>

@@ -1,5 +1,5 @@
 export function Loading({ label }: { label: string }) {
-  return <div className="p-8 text-sm text-slate-400">{label}</div>;
+  return <div className="p-8 text-sm text-slate-500 dark:text-slate-400">{label}</div>;
 }
 
 export function ErrorState({ message }: { message: string }) {

@@ -69,3 +69,13 @@ export interface CreateProjectInput {
   name: string;
   description?: string | null;
 }
+export type ThemePreference = "system" | "dark" | "light";
+
+export interface AppSettings {
+  llm: {
+    apiKey: string;
+    baseURL: string;
+    model: string;
+  };
+  theme: ThemePreference;
+}

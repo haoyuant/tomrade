@@ -25,15 +25,15 @@ function ToolResult({ tool, result }: { tool: string; result: unknown }) {
   }
   if (tool === "list_items") {
     const items = Array.isArray(result) ? result : [];
-    if (items.length === 0) return <div className="text-xs text-slate-400">No items found.</div>;
+    if (items.length === 0) return <div className="text-xs text-slate-500 dark:text-slate-400">No items found.</div>;
     return (
       <ul className="flex flex-col gap-1">
         {items.map((i) => {
           const it = i as { id: string; title: string; kind: string; status: string };
           return (
-            <li key={it.id} className="rounded border border-slate-700 bg-slate-950/50 px-2 py-1 text-xs">
+            <li key={it.id} className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-950/50 px-2 py-1 text-xs">
               <span className={cn("font-semibold uppercase", it.kind === "epic" ? "text-violet-400" : "text-sky-400")}>{it.kind}</span>
-              {" "}<span className="text-slate-200">{it.title}</span>
+              {" "}<span className="text-slate-800 dark:text-slate-200">{it.title}</span>
               <span className="ml-1 text-slate-500">[{it.status}]</span>
             </li>
           );
@@ -49,7 +49,7 @@ function ToolResult({ tool, result }: { tool: string; result: unknown }) {
     const items = Array.isArray(result) ? (result as GapCandidate[]) : [];
     return <CandidateList candidates={items.map((g, i) => ({ ...g, key: "g" + i, reason: g.reason }))} />;
   }
-  return <pre className="text-xs text-slate-400">{JSON.stringify(result, null, 2)}</pre>;
+  return <pre className="text-xs text-slate-500 dark:text-slate-400">{JSON.stringify(result, null, 2)}</pre>;
 }
 
 function CandidateList({ candidates }: { candidates: Candidate[] }) {
@@ -58,10 +58,10 @@ function CandidateList({ candidates }: { candidates: Candidate[] }) {
   return (
     <ul className="flex flex-col gap-1.5">
       {candidates.map((c) => (
-        <li key={c.key} className="rounded border border-slate-700 bg-slate-950/50 p-2">
+        <li key={c.key} className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-950/50 p-2">
           <div className="flex items-center gap-2">
             <span className={cn("text-[10px] font-semibold uppercase", c.kind === "epic" ? "text-violet-400" : "text-sky-400")}>{c.kind}</span>
-            <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{c.title}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-800 dark:text-slate-200">{c.title}</span>
             <button
               type="button"
               className="rounded bg-sky-600 px-2 py-0.5 text-[10px] text-white hover:bg-sky-500 disabled:opacity-50"
@@ -123,9 +123,9 @@ export function AiAssistant({ projectId }: { projectId?: string }) {
   };
 
   return (
-    <aside className="flex w-[380px] shrink-0 flex-col border-l border-slate-800 bg-slate-900">
-      <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-2.5">
-        <h2 className="text-sm font-bold text-slate-100">✨ AI Assistant</h2>
+    <aside className="flex w-[380px] shrink-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-4 py-2.5">
+        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">✨ AI Assistant</h2>
         <span className="ml-auto text-[10px] text-slate-500" title="LLM settings live in ⚙ Settings">⚙ in Settings</span>
       </div>
 
@@ -143,15 +143,15 @@ export function AiAssistant({ projectId }: { projectId?: string }) {
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={cn("max-w-[95%] rounded-lg px-3 py-2 text-sm", m.role === "user" ? "self-end bg-sky-600/80 text-white" : "self-start bg-slate-800 text-slate-200")}>
-            {m.role === "user" ? m.text : m.kind === "text" ? m.reply : m.kind === "error" ? <span className="text-red-300">{m.error}</span> : (<><ToolResult tool={m.tool} result={m.result} />{m.reply && <p className="mt-1 text-xs text-slate-400">{m.reply}</p>}</>)}
+          <div key={m.id} className={cn("max-w-[95%] rounded-lg px-3 py-2 text-sm", m.role === "user" ? "self-end bg-sky-600/80 text-white" : "self-start bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200")}>
+            {m.role === "user" ? m.text : m.kind === "text" ? m.reply : m.kind === "error" ? <span className="text-red-300">{m.error}</span> : (<><ToolResult tool={m.tool} result={m.result} />{m.reply && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{m.reply}</p>}</>)}
           </div>
         ))}
-        {busy && <div className="self-start rounded-lg bg-slate-800 px-3 py-2 text-xs text-slate-400">Thinking…</div>}
+        {busy && <div className="self-start rounded-lg bg-slate-200 dark:bg-slate-800 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">Thinking…</div>}
         <div ref={bottomRef} />
       </div>
 
-      <div className="flex items-center gap-2 border-t border-slate-800 p-3">
+      <div className="flex items-center gap-2 border-t border-slate-200 dark:border-slate-800 p-3">
         <input
           className={cn(INPUT, "flex-1")}
           value={input}

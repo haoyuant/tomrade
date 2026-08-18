@@ -36,7 +36,7 @@ export function BoardCard({
       ref={ref}
       onClick={onClick}
       className={cn(
-        "cursor-grab rounded-md border border-slate-700 bg-slate-900 p-3 shadow-sm hover:border-slate-600 active:cursor-grabbing",
+        "cursor-grab rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 shadow-sm hover:border-slate-600 active:cursor-grabbing",
         isDragging && "z-50 opacity-60 shadow-lg",
       )}
     >
@@ -55,10 +55,10 @@ export function BoardCard({
         )}
       </div>
 
-      <p className="text-sm text-slate-200">{card.title}</p>
+      <p className="text-sm text-slate-800 dark:text-slate-200">{card.title}</p>
 
       {epicTitle && (
-        <div className="mt-2 border-t border-slate-800 pt-1.5">
+        <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-1.5">
           <span className="text-[10px] font-medium text-violet-400">
             {epicTitle}
           </span>
