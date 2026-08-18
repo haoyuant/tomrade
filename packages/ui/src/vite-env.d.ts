@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
-import type { CreateItemInput, Item, ListItemsFilter, OplogEntry, Patch } from "@tomrade/core";
+import type { CreateItemInput, ExtractCandidate, GapCandidate, Item, ListItemsFilter, OplogEntry, Patch, ProviderConfig } from "@tomrade/core";
+
+interface AiExtractResult {
+  candidates: ExtractCandidate[];
+  dedup: Record<number, { isDuplicate: boolean; duplicates: { id: string; reason: string }[] }>;
+}
 
 declare global {
   interface Window {
@@ -13,6 +18,11 @@ declare global {
       undo: (entityId?: string) => Promise<Item | null>;
       recentOplog: (limit?: number) => Promise<OplogEntry[]>;
       mcpUrl: () => Promise<string | null>;
+      settingsGet: () => Promise<ProviderConfig>;
+      settingsSet: (s: ProviderConfig) => Promise<ProviderConfig>;
+      aiExtract: (text: string) => Promise<AiExtractResult>;
+      aiGap: (requirement: string) => Promise<GapCandidate[]>;
+      aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null) => Promise<Item>;
     };
   }
 }
