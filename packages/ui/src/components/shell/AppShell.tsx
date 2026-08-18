@@ -27,19 +27,19 @@ export function AppShell({
         <button type="button" onClick={onBack} className="app-no-drag rounded px-2 py-1 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-800 hover:text-slate-200" title="Back to projects">← Projects</button>
         <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100">{projectName}</h1>
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className={BTN.secondary + " app-no-drag inline-flex items-center gap-1.5"} onClick={onUndo} title="Undo last change">
+          <button type="button" className={BTN.secondary + " app-no-drag"} onClick={onUndo} title="Undo last change">
             <UndoIcon className="h-3.5 w-3.5" />
             Undo
           </button>
-          <button type="button" className={BTN.secondary + " app-no-drag inline-flex items-center gap-1.5"} onClick={onNewEpic} title="New epic">
+          <button type="button" className={BTN.secondary + " app-no-drag"} onClick={onNewEpic} title="New epic">
             <PlusIcon className="h-3.5 w-3.5" />
             Epic
           </button>
-          <button type="button" className={BTN.primary + " app-no-drag inline-flex items-center gap-1.5"} onClick={onNewTicket} title="New ticket">
+          <button type="button" className={BTN.primary + " app-no-drag"} onClick={onNewTicket} title="New ticket">
             <PlusIcon className="h-3.5 w-3.5" />
             Ticket
           </button>
-          <button type="button" className={BTN.ghost + " app-no-drag inline-flex !px-2 py-1.5"} onClick={onOpenSettings} title="Settings">
+          <button type="button" className={BTN.icon + " app-no-drag"} onClick={onOpenSettings} title="Settings">
             <SettingsIcon className="h-4 w-4" />
           </button>
         </div>

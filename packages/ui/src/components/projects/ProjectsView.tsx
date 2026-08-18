@@ -39,10 +39,10 @@ export function ProjectsView({ mcpUrl, onOpen, onOpenSettings }: { mcpUrl: strin
       <header className="app-drag flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-3 pl-20 pr-6">
         <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">Tomrade</h1>
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className={cn(BTN.ghost, "app-no-drag inline-flex !px-2 py-1.5")} onClick={onOpenSettings} title="Settings">
+          <button type="button" className={cn(BTN.icon, "app-no-drag")} onClick={onOpenSettings} title="Settings">
             <SettingsIcon className="h-4 w-4" />
           </button>
-          <button type="button" className={cn(BTN.primary, "app-no-drag inline-flex items-center gap-1.5")} onClick={() => setShowNew(true)}>
+          <button type="button" className={cn(BTN.primary, "app-no-drag")} onClick={() => setShowNew(true)}>
             <PlusIcon className="h-3.5 w-3.5" />
             New Project
           </button>

@@ -21,11 +21,20 @@ export const TEXT = {
   subtle: "text-slate-500 dark:text-slate-400",
 } as const;
 
+/** Shared button base: geometry, focus ring, disabled, transitions. */
+export const BTN_BASE =
+  "inline-flex select-none items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 disabled:cursor-not-allowed disabled:opacity-50";
+
 export const BTN = {
-  primary: "bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50",
-  secondary: "bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 disabled:opacity-50",
-  ghost: "text-slate-500 hover:text-slate-900 hover:bg-slate-200 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800",
-  danger: "bg-red-600/90 hover:bg-red-500 text-white disabled:opacity-50",
+  primary: BTN_BASE + " bg-sky-600 text-white shadow-sm hover:bg-sky-500 active:bg-sky-700",
+  secondary:
+    BTN_BASE +
+    " bg-slate-200 text-slate-800 hover:bg-slate-300 active:bg-slate-400/60 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:active:bg-slate-600",
+  ghost:
+    BTN_BASE +
+    " text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
+  danger: BTN_BASE + " bg-red-600 text-white shadow-sm hover:bg-red-500 active:bg-red-700",
+  icon: BTN_BASE + " !px-2 !py-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
 } as const;
 
 export const INPUT =

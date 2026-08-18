@@ -82,7 +82,7 @@ export function Board({ projectId, onCardClick }: { projectId: string; onCardCli
             Version conflict moving “{conflict}”. The board re-fetched the latest — try the
             move again (optimistic concurrency).
           </span>
-          <button type="button" onClick={() => setConflict(null)} className="ml-3 underline hover:text-amber-200">
+          <button type="button" onClick={() => setConflict(null)} className="ml-3 rounded-md px-2 py-1 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-900/30">
             Dismiss
           </button>
         </div>

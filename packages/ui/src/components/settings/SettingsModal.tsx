@@ -40,7 +40,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2">
           <SettingsIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Settings</h2>
-          <button type="button" onClick={onClose} className="ml-auto rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+          <button type="button" onClick={onClose} className="ml-auto text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-slate-200" title="Close">
             <CloseIcon className="h-4 w-4" />
           </button>
         </div>

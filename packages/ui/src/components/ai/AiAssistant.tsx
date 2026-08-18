@@ -65,7 +65,7 @@ function CandidateList({ candidates }: { candidates: Candidate[] }) {
             <span className="min-w-0 flex-1 truncate text-xs text-slate-800 dark:text-slate-200">{c.title}</span>
             <button
               type="button"
-              className="rounded bg-sky-600 px-2 py-0.5 text-[10px] text-white hover:bg-sky-500 disabled:opacity-50"
+              className="rounded-md bg-sky-600 px-2 py-1 text-[11px] font-medium text-white shadow-sm transition-colors hover:bg-sky-500 active:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={created.has(c.key)}
               onClick={() => {
                 void window.tomrade.aiCreateFromCandidate(c, null).then(() => {

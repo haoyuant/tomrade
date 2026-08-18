@@ -121,7 +121,7 @@ export function App() {
         // enable global color transition just for this switch, then release it
         root.classList.add("theme-transition");
         root.classList.toggle("dark", dark);
-        window.setTimeout(() => root.classList.remove("theme-transition"), 400);
+        window.setTimeout(() => root.classList.remove("theme-transition"), 1100);
       } else {
         root.classList.toggle("dark", dark);
       }
