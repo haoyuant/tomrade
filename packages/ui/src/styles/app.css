@@ -21,3 +21,11 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #334155 #0f172a;
 }
+/* Window drag regions (frameless window): headers drag the window,
+   interactive children must opt out with no-drag. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

@@ -118,6 +118,8 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     title: "Tomrade",
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
