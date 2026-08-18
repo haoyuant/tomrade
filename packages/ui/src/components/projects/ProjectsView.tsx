@@ -37,7 +37,6 @@ export function ProjectsView({ mcpUrl, onOpen, onOpenSettings }: { mcpUrl: strin
     <div className="flex h-full flex-col bg-slate-950">
       <header className="app-drag flex items-center gap-3 border-b border-slate-800 bg-slate-900 py-3 pl-20 pr-6">
         <h1 className="text-base font-bold text-slate-100">Tomrade</h1>
-        {mcpUrl && <span className="rounded-full border border-emerald-800 bg-emerald-950 px-2 py-0.5 text-[10px] text-emerald-300">● MCP</span>}
         <div className="ml-auto flex items-center gap-2">
           <button type="button" className={cn(BTN.ghost, "app-no-drag !px-2")} onClick={onOpenSettings} title="Settings">⚙</button>
           <button type="button" className={cn(BTN.primary, "app-no-drag")} onClick={() => setShowNew(true)}>+ New Project</button>
@@ -67,6 +66,15 @@ export function ProjectsView({ mcpUrl, onOpen, onOpenSettings }: { mcpUrl: strin
           {projects.data?.length === 0 && <p className="col-span-full text-sm text-slate-500">No projects yet — create your first one.</p>}
         </div>
       </main>
+      <footer className="flex items-center justify-between border-t border-slate-800 bg-slate-900 px-6 py-1.5">
+        <span className="text-[10px] text-slate-600">Tomrade · local-first backlog</span>
+        {mcpUrl && (
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-slate-400" title={mcpUrl}>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            MCP <span className="text-slate-500">{mcpUrl.replace("http://", "")}</span>
+          </span>
+        )}
+      </footer>
       {showNew && <NewProjectModal onClose={() => setShowNew(false)} onCreate={(name) => { create.mutate(name, { onSuccess: () => setShowNew(false) }); }} />}
     </div>
   );
