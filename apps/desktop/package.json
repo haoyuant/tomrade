@@ -14,7 +14,8 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
-    "@tomrade/core": "workspace:*"
+    "@tomrade/core": "workspace:*",
+    "@tomrade/mcp": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

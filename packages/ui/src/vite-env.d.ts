@@ -12,6 +12,7 @@ declare global {
       remove: (id: string) => Promise<void>;
       undo: (entityId?: string) => Promise<Item | null>;
       recentOplog: (limit?: number) => Promise<OplogEntry[]>;
+      mcpUrl: () => Promise<string | null>;
     };
   }
 }

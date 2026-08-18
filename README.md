@@ -33,6 +33,27 @@ packages/mcp    MCP server (stdio/localhost) exposing Tomrade to coding agents
 packages/ui     React UI (TanStack Query/Router)
 ```
 
+## Connecting VS Code agents (MCP)
+
+Run `pnpm dev` (Tomrade desktop). The MCP server listens on `http://127.0.0.1:19090/mcp` (shown in the UI banner).
+
+To let Claude Code / Cline / VS Code MCP clients read and write your backlog, add to your MCP config (e.g. `.mcp.json` in the project, or the client's global MCP config):
+
+```json
+{
+  "mcpServers": {
+    "tomrade": {
+      "type": "http",
+      "url": "http://127.0.0.1:19090/mcp"
+    }
+  }
+}
+```
+
+Tools: `tomrade.list_items`, `tomrade.get_item`, `tomrade.create_item`, `tomrade.update_item` (optimistic-lock + human_locked protection), `tomrade.change_status`, `tomrade.delete_item`.
+
+AI writes are always recorded as `ai:mcp` in the oplog, require `baseVersion` you read, and are rejected when the item is human-locked or the version is stale — human work is never silently overwritten.
+
 ## History
 
 Reboot of `tomrade` (legacy enterprise-style design: Supabase + FastAPI + TanStack Start; archived at tag `legacy-architecture-final`). New design driven by: local-first + MCP + TypeScript-fullstack + human-work protection without enterprise ceremony.

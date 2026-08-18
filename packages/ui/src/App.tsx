@@ -26,6 +26,7 @@ export function App() {
 
   const items = useQuery({ queryKey: ["items"], queryFn: () => window.tomrade.list() });
   const oplog = useQuery({ queryKey: ["oplog"], queryFn: () => window.tomrade.recentOplog(10) });
+  const mcp = useQuery({ queryKey: ["mcp"], queryFn: () => window.tomrade.mcpUrl() });
 
   const create = useMutation({
     mutationFn: (t: string) => window.tomrade.create({ title: t }),
@@ -52,6 +53,11 @@ export function App() {
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto", padding: 24 }}>
       <h1>Tomrade</h1>
+      {mcp.data && (
+        <p style={{ fontSize: 13, color: "#2a7a2a", background: "#eef7ee", padding: "6px 12px", borderRadius: 6 }}>
+          🤖 MCP server: <code>{mcp.data}</code> — connect VS Code agents here
+        </p>
+      )}
 
       <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) create.mutate(title.trim()); }}>
         <input

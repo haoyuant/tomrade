@@ -8,7 +8,8 @@ const api = {
   update: (id: string, patch: Patch, baseVersion: number): Promise<Item> => ipcRenderer.invoke("tomrade:update", id, patch, baseVersion),
   remove: (id: string): Promise<void> => ipcRenderer.invoke("tomrade:delete", id),
   undo: (entityId?: string): Promise<Item | null> => ipcRenderer.invoke("tomrade:undo", entityId),
-  recentOplog: (limit?: number): Promise<OplogEntry[]> => ipcRenderer.invoke("tomrade:recentOplog", limit)
+  recentOplog: (limit?: number): Promise<OplogEntry[]> => ipcRenderer.invoke("tomrade:recentOplog", limit),
+  mcpUrl: (): Promise<string | null> => ipcRenderer.invoke("tomrade:mcpUrl")
 };
 
 contextBridge.exposeInMainWorld("tomrade", api);

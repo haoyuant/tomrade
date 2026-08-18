@@ -2,12 +2,14 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, ItemsRepository } from "@tomrade/core";
+import { startTomradeMcpServer } from "@tomrade/mcp";
 import type { Author, CreateItemInput, ListItemsFilter, Patch } from "@tomrade/core";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
 let repo: ItemsRepository;
+let mcpUrl: string | null = null;
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -37,11 +39,19 @@ function registerIpc(): void {
   ipcMain.handle("tomrade:delete", (_e, id: string) => repo.delete(id, "human"));
   ipcMain.handle("tomrade:undo", (_e, entityId?: string) => repo.undo(entityId));
   ipcMain.handle("tomrade:recentOplog", (_e, limit?: number) => repo.recentOplog(limit ?? 20));
+  ipcMain.handle("tomrade:mcpUrl", () => mcpUrl);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath("userData"), "tomrade.db");
   repo = new ItemsRepository(openDb(dbPath));
+  try {
+    const mcp = await startTomradeMcpServer(repo);
+    mcpUrl = mcp.url;
+    console.log(`[tomrade] MCP server ready: ${mcp.url}`);
+  } catch (err) {
+    console.error("[tomrade] MCP server failed to start:", err);
+  }
   registerIpc();
   createWindow();
 
