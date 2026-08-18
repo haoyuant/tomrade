@@ -1,0 +1,17 @@
+{
+  "name": "@tomrade/mcp",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "MCP server exposing Tomrade to coding agents (stdio/localhost)",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}
