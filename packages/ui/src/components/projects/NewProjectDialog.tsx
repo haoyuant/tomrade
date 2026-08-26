@@ -32,7 +32,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="New project" className="modal">
+    <Dialog open={open} onOpenChange={onOpenChange} label="New project">
       <DialogHead title="New project" />
       <DialogBody className="stack-4">
         <div className="field">

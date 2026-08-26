@@ -5,7 +5,8 @@ import { cn } from "~/lib/utils";
 
 /**
  * Radix supplies the focus trap, the restore and the inert background; the
- * design supplies every pixel. `.scrim` is the overlay, `.palette` the sheet.
+ * design supplies every pixel. `.scrim` is the overlay, `.palette.modal` the
+ * sheet — centred on the workspace row, height capped to the same row.
  */
 export function Dialog({
   open,
@@ -37,7 +38,11 @@ export function Dialog({
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="scrim" />
-        <RadixDialog.Content className={cn("palette", className)} aria-label={label}>
+        {/* `.modal` is not the caller's to opt into — it is what centres the
+            sheet on the workspace row and caps its height. Forgetting it left
+            dialogs sitting at the command palette's 96px top anchor. A
+            `className` here only ever picks a width. */}
+        <RadixDialog.Content className={cn("palette modal", className)} aria-label={label}>
           <RadixDialog.Title className="sr-only">{label}</RadixDialog.Title>
           {children}
         </RadixDialog.Content>

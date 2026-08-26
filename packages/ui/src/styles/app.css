@@ -93,6 +93,12 @@
   --statusbar-h: 29px;
   --sidebar-w: 264px;
   --detail-w: 440px;
+  /* Every overlay centres on the workspace row, not the window: the titlebar
+     and the status bar are chrome, so splitting the difference between them
+     is what reads as "centred". One pair of tokens keeps the modals and the
+     expanded issue sheet on the same axis. */
+  --overlay-mid: calc(var(--titlebar-h) + (100vh - var(--titlebar-h) - var(--statusbar-h)) / 2);
+  --overlay-max-h: calc(100vh - var(--titlebar-h) - var(--statusbar-h) - 2 * var(--space-8));
   /* the window controls are overlaid by the shell, so the bar owns its own
      gutter — the same 12px the sidebar and the right edge use */
   --traffic-inset: var(--space-3);
@@ -686,12 +692,12 @@ strong { font-weight: 500; }
 .detail.expanded {
   position: fixed; z-index: 62;
   left: 50%;
-  top: calc(var(--titlebar-h) + (100vh - var(--titlebar-h) - var(--statusbar-h)) / 2);
+  top: var(--overlay-mid);
   transform: translate(-50%, -50%);
   width: min(880px, calc(100vw - 2 * var(--space-12)));
   min-width: 0;
   height: auto;
-  max-height: calc(100vh - var(--titlebar-h) - var(--statusbar-h) - 2 * var(--space-8));
+  max-height: var(--overlay-max-h);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   box-shadow: var(--elev-raised); background: var(--bg);
   overflow: hidden;   /* clips the head rule and the scroll edge to the radius */
@@ -852,10 +858,15 @@ strong { font-weight: 500; }
 .dlg-foot { display: flex; justify-content: flex-end; gap: var(--space-2);
   padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); flex-shrink: 0; }
 
-/* A real modal is centred in the window and scrolls its own body. The
- * command palette stays top-anchored — it is typed at, not read. */
-.palette.modal { top: 50%; transform: translate(-50%, -50%);
-  width: min(620px, calc(100vw - 64px)); max-height: min(78vh, 760px); }
+/* A real modal is centred on the workspace row and scrolls its own body. The
+ * command palette stays top-anchored — it is typed at, not read.
+ * `<Dialog>` stamps `.modal` on every sheet it renders, so height and axis are
+ * settled here once; a per-dialog class only ever picks a width. */
+.palette.modal {
+  top: var(--overlay-mid); transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 64px));
+  max-height: min(var(--overlay-max-h), 760px);
+}
 .palette.modal.wide { width: min(760px, calc(100vw - 64px)); }
 
 /* ─── the projects screen · a route inside the file, not a dialog ───────
@@ -1107,9 +1118,10 @@ html.overlay-open .titlebar .btn-primary {
   color: var(--fg-2);
   box-shadow: var(--elev-ring);
 }
-.palette.sheet-md { max-height: none; }
-.palette.sheet-view { max-height: 82vh; width: min(560px, calc(100vw - 64px)); }
-.palette.sheet-board { max-height: 84vh; width: min(620px, calc(100vw - 64px)); }
+/* width only — `.palette.modal` owns the axis and the height */
+.palette.sheet-md { width: min(560px, calc(100vw - 64px)); }
+.palette.sheet-view { width: min(560px, calc(100vw - 64px)); }
+.palette.sheet-board { width: min(620px, calc(100vw - 64px)); }
 .dlg-title { font-size: var(--text-lg); }
 .dlg-sub { font-size: var(--text-base); margin-bottom: var(--space-2); }
 .dense { line-height: var(--leading-dense); }

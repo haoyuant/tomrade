@@ -89,6 +89,23 @@ const run = async () => {
     const image = await win.webContents.capturePage();
     fs.writeFileSync(path.join(SHOTS, `${name}.png`), image.toPNG());
   };
+  /* Every overlay centres on the workspace row — the window less the titlebar
+     and the status bar — not on the window. Measured, because a dialog that
+     forgets `.modal` silently inherits the palette's 96px top anchor and still
+     looks plausible in isolation. */
+  const checkCentred = async (name, selector = ".palette.modal") =>
+    check(
+      `${name} is centred on the workspace row`,
+      await $(`(() => {
+        const n = document.querySelector('${selector}');
+        if (!n) return false;
+        const r = n.getBoundingClientRect();
+        const px = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v));
+        const top = px('--titlebar-h'), bottom = px('--statusbar-h');
+        const wantY = top + (innerHeight - top - bottom) / 2;
+        return Math.abs(r.top + r.height / 2 - wantY) <= 1 && Math.abs(r.left + r.width / 2 - innerWidth / 2) <= 1;
+      })()`)
+    );
   /* The ThemeProvider owns the class, so a theme must be set through a real
      control: the status-bar switch where there is one, the palette otherwise. */
   const SEGMENT = { system: 0, light: 1, dark: 2, matcha: 3 };
@@ -310,6 +327,7 @@ const run = async () => {
   })()`);
   check("the overlay holds focus inside itself", trapped === true);
   check("focus moves into the overlay", (await $(`!!document.querySelector('.detail.expanded')?.contains(document.activeElement)`)) === true);
+  await checkCentred("the expanded issue overlay", ".detail.expanded");
   await shot("10-detail-expanded");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
@@ -371,6 +389,7 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',metaKey:true,bubbles:true}));true`);
   await sleep(700);
   check("⌘N opens the new-issue sheet", (await $(`!!document.querySelector('#niTitle')`)) === true);
+  await checkCentred("the new-issue sheet");
   await shot("14-new-issue");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
@@ -389,6 +408,7 @@ const run = async () => {
   check("Cancel discards the roster edit", repos.views.listForBoard(repos.boards.list(project.id).find((b) => b.name === "UI").id).length === viewsBefore);
   await press(`[...document.querySelectorAll('.board-head .btn-ghost')].pop()`);
   await sleep(800);
+  await checkCentred("board settings");
   await shot("15-board-settings");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
@@ -396,6 +416,7 @@ const run = async () => {
   await $(`[...document.querySelectorAll('.qb-right .btn-ghost')].pop().click();true`);
   await sleep(800);
   check("view settings lists the column space with WIP inputs", (await $(`document.querySelectorAll('.wip-in').length`)) === 6);
+  await checkCentred("view settings");
   await shot("16-view-settings");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
@@ -406,6 +427,7 @@ const run = async () => {
   check("an overlay demotes the chrome's primary button", (await $(`document.documentElement.classList.contains('overlay-open')`)) === true);
   check("all three themes preview at once", (await $(`document.querySelectorAll('.mode').length`)) === 3);
   check("the token table resolves live swatches", (await $(`document.querySelectorAll('.tok-table .chip').length`)) === 8);
+  await checkCentred("settings");
   await shot("17-settings");
   await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
   await sleep(700);

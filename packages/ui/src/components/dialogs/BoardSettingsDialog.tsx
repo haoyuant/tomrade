@@ -99,7 +99,7 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="Board settings" className="modal sheet-board">
+    <Dialog open={open} onOpenChange={onOpenChange} label="Board settings" className="sheet-board">
       <DialogHead title="Board settings" aside={<Tag tone="neutral">{subtitle || name}</Tag>} />
       <DialogBody className="stack-4">
         <div className="field">

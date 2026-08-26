@@ -86,7 +86,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="modal wide">
+    <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="wide">
       <DialogHead title="Settings" aside={<Tag tone="neutral">local · this machine</Tag>} />
       <DialogBody>
         <div className="sec-head">
