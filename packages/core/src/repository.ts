@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import { ConflictError, HumanLockedError, NotFoundError } from "./errors.js";
-import type { Author, CreateItemInput, Item, ItemStatus, ListItemsFilter, OplogEntry, Patch } from "./types.js";
+import { appendOplog, rowToEntry, type OplogRow } from "./oplog.js";
+import type { Author, CreateItemInput, Item, ItemKind, ItemStatus, ListItemsFilter, OplogEntry, Patch, Priority, Provenance } from "./types.js";
 
 interface ItemRow {
   id: string;
   project_id: string;
+  board_id: string;
+  key_num: number;
+  key_prefix: string;
   title: string;
   body: string | null;
-  kind: "ticket" | "epic";
+  kind: ItemKind;
   status: ItemStatus;
+  priority: number;
   parent_id: string | null;
   rank: number;
   updated_at: number;
@@ -18,22 +23,30 @@ interface ItemRow {
   human_locked: number;
 }
 
-/** better-sqlite3 cannot bind booleans; map Item -> bindable params. */
-function toSqlParams(item: Item): Record<string, unknown> {
-  return {
-    ...item,
-    humanLocked: item.humanLocked ? 1 : 0
-  };
+const SELECT_ITEM =
+  "SELECT i.*, COALESCE(p.key_prefix, 'TOM') AS key_prefix FROM items i LEFT JOIN projects p ON p.id = i.project_id";
+
+/** AI writers may never touch these fields on a human-locked item. */
+const LOCKED_FIELDS: (keyof Patch)[] = ["title", "body"];
+
+/** Derived, never stored: a locked item reads as locked whoever wrote it last. */
+export function provenanceOf(item: Pick<Item, "humanLocked" | "updatedBy">): Provenance {
+  if (item.humanLocked) return "locked";
+  return item.updatedBy.startsWith("ai:") ? "ai" : "human";
 }
 
-function rowToItem(row: ItemRow): Item {
+function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks"> {
   return {
     id: row.id,
     projectId: row.project_id,
+    boardId: row.board_id,
+    keyNum: row.key_num,
+    key: `${row.key_prefix}-${row.key_num}`,
     title: row.title,
     body: row.body,
     kind: row.kind,
     status: row.status,
+    priority: row.priority as Priority,
     parentId: row.parent_id,
     rank: row.rank,
     updatedAt: row.updated_at,
@@ -43,8 +56,22 @@ function rowToItem(row: ItemRow): Item {
   };
 }
 
-/** AI writers may never touch these fields on a human-locked item. */
-const LOCKED_FIELDS: (keyof Patch)[] = ["title", "body"];
+function groupBy<T, V>(rows: T[], key: (r: T) => string, value: (r: T) => V): Map<string, V[]> {
+  const out = new Map<string, V[]>();
+  for (const r of rows) {
+    const k = key(r);
+    const bucket = out.get(k);
+    if (bucket) bucket.push(value(r));
+    else out.set(k, [value(r)]);
+  }
+  return out;
+}
+
+/** better-sqlite3 cannot bind booleans. */
+function toSqlParams(item: Item): Record<string, unknown> {
+  const { labels: _labels, blocks: _blocks, key: _key, ...rest } = item;
+  return { ...rest, humanLocked: item.humanLocked ? 1 : 0 };
+}
 
 export class ItemsRepository {
   constructor(private readonly db: Db) {}
@@ -53,63 +80,106 @@ export class ItemsRepository {
     const where: string[] = [];
     const params: unknown[] = [];
     if (filter.projectId !== undefined) {
-      where.push("project_id = ?");
+      where.push("i.project_id = ?");
       params.push(filter.projectId);
     }
+    if (filter.boardId !== undefined) {
+      where.push("i.board_id = ?");
+      params.push(filter.boardId);
+    }
     if (filter.status !== undefined) {
-      where.push("status = ?");
+      where.push("i.status = ?");
       params.push(filter.status);
     }
     if (filter.kind !== undefined) {
-      where.push("kind = ?");
+      where.push("i.kind = ?");
       params.push(filter.kind);
     }
+    if (filter.priority !== undefined) {
+      where.push("i.priority = ?");
+      params.push(filter.priority);
+    }
     if (filter.parentId !== undefined) {
-      where.push(filter.parentId === null ? "parent_id IS NULL" : "parent_id = ?");
+      where.push(filter.parentId === null ? "i.parent_id IS NULL" : "i.parent_id = ?");
       if (filter.parentId !== null) params.push(filter.parentId);
     }
-    const sql = `SELECT * FROM items ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY rank ASC, updated_at DESC`;
-    return (this.db.prepare(sql).all(...params) as ItemRow[]).map(rowToItem);
+    if (filter.label !== undefined) {
+      where.push("i.id IN (SELECT il.item_id FROM item_labels il JOIN labels l ON l.id = il.label_id WHERE l.name = ?)");
+      params.push(filter.label);
+    }
+    const sql = `${SELECT_ITEM} ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY i.rank ASC, i.updated_at DESC`;
+    const rows = this.db.prepare(sql).all(...params) as ItemRow[];
+    return this.hydrate(rows);
   }
 
   get(id: string): Item | null {
-    const row = this.db.prepare("SELECT * FROM items WHERE id = ?").get(id) as ItemRow | undefined;
-    return row ? rowToItem(row) : null;
+    const row = this.db.prepare(`${SELECT_ITEM} WHERE i.id = ?`).get(id) as ItemRow | undefined;
+    return row ? this.hydrate([row])[0] : null;
+  }
+
+  /** Resolve a human key ('TOM-142') within a project. */
+  getByKey(projectId: string, key: string): Item | null {
+    const num = Number(key.split("-").pop());
+    if (!Number.isFinite(num)) return null;
+    const row = this.db.prepare(`${SELECT_ITEM} WHERE i.project_id = ? AND i.key_num = ?`).get(projectId, num) as ItemRow | undefined;
+    return row ? this.hydrate([row])[0] : null;
   }
 
   create(input: CreateItemInput): Item {
     const id = randomUUID();
     const now = Date.now();
-    const item: Item = {
-      id,
-      projectId: input.projectId ?? "default",
-      title: input.title,
-      body: input.body ?? null,
-      kind: input.kind ?? "ticket",
-      status: input.status ?? "backlog",
-      parentId: input.parentId ?? null,
-      rank: input.rank ?? 0,
-      updatedAt: now,
-      updatedBy: input.by,
-      version: 1,
-      humanLocked: false
-    };
-    const tx = this.db.transaction(() => {
-      this.db.prepare(`
-        INSERT INTO items (id, project_id, title, body, kind, status, parent_id, rank, updated_at, updated_by, version, human_locked)
-        VALUES (@id, @projectId, @title, @body, @kind, @status, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)
-      `).run(toSqlParams(item));
-      this.appendOplog("create", id, null, null, item, input.by, now);
+    const projectId = input.projectId ?? "default";
+    const tx = this.db.transaction((): Item => {
+      // The counter lives on the project so a deleted key is never handed out again.
+      const proj = this.db.prepare("SELECT key_prefix, next_key_num FROM projects WHERE id = ?").get(projectId) as
+        | { key_prefix: string; next_key_num: number }
+        | undefined;
+      // without the project row there is no counter, and every item would claim key 1
+      if (!proj) throw new NotFoundError(projectId);
+      const keyNum = proj.next_key_num;
+      const prefix = proj.key_prefix;
+      this.db.prepare("UPDATE projects SET next_key_num = ? WHERE id = ?").run(keyNum + 1, projectId);
+      const item: Item = {
+        id,
+        projectId,
+        boardId: input.boardId,
+        keyNum,
+        key: `${prefix}-${keyNum}`,
+        title: input.title,
+        body: input.body ?? null,
+        kind: input.kind ?? "ticket",
+        status: input.status ?? "backlog",
+        priority: input.priority ?? 2,
+        parentId: input.parentId ?? null,
+        rank: input.rank ?? 0,
+        labels: input.labels ?? [],
+        blocks: [],
+        updatedAt: now,
+        updatedBy: input.by,
+        version: 1,
+        humanLocked: false
+      };
+      this.db
+        .prepare(
+          `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
+           VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)`
+        )
+        .run(toSqlParams(item));
+      this.writeLabels(item.id, projectId, item.labels);
+      appendOplog(this.db, "item", "create", id, null, null, item, input.by, now);
+      return item;
     });
-    tx();
-    return item;
+    return tx();
   }
 
   /**
-   * Optimistic-lock update. AI writes are refused (ConflictError) when the caller's
-   * baseVersion is stale, and refused (HumanLockedError) when touching locked fields
-   * on a human-locked item. Human writes always win (last-writer-wins) but still
-   * bump version and record the oplog row.
+   * Optimistic-lock update. A caller that supplies baseVersion is asserting which
+   * version it read, and a stale assertion is refused (ConflictError) whoever made
+   * it — that is what lets the board surface a conflict instead of blind-writing
+   * over an agent's change. Omitting baseVersion is an unconditional write.
+   *
+   * The human/AI asymmetry is about ownership, not staleness: only AI writes are
+   * refused (HumanLockedError) on the locked fields of a human-locked item.
    */
   update(id: string, patch: Patch, by: Author, opts: { baseVersion?: number } = {}): Item {
     const existing = this.get(id);
@@ -124,26 +194,23 @@ export class ItemsRepository {
       if (existing.humanLocked && conflicting.length > 0) {
         throw new HumanLockedError(id, conflicting);
       }
-      if (opts.baseVersion !== undefined && opts.baseVersion !== existing.version) {
-        throw new ConflictError(id, opts.baseVersion, existing.version);
-      }
+    }
+    if (opts.baseVersion !== undefined && opts.baseVersion !== existing.version) {
+      throw new ConflictError(id, opts.baseVersion, existing.version);
     }
 
-    const next: Item = {
-      ...existing,
-      ...patch,
-      updatedAt: Date.now(),
-      updatedBy: by,
-      version: existing.version + 1
-    };
+    const next: Item = { ...existing, ...patch, updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
     const tx = this.db.transaction(() => {
-      this.db.prepare(`
-        UPDATE items SET title = @title, body = @body, kind = @kind, status = @status,
-          parent_id = @parentId, rank = @rank, updated_at = @updatedAt, updated_by = @updatedBy,
-          version = @version, human_locked = @humanLocked
-        WHERE id = @id
-      `).run(toSqlParams(next));
-      this.appendOplog("update", id, existing.version, existing, next, by, next.updatedAt);
+      this.db
+        .prepare(
+          `UPDATE items SET board_id = @boardId, title = @title, body = @body, kind = @kind, status = @status,
+             priority = @priority, parent_id = @parentId, rank = @rank, updated_at = @updatedAt,
+             updated_by = @updatedBy, version = @version, human_locked = @humanLocked
+           WHERE id = @id`
+        )
+        .run(toSqlParams(next));
+      if (patch.labels) this.writeLabels(id, next.projectId, next.labels);
+      appendOplog(this.db, "item", "update", id, existing.version, existing, next, by, next.updatedAt);
     });
     tx();
     return next;
@@ -152,89 +219,74 @@ export class ItemsRepository {
   delete(id: string, by: Author): void {
     const existing = this.get(id);
     if (!existing) throw new NotFoundError(id);
+    // Incoming edges live on the other item's row, so the snapshot has to carry
+    // them or undo restores the issue with half its relations.
+    const blockedBy = (this.db.prepare("SELECT from_item_id FROM item_relations WHERE kind = 'blocks' AND to_item_id = ?").all(id) as {
+      from_item_id: string;
+    }[]).map((r) => r.from_item_id);
     const tx = this.db.transaction(() => {
+      this.db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(id);
+      this.db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(id, id);
+      this.db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(id);
+      // children would otherwise point at a dead epic and vanish from every
+      // epic-grouped view
+      this.db.prepare("UPDATE items SET parent_id = NULL WHERE parent_id = ?").run(id);
       this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
-      this.appendOplog("delete", id, existing.version, existing, null, by, Date.now());
+      appendOplog(this.db, "item", "delete", id, existing.version, { ...existing, blockedBy }, null, by, Date.now());
     });
     tx();
   }
 
-  /** Undo the most recent operation on a given entity (or globally when id omitted). */
-  undo(entityId?: string): Item | null {
-    const row = entityId
-      ? (this.db.prepare("SELECT * FROM oplog WHERE entity = 'item' AND entity_id = ? ORDER BY seq DESC LIMIT 1").get(entityId) as OplogRow | undefined)
-      : (this.db.prepare("SELECT * FROM oplog WHERE entity = 'item' ORDER BY seq DESC LIMIT 1").get() as OplogRow | undefined);
-    if (!row) return null;
-    const before = row.before_json ? (JSON.parse(row.before_json) as Item) : null;
-    const after = row.after_json ? (JSON.parse(row.after_json) as Item) : null;
+  /** Record that `id` blocks `blockedId`. */
+  addRelation(id: string, blockedId: string): void {
+    this.db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(id, blockedId);
+  }
 
-    const tx = this.db.transaction(() => {
-      if (row.op === "create") {
-        this.db.prepare("DELETE FROM items WHERE id = ?").run(row.entity_id);
-      } else if (row.op === "delete") {
-        if (before) this.insertItemRow(before);
-      } else if (row.op === "update") {
-        if (before) {
-          this.db.prepare(`
-            UPDATE items SET title = @title, body = @body, kind = @kind, status = @status,
-              parent_id = @parentId, rank = @rank, updated_at = @updatedAt, updated_by = @updatedBy,
-              version = @version, human_locked = @humanLocked
-            WHERE id = @id
-          `).run(toSqlParams(before));
-        }
-      }
-      this.db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
-    });
-    tx();
-    return after ?? before;
+  removeRelation(id: string, blockedId: string): void {
+    this.db.prepare("DELETE FROM item_relations WHERE from_item_id = ? AND to_item_id = ? AND kind = 'blocks'").run(id, blockedId);
+  }
+
+  labelsFor(projectId: string): string[] {
+    return (this.db.prepare("SELECT name FROM labels WHERE project_id = ? ORDER BY name ASC").all(projectId) as { name: string }[]).map((r) => r.name);
   }
 
   recentOplog(limit = 50): OplogEntry[] {
-    const rows = this.db.prepare("SELECT * FROM oplog ORDER BY seq DESC LIMIT ?").all(limit) as OplogRow[];
-    return rows.map((r) => ({
-      seq: r.seq,
-      entity: r.entity as "item",
-      entityId: r.entity_id,
-      op: r.op as OplogEntry["op"],
-      baseVersion: r.base_version,
-      before: r.before_json ? JSON.parse(r.before_json) : null,
-      after: r.after_json ? JSON.parse(r.after_json) : null,
-      by: r.by as Author,
-      at: r.at
-    }));
+    return (this.db.prepare("SELECT * FROM oplog ORDER BY at DESC, seq DESC LIMIT ?").all(limit) as OplogRow[]).map(rowToEntry);
   }
 
-  private insertItemRow(item: Item): void {
-    this.db.prepare(`
-      INSERT INTO items (id, project_id, title, body, kind, status, parent_id, rank, updated_at, updated_by, version, human_locked)
-      VALUES (@id, @projectId, @title, @body, @kind, @status, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)
-    `).run(toSqlParams(item));
+  /** History of one item, newest first. */
+  historyFor(itemId: string, limit = 20): OplogEntry[] {
+    return (
+      this.db.prepare("SELECT * FROM oplog WHERE entity = 'item' AND entity_id = ? ORDER BY at DESC, seq DESC LIMIT ?").all(itemId, limit) as OplogRow[]
+    ).map(rowToEntry);
   }
 
-  private appendOplog(
-    op: OplogEntry["op"],
-    entityId: string,
-    baseVersion: number | null,
-    before: unknown | null,
-    after: unknown | null,
-    by: Author,
-    at: number
-  ): void {
-    this.db.prepare(`
-      INSERT INTO oplog (entity, entity_id, op, base_version, before_json, after_json, by, at)
-      VALUES ('item', ?, ?, ?, ?, ?, ?, ?)
-    `).run(entityId, op, baseVersion, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, by, at);
-  }
-}
+  private hydrate(rows: ItemRow[]): Item[] {
+    if (!rows.length) return [];
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map(() => "?").join(",");
+    const labelRows = this.db
+      .prepare(`SELECT il.item_id, l.name FROM item_labels il JOIN labels l ON l.id = il.label_id WHERE il.item_id IN (${placeholders}) ORDER BY l.name`)
+      .all(...ids) as { item_id: string; name: string }[];
+    const relRows = this.db
+      .prepare(`SELECT from_item_id, to_item_id FROM item_relations WHERE kind = 'blocks' AND from_item_id IN (${placeholders})`)
+      .all(...ids) as { from_item_id: string; to_item_id: string }[];
 
-interface OplogRow {
-  seq: number;
-  entity: string;
-  entity_id: string;
-  op: string;
-  base_version: number | null;
-  before_json: string | null;
-  after_json: string | null;
-  by: string;
-  at: number;
+    const labels = groupBy(labelRows, (r) => r.item_id, (r) => r.name);
+    const blocks = groupBy(relRows, (r) => r.from_item_id, (r) => r.to_item_id);
+
+    return rows.map((row) => ({ ...baseItem(row), labels: labels.get(row.id) ?? [], blocks: blocks.get(row.id) ?? [] }));
+  }
+
+  /** Replace an item's labels, creating any that are new to the project. */
+  private writeLabels(itemId: string, projectId: string, names: string[]): void {
+    this.db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(itemId);
+    for (const raw of names) {
+      const name = raw.trim();
+      if (!name) continue;
+      this.db.prepare("INSERT OR IGNORE INTO labels (id, project_id, name) VALUES (?, ?, ?)").run(randomUUID(), projectId, name);
+      const label = this.db.prepare("SELECT id FROM labels WHERE project_id = ? AND name = ?").get(projectId, name) as { id: string };
+      this.db.prepare("INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)").run(itemId, label.id);
+    }
+  }
 }

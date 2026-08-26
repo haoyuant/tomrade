@@ -4,8 +4,8 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
-import { ConflictError, HumanLockedError, ItemsRepository, NotFoundError } from "@tomrade/core";
-import type { ItemKind, ItemStatus } from "@tomrade/core";
+import { BoardsRepository, ConflictError, HumanLockedError, ItemsRepository, NotFoundError } from "@tomrade/core";
+import type { ItemKind, ItemStatus, Priority } from "@tomrade/core";
 
 export const MCP_SERVER_NAME = "tomrade";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -13,10 +13,15 @@ export const MCP_SERVER_VERSION = "0.0.1";
 const KIND_ENUM = ["ticket", "epic"] as const;
 const STATUS_ENUM = ["backlog", "todo", "doing", "verifying", "done", "cancelled"] as const;
 
+const PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
+
 const itemSchema = z.object({
   projectId: z.string().optional(),
+  boardId: z.string().optional(),
   status: z.enum(STATUS_ENUM).optional(),
   kind: z.enum(KIND_ENUM).optional(),
+  priority: PRIORITY.optional(),
+  label: z.string().optional(),
   parentId: z.string().nullable().optional()
 });
 
@@ -25,8 +30,11 @@ const createSchema = z.object({
   body: z.string().nullable().optional(),
   kind: z.enum(KIND_ENUM).optional(),
   status: z.enum(STATUS_ENUM).optional(),
+  priority: PRIORITY.optional(),
+  labels: z.array(z.string()).optional(),
   parentId: z.string().nullable().optional(),
-  projectId: z.string().optional()
+  projectId: z.string().optional(),
+  boardId: z.string().optional()
 });
 
 const patchSchema = z.object({
@@ -34,6 +42,8 @@ const patchSchema = z.object({
   body: z.string().nullable().optional(),
   kind: z.enum(KIND_ENUM).optional(),
   status: z.enum(STATUS_ENUM).optional(),
+  priority: PRIORITY.optional(),
+  labels: z.array(z.string()).optional(),
   parentId: z.string().nullable().optional(),
   rank: z.number().optional()
 });
@@ -62,17 +72,28 @@ function errorResult(e: unknown) {
   return { content: [{ type: "text" as const, text: `ERROR: ${message}` }], isError: true };
 }
 
-function registerTools(server: McpServer, repo: ItemsRepository): void {
+function registerTools(server: McpServer, repo: ItemsRepository, boards: BoardsRepository): void {
+  server.registerTool("tomrade.list_boards", {
+    title: "List boards",
+    description: "List the boards (workstreams) in a project. Every issue belongs to exactly one board; boards flagged `across` own nothing and borrow every issue.",
+    inputSchema: z.object({ projectId: z.string().optional() })
+  }, async (args) => {
+    try { return textResult(boards.list(args.projectId ?? "default")); } catch (e) { return errorResult(e); }
+  });
+
   server.registerTool("tomrade.list_items", {
     title: "List backlog items",
-    description: "List Tomrade backlog items, optionally filtered by project, status, kind, or parent.",
+    description: "List Tomrade backlog items, optionally filtered by project, board, status, kind, priority, label or parent.",
     inputSchema: itemSchema
   }, async (args) => {
     try {
       return textResult(repo.list({
         projectId: args.projectId,
+        boardId: args.boardId,
         status: args.status as ItemStatus | undefined,
         kind: args.kind as ItemKind | undefined,
+        priority: args.priority as Priority | undefined,
+        label: args.label,
         parentId: args.parentId
       }));
     } catch (e) { return errorResult(e); }
@@ -92,13 +113,19 @@ function registerTools(server: McpServer, repo: ItemsRepository): void {
     inputSchema: createSchema
   }, async (args) => {
     try {
+      const projectId = args.projectId ?? "default";
+      const boardId = args.boardId ?? boards.list(projectId).find((b) => !b.across)?.id;
+      if (!boardId) throw new Error(`Project ${projectId} has no board to create into`);
       return textResult(repo.create({
         title: args.title,
         body: args.body,
         kind: args.kind as ItemKind | undefined,
         status: args.status as ItemStatus | undefined,
+        priority: args.priority as Priority | undefined,
+        labels: args.labels,
         parentId: args.parentId,
-        projectId: args.projectId,
+        boardId,
+        projectId,
         by: "ai:mcp"
       }));
     } catch (e) { return errorResult(e); }
@@ -154,7 +181,7 @@ function extractSessionId(req: express.Request): string | undefined {
  * Start the Tomrade MCP server bound to 127.0.0.1.
  * VS Code agents connect at `http://127.0.0.1:<port>/mcp`.
  */
-export async function startTomradeMcpServer(repo: ItemsRepository, port = 19090): Promise<TomradeMcpServer> {
+export async function startTomradeMcpServer(repo: ItemsRepository, boards: BoardsRepository, port = 19090): Promise<TomradeMcpServer> {
   const transports = new Map<string, StreamableHTTPServerTransport>();
   // createMcpExpressApp() already mounts express.json() and localhost DNS-rebinding protection
   const app = createMcpExpressApp();
@@ -168,7 +195,7 @@ export async function startTomradeMcpServer(repo: ItemsRepository, port = 19090)
     }
     // Each client session gets its own McpServer + transport (SDK servers are single-transport).
     const sessionServer = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
-    registerTools(sessionServer, repo);
+    registerTools(sessionServer, repo, boards);
     const newTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {

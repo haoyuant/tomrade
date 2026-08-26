@@ -8,3 +8,6 @@ out/
 .env.local
 data/*.db
 data/*.db-*
+
+# UI harness output
+apps/desktop/scripts/shots/

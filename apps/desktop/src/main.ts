@@ -2,17 +2,42 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
-import { openDb, ItemsRepository, ProjectsRepository, OpenAICompatibleProvider, checkDuplicate, extractTickets, gapAnalysis, routeIntent } from "@tomrade/core";
-import type { AppSettings, ChatTurn, ExtractCandidate, GapCandidate, Item, ItemKind, ItemStatus, ToolName } from "@tomrade/core";
+import {
+  openDb,
+  BoardsRepository,
+  ItemsRepository,
+  ProjectsRepository,
+  ViewsRepository,
+  OpenAICompatibleProvider,
+  checkDuplicate,
+  extractTickets,
+  gapAnalysis,
+  routeIntent
+} from "@tomrade/core";
+import type {
+  AppSettings,
+  ChatTurn,
+  ExtractCandidate,
+  GapCandidate,
+  ItemKind,
+  ItemStatus,
+  Patch,
+  Priority,
+  ToolName
+} from "@tomrade/core";
 import { startTomradeMcpServer } from "@tomrade/mcp";
-import type { Author, CreateItemInput, ListItemsFilter, Patch } from "@tomrade/core";
+import { defaultBoardId as boardIdFor, registerDataIpc, type IpcContext } from "./ipc.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
+let db: ReturnType<typeof openDb>;
 let repo: ItemsRepository;
 let projectsRepo: ProjectsRepository;
+let boardsRepo: BoardsRepository;
+let viewsRepo: ViewsRepository;
 let mcpUrl: string | null = null;
+let dbPath = "";
 let settingsPath = "";
 let settings: AppSettings = {
   llm: {
@@ -50,13 +75,14 @@ async function executeTool(tool: ToolName, args: Record<string, unknown>, projec
     case "list_items": {
       const items = repo.list({
         projectId,
+        boardId: typeof args.boardId === "string" ? args.boardId : undefined,
         status: typeof args.status === "string" ? (args.status as ItemStatus) : undefined,
         kind: typeof args.kind === "string" ? (args.kind as ItemKind) : undefined,
         parentId: typeof args.parentId === "string" || args.parentId === null ? (args.parentId as string | null) : undefined
       });
       const q = typeof args.search === "string" ? args.search.toLowerCase() : null;
       const filtered = q ? items.filter((i) => i.title.toLowerCase().includes(q) || (i.body ?? "").toLowerCase().includes(q)) : items;
-      return filtered.map((i) => ({ id: i.id, title: i.title, kind: i.kind, status: i.status, parentId: i.parentId }));
+      return filtered.map((i) => ({ id: i.id, key: i.key, title: i.title, kind: i.kind, status: i.status, priority: i.priority, parentId: i.parentId }));
     }
     case "create_item": {
       if (typeof args.title !== "string" || !args.title.trim()) throw new Error("create_item requires a title");
@@ -65,6 +91,7 @@ async function executeTool(tool: ToolName, args: Record<string, unknown>, projec
         body: typeof args.body === "string" ? args.body : null,
         kind: args.kind === "epic" ? "epic" : "ticket",
         parentId: typeof args.parentId === "string" ? args.parentId : null,
+        boardId: typeof args.boardId === "string" ? args.boardId : defaultBoardId(projectId),
         projectId,
         by: "ai:assistant"
       });
@@ -73,12 +100,13 @@ async function executeTool(tool: ToolName, args: Record<string, unknown>, projec
       if (typeof args.id !== "string") throw new Error("update_item requires an id");
       const existing = repo.get(args.id);
       if (!existing) throw new Error(`Item ${args.id} not found`);
-      const patch: Parameters<typeof repo.update>[1] = {};
+      const patch: Patch = {};
       if (typeof args.status === "string") patch.status = args.status as ItemStatus;
       if (typeof args.title === "string") patch.title = args.title;
       if (typeof args.body === "string") patch.body = args.body;
+      if (typeof args.priority === "number") patch.priority = args.priority as Priority;
       if (typeof args.parentId === "string" || args.parentId === null) patch.parentId = args.parentId;
-      if (Object.keys(patch).length === 0) throw new Error("update_item requires status/title/body/parentId");
+      if (Object.keys(patch).length === 0) throw new Error("update_item requires status/title/body/priority/parentId");
       return repo.update(args.id, patch, "ai:assistant", { baseVersion: existing.version });
     }
     case "delete_item": {
@@ -99,17 +127,15 @@ async function executeTool(tool: ToolName, args: Record<string, unknown>, projec
   }
 }
 
-async function extractWithDedup(text: string): Promise<{ candidates: ExtractCandidate[]; dedup: Record<number, { isDuplicate: boolean; duplicates: { id: string; reason: string }[] }> }> {
+async function extractWithDedup(
+  text: string
+): Promise<{ candidates: ExtractCandidate[]; dedup: Record<number, { isDuplicate: boolean; duplicates: { id: string; reason: string }[] }> }> {
   const candidates = await extractTickets(provider, text);
   const dedup: Record<number, { isDuplicate: boolean; duplicates: { id: string; reason: string }[] }> = {};
   const existing = existingSummary();
   for (let i = 0; i < candidates.length; i += 1) {
     try {
-      dedup[i] = await checkDuplicate(provider, {
-        title: candidates[i].title,
-        body: candidates[i].body,
-        existing
-      });
+      dedup[i] = await checkDuplicate(provider, { title: candidates[i].title, body: candidates[i].body, existing });
     } catch {
       dedup[i] = { isDuplicate: false, duplicates: [] };
     }
@@ -119,8 +145,8 @@ async function extractWithDedup(text: string): Promise<{ candidates: ExtractCand
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: 1440,
+    height: 900,
     minWidth: 900,
     minHeight: 600,
     title: "Tomrade",
@@ -141,30 +167,20 @@ function createWindow(): void {
   }
 }
 
+let ipcContext: IpcContext;
+
+/** The board an item lands on when the caller did not name one. */
+function defaultBoardId(projectId = "default"): string {
+  return boardIdFor(ipcContext, projectId);
+}
+
 function registerIpc(): void {
-  ipcMain.handle("tomrade:list", (_e, filter: ListItemsFilter = {}) => repo.list(filter));
-  ipcMain.handle("tomrade:get", (_e, id: string) => repo.get(id));
-  ipcMain.handle("tomrade:create", (_e, input: Omit<CreateItemInput, "by">) => repo.create({ ...input, by: "human" }));
-  ipcMain.handle("tomrade:update", (_e, id: string, patch: Patch, baseVersion: number) => repo.update(id, patch, "human", { baseVersion }));
-  ipcMain.handle("tomrade:delete", (_e, id: string) => repo.delete(id, "human"));
-  ipcMain.handle("tomrade:undo", (_e, entityId?: string) => repo.undo(entityId));
-  ipcMain.handle("tomrade:recentOplog", (_e, limit?: number) => repo.recentOplog(limit ?? 20));
-  ipcMain.handle("tomrade:mcpUrl", () => mcpUrl);
+  registerDataIpc(ipcContext);
 
-  ipcMain.handle("tomrade:projects:list", () => projectsRepo.list());
-  ipcMain.handle("tomrade:projects:create", (_e, input: { name: string; description?: string | null }) => projectsRepo.create(input));
-  ipcMain.handle("tomrade:projects:rename", (_e, id: string, name: string) => projectsRepo.rename(id, name));
-  ipcMain.handle("tomrade:projects:remove", (_e, id: string) => projectsRepo.remove(id));
-
-  ipcMain.handle("tomrade:settings:get", () => settings);
-  ipcMain.handle("tomrade:settings:set", (_e, next: AppSettings) => {
-    saveSettings(next);
-    return settings;
-  });
   ipcMain.handle("tomrade:ai:extract", (_e, text: string) => extractWithDedup(text));
   ipcMain.handle("tomrade:ai:gap", (_e, requirement: string) => gapAnalysis(provider, { requirement, existing: existingSummary() }));
-  ipcMain.handle("tomrade:ai:createFromCandidate", (_e, candidate: ExtractCandidate | GapCandidate, parentId: string | null) =>
-    repo.create({ title: candidate.title, body: candidate.body, kind: candidate.kind, parentId, by: "ai:extraction" })
+  ipcMain.handle("tomrade:ai:createFromCandidate", (_e, candidate: ExtractCandidate | GapCandidate, parentId: string | null, boardId?: string) =>
+    repo.create({ title: candidate.title, body: candidate.body, kind: candidate.kind, parentId, boardId: boardId ?? defaultBoardId(), by: "ai:extraction" })
   );
   ipcMain.handle("tomrade:ai:chat", async (_e, text: string, history: ChatTurn[] = [], projectId?: string) => {
     const turns: ChatTurn[] = [...history, { role: "user", content: text }];
@@ -182,15 +198,31 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(async () => {
-  const dbPath = path.join(app.getPath("userData"), "tomrade.db");
+  dbPath = path.join(app.getPath("userData"), "tomrade.db");
   settingsPath = path.join(app.getPath("userData"), "settings.json");
   loadSettings();
-  const db = openDb(dbPath);
+  db = openDb(dbPath);
   repo = new ItemsRepository(db);
   projectsRepo = new ProjectsRepository(db);
+  boardsRepo = new BoardsRepository(db);
+  viewsRepo = new ViewsRepository(db);
   projectsRepo.ensureDefault();
+  ipcContext = {
+    db,
+    items: repo,
+    projects: projectsRepo,
+    boards: boardsRepo,
+    views: viewsRepo,
+    dbPath,
+    mcpUrl: () => mcpUrl,
+    getSettings: () => settings,
+    setSettings: (next) => {
+      saveSettings(next);
+      return settings;
+    }
+  };
   try {
-    const mcp = await startTomradeMcpServer(repo);
+    const mcp = await startTomradeMcpServer(repo, boardsRepo);
     mcpUrl = mcp.url;
     console.log(`[tomrade] MCP server ready: ${mcp.url}`);
   } catch (err) {
@@ -207,5 +239,3 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-
-export type { Author };

@@ -8,7 +8,7 @@
   "scripts": {
     "build": "pnpm --filter @tomrade/core build && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:ui": "electron scripts/ui-regression.cjs",
+    "test:ui": "electron scripts/ui-regression.mjs",
     "dev": "pnpm --filter @tomrade/core build && tsc -p tsconfig.json && concurrently -k \"pnpm dev:ui\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",

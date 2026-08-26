@@ -19,3 +19,14 @@ export class NotFoundError extends Error {
     this.name = "NotFoundError";
   }
 }
+
+/** A destructive write refused because something still depends on the target. */
+export class InUseError extends Error {
+  constructor(
+    public readonly entityId: string,
+    public readonly reason: string
+  ) {
+    super(reason);
+    this.name = "InUseError";
+  }
+}

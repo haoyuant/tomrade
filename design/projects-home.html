@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Projects · Tomrade Next</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+ * Tomrade — "The Ledger"  ·  kami (紙 / 纸) bound to a desktop app shell
+ *
+ * Single source of truth for the three themes. Tokens are declared once
+ * here (:root / .dark / .matcha); every component below consumes var(--*).
+ * No raw hex exists outside the token blocks — that is the whole point of
+ * the architecture change in prototype-plan.md §7.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── kami tokens · light "paper" (declared values, verbatim) ────────── */
+:root {
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
+
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #504e49;
+  --meta: #6b6a64;
+
+  --border: #e8e6dc;
+  --border-soft: #e5e3d8;
+
+  --accent: #1b365d;
+  --accent-on: #faf9f5;
+  --accent-light: #2d5a8a;
+  --accent-hover: var(--accent);
+  --accent-active: #142a48;
+
+  --success: #4a6b3a;
+  --warn: #8a6b1f;
+  --danger: #8a3a30;
+
+  --font-display: Charter, Georgia, Palatino, "Times New Roman", serif;
+  --font-body: Charter, Georgia, Palatino, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Consolas, Monaco, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 19px;
+  --text-xl: 24px;
+  --text-2xl: 35px;
+
+  --leading-display: 1.1;
+  --leading-tight: 1.25;
+  --leading-body: 1.55;
+  --leading-dense: 1.4;
+  --leading-card: 1.32;          /* documented exception — plan §7 */
+
+  --tracking-eyebrow: 1.2px;
+  --tracking-label: 0.4px;
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px;
+
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 8px;
+  --radius-lg: 12px; --radius-xl: 16px;
+
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-ring-accent: 0 0 0 1px var(--accent);
+  --elev-raised: 0 4px 24px rgba(0, 0, 0, 0.05);
+
+  --focus-ring: 0 0 0 2px var(--accent-active);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* tag fills — solid, pre-blended over parchment (kami: never rgba) */
+  --tag-bg-faint: #eef2f7;
+  --tag-bg-soft: #e4ecf5;
+  --tag-bg-base: #d6e1ee;
+  --tag-bg-strong: #d0dce9;
+  --tag-fg: var(--accent);
+
+  /* app chrome geometry */
+  --titlebar-h: 42px;
+  --statusbar-h: 29px;
+  --sidebar-w: 264px;
+  --detail-w: 440px;
+  /* the window controls are overlaid by the shell, so the bar owns its own
+     gutter — the same 12px the sidebar and the right edge use */
+  --traffic-inset: var(--space-3);
+}
+
+/* ─── dark "ink" — derived with oklch() from kami's declared darks ──── */
+.dark {
+  --bg: #141413;
+  --surface: #30302e;
+  --surface-warm: oklch(0.356 0.003 110);
+
+  --fg: #faf9f5;
+  --fg-2: oklch(0.878 0.004 106);
+  --muted: oklch(0.800 0.004 106);
+  --meta: oklch(0.740 0.004 106);
+
+  --border: oklch(0.386 0.003 110);
+  --border-soft: oklch(0.352 0.003 110);
+
+  --accent: oklch(0.68 0.11 250);        /* solved against #30302e — #2d5a8a was 1.85:1 */
+  --accent-on: #141413;
+  --accent-light: oklch(0.78 0.10 250);
+  --accent-hover: var(--accent);
+  --accent-active: oklch(0.76 0.11 250); /* hover LIGHTENS on dark: contrast must rise */
+
+  --success: oklch(0.74 0.11 145);
+  --warn: oklch(0.78 0.11 85);
+  --danger: oklch(0.70 0.13 30);
+
+  --tag-bg-faint: oklch(0.32 0.02 250);
+  --tag-bg-soft: oklch(0.34 0.03 250);
+  --tag-bg-base: oklch(0.40 0.045 250);
+  --tag-bg-strong: oklch(0.37 0.04 250);
+  --tag-fg: oklch(0.82 0.05 250);
+
+  --elev-raised: 0 4px 24px rgba(0, 0, 0, 0.28);
+  --focus-ring: 0 0 0 2px var(--accent-active);
+}
+
+/* ─── matcha — parchment structure, accent swapped (not added) ───────── */
+.matcha {
+  /* Matcha is now a DARK theme: a deep steeped-tea ground with a bright
+   * matcha-powder accent. Same single-accent rule as the other two — the
+   * accent is replaced, never added to. */
+  --bg: oklch(0.275 0.022 142);
+  --surface: oklch(0.335 0.024 142);
+  --surface-warm: oklch(0.395 0.026 142);
+
+  --fg: oklch(0.95 0.014 142);
+  --fg-2: oklch(0.875 0.014 142);
+  --muted: oklch(0.80 0.013 142);
+  --meta: oklch(0.735 0.012 142);
+
+  --border: oklch(0.425 0.024 142);
+  --border-soft: oklch(0.385 0.022 142);
+
+  --accent: oklch(0.84 0.14 133);        /* matcha powder — the light primary */
+  --accent-on: oklch(0.275 0.022 142);    /* dark label sits on the bright accent */
+  --accent-light: oklch(0.90 0.11 133);
+  --accent-hover: var(--accent);
+  --accent-active: oklch(0.91 0.12 133); /* hover LIGHTENS: contrast must rise */
+
+  --success: oklch(0.80 0.14 148);
+  --warn: oklch(0.82 0.12 88);
+  --danger: oklch(0.72 0.15 30);
+
+  --tag-bg-faint: oklch(0.345 0.035 138);
+  --tag-bg-soft: oklch(0.375 0.05 138);
+  --tag-bg-base: oklch(0.435 0.06 138);
+  --tag-bg-strong: oklch(0.405 0.055 138);
+  --tag-fg: oklch(0.87 0.11 133);
+
+  --elev-raised: 0 4px 24px rgba(0, 0, 0, 0.30);
+  --focus-ring: 0 0 0 2px var(--accent-active);
+}
+
+/* ─── reset & base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+/* Component rules below set display:flex, which outranks the UA's
+ * [hidden]{display:none}. This keeps the attribute authoritative. */
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;                       /* app chrome never scrolls */
+}
+svg { display: block; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; cursor: pointer; color: inherit; }
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 500; margin: 0; text-wrap: balance; }
+p { margin: 0; text-wrap: pretty; }
+strong { font-weight: 500; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+
+/* theme crossfade — added only for the duration of a switch */
+.theme-transition, .theme-transition *, .theme-transition *::before, .theme-transition *::after {
+  transition: background-color 600ms ease, border-color 600ms ease,
+              color 600ms ease, fill 600ms ease, box-shadow 600ms ease !important;
+}
+
+/* ─── typography utilities ───────────────────────────────────────────── */
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-label); }
+.eyebrow {
+  font-size: var(--text-xs); text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow); color: var(--meta);
+  line-height: 1; margin: 0;
+}
+.meta-txt { font-size: var(--text-sm); color: var(--meta); }
+.muted-txt { color: var(--muted); }
+.prose { font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg-2); }
+.prose p + p { margin-top: var(--space-3); }
+
+/* ─── app shell ──────────────────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-rows: var(--titlebar-h) minmax(0, 1fr) var(--statusbar-h);
+  height: 100%;
+}
+.titlebar {
+  -webkit-app-region: drag;
+  display: flex; align-items: center; gap: var(--space-3);
+  padding-left: var(--traffic-inset); padding-right: var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.no-drag { -webkit-app-region: no-drag; }
+.crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.crumb-sep { color: var(--meta); font-size: var(--text-sm); }
+.crumb-title { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); white-space: nowrap; }
+
+.workspace { display: flex; min-height: 0; min-width: 0; }
+
+/* ─── sidebar ────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-3) var(--space-3);
+}
+.side-group + .side-group { margin-top: var(--space-6); }
+.side-label { padding: 0 var(--space-2) var(--space-2); }
+.side-row {
+  display: flex; align-items: center; gap: var(--space-2);
+  width: 100%; text-align: left;
+  padding: 7px var(--space-2) 7px 10px;
+  border: 0; border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent; color: var(--fg-2);
+  font-family: var(--font-display); font-size: 14px; line-height: 1.3;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.side-row:hover { background: var(--surface-warm); color: var(--fg); }
+.side-row[aria-current="true"] {
+  background: var(--surface-warm); color: var(--fg);
+  border-left-color: var(--accent);
+}
+.side-row .ico { color: var(--meta); flex-shrink: 0; }
+.side-row[aria-current="true"] .ico { color: var(--accent); }
+.side-row .side-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-row .side-count { font-size: var(--text-xs); color: var(--meta); }
+.side-add { color: var(--muted); font-size: var(--text-sm); }
+.side-add:hover { color: var(--fg); }
+
+/* ─── board region ───────────────────────────────────────────────────── */
+.board-region { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+  container-type: inline-size; container-name: board; }
+/* When the detail pane squeezes the board, the header facts must drop out
+ * cleanly rather than clip mid-chip. The title and Configure always survive. */
+@container board (max-width: 560px) { .board-facts { display: none; } }
+.board-head {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 0 var(--space-4); height: 52px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.board-title { font-size: var(--text-lg); line-height: var(--leading-tight); white-space: nowrap; }
+.board-facts { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.board-facts > * { white-space: nowrap; flex-shrink: 0; }
+
+.col-track {
+  display: flex; gap: var(--space-4);
+  padding: var(--space-4);
+  overflow-x: auto; overflow-y: hidden;
+  flex: 1; min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.col { width: 330px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
+.col-head {
+  display: flex; align-items: baseline; gap: var(--space-2);
+  padding-bottom: var(--space-2); margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.col-num { font-family: var(--font-display); font-size: var(--text-base); color: var(--accent); font-variant-numeric: tabular-nums; }
+.col-name { font-family: var(--font-display); font-size: var(--text-base); color: var(--fg); line-height: 1.2; }
+.col-count { margin-left: auto; font-size: var(--text-xs); color: var(--meta); }
+.col-count.over { color: var(--warn); }
+.col-body {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  overflow-y: auto; flex: 1; min-height: 0;
+  padding: 2px; margin: -2px;                /* room for the focus ring */
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.col.drop-target .col-body {
+  background: var(--surface-warm);
+  border-radius: var(--radius-md);
+  outline: 1px dashed var(--border);
+}
+.col-empty { padding: var(--space-4) var(--space-2); font-size: var(--text-sm); color: var(--meta); line-height: var(--leading-dense); }
+
+/* ─── card ───────────────────────────────────────────────────────────── */
+.card {
+  display: grid; grid-template-columns: 14px 1fr;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 11px 8px 4px;
+  cursor: grab; text-align: left; width: 100%;
+  transition: box-shadow var(--motion-base) var(--ease-standard),
+              border-color var(--motion-base) var(--ease-standard);
+}
+.card:hover { box-shadow: var(--elev-raised); border-color: var(--border-soft); }
+.card:focus-visible { box-shadow: var(--focus-ring); }
+.card[aria-selected="true"] { border-color: var(--accent); box-shadow: var(--elev-ring-accent); }
+.card.dragging { opacity: 0.55; box-shadow: var(--elev-ring-accent); cursor: grabbing; }
+
+/* provenance marginalia — a short tick in a dedicated gutter, NOT a
+   left-bar callout: it is title-height and sits outside the text column */
+.card-gutter { display: flex; justify-content: center; padding-top: 3px; }
+.prov-tick { width: 2px; height: 17px; background: var(--accent); border-radius: 1px; }
+.prov-lock { color: var(--meta); margin-top: 1px; }
+.card-body { min-width: 0; }
+.card-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.card-id { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
+.card-title {
+  font-family: var(--font-display); font-weight: 500;
+  font-size: 14px; line-height: var(--leading-card); color: var(--fg);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: break-word;
+}
+.card-foot { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+.card-date { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--meta); }
+/* Epic is structural context, not an attribute — it appears on almost every
+ * card, so it earns quiet text rather than a tinted chip. Draining it frees
+ * the accent budget for the provenance tick, the only mark that must be seen. */
+.card-epic {
+  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
+  color: var(--meta); min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ─── status dot — shape-coded, not colour-coded ─────────────────────── */
+.sdot { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
+.sdot.done { color: var(--success); }
+
+/* ─── priority glyph — 5 levels, distinguishable without colour ──────── */
+.prio { width: 11px; height: 11px; flex-shrink: 0; color: var(--meta); }
+.prio.urgent { color: var(--danger); }
+
+/* ─── tags ───────────────────────────────────────────────────────────── */
+.tag {
+  display: inline-flex; align-items: center;
+  font-family: var(--font-display); font-weight: 500;
+  font-size: var(--text-xs); line-height: 1.5;
+  padding: 1px 6px; border-radius: var(--radius-xs);
+  color: var(--tag-fg); background: var(--tag-bg-soft);
+  letter-spacing: var(--tracking-label);
+  white-space: nowrap;
+}
+.tag.faint { background: var(--tag-bg-faint); }
+.tag.strong { background: var(--tag-bg-strong); border-radius: var(--radius-sm); padding: 1px 7px; }
+.tag.neutral { background: var(--surface-warm); color: var(--muted); }
+
+/* ─── buttons ────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 11px; border: 0; border-radius: var(--radius-md);
+  font-family: var(--font-display); font-weight: 500; font-size: var(--text-sm);
+  line-height: 1.35; letter-spacing: var(--tracking-label);
+  background: transparent; color: var(--fg-2);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+}
+.btn-primary { background: var(--accent); color: var(--accent-on); box-shadow: var(--elev-ring-accent); }
+.btn-primary:hover { background: var(--accent-active); color: var(--accent-on); box-shadow: 0 0 0 1px var(--accent-active); }
+.btn-secondary { background: var(--surface-warm); color: var(--fg-2); box-shadow: var(--elev-ring); }
+.btn-secondary:hover { background: var(--surface); color: var(--fg); box-shadow: 0 0 0 1px var(--meta); }
+.btn-ghost { background: transparent; color: var(--muted); }
+.btn-ghost:hover { background: var(--surface-warm); color: var(--fg); }
+.btn-icon { padding: 6px; border-radius: var(--radius-sm); color: var(--muted); background: transparent; }
+.btn-icon:hover { background: var(--surface-warm); color: var(--fg); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.kbd {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1;
+  padding: 3px 5px; border-radius: var(--radius-xs);
+  background: var(--surface-warm); color: var(--meta);
+  box-shadow: var(--elev-ring);
+}
+
+/* When an overlay is up, the background CTA must not compete with the
+ * dialog's confirm — exactly one solid button is visible at any moment. */
+.overlay-open .titlebar .btn-primary {
+  background: var(--surface-warm); color: var(--fg-2); box-shadow: var(--elev-ring);
+}
+
+/* ─── inputs ─────────────────────────────────────────────────────────── */
+.input, .textarea, .select {
+  width: 100%; padding: 7px 10px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+}
+.input::placeholder, .textarea::placeholder { color: var(--meta); }
+.input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.textarea { resize: vertical; min-height: 72px; line-height: var(--leading-body); font-size: var(--text-base); }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); }
+
+/* ─── detail pane ────────────────────────────────────────────────────── */
+.detail {
+  width: var(--detail-w); flex-shrink: 0;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--bg); border-left: 1px solid var(--border);
+}
+.detail-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.detail-body { overflow-y: auto; padding: var(--space-4); flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.detail-title { font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
+.field-row { display: grid; grid-template-columns: 92px 1fr; gap: var(--space-3); align-items: start; padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.field-row dt { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); padding-top: 2px; }
+.field-row dd { margin: 0; font-size: 14px; color: var(--fg-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* activity ledger — provenance vocabulary carried into the detail pane */
+.ledger { display: flex; flex-direction: column; }
+.ledger-row { display: grid; grid-template-columns: 14px 1fr; gap: var(--space-2); padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.ledger-mark { display: flex; justify-content: center; padding-top: 4px; }
+.ledger-txt { font-size: var(--text-sm); color: var(--muted); line-height: var(--leading-dense); }
+.ledger-txt b { font-weight: 500; color: var(--fg-2); }
+
+/* ─── AI panel ───────────────────────────────────────────────────────── */
+.ai {
+  width: 418px; flex-shrink: 0; position: relative;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface); border-left: 1px solid var(--border);
+}
+.ai-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
+.ai-resize:hover { background: var(--accent); opacity: 0.28; }
+.ai-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ai-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; gap: var(--space-2); align-items: flex-end; flex-shrink: 0; }
+
+/* collapsed rail */
+.ai-rail {
+  width: 48px; flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
+  padding-top: var(--space-3);
+  background: var(--surface); border-left: 1px solid var(--border);
+}
+.ai-rail-label {
+  writing-mode: vertical-rl; font-size: var(--text-xs);
+  letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--meta);
+}
+
+/* transcript — typeset, not bubbles */
+.turn + .turn { margin-top: var(--space-5); }
+.turn-user { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.turn-user .turn-rule { width: 28px; height: 1px; background: var(--border); }
+.turn-user p { font-size: 14px; line-height: var(--leading-dense); color: var(--fg-2); text-align: right; max-width: 88%; }
+.turn-ai { display: grid; grid-template-columns: 14px 1fr; gap: var(--space-2); }
+.turn-mark { display: flex; justify-content: center; padding-top: 6px; }
+.turn-ai .turn-body { font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg-2); min-width: 0; }
+.turn-think { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
+.tool-card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); padding: var(--space-3); margin-top: var(--space-2); }
+.tool-head { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); margin-bottom: var(--space-2); }
+.tool-row { display: flex; align-items: center; gap: var(--space-2); padding: 5px 0; border-top: 1px solid var(--border-soft); font-size: 14px; }
+.tool-row:first-of-type { border-top: 0; }
+.tool-row .t-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.ai-error { color: var(--danger); font-size: 14px; line-height: var(--leading-dense); }
+
+/* ─── status bar ─────────────────────────────────────────────────────── */
+.statusbar {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--surface); border-top: 1px solid var(--border);
+  font-size: var(--text-xs); color: var(--meta);
+  overflow: hidden;
+}
+.status-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.ribbon-tick { width: 2px; height: 10px; background: var(--accent); border-radius: 1px; flex-shrink: 0; }
+
+/* ─── command palette ────────────────────────────────────────────────── */
+.scrim { position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 42%, transparent); z-index: 60; }
+.palette {
+  position: fixed; top: 96px; left: 50%; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 64px)); z-index: 61;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--elev-raised);
+  overflow: hidden; display: flex; flex-direction: column; max-height: 60vh;
+}
+.palette-input {
+  width: 100%; padding: var(--space-4); border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--fg);
+  font-family: var(--font-display); font-size: var(--text-md);
+}
+.palette-input:focus { outline: none; }
+.palette-list { overflow-y: auto; padding: var(--space-2); scrollbar-width: thin; }
+.palette-group { padding: var(--space-3) var(--space-3) var(--space-1); }
+.palette-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%; text-align: left; padding: 8px var(--space-3);
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  color: var(--fg-2); font-family: var(--font-display); font-size: 14px;
+}
+.palette-row:hover, .palette-row.active { background: var(--surface-warm); color: var(--fg); }
+.palette-row .p-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-empty { padding: var(--space-6) var(--space-4); text-align: center; font-size: 14px; color: var(--meta); }
+
+.switch { position: relative; width: 37px; height: 21px; flex-shrink: 0; border: 0; padding: 0;
+  border-radius: 999px; background: var(--surface-warm); box-shadow: var(--elev-ring);
+  transition: background-color var(--motion-fast) var(--ease-standard); }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+  border-radius: 50%; background: var(--surface); box-shadow: var(--elev-ring);
+  transition: transform var(--motion-fast) var(--ease-standard); }
+.switch[aria-checked="true"] { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(16px); }
+.switch[disabled] { opacity: 0.5; }
+.opt-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  padding: 9px 0; border-top: 1px solid var(--border-soft); }
+.opt-name { font-family: var(--font-display); font-size: 14px; color: var(--fg); }
+
+/* ─── dialog shell / centred modal ───────────────────────────────────── */
+.dlg-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.dlg-body { overflow-y: auto; padding: var(--space-5); flex: 1; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.dlg-foot { display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); flex-shrink: 0; }
+/* A real modal is centred in the window and scrolls its own body. */
+.palette.modal { top: 50%; transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 64px)); max-height: min(78vh, 760px); }
+
+/* ─── toast ──────────────────────────────────────────────────────────── */
+.toast-stack { position: fixed; right: var(--space-4); bottom: calc(var(--statusbar-h) + var(--space-4)); z-index: 70; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 10px var(--space-3) 10px var(--space-2);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--elev-raised);
+  font-size: 14px; color: var(--fg-2); max-width: 380px;
+}
+
+/* ─── banner (version conflict) — readable in all three themes ───────── */
+.banner {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin: var(--space-3) var(--space-4) 0;
+  padding: 9px var(--space-3);
+  background: var(--surface); color: var(--fg-2);
+  border: 1px solid var(--warn); border-radius: var(--radius-md);
+  font-size: var(--text-sm); line-height: var(--leading-dense);
+}
+.banner .b-mark { color: var(--warn); flex-shrink: 0; }
+
+/* ─── theme switcher ─────────────────────────────────────────────────── */
+.theme-switch { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-warm); border-radius: var(--radius-md); box-shadow: var(--elev-ring); }
+.theme-seg {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  font-family: var(--font-display); font-size: var(--text-xs); font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.theme-seg:hover { background: var(--surface); color: var(--fg); }
+.theme-seg[aria-pressed="true"] { background: var(--accent); color: var(--accent-on); }
+.theme-seg[aria-pressed="true"]:hover { background: var(--accent-active); color: var(--accent-on); }
+
+/* ─── generic surfaces used by the secondary screens ─────────────────── */
+.sheet { overflow-y: auto; flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.wrap { max-width: 880px; margin-inline: auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.wrap-wide { max-width: 1120px; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-5); }
+.panel + .panel { margin-top: var(--space-3); }
+/* ...but not when they are grid siblings — the margin would offset the
+ * second card and defeat grid stretch, leaving mismatched heights. */
+.grid-2 > .panel + .panel, .grid-3 > .panel + .panel { margin-top: 0; }
+.sec-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-4); }
+.sec-title { font-size: var(--text-xl); line-height: var(--leading-tight); }
+.sec-lede { font-size: var(--text-base); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
+.rule { border: 0; border-top: 1px solid var(--border); margin: var(--space-6) 0; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.row { display: flex; align-items: center; gap: var(--space-2); }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.spacer { margin-left: auto; }
+.stack-2 > * + * { margin-top: var(--space-2); }
+.stack-3 > * + * { margin-top: var(--space-3); }
+.stack-4 > * + * { margin-top: var(--space-4); }
+.stack-6 > * + * { margin-top: var(--space-6); }
+ul.dash { list-style: none; padding: 0; margin: 0; }
+ul.dash li { position: relative; padding-left: 15px; font-size: 14px; line-height: var(--leading-dense); color: var(--fg-2); }
+ul.dash li + li { margin-top: 5px; }
+ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(--accent); }
+
+/* ─── responsive ──────────────────────────────────────────────────────
+ * 1360px is the side-by-side floor for sidebar + board + detail + AI
+ * (240 + 320 min + 400 + 380 = 1340). Below it the AI panel collapses to
+ * its 44px rail when the detail pane opens — handled in script, so every
+ * pane stays in normal flow and nothing ever overlaps.
+ * Floor with detail open and AI railed: 240 + 320 + 400 + 44 = 1004px. */
+@media (max-width: 1230px) {
+  :root { --sidebar-w: 200px; }
+  .ai { width: 352px !important; }
+}
+@media (max-width: 990px) {
+  .sidebar { display: none; }
+}
+</style>
+<script>
+/* Theme binding shared by every screen except workspace-board.html, which
+ * carries its own fuller controller. One class on <html> selects the theme —
+ * the whole point of the token architecture in prototype-plan.md §7. */
+(function () {
+  /* One preference key for every screen, so the theme survives a jump from
+     the board to this page. "system" resolves against the OS. */
+  var MQ = window.matchMedia("(prefers-color-scheme: dark)");
+  function resolve(p) { return p === "system" ? (MQ.matches ? "dark" : "light") : p; }
+  function readPref() {
+    try { return localStorage.getItem("tomrade.themePref") || "light"; } catch (e) { return "light"; }
+  }
+  function apply(pref, animate) {
+    var root = document.documentElement, name = resolve(pref);
+    if (animate) root.classList.add("theme-transition");
+    root.classList.remove("dark", "matcha");
+    if (name !== "light") root.classList.add(name);
+    document.querySelectorAll(".theme-seg").forEach(function (s) {
+      /* a three-way quick switch has no System segment, so it reports the
+         effective theme; a managed switcher reports the preference itself */
+      var shown = s.closest("[data-theme-managed]") ? pref : name;
+      s.setAttribute("aria-pressed", String(s.dataset.theme === shown));
+    });
+    try { localStorage.setItem("tomrade.themePref", pref); } catch (e) {}
+    if (animate) setTimeout(function () { root.classList.remove("theme-transition"); }, 650);
+  }
+  apply(readPref(), false);
+  MQ.addEventListener("change", function () { if (readPref() === "system") apply("system", false); });
+  window.setTheme = function (n) { apply(n, true); };
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".theme-seg").forEach(function (s) {
+      /* screens that manage their own preference (e.g. a System option)
+         opt out, so we never apply a non-existent theme class */
+      if (s.closest("[data-theme-managed]")) return;
+      s.addEventListener("click", function () { apply(s.dataset.theme, true); });
+    });
+  });
+})();
+</script>
+<style>
+  .proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: var(--space-4); }
+  .proj {
+    display: flex; flex-direction: column; text-align: left;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: var(--space-5);
+    min-height: 229px; width: 100%;
+    transition: box-shadow var(--motion-base) var(--ease-standard), border-color var(--motion-base) var(--ease-standard);
+  }
+  .proj:hover { box-shadow: var(--elev-raised); border-color: var(--border-soft); }
+  .proj:focus-visible { box-shadow: var(--focus-ring); }
+  .proj-name { font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
+  .proj-desc { font-size: 14px; line-height: var(--leading-dense); color: var(--muted); margin-top: 6px; }
+  .proj-boards { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-4); margin-bottom: var(--space-3); }
+  .proj-foot { display: flex; align-items: baseline; gap: var(--space-4); margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--border-soft); }
+  .stat-pair { display: flex; flex-direction: column; gap: 1px; }
+  .stat-v { font-family: var(--font-display); font-size: var(--text-lg); color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat-v.plain { color: var(--fg-2); }
+  .stat-k { font-size: var(--text-xs); color: var(--meta); }
+  .proj-new {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+    gap: var(--space-2); min-height: 229px; width: 100%; text-align: left;
+    background: transparent; border: 1px dashed var(--border); border-radius: var(--radius-lg);
+    padding: var(--space-5); color: var(--muted);
+    transition: border-color var(--motion-base) var(--ease-standard), background-color var(--motion-base) var(--ease-standard);
+  }
+  .proj-new:hover { background: var(--surface-warm); border-color: var(--meta); color: var(--fg); }
+  .proj-new:focus-visible { box-shadow: var(--focus-ring); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-board" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="2" width="4" height="10" rx="1"/><rect x="8.5" y="2" width="4" height="6.5" rx="1"/></g></symbol>
+  <symbol id="i-stack" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M7 1.8 12.4 4.6 7 7.4 1.6 4.6Z"/><path d="M1.6 7.6 7 10.4l5.4-2.8"/></g></symbol>
+  <symbol id="i-plus" viewBox="0 0 14 14"><path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round"><circle cx="7" cy="7" r="4.15"/><circle cx="7" cy="7" r="1.8"/><path d="M11.15 7H12.75M7 2.85V1.25M2.85 7H1.25M7 11.15V12.75M9.94 4.06 11.07 2.93M4.06 4.06 2.93 2.93M4.06 9.94 2.93 11.07M9.94 9.94 11.07 11.07"/></g></symbol>
+  <symbol id="i-archive" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.8" y="2.4" width="10.4" height="2.8" rx="0.8"/><path d="M2.9 5.2v5.6a.8.8 0 0 0 .8.8h6.6a.8.8 0 0 0 .8-.8V5.2M5.7 7.6h2.6"/></g></symbol>
+  <symbol id="i-search" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="6.2" cy="6.2" r="3.9"/><path d="M9.2 9.2 12 12"/></g></symbol>
+  <symbol id="i-close" viewBox="0 0 14 14"><path d="M3.4 3.4 10.6 10.6M10.6 3.4 3.4 10.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+</defs></svg>
+
+<div class="app">
+  <header class="titlebar" data-od-id="titlebar">
+    <span class="crumb-title">Tomrade</span>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-title" style="color:var(--muted)">Projects</span>
+    <div class="spacer"></div>
+    <button class="btn btn-primary no-drag" data-od-id="new-project-cta">
+      <svg width="14" height="14"><use href="#i-plus"/></svg> New project
+    </button>
+    <button class="btn btn-icon no-drag" data-od-id="settings-link" title="Settings — ⌘," aria-label="Settings">
+      <svg width="17" height="17"><use href="#i-gear"/></svg>
+    </button>
+  </header>
+
+  <main class="sheet" data-od-id="projects-sheet">
+    <div class="wrap wrap-wide">
+
+      <div class="sec-head">
+        <div>
+          <h1 class="sec-title">Projects</h1>
+          <p class="sec-lede" style="margin-top:4px">Every project is a local SQLite database on this machine. Each board is a workstream that owns its issues; views slice a board without moving anything.</p>
+        </div>
+      </div>
+
+      <div class="proj-grid" data-od-id="project-grid">
+
+        <a class="proj" href="workspace-board.html" data-nav="workspace-board.html" data-od-id="project-tomrade-next">
+          <div class="row" style="gap:7px">
+            <svg width="15" height="15" style="color:var(--accent)"><use href="#i-stack"/></svg>
+            <span class="eyebrow">Active</span>
+          </div>
+          <h2 class="proj-name" style="margin-top:var(--space-3)">Tomrade Next</h2>
+          <p class="proj-desc">Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents.</p>
+          <div class="proj-boards">
+            <span class="tag">UI</span><span class="tag">Core &amp; data</span>
+            <span class="tag">MCP server</span><span class="tag">Desktop shell</span>
+          </div>
+          <div class="proj-foot">
+            <span class="stat-pair"><span class="stat-v">4</span><span class="stat-k">boards</span></span>
+            <span class="stat-pair"><span class="stat-v plain">18</span><span class="stat-k">open</span></span>
+            <span class="stat-pair"><span class="stat-v plain">21</span><span class="stat-k">issues</span></span>
+            <span class="stat-pair" style="margin-left:auto;text-align:right">
+              <span class="stat-k num">2m ago</span><span class="stat-k">last write</span></span>
+          </div>
+        </a>
+
+        <a class="proj" href="workspace-board.html" data-nav="workspace-board.html" data-od-id="project-tomrade-legacy">
+          <div class="row" style="gap:7px">
+            <svg width="15" height="15" style="color:var(--meta)"><use href="#i-archive"/></svg>
+            <span class="eyebrow">Archived</span>
+          </div>
+          <h2 class="proj-name" style="margin-top:var(--space-3)">Tomrade Legacy</h2>
+          <p class="proj-desc">The pre-reboot design — Supabase, FastAPI and TanStack Start. Kept read-only for reference; superseded by the local-first architecture.</p>
+          <div class="proj-boards">
+            <span class="tag neutral">Archive</span>
+          </div>
+          <div class="proj-foot">
+            <span class="stat-pair">
+              <span class="stat-k num">legacy-architecture-final</span>
+              <span class="stat-k">archived at tag</span>
+            </span>
+          </div>
+        </a>
+
+        <button class="proj-new" data-od-id="project-new-card">
+          <svg width="20" height="20"><use href="#i-plus"/></svg>
+          <span style="font-family:var(--font-display);font-size:var(--text-lg);color:inherit">New project</span>
+          <span style="font-size:14px;line-height:var(--leading-dense);color:var(--meta)">Creates a SQLite file and an “All work” board.</span>
+        </button>
+      </div>
+
+      <hr class="rule" />
+
+      <div class="sec-head">
+        <div>
+          <h2 class="sec-title">Agents</h2>
+          <p class="sec-lede" style="margin-top:4px">Coding agents read and write this backlog over MCP. Their writes carry provenance and stay reversible.</p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="row" style="gap:7px;margin-bottom:var(--space-3)">
+            <span class="live-dot"></span>
+            <span class="eyebrow">MCP server · listening</span>
+          </div>
+          <p class="num" style="font-size:14px;color:var(--fg-2)">http://127.0.0.1:19090/mcp</p>
+          <p class="meta-txt" style="margin-top:var(--space-3);line-height:var(--leading-dense)">
+            Point Claude Code, Cline or any MCP client at this endpoint to list, read and write issues.
+          </p>
+        </div>
+        <div class="panel">
+          <p class="eyebrow" style="margin-bottom:var(--space-3)">Tools exposed</p>
+          <ul class="dash">
+            <li><span class="num">list_items</span> · <span class="num">get_item</span> · <span class="num">create_item</span></li>
+            <li><span class="num">update_item</span> — optimistic lock on <span class="num">baseVersion</span></li>
+            <li><span class="num">change_status</span> · <span class="num">delete_item</span></li>
+            <li>Writes on human-locked items are rejected, not merged</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="statusbar">
+    <span class="status-item"><span class="live-dot"></span> MCP <span class="num">127.0.0.1:19090</span></span>
+    <span class="status-item"><span class="ribbon-tick"></span><span class="num">ai:mcp</span> updated TOM-64 · 2m ago</span>
+    <div class="spacer"></div>
+    <div class="theme-switch" role="group" aria-label="Theme">
+      <button class="theme-seg" data-theme="light" aria-pressed="true">Paper</button>
+      <button class="theme-seg" data-theme="dark" aria-pressed="false">Ink</button>
+      <button class="theme-seg" data-theme="matcha" aria-pressed="false">Matcha</button>
+    </div>
+  </footer>
+</div>
+<script>
+/* ═══ cross-screen links ═══════════════════════════════════════════════
+   Every screen here is its own file, and OD renders a file inside a srcdoc
+   frame — a relative href has no base URL to resolve against there, so a
+   jump between files cannot follow. Everything the click-through needs now
+   lives in-page (modals, panels); the few remaining file links say where
+   they lead rather than doing nothing, and follow normally in a browser or
+   an export. */
+function odToast(html) {
+  if (typeof window.toast === "function") { window.toast(html); return; }
+  var host = document.getElementById("toasts");
+  if (!host) return;
+  var t = document.createElement("div");
+  t.className = "toast";
+  t.dataset.odId = "link-toast";
+  t.innerHTML = '<span class="ribbon-tick"></span>' +
+    '<span style="flex:1;line-height:var(--leading-dense)">' + html + '</span>';
+  host.appendChild(t);
+  setTimeout(function () { t.remove(); }, 6000);
+}
+function go(url) {
+  if (!url) return;
+  try { window.location.assign(url); } catch (e) {}
+  /* still here a moment later means the frame swallowed the jump */
+  setTimeout(function () {
+    odToast('<span class="num">' + url.split("?")[0] +
+            '</span> is a separate screen — open it from the file list.');
+  }, 400);
+}
+document.addEventListener("click", function (ev) {
+  if (ev.defaultPrevented || ev.button !== 0) return;
+  if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  var t = ev.target.closest ? ev.target.closest("[data-nav]") : null;
+  if (!t) return;
+  ev.preventDefault();
+  go(t.getAttribute("data-nav") || t.getAttribute("href"));
+});
+</script>
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="palette modal" id="newProjSheet" hidden role="dialog" aria-modal="true"
+     aria-label="New project" data-od-id="new-project-dialog">
+  <div class="dlg-head">
+    <h2 style="font-size:var(--text-lg)">New project</h2>
+    <div class="spacer"></div>
+    <button class="btn btn-icon" id="npClose" aria-label="Close new project">
+      <svg width="15" height="15"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="dlg-body stack-4">
+    <div class="field">
+      <label for="npName">Project name</label>
+      <input class="input" id="npName" placeholder="e.g. Tomrade Docs" autocomplete="off" />
+      <span class="meta-txt" id="npErr" hidden style="color:var(--danger)">A project needs a name.</span>
+    </div>
+    <div class="field">
+      <label for="npFile">Database file</label>
+      <input class="input num" id="npFile" value="~/Library/Application Support/Tomrade/" />
+      <span class="meta-txt">One SQLite file per project. Nothing leaves this machine.</span>
+    </div>
+    <div>
+      <p class="eyebrow" style="margin-bottom:var(--space-2)">Boards to create</p>
+      <div id="npBoards"></div>
+      <p class="meta-txt" style="margin-top:var(--space-3)" id="npHint"></p>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-ghost" id="npCancel">Cancel</button>
+    <button class="btn btn-primary" id="npCreate">Create project</button>
+  </div>
+</div>
+
+<div class="palette modal" id="settingsSheet" hidden role="dialog" aria-modal="true"
+     aria-label="Settings" data-od-id="settings-dialog">
+  <div class="dlg-head">
+    <h2 style="font-size:var(--text-lg)">Settings</h2>
+    <div class="spacer"></div>
+    <button class="btn btn-icon" id="settingsClose" aria-label="Close settings">
+      <svg width="15" height="15"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="dlg-body stack-6">
+    <section data-theme-managed>
+      <h3 style="font-size:var(--text-base);margin-bottom:var(--space-2)">Appearance</h3>
+      <p class="meta-txt" style="margin-bottom:var(--space-3);line-height:var(--leading-dense)">
+        Three themes from one token block. System follows the OS.</p>
+      <div class="theme-switch" role="group" aria-label="Theme preference" data-od-id="settings-theme">
+        <button class="theme-seg" data-theme="system" aria-pressed="false">System</button>
+        <button class="theme-seg" data-theme="light" aria-pressed="true">Paper</button>
+        <button class="theme-seg" data-theme="dark" aria-pressed="false">Ink</button>
+        <button class="theme-seg" data-theme="matcha" aria-pressed="false">Matcha</button>
+      </div>
+    </section>
+    <section>
+      <h3 style="font-size:var(--text-base);margin-bottom:var(--space-3)">Assistant</h3>
+      <div class="grid-2" style="margin-bottom:var(--space-3)">
+        <div class="field"><label for="stBase">Base URL</label>
+          <input class="input num" id="stBase" value="https://api.deepseek.com" /></div>
+        <div class="field"><label for="stModel">Model</label>
+          <input class="input num" id="stModel" value="deepseek-chat" /></div>
+      </div>
+      <div class="field"><label for="stKey">API key</label>
+        <input class="input num" id="stKey" type="password" value="sk-000000000000000000000000" />
+        <span class="meta-txt">Stored on this machine only. Never sent anywhere but the base URL.</span></div>
+    </section>
+    <section>
+      <h3 style="font-size:var(--text-base);margin-bottom:var(--space-3)">Agent access</h3>
+      <div class="row" style="gap:7px;margin-bottom:var(--space-2)">
+        <span class="live-dot"></span>
+        <span class="num" style="font-size:14px;color:var(--fg-2)">http://127.0.0.1:19090/mcp</span>
+      </div>
+      <ul class="dash">
+        <li>Writes carry the <span class="num">baseVersion</span> the agent read — stale writes are rejected, never merged</li>
+        <li>Locked fields reject agent writes with a typed error</li>
+        <li>Every write lands in the oplog; <span class="num">⌘Z</span> reverts any of them</li>
+      </ul>
+    </section>
+    <section>
+      <h3 style="font-size:var(--text-base);margin-bottom:var(--space-3)">Data</h3>
+      <div class="field"><label for="stDb">Database file</label>
+        <input class="input num" id="stDb" value="~/Library/Application Support/Tomrade/tomrade-next.sqlite" />
+        <span class="meta-txt">Local-first. The oplog in this file is the whole history.</span></div>
+    </section>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-secondary" id="settingsDone">Done</button>
+  </div>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+<script>
+/* ═══ overlays ════════════════════════════════════════════════════════
+   Two centred modals share one scrim: Settings (gear or ⌘,) and New
+   project (either "New project" entry, or ⌘N). Both scroll their own body,
+   and only one is ever up. */
+(function () {
+  var scrim = document.getElementById("scrim");
+  var settings = document.getElementById("settingsSheet");
+  var newProj = document.getElementById("newProjSheet");
+  var sheets = [settings, newProj];
+  var lastFocus = null;
+
+  function anyOpen() { return sheets.some(function (x) { return !x.hidden; }); }
+  function closeAll() {
+    document.documentElement.classList.remove("overlay-open");
+    scrim.hidden = true;
+    sheets.forEach(function (x) { x.hidden = true; });
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+    lastFocus = null;
+  }
+  function open(sheet, focusSel) {
+    if (!anyOpen()) lastFocus = document.activeElement;
+    sheets.forEach(function (x) { x.hidden = true; });
+    document.documentElement.classList.add("overlay-open");
+    scrim.hidden = false;
+    sheet.hidden = false;
+    var target = sheet.querySelector(focusSel) || sheet.querySelector("button");
+    if (target) target.focus();
+  }
+  scrim.addEventListener("click", closeAll);
+
+  /* ── settings ──────────────────────────────────────────────────── */
+  function openSettings() { open(settings, ".theme-seg[aria-pressed='true']"); }
+  document.querySelectorAll("[data-od-id='settings-link']").forEach(function (b) {
+    b.addEventListener("click", function (ev) { ev.preventDefault(); openSettings(); });
+  });
+  settings.querySelector("#settingsClose").addEventListener("click", closeAll);
+  settings.querySelector("#settingsDone").addEventListener("click", closeAll);
+  /* the four-way switcher is theme-managed, so the shared binder skips it */
+  settings.querySelectorAll(".theme-seg").forEach(function (seg) {
+    seg.addEventListener("click", function () { window.setTheme(seg.dataset.theme); });
+  });
+
+  /* ── new project ───────────────────────────────────────────────── */
+  var BOARD_OPTS = [
+    { name: "All work", note: "every issue in the project", on: true, locked: true },
+    { name: "Sprint", note: "a two-week slice, grouped by status", on: true },
+    { name: "Bugs", note: "filtered to the bug label", on: false },
+    { name: "Triage", note: "inbox for unsorted work", on: false }
+  ];
+  var optHost = document.getElementById("npBoards");
+  var hint = document.getElementById("npHint");
+  var nameIn = document.getElementById("npName");
+  var err = document.getElementById("npErr");
+  var grid = document.querySelector("[data-od-id='project-grid']");
+  var newCard = document.querySelector("[data-od-id='project-new-card']");
+
+  function chosen() { return BOARD_OPTS.filter(function (o) { return o.on; }); }
+  function syncHint() {
+    var picked = chosen();
+    hint.innerHTML = 'Creates <span class="num">' + picked.length + '</span> board' +
+      (picked.length === 1 ? '' : 's') + ' · ' +
+      picked.map(function (o) { return o.name; }).join(', ');
+  }
+  function renderOpts() {
+    optHost.innerHTML = "";
+    BOARD_OPTS.forEach(function (o) {
+      var row = document.createElement("div");
+      row.className = "opt-row";
+      row.innerHTML =
+        '<span style="min-width:0"><span class="opt-name">' + o.name + '</span>' +
+        '<span class="meta-txt" style="display:block;line-height:var(--leading-dense)">' + o.note + '</span></span>' +
+        '<button class="switch" role="switch" aria-checked="' + o.on + '"' +
+        (o.locked ? ' disabled title="Every project gets an All work board"' : '') +
+        ' aria-label="Create the ' + o.name + ' board"></button>';
+      var sw = row.querySelector(".switch");
+      if (!o.locked) {
+        sw.addEventListener("click", function () {
+          o.on = !o.on;
+          sw.setAttribute("aria-checked", String(o.on));
+          syncHint();
+        });
+      }
+      optHost.appendChild(row);
+    });
+    syncHint();
+  }
+  renderOpts();
+
+  function openNew() { err.hidden = true; open(newProj, "#npName"); }
+  document.querySelectorAll("[data-od-id='new-project-cta'],[data-od-id='project-new-card']")
+    .forEach(function (b) {
+      b.addEventListener("click", function (ev) { ev.preventDefault(); openNew(); });
+    });
+  newProj.querySelector("#npClose").addEventListener("click", closeAll);
+  newProj.querySelector("#npCancel").addEventListener("click", closeAll);
+
+  var esc = function (t) {
+    return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  };
+  function create() {
+    var value = nameIn.value.trim();
+    if (!value) { err.hidden = false; nameIn.focus(); return; }
+    var picked = chosen();
+    var card = document.createElement("a");
+    card.className = "proj";
+    card.href = "workspace-board.html";
+    card.setAttribute("data-nav", "workspace-board.html");
+    card.dataset.odId = "project-" + value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    card.innerHTML =
+      '<div class="row" style="gap:7px">' +
+        '<svg width="15" height="15" style="color:var(--accent)"><use href="#i-stack"/></svg>' +
+        '<span class="eyebrow">Active</span></div>' +
+      '<h2 class="proj-name" style="margin-top:var(--space-3)">' + esc(value) + '</h2>' +
+      '<p class="proj-desc">Created just now. The SQLite file is written on the first issue; ' +
+        'every board below starts empty.</p>' +
+      '<div class="proj-boards">' +
+        picked.map(function (o) { return '<span class="tag">' + o.name + '</span>'; }).join('') +
+      '</div>' +
+      '<div class="proj-foot">' +
+        '<span class="stat-pair"><span class="stat-v">' + picked.length + '</span>' +
+          '<span class="stat-k">boards</span></span>' +
+        '<span class="stat-pair"><span class="stat-v plain">0</span><span class="stat-k">open</span></span>' +
+        '<span class="stat-pair"><span class="stat-v plain">0</span><span class="stat-k">issues</span></span>' +
+        '<span class="stat-pair" style="margin-left:auto;text-align:right">' +
+          '<span class="stat-k num">just now</span><span class="stat-k">created</span></span>' +
+      '</div>';
+    grid.insertBefore(card, newCard);
+    odToast('Created <span class="num">' + esc(value) + '</span> with <span class="num">' +
+            picked.length + '</span> board' + (picked.length === 1 ? '' : 's') + '.');
+    closeAll();
+    nameIn.value = "";
+    BOARD_OPTS.forEach(function (o, idx) { o.on = idx < 2; });
+    renderOpts();
+  }
+  newProj.querySelector("#npCreate").addEventListener("click", create);
+  nameIn.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); create(); }
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    var meta = ev.metaKey || ev.ctrlKey;
+    if (ev.key === "Escape" && anyOpen()) { ev.preventDefault(); closeAll(); }
+    else if (meta && ev.key === ",") { ev.preventDefault(); settings.hidden ? openSettings() : closeAll(); }
+    else if (meta && ev.key.toLowerCase() === "n") { ev.preventDefault(); openNew(); }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,8 +1,46 @@
-export const SCHEMA_SQL = `
+/**
+ * Target schema. Every table is created with its full current definition, so a
+ * fresh database needs no migration; `migrate()` in migrate.ts brings a database
+ * written by an older build up to the same shape.
+ */
+export const SCHEMA_VERSION = 2;
+
+export const SCHEMA_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   description   TEXT,
+  key_prefix    TEXT NOT NULL DEFAULT 'TOM',
+  next_key_num  INTEGER NOT NULL DEFAULT 1,
+  archived      INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS boards (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  icon          TEXT NOT NULL DEFAULT 'i-board',
+  subtitle      TEXT,
+  across        INTEGER NOT NULL DEFAULT 0,
+  sort          TEXT,
+  note          TEXT,
+  rank          REAL NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS views (
+  id            TEXT PRIMARY KEY,
+  board_id      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  icon          TEXT NOT NULL DEFAULT 'i-board',
+  group_by      TEXT NOT NULL DEFAULT 'status',
+  columns_json  TEXT NOT NULL DEFAULT '[]',
+  filter_json   TEXT NOT NULL DEFAULT '{}',
+  wip_json      TEXT NOT NULL DEFAULT '{}',
+  rank          REAL NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );
@@ -10,10 +48,13 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS items (
   id            TEXT PRIMARY KEY,
   project_id    TEXT NOT NULL DEFAULT 'default',
+  board_id      TEXT NOT NULL DEFAULT '',
+  key_num       INTEGER NOT NULL DEFAULT 0,
   title         TEXT NOT NULL,
   body          TEXT,
   kind          TEXT NOT NULL DEFAULT 'ticket',
   status        TEXT NOT NULL DEFAULT 'backlog',
+  priority      INTEGER NOT NULL DEFAULT 2,
   parent_id     TEXT,
   rank          REAL NOT NULL DEFAULT 0,
   updated_at    INTEGER NOT NULL,
@@ -21,7 +62,34 @@ CREATE TABLE IF NOT EXISTS items (
   version       INTEGER NOT NULL DEFAULT 1,
   human_locked  INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id, status);
+
+CREATE TABLE IF NOT EXISTS labels (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  name          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS item_labels (
+  item_id       TEXT NOT NULL,
+  label_id      TEXT NOT NULL,
+  PRIMARY KEY (item_id, label_id)
+);
+
+CREATE TABLE IF NOT EXISTS item_relations (
+  from_item_id  TEXT NOT NULL,
+  to_item_id    TEXT NOT NULL,
+  kind          TEXT NOT NULL DEFAULT 'blocks',
+  PRIMARY KEY (from_item_id, to_item_id, kind)
+);
+
+-- Sparse: a row appears only once a human drags that item in that view.
+-- Ordering falls back to items.rank when no row exists (TOM-77).
+CREATE TABLE IF NOT EXISTS view_item_rank (
+  view_id       TEXT NOT NULL,
+  item_id       TEXT NOT NULL,
+  rank          REAL NOT NULL,
+  PRIMARY KEY (view_id, item_id)
+);
 
 CREATE TABLE IF NOT EXISTS oplog (
   seq           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,4 +102,16 @@ CREATE TABLE IF NOT EXISTS oplog (
   by            TEXT NOT NULL,
   at            INTEGER NOT NULL
 );
+`;
+
+/** Created after migration: the unique key index cannot exist while backfill is pending. */
+export const SCHEMA_INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id, rank);
+CREATE INDEX IF NOT EXISTS idx_views_board ON views(board_id, rank);
+CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_name ON labels(project_id, name);
+CREATE INDEX IF NOT EXISTS idx_item_labels_label ON item_labels(label_id);
+CREATE INDEX IF NOT EXISTS idx_relations_to ON item_relations(to_item_id);
 `;
