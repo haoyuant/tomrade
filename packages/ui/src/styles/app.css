@@ -634,6 +634,14 @@ strong { font-weight: 500; }
 .btn-secondary:hover { background: var(--surface); color: var(--fg); box-shadow: 0 0 0 1px var(--meta); }
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover { background: var(--surface-warm); color: var(--fg); }
+/* The one solid button in a confirm sheet, and the only place --danger is a
+ * fill rather than a mark. `--accent-on` is the label on every solid button in
+ * the system and clears AA against --danger in all three themes. */
+.btn-danger { background: var(--danger); color: var(--accent-on); box-shadow: 0 0 0 1px var(--danger); }
+.btn-danger:hover { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 1px var(--fg); }
+/* A quiet destructive affordance in chrome: it reads as an icon button and only
+ * turns red when reached for, so the head is not a row of warnings at rest. */
+.btn-icon.is-danger:hover { background: var(--surface-warm); color: var(--danger); }
 .btn-icon { padding: 6px; border-radius: var(--radius-sm); color: var(--muted); background: transparent; }
 .btn-icon:hover { background: var(--surface-warm); color: var(--fg); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -747,6 +755,14 @@ strong { font-weight: 500; }
 .lockbar { display: flex; align-items: flex-start; gap: var(--space-3); padding: 10px var(--space-3);
   margin-top: var(--space-4); background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-md); }
+/* The lockbar's shape in the destructive register: a confirm sheet states what
+ * is about to be lost before it offers the button that loses it. */
+.dangerbar { display: flex; align-items: flex-start; gap: var(--space-3); padding: 10px var(--space-3);
+  background: var(--surface); border: 1px solid var(--danger); border-radius: var(--radius-md); }
+.dangerbar .b-mark { color: var(--danger); flex-shrink: 0; margin-top: 2px; }
+.del-list { margin: 6px 0 0; padding-left: var(--space-4); list-style: disc;
+  font-size: var(--text-sm); color: var(--meta); line-height: var(--leading-dense); }
+.del-list li + li { margin-top: 3px; }
 .issue-body { margin-top: var(--space-5); font-size: var(--text-base);
   line-height: var(--leading-body); color: var(--fg-2); max-width: 66ch; }
 .rel-row {

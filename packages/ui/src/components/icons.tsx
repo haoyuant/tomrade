@@ -25,6 +25,7 @@ export const ICON_IDS = [
   "i-archive",
   "i-close",
   "i-lock",
+  "i-trash",
   "i-panel",
   "i-warn",
   "i-filter",
@@ -75,6 +76,7 @@ export function IconSprite() {
         <symbol id="i-close" viewBox="0 0 14 14"><path d="M3.4 3.4 10.6 10.6M10.6 3.4 3.4 10.6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></symbol>
         <symbol id="i-lock" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.15"><rect x="3.3" y="6.2" width="7.4" height="5.4" rx="1.2"/><path d="M5.1 6.2V4.7a1.9 1.9 0 0 1 3.8 0v1.5"/></g></symbol>
         <symbol id="i-panel" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="1.6" y="2.4" width="10.8" height="9.2" rx="1.4"/><path d="M8.6 2.4v9.2"/></g></symbol>
+        <symbol id="i-trash" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.4 3.9h9.2"/><path d="M5.6 3.9V2.6a.7.7 0 0 1 .7-.7h1.4a.7.7 0 0 1 .7.7v1.3"/><path d="M3.5 3.9l.5 7.4a.9.9 0 0 0 .9.8h4.2a.9.9 0 0 0 .9-.8l.5-7.4"/><path d="M5.9 6.2v3.6M8.1 6.2v3.6"/></g></symbol>
         <symbol id="i-warn" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M7 1.9 12.9 12H1.1Z" strokeLinejoin="round"/><path d="M7 5.9v2.6M7 10.3v.1"/></g></symbol>
         <symbol id="i-filter" viewBox="0 0 14 14"><path d="M1.8 3.2h10.4L8.3 7.6v4l-2.6-1.4V7.6Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
         <symbol id="i-plug" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M5.2 1.8v3M8.8 1.8v3M3.4 4.8h7.2v2.1a3.6 3.6 0 0 1-3.6 3.6 3.6 3.6 0 0 1-3.6-3.6Z"/><path d="M7 10.5v1.7"/></g></symbol>

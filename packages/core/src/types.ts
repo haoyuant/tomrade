@@ -53,7 +53,13 @@ export type Patch = Partial<
 >;
 
 export type OplogEntity = "item" | "board" | "view";
-export type OplogOp = "create" | "update" | "delete";
+/**
+ * 'delete' is reversible — the row carries the snapshot undo restores from.
+ * 'purge' is a human-only permanent destroy: the entity's own history is
+ * removed with it and the tombstone carries no snapshot, so nothing can put
+ * it back. Undo walks straight past a purge.
+ */
+export type OplogOp = "create" | "update" | "delete" | "purge";
 
 export interface OplogEntry {
   seq: number;

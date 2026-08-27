@@ -5,7 +5,7 @@
  * undo restores state.
  */
 import { describe, expect, it } from "vitest";
-import { ConflictError, HumanLockedError, NotFoundError, provenanceOf, undoLast } from "../src/index.js";
+import { ConflictError, HumanLockedError, NotFoundError, PurgeNotPermittedError, provenanceOf, undoLast } from "../src/index.js";
 import { fresh } from "./helpers.js";
 
 describe("items repository (write path)", () => {
@@ -193,5 +193,160 @@ describe("items repository (write path)", () => {
   it("update on missing item throws NotFoundError", () => {
     const { items } = fresh();
     expect(() => items.update("nope", { status: "done" }, "human")).toThrow(NotFoundError);
+  });
+});
+
+/**
+ * `delete` is the reversible one. `purge` is the human-only permanent destroy:
+ * no snapshot survives it, so nothing — not undo, not an older update entry —
+ * can put the issue back.
+ */
+describe("items repository (permanent purge)", () => {
+  it("purge removes the item and leaves a tombstone carrying no snapshot", () => {
+    const { items, board } = fresh();
+    const item = items.create({ title: "A", boardId: board.id, by: "human" });
+    items.purge(item.id, "human");
+    expect(items.get(item.id)).toBeNull();
+    const tomb = items.recentOplog(10).find((o) => o.entityId === item.id);
+    expect(tomb?.op).toBe("purge");
+    expect(tomb?.after).toBeNull();
+    expect(tomb?.before).toEqual({ key: item.key, title: "A", projectId: item.projectId, releasedChildren: [] });
+  });
+
+  it("purge takes the item's own history with it", () => {
+    const { items, board } = fresh();
+    const item = items.create({ title: "A", boardId: board.id, by: "human" });
+    items.update(item.id, { status: "doing" }, "ai:mcp", { baseVersion: 1 });
+    expect(items.historyFor(item.id, 10).length).toBe(2);
+    items.purge(item.id, "human");
+    expect(items.historyFor(item.id, 10).map((o) => o.op)).toEqual(["purge"]);
+  });
+
+  it("no amount of undo brings a purged item back", () => {
+    const { db, items, board } = fresh();
+    const item = items.create({ title: "A", boardId: board.id, by: "human" });
+    items.update(item.id, { status: "doing" }, "human", { baseVersion: 1 });
+    items.update(item.id, { priority: 4 }, "human", { baseVersion: 2 });
+    items.purge(item.id, "human");
+    for (let i = 0; i < 6; i += 1) undoLast(db);
+    expect(items.get(item.id)).toBeNull();
+    expect(undoLast(db, item.id)).toBeNull();
+  });
+
+  it("undo walks past the tombstone to the write before it, and leaves it in the log", () => {
+    const { db, items, board } = fresh();
+    const keep = items.create({ title: "Keep", boardId: board.id, by: "human" });
+    items.update(keep.id, { status: "doing" }, "human", { baseVersion: 1 });
+    const doomed = items.create({ title: "Doomed", boardId: board.id, by: "human" });
+    items.purge(doomed.id, "human");
+
+    const result = undoLast(db);
+    expect(result?.entry.entityId).toBe(keep.id);
+    expect(items.get(keep.id)?.status).toBe("backlog");
+    expect(items.recentOplog(10).some((o) => o.op === "purge" && o.entityId === doomed.id)).toBe(true);
+  });
+
+  it("purging an epic releases its children rather than taking them with it", () => {
+    const { items, board } = fresh();
+    const epic = items.create({ title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
+    const child = items.create({ title: "Export", parentId: epic.id, boardId: board.id, by: "human" });
+    items.purge(epic.id, "human");
+    expect(items.get(child.id)?.parentId).toBeNull();
+  });
+
+  it("the tombstone names the children the purge reparented", () => {
+    const { items, board } = fresh();
+    const epic = items.create({ title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
+    const a = items.create({ title: "Export", parentId: epic.id, boardId: board.id, by: "human" });
+    const b = items.create({ title: "Schedule", parentId: epic.id, boardId: board.id, by: "human" });
+    items.purge(epic.id, "human");
+    const tomb = items.recentOplog(10).find((o) => o.op === "purge");
+    expect((tomb?.before as { releasedChildren: string[] }).releasedChildren.sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it("an agent may not purge — the reversible delete is the only destroy it gets", () => {
+    const { items, board } = fresh();
+    const item = items.create({ title: "A", boardId: board.id, by: "human" });
+    expect(() => items.purge(item.id, "ai:mcp")).toThrow(PurgeNotPermittedError);
+    expect(items.get(item.id)).not.toBeNull();
+  });
+
+  it("a stale confirmation is refused rather than destroying work the human never saw", () => {
+    const { items, board } = fresh();
+    const item = items.create({ title: "Fix login", boardId: board.id, by: "human" });
+    // the sheet is open on version 1 when an agent rewrites the issue
+    items.update(item.id, { title: "Fix SSO redirect loop" }, "ai:mcp", { baseVersion: 1 });
+    expect(() => items.purge(item.id, "human", { baseVersion: 1 })).toThrow(ConflictError);
+    expect(items.get(item.id)?.title).toBe("Fix SSO redirect loop");
+    // confirming against what is actually there now goes through
+    items.purge(item.id, "human", { baseVersion: 2 });
+    expect(items.get(item.id)).toBeNull();
+  });
+
+  it("a soft-deleted epic still round-trips: only a purge drops the link", () => {
+    const { db, items, board } = fresh();
+    const epic = items.create({ title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
+    const child = items.create({ title: "Export", parentId: epic.id, boardId: board.id, by: "human" });
+    items.update(child.id, { parentId: null }, "human", { baseVersion: 1 });
+    items.delete(epic.id, "ai:mcp");
+    undoLast(db, child.id);
+    undoLast(db, epic.id);
+    expect(items.get(epic.id)).not.toBeNull();
+    expect(items.get(child.id)?.parentId).toBe(epic.id);
+  });
+
+  it("purge cuts the blocks relations in both directions", () => {
+    const { items, board } = fresh();
+    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const b = items.create({ title: "B", boardId: board.id, by: "human" });
+    items.addRelation(a.id, b.id);
+    items.addRelation(b.id, a.id);
+    items.purge(a.id, "human");
+    expect(items.get(b.id)?.blocks).toEqual([]);
+  });
+
+  it("undoing an older write never restores an edge to a purged item", () => {
+    const { db, items, board } = fresh();
+    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const b = items.create({ title: "B", boardId: board.id, by: "human" });
+    items.addRelation(b.id, a.id);
+    // b's snapshot at version 1 still names a as blocked
+    items.update(b.id, { status: "doing" }, "human", { baseVersion: 1 });
+    items.purge(a.id, "human");
+    undoLast(db, b.id);
+    expect(items.get(b.id)?.status).toBe("backlog");
+    expect(items.get(b.id)?.blocks).toEqual([]);
+  });
+
+  it("undoing an older write never re-parents an issue onto a purged epic", () => {
+    const { db, items, board } = fresh();
+    const epic = items.create({ title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
+    const child = items.create({ title: "Export", parentId: epic.id, boardId: board.id, by: "human" });
+    items.update(child.id, { status: "doing" }, "human", { baseVersion: 1 });
+    items.purge(epic.id, "human");
+    undoLast(db, child.id);
+    expect(items.get(child.id)?.status).toBe("backlog");
+    expect(items.get(child.id)?.parentId).toBeNull();
+  });
+
+  it("a purged key is never handed out again", () => {
+    const { items, board, project } = fresh();
+    const first = items.create({ title: "A", boardId: board.id, by: "human" });
+    items.purge(first.id, "human");
+    const next = items.create({ title: "B", boardId: board.id, projectId: project.id, by: "human" });
+    expect(next.key).not.toBe(first.key);
+  });
+
+  it("a purge tombstone does not outlive the project it names", () => {
+    const { db, items, projects, board, project } = fresh();
+    const item = items.create({ title: "A", boardId: board.id, by: "human" });
+    items.purge(item.id, "human");
+    projects.remove(project.id);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM oplog").get() as { n: number }).n).toBe(0);
+  });
+
+  it("purging a missing item throws NotFoundError", () => {
+    const { items } = fresh();
+    expect(() => items.purge("nope", "human")).toThrow(NotFoundError);
   });
 });

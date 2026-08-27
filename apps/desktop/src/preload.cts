@@ -43,6 +43,8 @@ const api = {
   create: (input: Omit<CreateItemInput, "by">): Promise<Item> => ipcRenderer.invoke("tomrade:create", input),
   update: (id: string, patch: Patch, baseVersion: number): Promise<Item> => ipcRenderer.invoke("tomrade:update", id, patch, baseVersion),
   remove: (id: string): Promise<void> => ipcRenderer.invoke("tomrade:delete", id),
+  /** Permanent — no snapshot survives it and undo will not bring it back. */
+  purge: (id: string, baseVersion: number): Promise<void> => ipcRenderer.invoke("tomrade:purge", id, baseVersion),
   undo: (entityId?: string): Promise<UndoResult | null> => ipcRenderer.invoke("tomrade:undo", entityId),
   recentOplog: (limit?: number): Promise<OplogEntry[]> => ipcRenderer.invoke("tomrade:recentOplog", limit),
   historyFor: (id: string, limit?: number): Promise<OplogEntry[]> => ipcRenderer.invoke("tomrade:historyFor", id, limit),

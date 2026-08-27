@@ -83,6 +83,7 @@ export function timeAgo(ts: number, now = Date.now()): string {
 export function describeWrite(entry: OplogEntry): string {
   if (entry.op === "create") return "created the issue";
   if (entry.op === "delete") return "deleted the issue";
+  if (entry.op === "purge") return "permanently deleted the issue";
   const before = entry.before as Item | null;
   const after = entry.after as Item | null;
   if (before && after) {

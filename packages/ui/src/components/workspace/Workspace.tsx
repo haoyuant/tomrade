@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "~/components/icons";
 import { BoardSettingsDialog } from "~/components/dialogs/BoardSettingsDialog";
+import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
@@ -55,8 +56,19 @@ export function Workspace() {
   const [viewSettings, setViewSettings] = useState(false);
   const [boardSettings, setBoardSettings] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
+  /** The issue the confirmation is open on, held by id so it can go stale. */
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const selected = ws.items.find((i) => i.id === ws.selectedId) ?? null;
+  const deleteTarget = ws.items.find((i) => i.id === deleting) ?? null;
+
+  // The sheet is rendered from a live lookup, so an agent deleting the issue out
+  // from under it unmounts the dialog without ever calling onOpenChange — and a
+  // `deleting` id left set would hold `anyOverlay` true and wedge the Escape
+  // stack behind an overlay that is not on screen.
+  useEffect(() => {
+    if (deleting && !deleteTarget) setDeleting(null);
+  }, [deleting, deleteTarget]);
 
   const runUndo = useCallback(() => {
     undo.mutate(undefined, {
@@ -72,7 +84,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings || viewSettings || boardSettings;
+  const anyOverlay = palette || newIssue || settings || viewSettings || boardSettings || !!deleteTarget;
 
   // A cross-board space borrows every board and owns nothing to configure.
   const openBoardSettings = useCallback(() => {
@@ -157,6 +169,7 @@ export function Workspace() {
               setExpanded(false);
               ws.select(null);
             }}
+            onDelete={() => setDeleting(selected.id)}
           />
         )}
 
@@ -197,6 +210,16 @@ export function Workspace() {
         }}
       />
       <BoardSettingsDialog open={boardSettings} onOpenChange={setBoardSettings} />
+      <DeleteIssueDialog
+        item={deleteTarget}
+        items={ws.items}
+        projectId={ws.project.id}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        onDeleted={() => {
+          setExpanded(false);
+          ws.select(null);
+        }}
+      />
     </div>
   );
 }

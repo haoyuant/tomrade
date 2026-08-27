@@ -5,7 +5,7 @@ export { BoardsRepository, ViewsRepository } from "./boards.js";
 export { ProjectsRepository, keyPrefixFor } from "./projects.js";
 export { undoLast } from "./undo.js";
 export type { UndoResult } from "./undo.js";
-export { ConflictError, HumanLockedError, InUseError, NotFoundError } from "./errors.js";
+export { ConflictError, HumanLockedError, InUseError, NotFoundError, PurgeNotPermittedError } from "./errors.js";
 export * from "./llm/index.js";
 export { DEFAULT_PRIORITY, ITEM_STATUSES } from "./types.js";
 export type {

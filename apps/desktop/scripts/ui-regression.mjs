@@ -384,7 +384,9 @@ const run = async () => {
   await sleep(900);
   check("the head toggles the human lock", open().humanLocked === !lockedBefore);
 
-  await $(`document.querySelector('.detail .btn-icon').click();true`);
+  /* By role, not by position: the head gained a delete button, and the first
+     .btn-icon in the pane is no longer the expand toggle. */
+  await $(`document.querySelector('.detail [aria-label="Expand detail"]').click();true`);
   await sleep(700);
   check("the detail expands to an overlay", (await $(`!!document.querySelector('.detail.expanded')`)) === true);
   check("the expanded overlay is a real dialog", (await $(`document.querySelector('.detail.expanded')?.getAttribute('role')`)) === "dialog");
@@ -544,6 +546,91 @@ const run = async () => {
   check("a locked issue explains the lock", (await $(`!!document.querySelector('.lockbar')`)) === true);
   check("blocked issues are listed as relations", (await $(`document.querySelectorAll('.rel-row').length`)) === 3);
   await shot("20-issue-detail");
+
+  // ── permanent delete ────────────────────────────────────────────────
+  // Last, deliberately. It is the one write nothing can walk back, so it must
+  // never shrink the project under a count an earlier section asserted — and
+  // both targets are created here, never a seeded issue another check counts.
+  const ownBoard = repos.boards.list(project.id).find((b) => !b.across);
+  const doomed = repos.items.create({ title: "Purge me from the sheet", boardId: ownBoard.id, projectId: project.id, by: "human" });
+  const doomed2 = repos.items.create({ title: "Purge me from the pane", boardId: ownBoard.id, projectId: project.id, status: "doing", by: "human" });
+
+  /* These two were written behind the renderer's back, and queries hold for
+     `staleTime` (30s). A hash change — including one made through loadURL, which
+     is a same-document navigation when only the fragment differs — leaves the
+     SPA and its cache alive, so the sheet would render "not in this project".
+     Reload for a genuinely cold client. */
+  await $(`location.hash = '#/p/${project.id}/i/${doomed.id}';true`);
+  await sleep(400);
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  await sleep(2600);
+  check("the issue sheet offers a permanent delete", (await $(`!!document.querySelector('.titlebar .purge-btn')`)) === true);
+  check("the delete control is not a ninth field", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 8);
+
+  await $(`document.querySelector('.titlebar .purge-btn').focus();true`);
+  await press(`document.querySelector('.titlebar .purge-btn')`);
+  await sleep(800);
+  check("the permanent delete asks before it destroys", (await $(`!!document.querySelector('.dangerbar')`)) === true);
+  check("the confirmation names the issue it will destroy", (await $(`document.querySelector('.dlg-head .tag')?.textContent`)) === doomed.key);
+  check("the confirmation says the write is not undoable", (await $(`/not undoable/i.test(document.querySelector('.dangerbar')?.textContent ?? '')`)) === true);
+  // focus must land in the sheet but never on the button that destroys
+  check(
+    "focus opens away from the destructive button",
+    (await $(`(() => {
+      const dlg = document.querySelector('.palette.modal.sheet-md');
+      return !!dlg && dlg.contains(document.activeElement) && !document.activeElement.classList.contains('btn-danger');
+    })()`)) === true
+  );
+  await checkCentred("the delete confirmation", ".palette.modal.sheet-md");
+  await shot("23-delete-confirm");
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(700);
+  check("Escape cancels the confirmation rather than confirming it", repos.items.get(doomed.id) !== null);
+  check("cancelling closes the sheet", (await $(`!!document.querySelector('.dangerbar')`)) === false);
+  // a sheet that closes by unmounting never gives the shared Dialog its
+  // open -> false transition, and the restore silently never runs
+  check(
+    "cancelling hands focus back to the control that opened it",
+    (await $(`document.activeElement?.classList.contains('purge-btn')`)) === true
+  );
+
+  await press(`document.querySelector('.titlebar .purge-btn')`);
+  await sleep(700);
+  await press(`document.querySelector('.dlg-foot .btn-danger')`);
+  await sleep(1400);
+  check("confirming destroys the issue for good", repos.items.get(doomed.id) === null);
+  check("the purge left one tombstone and no history", repos.items.historyFor(doomed.id, 10).map((o) => o.op).join() === "purge");
+  check("deleting the open issue leaves for the board, not a dead sheet", /\/p\/.+\/b\/.+\/v\/.+/.test(await $(`location.hash`)));
+
+  // the same control on the docked pane, where the board is what has to react
+  await sleep(900);
+  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${doomed2.key}')); if(!c) return false; c.click(); return true; })()`);
+  await sleep(900);
+  check("the detail pane offers the same permanent delete", (await $(`!!document.querySelector('.detail .purge-btn')`)) === true);
+  await press(`document.querySelector('.detail .purge-btn')`);
+  await sleep(800);
+  await press(`document.querySelector('.dlg-foot .btn-danger')`);
+  await sleep(1400);
+  check("the pane's delete destroys the issue too", repos.items.get(doomed2.id) === null);
+  check("the card leaves the board", (await $(`[...document.querySelectorAll('.card-id')].some(n => n.textContent === '${doomed2.key}')`)) === false);
+  check("the detail pane closes with the issue it was showing", (await $(`!!document.querySelector('.detail')`)) === false);
+  // the toast must not offer an undo the write path cannot honour
+  check(
+    "the permanent delete's toast offers no undo",
+    (await $(`(() => { const t = [...document.querySelectorAll('.toast')].pop(); return !!t && !t.querySelector('.btn-ghost'); })()`)) === true
+  );
+  check(
+    "the status bar names the purge rather than calling it an update",
+    (await $(`[...document.querySelectorAll('.statusbar .status-item')].some(n => /permanently deleted/.test(n.textContent))`)) === true
+  );
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,bubbles:true}));true`);
+  await sleep(1200);
+  check("⌘Z cannot resurrect a permanently deleted issue", repos.items.get(doomed2.id) === null);
+  check("the tombstone survives the undo as the audit trail", repos.items.recentOplog(30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
+  await shot("24-after-delete");
 
   return results;
 };
