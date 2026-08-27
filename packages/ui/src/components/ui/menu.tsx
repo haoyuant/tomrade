@@ -113,6 +113,17 @@ export function MenuRadioItem({
   );
 }
 
+/** A footer row that opens something *over* this screen: no arrow, because
+ *  nothing is being left behind. */
+export function MenuActionItem({ icon, name, onSelect }: { icon: ReactNode; name: string; onSelect: () => void }) {
+  return (
+    <RadixMenu.Item className="menu-row m-link" onSelect={onSelect}>
+      <span className="m-mark">{icon}</span>
+      <span className="m-name">{name}</span>
+    </RadixMenu.Item>
+  );
+}
+
 /** A row that leaves this screen rather than changing it — the arrow says so. */
 export function MenuLinkItem({ icon, name, onSelect }: { icon: ReactNode; name: string; onSelect: () => void }) {
   return (

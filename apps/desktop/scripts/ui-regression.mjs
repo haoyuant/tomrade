@@ -619,6 +619,85 @@ const run = async () => {
   check("the tombstone survives the undo as the audit trail", ctx.oplog.recent(30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
   await shot("24-after-delete");
 
+  // ── project settings, and the delete that takes a whole project ──────
+  // After everything that counts the fixture, and on a project the harness makes
+  // for itself: this delete is not undoable and takes every board and issue with
+  // it, so it must never be pointed at the sample data other checks assert on.
+  const throwaway = repos.projects.create({ name: "Throwaway", description: "made by the harness" });
+  repos.items.create({ title: "goes with the project", projectId: throwaway.id, boardId: repos.boards.defaultFor(throwaway.id).id, by: "human" });
+
+  /* Written behind the renderer's back, so the projects query is stale for
+     `staleTime`; a hash change keeps the SPA and its cache alive. Reload. */
+  await $(`location.hash = '#/';true`);
+  await sleep(400);
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  await sleep(2600);
+  check("the projects grid renders a card per project", (await $(`document.querySelectorAll('.proj').length`)) === 3);
+
+  const gearFor = (name) =>
+    `[...document.querySelectorAll('.proj-cell')].find(c => c.querySelector('.proj-name')?.textContent === '${name}')?.querySelector('.proj-gear')`;
+  check("each card carries its own settings control", (await $(`document.querySelectorAll('.proj-cell .proj-gear').length`)) === 3);
+  await $(`${gearFor("Throwaway")}.focus();true`);
+  await press(gearFor("Throwaway"));
+  await sleep(800);
+  check("a project card opens its own settings sheet", (await $(`!!document.querySelector('#psName')`)) === true);
+  check("the key prefix is stated, not offered", (await $(`document.querySelector('#psPrefix')?.readOnly`)) === true);
+  check("the sheet names the id an agent uses over MCP", (await $(`document.querySelector('#psId')?.value`)) === throwaway.id);
+  await checkCentred("project settings");
+  await shot("25-project-settings");
+
+  // the archive switch is a draft like every other control on a settings sheet
+  await press(`document.querySelector('.cfg-row .switch')`);
+  await sleep(300);
+  check("the archive switch reads back its draft state", (await $(`document.querySelector('.cfg-row .switch')?.getAttribute('aria-checked')`)) === "true");
+  await press(`[...document.querySelectorAll('.dlg-foot .btn-ghost')].pop()`);
+  await sleep(700);
+  check("Cancel discards the project draft", repos.projects.get(throwaway.id).archived === false);
+
+  await press(gearFor("Throwaway"));
+  await sleep(700);
+  await typeInto("#psName", "Throwaway renamed");
+  await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
+  await sleep(1200);
+  check("Save writes the project name", repos.projects.get(throwaway.id).name === "Throwaway renamed");
+  check("the grid re-reads the renamed project", (await $(`[...document.querySelectorAll('.proj-name')].some(n => n.textContent === 'Throwaway renamed')`)) === true);
+
+  await press(gearFor("Throwaway renamed"));
+  await sleep(700);
+  await press(`document.querySelector('.del-proj')`);
+  await sleep(800);
+  check("deleting a project asks before it destroys", (await $(`!!document.querySelector('.dangerbar')`)) === true);
+  check("the confirmation says the write is not undoable", (await $(`/not undoable/i.test(document.querySelector('.dangerbar')?.textContent ?? '')`)) === true);
+  check("the confirmation lists what goes with the project", (await $(`document.querySelectorAll('.del-list li').length`)) >= 4);
+  check("the button that destroys is disabled until the name is typed", (await $(`document.querySelector('.dlg-foot .btn-danger')?.disabled`)) === true);
+  check("focus opens on the confirmation field, not the destructive button", (await $(`document.activeElement?.id`)) === "dpName");
+  await checkCentred("the project delete confirmation");
+  await shot("26-project-delete-confirm");
+
+  // one sheet, two faces: Escape steps back to the settings rather than out
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(700);
+  check("Escape on the confirmation returns to the settings face", (await $(`!!document.querySelector('#psName')`)) === true);
+  check("Escape cancelled the delete rather than confirming it", repos.projects.get(throwaway.id) !== null);
+
+  await press(`document.querySelector('.del-proj')`);
+  await sleep(700);
+  await typeInto("#dpName", "Throwaway");
+  await sleep(400);
+  check("a name that does not match keeps the delete disabled", (await $(`document.querySelector('.dlg-foot .btn-danger')?.disabled`)) === true);
+  await typeInto("#dpName", "Throwaway renamed");
+  await sleep(400);
+  check("the typed name arms the delete", (await $(`document.querySelector('.dlg-foot .btn-danger')?.disabled`)) === false);
+  await press(`document.querySelector('.dlg-foot .btn-danger')`);
+  await sleep(1600);
+  check("confirming destroys the project for good", repos.projects.get(throwaway.id) === null);
+  check("its boards, views and issues go with it", repos.boards.list(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
+  check("the card leaves the grid", (await $(`document.querySelectorAll('.proj').length`)) === 2);
+  check("the sheet closes with the project it was configuring", (await $(`!!document.querySelector('#psName')`)) === false);
+  check("the fixture project is untouched", repos.items.list({ projectId: project.id }).length > 0);
+  await shot("27-after-project-delete");
+
   return results;
 };
 

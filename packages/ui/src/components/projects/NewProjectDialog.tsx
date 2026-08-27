@@ -4,7 +4,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { Eyebrow } from "~/components/ui/atoms";
 import { useCreateProject, useDbPath } from "~/lib/queries";
 
-/** Prefix preview mirrors keyPrefixFor() in core: first three letters, uppercased. */
+/** Prefix preview mirrors keyPrefixFor() in the domain: first three letters, uppercased. */
 const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ISS";
 
 export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -13,18 +13,23 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  /** Blank means "derive it from the name" — and it is fixed from here on. */
+  const [prefix, setPrefix] = useState("");
   const [error, setError] = useState(false);
+
+  const key = prefix || previewPrefix(name);
 
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return setError(true);
     create.mutate(
-      { name: trimmed, description: description.trim() || null },
+      { name: trimmed, description: description.trim() || null, keyPrefix: prefix || undefined },
       {
         onSuccess: (project) => {
           onOpenChange(false);
           setName("");
           setDescription("");
+          setPrefix("");
           void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
         }
       }
@@ -58,13 +63,29 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
             </span>
           ) : (
             <span className="meta-txt">
-              Issues will be keyed <span className="num">{previewPrefix(name)}-1</span>, <span className="num">{previewPrefix(name)}-2</span>, …
+              Issues will be keyed <span className="num">{key}-1</span>, <span className="num">{key}-2</span>, …
             </span>
           )}
         </div>
-        <div className="field">
-          <label htmlFor="npDesc">Description</label>
-          <input id="npDesc" className="input" placeholder="What this workspace is for" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <div className="grid-2">
+          <div className="field">
+            <label htmlFor="npDesc">Description</label>
+            <input id="npDesc" className="input" placeholder="What this workspace is for" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="npPrefix">Issue key prefix</label>
+            <input
+              id="npPrefix"
+              className="input num"
+              placeholder={previewPrefix(name)}
+              maxLength={6}
+              value={prefix}
+              // Sanitised here rather than refused later: the repository upper-cases
+              // whatever it is handed and the key it makes is permanent.
+              onChange={(e) => setPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+            />
+            <span className="meta-txt">Derived from the name if left blank, and fixed once the project exists.</span>
+          </div>
         </div>
         <div className="field">
           <label htmlFor="npFile">Database file</label>

@@ -36,7 +36,9 @@ export async function fresh(opts: FreshOptions = {}) {
   await settle();
   if (failures.length) throw failures[0];
 
-  const project = ctx.projects.get("default")!;
+  // 'default' is a first-run seed, not a guarantee: a database whose default
+  // project was deleted opens on whatever project it does have.
+  const project = (ctx.projects.get("default") ?? ctx.projects.list()[0])!;
   const board = ctx.boards.defaultFor(project.id);
   return { ctx, db: ctx.db, oplog: ctx.oplog, items: ctx.items, boards: ctx.boards, views: ctx.views, projects: ctx.projects, project, board };
 }

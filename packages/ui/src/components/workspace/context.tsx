@@ -151,20 +151,24 @@ export function WorkspaceProvider({
   }, [project, projects.data, board, boards.data, view, views.data, items.data, labels.data, epics, savedQuery, query, ranks.data, badges.data, selectedId, openSpace]);
 
   // Deleting the open board or view strands this route; the project loader knows
-  // how to pick a surviving one.
+  // how to pick a surviving one. Deleting the project strands that loader too,
+  // and then only home is left.
   useEffect(() => {
-    if (settled && (!board || !view)) void navigate({ to: "/p/$projectId", params: { projectId }, replace: true });
-  }, [settled, board, view, navigate, projectId]);
+    if (!settled) return;
+    if (!project) void navigate({ to: "/", replace: true });
+    else if (!board || !view) void navigate({ to: "/p/$projectId", params: { projectId }, replace: true });
+  }, [settled, project, board, view, navigate, projectId]);
 
   if (!value) {
-    const missing = settled && (!project || !board || !view);
+    const gone = settled && !project;
+    const missing = settled && (!board || !view);
     return (
       <div className="app">
         <header className="titlebar" />
         <main className="sheet">
           <div className="wrap">
             <p className="meta-txt">
-              {missing ? "That board is no longer in this project." : "Opening the workspace…"}
+              {gone ? "That project has been deleted." : missing ? "That board is no longer in this project." : "Opening the workspace…"}
             </p>
           </div>
         </main>

@@ -1009,6 +1009,11 @@ strong { font-weight: 500; }
 .proj:hover { box-shadow: var(--elev-raised); border-color: var(--border-soft); }
 .proj:focus-visible { box-shadow: var(--focus-ring); }
 .proj[aria-current="true"] { border-color: var(--accent); }
+/* The gear sits over the card, not inside it: a button inside a button is
+   invalid, and the card itself is the button that opens the project. */
+.proj-cell { position: relative; display: flex; }
+.proj-gear { position: absolute; top: var(--space-3); right: var(--space-3); color: var(--meta); }
+.proj-cell:hover .proj-gear { color: var(--fg-2); }
 .proj-name { font-family: var(--font-display); font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
 .proj-desc { font-size: 14px; line-height: var(--leading-dense); color: var(--muted); margin-top: 6px; }
 .proj-boards { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-4); margin-bottom: var(--space-3); }

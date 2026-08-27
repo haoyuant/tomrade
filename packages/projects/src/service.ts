@@ -67,10 +67,15 @@ export class Projects extends Service {
     return this.ctx.db;
   }
 
-  /** The default project keeps id 'default' so databases written before projects existed still resolve. */
-  ensureDefault(): Project {
+  /**
+   * A first-run seed, not a repair. The id stays 'default' so a database written
+   * before projects existed still resolves, but this only ever writes into an
+   * empty table: a project a human deleted must not reappear on the next boot.
+   */
+  ensureDefault(): Project | null {
     const existing = this.db.prepare("SELECT * FROM projects WHERE id = 'default'").get() as ProjectRow | undefined;
     if (existing) return rowToProject(existing);
+    if ((this.db.prepare("SELECT COUNT(*) AS n FROM projects").get() as { n: number }).n > 0) return null;
     const now = Date.now();
     this.db.transaction(() => {
       this.db
@@ -107,7 +112,15 @@ export class Projects extends Service {
   update(id: string, patch: ProjectPatch): Project | null {
     const existing = this.get(id);
     if (!existing) return null;
-    const next = { ...existing, ...patch, updatedAt: Date.now() };
+    // An absent key means "leave it" — a bare spread would let an explicit
+    // `description: undefined` through and bind it as a value.
+    const next: Project = {
+      ...existing,
+      name: patch.name ?? existing.name,
+      description: patch.description === undefined ? existing.description : patch.description,
+      archived: patch.archived ?? existing.archived,
+      updatedAt: Date.now()
+    };
     this.db
       .prepare("UPDATE projects SET name = ?, description = ?, archived = ?, updated_at = ? WHERE id = ?")
       .run(next.name, next.description, next.archived ? 1 : 0, next.updatedAt, id);
@@ -128,7 +141,13 @@ export class Projects extends Service {
       this.db.prepare("DELETE FROM oplog WHERE op = 'purge' AND json_extract(before_json, '$.projectId') = ?").run(id);
 
       this.db.prepare("DELETE FROM item_labels WHERE item_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM item_relations WHERE from_item_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
+      // Both directions: nothing stops an agent relating across projects, and an
+      // incoming edge lives on the other project's row.
+      this.db
+        .prepare(
+          "DELETE FROM item_relations WHERE from_item_id IN (SELECT id FROM items WHERE project_id = ?) OR to_item_id IN (SELECT id FROM items WHERE project_id = ?)"
+        )
+        .run(id, id);
       this.db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = ?)").run(id);
       this.db.prepare("DELETE FROM views WHERE board_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
       this.db.prepare("DELETE FROM boards WHERE project_id = ?").run(id);
