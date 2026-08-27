@@ -11,6 +11,7 @@ import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { keys, useMcpUrl, useProjects } from "~/lib/queries";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 interface Facts {
   boards: number;
@@ -42,45 +43,69 @@ function useProjectFacts(projects: Project[]): Map<string, Facts> {
   return facts;
 }
 
-function ProjectCard({ project, facts, boardNames }: { project: Project; facts?: Facts; boardNames: string[] }) {
+/* The gear is a sibling of the card, not a child of it: a button inside a button
+   is invalid, and the whole card is the button that opens the project. */
+function ProjectCard({
+  project,
+  facts,
+  boardNames,
+  onOpenSettings
+}: {
+  project: Project;
+  facts?: Facts;
+  boardNames: string[];
+  onOpenSettings: () => void;
+}) {
   const navigate = useNavigate();
   return (
-    <button
-      type="button"
-      className="proj"
-      title={`Open ${project.name}`}
-      onClick={() => void navigate({ to: "/p/$projectId", params: { projectId: project.id } })}
-    >
-      <div className="row" style={{ gap: 7 }}>
-        <Icon name={project.archived ? "i-archive" : "i-stack"} size={15} style={{ color: project.archived ? "var(--meta)" : "var(--accent)" }} />
-        <Eyebrow>{project.archived ? "Archived" : "Active"}</Eyebrow>
-      </div>
-      <h2 className="proj-name" style={{ marginTop: "var(--space-3)" }}>
-        {project.name}
-      </h2>
-      <p className="proj-desc">{project.description ?? "No description yet."}</p>
-      <div className="proj-boards">
-        {boardNames.length ? boardNames.map((n) => <Tag key={n} tone="neutral">{n}</Tag>) : <Tag tone="neutral">No boards</Tag>}
-      </div>
-      <div className="proj-foot">
-        <span className="stat-pair">
-          <span className="stat-v">{facts?.boards ?? "—"}</span>
-          <span className="stat-k">boards</span>
-        </span>
-        <span className="stat-pair">
-          <span className="stat-v plain">{facts?.open ?? "—"}</span>
-          <span className="stat-k">open</span>
-        </span>
-        <span className="stat-pair">
-          <span className="stat-v plain">{facts?.total ?? "—"}</span>
-          <span className="stat-k">issues</span>
-        </span>
-        <span className="stat-pair" style={{ marginLeft: "auto", textAlign: "right" }}>
-          <span className="stat-k num">{facts?.lastWrite ? agoLabel(facts.lastWrite) : "—"}</span>
-          <span className="stat-k">last write</span>
-        </span>
-      </div>
-    </button>
+    <div className="proj-cell">
+      <button
+        type="button"
+        className="proj"
+        title={`Open ${project.name}`}
+        onClick={() => void navigate({ to: "/p/$projectId", params: { projectId: project.id } })}
+      >
+        <div className="row" style={{ gap: 7 }}>
+          <Icon name={project.archived ? "i-archive" : "i-stack"} size={15} style={{ color: project.archived ? "var(--meta)" : "var(--accent)" }} />
+          <Eyebrow>{project.archived ? "Archived" : "Active"}</Eyebrow>
+        </div>
+        <h2 className="proj-name" style={{ marginTop: "var(--space-3)" }}>
+          {project.name}
+        </h2>
+        <p className="proj-desc">{project.description ?? "No description yet."}</p>
+        <div className="proj-boards">
+          {boardNames.length ? boardNames.map((n) => <Tag key={n} tone="neutral">{n}</Tag>) : <Tag tone="neutral">No boards</Tag>}
+        </div>
+        <div className="proj-foot">
+          <span className="stat-pair">
+            <span className="stat-v">{facts?.boards ?? "—"}</span>
+            <span className="stat-k">boards</span>
+          </span>
+          <span className="stat-pair">
+            <span className="stat-v plain">{facts?.open ?? "—"}</span>
+            <span className="stat-k">open</span>
+          </span>
+          <span className="stat-pair">
+            <span className="stat-v plain">{facts?.total ?? "—"}</span>
+            <span className="stat-k">issues</span>
+          </span>
+          <span className="stat-pair" style={{ marginLeft: "auto", textAlign: "right" }}>
+            <span className="stat-k num">{facts?.lastWrite ? agoLabel(facts.lastWrite) : "—"}</span>
+            <span className="stat-k">last write</span>
+          </span>
+        </div>
+      </button>
+      <button
+        type="button"
+        className="btn btn-icon proj-gear"
+        aria-haspopup="dialog"
+        title={`Settings for ${project.name}`}
+        aria-label={`Settings for ${project.name}`}
+        onClick={onOpenSettings}
+      >
+        <Icon name="i-gear" size={15} />
+      </button>
+    </div>
   );
 }
 
@@ -89,6 +114,8 @@ export function ProjectsScreen() {
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  /** Held by id, and looked up live: deleting the project is what closes the sheet. */
+  const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
   const facts = useProjectFacts(list);
 
@@ -144,6 +171,7 @@ export function ProjectsScreen() {
                 project={p}
                 facts={facts.get(p.id)}
                 boardNames={(boardQueries[i]?.data ?? []).filter((b) => !b.across).map((b) => b.name)}
+                onOpenSettings={() => setConfiguring(p.id)}
               />
             ))}
             <button type="button" className="proj-new" onClick={() => setNewOpen(true)}>
@@ -201,6 +229,11 @@ export function ProjectsScreen() {
       </StatusBar>
 
       <NewProjectDialog open={newOpen} onOpenChange={setNewOpen} />
+      <ProjectSettingsDialog
+        project={list.find((p) => p.id === configuring) ?? null}
+        projects={list}
+        onOpenChange={(open) => !open && setConfiguring(null)}
+      />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );

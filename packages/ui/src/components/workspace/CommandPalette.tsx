@@ -17,6 +17,7 @@ export interface PaletteActions {
   undo: () => void;
   openSettings: () => void;
   openBoardSettings: () => void;
+  openProjectSettings: () => void;
   openProjectMenu: () => void;
 }
 
@@ -119,6 +120,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   { label: "All projects", kb: undefined, run: () => void navigate({ to: "/" }) },
                   { label: "Settings", kb: "⌘,", run: actions.openSettings },
                   { label: "Board settings", kb: undefined, run: actions.openBoardSettings },
+                  { label: "Project settings", kb: undefined, run: actions.openProjectSettings },
                   ...THEME_OPTIONS.filter((t) => t.value !== "system").map((t) => ({ label: `Theme · ${t.label}`, kb: undefined, run: () => setPreference(t.value) }))
                 ].map((action) => (
                   <Command.Item key={action.label} value={action.label} className="palette-row" onSelect={() => run(action.run)}>

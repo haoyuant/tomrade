@@ -128,7 +128,7 @@ export function DeleteIssueDialog({
             </button>
             <button type="button" className="btn btn-danger" disabled={purge.isPending} onClick={destroy}>
               <Icon name="i-trash" size={13} />
-              {purge.isPending ? "Deleting…" : `Delete ${item.key} for ever`}
+              {purge.isPending ? "Deleting…" : `Delete ${item.key} forever`}
             </button>
           </DialogFoot>
         </>

@@ -12,6 +12,7 @@ import type {
   Item,
   Patch,
   Project,
+  ProjectPatch,
   View,
   ViewPatch
 } from "@tomrade/domain";
@@ -207,6 +208,35 @@ export function useCreateProject() {
   return useMutation({
     mutationFn: (input: CreateProjectInput): Promise<Project> => invoke("projects.create", input),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.projects })
+  });
+}
+
+export function useUpdateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; patch: ProjectPatch }) => invoke("projects.update", args.id, args.patch),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.projects })
+  });
+}
+
+/**
+ * The other write undo cannot reach: projects sit outside the oplog, and the
+ * delete takes the history of everything inside it. The caller confirms first,
+ * never offers an Undo, and leaves the project's caches behind rather than
+ * refetching them for a scope that is gone.
+ */
+export function useRemoveProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => invoke("projects.remove", id),
+    onSuccess: (_r, id) => {
+      for (const key of [keys.boards(id), keys.views(id), keys.items(id), keys.labels(id), keys.badges(id), keys.statusItems(id)]) {
+        qc.removeQueries({ queryKey: key });
+      }
+      void qc.invalidateQueries({ queryKey: keys.projects });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
+      void qc.invalidateQueries({ queryKey: keys.contributions });
+    }
   });
 }
 

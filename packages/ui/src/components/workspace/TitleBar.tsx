@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
-import { Menu, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
+import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
 import { useWorkspace } from "./context";
 
 /**
@@ -13,12 +13,14 @@ export function TitleBar({
   onOpenPalette,
   onNewIssue,
   onOpenSettings,
+  onOpenProjectSettings,
   projectMenuOpen,
   setProjectMenuOpen
 }: {
   onOpenPalette: () => void;
   onNewIssue: () => void;
   onOpenSettings: () => void;
+  onOpenProjectSettings: () => void;
   projectMenuOpen: boolean;
   setProjectMenuOpen: (open: boolean) => void;
 }) {
@@ -52,12 +54,13 @@ export function TitleBar({
               key={p.id}
               checked={p.id === project.id}
               name={p.name}
-              sub={p.archived ? "Archived · read-only" : p.id === project.id ? `${boards.filter((b) => !b.across).length} boards · ${open} open` : p.description ?? "Local project"}
+              sub={p.archived ? "Archived" : p.id === project.id ? `${boards.filter((b) => !b.across).length} boards · ${open} open` : p.description ?? "Local project"}
               mark={<Icon name={p.archived ? "i-archive" : "i-stack"} size={13} style={{ color: p.id === project.id ? "var(--accent)" : "var(--meta)" }} />}
               onSelect={() => void navigate({ to: "/p/$projectId", params: { projectId: p.id } })}
             />
           ))}
           <div className="menu-foot">
+            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name="Project settings" onSelect={onOpenProjectSettings} />
             <MenuLinkItem icon={<Icon name="i-home" size={13} />} name="All projects" onSelect={() => void navigate({ to: "/" })} />
           </div>
         </Menu>

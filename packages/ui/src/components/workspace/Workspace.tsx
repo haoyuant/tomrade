@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { BoardSettingsDialog } from "~/components/dialogs/BoardSettingsDialog";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
+import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -38,6 +40,7 @@ export function Workspace() {
   const ws = useWorkspace();
   const undo = useUndo(ws.project.id);
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [aiOpen, setAiOpenState] = useState(aiOpenDefault);
   /** Every toggle persists, not just the panel's own buttons. */
@@ -55,6 +58,7 @@ export function Workspace() {
   const [settings, setSettings] = useState(false);
   const [viewSettings, setViewSettings] = useState(false);
   const [boardSettings, setBoardSettings] = useState(false);
+  const [projectSettings, setProjectSettings] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
   /** The issue the confirmation is open on, held by id so it can go stale. */
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -84,7 +88,15 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings || viewSettings || boardSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings || viewSettings || boardSettings || projectSettings || !!deleteTarget;
+
+  // Both entry points are inside a closing overlay — the switcher menu or the
+  // palette — and Radix hands focus back to the trigger as that one goes. Open
+  // the sheet after that, or the two fight over the focus.
+  const openProjectSettings = useCallback(() => {
+    setProjectMenu(false);
+    requestAnimationFrame(() => setProjectSettings(true));
+  }, []);
 
   // A cross-board space borrows every board and owns nothing to configure.
   const openBoardSettings = useCallback(() => {
@@ -147,6 +159,7 @@ export function Workspace() {
         onOpenPalette={() => setPalette(true)}
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings(true)}
+        onOpenProjectSettings={openProjectSettings}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />
@@ -196,6 +209,7 @@ export function Workspace() {
           undo: runUndo,
           openSettings: () => setSettings(true),
           openBoardSettings,
+          openProjectSettings,
           openProjectMenu: () => setProjectMenu(true)
         }}
       />
@@ -210,6 +224,14 @@ export function Workspace() {
         }}
       />
       <BoardSettingsDialog open={boardSettings} onOpenChange={setBoardSettings} />
+      <ProjectSettingsDialog
+        project={projectSettings ? ws.project : null}
+        projects={ws.projects}
+        onOpenChange={setProjectSettings}
+        // The route names the project that no longer exists, so leave before the
+        // caches it was rendered from are dropped.
+        onDeleted={() => void navigate({ to: "/" })}
+      />
       <DeleteIssueDialog
         item={deleteTarget}
         items={ws.items}

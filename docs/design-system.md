@@ -56,6 +56,8 @@ deliberate act, which is why it lives in board settings as a bulk move.
 **Leaving a project is titlebar chrome.** The sidebar holds boards and
 cross-board scopes and nothing else. Home *leaves* the project, the switcher
 *rebinds* it — two jobs, two controls, separated by a hairline not a slash.
+Configuring one is chrome too: the switcher's foot inside a project, the card's
+own gear on the projects grid, and nowhere in the sidebar.
 
 **One solid button per viewport, per action.** Hover on a solid button swaps
 foreground and background in the same rule. Everything else is ghost,
@@ -114,6 +116,18 @@ confirmation asserts the version it was rendered from, because a promise about a
 title an agent has since rewritten is not a confirmation, and here there is no
 undo to fall back on.
 
+**Two irreversible writes, and each asks in the words it will be judged by.**
+Purging an issue asks for one click on a sheet that names the version it was
+rendered from. Deleting a project asks for its name in writing, because it takes
+every board, view and issue inside it *and* the oplog rows those issues wrote —
+a project is not in the oplog at all, so unlike a purge it leaves no tombstone
+and nothing for `⌘Z` to walk back to. The confirmation is the *second face* of
+the project-settings sheet rather than a second dialog: one focus trap, one
+scrim, and Escape steps back to the settings instead of out. Its counterpart on
+the way in: `ensureDefault()` is a first-run seed, not a repair — it writes the
+`default` project only into an *empty* projects table, so a project a human
+deleted does not reappear on the next boot.
+
 The corollary nothing in the compiler enforces: a *surviving* snapshot can still
 name a purged row. `restoreItem` therefore nulls a dangling `parent_id` and skips
 a dangling edge — testing the tombstone, not whether the row is there right now,
@@ -170,7 +184,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 `pnpm --filter @tomrade/desktop test:ui` boots the same plugin tree the app
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port — over a
 throwaway database seeded with the prototype's sample project
-(`apps/desktop/scripts/seed.mjs`). It asserts 120 behaviours and writes a
+(`apps/desktop/scripts/seed.mjs`). It asserts 145 behaviours and writes a
 screenshot per screen and per theme into `apps/desktop/scripts/shots/`. It
 needs the dev server up (`pnpm dev:ui`) *and* a built backend — it loads
 `apps/desktop/dist` and every plugin's `dist`, so a new channel is invisible to
