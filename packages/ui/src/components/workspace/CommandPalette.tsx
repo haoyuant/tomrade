@@ -14,6 +14,7 @@ import { useWorkspace, viewCount } from "./context";
 export interface PaletteActions {
   newIssue: () => void;
   toggleAssistant: () => void;
+  toggleSidebar: () => void;
   undo: () => void;
   openSettings: () => void;
   openBoardSettings: () => void;
@@ -113,6 +114,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 {[
                   { label: "New issue", kb: "⌘N", run: actions.newIssue },
                   { label: "Toggle assistant panel", kb: "⌘J", run: actions.toggleAssistant },
+                  { label: "Toggle sidebar", kb: "⌘B", run: actions.toggleSidebar },
                   { label: "Undo last write", kb: "⌘Z", run: actions.undo },
                   ...(Object.keys(GROUPS) as GroupBy[]).map((g) => ({ label: `Group by ${GROUPS[g].label.toLowerCase()}`, kb: undefined, run: () => setGroup(g) })),
                   { label: "Clear all filters", kb: undefined, run: () => ws.setQuery({ ...ws.query, labels: [], epics: [], priorities: [], provenance: [] }) },

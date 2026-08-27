@@ -512,6 +512,18 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'j',metaKey:true,bubbles:true}));true`);
   await sleep(600);
 
+  // ── sidebar ─────────────────────────────────────────────────────────
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'b',metaKey:true,bubbles:true}));true`);
+  await sleep(600);
+  check("⌘B collapses the sidebar to its rail", (await $(`!!document.querySelector('.side-rail') && !document.querySelector('.sidebar')`)) === true);
+  check("a railed sidebar hands board switching to the board head", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) !== "none");
+  check("the collapsed sidebar is remembered", (await $(`localStorage.getItem('tomrade.sidebar.open')`)) === "0");
+  await shot("18-sidebar-railed");
+  await press(`document.querySelector('.side-rail .btn-icon')`);
+  await sleep(600);
+  check("the rail's button brings the sidebar back", (await $(`!!document.querySelector('.sidebar')`)) === true);
+  check("the board head's switcher retreats with it", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) === "none");
+
   // ── cross-board scope ───────────────────────────────────────────────
   await press(`[...document.querySelectorAll('.side-row.is-board')].pop()`);
   await sleep(1200);

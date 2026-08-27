@@ -90,7 +90,7 @@ export function seedDesignProject({ db, projects, boards, views, items }) {
   for (const spec of BOARDS) {
     boardIds.set(spec.key, boards.create({ projectId: project.id, name: spec.name, icon: spec.icon, subtitle: spec.subtitle }).id);
   }
-  // the seeded "All work" board is redundant once the four real workstreams exist
+  // the seeded "Main" board is redundant once the four real workstreams exist
   if (firstBoard) boards.remove(firstBoard.id);
 
   // the named views open first; the auto "All work" view stays in the roster behind them

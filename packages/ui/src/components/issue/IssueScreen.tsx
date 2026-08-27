@@ -5,7 +5,8 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
-import { AiPanel, aiOpenDefault } from "~/components/workspace/AiPanel";
+import { usePanelOpen } from "~/lib/panel";
+import { AiPanel, aiOpenKey } from "~/components/workspace/AiPanel";
 import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
@@ -40,7 +41,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [aiOpen, setAiOpen] = useState(aiOpenDefault);
+  const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey);
 
   const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
   if (!item) {

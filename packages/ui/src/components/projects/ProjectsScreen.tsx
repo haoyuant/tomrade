@@ -178,7 +178,7 @@ export function ProjectsScreen() {
               <Icon name="i-plus" size={20} />
               <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>New project</span>
               <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>
-                Creates an “All work” board and the two cross-board scopes.
+                Creates a “Main” board and the two cross-board scopes.
               </span>
             </button>
           </div>

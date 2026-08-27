@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Board } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
-import { Eyebrow } from "~/components/ui/atoms";
+import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { boardSubtitle } from "~/lib/domain";
 import { useCreateBoard, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -109,17 +109,35 @@ function NewBoardRow() {
 
 /**
  * Boards inside THIS project, and nothing else. Leaving the project is chrome
- * work — home and the switcher, both in the titlebar.
+ * work — home and the switcher, both in the titlebar. Collapsed, it is the same
+ * rail the assistant folds to, and the board head grows its own switcher.
  */
-export function Sidebar() {
+export function Sidebar({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
   const { boards } = useWorkspace();
   const workstreams = boards.filter((b) => !b.across);
   const scopes = boards.filter((b) => b.across);
 
+  if (!open) {
+    return (
+      <div className="rail side-rail">
+        <button type="button" className="btn btn-icon" title="Expand sidebar — ⌘B" aria-label="Expand sidebar" onClick={() => onToggle(true)}>
+          <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
+        </button>
+        <span className="rail-label">Boards</span>
+      </div>
+    );
+  }
+
   return (
     <nav className="sidebar">
+      <div className="side-head">
+        <Eyebrow>Boards</Eyebrow>
+        <Spacer />
+        <button type="button" className="btn btn-icon" title="Collapse sidebar — ⌘B" aria-label="Collapse sidebar" onClick={() => onToggle(false)}>
+          <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
+        </button>
+      </div>
       <div className="side-group">
-        <Eyebrow className="side-label">Boards</Eyebrow>
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {workstreams.map((b) => (
             <BoardRow key={b.id} board={b} />
@@ -140,3 +158,5 @@ export function Sidebar() {
     </nav>
   );
 }
+
+export const sidebarOpenKey = "tomrade.sidebar.open";

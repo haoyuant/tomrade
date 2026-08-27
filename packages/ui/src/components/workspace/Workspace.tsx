@@ -8,14 +8,15 @@ import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
 import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
+import { usePanelOpen } from "~/lib/panel";
 import { useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
-import { AiPanel, aiOpenDefault, persistAiOpen } from "./AiPanel";
+import { AiPanel, aiOpenKey } from "./AiPanel";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
 import { QueryBar } from "./QueryBar";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { BoardHead, TitleBar } from "./TitleBar";
 import { useWorkspace } from "./context";
 
@@ -42,15 +43,8 @@ export function Workspace() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [aiOpen, setAiOpenState] = useState(aiOpenDefault);
-  /** Every toggle persists, not just the panel's own buttons. */
-  const setAiOpen = useCallback((next: boolean | ((v: boolean) => boolean)) => {
-    setAiOpenState((current) => {
-      const value = typeof next === "function" ? next(current) : next;
-      persistAiOpen(value);
-      return value;
-    });
-  }, []);
+  const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey);
+  const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey);
   const [expanded, setExpanded] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
@@ -124,6 +118,9 @@ export function Workspace() {
       } else if (meta && key === "j") {
         e.preventDefault();
         setAiOpen((v) => !v);
+      } else if (meta && key === "b") {
+        e.preventDefault();
+        setSideOpen((v) => !v);
       } else if (meta && key === "n") {
         e.preventDefault();
         setNewIssue(true);
@@ -164,8 +161,8 @@ export function Workspace() {
         setProjectMenuOpen={setProjectMenu}
       />
 
-      <div className="workspace">
-        <Sidebar />
+      <div className={sideOpen ? "workspace" : "workspace side-railed"}>
+        <Sidebar open={sideOpen} onToggle={setSideOpen} />
         <section className="board-region">
           <BoardHead onOpenBoardSettings={openBoardSettings} />
           <QueryBar onOpenViewSettings={() => setViewSettings(true)} />
@@ -206,6 +203,7 @@ export function Workspace() {
         actions={{
           newIssue: () => setNewIssue(true),
           toggleAssistant: () => setAiOpen((v) => !v),
+          toggleSidebar: () => setSideOpen((v) => !v),
           undo: runUndo,
           openSettings: () => setSettings(true),
           openBoardSettings,

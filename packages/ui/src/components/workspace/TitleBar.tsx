@@ -88,7 +88,7 @@ export function TitleBar({
   );
 }
 
-/** Under 990px the sidebar is hidden, so this answers the same question it does. */
+/** Railed, or hidden under 990px, the sidebar is gone — so this answers the same question it does. */
 export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => void }) {
   const { board, boards, view, boardViews, items, visible, openSpace } = useWorkspace();
   const [menuOpen, setMenuOpen] = useState(false);
