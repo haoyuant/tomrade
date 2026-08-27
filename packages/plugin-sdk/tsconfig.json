@@ -45,6 +45,9 @@
       "path": "../settings"
     },
     {
+      "path": "../storage"
+    },
+    {
       "path": "../tools"
     },
     {

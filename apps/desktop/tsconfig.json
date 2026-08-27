@@ -45,6 +45,15 @@
       "path": "../../packages/settings"
     },
     {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/storage-git"
+    },
+    {
+      "path": "../../packages/storage-github"
+    },
+    {
       "path": "../../packages/tools"
     },
     {

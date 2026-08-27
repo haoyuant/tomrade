@@ -44,6 +44,9 @@ packages/projects     ctx.projects
 packages/tools        ctx.tools        one registry, guarded execute
 packages/llm          ctx.llm          the LLM seam (OpenAI-compatible by default, FakeLlm for tests)
 packages/settings     ctx.settings     file-backed; sections registered by zod schema
+packages/storage      ctx.storage      where a project's shareable copy lives; the text artifact; flush/refresh
+packages/storage-git  —                a git repository as a destination (the base the hosting providers use)
+packages/storage-github —              GitHub: repository discovery and creation on top of storage-git
 packages/assistant    ctx.assistant    chat routing over ctx.tools; extract / dedup / gap workflows
 packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
 packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
