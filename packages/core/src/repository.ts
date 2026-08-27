@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
-import { ConflictError, HumanLockedError, NotFoundError } from "./errors.js";
+import { ConflictError, HumanLockedError, NotFoundError, PurgeNotPermittedError } from "./errors.js";
 import { appendOplog, rowToEntry, type OplogRow } from "./oplog.js";
 import type { Author, CreateItemInput, Item, ItemKind, ItemStatus, ListItemsFilter, OplogEntry, Patch, Priority, Provenance } from "./types.js";
 
@@ -233,6 +233,59 @@ export class ItemsRepository {
       this.db.prepare("UPDATE items SET parent_id = NULL WHERE parent_id = ?").run(id);
       this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
       appendOplog(this.db, "item", "delete", id, existing.version, { ...existing, blockedBy }, null, by, Date.now());
+    });
+    tx();
+  }
+
+  /**
+   * Permanent, human-only destroy. `delete` is the reversible one — it leaves a
+   * snapshot undo restores from. This leaves nothing: the item's own oplog rows
+   * go with it, so no earlier `update` snapshot can put the row back either, and
+   * the tombstone it appends carries the key for the audit line and nothing that
+   * could rebuild the issue. `undoLast` walks straight past a purge.
+   *
+   * Children are released, never destroyed with the parent — the tombstone
+   * records which ones, because that reparenting is the one part of a purge
+   * that touches rows the human never named and cannot be read back afterwards.
+   */
+  purge(id: string, by: Author, opts: { baseVersion?: number } = {}): void {
+    // The reversibility promise is what makes an agent write safe to apply
+    // immediately, so the write that cannot be reversed is closed to agents in
+    // the class that owns the rule, not just at the IPC boundary.
+    if (by !== "human") throw new PurgeNotPermittedError(id, by);
+    const existing = this.get(id);
+    if (!existing) throw new NotFoundError(id);
+    // A confirmation is a promise about the issue the human just read. An agent
+    // can rewrite it through the shared repository while the sheet is open, so
+    // the same staleness check every other write makes is what keeps that
+    // promise — and here there is no undo to fall back on.
+    if (opts.baseVersion !== undefined && opts.baseVersion !== existing.version) {
+      throw new ConflictError(id, opts.baseVersion, existing.version);
+    }
+
+    const tx = this.db.transaction(() => {
+      const releasedChildren = (this.db.prepare("SELECT id FROM items WHERE parent_id = ?").all(id) as { id: string }[]).map((r) => r.id);
+      this.db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(id);
+      this.db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(id, id);
+      this.db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(id);
+      this.db.prepare("UPDATE items SET parent_id = NULL WHERE parent_id = ?").run(id);
+      this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
+      // The whole point: with its history gone there is no snapshot left to
+      // restore from, whatever anyone undoes afterwards.
+      this.db.prepare("DELETE FROM oplog WHERE entity = 'item' AND entity_id = ?").run(id);
+      // Ids, not a snapshot — they name what moved without being able to
+      // rebuild anything.
+      appendOplog(
+        this.db,
+        "item",
+        "purge",
+        id,
+        null,
+        { key: existing.key, title: existing.title, projectId: existing.projectId, releasedChildren },
+        null,
+        by,
+        Date.now()
+      );
     });
     tx();
   }

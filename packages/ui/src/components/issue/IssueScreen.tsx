@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { Item, ItemStatus } from "@tomrade/core";
 import { Icon } from "~/components/icons";
+import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { AiPanel, aiOpenDefault } from "~/components/workspace/AiPanel";
@@ -38,6 +39,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const undo = useUndo(projectId);
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [aiOpen, setAiOpen] = useState(aiOpenDefault);
 
   const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
@@ -79,6 +81,15 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         <span className="crumb-title num">{item.key}</span>
         <Spacer />
         <LockButton item={item} write={write} className="btn-ghost no-drag" />
+        <button
+          type="button"
+          className="btn btn-icon is-danger purge-btn no-drag"
+          title={`Delete ${item.key} permanently`}
+          aria-label={`Delete ${item.key} permanently`}
+          onClick={() => setDeleting(true)}
+        >
+          <Icon name="i-trash" size={15} />
+        </button>
         {next && (
           <button type="button" className="btn btn-primary no-drag" onClick={advance}>
             Move to {STATUS[next].label}
@@ -207,6 +218,15 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         <ThemeSwitch compact />
       </StatusBar>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <DeleteIssueDialog
+        item={deleting ? item : null}
+        items={items.data ?? []}
+        projectId={projectId}
+        onOpenChange={setDeleting}
+        // this route is the issue; destroying it would otherwise leave the
+        // "not in this project" fallback as the terminal state of a delete
+        onDeleted={() => void navigate({ to: "/p/$projectId", params: { projectId }, replace: true })}
+      />
     </div>
   );
 }

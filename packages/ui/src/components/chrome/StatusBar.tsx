@@ -9,7 +9,7 @@ const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").repl
 /** The most recent write, with its author — the agent collaboration at rest. */
 function Ribbon({ entry }: { entry: OplogEntry }) {
   const after = (entry.after ?? entry.before) as Item | null;
-  const verb = entry.op === "create" ? "created" : entry.op === "delete" ? "deleted" : "updated";
+  const verb = entry.op === "create" ? "created" : entry.op === "delete" ? "deleted" : entry.op === "purge" ? "permanently deleted" : "updated";
   return (
     <span className="status-item">
       {entry.by.startsWith("ai:") && <span className="ribbon-tick" />}

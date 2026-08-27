@@ -90,6 +90,22 @@ export function useDeleteItem(projectId: string) {
   });
 }
 
+/**
+ * The permanent one. `useDeleteItem` leaves a snapshot undo can restore; this
+ * leaves nothing, so the caller must have confirmed first and must never offer
+ * an Undo on the toast.
+ */
+export function usePurgeItem(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; baseVersion: number }) => api().purge(args.id, args.baseVersion),
+    // onSettled, not onSuccess: a refused purge means the sheet was rendered
+    // from a stale read, so the re-read has to happen before the user can
+    // confirm again — the same reason usePatchItem re-fetches either way.
+    onSettled: () => invalidateWorkspace(qc, projectId)
+  });
+}
+
 export function useUndo(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

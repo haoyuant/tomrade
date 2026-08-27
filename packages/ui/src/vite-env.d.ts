@@ -44,6 +44,7 @@ declare global {
       create: (input: Omit<CreateItemInput, "by">) => Promise<Item>;
       update: (id: string, patch: Patch, baseVersion: number) => Promise<Item>;
       remove: (id: string) => Promise<void>;
+      purge: (id: string, baseVersion: number) => Promise<void>;
       undo: (entityId?: string) => Promise<UndoResult | null>;
       recentOplog: (limit?: number) => Promise<OplogEntry[]>;
       historyFor: (id: string, limit?: number) => Promise<OplogEntry[]>;

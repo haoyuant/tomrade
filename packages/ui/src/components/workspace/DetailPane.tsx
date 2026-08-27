@@ -126,14 +126,17 @@ export function DetailPane({
   item,
   expanded,
   onToggleExpand,
-  onClose
+  onClose,
+  onDelete
 }: {
   item: Item;
   expanded: boolean;
   onToggleExpand: () => void;
   onClose: () => void;
+  /** Opens the confirmation. The pane never destroys anything itself. */
+  onDelete: () => void;
 }) {
-  const body = <DetailBody item={item} expanded={expanded} onToggleExpand={onToggleExpand} onClose={onClose} />;
+  const body = <DetailBody item={item} expanded={expanded} onToggleExpand={onToggleExpand} onClose={onClose} onDelete={onDelete} />;
 
   // Expanded, the pane reads as a modal overlay, so it is one: Radix supplies
   // the focus trap, the focus restore and the Escape that collapses it.
@@ -157,12 +160,14 @@ function DetailBody({
   item,
   expanded,
   onToggleExpand,
-  onClose
+  onClose,
+  onDelete
 }: {
   item: Item;
   expanded: boolean;
   onToggleExpand: () => void;
   onClose: () => void;
+  onDelete: () => void;
 }) {
   const { project, boards, items, select } = useWorkspace();
   const { write } = useIssueWriter(project.id);
@@ -176,6 +181,17 @@ function DetailBody({
         {owner && <span className="tag neutral">{owner.name}</span>}
         <Spacer />
         <LockButton item={item} write={write} />
+        {/* Sits away from Close, and carries its own class rather than another
+            bare `.btn-icon` — the head is addressed by position in places. */}
+        <button
+          type="button"
+          className="btn btn-icon is-danger purge-btn"
+          title={`Delete ${item.key} permanently`}
+          aria-label={`Delete ${item.key} permanently`}
+          onClick={onDelete}
+        >
+          <Icon name="i-trash" size={15} />
+        </button>
         <button type="button" className="btn btn-icon" title={expanded ? "Collapse" : "Expand"} aria-label={expanded ? "Collapse detail" : "Expand detail"} onClick={onToggleExpand}>
           <Icon name={expanded ? "i-shrink" : "i-expand"} size={15} />
         </button>

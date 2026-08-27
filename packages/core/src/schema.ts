@@ -114,4 +114,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_name ON labels(project_id, name);
 CREATE INDEX IF NOT EXISTS idx_item_labels_label ON item_labels(label_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON item_relations(to_item_id);
+-- Undo asks "was this id purged?" once per row it restores, and the oplog only
+-- ever grows. Partial, because tombstones are a rounding error in that table.
+CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge';
 `;

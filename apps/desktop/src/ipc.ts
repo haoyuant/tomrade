@@ -42,6 +42,9 @@ export function registerDataIpc(ctx: IpcContext): void {
   ipcMain.handle("tomrade:create", (_e, input: Omit<CreateItemInput, "by">) => ctx.items.create({ ...input, by: "human" }));
   ipcMain.handle("tomrade:update", (_e, id: string, patch: Patch, baseVersion: number) => ctx.items.update(id, patch, "human", { baseVersion }));
   ipcMain.handle("tomrade:delete", (_e, id: string) => ctx.items.delete(id, "human"));
+  // Permanent. The repository refuses any author but 'human', and the version
+  // is the one the confirmation sheet was rendered from.
+  ipcMain.handle("tomrade:purge", (_e, id: string, baseVersion?: number) => ctx.items.purge(id, "human", { baseVersion }));
   ipcMain.handle("tomrade:undo", (_e, entityId?: string) => undoLast(ctx.db, entityId));
   ipcMain.handle("tomrade:recentOplog", (_e, limit?: number) => ctx.items.recentOplog(limit ?? 20));
   ipcMain.handle("tomrade:historyFor", (_e, id: string, limit?: number) => ctx.items.historyFor(id, limit ?? 20));

@@ -90,15 +90,27 @@ export class ProjectsRepository {
   /** Delete a project and everything scoped to it. */
   remove(id: string): void {
     const tx = this.db.transaction(() => {
+      // History first. Every one of these scopes itself through a table a later
+      // statement empties, so scrubbing afterwards silently matches nothing —
+      // which is exactly what the board sweep used to do from below the boards
+      // delete, and views were never swept at all.
+      this.db.prepare("DELETE FROM oplog WHERE entity = 'item' AND entity_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
+      this.db.prepare("DELETE FROM oplog WHERE entity = 'board' AND entity_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
+      this.db
+        .prepare(
+          "DELETE FROM oplog WHERE entity = 'view' AND entity_id IN (SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = ?)"
+        )
+        .run(id);
+      // A purged item left no row to scope through — its tombstone names the
+      // project itself, and is the one oplog row that outlives its subject.
+      this.db.prepare("DELETE FROM oplog WHERE op = 'purge' AND json_extract(before_json, '$.projectId') = ?").run(id);
+
       this.db.prepare("DELETE FROM item_labels WHERE item_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
       this.db.prepare("DELETE FROM item_relations WHERE from_item_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
       this.db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = ?)").run(id);
       this.db.prepare("DELETE FROM views WHERE board_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
       this.db.prepare("DELETE FROM boards WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM labels WHERE project_id = ?").run(id);
-      // history too: an undo must not resurrect an item into a project that is gone
-      this.db.prepare("DELETE FROM oplog WHERE entity = 'item' AND entity_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM oplog WHERE entity = 'board' AND entity_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
       this.db.prepare("DELETE FROM items WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
     });

@@ -9,7 +9,21 @@ export interface UndoResult {
   summary: string;
 }
 
+/**
+ * Was this id permanently destroyed? The test is the tombstone, not whether the
+ * row is there right now: a *soft*-deleted counterpart is coming back the moment
+ * someone undoes that delete, so a snapshot naming it must still round-trip.
+ * Only a purge is forever, and only a purge may drop the edge.
+ */
+const wasPurged = (db: Db, id: string) => !!db.prepare("SELECT 1 FROM oplog WHERE op = 'purge' AND entity_id = ?").get(id);
+
 function restoreItem(db: Db, item: Item): void {
+  // A snapshot written before a purge can still name the epic or the blocked
+  // issue that purge destroyed. Restoring the issue must not restore a dangling
+  // edge with it — that is how a purged ticket leaks back in as a parent nothing
+  // resolves or a relation the board cannot render.
+  const parentId = item.parentId && wasPurged(db, item.parentId) ? null : item.parentId;
+
   db.prepare(
     `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
      VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)
@@ -28,7 +42,7 @@ function restoreItem(db: Db, item: Item): void {
     kind: item.kind,
     status: item.status,
     priority: item.priority,
-    parentId: item.parentId,
+    parentId,
     rank: item.rank,
     updatedAt: item.updatedAt,
     updatedBy: item.updatedBy,
@@ -46,9 +60,11 @@ function restoreItem(db: Db, item: Item): void {
   // from the snapshot. INSERT OR IGNORE keeps this safe for an update snapshot,
   // where the edges were never removed.
   for (const blocked of item.blocks ?? []) {
+    if (wasPurged(db, blocked)) continue;
     db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(item.id, blocked);
   }
   for (const blocker of (item as ItemSnapshot).blockedBy ?? []) {
+    if (wasPurged(db, blocker)) continue;
     db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(blocker, item.id);
   }
 }
@@ -108,6 +124,9 @@ function restoreView(db: Db, view: View & { ranks?: { item_id: string; rank: num
     updatedAt: view.updatedAt
   });
   for (const r of view.ranks ?? []) {
+    // the view outlived the issue: restoring its order must not re-seat a row
+    // for something permanently gone
+    if (wasPurged(db, r.item_id)) continue;
     db.prepare("INSERT OR IGNORE INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?)").run(view.id, r.item_id, r.rank);
   }
 }
@@ -138,11 +157,15 @@ function restoreBoard(db: Db, board: Board): void {
 /**
  * Walk the oplog backwards, newest first, across every entity it records.
  * The entry is consumed, so a second call reverts the write before it.
+ *
+ * A `purge` tombstone is not a write to walk back: it carries no snapshot and
+ * the entity's own history went with it. Undo steps straight over one to the
+ * write before it, and the tombstone stays in the log as the audit trail.
  */
 export function undoLast(db: Db, entityId?: string): UndoResult | null {
   const row = entityId
-    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? ORDER BY seq DESC LIMIT 1").get(entityId) as OplogRow | undefined)
-    : (db.prepare("SELECT * FROM oplog ORDER BY seq DESC LIMIT 1").get() as OplogRow | undefined);
+    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op != 'purge' ORDER BY seq DESC LIMIT 1").get(entityId) as OplogRow | undefined)
+    : (db.prepare("SELECT * FROM oplog WHERE op != 'purge' ORDER BY seq DESC LIMIT 1").get() as OplogRow | undefined);
   if (!row) return null;
 
   const entry = rowToEntry(row);

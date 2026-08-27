@@ -20,6 +20,17 @@ export class NotFoundError extends Error {
   }
 }
 
+/**
+ * The permanent delete refused because the caller is not a human. Every AI write
+ * is reversible by design, so the one write undo cannot reach is closed to them.
+ */
+export class PurgeNotPermittedError extends Error {
+  constructor(public readonly itemId: string, public readonly by: string) {
+    super(`Item ${itemId} may only be permanently deleted by a human; ${by} must use the reversible delete`);
+    this.name = "PurgeNotPermittedError";
+  }
+}
+
 /** A destructive write refused because something still depends on the target. */
 export class InUseError extends Error {
   constructor(

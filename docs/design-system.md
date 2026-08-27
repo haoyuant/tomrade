@@ -14,7 +14,7 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 |---|---|
 | Tokens, base, every component class | `packages/ui/src/styles/app.css` |
 | Tailwind + shadcn token aliases | same file, the two `@theme` blocks |
-| Icon sprite (41 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
+| Icon sprite (42 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
 | Domain vocabulary: statuses, priorities, grouping, the live query | `packages/ui/src/lib/domain.ts` |
 | Primitives on Radix, styled by the design's classes | `packages/ui/src/components/ui/` |
 | Theme resolution and the crossfade | `packages/ui/src/lib/theme.tsx` |
@@ -86,10 +86,29 @@ AI writes are refused on a locked item's fields), not about staleness.
 
 **Nothing destructive strands a row.** A board that still owns issues refuses to
 be deleted, and so does undoing the creation of a board work has since been moved
-onto — `InUseError` carries the count. Deleting an epic releases its children;
-deleting a project takes its oplog with it; a delete snapshot carries the item's
-labels and its relations in *both* directions, because the incoming edges live on
-the other row.
+onto — `InUseError` carries the count. Deleting *or purging* an epic releases its
+children; deleting a project takes its oplog with it — items, boards, views and
+any purge tombstone naming it, which is why those sweeps run *before* the rows
+they scope through are deleted; a delete snapshot carries the item's labels and
+its relations in *both* directions, because the incoming edges live on the other
+row.
+
+**Reversible by default; permanent only on purpose.** Agents get `delete`, which
+leaves the snapshot undo restores from. Only a human reaches `purge`, and the
+repository refuses any other author rather than trusting the IPC boundary to.
+A purge removes the item's *own* oplog rows and leaves one tombstone carrying
+`{key, title, projectId, releasedChildren}` — enough to name what happened, never
+enough to rebuild it — so no earlier `update` snapshot can put the row back
+either. `undoLast` walks straight past a tombstone to the write before it. The
+confirmation asserts the version it was rendered from, because a promise about a
+title an agent has since rewritten is not a confirmation, and here there is no
+undo to fall back on.
+
+The corollary nothing in the compiler enforces: a *surviving* snapshot can still
+name a purged row. `restoreItem` therefore nulls a dangling `parent_id` and skips
+a dangling edge — testing the tombstone, not whether the row is there right now,
+because a *soft*-deleted counterpart is coming back the moment someone undoes
+that delete and must still round-trip.
 
 **Order is written in the domain the board sorts by.** `view_item_rank` is
 sparse, so a neighbour may still be ordered by `items.rank`; a drop computes its
@@ -106,10 +125,10 @@ on the field write, so a refused move leaves no rank behind.
 | `⌘P` | Project switcher |
 | `⌘J` | Toggle the assistant panel |
 | `⌘,` | Settings |
-| `⌘Z` | Undo the last write, agent or human |
+| `⌘Z` | Undo the last write, agent or human — a permanent delete is not a write it can reach |
 | `Enter` / `Space` | Open the focused card |
 | `←` / `→` | Move the focused card one column |
-| `Esc` | Close, innermost first — dialog → expanded detail → detail pane |
+| `Esc` | Close, innermost first — dialog → expanded detail → detail pane. On the delete confirmation it cancels, never confirms |
 
 ## Accessibility floor
 
@@ -140,6 +159,8 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 
 `pnpm --filter @tomrade/desktop test:ui` drives the real UI against real
 repositories over a throwaway database seeded with the prototype's sample
-project (`apps/desktop/scripts/seed.mjs`). It asserts 81 behaviours and writes
+project (`apps/desktop/scripts/seed.mjs`). It asserts 120 behaviours and writes
 a screenshot per screen and per theme into `apps/desktop/scripts/shots/`.
-It needs the dev server up: `pnpm dev:ui`.
+It needs the dev server up (`pnpm dev:ui`) *and* a built shell — it drives
+`apps/desktop/dist`, so a new IPC channel is invisible to it until
+`pnpm --filter @tomrade/desktop build` has run.
