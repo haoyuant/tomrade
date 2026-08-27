@@ -75,6 +75,16 @@ const run = async () => {
       i.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     })()`);
+  /* The editable fields are native <select>s, and React tracks the last value
+     it wrote there too — so the option has to be set through the setter. */
+  const pick = (nodeExpr, value) =>
+    $(`(() => {
+      const s = ${nodeExpr};
+      if (!s) return false;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)});
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
   /* Radix opens menus on pointerdown, so a bare .click() never reaches them. */
   const press = (selector) =>
     $(`(() => {
@@ -310,9 +320,70 @@ const run = async () => {
   await $(`document.querySelector('.card').click();true`);
   await sleep(900);
   check("a card opens the detail pane", (await $(`!!document.querySelector('.detail')`)) === true);
-  check("the detail prints the field strip", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 6);
+  check("the detail prints the field strip", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 7);
   check("the activity ledger reads the oplog", (await $(`document.querySelectorAll('.detail .ledger-row').length`)) > 0);
+  check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .fsel').length`)) === 4);
   await shot("09-detail-docked");
+
+  // ── editing an issue in place ────────────────────────────────────────
+  // Every field goes through the same optimistic-lock write as an agent's,
+  // so the assertions are made against the repository, not the DOM.
+  const openKey = await $(`document.querySelector('.detail .card-id')?.textContent`);
+  const open = () => repos.items.list({ projectId: project.id }).find((i) => i.key === openKey);
+  const opened = open();
+
+  const wantStatus = opened.status === "verifying" ? "doing" : "verifying";
+  await pick(`document.querySelectorAll('.detail .fsel')[0]`, wantStatus);
+  await sleep(900);
+  check("the status field writes to the issue", open().status === wantStatus);
+  check("the edit bumped the version", open().version === opened.version + 1);
+  check("the edit is one reversible oplog row", repos.items.historyFor(opened.id, 1)[0]?.op === "update");
+
+  const wantPriority = opened.priority === 4 ? "1" : "4";
+  await pick(`document.querySelectorAll('.detail .fsel')[1]`, wantPriority);
+  await sleep(900);
+  check("the priority field writes to the issue", String(open().priority) === wantPriority);
+
+  await press(`document.querySelector('.detail .lab-add')`);
+  await sleep(400);
+  check("the label field offers an input", (await $(`!!document.querySelector('.detail .lab-in')`)) === true);
+  await typeInto(".detail .lab-in", "regression");
+  await $(`document.querySelector('.detail .lab-in').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  await sleep(900);
+  check("a label typed into the field lands on the issue", open().labels.includes("regression"));
+
+  await press(`document.querySelector('.detail .lab .lab-x')`);
+  await sleep(900);
+  check("a label chip can be taken back off", open().labels.length === opened.labels.length);
+
+  await press(`document.querySelector('.detail-title .inline-edit')`);
+  await sleep(400);
+  check("the title becomes a textarea in place", (await $(`!!document.querySelector('textarea.detail-title')`)) === true);
+  await $(`(() => {
+    const t = document.querySelector('textarea.detail-title');
+    t.value = 'Edited by the regression harness';
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return true;
+  })()`);
+  await sleep(900);
+  check("Enter commits the retitle", open().title === "Edited by the regression harness");
+
+  await press(`document.querySelector('.detail-title .inline-edit')`);
+  await sleep(400);
+  await $(`(() => {
+    const t = document.querySelector('textarea.detail-title');
+    t.value = 'Discarded';
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return true;
+  })()`);
+  await sleep(700);
+  check("Escape discards the edit instead of committing it", open().title === "Edited by the regression harness");
+
+  const lockedBefore = open().humanLocked;
+  await press(`document.querySelector('.detail-head .btn-ghost')`);
+  await sleep(900);
+  check("the head toggles the human lock", open().humanLocked === !lockedBefore);
+
   await $(`document.querySelector('.detail .btn-icon').click();true`);
   await sleep(700);
   check("the detail expands to an overlay", (await $(`!!document.querySelector('.detail.expanded')`)) === true);
@@ -468,7 +539,8 @@ const run = async () => {
   await sleep(1600);
   check("the issue route renders the standalone sheet", (await $(`!!document.querySelector('.issue-wrap')`)) === true);
   check("the ledger names the write, not just 'updated'", (await $(`[...document.querySelectorAll('.ledger-txt')].some(n => /locked title and body|set status to/.test(n.textContent))`)) === true);
-  check("the field strip lays out horizontally", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 6);
+  check("the field strip lays out horizontally", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 8);
+  check("the standalone sheet is editable too", (await $(`document.querySelectorAll('.issue-wrap .fsel').length`)) === 4);
   check("a locked issue explains the lock", (await $(`!!document.querySelector('.lockbar')`)) === true);
   check("blocked issues are listed as relations", (await $(`document.querySelectorAll('.rel-row').length`)) === 3);
   await shot("20-issue-detail");

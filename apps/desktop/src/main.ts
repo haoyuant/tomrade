@@ -159,6 +159,19 @@ function createWindow(): void {
     }
   });
 
+  /* The traffic lights sit inside the renderer's own header (hiddenInset), so
+     the header has to keep a gutter for them — but only while windowed: in
+     full screen macOS hands them back to the auto-hiding menu bar. Only this
+     window is frameless, so the shell tells the page rather than the page
+     guessing. */
+  const sendChrome = (): void => {
+    if (win.isDestroyed()) return;
+    win.webContents.send("tomrade:chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen() });
+  };
+  win.webContents.on("did-finish-load", sendChrome);
+  win.on("enter-full-screen", sendChrome);
+  win.on("leave-full-screen", sendChrome);
+
   if (DEV_SERVER_URL) {
     void win.loadURL(DEV_SERVER_URL);
   } else {

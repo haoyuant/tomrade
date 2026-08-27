@@ -5,12 +5,22 @@ import { Icon } from "~/components/icons";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { AiPanel, aiOpenDefault } from "~/components/workspace/AiPanel";
-import { Eyebrow, PriorityGlyph, Spacer, StatusMark, Tag } from "~/components/ui/atoms";
+import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { LedgerRow } from "~/components/workspace/DetailPane";
-import { PRIORITY_LABEL, PROVENANCE, STATUS, agoLabel, provenanceOf } from "~/lib/domain";
-import { useBoards, useHistory, useItems, usePatchItem, useUndo } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import {
+  BoardField,
+  EpicField,
+  IssueBody,
+  IssueTitle,
+  LabelsField,
+  LockButton,
+  PriorityField,
+  StatusField,
+  useIssueWriter
+} from "~/components/issue/fields";
+import { PROVENANCE, STATUS, agoLabel, provenanceOf } from "~/lib/domain";
+import { useBoards, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
 const FLOW: ItemStatus[] = ["backlog", "todo", "doing", "verifying", "done"];
@@ -22,10 +32,10 @@ const nextStatus = (status: ItemStatus): ItemStatus | null => {
 export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: string }) {
   const items = useItems(projectId);
   const boards = useBoards(projectId);
+  const labels = useLabels(projectId);
   const history = useHistory(items.data?.find((i) => i.id === itemId || i.key === itemId)?.id);
-  const patch = usePatchItem(projectId);
+  const { write } = useIssueWriter(projectId);
   const undo = useUndo(projectId);
-  const toast = useToast();
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(aiOpenDefault);
@@ -50,26 +60,13 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   }
 
   const board = boards.data?.find((b) => b.id === item.boardId);
-  const epic = item.parentId ? items.data?.find((i) => i.id === item.parentId) : undefined;
+  const epics = (items.data ?? []).filter((i) => i.kind === "epic");
   const blocks = item.blocks.map((id) => items.data?.find((i) => i.id === id)).filter((i): i is Item => !!i);
   const prov = provenanceOf(item);
   const next = nextStatus(item.status);
 
   const advance = () => {
-    if (!next) return;
-    patch.mutate(
-      { id: item.id, patch: { status: next }, baseVersion: item.version },
-      {
-        onSuccess: () => toast({ body: <>Moved <span className="num">{item.key}</span> to {STATUS[next].label}</>, onUndo: () => undo.mutate(item.id) }),
-        // a refused write must say so; react-query swallows the rejection otherwise
-        onError: (err) =>
-          toast({
-            body: /conflict/i.test(err.message)
-              ? <>An agent wrote to <span className="num">{item.key}</span> first — it re-read, so try again.</>
-              : err.message
-          })
-      }
-    );
+    if (next) write(item, { status: next }, <>Moved <span className="num">{item.key}</span> to {STATUS[next].label}</>);
   };
 
   return (
@@ -81,6 +78,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         <span className="crumb-sep">/</span>
         <span className="crumb-title num">{item.key}</span>
         <Spacer />
+        <LockButton item={item} write={write} className="btn-ghost no-drag" />
         {next && (
           <button type="button" className="btn btn-primary no-drag" onClick={advance}>
             Move to {STATUS[next].label}
@@ -94,37 +92,49 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
       <div className="workspace">
         <main className="sheet">
           <div className="issue-wrap">
+            {/* Epic and labels used to be read-only chips here; they are fields
+                now, so the row carries identity only and there is one truth. */}
             <div className="row" style={{ gap: 7 }}>
               <span className="card-id">{item.key}</span>
-              {epic && <Tag>{epic.title}</Tag>}
-              {item.labels.map((l) => (
-                <Tag key={l} tone="faint">
-                  {l}
-                </Tag>
-              ))}
             </div>
-            <h1 className="issue-title">{item.title}</h1>
+            <IssueTitle item={item} write={write} heading="h1" />
 
             <div className="fieldstrip">
               <span className="fs-item">
                 <span className="fs-k">Status</span>
                 <span className="fs-v">
-                  <StatusMark status={item.status} size={13} /> {STATUS[item.status].label}
+                  <StatusField item={item} write={write} />
                 </span>
               </span>
               <span className="fs-item">
                 <span className="fs-k">Priority</span>
                 <span className="fs-v">
-                  <PriorityGlyph priority={item.priority} size={13} always /> {PRIORITY_LABEL[item.priority]}
+                  <PriorityField item={item} write={write} />
                 </span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Kind</span>
-                <span className="fs-v">{item.kind === "epic" ? "Epic" : "Ticket · one PR"}</span>
+                <span className="fs-k">Epic</span>
+                <span className="fs-v">
+                  <EpicField item={item} write={write} epics={epics} />
+                </span>
+              </span>
+              <span className="fs-item">
+                <span className="fs-k">Labels</span>
+                <span className="fs-v">
+                  <LabelsField item={item} write={write} vocabulary={labels.data ?? []} />
+                </span>
               </span>
               <span className="fs-item">
                 <span className="fs-k">Board</span>
-                <span className="fs-v">{board?.name ?? "—"}</span>
+                <span className="fs-v">
+                  <BoardField item={item} write={write} boards={boards.data ?? []} />
+                </span>
+              </span>
+              {/* Kind is structure: an epic names a column, so it is not a field
+                  you flip in passing. */}
+              <span className="fs-item">
+                <span className="fs-k">Kind</span>
+                <span className="fs-v">{item.kind === "epic" ? "Epic" : "Ticket · one PR"}</span>
               </span>
               <span className="fs-item">
                 <span className="fs-k">Version</span>
@@ -151,7 +161,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             )}
 
             <div className="body-prose">
-              <p>{item.body ?? "No description yet."}</p>
+              <IssueBody item={item} write={write} className="bp-body" />
               {blocks.length > 0 && (
                 <>
                   <h3>Blocks</h3>

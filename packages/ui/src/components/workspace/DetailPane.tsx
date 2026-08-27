@@ -1,8 +1,20 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { Item, OplogEntry } from "@tomrade/core";
 import { Icon } from "~/components/icons";
-import { Eyebrow, PriorityGlyph, Spacer, StatusMark, Tag } from "~/components/ui/atoms";
-import { PRIORITY_LABEL, PROVENANCE, STATUS, agoLabel, describeWrite, ledgerMarkOf, provenanceOf } from "~/lib/domain";
+import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
+import {
+  BoardField,
+  EpicField,
+  IssueBody,
+  IssueTitle,
+  LabelsField,
+  LockButton,
+  PriorityField,
+  StatusField,
+  useIssueWriter,
+  type IssueWrite
+} from "~/components/issue/fields";
+import { PROVENANCE, agoLabel, describeWrite, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useHistory } from "~/lib/queries";
 import { useWorkspace } from "./context";
 
@@ -57,41 +69,39 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
   );
 }
 
-export function FieldStrip({ item }: { item: Item }) {
-  const { epicNames } = useWorkspace();
+export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
+  const { epics, boards, labels } = useWorkspace();
   const prov = provenanceOf(item);
   return (
     <dl className="fieldstrip">
       <div className="field-row">
         <dt>Status</dt>
         <dd>
-          <StatusMark status={item.status} size={13} />
-          {STATUS[item.status].label}
+          <StatusField item={item} write={write} />
         </dd>
       </div>
       <div className="field-row">
         <dt>Priority</dt>
         <dd>
-          <PriorityGlyph priority={item.priority} size={13} always />
-          {PRIORITY_LABEL[item.priority]}
+          <PriorityField item={item} write={write} />
         </dd>
       </div>
       <div className="field-row">
         <dt>Epic</dt>
-        <dd>{item.parentId ? <Tag>{epicNames.get(item.parentId) ?? "Epic"}</Tag> : <span className="meta-txt">None</span>}</dd>
+        <dd>
+          <EpicField item={item} write={write} epics={epics} />
+        </dd>
       </div>
       <div className="field-row">
         <dt>Labels</dt>
         <dd>
-          {item.labels.length ? (
-            item.labels.map((l) => (
-              <Tag key={l} tone="faint">
-                {l}
-              </Tag>
-            ))
-          ) : (
-            <span className="meta-txt">None</span>
-          )}
+          <LabelsField item={item} write={write} vocabulary={labels} />
+        </dd>
+      </div>
+      <div className="field-row">
+        <dt>Board</dt>
+        <dd>
+          <BoardField item={item} write={write} boards={boards} />
         </dd>
       </div>
       <div className="field-row">
@@ -154,7 +164,8 @@ function DetailBody({
   onToggleExpand: () => void;
   onClose: () => void;
 }) {
-  const { boards, items, select } = useWorkspace();
+  const { project, boards, items, select } = useWorkspace();
+  const { write } = useIssueWriter(project.id);
   const owner = boards.find((b) => b.id === item.boardId);
   const blocks = item.blocks.map((id) => items.find((i) => i.id === id)).filter((i): i is Item => !!i);
 
@@ -164,6 +175,7 @@ function DetailBody({
         <span className="card-id">{item.key}</span>
         {owner && <span className="tag neutral">{owner.name}</span>}
         <Spacer />
+        <LockButton item={item} write={write} />
         <button type="button" className="btn btn-icon" title={expanded ? "Collapse" : "Expand"} aria-label={expanded ? "Collapse detail" : "Expand detail"} onClick={onToggleExpand}>
           <Icon name={expanded ? "i-shrink" : "i-expand"} size={15} />
         </button>
@@ -172,12 +184,12 @@ function DetailBody({
         </button>
       </div>
       <div className="detail-body">
-        <h2 className="detail-title">{item.title}</h2>
-        <FieldStrip item={item} />
+        <IssueTitle item={item} write={write} heading="h2" />
+        <FieldStrip item={item} write={write} />
         <div className="detail-cols">
           <div className="detail-main">
             {item.humanLocked && <LockBar />}
-            <p className="issue-body">{item.body ?? "No description yet."}</p>
+            <IssueBody item={item} write={write} className="issue-body" />
             {blocks.length > 0 && (
               <section className="detail-sect">
                 <Eyebrow>Blocks</Eyebrow>

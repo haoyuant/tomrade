@@ -27,6 +27,10 @@ type AiChatResult =
   | { kind: "tool"; tool: string; result: unknown; reply?: string }
   | { kind: "error"; tool?: string; error: string };
 
+interface WindowChrome {
+  trafficLights: boolean;
+}
+
 interface AiExtractResult {
   candidates: ExtractCandidate[];
   dedup: Record<number, { isDuplicate: boolean; duplicates: { id: string; reason: string }[] }>;
@@ -71,6 +75,7 @@ declare global {
       aiGap: (requirement: string) => Promise<GapCandidate[]>;
       aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null, boardId?: string) => Promise<Item>;
       aiChat: (text: string, history: ChatTurn[], projectId?: string) => Promise<AiChatResult>;
+      onWindowChrome: (cb: (state: WindowChrome) => void) => () => void;
     };
   }
 }

@@ -104,6 +104,16 @@
   --traffic-inset: var(--space-3);
 }
 
+/* Windowed on macOS the traffic lights are drawn *inside* our header, so the
+   bar owes them room; in full screen they retreat into the auto-hiding menu
+   bar and a reserved gutter would read as a dent. The shell flips the
+   attribute (lib/window-chrome.ts) and every `.titlebar` follows. */
+html[data-traffic-lights="on"] {
+  /* the 14px trafficLightPosition offset (see main.ts) + the ~60px the three
+     buttons span + the same 12px gutter the rest of the bar uses */
+  --traffic-inset: 86px;
+}
+
 /* ─── dark "ink" — derived with oklch() from kami's declared darks ──── */
 .dark {
   --bg: #141413;
@@ -750,6 +760,103 @@ strong { font-weight: 500; }
 .rel-row:hover { color: var(--fg); }
 .rel-row:focus-visible { box-shadow: var(--focus-ring); }
 
+/* ─── editable fields ─────────────────────────────────────────────────
+ * Every field on an issue is writable, but the detail is read far more
+ * often than it is edited — so a field renders as its own value and only
+ * becomes a control under the cursor. Nothing shifts when it does: the
+ * hover state is a background and a border, never a size.
+ *
+ * The enum pickers are native `<select>`s on purpose. The field strip
+ * renders inside a Radix dialog when the pane is expanded, and an OS menu
+ * neither fights that focus trap nor gets clipped by the overlay, which
+ * establishes a containing block with its own `overflow: hidden`. */
+.fset { position: relative; display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
+.fsel {
+  appearance: none; -webkit-appearance: none;
+  max-width: 100%; min-width: 0;
+  margin-inline-start: -5px; padding: 2px 19px 2px 5px;
+  font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+  color: inherit; background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  text-overflow: ellipsis; cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+}
+.fsel:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
+.fsel:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
+/* the chevron is the affordance, so it appears with the hover state and
+   never occupies width the resting field has to reserve */
+.fchev {
+  position: absolute; right: 4px; color: var(--meta); pointer-events: none;
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.fset:hover .fchev, .fsel:focus-visible ~ .fchev { opacity: 1; }
+
+/* labels — chips that can be taken off, and one input that puts them on */
+.labset { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.lab { gap: 3px; padding-right: 3px; }
+.lab-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; padding: 0;
+  border: 0; border-radius: var(--radius-xs);
+  background: transparent; color: currentColor; opacity: 0.55; cursor: pointer;
+  transition: opacity var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+/* a wash of the chip's own text colour, so the hover reads on every theme's
+   tag background rather than only on the light one */
+.lab-x:hover { opacity: 1; background: color-mix(in oklch, currentColor 20%, transparent); }
+.lab-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.lab-add {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border: 1px dashed var(--border); border-radius: var(--radius-xs);
+  background: transparent; color: var(--meta);
+  font-family: var(--font-display); font-weight: 500; font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label); line-height: 1.5; cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.lab-add:hover { color: var(--fg); border-color: var(--meta); }
+.lab-add:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.lab-in {
+  width: 9ch; padding: 1px 6px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: var(--radius-xs);
+  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
+}
+.lab-in:focus { outline: none; box-shadow: var(--focus-ring); }
+
+/* click-to-edit text — the read view is a button, so the whole line is one
+   hit target and one tab stop, and the write view is a textarea that grows.
+ *
+ * Both views carry the class of the text they stand in for (`.detail-title`,
+ * `.issue-body`, …), which is what keeps the type from reflowing when the
+ * field becomes editable. The font reset that a button and a textarea need
+ * against the UA default is therefore declared at zero specificity — `:where`
+ * — so that co-class still wins and a title does not edit at body size. */
+:where(.inline-edit, .inline-ta) { font: inherit; letter-spacing: inherit; }
+.inline-edit, .inline-ta {
+  display: block;
+  /* the 12px the negative margin reclaims, so the hit area can be padded
+     without the text starting 6px in from everything above it */
+  width: calc(100% + 12px);
+  margin: -3px -6px; padding: 3px 6px;
+  text-align: left; border-radius: var(--radius-sm);
+}
+.inline-edit {
+  color: inherit; background: transparent; border: 1px solid transparent;
+  cursor: text; white-space: pre-wrap;
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.inline-edit:hover { background: var(--surface-warm); border-color: var(--border); }
+.inline-edit:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.inline-hint { color: var(--meta); font-style: italic; }
+.inline-ta {
+  color: var(--fg); background: var(--surface);
+  border: 1px solid var(--accent);
+  overflow: hidden; resize: none;
+}
+.inline-ta:focus { outline: none; box-shadow: var(--focus-ring); }
+
 /* ─── AI panel ───────────────────────────────────────────────────────── */
 .ai {
   width: 418px; flex-shrink: 0; position: relative;
@@ -1071,6 +1178,7 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
   border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
 }
 .body-prose { margin-top: var(--space-6); font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg-2); }
+.bp-body { max-width: 66ch; }
 .body-prose h3 { font-size: var(--text-lg); color: var(--fg); margin: var(--space-6) 0 var(--space-2); }
 .body-prose p + p { margin-top: var(--space-3); }
 .code {
