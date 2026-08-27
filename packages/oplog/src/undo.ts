@@ -1,0 +1,191 @@
+import type { Db } from "@tomrade/db";
+import { InUseError, type Board, type Item, type OplogEntry, type UndoResult, type View } from "@tomrade/domain";
+import { rowToEntry, type OplogRow } from "./rows.js";
+
+interface ItemSnapshot extends Item {
+  /** Present on a delete snapshot: the edges pointing *at* this item. */
+  blockedBy?: string[];
+}
+
+interface ViewRow {
+  id: string;
+  board_id: string;
+  name: string;
+  icon: string;
+  group_by: string;
+  columns_json: string;
+  filter_json: string;
+  wip_json: string;
+  rank: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface BoardSnapshot extends Board {
+  views?: ViewRow[];
+}
+
+interface ViewSnapshot extends View {
+  ranks?: { item_id: string; rank: number }[];
+}
+
+/**
+ * Was this id permanently destroyed? The test is the tombstone, not whether the
+ * row exists now: a soft-deleted counterpart comes back the moment someone
+ * undoes that delete, so a snapshot naming it must still round-trip.
+ */
+export const wasPurged = (db: Db, id: string): boolean => !!db.prepare("SELECT 1 FROM oplog WHERE op = 'purge' AND entity_id = ?").get(id);
+
+function restoreItem(db: Db, item: ItemSnapshot): void {
+  // A snapshot written before a purge can still name what the purge destroyed;
+  // restoring the issue must not restore a dangling parent or edge with it.
+  const parentId = item.parentId && wasPurged(db, item.parentId) ? null : item.parentId;
+  db.prepare(
+    `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
+     VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)
+     ON CONFLICT(id) DO UPDATE SET
+       board_id = excluded.board_id, title = excluded.title, body = excluded.body, kind = excluded.kind,
+       status = excluded.status, priority = excluded.priority, parent_id = excluded.parent_id, rank = excluded.rank,
+       updated_at = excluded.updated_at, updated_by = excluded.updated_by, version = excluded.version,
+       human_locked = excluded.human_locked`
+  ).run({
+    id: item.id,
+    projectId: item.projectId,
+    boardId: item.boardId,
+    keyNum: item.keyNum,
+    title: item.title,
+    body: item.body,
+    kind: item.kind,
+    status: item.status,
+    priority: item.priority,
+    parentId,
+    rank: item.rank,
+    updatedAt: item.updatedAt,
+    updatedBy: item.updatedBy,
+    version: item.version,
+    humanLocked: item.humanLocked ? 1 : 0
+  });
+
+  db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(item.id);
+  for (const name of item.labels ?? []) {
+    const label = db.prepare("SELECT id FROM labels WHERE project_id = ? AND name = ?").get(item.projectId, name) as { id: string } | undefined;
+    if (label) db.prepare("INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)").run(item.id, label.id);
+  }
+
+  // A delete cut edges in both directions, so both are restored; INSERT OR
+  // IGNORE keeps this safe for an update snapshot where nothing was removed.
+  for (const blocked of item.blocks ?? []) {
+    if (wasPurged(db, blocked)) continue;
+    db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(item.id, blocked);
+  }
+  for (const blocker of item.blockedBy ?? []) {
+    if (wasPurged(db, blocker)) continue;
+    db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(blocker, item.id);
+  }
+}
+
+function restoreView(db: Db, view: ViewSnapshot): void {
+  db.prepare(
+    `INSERT INTO views (id, board_id, name, icon, group_by, columns_json, filter_json, wip_json, rank, created_at, updated_at)
+     VALUES (@id, @boardId, @name, @icon, @groupBy, @columns, @filter, @wip, @rank, @createdAt, @updatedAt)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name, icon = excluded.icon, group_by = excluded.group_by,
+       columns_json = excluded.columns_json, filter_json = excluded.filter_json,
+       wip_json = excluded.wip_json, rank = excluded.rank, updated_at = excluded.updated_at`
+  ).run({
+    id: view.id,
+    boardId: view.boardId,
+    name: view.name,
+    icon: view.icon,
+    groupBy: view.groupBy,
+    columns: JSON.stringify(view.columns),
+    filter: JSON.stringify(view.filter),
+    wip: JSON.stringify(view.wip),
+    rank: view.rank,
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt
+  });
+  for (const r of view.ranks ?? []) {
+    if (wasPurged(db, r.item_id)) continue;
+    db.prepare("INSERT OR IGNORE INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?)").run(view.id, r.item_id, r.rank);
+  }
+}
+
+function restoreBoard(db: Db, board: BoardSnapshot): void {
+  db.prepare(
+    `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
+     VALUES (@id, @projectId, @name, @icon, @subtitle, @across, @sort, @note, @rank, @createdAt, @updatedAt)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name, icon = excluded.icon, subtitle = excluded.subtitle,
+       note = excluded.note, rank = excluded.rank, updated_at = excluded.updated_at`
+  ).run({
+    id: board.id,
+    projectId: board.projectId,
+    name: board.name,
+    icon: board.icon,
+    subtitle: board.subtitle,
+    across: board.across ? 1 : 0,
+    sort: board.sort,
+    note: board.note,
+    rank: board.rank,
+    createdAt: board.createdAt,
+    updatedAt: board.updatedAt
+  });
+  for (const v of board.views ?? []) {
+    db.prepare(
+      `INSERT INTO views (id, board_id, name, icon, group_by, columns_json, filter_json, wip_json, rank, created_at, updated_at)
+       VALUES (@id, @board_id, @name, @icon, @group_by, @columns_json, @filter_json, @wip_json, @rank, @created_at, @updated_at)
+       ON CONFLICT(id) DO NOTHING`
+    ).run(v);
+  }
+}
+
+/**
+ * Walk the oplog backwards, newest first, across every entity it records. The
+ * entry is consumed, so a second call reverts the write before it. A purge
+ * tombstone carries no snapshot and is stepped over; it stays as the audit trail.
+ */
+export function undoLast(db: Db, entityId?: string): UndoResult | null {
+  const row = entityId
+    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op != 'purge' ORDER BY seq DESC LIMIT 1").get(entityId) as OplogRow | undefined)
+    : (db.prepare("SELECT * FROM oplog WHERE op != 'purge' ORDER BY seq DESC LIMIT 1").get() as OplogRow | undefined);
+  if (!row) return null;
+
+  const entry: OplogEntry = rowToEntry(row);
+  const named = (entry.before ?? entry.after) as { key?: string; name?: string } | null;
+  const label = named?.key ?? named?.name ?? entry.entityId;
+
+  db.transaction(() => {
+    if (entry.entity === "item") {
+      if (entry.op === "create") {
+        db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
+        db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
+        db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
+        db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
+      } else if (entry.before) {
+        restoreItem(db, entry.before as ItemSnapshot);
+      }
+    } else if (entry.entity === "board") {
+      if (entry.op === "create") {
+        const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(entry.entityId) as { n: number }).n;
+        if (owned > 0) throw new InUseError(entry.entityId, `That board now owns ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
+        db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE board_id = ?)").run(entry.entityId);
+        db.prepare("DELETE FROM views WHERE board_id = ?").run(entry.entityId);
+        db.prepare("DELETE FROM boards WHERE id = ?").run(entry.entityId);
+      } else if (entry.before) {
+        restoreBoard(db, entry.before as BoardSnapshot);
+      }
+    } else if (entry.entity === "view") {
+      if (entry.op === "create") {
+        db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
+        db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
+      } else if (entry.before) {
+        restoreView(db, entry.before as ViewSnapshot);
+      }
+    }
+    db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
+  });
+
+  const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : "Reverted";
+  return { entry, summary: `${verb} ${label}` };
+}

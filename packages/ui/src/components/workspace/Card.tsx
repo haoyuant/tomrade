@@ -1,4 +1,4 @@
-import type { Item } from "@tomrade/core";
+import type { Item } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { PriorityGlyph, ProvenanceMark, StatusMark, Tag } from "~/components/ui/atoms";
 import { timeAgo } from "~/lib/domain";
@@ -19,7 +19,8 @@ export interface CardProps {
  * a keyboard, and the tooltip is where that gets discovered.
  */
 export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardProps) {
-  const { board, boards, query, epicNames, selectedId } = useWorkspace();
+  const { board, boards, query, epicNames, selectedId, badges } = useWorkspace();
+  const marks = badges[item.id] ?? [];
   const owner = board.across ? boards.find((b) => b.id === item.boardId) : undefined;
   const epicName = item.parentId && query.group !== "epic" ? epicNames.get(item.parentId) : undefined;
 
@@ -61,12 +62,17 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
           <span className="card-date">{timeAgo(item.updatedAt)}</span>
         </span>
         <span className="card-title">{item.title}</span>
-        {(epicName || item.labels.length > 0) && (
+        {(epicName || item.labels.length > 0 || marks.length > 0) && (
           <span className="card-foot">
             {epicName && <span className="card-epic">{epicName}</span>}
             {item.labels.map((l) => (
               <Tag key={l} tone="neutral">
                 {l}
+              </Tag>
+            ))}
+            {marks.map((b) => (
+              <Tag key={b.id} tone={b.tone ?? "neutral"} title={b.title}>
+                {b.label}
               </Tag>
             ))}
           </span>

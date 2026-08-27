@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AppSettings, ThemePreference } from "@tomrade/core";
+import type { AppSettings, ThemePreference } from "@tomrade/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
 

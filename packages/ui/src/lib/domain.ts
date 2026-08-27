@@ -1,4 +1,4 @@
-import type { Board, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter } from "@tomrade/core";
+import type { Board, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter } from "@tomrade/domain";
 import type { IconId } from "~/components/icons";
 
 /** Status marks are shape-coded: each is legible in greyscale. */

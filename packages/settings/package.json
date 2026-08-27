@@ -1,0 +1,29 @@
+{
+  "name": "@tomrade/settings",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.settings \u2014 a file today, synced later; plugins register schema-described sections",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

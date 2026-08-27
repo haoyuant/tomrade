@@ -1,0 +1,28 @@
+{
+  "name": "@tomrade/projects",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.projects \u2014 the scope every board and issue lives in",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/db": "workspace:*",
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@tomrade/llm",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.llm \u2014 structured completion behind one interface; the provider is configuration",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

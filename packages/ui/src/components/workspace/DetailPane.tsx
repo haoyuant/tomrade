@@ -1,5 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import type { Item, OplogEntry } from "@tomrade/core";
+import type { Item, OplogEntry } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
 import {
@@ -15,7 +15,7 @@ import {
   type IssueWrite
 } from "~/components/issue/fields";
 import { PROVENANCE, agoLabel, describeWrite, ledgerMarkOf, provenanceOf } from "~/lib/domain";
-import { useHistory } from "~/lib/queries";
+import { useHistory, useSections } from "~/lib/queries";
 import { useWorkspace } from "./context";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
@@ -48,6 +48,44 @@ export function Ledger({ itemId }: { itemId: string }) {
         Every row above is reversible. <span className="num">⌘Z</span> walks the oplog backwards, newest first.
       </p>
     </section>
+  );
+}
+
+/** Plugin sections come as rows and text; the pane draws them with its own primitives. */
+export function PluginSections({ itemId, variant = "pane" }: { itemId: string; variant?: "pane" | "sheet" }) {
+  const sections = useSections(itemId);
+  return (
+    <>
+      {(sections.data ?? []).map((s) => {
+        const body = (
+          <>
+            {s.rows.length > 0 && (
+              <dl className="fieldstrip" style={{ marginTop: 0 }}>
+                {s.rows.map((r) => (
+                  <div className="field-row" key={r.label}>
+                    <dt>{r.label}</dt>
+                    <dd>{r.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {s.text && <p className="meta-txt detail-note">{s.text}</p>}
+          </>
+        );
+        return variant === "pane" ? (
+          <section className="detail-sect" key={s.id}>
+            <Eyebrow>{s.title}</Eyebrow>
+            {body}
+          </section>
+        ) : (
+          <div key={s.id}>
+            <hr className="rule" />
+            <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{s.title}</Eyebrow>
+            {body}
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -218,6 +256,7 @@ function DetailBody({
                 ))}
               </section>
             )}
+            <PluginSections itemId={item.id} />
           </div>
           <aside className="detail-side">
             <Ledger itemId={item.id} />

@@ -19,6 +19,8 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 | Primitives on Radix, styled by the design's classes | `packages/ui/src/components/ui/` |
 | Theme resolution and the crossfade | `packages/ui/src/lib/theme.tsx` |
 | Toasts, including the hold-on-hover countdown | `packages/ui/src/lib/toast.tsx` |
+| Every call into the main process | `packages/ui/src/lib/api.ts` + `queries.ts`, typed by the channels plugins contribute (`@tomrade/ipc`) |
+| Plugin contributions: palette commands, card badges, status items, detail sections, settings cards | rendered where each lives — `CommandPalette.tsx`, `Card.tsx`, `StatusBar.tsx`, `DetailPane.tsx`, `SettingsDialog.tsx` — from data, never from plugin code |
 
 ## Tokens
 
@@ -82,7 +84,14 @@ difference is always visible — the bar offers both ways out.
 **A supplied `baseVersion` is enforced for every author.** That is what makes
 the conflict banner real: a human drag that races an agent write is refused
 rather than silently winning. The human/AI asymmetry is about ownership (only
-AI writes are refused on a locked item's fields), not about staleness.
+AI writes are refused on a locked item's fields), not about staleness. Both
+rules are listeners on `write/pre-commit`, loaded by the `write-policy` row in
+`tomrade.yml` — the compiler will not stop you removing the row, and the tests
+in `packages/write` show what that costs.
+
+**A plugin badge is a tag, never a mark.** The card gutter belongs to
+provenance. Contributed badges render in the card foot beside the labels, in
+the tag tones the design already has; a plugin cannot put anything in the gutter.
 
 **Nothing destructive strands a row.** A board that still owns issues refuses to
 be deleted, and so does undoing the creation of a board work has since been moved
@@ -95,7 +104,8 @@ row.
 
 **Reversible by default; permanent only on purpose.** Agents get `delete`, which
 leaves the snapshot undo restores from. Only a human reaches `purge`, and the
-repository refuses any other author rather than trusting the IPC boundary to.
+write policy (`humanOnlyPurge` on `write/pre-commit`) refuses any other author
+rather than trusting the IPC boundary to.
 A purge removes the item's *own* oplog rows and leaves one tombstone carrying
 `{key, title, projectId, releasedChildren}` — enough to name what happened, never
 enough to rebuild it — so no earlier `update` snapshot can put the row back
@@ -157,10 +167,11 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 
 ## Verifying a change
 
-`pnpm --filter @tomrade/desktop test:ui` drives the real UI against real
-repositories over a throwaway database seeded with the prototype's sample
-project (`apps/desktop/scripts/seed.mjs`). It asserts 120 behaviours and writes
-a screenshot per screen and per theme into `apps/desktop/scripts/shots/`.
-It needs the dev server up (`pnpm dev:ui`) *and* a built shell — it drives
-`apps/desktop/dist`, so a new IPC channel is invisible to it until
-`pnpm --filter @tomrade/desktop build` has run.
+`pnpm --filter @tomrade/desktop test:ui` boots the same plugin tree the app
+does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port — over a
+throwaway database seeded with the prototype's sample project
+(`apps/desktop/scripts/seed.mjs`). It asserts 120 behaviours and writes a
+screenshot per screen and per theme into `apps/desktop/scripts/shots/`. It
+needs the dev server up (`pnpm dev:ui`) *and* a built backend — it loads
+`apps/desktop/dist` and every plugin's `dist`, so a new channel is invisible to
+it until `pnpm build:backend` has run.

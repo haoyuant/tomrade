@@ -1,0 +1,59 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/desktop"
+    },
+    {
+      "path": "./examples/stale"
+    },
+    {
+      "path": "./packages/assistant"
+    },
+    {
+      "path": "./packages/boards"
+    },
+    {
+      "path": "./packages/contributions"
+    },
+    {
+      "path": "./packages/db"
+    },
+    {
+      "path": "./packages/domain"
+    },
+    {
+      "path": "./packages/ipc"
+    },
+    {
+      "path": "./packages/items"
+    },
+    {
+      "path": "./packages/llm"
+    },
+    {
+      "path": "./packages/mcp"
+    },
+    {
+      "path": "./packages/oplog"
+    },
+    {
+      "path": "./packages/plugin-sdk"
+    },
+    {
+      "path": "./packages/projects"
+    },
+    {
+      "path": "./packages/settings"
+    },
+    {
+      "path": "./packages/testkit"
+    },
+    {
+      "path": "./packages/tools"
+    },
+    {
+      "path": "./packages/write"
+    }
+  ]
+}

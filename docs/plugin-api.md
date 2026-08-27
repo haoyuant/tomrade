@@ -1,0 +1,254 @@
+# Plugin API
+
+Tomrade is a [cordis](https://github.com/cordiverse/cordis) application. The
+desktop shell creates one `Context`, reads `apps/desktop/tomrade.yml`, and loads
+one plugin per row. Everything else — the database, the write path, the tool
+registry, the MCP server, the IPC channels the renderer calls — is a plugin
+that claims a key on that context. Third-party plugins use the same mechanism
+with the same rights.
+
+This document is the contract. `packages/plugin-sdk` is the import; the example
+in `examples/stale` is the documentation that compiles.
+
+## Stability
+
+- `cordis` is pinned to `4.0.0-rc.8`. The framework is a release candidate and
+  says so; so does `@tomrade/plugin-sdk`, which is `0.x`. Expect breaking
+  changes between minor versions until both are `1.0`.
+- What this file describes is what we promise. Anything reachable but not
+  written here — table shapes, private methods, event argument internals — may
+  change without notice.
+
+## Trust model
+
+Plugins run in the main process with the same rights as Tomrade itself:
+`better-sqlite3`, the filesystem, the network, and the user's API key. **This is
+not a sandbox.** What the system does guarantee:
+
+- A plugin sees only the services it names in `inject`; `ctx.foo` without
+  `foo` in `inject` throws.
+- Every write a plugin makes is attributed. Pass `by: "ai:<plugin-id>"` and it
+  is recorded in the oplog, refused on human-locked fields, and undoable like
+  any agent write. Only `"human"` may purge.
+- Every tool call passes `tools/pre-execute`, where a policy plugin can refuse it.
+- Every registration is an effect: unload the plugin and its tools, channels,
+  listeners, badges and settings cards go with it.
+
+## A plugin
+
+```ts
+import { z } from "zod";
+import { definePlugin, defineTool } from "@tomrade/plugin-sdk";
+
+export default definePlugin({
+  name: "hello",
+  inject: ["items", "tools"],
+  apply(ctx) {
+    ctx.tools.register(
+      defineTool({
+        name: "count_items",
+        title: "Count items",
+        description: "How many issues the project holds.",
+        input: z.object({ projectId: z.string().optional() }),
+        execute: ({ projectId }, inv) => ctx.items.list({ projectId: projectId ?? inv.projectId }).length
+      })
+    );
+  }
+});
+```
+
+A plugin is a function `(ctx, config)`, a class whose constructor takes
+`(ctx, config)`, or an object with `apply(ctx, config)`. `inject` lists the
+services it needs; it loads when all of them are active and unloads when one
+goes away. `Config` may be a zod schema; the row's `config` is validated
+against it before `apply` runs.
+
+Optional dependencies are nested contexts:
+
+```ts
+ctx.inject(["contributions"], (ctx) => {
+  ctx.contributions.statusItem({ id: "hello", text: () => "hello" });
+});
+```
+
+The callback runs when `contributions` appears and is unwound when it disappears.
+
+### Loading it
+
+Add a row to `tomrade.yml`, or to `<userData>/tomrade.patch.yml`, which is
+merged by `id` and can add rows the app does not ship:
+
+```yaml
+plugins:
+  - id: hello
+    name: /absolute/path/to/hello/dist/index.js
+    config: {}
+```
+
+`name` is a package name or a path relative to the file it appears in.
+`disabled: true` skips a row. `electron . --dump-config` prints every row with
+its state — `active`, `failed` with the error, `pending` with the services it is
+still waiting for, or `disabled`.
+
+## Services
+
+A **spine** service has one implementation and is assumed. A **seam** is
+expected to be swapped: provide the same key from your own plugin and every
+consumer follows.
+
+| Key | Kind | Package | Owns |
+|---|---|---|---|
+| `ctx.db` | spine | `@tomrade/db` | The SQLite connection, the core schema, `migrate()` |
+| `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast` |
+| `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations |
+| `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams and their slices |
+| `ctx.projects` | spine | `@tomrade/projects` | The container; outside the oplog and undo |
+| `ctx.tools` | spine | `@tomrade/tools` | The registry and guarded `execute` |
+| `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections |
+| `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
+| `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
+| `ctx.llm` | seam | `@tomrade/llm` | `completeJson(schema, request)`; OpenAI-compatible by default |
+| `ctx.assistant` | — | `@tomrade/assistant` | Chat routing over `ctx.tools` |
+| `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
+
+Reserved, not yet declared or provided: `ctx.agentExecutor` (delegation to
+`claude -p`, `codex exec`), `ctx.search` (FTS5, later a vector column),
+`ctx.sync`. A plugin may provide any of them today; until a first-party
+declaration lands it augments `Context` with the key itself.
+
+### Providing a seam
+
+```ts
+import { Service, type Context, type LLMProvider } from "@tomrade/plugin-sdk";
+
+class Anthropic extends Service implements LLMProvider {
+  static provide = "llm";
+  constructor(ctx: Context) { super(ctx, "llm"); }
+  async completeJson(schema, request) { /* ... */ }
+}
+```
+
+Replace the `llm` row's `name` in `tomrade.yml` and the assistant never notices.
+
+## Events
+
+Events are the policy layer. `emit` announces; `waterfall` decides — a listener
+receives `(...args, next)` and either calls `next()` to delegate or throws to
+refuse. Listeners on `write/pre-commit` must be synchronous: the commit runs
+inside a SQLite transaction.
+
+| Event | Mode | Purpose |
+|---|---|---|
+| `write/pre-commit` | waterfall | Refuse or allow a mutation before it lands. `WriteIntent` carries `entity`, `op`, `id`, `by`, `baseVersion`, `before`, `after`, `patch`. |
+| `write/committed` | emit | A durable fact: the rows and the oplog entry exist. |
+| `tools/pre-execute` | waterfall | Refuse or allow a tool call, first-party or plugin, whoever invokes it. |
+| `tools/result` | emit | The outcome of a tool call, success or failure. |
+| `settings/changed` | emit | Settings were saved; providers re-read. |
+
+The rule everything else rests on: **every mutation of an item, board or view
+passes `write/pre-commit` and lands an oplog row.** `@tomrade/write` enforces the
+default policy — human lock, human-only purge, optimistic version — as three
+plugins. Remove the row and the guarantees are gone, which is what
+`packages/write/tests` proves. A repository method that skips `write()` is a
+bug; the helper asserts that a listener either refused or delegated.
+
+Exceptions, deliberately: projects are managed by humans through the UI and sit
+outside the oplog; `views.setRank`, `items.addRelation` and `boards.moveItems`
+are not logged today.
+
+## Tools
+
+```ts
+ctx.tools.register(defineTool({ name, title, description, input: z.object({...}), execute(args, invocation) }));
+```
+
+Names are global and unique. `execute` receives validated `args` and
+`{ by, projectId }`; use `inv.by` as the author of any write and
+`inv.projectId` as the default scope. A registered tool appears on every
+surface at once: the in-app assistant's prompt is generated from
+`ctx.tools.describe()`, and each MCP session registers `tomrade.<name>` from
+`ctx.tools.list()`. There is no per-surface code to write.
+
+## Storage
+
+```ts
+ctx.db.migrate("hello", [
+  { version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_hello_notes (id TEXT PRIMARY KEY, body TEXT)" },
+  { version: 2, up: (db) => db.exec("ALTER TABLE plugin_hello_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0") }
+]);
+```
+
+Each namespace keeps its own version counter in `plugin_migrations`. SQL
+migrations may only create, alter or drop tables named `plugin_<namespace>_*`;
+the registry refuses anything else. Read and write your tables through
+`ctx.db.prepare()`; write core tables only through their services, so the
+policy and the oplog see it.
+
+## Settings
+
+```ts
+ctx.settings.register({
+  id: "hello",
+  title: "Hello",
+  description: "Shown under the card title.",
+  schema: z.object({ greeting: z.string() }),
+  defaults: { greeting: "hi" }
+});
+const { greeting } = ctx.settings.get().hello as { greeting: string };
+```
+
+`get()` returns every registered section with defaults filled in; `set()`
+validates each registered section against its schema and persists the file.
+The settings dialog draws a card for every section it does not lay out by hand,
+from the schema's JSON Schema: strings, numbers, booleans and enums; a string
+with `format: "password"` is masked.
+
+## Contributions
+
+Declarative only. A plugin contributes data and the renderer draws it with the
+design system's own primitives — no bundling, no CSP work, on-design by
+construction.
+
+```ts
+ctx.contributions.command({ id: "hello.say", title: "Say hello", group: "Hello", run: ({ itemId }) => ({ toast: `hello ${itemId}` }) });
+ctx.contributions.badge({ id: "hello", compute: (items) => ({ [items[0]?.id]: [{ id: "hi", label: "hi", tone: "strong" }] }) });
+ctx.contributions.statusItem({ id: "hello", text: ({ projectId }) => "hello" });
+ctx.contributions.section({ id: "hello", title: "Hello", render: (item) => ({ rows: [{ label: "Key", value: item.key }] }) });
+```
+
+Commands appear in the palette under their group and run in the main process
+with the current `{ projectId, boardId, viewId, itemId }`. Badges are computed
+on every board refresh over the project's items. Status items render in the
+status bar; sections in the detail pane and the issue sheet. Registering or
+unregistering any of them broadcasts `contributions.changed`, and the renderer
+refetches.
+
+## Channels
+
+Plugins add renderer channels by augmenting the contract and registering a
+handler when `ipc` is present:
+
+```ts
+declare module "@tomrade/ipc" {
+  interface Channels {
+    "hello.count": (projectId: string) => number;
+  }
+}
+ctx.inject(["ipc"], (ctx) => {
+  ctx.ipc.handle("hello.count", (projectId) => ctx.items.list({ projectId }).length);
+});
+```
+
+The renderer calls `invoke("hello.count", projectId)` and gets the declared
+return type. Every renderer write is a human write; channel handlers pass
+`"human"` as the author.
+
+## What is deliberately not here
+
+- No agent loop, turn driver, compaction or sandbox. Tomrade plans and records;
+  the user's CLI agent executes. That delegation is the unbuilt
+  `ctx.agentExecutor` seam.
+- No code evaluation in configuration. `tomrade.yml` is static YAML with
+  `${userData}`-style substitution and nothing more.
+- No profile or bundle layering. One file, one patch file, merged by id.
+- No renderer plugin bundles. Contributions are data.

@@ -1,4 +1,4 @@
-import type { Item } from "@tomrade/core";
+import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Num, Tag } from "~/components/ui/atoms";

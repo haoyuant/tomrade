@@ -1,0 +1,54 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../assistant"
+    },
+    {
+      "path": "../boards"
+    },
+    {
+      "path": "../contributions"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../domain"
+    },
+    {
+      "path": "../ipc"
+    },
+    {
+      "path": "../items"
+    },
+    {
+      "path": "../llm"
+    },
+    {
+      "path": "../mcp"
+    },
+    {
+      "path": "../oplog"
+    },
+    {
+      "path": "../projects"
+    },
+    {
+      "path": "../settings"
+    },
+    {
+      "path": "../tools"
+    },
+    {
+      "path": "../write"
+    }
+  ]
+}

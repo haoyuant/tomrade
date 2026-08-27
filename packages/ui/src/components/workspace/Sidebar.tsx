@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Board } from "@tomrade/core";
+import type { Board } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
 import { boardSubtitle } from "~/lib/domain";

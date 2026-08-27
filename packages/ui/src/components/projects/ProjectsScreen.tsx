@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueries } from "@tanstack/react-query";
-import type { Project } from "@tomrade/core";
+import type { Board, Item, Project } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
+import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { keys, useMcpUrl, useProjects } from "~/lib/queries";
 import { NewProjectDialog } from "./NewProjectDialog";
@@ -23,14 +24,14 @@ interface Facts {
 function useProjectFacts(projects: Project[]): Map<string, Facts> {
   const results = useQueries({
     queries: projects.flatMap((p) => [
-      { queryKey: keys.boards(p.id), queryFn: () => window.tomrade.boardsList(p.id) },
-      { queryKey: keys.items(p.id), queryFn: () => window.tomrade.list({ projectId: p.id }) }
+      { queryKey: keys.boards(p.id), queryFn: () => invoke("boards.list", p.id) },
+      { queryKey: keys.items(p.id), queryFn: () => invoke("items.list", { projectId: p.id }) }
     ])
   });
   const facts = new Map<string, Facts>();
   projects.forEach((p, i) => {
-    const boards = (results[i * 2]?.data ?? []) as Awaited<ReturnType<typeof window.tomrade.boardsList>>;
-    const items = (results[i * 2 + 1]?.data ?? []) as Awaited<ReturnType<typeof window.tomrade.list>>;
+    const boards = (results[i * 2]?.data ?? []) as Board[];
+    const items = (results[i * 2 + 1]?.data ?? []) as Item[];
     facts.set(p.id, {
       boards: boards.filter((b) => !b.across).length,
       open: items.filter((i2) => i2.status !== "done" && i2.status !== "cancelled").length,
@@ -104,7 +105,7 @@ export function ProjectsScreen() {
   }, []);
 
   const boardQueries = useQueries({
-    queries: list.map((p) => ({ queryKey: keys.boards(p.id), queryFn: () => window.tomrade.boardsList(p.id) }))
+    queries: list.map((p) => ({ queryKey: keys.boards(p.id), queryFn: () => invoke("boards.list", p.id) }))
   });
 
   return (

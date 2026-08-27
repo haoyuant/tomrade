@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Priority } from "@tomrade/core";
+import type { Priority } from "@tomrade/domain";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { GROUPS, PRIORITIES, STATUS_KEYS, columnKeyOf, columnLabel, filterFromQuery } from "~/lib/domain";

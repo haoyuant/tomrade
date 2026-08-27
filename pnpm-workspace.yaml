@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - examples/*
 
 allowBuilds:
   better-sqlite3: true
@@ -8,5 +9,4 @@ allowBuilds:
   esbuild: true
 
 # @electron/rebuild transitively depends on @electron/node-gyp (git-hosted).
-# Allow that exotic subdep for the desktop rebuild toolchain.
 blockExoticSubdeps: false

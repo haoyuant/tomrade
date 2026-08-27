@@ -1,0 +1,183 @@
+import { Context, Service } from "cordis";
+import type { Item } from "@tomrade/domain";
+import type {} from "@tomrade/ipc";
+import type {} from "@tomrade/items";
+
+export interface CommandScope {
+  projectId?: string;
+  boardId?: string;
+  viewId?: string;
+  itemId?: string | null;
+}
+
+export interface CommandResult {
+  toast?: string;
+}
+
+export interface Command {
+  id: string;
+  title: string;
+  /** Palette group heading; defaults to "Plugins". */
+  group?: string;
+  shortcut?: string;
+  run(scope: CommandScope): CommandResult | void | Promise<CommandResult | void>;
+}
+
+export type CommandView = Omit<Command, "run">;
+
+export type BadgeTone = "faint" | "neutral" | "strong";
+
+export interface Badge {
+  id: string;
+  label: string;
+  tone?: BadgeTone;
+  title?: string;
+}
+
+export interface BadgeProvider {
+  id: string;
+  /** Item id → badges. Computed in the main process on every board refresh. */
+  compute(items: Item[], scope: { projectId: string }): Record<string, Badge[]>;
+}
+
+export interface StatusItem {
+  id: string;
+  /** Null hides the item. */
+  text(scope: { projectId?: string }): string | null;
+}
+
+export interface SectionRow {
+  label: string;
+  value: string;
+}
+
+export interface Section {
+  id: string;
+  title: string;
+  /** Null hides the section for this item. */
+  render(item: Item): { rows?: SectionRow[]; text?: string } | null;
+}
+
+export interface SectionView {
+  id: string;
+  title: string;
+  rows: SectionRow[];
+  text?: string;
+}
+
+declare module "cordis" {
+  interface Context {
+    contributions: Contributions;
+  }
+}
+
+declare module "@tomrade/ipc" {
+  interface Channels {
+    "contributions.commands": () => CommandView[];
+    "contributions.run": (id: string, scope: CommandScope) => CommandResult;
+    "contributions.badges": (projectId: string) => Record<string, Badge[]>;
+    "contributions.statusItems": (scope: { projectId?: string }) => { id: string; text: string }[];
+    "contributions.sections": (itemId: string) => SectionView[];
+  }
+  interface Broadcasts {
+    "contributions.changed": () => void;
+  }
+}
+
+export class Contributions extends Service {
+  static provide = "contributions";
+  static inject = ["items"];
+
+  private commandMap = new Map<string, Command>();
+  private badgeMap = new Map<string, BadgeProvider>();
+  private statusMap = new Map<string, StatusItem>();
+  private sectionMap = new Map<string, Section>();
+  private notify: () => void = () => {};
+
+  constructor(ctx: Context) {
+    super(ctx, "contributions");
+  }
+
+  [Service.init]() {
+    this.ctx.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("contributions.commands", () => ctx.contributions.commands());
+      ctx.ipc.handle("contributions.run", (id, scope) => ctx.contributions.run(id, scope));
+      ctx.ipc.handle("contributions.badges", (projectId) => ctx.contributions.badgesFor(projectId));
+      ctx.ipc.handle("contributions.statusItems", (scope) => ctx.contributions.statusItems(scope));
+      ctx.ipc.handle("contributions.sections", (itemId) => ctx.contributions.sectionsFor(itemId));
+      this.notify = () => ctx.ipc.send("contributions.changed");
+      return () => {
+        this.notify = () => {};
+      };
+    });
+  }
+
+  command(def: Command): () => void {
+    return this.add(this.commandMap, def, "command");
+  }
+
+  badge(def: BadgeProvider): () => void {
+    return this.add(this.badgeMap, def, "badge");
+  }
+
+  statusItem(def: StatusItem): () => void {
+    return this.add(this.statusMap, def, "statusItem");
+  }
+
+  section(def: Section): () => void {
+    return this.add(this.sectionMap, def, "section");
+  }
+
+  commands(): CommandView[] {
+    return [...this.commandMap.values()].map(({ run: _run, ...view }) => view);
+  }
+
+  async run(id: string, scope: CommandScope): Promise<CommandResult> {
+    const command = this.commandMap.get(id);
+    if (!command) throw new Error(`Unknown command: ${id}`);
+    return (await command.run(scope)) ?? {};
+  }
+
+  badgesFor(projectId: string): Record<string, Badge[]> {
+    if (!this.badgeMap.size) return {};
+    const items = this.ctx.items.list({ projectId });
+    const out: Record<string, Badge[]> = {};
+    for (const provider of this.badgeMap.values()) {
+      for (const [itemId, badges] of Object.entries(provider.compute(items, { projectId }))) {
+        (out[itemId] ??= []).push(...badges);
+      }
+    }
+    return out;
+  }
+
+  statusItems(scope: { projectId?: string }): { id: string; text: string }[] {
+    return [...this.statusMap.values()].flatMap((s) => {
+      const text = s.text(scope);
+      return text ? [{ id: s.id, text }] : [];
+    });
+  }
+
+  sectionsFor(itemId: string): SectionView[] {
+    const item = this.ctx.items.get(itemId);
+    if (!item) return [];
+    return [...this.sectionMap.values()].flatMap((s) => {
+      const rendered = s.render(item);
+      return rendered ? [{ id: s.id, title: s.title, rows: rendered.rows ?? [], text: rendered.text }] : [];
+    });
+  }
+
+  /** Reversible, and announced to every window so the renderer refetches. */
+  private add<T extends { id: string }>(map: Map<string, T>, def: T, kind: string): () => void {
+    if (map.has(def.id)) throw new Error(`${kind} "${def.id}" is already registered`);
+    return this.ctx.effect(() => {
+      map.set(def.id, def);
+      this.notify();
+      return () => {
+        map.delete(def.id);
+        this.notify();
+      };
+    }, `contributions.${kind}(${def.id})`);
+  }
+}
+
+export default Contributions;
