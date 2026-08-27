@@ -32,7 +32,7 @@ Chat with an LLM → it extracts requirements → specs → epics → **features
 
 ```
 apps/desktop          Electron shell: boots the context from tomrade.yml, supplies the IPC transport, opens the window
-apps/desktop/tomrade.yml   the application — one row per plugin
+apps/desktop/tomrade.yml   the application — the modules it needs, then one row per plugin
 
 packages/domain       types + zod schemas + typed errors. Zero I/O, zero ctx. Everyone imports this.
 packages/db           ctx.db           SQLite connection, core schema, plugin migration registry
@@ -48,6 +48,7 @@ packages/assistant    ctx.assistant    chat routing over ctx.tools; extract / de
 packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
 packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
 packages/contributions ctx.contributions  declarative UI contributions
+packages/plugins      ctx.plugins      loads the composition, and manages it: state per row, modules, the guard on switching one off
 packages/plugin-sdk   the public plugin API in one import
 packages/testkit      boots a fresh in-memory context for tests
 packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
@@ -101,15 +102,16 @@ pnpm install
 pnpm test                                # vitest over every package and the example, against sources
 pnpm build:backend                       # tsc -b: every plugin package, the example and the shell, incrementally
 pnpm dev                                 # builds the backend, then Vite + Electron
-pnpm dump-config                         # boots the app headlessly and prints every row's state
+pnpm dump-config                         # boots the app headlessly and prints every module and every row's state
 pnpm --filter @tomrade/desktop test:ui   # the UI harness (needs `pnpm dev:ui` up and the backend built)
+pnpm --filter @tomrade/desktop test:plugins  # switches real rows on and off, against the shipped composition
 ```
 
 The backend is one TypeScript build graph: every emitting package is `composite` and lists its workspace dependencies as `references`, and the root `tsconfig.json` references them all, so `tsc -b` rebuilds only what changed. `pnpm dev` runs it before launching Electron; the runtime boot itself loads every plugin in well under a second.
 
 Packages compile with `moduleResolution: "Bundler"`: cordis 4's declaration files use extensionless relative imports, which `NodeNext` refuses to resolve. Relative imports in our own sources keep their `.js` extension so the emitted ESM runs unbundled under Electron and Node.
 
-`electron . --patch my.yml` overlays rows by id — the same overlay the UI harness applies in code (`boot({ patches })`) to run MCP on a free port. A user-level `<userData>/tomrade.patch.yml` is applied automatically, which is how a plugin is installed without touching the app.
+`electron . --patch my.yml` overlays rows by id — the same overlay the UI harness applies in code (`boot({ patches })`) to run MCP on a free port. A user-level `<userData>/tomrade.patch.yml` is applied automatically, which is how a plugin is installed without touching the app; it is also where the Plugins sheet writes a switch, edited in place so hand-written rows and comments survive.
 
 ## History
 

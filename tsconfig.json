@@ -41,6 +41,9 @@
       "path": "./packages/plugin-sdk"
     },
     {
+      "path": "./packages/plugins"
+    },
+    {
       "path": "./packages/projects"
     },
     {

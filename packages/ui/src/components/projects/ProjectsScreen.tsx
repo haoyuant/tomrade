@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQueries } from "@tanstack/react-query";
 import type { Board, Item, Project } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
+import { PluginsDialog } from "~/components/dialogs/PluginsDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
@@ -113,6 +114,7 @@ export function ProjectsScreen() {
   const projects = useProjects();
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
   const [configuring, setConfiguring] = useState<string | null>(null);
@@ -234,7 +236,15 @@ export function ProjectsScreen() {
         projects={list}
         onOpenChange={(open) => !open && setConfiguring(null)}
       />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onOpenPlugins={() => {
+          setSettingsOpen(false);
+          setPluginsOpen(true);
+        }}
+      />
+      <PluginsDialog open={pluginsOpen} onOpenChange={setPluginsOpen} />
     </div>
   );
 }

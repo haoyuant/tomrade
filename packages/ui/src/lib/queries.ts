@@ -31,6 +31,7 @@ export const keys = {
   settingsSections: ["settings", "sections"] as const,
   mcp: ["mcp"] as const,
   dbPath: ["dbPath"] as const,
+  plugins: ["plugins"] as const,
   contributions: ["contributions"] as const,
   commands: ["contributions", "commands"] as const,
   badges: (projectId: string) => ["contributions", "badges", projectId] as const,
@@ -72,6 +73,27 @@ export const useStatusItems = (projectId?: string) =>
   useQuery({ queryKey: keys.statusItems(projectId), queryFn: () => invoke("contributions.statusItems", { projectId }) });
 export const useSections = (itemId: string | undefined) =>
   useQuery({ queryKey: keys.sections(itemId ?? ""), queryFn: () => invoke("contributions.sections", itemId!), enabled: !!itemId });
+
+export const usePlugins = () => useQuery({ queryKey: keys.plugins, queryFn: () => invoke("plugins.list") });
+
+/**
+ * The answer is the whole composition after the switch, so the dialog redraws
+ * from what actually loaded rather than from what it asked for. A refusal
+ * leaves the cache untouched — nothing came down.
+ */
+export function useSetPluginEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; enabled: boolean }) => invoke("plugins.setEnabled", args.id, args.enabled),
+    onSuccess: (snapshot) => {
+      qc.setQueryData(keys.plugins, snapshot);
+      // A plugin that just loaded or unloaded took its channels, tools, badges
+      // and settings cards with it.
+      void qc.invalidateQueries({ queryKey: keys.contributions });
+      void qc.invalidateQueries({ queryKey: keys.settingsSections });
+    }
+  });
+}
 
 export function useRunCommand(projectId?: string) {
   const qc = useQueryClient();

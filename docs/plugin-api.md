@@ -88,7 +88,11 @@ plugins:
 `name` is a package name or a path relative to the file it appears in.
 `disabled: true` skips a row. `electron . --dump-config` prints every row with
 its state — `active`, `failed` with the error, `pending` with the services it is
-still waiting for, or `disabled`.
+still waiting for, or `disabled` — alongside what it provides and needs.
+
+The same list is the Plugins sheet in the app (⌘K → Plugins, or Settings →
+Manage plugins), where a row can be switched on or off without a restart. See
+[Modules](#modules) for the one switch it will not throw.
 
 ## Services
 
@@ -110,6 +114,7 @@ consumer follows.
 | `ctx.llm` | seam | `@tomrade/llm` | `completeJson(schema, request)`; OpenAI-compatible by default |
 | `ctx.assistant` | — | `@tomrade/assistant` | Chat routing over `ctx.tools` |
 | `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
+| `ctx.plugins` | — | `@tomrade/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
 
 Reserved, not yet declared or provided: `ctx.agentExecutor` (delegation to
 `claude -p`, `codex exec`), `ctx.search` (FTS5, later a vector column),
@@ -129,6 +134,51 @@ class Anthropic extends Service implements LLMProvider {
 ```
 
 Replace the `llm` row's `name` in `tomrade.yml` and the assistant never notices.
+
+## Modules
+
+A **module** is a capability, named by the service key that carries it. The
+composition declares them above its rows:
+
+```yaml
+modules:
+  - id: db
+    title: Database
+    required: true
+  - id: llm
+    title: Language model
+```
+
+Which plugin fills a module is never declared. `ctx.plugins` reads it off the
+running context — cordis records the fiber that provided each service, so a row
+is credited with what the plugins *it* loads provide, and `@tomrade/boards`
+correctly answers for both `boards` and `views` from one row.
+
+**A required module may not be left empty.** `ctx.plugins.setEnabled(id, false)`
+refuses when `id` is the only plugin providing one, and refuses again — putting
+the row back — if unloading it cascaded into emptying one. A module that was
+already unfilled before the switch is not held against it.
+
+Because a service key has exactly one owner, a required module's provider
+cannot be replaced by switching a second one on beside it. Swapping one is a
+change of `name` on its row.
+
+| Call | Does |
+|---|---|
+| `ctx.plugins.list()` | Every row: state, error, what it waits for, what it provides, what it injects, and the required modules it alone holds up |
+| `ctx.plugins.modules()` | Every module, whether it is required, and which plugins fill it |
+| `ctx.plugins.setEnabled(id, on)` | Load or unload a row now, and write the choice to `<userData>/tomrade.patch.yml` |
+| `ctx.plugins.snapshot()` | Both lists at once — what `--dump-config` prints and what the renderer draws |
+
+`ctx.plugins` is not a row. It is what reads the composition and loads it, so
+there is no switch that turns off the switching; the renderer reaches it over
+`plugins.list` and `plugins.setEnabled`, and hears `plugins.changed`.
+
+Switching a row off is an ordinary cordis unload: its tools, channels, badges,
+settings cards and listeners go with it, and so does anything that injected
+what it provided. Nothing here makes a plugin safe — `write-policy` provides no
+service, holds no module, and is therefore switchable, which is the same thing
+the contract says about removing its row by hand.
 
 ## Events
 

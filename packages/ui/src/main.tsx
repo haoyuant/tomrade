@@ -16,7 +16,11 @@ const queryClient = new QueryClient({
 watchWindowChrome();
 
 // A plugin loading or unloading changes what the palette, cards and status bar show.
-if (window.tomrade) subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
+if (window.tomrade) {
+  subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
+  // Switched from another window, or from the manager in this one.
+  subscribe("plugins.changed", () => void queryClient.invalidateQueries({ queryKey: ["plugins"] }));
+}
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

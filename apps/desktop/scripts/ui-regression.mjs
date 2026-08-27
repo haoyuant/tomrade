@@ -502,6 +502,43 @@ const run = async () => {
   await sleep(800);
   check("closing a dialog hands focus back to whatever opened it", (await $(`document.activeElement?.getAttribute('aria-label')`)) === "Settings");
 
+  // ── plugin manager ─────────────────────────────────────────────────
+  // The counts come from the main process, so this checks the sheet against
+  // the composition that actually booted rather than against a number typed here.
+  const SHEET = `[aria-label="Plugins"]`;
+  const rowFor = (id) => `document.querySelector('${SHEET} .cfg-row[data-id="${id}"]')`;
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
+  await sleep(900);
+  await press(`[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => b.textContent.includes('Manage plugins'))`);
+  await sleep(900);
+  check("settings hands over to the plugin sheet", (await $(`!!document.querySelector('${SHEET}')`)) === true);
+  check(
+    "every module is listed with what provides it",
+    (await $(`document.querySelectorAll('${SHEET} .tok-table tbody tr').length`)) === ctx.plugins.modules().length
+  );
+  check("a row is drawn per plugin", (await $(`document.querySelectorAll('${SHEET} .cfg-row').length`)) === ctx.plugins.list().length);
+  check("the row credits one plugin with both keys it provides", (await $(`${rowFor("boards")}.textContent.includes('boards, views')`)) === true);
+  check("the switch is locked on the only plugin providing a required module", (await $(`!!${rowFor("db")}.querySelector('.switch[disabled]')`)) === true);
+  check("and the row names the module it holds", (await $(`${rowFor("db")}.textContent.includes('holds db')`)) === true);
+  check("with the reason on the control itself", (await $(`${rowFor("db")}.querySelector('.switch').title.includes('only plugin providing db')`)) === true);
+  check("a third-party plugin's switch is free", (await $(`!${rowFor("stale")}.querySelector('.switch[disabled]')`)) === true);
+  await checkCentred("the plugin sheet", SHEET);
+  await shot("18-plugins");
+  await $(`${rowFor("write-policy")}.scrollIntoView({ block: 'center' });true`);
+  await sleep(400);
+  await shot("18-plugins-installed");
+
+  await press(`${rowFor("stale")}.querySelector('.switch')`);
+  await sleep(1200);
+  check("the switch unloads the plugin in the main process", ctx.plugins.list().find((p) => p.id === "stale")?.state === "disabled");
+  check("its tool leaves the registry", !ctx.tools.list().some((t) => t.name === "list_stale_items"));
+  check("and the sheet redraws from what loaded", (await $(`${rowFor("stale")}.querySelector('.tag').textContent`)) === "off");
+  await press(`${rowFor("stale")}.querySelector('.switch')`);
+  await sleep(1200);
+  check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "list_stale_items"));
+  await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
+  await sleep(700);
+
   // ── assistant panel ────────────────────────────────────────────────
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
   check("the context chip states what it can see", (await $(`!!document.querySelector('.ai-head .tag')?.textContent.includes('·')`)) === true);
