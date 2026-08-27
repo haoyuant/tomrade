@@ -327,8 +327,10 @@ strong { font-weight: 500; }
   background: var(--bg);
   border-right: 1px solid var(--border);
   overflow-y: auto;
-  padding: var(--space-4) var(--space-3) var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
 }
+/* the same 52px head row the board and the assistant have */
+.side-head { display: flex; align-items: center; gap: var(--space-2); height: 52px; flex-shrink: 0; padding: 0 var(--space-2); }
 .side-group + .side-group { margin-top: var(--space-6); }
 .side-label { padding: 0 var(--space-2) var(--space-2); }
 .side-row {
@@ -388,9 +390,10 @@ strong { font-weight: 500; }
 @container board (max-width: 700px) { .seg-lbl { display: none; } }
 @container board (max-width: 660px) { .board-region .lbl { display: none; } }
 @container board (max-width: 560px) { .board-facts { display: none; } }
-/* Below 990px the sidebar is gone, and with it the only way to change
- * board — so the board head grows its own switcher at exactly that width. */
+/* Railed, or gone below 990px, the sidebar takes the only way to change
+ * board with it — so the board head grows its own switcher exactly then. */
 .board-nav { display: none; }
+.side-railed .board-nav { display: flex; }
 /* the full board list fits without a scrollbar — this menu is the only
    navigation at this width, so it should not hide a row behind an edge */
 .board-nav .menu { min-width: 264px; max-height: min(440px, 62vh); }
@@ -885,14 +888,15 @@ strong { font-weight: 500; }
 .ai-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; gap: var(--space-2); align-items: flex-end; flex-shrink: 0; }
 
-/* collapsed rail */
-.ai-rail {
+/* collapsed rails — one shape for both side panes */
+.rail {
   width: 48px; flex-shrink: 0;
   display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
   padding-top: var(--space-3);
-  background: var(--surface); border-left: 1px solid var(--border);
 }
-.ai-rail-label {
+.ai-rail { background: var(--surface); border-left: 1px solid var(--border); }
+.side-rail { background: var(--bg); border-right: 1px solid var(--border); }
+.rail-label {
   writing-mode: vertical-rl; font-size: var(--text-xs);
   letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--meta);
 }
@@ -1167,7 +1171,7 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
   .ai { width: 352px !important; }
 }
 @media (max-width: 990px) {
-  .sidebar { display: none; }
+  .sidebar, .side-rail { display: none; }
   .board-nav { display: flex; }
 }
 

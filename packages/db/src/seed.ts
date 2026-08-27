@@ -41,12 +41,12 @@ const SCOPES = [
   }
 ] as const;
 
-/** Seeds the All work board and both scopes; returns the board's id. */
+/** Seeds the Main board and both scopes; returns the board's id. */
 export function seedProjectBoards(db: Queryable, projectId: string, now: number): string {
   const boardId = randomUUID();
   db.prepare(
     `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
-     VALUES (?, ?, 'All work', 'i-board', NULL, 0, NULL, NULL, 0, ?, ?)`
+     VALUES (?, ?, 'Main', 'i-board', NULL, 0, NULL, NULL, 0, ?, ?)`
   ).run(boardId, projectId, now, now);
   insertDefaultView(db, boardId, now);
 

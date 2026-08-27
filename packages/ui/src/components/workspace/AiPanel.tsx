@@ -132,7 +132,7 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
 
   if (!open) {
     return (
-      <div className="ai-rail">
+      <div className="rail ai-rail">
         <button
           type="button"
           className="btn btn-icon"
@@ -142,7 +142,7 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
         >
           <Icon name="i-panel" size={15} />
         </button>
-        <span className="ai-rail-label">Assistant</span>
+        <span className="rail-label">Assistant</span>
       </div>
     );
   }
@@ -214,5 +214,4 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
   );
 }
 
-export const aiOpenDefault = () => localStorage.getItem(STORE.open) !== "0";
-export const persistAiOpen = (open: boolean) => localStorage.setItem(STORE.open, open ? "1" : "0");
+export const aiOpenKey = STORE.open;

@@ -46,7 +46,7 @@ function legacyFile(withOrphan = false): string {
 describe("core migration", () => {
   it("backfills board_id, priority and keys without losing rows", async () => {
     const { items, boards, board } = await fresh({ dbPath: legacyFile() });
-    expect(board.name).toBe("All work");
+    expect(board.name).toBe("Main");
     const all = items.list({ projectId: "default" });
     expect(all.length).toBe(3);
     expect(all.every((i) => i.boardId === board.id)).toBe(true);

@@ -96,7 +96,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
           <Eyebrow>Created with the project</Eyebrow>
           <ul className="dash" style={{ marginTop: "var(--space-2)" }}>
             <li>
-              An <span className="num">All work</span> board, with the view every board is guaranteed to have
+              A <span className="num">Main</span> board, with the view every board is guaranteed to have
             </li>
             <li>
               Two cross-board scopes: <span className="num">Recently updated</span> and <span className="num">Epics</span>

@@ -59,6 +59,12 @@ cross-board scopes and nothing else. Home *leaves* the project, the switcher
 Configuring one is chrome too: the switcher's foot inside a project, the card's
 own gear on the projects grid, and nowhere in the sidebar.
 
+**Both side panes fold to the same 48px rail, and remember it.** `⌘B` for the
+sidebar, `⌘J` for the assistant, each persisted per machine (`usePanelOpen`). A
+railed sidebar takes the board list with it, so the board head grows the same
+switcher it grows under 990px — the palette is never the only way to change
+board.
+
 **One solid button per viewport, per action.** Hover on a solid button swaps
 foreground and background in the same rule. Everything else is ghost,
 secondary, or a text link.
@@ -148,6 +154,7 @@ on the field write, so a refused move leaves no rank behind.
 | `⌘N` / `N` | New issue (`N` opens the sheet; each column also has an inline composer) |
 | `⌘P` | Project switcher |
 | `⌘J` | Toggle the assistant panel |
+| `⌘B` | Toggle the sidebar |
 | `⌘,` | Settings |
 | `⌘Z` | Undo the last write, agent or human — a permanent delete is not a write it can reach |
 | `Enter` / `Space` | Open the focused card |
@@ -184,7 +191,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 `pnpm --filter @tomrade/desktop test:ui` boots the same plugin tree the app
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port — over a
 throwaway database seeded with the prototype's sample project
-(`apps/desktop/scripts/seed.mjs`). It asserts 145 behaviours and writes a
+(`apps/desktop/scripts/seed.mjs`). It asserts 150 behaviours and writes a
 screenshot per screen and per theme into `apps/desktop/scripts/shots/`. It
 needs the dev server up (`pnpm dev:ui`) *and* a built backend — it loads
 `apps/desktop/dist` and every plugin's `dist`, so a new channel is invisible to

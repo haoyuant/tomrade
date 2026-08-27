@@ -14,7 +14,7 @@ describe("projects", () => {
     expect(project.id).toBe("default");
     expect(projects.list().length).toBe(1);
     const all = boards.list(project.id);
-    expect(all.filter((b) => !b.across).map((b) => b.name)).toEqual(["All work"]);
+    expect(all.filter((b) => !b.across).map((b) => b.name)).toEqual(["Main"]);
     expect(all.filter((b) => b.across).map((b) => b.name)).toEqual(["Recently updated", "Epics"]);
     expect(views.listForBoard(all[0].id).map((v) => v.name)).toEqual(["All work"]);
   });
