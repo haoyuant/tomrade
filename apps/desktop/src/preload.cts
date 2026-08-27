@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   AppSettings,
   Board,
@@ -25,6 +25,12 @@ export type AiChatResult =
   | { kind: "text"; reply: string }
   | { kind: "tool"; tool: string; result: unknown; reply?: string }
   | { kind: "error"; tool?: string; error: string };
+
+/** What the shell knows about its own frame that CSS cannot ask for. */
+export interface WindowChrome {
+  /** macOS draws the traffic lights over our header — reserve a gutter. */
+  trafficLights: boolean;
+}
 
 export interface AiExtractResult {
   candidates: ExtractCandidate[];
@@ -68,7 +74,14 @@ const api = {
   aiGap: (requirement: string): Promise<GapCandidate[]> => ipcRenderer.invoke("tomrade:ai:gap", requirement),
   aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null, boardId?: string): Promise<Item> =>
     ipcRenderer.invoke("tomrade:ai:createFromCandidate", c, parentId, boardId),
-  aiChat: (text: string, history: ChatTurn[], projectId?: string): Promise<AiChatResult> => ipcRenderer.invoke("tomrade:ai:chat", text, history, projectId)
+  aiChat: (text: string, history: ChatTurn[], projectId?: string): Promise<AiChatResult> => ipcRenderer.invoke("tomrade:ai:chat", text, history, projectId),
+
+  /** Subscribe to the shell's frame state; returns the unsubscribe. */
+  onWindowChrome: (cb: (state: WindowChrome) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, state: WindowChrome) => cb(state);
+    ipcRenderer.on("tomrade:chrome", listener);
+    return () => ipcRenderer.off("tomrade:chrome", listener);
+  }
 };
 
 contextBridge.exposeInMainWorld("tomrade", api);

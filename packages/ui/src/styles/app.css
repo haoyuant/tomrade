@@ -104,6 +104,16 @@
   --traffic-inset: var(--space-3);
 }
 
+/* Windowed on macOS the traffic lights are drawn *inside* our header, so the
+   bar owes them room; in full screen they retreat into the auto-hiding menu
+   bar and a reserved gutter would read as a dent. The shell flips the
+   attribute (lib/window-chrome.ts) and every `.titlebar` follows. */
+html[data-traffic-lights="on"] {
+  /* the 14px trafficLightPosition offset (see main.ts) + the ~60px the three
+     buttons span + the same 12px gutter the rest of the bar uses */
+  --traffic-inset: 86px;
+}
+
 /* ─── dark "ink" — derived with oklch() from kami's declared darks ──── */
 .dark {
   --bg: #141413;
