@@ -5,7 +5,11 @@ import { ARTIFACT_DIR, hasArtifact } from "../state.js";
 import type { StorageHandle, StorageProvider } from "../types.js";
 
 export const FolderConfig = z.object({
-  dir: z.string().min(1).meta({ format: "directory" }).describe("Folder that holds this project's .tomrade artifact")
+  dir: z
+    .string()
+    .min(1)
+    .meta({ title: "Folder", format: "directory" })
+    .describe("The folder that will hold this project's .tomrade copy")
 });
 export type FolderConfig = z.infer<typeof FolderConfig>;
 

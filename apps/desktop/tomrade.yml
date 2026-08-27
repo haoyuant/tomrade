@@ -48,6 +48,8 @@ plugins:
       port: 19090
   - id: ipc
     name: ./dist/ipc.js
+  - id: shell
+    name: ./dist/shell.js
   - id: contributions
     name: "@tomrade/contributions"
   # A third-party plugin: it edits nothing above, it is only listed here.

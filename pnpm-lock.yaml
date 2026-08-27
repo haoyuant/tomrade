@@ -632,6 +632,9 @@ importers:
       '@tomrade/settings':
         specifier: workspace:*
         version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@types/react':
         specifier: ^19.2.0
         version: 19.2.18

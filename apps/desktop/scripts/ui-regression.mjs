@@ -710,6 +710,68 @@ const run = async () => {
   check("the fixture project is untouched", repos.items.list({ projectId: project.id }).length > 0);
   await shot("27-after-project-delete");
 
+  // ── where a project is stored ────────────────────────────────────────
+  // The whole feature through the real UI: choose a destination, publish, and
+  // find the project on disk as text — then stop using it and find it still there.
+  const dest = path.join(WORK, "destination");
+  fs.mkdirSync(dest, { recursive: true });
+
+  await press(gearFor("Tomrade Next"));
+  await sleep(900);
+  check("the sheet says where the project is stored", (await $(`!!document.querySelector('#stgProvider')`)) === true);
+  check("an unbound project reads as living on this machine", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
+  check(
+    "every registered destination is offered",
+    (await $(`[...document.querySelectorAll('#stgProvider option')].map(o => o.value).join()`)) === ",folder,git,github"
+  );
+  check(
+    "nothing is publishable until a destination is chosen",
+    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].some(b => /Publish here/.test(b.textContent) && !b.disabled)`)) === false
+  );
+
+  await pick(`document.querySelector('#stgProvider')`, "folder");
+  await sleep(500);
+  check("choosing a folder asks which folder", (await $(`!!document.querySelector('#sf-stg-dir')`)) === true);
+  check(
+    "a path is chosen, not only typed",
+    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].some(b => /Choose/.test(b.textContent))`)) === true
+  );
+
+  const publishBtn = `[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => /Publish here/.test(b.textContent))`;
+  await typeInto("#sf-stg-dir", dest);
+  await sleep(400);
+  check("a chosen destination arms the publish", (await $(`${publishBtn}?.disabled`)) === false);
+  await shot("28-project-storage");
+
+  await press(publishBtn);
+  await sleep(2600);
+  check("publishing writes the project to the destination as text", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
+  check(
+    "every issue travels as one line",
+    fs.readFileSync(path.join(dest, ".tomrade", "state", "items.jsonl"), "utf8").trim().split("\n").length === repos.items.list({ projectId: project.id }).length
+  );
+  check("the live database is never in the destination", !fs.existsSync(path.join(dest, ".tomrade", "project.db")));
+  check("the destination keeps a database out on purpose", fs.readFileSync(path.join(dest, ".tomrade", ".gitignore"), "utf8").includes("*.db"));
+  check("the sheet reports it as published", (await $(`[...document.querySelectorAll('.cfg-row .tag')].some(t => t.textContent === 'Published')`)) === true);
+  check(
+    "a published project offers a sync",
+    (await $(`[...document.querySelectorAll('.dlg-body .btn-ghost')].some(b => /Sync now/.test(b.textContent))`)) === true
+  );
+  await shot("29-project-published");
+
+  // An unchanged project publishes nothing: the artifact is byte-identical.
+  const publishedAt = fs.statSync(path.join(dest, ".tomrade", "state", "items.jsonl")).mtimeMs;
+  await press(`[...document.querySelectorAll('.dlg-body .btn-ghost')].find(b => /Sync now/.test(b.textContent))`);
+  await sleep(1800);
+  check("syncing an unchanged project rewrites nothing", fs.statSync(path.join(dest, ".tomrade", "state", "items.jsonl")).mtimeMs === publishedAt);
+
+  await pick(`document.querySelector('#stgProvider')`, "");
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => /Stop using a destination/.test(b.textContent))`);
+  await sleep(1600);
+  check("a project can stop using a destination", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
+  check("nothing at the destination is deleted with the binding", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
+
   return results;
 };
 

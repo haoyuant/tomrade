@@ -20,10 +20,10 @@ export type GitHubPluginConfig = z.infer<typeof GitHubPluginConfig>;
 
 /** Per-project and non-secret, so it can be committed beside the code it tracks. */
 const RepoConfig = z.object({
-  owner: z.string().min(1).describe("GitHub user or organisation"),
-  repo: z.string().min(1).describe("Repository name"),
-  branch: z.string().min(1).default("main").describe("Branch the backlog is committed on"),
-  path: z.string().default("").describe("Subdirectory inside the repository; blank for its root")
+  owner: z.string().min(1).meta({ title: "Owner" }).describe("GitHub user or organisation"),
+  repo: z.string().min(1).meta({ title: "Repository" }).describe("Repository name — created for you if a token is set and it does not exist"),
+  branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the backlog is committed on"),
+  path: z.string().default("").meta({ title: "Subdirectory" }).describe("Where in the repository to commit; blank for the root")
 });
 type RepoConfig = z.infer<typeof RepoConfig>;
 

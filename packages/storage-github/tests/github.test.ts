@@ -18,6 +18,18 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 afterEach(() => vi.unstubAllGlobals());
 
 let n = 0;
+/**
+ * A git that never reaches a network: it echoes its arguments and fails. That is
+ * enough to prove what happens to a token on the way back out, and it keeps the
+ * suite offline and deterministic.
+ */
+function fakeGit(home: string): string {
+  const file = path.join(home, "fake-git");
+  fs.writeFileSync(file, ['#!/bin/sh', 'echo "fake git: $@" >&2', 'case "$1" in', '  init) exit 0 ;;', '  *) exit 1 ;;', 'esac', ''].join("\n"), "utf8");
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+
 async function machine(token = "") {
   const home = path.join(root, `home-${n++}`);
   fs.mkdirSync(home, { recursive: true });
@@ -25,7 +37,7 @@ async function machine(token = "") {
     plugins: [
       [Settings, { path: path.join(home, "settings.json") }],
       [Storage, { path: path.join(home, "storage.json"), debounceMs: 60_000, reconcileMs: 0 }],
-      [storageGithub, { root: path.join(home, "remotes") }]
+      [storageGithub, { root: path.join(home, "remotes"), binary: fakeGit(home) }]
     ]
   });
   await settle();
@@ -120,10 +132,14 @@ describe("the GitHub provider", () => {
   });
 
   it("never lets a token reach an error message", async () => {
-    // git puts the remote URL in its stderr; the URL carries the token.
-    const leaked = new GitError(["push"], "fatal: could not read from 'https://x-access-token:ghp_SECRET@github.com/me/app.git'");
-    expect(leaked.message).not.toContain("ghp_SECRET");
-    expect(leaked.message).toContain("github.com/me/app.git");
+    // The URL carries the token, and it reaches us twice: in git's own output,
+    // and in the arguments we handed git.
+    const fromOutput = new GitError(["push"], "fatal: could not read from 'https://x-access-token:ghp_SECRET@github.com/me/app.git'");
+    expect(fromOutput.message).not.toContain("ghp_SECRET");
+    expect(fromOutput.message).toContain("github.com/me/app.git");
+    const fromArgs = new GitError(["remote", "add", "origin", "https://x-access-token:ghp_SECRET@github.com/me/app.git"], "");
+    expect(fromArgs.message).not.toContain("ghp_SECRET");
+    expect(fromArgs.message).toContain("github.com/me/app.git");
 
     // And end to end: a bind that cannot reach GitHub must not name the token.
     const { storage, project } = await machine("ghp_SECRET_TOKEN");

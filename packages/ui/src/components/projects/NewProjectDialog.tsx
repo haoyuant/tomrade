@@ -88,9 +88,12 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
           </div>
         </div>
         <div className="field">
-          <label htmlFor="npFile">Database file</label>
+          <label htmlFor="npFile">Stored on this machine</label>
           <input id="npFile" className="input num" readOnly value={dbPath.data ?? ""} />
-          <span className="meta-txt">One SQLite file holds every project. Nothing leaves this machine.</span>
+          <span className="meta-txt">
+            Every project lives in this file to begin with. Give it a destination — a folder, or a git repository — in its own settings, and it
+            publishes a copy of itself there as text.
+          </span>
         </div>
         <div>
           <Eyebrow>Created with the project</Eyebrow>

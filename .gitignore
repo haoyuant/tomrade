@@ -1,4 +1,8 @@
 node_modules/
+
+# Scratch worktrees another session may be working in — never a nested checkout in a commit.
+.claude/worktrees/
+
 dist/
 out/
 *.tsbuildinfo

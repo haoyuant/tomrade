@@ -216,6 +216,13 @@ export class Storage extends Service {
   async statusFor(projectId: string): Promise<StorageStatus> {
     const binding = this.bindings.get(projectId);
     if (!binding) return this.remember(projectId, LOCAL);
+    // Projects are deleted through their own service, which knows nothing about
+    // destinations — so a binding can outlive its project. Prune it here rather
+    // than let an export fail on a project that is gone.
+    if (!this.projectExists(projectId)) {
+      await this.unbind(projectId);
+      return this.remember(projectId, LOCAL);
+    }
     if (!this.has(binding.provider)) {
       return this.remember(projectId, { state: "unavailable", location: null, detail: `The "${binding.provider}" provider is not loaded`, lastSyncAt: binding.lastSyncAt });
     }
@@ -352,6 +359,10 @@ export class Storage extends Service {
   /** Publish every bound project that has something to publish. */
   async flushAll(reason = "quit"): Promise<void> {
     for (const binding of this.bindings.all()) {
+      if (!this.projectExists(binding.projectId)) {
+        await this.unbind(binding.projectId);
+        continue;
+      }
       try {
         await this.flush(binding.projectId, reason);
       } catch (error) {

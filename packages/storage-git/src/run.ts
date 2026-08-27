@@ -15,9 +15,11 @@ export class GitError extends Error {
     public readonly args: string[],
     public readonly stderr: string
   ) {
-    // A token can reach us inside a remote URL; it must not reach a log or a toast.
-    const scrubbed = stderr.replace(/\/\/[^@\s/]*@/g, "//");
-    super(`git ${args.join(" ")} failed: ${scrubbed.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`);
+    // A token reaches us inside a remote URL — in git's own output AND in the
+    // arguments we passed it. Both must be scrubbed before this reaches a log,
+    // a toast or a status line.
+    const scrub = (text: string) => text.replace(/\/\/[^@\s/]*@/g, "//");
+    super(`git ${scrub(args.join(" "))} failed: ${scrub(stderr).trim().split("\n").slice(-3).join(" ").slice(0, 400)}`);
     this.name = "GitError";
   }
 }

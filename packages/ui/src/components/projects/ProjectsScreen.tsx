@@ -9,7 +9,9 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
-import { keys, useMcpUrl, useProjects } from "~/lib/queries";
+import { keys, useAttachProject, useMcpUrl, useProjects } from "~/lib/queries";
+import { pickDirectory } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
@@ -110,8 +112,11 @@ function ProjectCard({
 }
 
 export function ProjectsScreen() {
+  const navigate = useNavigate();
   const projects = useProjects();
   const mcp = useMcpUrl();
+  const attach = useAttachProject();
+  const toast = useToast();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
@@ -131,6 +136,19 @@ export function ProjectsScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /** A teammate's project arrives as a folder — usually one they committed to a repository. */
+  const openFolder = async () => {
+    const dir = await pickDirectory("Choose a project folder");
+    if (!dir) return;
+    attach.mutate(
+      { providerId: "folder", config: { dir } },
+      {
+        onSuccess: (projectId) => void navigate({ to: "/p/$projectId", params: { projectId } }),
+        onError: (error) => toast({ body: error instanceof Error ? error.message : String(error) })
+      }
+    );
+  };
+
   const boardQueries = useQueries({
     queries: list.map((p) => ({ queryKey: keys.boards(p.id), queryFn: () => invoke("boards.list", p.id) }))
   });
@@ -144,6 +162,9 @@ export function ProjectsScreen() {
           Projects
         </span>
         <Spacer />
+        <button type="button" className="btn btn-secondary no-drag" disabled={attach.isPending} onClick={() => void openFolder()}>
+          <Icon name="i-search" size={14} /> {attach.isPending ? "Opening…" : "Open a project folder…"}
+        </button>
         <button type="button" className="btn btn-primary no-drag" onClick={() => setNewOpen(true)}>
           <Icon name="i-plus" size={14} /> New project
         </button>
@@ -159,7 +180,7 @@ export function ProjectsScreen() {
               <h1 className="sec-title">Projects</h1>
               <p className="sec-lede" style={{ marginTop: 4 }}>
                 Every project is a workspace on this machine. Each board is a workstream that owns its issues; views slice a board without moving
-                anything.
+                anything. A project can publish a copy of itself to a folder or a repository — open one here to work on it too.
               </p>
             </div>
           </div>

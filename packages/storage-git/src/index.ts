@@ -17,9 +17,13 @@ export const GitConfig = z.object({
 export type GitConfig = z.infer<typeof GitConfig>;
 
 const RemoteConfig = z.object({
-  remote: z.string().min(1).describe("Repository URL — https://… or git@…"),
-  branch: z.string().min(1).default("main").describe("Branch the backlog is committed on"),
-  path: z.string().default("").describe("Subdirectory to commit into — e.g. docs, to keep the backlog beside the code. Blank for the repository root.")
+  remote: z.string().min(1).meta({ title: "Repository URL" }).describe("Any repository you can push to — https://… or git@…"),
+  branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the backlog is committed on"),
+  path: z
+    .string()
+    .default("")
+    .meta({ title: "Subdirectory" })
+    .describe("Where in the repository to commit — e.g. docs, to keep the backlog beside the code. Blank for the root.")
 });
 
 /**

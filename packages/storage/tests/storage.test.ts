@@ -208,6 +208,21 @@ describe("ctx.storage", () => {
     expect(fs.existsSync(path.join(dir, ".tomrade", "project.json"))).toBe(true);
   });
 
+  it("forgets a destination whose project has been deleted", async () => {
+    const { storage, projects } = await withStorage();
+    const doomed = projects.create({ name: "Doomed" });
+    const dir = tmp("doomed");
+    await storage.bind(doomed.id, "folder", { dir });
+    expect(storage.binding(doomed.id)).not.toBeNull();
+
+    // Projects are removed through their own service, which knows nothing of destinations.
+    projects.remove(doomed.id);
+    expect(await storage.statusFor(doomed.id)).toMatchObject({ state: "local" });
+    expect(storage.binding(doomed.id)).toBeNull();
+    // The published copy is left exactly where it was.
+    expect(fs.existsSync(path.join(dir, ".tomrade", "project.json"))).toBe(true);
+  });
+
   it("reports a destination whose provider is not loaded, instead of failing", async () => {
     const home = tmp("unavailable");
     const file = path.join(home, "storage.json");

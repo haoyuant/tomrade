@@ -5,6 +5,7 @@ import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { Eyebrow, LiveDot, Num, Tag } from "~/components/ui/atoms";
+import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections } from "~/lib/queries";
 
 /** Each preview re-declares the token block locally, so all three themes are
@@ -71,52 +72,6 @@ function ThemePreview() {
 /** Sections the dialog lays out by hand; every other registered section gets a card drawn from its schema. */
 const HAND_DRAWN = new Set(["theme", "llm"]);
 
-interface JsonSchema {
-  type?: string | string[];
-  properties?: Record<string, JsonSchema>;
-  enum?: unknown[];
-  title?: string;
-  description?: string;
-  format?: string;
-  minimum?: number;
-  maximum?: number;
-}
-
-function SchemaField({ id, name, schema, value, onChange }: { id: string; name: string; schema: JsonSchema; value: unknown; onChange: (v: unknown) => void }) {
-  const inputId = `st-${id}-${name}`;
-  const label = schema.title ?? name;
-  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
-  const numeric = type === "integer" || type === "number";
-  return (
-    <div className="field">
-      <label htmlFor={inputId}>{label}</label>
-      {schema.enum ? (
-        <select id={inputId} className="input" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
-          {schema.enum.map((o) => (
-            <option key={String(o)} value={String(o)}>
-              {String(o)}
-            </option>
-          ))}
-        </select>
-      ) : type === "boolean" ? (
-        <input id={inputId} type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
-      ) : (
-        <input
-          id={inputId}
-          className={numeric ? "input num" : "input"}
-          type={numeric ? "number" : schema.format === "password" ? "password" : "text"}
-          min={schema.minimum}
-          max={schema.maximum}
-          step={type === "integer" ? 1 : undefined}
-          value={value == null ? "" : String(value)}
-          onChange={(e) => onChange(numeric ? Number(e.target.value) : e.target.value)}
-        />
-      )}
-      {schema.description && <span className="meta-txt">{schema.description}</span>}
-    </div>
-  );
-}
-
 /** A plugin's settings card. Edits commit as they are made and fall back to the stored value if refused. */
 function PluginCard({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
   const [value, setValue] = useState<unknown>(stored);
@@ -126,7 +81,7 @@ function PluginCard({ section, stored, onCommit }: { section: SettingsSectionVie
     setValue(next);
     onCommit(next, () => setValue(stored));
   };
-  const fields = schema.type === "object" && schema.properties ? Object.entries(schema.properties) : null;
+  const fields = fieldsOf(schema);
   return (
     <>
       <hr className="rule" />
@@ -314,8 +269,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <div>
             <h3 className="sec-title">Data</h3>
             <p className="sec-lede" style={{ marginTop: 4 }}>
-              One SQLite file holds every project on this machine, and the oplog inside it is the whole history — nothing about this workspace lives
-              anywhere else.
+              One SQLite file holds every project on this machine, and the oplog inside it is the whole history. A project can also publish a copy of
+              itself as text to a destination you choose — that copy is what a teammate clones, and the database itself never leaves.
             </p>
           </div>
         </div>
@@ -323,7 +278,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <div className="field">
             <label htmlFor="stDb">Database file</label>
             <input id="stDb" className="input num" readOnly value={dbPath.data ?? ""} />
-            <span className="meta-txt">Local-first. Back it up by copying the file.</span>
+            <span className="meta-txt">Local-first. Back it up by copying the file — or give a project a destination in its own settings.</span>
           </div>
         </div>
       </DialogBody>
