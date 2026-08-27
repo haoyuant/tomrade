@@ -1,0 +1,25 @@
+{
+  "name": "@tomrade/domain",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Domain types, zod schemas and typed errors. No I/O, no context.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

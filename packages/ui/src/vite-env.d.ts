@@ -1,83 +1,32 @@
 /// <reference types="vite/client" />
 
-import type {
-  AppSettings,
-  Board,
-  BoardPatch,
-  ChatTurn,
-  CreateBoardInput,
-  CreatedBoard,
-  CreateItemInput,
-  CreateProjectInput,
-  CreateViewInput,
-  ExtractCandidate,
-  GapCandidate,
-  Item,
-  ListItemsFilter,
-  OplogEntry,
-  Patch,
-  Project,
-  UndoResult,
-  View,
-  ViewPatch
-} from "@tomrade/core";
+import type { Invoke, Subscribe } from "@tomrade/ipc";
+import type {} from "@tomrade/assistant";
+import type {} from "@tomrade/boards";
+import type {} from "@tomrade/contributions";
+import type {} from "@tomrade/db";
+import type {} from "@tomrade/items";
+import type {} from "@tomrade/mcp";
+import type {} from "@tomrade/oplog";
+import type {} from "@tomrade/projects";
+import type {} from "@tomrade/settings";
 
-type AiChatResult =
-  | { kind: "text"; reply: string }
-  | { kind: "tool"; tool: string; result: unknown; reply?: string }
-  | { kind: "error"; tool?: string; error: string };
-
-interface WindowChrome {
+export interface WindowChrome {
+  /** macOS draws the traffic lights over the header while windowed. */
   trafficLights: boolean;
 }
 
-interface AiExtractResult {
-  candidates: ExtractCandidate[];
-  dedup: Record<number, { isDuplicate: boolean; duplicates: { id: string; reason: string }[] }>;
+declare module "@tomrade/ipc" {
+  interface Broadcasts {
+    "window.chrome": (state: WindowChrome) => void;
+  }
 }
 
 declare global {
   interface Window {
     tomrade: {
-      list: (filter?: ListItemsFilter) => Promise<Item[]>;
-      get: (id: string) => Promise<Item | null>;
-      create: (input: Omit<CreateItemInput, "by">) => Promise<Item>;
-      update: (id: string, patch: Patch, baseVersion: number) => Promise<Item>;
-      remove: (id: string) => Promise<void>;
-      purge: (id: string, baseVersion: number) => Promise<void>;
-      undo: (entityId?: string) => Promise<UndoResult | null>;
-      recentOplog: (limit?: number) => Promise<OplogEntry[]>;
-      historyFor: (id: string, limit?: number) => Promise<OplogEntry[]>;
-      labels: (projectId: string) => Promise<string[]>;
-      mcpUrl: () => Promise<string | null>;
-      dbPath: () => Promise<string>;
-
-      projectsList: () => Promise<Project[]>;
-      projectsCreate: (input: CreateProjectInput) => Promise<Project>;
-      projectsUpdate: (id: string, patch: Partial<Project>) => Promise<Project | null>;
-      projectsRemove: (id: string) => Promise<void>;
-
-      boardsList: (projectId: string) => Promise<Board[]>;
-      boardsCreate: (input: CreateBoardInput) => Promise<CreatedBoard>;
-      boardsUpdate: (id: string, patch: BoardPatch) => Promise<Board>;
-      boardsRemove: (id: string) => Promise<void>;
-      boardsMoveItems: (from: string, to: string, itemIds: string[]) => Promise<number>;
-
-      viewsList: (projectId: string) => Promise<View[]>;
-      viewsCreate: (input: CreateViewInput) => Promise<View>;
-      viewsUpdate: (id: string, patch: ViewPatch) => Promise<View>;
-      viewsRemove: (id: string) => Promise<void>;
-      viewRanks: (viewId: string) => Promise<Record<string, number>>;
-      viewSetRank: (viewId: string, itemId: string, rank: number) => Promise<void>;
-
-      settingsGet: () => Promise<AppSettings>;
-      settingsSet: (s: AppSettings) => Promise<AppSettings>;
-      aiExtract: (text: string) => Promise<AiExtractResult>;
-      aiGap: (requirement: string) => Promise<GapCandidate[]>;
-      aiCreateFromCandidate: (c: ExtractCandidate | GapCandidate, parentId: string | null, boardId?: string) => Promise<Item>;
-      aiChat: (text: string, history: ChatTurn[], projectId?: string) => Promise<AiChatResult>;
-      onWindowChrome: (cb: (state: WindowChrome) => void) => () => void;
+      invoke: Invoke;
+      on: Subscribe;
     };
   }
 }
-export {};

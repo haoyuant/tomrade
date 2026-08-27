@@ -1,0 +1,29 @@
+{
+  "name": "@tomrade/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.db \u2014 the SQLite connection, the core schema and the plugin migration registry",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/ipc": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "typescript": "^6.0.0"
+  }
+}

@@ -1,0 +1,40 @@
+# Tomrade is this list. Each row loads one plugin; load order comes from what
+# each plugin injects, not from the order here. A row is replaced by id from
+# <userData>/tomrade.patch.yml or a file passed with --patch, and
+# `electron . --dump-config` prints the tree that actually booted.
+plugins:
+  - id: db
+    name: "@tomrade/db"
+    config:
+      path: "${userData}/tomrade.db"
+  - id: oplog
+    name: "@tomrade/oplog"
+  - id: write-policy
+    name: "@tomrade/write"
+  - id: items
+    name: "@tomrade/items"
+  - id: boards
+    name: "@tomrade/boards"
+  - id: projects
+    name: "@tomrade/projects"
+  - id: settings
+    name: "@tomrade/settings"
+    config:
+      path: "${userData}/settings.json"
+  - id: llm
+    name: "@tomrade/llm"
+  - id: tools
+    name: "@tomrade/tools"
+  - id: assistant
+    name: "@tomrade/assistant"
+  - id: mcp
+    name: "@tomrade/mcp"
+    config:
+      port: 19090
+  - id: ipc
+    name: ./dist/ipc.js
+  - id: contributions
+    name: "@tomrade/contributions"
+  # A third-party plugin: it edits nothing above, it is only listed here.
+  - id: stale
+    name: ../../examples/stale/dist/index.js

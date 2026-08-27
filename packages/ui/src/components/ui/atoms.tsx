@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { Item, ItemStatus, Priority } from "@tomrade/core";
+import type { Item, ItemStatus, Priority } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { PRIORITY_LABEL, STATUS, provenanceOf } from "~/lib/domain";
 import { cn } from "~/lib/utils";
@@ -19,8 +19,10 @@ export const Kbd = ({ children }: { children: React.ReactNode }) => <span classN
 
 export const Spacer = () => <div className="spacer" />;
 
-export const Tag = ({ tone, children }: { tone?: "faint" | "neutral" | "strong"; children: React.ReactNode }) => (
-  <span className={cn("tag", tone)}>{children}</span>
+export const Tag = ({ tone, title, children }: { tone?: "faint" | "neutral" | "strong"; title?: string; children: React.ReactNode }) => (
+  <span className={cn("tag", tone)} title={title}>
+    {children}
+  </span>
 );
 
 export const StatusMark = ({ status, size = 12 }: { status: ItemStatus; size?: number }) => (

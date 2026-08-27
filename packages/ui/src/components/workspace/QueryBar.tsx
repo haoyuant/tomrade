@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import type { GroupBy, Item, Priority, Provenance } from "@tomrade/core";
+import type { GroupBy, Item, Priority, Provenance } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Menu, MenuCheckItem, MenuEmpty, MenuFoot, MenuHead } from "~/components/ui/menu";
 import { PriorityGlyph } from "~/components/ui/atoms";

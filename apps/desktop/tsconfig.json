@@ -3,8 +3,52 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src"],
-  "references": []
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/assistant"
+    },
+    {
+      "path": "../../packages/boards"
+    },
+    {
+      "path": "../../packages/contributions"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/ipc"
+    },
+    {
+      "path": "../../packages/items"
+    },
+    {
+      "path": "../../packages/llm"
+    },
+    {
+      "path": "../../packages/mcp"
+    },
+    {
+      "path": "../../packages/oplog"
+    },
+    {
+      "path": "../../packages/projects"
+    },
+    {
+      "path": "../../packages/settings"
+    },
+    {
+      "path": "../../packages/tools"
+    },
+    {
+      "path": "../../packages/write"
+    }
+  ]
 }

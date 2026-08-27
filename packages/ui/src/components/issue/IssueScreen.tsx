@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { Item, ItemStatus } from "@tomrade/core";
+import type { Item, ItemStatus } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
@@ -8,7 +8,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { AiPanel, aiOpenDefault } from "~/components/workspace/AiPanel";
 import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
-import { LedgerRow } from "~/components/workspace/DetailPane";
+import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
   EpicField,
@@ -56,7 +56,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             <p className="meta-txt">{items.isLoading ? "Loading…" : "That issue is not in this project."}</p>
           </div>
         </main>
-        <StatusBar />
+        <StatusBar projectId={projectId} />
       </div>
     );
   }
@@ -194,6 +194,8 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               )}
             </div>
 
+            <PluginSections itemId={item.id} variant="sheet" />
+
             <hr className="rule" />
             <Eyebrow style={{ marginBottom: "var(--space-3)" }}>Activity · append-only oplog</Eyebrow>
             <div className="ledger">
@@ -214,7 +216,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         />
       </div>
 
-      <StatusBar onUndo={() => undo.mutate(undefined)}>
+      <StatusBar projectId={projectId} onUndo={() => undo.mutate(undefined)}>
         <ThemeSwitch compact />
       </StatusBar>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

@@ -1,0 +1,33 @@
+{
+  "name": "@tomrade/items",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.items \u2014 issues, labels and relations, written through the write protocol",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/boards": "workspace:*",
+    "@tomrade/db": "workspace:*",
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/oplog": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "@tomrade/write": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@tomrade/write",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The write protocol: the write/pre-commit waterfall every mutation passes, and the default policy plugins",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/domain": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

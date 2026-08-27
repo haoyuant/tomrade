@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ItemStatus } from "@tomrade/core";
+import type { ItemStatus } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
@@ -7,7 +7,7 @@ import { BOARD_GLYPHS, GROUPS, PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_FILL, 
 import { useMoveItemsToBoard, useRemoveView, useUpdateBoard, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "~/components/workspace/context";
-import type { View } from "@tomrade/core";
+import type { View } from "@tomrade/domain";
 
 /** What a view resolves to, in one line, so a roster row can never advertise
  *  something the board disagrees with. */

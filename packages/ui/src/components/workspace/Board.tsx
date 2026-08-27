@@ -3,7 +3,7 @@ import { CollisionPriority } from "@dnd-kit/abstract";
 import { DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
-import type { Item } from "@tomrade/core";
+import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { columnKeyOf, columnLabel, patchForColumn } from "~/lib/domain";
 import { useCreateItem, usePatchItem, useSetViewRank, useUndo } from "~/lib/queries";

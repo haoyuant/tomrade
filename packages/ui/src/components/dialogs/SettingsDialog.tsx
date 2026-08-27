@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import type { AppSettings } from "@tomrade/core";
+import type { LlmSettings } from "@tomrade/domain";
+import type { SettingsSectionView } from "@tomrade/settings";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { Eyebrow, LiveDot, Num, Tag } from "~/components/ui/atoms";
-import { useDbPath, useMcpUrl, useSaveSettings, useSettings } from "~/lib/queries";
+import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections } from "~/lib/queries";
 
 /** Each preview re-declares the token block locally, so all three themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -67,23 +68,117 @@ function ThemePreview() {
   );
 }
 
+/** Sections the dialog lays out by hand; every other registered section gets a card drawn from its schema. */
+const HAND_DRAWN = new Set(["theme", "llm"]);
+
+interface JsonSchema {
+  type?: string | string[];
+  properties?: Record<string, JsonSchema>;
+  enum?: unknown[];
+  title?: string;
+  description?: string;
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+}
+
+function SchemaField({ id, name, schema, value, onChange }: { id: string; name: string; schema: JsonSchema; value: unknown; onChange: (v: unknown) => void }) {
+  const inputId = `st-${id}-${name}`;
+  const label = schema.title ?? name;
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const numeric = type === "integer" || type === "number";
+  return (
+    <div className="field">
+      <label htmlFor={inputId}>{label}</label>
+      {schema.enum ? (
+        <select id={inputId} className="input" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
+          {schema.enum.map((o) => (
+            <option key={String(o)} value={String(o)}>
+              {String(o)}
+            </option>
+          ))}
+        </select>
+      ) : type === "boolean" ? (
+        <input id={inputId} type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
+      ) : (
+        <input
+          id={inputId}
+          className={numeric ? "input num" : "input"}
+          type={numeric ? "number" : schema.format === "password" ? "password" : "text"}
+          min={schema.minimum}
+          max={schema.maximum}
+          step={type === "integer" ? 1 : undefined}
+          value={value == null ? "" : String(value)}
+          onChange={(e) => onChange(numeric ? Number(e.target.value) : e.target.value)}
+        />
+      )}
+      {schema.description && <span className="meta-txt">{schema.description}</span>}
+    </div>
+  );
+}
+
+/** A plugin's settings card. Edits commit as they are made and fall back to the stored value if refused. */
+function PluginCard({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
+  const [value, setValue] = useState<unknown>(stored);
+  useEffect(() => setValue(stored), [stored]);
+  const schema = section.schema as JsonSchema;
+  const commit = (next: unknown) => {
+    setValue(next);
+    onCommit(next, () => setValue(stored));
+  };
+  const fields = schema.type === "object" && schema.properties ? Object.entries(schema.properties) : null;
+  return (
+    <>
+      <hr className="rule" />
+      <div className="sec-head">
+        <div>
+          <h3 className="sec-title">{section.title}</h3>
+          {section.description && (
+            <p className="sec-lede" style={{ marginTop: 4 }}>
+              {section.description}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="panel stack-3">
+        {fields ? (
+          fields.map(([name, field]) => (
+            <SchemaField
+              key={name}
+              id={section.id}
+              name={name}
+              schema={field}
+              value={(value as Record<string, unknown> | undefined)?.[name]}
+              onChange={(v) => commit({ ...(value as Record<string, unknown>), [name]: v })}
+            />
+          ))
+        ) : (
+          <SchemaField id={section.id} name={section.id} schema={schema} value={value} onChange={commit} />
+        )}
+      </div>
+    </>
+  );
+}
+
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const settings = useSettings();
+  const sections = useSettingsSections();
   const save = useSaveSettings();
   const mcp = useMcpUrl();
   const dbPath = useDbPath();
-  const [llm, setLlm] = useState<AppSettings["llm"] | null>(null);
+  const [llm, setLlm] = useState<LlmSettings | null | undefined>(undefined);
 
   useEffect(() => {
-    if (settings.data && !llm) setLlm(settings.data.llm);
+    if (settings.data && llm === undefined) setLlm(settings.data.llm ?? null);
   }, [settings.data, llm]);
 
-  const commit = (patch: Partial<AppSettings["llm"]>) => {
+  const commit = (patch: Partial<LlmSettings>) => {
     if (!settings.data || !llm) return;
     const next = { ...llm, ...patch };
     setLlm(next);
     save.mutate({ ...settings.data, llm: next });
   };
+  const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="wide">
@@ -137,6 +232,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           </table>
         </div>
 
+        {llm && (
+          <>
         <hr className="rule" />
         <div className="sec-head">
           <div>
@@ -163,6 +260,17 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <span className="meta-txt">Stored on this machine only. Never sent anywhere but the base URL above.</span>
           </div>
         </div>
+          </>
+        )}
+
+        {pluginSections.map((section) => (
+          <PluginCard
+            key={section.id}
+            section={section}
+            stored={settings.data?.[section.id]}
+            onCommit={(next, revert) => settings.data && save.mutate({ ...settings.data, [section.id]: next }, { onError: revert })}
+          />
+        ))}
 
         <hr className="rule" />
         <div className="sec-head">

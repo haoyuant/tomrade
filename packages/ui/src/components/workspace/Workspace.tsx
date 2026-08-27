@@ -185,7 +185,7 @@ export function Workspace() {
         />
       </div>
 
-      <StatusBar onUndo={runUndo} />
+      <StatusBar projectId={ws.project.id} onUndo={runUndo} />
 
       <CommandPalette
         open={palette}

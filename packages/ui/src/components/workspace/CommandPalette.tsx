@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
-import type { GroupBy } from "@tomrade/core";
+import type { GroupBy } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
 import { GROUPS, isTicket, queryWithGroup } from "~/lib/domain";
+import { useCommands, useRunCommand } from "~/lib/queries";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
+import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 
 export interface PaletteActions {
@@ -23,6 +25,9 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const ws = useWorkspace();
   const navigate = useNavigate();
   const { setPreference } = useTheme();
+  const toast = useToast();
+  const commands = useCommands();
+  const runCommand = useRunCommand(ws.project.id);
   const epicColumns = [...ws.epics.map((e) => e.id), "none"];
   const [search, setSearch] = useState("");
   useEffect(() => {
@@ -35,6 +40,18 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   };
 
   const setGroup = (group: GroupBy) => ws.setQuery(queryWithGroup(ws.query, group, ws.savedQuery, epicColumns));
+
+  // Plugin commands arrive as data and run in the main process against the current scope.
+  const pluginGroups = new Map<string, NonNullable<typeof commands.data>>();
+  for (const c of commands.data ?? []) {
+    const group = c.group ?? "Plugins";
+    pluginGroups.set(group, [...(pluginGroups.get(group) ?? []), c]);
+  }
+  const runPlugin = (id: string) =>
+    runCommand.mutate(
+      { id, scope: { projectId: ws.project.id, boardId: ws.board.id, viewId: ws.view.id, itemId: ws.selectedId } },
+      { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast({ body: e.message }) }
+    );
 
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -111,6 +128,18 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   </Command.Item>
                 ))}
               </Command.Group>
+
+              {[...pluginGroups].map(([group, list]) => (
+                <Command.Group key={group} heading={group} className="eyebrow palette-group">
+                  {list.map((c) => (
+                    <Command.Item key={c.id} value={c.title} className="palette-row" onSelect={() => run(() => runPlugin(c.id))}>
+                      <Icon name="i-plug" size={14} style={{ color: "var(--meta)" }} />
+                      <span className="p-label">{c.title}</span>
+                      {c.shortcut && <Kbd>{c.shortcut}</Kbd>}
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              ))}
             </Command.List>
           </Command>
         </RadixDialog.Content>

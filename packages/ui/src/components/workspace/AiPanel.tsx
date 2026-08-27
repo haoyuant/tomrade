@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatTurn, Item } from "@tomrade/core";
+import type { ChatTurn, Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
+import { invoke } from "~/lib/api";
 import { invalidateWorkspace } from "~/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -105,7 +106,7 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
     setDraft("");
     setPending(true);
     try {
-      const result = await window.tomrade.aiChat(text, history, scope.projectId);
+      const result = await invoke("assistant.chat", text, history, scope.projectId);
       setTurns((all) => {
         const next = [...all];
         const last = next.length - 1;

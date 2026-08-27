@@ -7,10 +7,17 @@
     "dev": "pnpm dev:desktop",
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "dev:desktop": "pnpm --filter @tomrade/desktop dev",
-    "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "build": "tsc -b && pnpm --filter @tomrade/ui build",
+    "typecheck": "tsc -b && pnpm --filter @tomrade/ui typecheck",
+    "test": "vitest run",
+    "test:ui": "pnpm --filter @tomrade/desktop test:ui",
     "rebuild:desktop": "pnpm --filter @tomrade/desktop exec electron-rebuild -f -w better-sqlite3",
-    "test": "pnpm --filter @tomrade/core test",
-    "test:ui": "pnpm --filter @tomrade/desktop test:ui"
+    "build:backend": "tsc -b",
+    "dump-config": "pnpm --filter @tomrade/desktop dump-config"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7",
+    "typescript": "^6.0.0",
+    "@types/node": "^26.2.0"
   }
 }

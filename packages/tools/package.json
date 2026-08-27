@@ -1,0 +1,27 @@
+{
+  "name": "@tomrade/tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.tools \u2014 one tool registry with guarded execution, feeding the assistant and MCP alike",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/domain": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

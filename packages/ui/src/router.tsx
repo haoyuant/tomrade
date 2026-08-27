@@ -4,6 +4,7 @@ import { IssueScreen } from "~/components/issue/IssueScreen";
 import { ProjectsScreen } from "~/components/projects/ProjectsScreen";
 import { Workspace } from "~/components/workspace/Workspace";
 import { WorkspaceProvider } from "~/components/workspace/context";
+import { invoke } from "~/lib/api";
 import { ThemeProvider } from "~/lib/theme";
 import { ToastProvider } from "~/lib/toast";
 
@@ -25,10 +26,10 @@ const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/p/$projectId",
   loader: async ({ params }) => {
-    const boards = await window.tomrade.boardsList(params.projectId);
+    const boards = await invoke("boards.list", params.projectId);
     const board = boards.find((b) => !b.across) ?? boards[0];
     if (!board) throw redirect({ to: "/" });
-    const views = await window.tomrade.viewsList(params.projectId);
+    const views = await invoke("views.list", params.projectId);
     const view = views.filter((v) => v.boardId === board.id).sort((a, b) => a.rank - b.rank)[0];
     if (!view) throw redirect({ to: "/" });
     throw redirect({ to: "/p/$projectId/b/$boardId/v/$viewId", params: { projectId: params.projectId, boardId: board.id, viewId: view.id } });

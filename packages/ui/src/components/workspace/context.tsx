@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { Board, Item, Project, View } from "@tomrade/core";
+import type { Badge } from "@tomrade/contributions";
+import type { Board, Item, Project, View } from "@tomrade/domain";
 import {
   columnKeyOf,
   filterCount,
@@ -10,7 +11,7 @@ import {
   queryFromView,
   type BoardQuery
 } from "~/lib/domain";
-import { useBoards, useItems, useLabels, useProjects, useViewRanks, useViews } from "~/lib/queries";
+import { useBadges, useBoards, useItems, useLabels, useProjects, useViewRanks, useViews } from "~/lib/queries";
 
 export interface WorkspaceValue {
   project: Project;
@@ -37,6 +38,8 @@ export interface WorkspaceValue {
   /** Every issue the board owns, filter ignored. */
   owned: Item[];
   ranks: Record<string, number>;
+  /** Plugin badges per item id, computed in the main process. */
+  badges: Record<string, Badge[]>;
   selectedId: string | null;
   select: (id: string | null) => void;
   openSpace: (boardId: string, viewId?: string) => void;
@@ -68,6 +71,7 @@ export function WorkspaceProvider({
   const items = useItems(projectId);
   const labels = useLabels(projectId);
   const ranks = useViewRanks(viewId);
+  const badges = useBadges(projectId);
   const [selectedId, select] = useState<string | null>(null);
 
   const project = projects.data?.find((p) => p.id === projectId);
@@ -139,11 +143,12 @@ export function WorkspaceProvider({
       visible: itemsFor(all, board, query, rankMap),
       owned,
       ranks: rankMap,
+      badges: badges.data ?? {},
       selectedId,
       select,
       openSpace
     };
-  }, [project, projects.data, board, boards.data, view, views.data, items.data, labels.data, epics, savedQuery, query, ranks.data, selectedId, openSpace]);
+  }, [project, projects.data, board, boards.data, view, views.data, items.data, labels.data, epics, savedQuery, query, ranks.data, badges.data, selectedId, openSpace]);
 
   // Deleting the open board or view strands this route; the project loader knows
   // how to pick a surviving one.

@@ -1,8 +1,8 @@
 /**
- * UI regression: drives the REAL UI against the REAL repositories over a
- * throwaway SQLite file seeded with the design's sample project. Checks the
- * interactions the design specifies, then captures a screenshot per screen
- * and per theme into scripts/shots/.
+ * UI regression: drives the REAL UI against the REAL plugins, booted from the
+ * app's own tomrade.yml over a throwaway SQLite file seeded with the design's
+ * sample project. Checks the interactions the design specifies, then captures
+ * a screenshot per screen and per theme into scripts/shots/.
  *
  *   pnpm --filter @tomrade/desktop test:ui        (needs the dev server up)
  */
@@ -10,8 +10,7 @@ import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { openDb, BoardsRepository, ItemsRepository, ProjectsRepository, ViewsRepository } from "@tomrade/core";
-import { registerDataIpc } from "../dist/ipc.js";
+import { boot } from "../dist/boot.js";
 import { seedDesignProject } from "./seed.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,36 +30,24 @@ const check = (name, cond) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let settings = { llm: { apiKey: "", baseURL: "https://api.deepseek.com", model: "deepseek-chat" }, theme: "system" };
-
 const run = async () => {
-  const dbPath = path.join(WORK, "tomrade.db");
-  const db = openDb(dbPath);
-  const repos = {
-    db,
-    items: new ItemsRepository(db),
-    projects: new ProjectsRepository(db),
-    boards: new BoardsRepository(db),
-    views: new ViewsRepository(db)
-  };
-  const { project } = seedDesignProject(repos);
-
-  registerDataIpc({
-    ...repos,
-    dbPath,
-    mcpUrl: () => "http://127.0.0.1:19090/mcp",
-    getSettings: () => settings,
-    setSettings: (next) => {
-      settings = next;
-      return settings;
-    }
+  // The same composition the app boots, patched by id: MCP on a free port so a
+  // running Tomrade never collides with the harness.
+  const { ctx } = await boot({
+    configFile: path.join(__dirname, "../tomrade.yml"),
+    vars: { userData: WORK },
+    patches: [[{ id: "mcp", config: { port: 0 } }]]
   });
+  // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
+  ctx.projects.remove("default");
+  const repos = { db: ctx.db, items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views };
+  const { project } = seedDesignProject(repos);
 
   const win = new BrowserWindow({
     width: 1560,
     height: 940,
     show: !!process.env.TOMRADE_SHOW,
-    webPreferences: { preload: path.join(__dirname, "../dist/preload.cjs"), contextIsolation: true }
+    webPreferences: { preload: path.join(__dirname, "../preload.cjs"), contextIsolation: true }
   });
   await win.loadURL(DEV_URL);
   await sleep(3500);
@@ -337,7 +324,7 @@ const run = async () => {
   await sleep(900);
   check("the status field writes to the issue", open().status === wantStatus);
   check("the edit bumped the version", open().version === opened.version + 1);
-  check("the edit is one reversible oplog row", repos.items.historyFor(opened.id, 1)[0]?.op === "update");
+  check("the edit is one reversible oplog row", ctx.oplog.historyFor("item", opened.id, 1)[0]?.op === "update");
 
   const wantPriority = opened.priority === 4 ? "1" : "4";
   await pick(`document.querySelectorAll('.detail .fsel')[1]`, wantPriority);
@@ -601,7 +588,7 @@ const run = async () => {
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1400);
   check("confirming destroys the issue for good", repos.items.get(doomed.id) === null);
-  check("the purge left one tombstone and no history", repos.items.historyFor(doomed.id, 10).map((o) => o.op).join() === "purge");
+  check("the purge left one tombstone and no history", ctx.oplog.historyFor("item", doomed.id, 10).map((o) => o.op).join() === "purge");
   check("deleting the open issue leaves for the board, not a dead sheet", /\/p\/.+\/b\/.+\/v\/.+/.test(await $(`location.hash`)));
 
   // the same control on the docked pane, where the board is what has to react
@@ -629,7 +616,7 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,bubbles:true}));true`);
   await sleep(1200);
   check("⌘Z cannot resurrect a permanently deleted issue", repos.items.get(doomed2.id) === null);
-  check("the tombstone survives the undo as the audit trail", repos.items.recentOplog(30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
+  check("the tombstone survives the undo as the audit trail", ctx.oplog.recent(30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
   await shot("24-after-delete");
 
   return results;

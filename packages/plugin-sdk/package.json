@@ -1,0 +1,39 @@
+{
+  "name": "@tomrade/plugin-sdk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The public plugin API: Context, Service, defineTool, definePlugin and every service's typings in one import",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/assistant": "workspace:*",
+    "@tomrade/boards": "workspace:*",
+    "@tomrade/contributions": "workspace:*",
+    "@tomrade/db": "workspace:*",
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/items": "workspace:*",
+    "@tomrade/llm": "workspace:*",
+    "@tomrade/mcp": "workspace:*",
+    "@tomrade/oplog": "workspace:*",
+    "@tomrade/projects": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "@tomrade/write": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}
