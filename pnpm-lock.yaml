@@ -47,6 +47,9 @@ importers:
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../../packages/oplog
+      '@tomrade/plugins':
+        specifier: workspace:*
+        version: link:../../packages/plugins
       '@tomrade/projects':
         specifier: workspace:*
         version: link:../../packages/projects
@@ -394,6 +397,22 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/plugins:
+    dependencies:
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/projects:
     dependencies:
       '@tomrade/db':
@@ -626,6 +645,9 @@ importers:
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../oplog
+      '@tomrade/plugins':
+        specifier: workspace:*
+        version: link:../plugins
       '@tomrade/projects':
         specifier: workspace:*
         version: link:../projects

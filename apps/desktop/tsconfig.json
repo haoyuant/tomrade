@@ -39,6 +39,9 @@
       "path": "../../packages/oplog"
     },
     {
+      "path": "../../packages/plugins"
+    },
+    {
       "path": "../../packages/projects"
     },
     {

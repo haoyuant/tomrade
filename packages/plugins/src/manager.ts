@@ -1,0 +1,284 @@
+import { Context, Service, type Fiber } from "cordis";
+import type {} from "@tomrade/ipc";
+import {
+  RequiredModuleError,
+  type ModuleView,
+  type PluginRow,
+  type PluginState,
+  type PluginView,
+  type PluginsConfig,
+  type PluginsSnapshot
+} from "./types.js";
+
+declare module "cordis" {
+  interface Context {
+    plugins: Plugins;
+  }
+}
+
+declare module "@tomrade/ipc" {
+  interface Channels {
+    "plugins.list": () => PluginsSnapshot;
+    "plugins.setEnabled": (id: string, enabled: boolean) => PluginsSnapshot;
+  }
+  interface Broadcasts {
+    "plugins.changed": () => void;
+  }
+}
+
+const STATE: Record<number, PluginState> = { 0: "pending", 1: "pending", 2: "active", 3: "failed", 4: "failed", 5: "pending" };
+
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** The shape cordis records for a live service: which fiber put it there. */
+interface Impl {
+  name: string;
+  fiber: Fiber;
+}
+
+/**
+ * The loader, and the thing the user manages it with. It owns every row's
+ * fiber, so it can say what is running, switch a row off, and put it back —
+ * except when that would leave a required module with nothing providing it.
+ *
+ * It is not a row itself: you cannot switch off the thing that does the switching.
+ */
+export class Plugins extends Service {
+  static provide = "plugins";
+
+  private fibers = new Map<string, Fiber>();
+  private errors = new Map<string, unknown>();
+  private notify: () => void = () => {};
+  private queue: Promise<void> = Promise.resolve();
+  /**
+   * Inside a service method `this.ctx` is the *caller's* context, and a row
+   * loaded from one would belong to whoever asked for it — the IPC handler, on
+   * a switch thrown in the UI. Every row hangs off this one instead.
+   */
+  private readonly home: Context;
+
+  constructor(
+    ctx: Context,
+    public readonly config: PluginsConfig
+  ) {
+    super(ctx, "plugins");
+    this.home = ctx;
+  }
+
+  async [Service.init]() {
+    for (const row of this.config.rows) {
+      if (!row.disabled) await this.start(row);
+    }
+    await this.settle();
+
+    for (const view of this.list()) {
+      if (view.state === "pending") this.home.logger.warn(`${view.id} is waiting for: ${view.waitingFor?.join(", ") ?? "?"}`);
+    }
+    for (const module of this.modules()) {
+      if (module.required && !module.providers.length) this.home.logger.warn(`nothing provides the required module "${module.id}"`);
+    }
+
+    this.home.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("plugins.list", () => ctx.plugins.snapshot());
+      ctx.ipc.handle("plugins.setEnabled", (id, enabled) => ctx.plugins.setEnabled(id, enabled));
+      this.notify = () => ctx.ipc.send("plugins.changed");
+      return () => {
+        this.notify = () => {};
+      };
+    });
+  }
+
+  rows(): PluginRow[] {
+    return this.config.rows;
+  }
+
+  snapshot(): PluginsSnapshot {
+    return { modules: this.modules(), plugins: this.list() };
+  }
+
+  list(): PluginView[] {
+    const provided = this.providers();
+    const held = this.soleProviders(provided);
+    const owns = new Map<string, string[]>();
+    for (const [name, ids] of provided) {
+      for (const id of ids) owns.set(id, [...(owns.get(id) ?? []), name]);
+    }
+    return this.config.rows.map((row) => this.describe(row, owns.get(row.id) ?? [], held.get(row.id) ?? []));
+  }
+
+  modules(): ModuleView[] {
+    const provided = this.providers();
+    return (this.config.modules ?? []).map((module) => ({
+      id: module.id,
+      title: module.title,
+      required: module.required === true,
+      providers: provided.get(module.id) ?? []
+    }));
+  }
+
+  /**
+   * Switching a row on loads it; switching one off disposes its fiber, and
+   * everything that injected what it provided unloads with it. Both survive a
+   * restart through `persist`.
+   *
+   * Switches run one at a time. Two of them interleaved would read a half
+   * torn-down context and guard against the wrong answer — and two windows, or
+   * one impatient click, are enough to do it.
+   */
+  setEnabled(id: string, enabled: boolean): Promise<PluginsSnapshot> {
+    const next = this.queue.then(() => this.apply(id, enabled));
+    // The queue itself must never carry a rejection forward: a refused switch
+    // is this caller's to see, not the next one's.
+    this.queue = next.then(
+      () => {},
+      () => {}
+    );
+    return next;
+  }
+
+  private async apply(id: string, enabled: boolean): Promise<PluginsSnapshot> {
+    const row = this.config.rows.find((r) => r.id === id);
+    if (!row) throw new Error(`Unknown plugin “${id}”`);
+    if (!row.disabled === enabled) return this.snapshot();
+
+    if (enabled) {
+      row.disabled = false;
+      await this.start(row);
+      await this.settle();
+    } else {
+      await this.disable(row);
+    }
+
+    await this.config.persist?.(id, !enabled);
+    this.notify();
+    return this.snapshot();
+  }
+
+  private async disable(row: PluginRow): Promise<void> {
+    // The cheap refusal, taken before anything is torn down: this row is the
+    // only thing on the context providing a module nothing may run without.
+    const held = this.soleProviders(this.providers()).get(row.id);
+    if (held?.length) throw new RequiredModuleError(row.id, this.viewsOf(held));
+
+    // A module standing empty before the switch — a row this composition never
+    // had, or one that failed to load — is not this switch's doing. Refusing
+    // over it would lock every plugin in the list behind an unrelated fault.
+    const filled = new Set(this.modules().flatMap((m) => (m.providers.length ? [m.id] : [])));
+
+    const fiber = this.fibers.get(row.id);
+    row.disabled = true;
+    this.fibers.delete(row.id);
+    this.errors.delete(row.id);
+    if (fiber) await fiber.dispose();
+    await this.settle();
+
+    // Unloading cascades — whatever injected this row's services went with it.
+    // Only the context itself can say whether that emptied a required module,
+    // so ask it, and put the row back if the answer is yes.
+    const emptied = this.modules().filter((m) => m.required && !m.providers.length && filled.has(m.id));
+    if (!emptied.length) return;
+    row.disabled = false;
+    await this.start(row);
+    await this.settle();
+    throw new RequiredModuleError(row.id, emptied);
+  }
+
+  private async start(row: PluginRow): Promise<void> {
+    this.errors.delete(row.id);
+    try {
+      this.fibers.set(row.id, this.home.plugin(await this.config.resolve(row.name), row.config));
+    } catch (error) {
+      this.errors.set(row.id, error);
+      this.home.logger.error(`${row.id}: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * A fiber whose dependencies arrive later starts loading after the notify
+   * that brings them, so settle until no fiber is mid-flight.
+   */
+  private async settle(): Promise<void> {
+    let loading = true;
+    while (loading) {
+      for (const [id, fiber] of this.fibers) {
+        try {
+          await fiber;
+        } catch (error) {
+          this.errors.set(id, error);
+        }
+      }
+      await tick();
+      loading = [...this.fibers.values()].some((f) => f.state === 1 || f.state === 5);
+    }
+  }
+
+  private describe(row: PluginRow, provides: string[], holds: string[]): PluginView {
+    const fiber = this.fibers.get(row.id);
+    const error = this.errors.get(row.id);
+    const base = { id: row.id, name: row.name, config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds };
+    if (row.disabled) return { ...base, state: "disabled" };
+    if (error || !fiber) return { ...base, state: "failed", error: messageOf(error ?? "not loaded") };
+    const state = STATE[fiber.state] ?? "pending";
+    const waitingFor = state === "pending" ? Object.keys(fiber.inject).filter((name) => this.home.get(name) === undefined) : undefined;
+    return { ...base, state, ...(waitingFor?.length ? { waitingFor } : {}) };
+  }
+
+  /**
+   * Which row puts each live service on the context. Read from the context
+   * rather than from a declaration, so a row that loads further plugins — and
+   * every row here may — is credited with what they provide.
+   */
+  private providers(): Map<string, string[]> {
+    // Fibers reach us through cordis' tracing proxy, so they never compare
+    // equal to the ones we hold; `uid` is the identity that survives it.
+    const owners = new Map<number, string>();
+    for (const [id, fiber] of this.fibers) {
+      if (fiber.uid !== null) owners.set(fiber.uid, id);
+    }
+
+    const store = this.home.reflect.store as Record<symbol, Impl | undefined>;
+    const out = new Map<string, string[]>();
+    for (const key of Reflect.ownKeys(store)) {
+      const impl = store[key as symbol];
+      if (!impl) continue;
+      const id = this.ownerOf(impl.fiber, owners);
+      if (id) out.set(impl.name, [...(out.get(impl.name) ?? []), id]);
+    }
+    return out;
+  }
+
+  /** Walk out of nested fibers until one of them is a row of the composition. */
+  private ownerOf(fiber: Fiber, owners: Map<number, string>): string | undefined {
+    const seen = new Set<number>();
+    let current: Fiber | undefined = fiber;
+    while (current?.uid != null && !seen.has(current.uid)) {
+      const id = owners.get(current.uid);
+      if (id) return id;
+      seen.add(current.uid);
+      current = current.parent?.fiber;
+    }
+    return undefined;
+  }
+
+  /** Plugin id → the required modules it is the last one holding up. */
+  private soleProviders(provided: Map<string, string[]>): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    for (const module of this.config.modules ?? []) {
+      if (module.required !== true) continue;
+      const providers = provided.get(module.id) ?? [];
+      if (providers.length !== 1) continue;
+      const id = providers[0]!;
+      out.set(id, [...(out.get(id) ?? []), module.id]);
+    }
+    return out;
+  }
+
+  private viewsOf(ids: string[]): ModuleView[] {
+    const byId = new Map(this.modules().map((m) => [m.id, m]));
+    return ids.flatMap((id) => byId.get(id) ?? []);
+  }
+}
+
+export default Plugins;

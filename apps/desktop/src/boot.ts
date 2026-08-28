@@ -1,11 +1,13 @@
+import { Context, Logger } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
-import { Context, Logger, type Fiber } from "cordis";
-import { applyPatches, describeRow, dumpRows, interpolate, readRows, resolvePlugin, type PluginPatch, type PluginRow } from "./loader.js";
+import { stringify } from "yaml";
+import { Plugins, type PluginRow } from "@tomrade/plugins";
+import { applyPatches, interpolate, readConfig, readRows, resolvePlugin, writePatchRow, type PluginPatch } from "./loader.js";
 
 export interface BootOptions {
   configFile: string;
-  /** Applied in order; a missing file is skipped. */
+  /** Applied in order; a missing file is skipped. The first is where a switch thrown in the UI lands. */
   patchFiles?: string[];
   patches?: PluginPatch[][];
   vars: Record<string, string>;
@@ -16,8 +18,6 @@ export interface Booted {
   rows: PluginRow[];
   dump(): string;
 }
-
-const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 function consoleExporter() {
   return {
@@ -31,46 +31,29 @@ function consoleExporter() {
   };
 }
 
-/** Create the context, load every row, and wait until nothing is still loading. */
+/**
+ * Create the context and hand the composition to `ctx.plugins`, which loads
+ * every row, waits until nothing is still loading, and stays around as the
+ * thing that can switch a row off again.
+ */
 export async function boot(opts: BootOptions): Promise<Booted> {
   const ctx = new Context();
   ctx.logger.exporter(consoleExporter());
 
+  const { rows: base, modules } = readConfig(opts.configFile);
   const fromFiles = (opts.patchFiles ?? []).filter((f) => fs.existsSync(f)).map(readRows);
-  const rows = interpolate(applyPatches(readRows(opts.configFile), [...fromFiles, ...(opts.patches ?? [])]), opts.vars);
+  const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), opts.vars);
   const baseDir = path.dirname(opts.configFile);
+  // The user's own patch file, which is the first: a --patch passed on the
+  // command line describes one run and is never written back.
+  const patchFile = opts.patchFiles?.[0];
 
-  const fibers = new Map<string, Fiber>();
-  const errors = new Map<string, unknown>();
-  for (const row of rows) {
-    if (row.disabled) continue;
-    try {
-      fibers.set(row.id, ctx.plugin(await resolvePlugin(row.name, baseDir), row.config));
-    } catch (error) {
-      errors.set(row.id, error);
-      ctx.logger.error(`${row.id}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  await ctx.plugin(Plugins, {
+    rows,
+    modules,
+    resolve: (name) => resolvePlugin(name, baseDir),
+    persist: patchFile ? (id, disabled) => writePatchRow(patchFile, id, { disabled }) : undefined
+  });
 
-  // A fiber whose dependencies arrive later starts loading after the notify
-  // that brings them, so settle until no fiber is mid-flight.
-  let loading = true;
-  while (loading) {
-    for (const [id, fiber] of fibers) {
-      try {
-        await fiber;
-      } catch (error) {
-        errors.set(id, error);
-      }
-    }
-    await tick();
-    loading = [...fibers.values()].some((f) => f.state === 1 || f.state === 5);
-  }
-
-  const has = (name: string) => ctx.get(name) !== undefined;
-  const described = () => rows.map((row) => describeRow(row, fibers.get(row.id), errors.get(row.id), has));
-  for (const row of described()) {
-    if (row.state === "pending") ctx.logger.warn(`${row.id} is waiting for: ${row.waitingFor?.join(", ") ?? "?"}`);
-  }
-  return { ctx, rows, dump: () => dumpRows(described()) };
+  return { ctx, rows, dump: () => stringify(ctx.plugins.snapshot()) };
 }

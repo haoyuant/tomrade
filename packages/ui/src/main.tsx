@@ -19,6 +19,8 @@ watchWindowChrome();
 // A plugin loading or unloading changes what the palette, cards and status bar show.
 if (window.tomrade) {
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
+  // Switched from another window, or from the manager in this one.
+  subscribe("plugins.changed", () => void queryClient.invalidateQueries({ queryKey: ["plugins"] }));
   // A destination was published to, or its copy replaced this project's rows.
   // An import spares nothing, so neither does this.
   subscribe("storage.changed", (projectId) => invalidateProject(queryClient, projectId));

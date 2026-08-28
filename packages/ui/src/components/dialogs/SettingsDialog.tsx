@@ -115,7 +115,16 @@ function PluginCard({ section, stored, onCommit }: { section: SettingsSectionVie
   );
 }
 
-export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  onOpenPlugins
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Given, the dialog offers the plugin sheet; the caller owns both, so it decides the handover. */
+  onOpenPlugins?: () => void;
+}) {
   const settings = useSettings();
   const sections = useSettingsSections();
   const save = useSaveSettings();
@@ -231,6 +240,29 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             onCommit={(next, revert) => settings.data && save.mutate({ ...settings.data, [section.id]: next }, { onError: revert })}
           />
         ))}
+
+        {onOpenPlugins && (
+          <>
+            <hr className="rule" />
+            <div className="sec-head">
+              <div>
+                <h3 className="sec-title">Plugins</h3>
+                <p className="sec-lede" style={{ marginTop: 4 }}>
+                  Every card above this one was drawn from a plugin's own schema. Which plugins are loaded — and which modules the app may not be
+                  left without — is managed on its own sheet.
+                </p>
+              </div>
+            </div>
+            <div className="panel row-between">
+              <p className="meta-txt dense" style={{ margin: 0 }}>
+                Switch a plugin off and its tools, channels, badges and settings cards go with it.
+              </p>
+              <button type="button" className="btn btn-secondary" onClick={onOpenPlugins}>
+                <Icon name="i-plug" size={14} /> Manage plugins
+              </button>
+            </div>
+          </>
+        )}
 
         <hr className="rule" />
         <div className="sec-head">

@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { BoardSettingsDialog } from "~/components/dialogs/BoardSettingsDialog";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
+import { PluginsDialog } from "~/components/dialogs/PluginsDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
 import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
@@ -50,6 +51,7 @@ export function Workspace() {
   const [palette, setPalette] = useState(false);
   const [newIssue, setNewIssue] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [plugins, setPlugins] = useState(false);
   const [viewSettings, setViewSettings] = useState(false);
   const [boardSettings, setBoardSettings] = useState(false);
   const [projectSettings, setProjectSettings] = useState(false);
@@ -206,13 +208,22 @@ export function Workspace() {
           toggleSidebar: () => setSideOpen((v) => !v),
           undo: runUndo,
           openSettings: () => setSettings(true),
+          openPlugins: () => setPlugins(true),
           openBoardSettings,
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true)
         }}
       />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
-      <SettingsDialog open={settings} onOpenChange={setSettings} />
+      <SettingsDialog
+        open={settings}
+        onOpenChange={setSettings}
+        onOpenPlugins={() => {
+          setSettings(false);
+          setPlugins(true);
+        }}
+      />
+      <PluginsDialog open={plugins} onOpenChange={setPlugins} />
       <ViewSettingsDialog
         open={viewSettings}
         onOpenChange={setViewSettings}

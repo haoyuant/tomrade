@@ -1,31 +1,41 @@
+import type { Plugin } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parse, stringify } from "yaml";
-import type { Fiber, Plugin } from "cordis";
+import { Document, isMap, isSeq, parse, parseDocument } from "yaml";
+import type { ModuleSpec, PluginRow } from "@tomrade/plugins";
 
-export interface PluginRow {
-  id: string;
-  name: string;
-  config?: unknown;
-  disabled?: boolean;
-}
+export type { PluginRow };
 
 export type PluginPatch = Partial<PluginRow> & { id: string };
-
-interface ConfigFile {
-  plugins?: unknown;
-}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 function rowsOf(raw: unknown, file: string): PluginPatch[] {
-  const plugins = isRecord(raw) ? (raw as ConfigFile).plugins : undefined;
+  const plugins = isRecord(raw) ? raw.plugins : undefined;
   if (!Array.isArray(plugins)) throw new Error(`${file}: expected a top-level "plugins" list`);
   return plugins.map((row, i) => {
     if (!isRecord(row) || typeof row.id !== "string") throw new Error(`${file}: plugins[${i}] needs a string id`);
     return row as PluginPatch;
   });
+}
+
+function modulesOf(raw: unknown, file: string): ModuleSpec[] {
+  const modules = isRecord(raw) ? raw.modules : undefined;
+  if (modules === undefined) return [];
+  if (!Array.isArray(modules)) throw new Error(`${file}: expected "modules" to be a list`);
+  return modules.map((module, i) => {
+    if (!isRecord(module) || typeof module.id !== "string" || typeof module.title !== "string") {
+      throw new Error(`${file}: modules[${i}] needs a string id and title`);
+    }
+    return { id: module.id, title: module.title, required: module.required === true };
+  });
+}
+
+/** The whole composition: the rows to load, and the capabilities they may not leave unfilled. */
+export function readConfig(file: string): { rows: PluginPatch[]; modules: ModuleSpec[] } {
+  const raw: unknown = parse(fs.readFileSync(file, "utf8"));
+  return { rows: rowsOf(raw, file), modules: modulesOf(raw, file) };
 }
 
 export function readRows(file: string): PluginPatch[] {
@@ -42,6 +52,22 @@ export function applyPatches(base: PluginPatch[], patches: PluginPatch[][]): Plu
     if (typeof r.name !== "string") throw new Error(`plugins[${i}] "${r.id}" has no plugin name`);
     return r as PluginRow;
   });
+}
+
+/**
+ * Write one row's fields back to a patch file, in place. The file is edited as
+ * a document rather than re-serialised, so rows and comments the user put there
+ * by hand survive a switch thrown in the UI.
+ */
+export function writePatchRow(file: string, id: string, fields: Partial<PluginRow>): void {
+  const doc = fs.existsSync(file) ? parseDocument(fs.readFileSync(file, "utf8")) : new Document({ plugins: [] });
+  const rows = doc.get("plugins");
+  if (!isSeq(rows)) throw new Error(`${file}: expected a top-level "plugins" list`);
+  const row = rows.items.find((item) => isMap(item) && item.get("id") === id);
+  if (isMap(row)) for (const [key, value] of Object.entries(fields)) row.set(key, value);
+  else rows.add(doc.createNode({ id, ...fields }));
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, String(doc), "utf8");
 }
 
 /** Static `${var}` substitution in config strings — never evaluation. */
@@ -68,22 +94,3 @@ export async function resolvePlugin(name: string, baseDir: string): Promise<Plug
   }
   return candidate as Plugin;
 }
-
-export interface BootedRow extends PluginRow {
-  state: "active" | "failed" | "pending" | "disabled";
-  error?: string;
-  /** For a pending row: the services it is still waiting for. */
-  waitingFor?: string[];
-}
-
-const STATE: Record<number, BootedRow["state"]> = { 0: "pending", 1: "pending", 2: "active", 3: "failed", 4: "failed", 5: "pending" };
-
-export function describeRow(row: PluginRow, fiber: Fiber | undefined, error: unknown, has: (name: string) => boolean): BootedRow {
-  if (row.disabled) return { ...row, state: "disabled" };
-  if (error || !fiber) return { ...row, state: "failed", error: error instanceof Error ? error.message : String(error ?? "not loaded") };
-  const state = STATE[fiber.state] ?? "pending";
-  const waitingFor = state === "pending" ? Object.keys(fiber.inject).filter((name) => !has(name)) : undefined;
-  return { ...row, state, ...(waitingFor?.length ? { waitingFor } : {}) };
-}
-
-export const dumpRows = (rows: BootedRow[]): string => stringify({ plugins: rows });

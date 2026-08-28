@@ -35,6 +35,7 @@
     "@tomrade/items": "workspace:*",
     "@tomrade/mcp": "workspace:*",
     "@tomrade/oplog": "workspace:*",
+    "@tomrade/plugins": "workspace:*",
     "@tomrade/projects": "workspace:*",
     "@tomrade/settings": "workspace:*",
     "@tomrade/storage": "workspace:*",

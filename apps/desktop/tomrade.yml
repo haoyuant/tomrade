@@ -2,6 +2,57 @@
 # each plugin injects, not from the order here. A row is replaced by id from
 # <userData>/tomrade.patch.yml or a file passed with --patch, and
 # `electron . --dump-config` prints the tree that actually booted.
+
+# A module is a capability, named by the service key that carries it. Which row
+# fills one is never declared: the manager reads it off the running context, so
+# a plugin that loads further plugins is credited with what they provide. A
+# required module may not be left empty — the switch that would do it is refused.
+modules:
+  - id: db
+    title: Database
+    required: true
+  - id: oplog
+    title: History
+    required: true
+  - id: items
+    title: Issues
+    required: true
+  - id: boards
+    title: Boards
+    required: true
+  - id: views
+    title: Saved views
+    required: true
+  - id: projects
+    title: Projects
+    required: true
+  - id: tools
+    title: Tool registry
+    required: true
+  - id: contributions
+    title: Contributions
+    required: true
+  - id: settings
+    title: Settings
+    required: true
+  - id: ipc
+    title: Renderer channels
+    required: true
+  # The registry, not the destinations. storage-git and storage-github register
+  # providers into it and hold no module of their own, so either can go without
+  # taking a project's own copy with it.
+  - id: storage
+    title: Destinations
+    required: true
+  # Optional, and listed so the manager can say who fills them and what is
+  # lost by switching the last one off.
+  - id: llm
+    title: Language model
+  - id: assistant
+    title: Assistant
+  - id: mcp
+    title: MCP server
+
 plugins:
   - id: db
     name: "@tomrade/db"
