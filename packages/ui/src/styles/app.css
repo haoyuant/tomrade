@@ -996,6 +996,24 @@ strong { font-weight: 500; }
 }
 .palette.modal.wide { width: min(760px, calc(100vw - 64px)); }
 
+/* Settings outgrew one scroll, so its body is a menu beside a pane rather than
+ * one column. The rail borrows the sidebar's rows at a narrower width: one row
+ * per pane, the current one marked exactly the way a current board is.
+ * It is also the one sheet you move around inside, so — alone among the
+ * dialogs — it pins its height as well as its width: the pane scrolls, and the
+ * box never resizes under the menu row you are clicking. */
+.palette.sheet-settings {
+  width: min(964px, calc(100vw - 64px));
+  height: min(var(--overlay-max-h), 760px);
+}
+.dlg-split { display: flex; flex: 1; min-height: 0; }
+.dlg-nav {
+  width: 204px; flex-shrink: 0; overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  background: var(--bg); border-right: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+
 /* ─── the projects screen · a route inside the file, not a dialog ───────
  * OD renders every screen in a srcdoc frame, where a relative href has no
  * base URL to resolve against — so a file-to-file jump silently dies. Home

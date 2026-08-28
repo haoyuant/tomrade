@@ -104,11 +104,17 @@ const run = async () => {
       })()`)
     );
   /* The ThemeProvider owns the class, so a theme must be set through a real
-     control: the status-bar switch where there is one, the palette otherwise. */
+     control: the settings sheet's own switch on the projects home, the palette
+     inside a project. */
   const SEGMENT = { system: 0, light: 1, dark: 2, matcha: 3 };
-  const themeViaSwitch = async (theme) => {
-    await press(`document.querySelectorAll('.statusbar .theme-seg')[${SEGMENT[theme]}]`);
+  const settingsNav = (label) => `[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === '${label}')`;
+  const themeViaSettings = async (theme) => {
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
     await sleep(800);
+    await press(`document.querySelectorAll('.dlg-body .theme-seg')[${SEGMENT[theme]}]`);
+    await sleep(600);
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+    await sleep(700);
   };
   const THEME_LABEL = { light: "Paper", dark: "Ink", matcha: "Matcha" };
   const themeViaPalette = async (theme) => {
@@ -122,17 +128,17 @@ const run = async () => {
 
   // ── projects home ───────────────────────────────────────────────────
   // the stored preference is 'system', so pin a theme before the first shot
-  await themeViaSwitch("light");
+  await themeViaSettings("light");
   const projectCards = await $(`document.querySelectorAll('.proj').length`);
   check("projects home renders a card per project", projectCards === 2);
   check("project card shows board and issue counts", (await $(`document.querySelectorAll('.proj .stat-v').length`)) >= 6);
   await shot("01-projects-paper");
-  await themeViaSwitch("dark");
+  await themeViaSettings("dark");
   await shot("02-projects-ink");
-  await themeViaSwitch("matcha");
+  await themeViaSettings("matcha");
   await shot("03-projects-matcha");
-  await themeViaSwitch("light");
-  check("the theme switch reports the preference, not the resolved theme", (await $(`document.querySelectorAll('.statusbar .theme-seg[aria-pressed="true"]').length`)) === 1);
+  await themeViaSettings("light");
+  check("the projects home leaves the theme to settings", (await $(`!!document.querySelector('.statusbar .theme-seg')`)) === false);
 
   // ── enter the project ───────────────────────────────────────────────
   await $(`document.querySelectorAll('.proj')[0].click();true`);
@@ -487,8 +493,22 @@ const run = async () => {
   check("an overlay demotes the chrome's primary button", (await $(`document.documentElement.classList.contains('overlay-open')`)) === true);
   check("all three themes preview at once", (await $(`document.querySelectorAll('.mode').length`)) === 3);
   check("the token table resolves live swatches", (await $(`document.querySelectorAll('.tok-table .chip').length`)) === 8);
+  check("the theme switch reports the preference, not the resolved theme", (await $(`document.querySelectorAll('.dlg-body .theme-seg[aria-pressed="true"]').length`)) === 1);
+  // one pane at a time: the menu is what makes the sheet short enough to read
+  check("settings opens on a side menu", (await $(`document.querySelectorAll('.dlg-nav .side-row').length`)) >= 4);
+  check("exactly one menu row is current", (await $(`document.querySelectorAll('.dlg-nav .side-row[aria-current="true"]').length`)) === 1);
+  check("it lands on Appearance", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Appearance");
   await checkCentred("settings");
   await shot("17-settings");
+  const sheetBox = `(() => { const r = document.querySelector('.palette.modal').getBoundingClientRect(); return r.width + 'x' + r.height; })()`;
+  const boxOnAppearance = await $(sheetBox);
+  await press(settingsNav("Agent access"));
+  await sleep(600);
+  check("choosing a menu row swaps the pane", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Agent access");
+  check("and takes the pane it replaced out of the body", (await $(`!!document.querySelector('.tok-table')`)) === false);
+  // the tallest pane and the shortest one leave the sheet exactly the same size
+  check("the sheet keeps its frame across panes", (await $(sheetBox)) === boxOnAppearance);
+  await checkCentred("settings on its shortest pane");
   await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
   await sleep(700);
   check("the demotion lifts with the overlay", (await $(`document.documentElement.classList.contains('overlay-open')`)) === false);
@@ -503,15 +523,19 @@ const run = async () => {
   check("closing a dialog hands focus back to whatever opened it", (await $(`document.activeElement?.getAttribute('aria-label')`)) === "Settings");
 
   // ── plugin manager ─────────────────────────────────────────────────
-  // The counts come from the main process, so this checks the sheet against
-  // the composition that actually booted rather than against a number typed here.
-  const SHEET = `[aria-label="Plugins"]`;
+  // A pane of settings, not a sheet of its own. The counts come from the main
+  // process, so this checks it against the composition that actually booted
+  // rather than against a number typed here.
+  const SHEET = `[aria-label="Settings"]`;
   const rowFor = (id) => `document.querySelector('${SHEET} .cfg-row[data-id="${id}"]')`;
-  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
+  await sleep(500);
+  await typeInto(".palette-input", "Plugins");
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.palette-row')].find(r => r.textContent.trim() === 'Plugins')`);
   await sleep(900);
-  await press(`[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => b.textContent.includes('Manage plugins'))`);
-  await sleep(900);
-  check("settings hands over to the plugin sheet", (await $(`!!document.querySelector('${SHEET}')`)) === true);
+  check("the palette's Plugins command opens settings on that pane", (await $(`document.querySelector('.dlg-nav .side-row[aria-current="true"]')?.textContent.trim()`)) === "Manage plugins");
+  check("and stacks no second sheet over settings", (await $(`document.querySelectorAll('.palette.modal').length`)) === 1);
   check(
     "every module is listed with what provides it",
     (await $(`document.querySelectorAll('${SHEET} .tok-table tbody tr').length`)) === ctx.plugins.modules().length
@@ -522,7 +546,7 @@ const run = async () => {
   check("and the row names the module it holds", (await $(`${rowFor("db")}.textContent.includes('holds db')`)) === true);
   check("with the reason on the control itself", (await $(`${rowFor("db")}.querySelector('.switch').title.includes('only plugin providing db')`)) === true);
   check("a third-party plugin's switch is free", (await $(`!${rowFor("stale")}.querySelector('.switch[disabled]')`)) === true);
-  await checkCentred("the plugin sheet", SHEET);
+  check("the manager fits the frame the other panes set", (await $(sheetBox)) === boxOnAppearance);
   await shot("18-plugins");
   await $(`${rowFor("write-policy")}.scrollIntoView({ block: 'center' });true`);
   await sleep(400);
@@ -832,9 +856,9 @@ const run = async () => {
   // provider claims that section, and Settings does not draw it twice.
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
-  const cardTitles = `[...document.querySelectorAll('.dlg-body .sec-title')].map(t => t.textContent).join(' | ')`;
-  check("a plugin's own settings card is still drawn", (await $(cardTitles)).includes("Stale issues"));
-  check("but a destination's account is not a settings card", (await $(cardTitles)).includes("GitHub") === false);
+  const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
+  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Stale issues"));
+  check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 

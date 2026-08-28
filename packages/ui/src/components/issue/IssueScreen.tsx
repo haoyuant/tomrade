@@ -3,7 +3,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { Item, ItemStatus } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
-import { PluginsDialog } from "~/components/dialogs/PluginsDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { usePanelOpen } from "~/lib/panel";
@@ -41,7 +40,6 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const undo = useUndo(projectId);
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey);
 
@@ -222,15 +220,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
       <StatusBar projectId={projectId} onUndo={() => undo.mutate(undefined)}>
         <ThemeSwitch compact />
       </StatusBar>
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onOpenPlugins={() => {
-          setSettingsOpen(false);
-          setPluginsOpen(true);
-        }}
-      />
-      <PluginsDialog open={pluginsOpen} onOpenChange={setPluginsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <DeleteIssueDialog
         item={deleting ? item : null}
         items={items.data ?? []}

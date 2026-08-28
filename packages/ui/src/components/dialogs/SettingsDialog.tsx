@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { LlmSettings } from "@tomrade/domain";
 import type { SettingsSectionView } from "@tomrade/settings";
-import { Icon } from "~/components/icons";
+import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
-import { Eyebrow, LiveDot, Num, Tag } from "~/components/ui/atoms";
+import { PluginsPanel } from "./PluginsPanel";
+import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 
@@ -69,11 +70,11 @@ function ThemePreview() {
   );
 }
 
-/** Sections the dialog lays out by hand; every other registered section gets a card drawn from its schema. */
+/** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 const HAND_DRAWN = new Set(["theme", "llm"]);
 
-/** A plugin's settings card. Edits commit as they are made and fall back to the stored value if refused. */
-function PluginCard({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
+/** A plugin's settings pane. Edits commit as they are made and fall back to the stored value if refused. */
+function PluginPane({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
   const [value, setValue] = useState<unknown>(stored);
   useEffect(() => setValue(stored), [stored]);
   const schema = section.schema as JsonSchema;
@@ -84,17 +85,7 @@ function PluginCard({ section, stored, onCommit }: { section: SettingsSectionVie
   const fields = fieldsOf(schema);
   return (
     <>
-      <hr className="rule" />
-      <div className="sec-head">
-        <div>
-          <h3 className="sec-title">{section.title}</h3>
-          {section.description && (
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              {section.description}
-            </p>
-          )}
-        </div>
-      </div>
+      <SectionHead title={section.title}>{section.description}</SectionHead>
       <div className="panel stack-3">
         {fields ? (
           fields.map(([name, field]) => (
@@ -115,15 +106,24 @@ function PluginCard({ section, stored, onCommit }: { section: SettingsSectionVie
   );
 }
 
+/** A row in the side menu and the pane it reveals are one and the same thing. */
+interface Pane {
+  id: string;
+  label: string;
+  icon: IconId;
+  group: "app" | "plugins";
+  render: () => ReactNode;
+}
+
 export function SettingsDialog({
   open,
   onOpenChange,
-  onOpenPlugins
+  pane
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Given, the dialog offers the plugin sheet; the caller owns both, so it decides the handover. */
-  onOpenPlugins?: () => void;
+  /** Opens on this pane. Empty leaves the sheet on whichever one it was left showing. */
+  pane?: string;
 }) {
   const settings = useSettings();
   const sections = useSettingsSections();
@@ -132,10 +132,16 @@ export function SettingsDialog({
   const dbPath = useDbPath();
   const providers = useStorageProviders();
   const [llm, setLlm] = useState<LlmSettings | null | undefined>(undefined);
+  const [active, setActive] = useState("appearance");
 
   useEffect(() => {
     if (settings.data && llm === undefined) setLlm(settings.data.llm ?? null);
   }, [settings.data, llm]);
+
+  // The palette sends you straight to a pane; ⌘, leaves you on the last one.
+  useEffect(() => {
+    if (open && pane) setActive(pane);
+  }, [open, pane]);
 
   const commit = (patch: Partial<LlmSettings>) => {
     if (!settings.data || !llm) return;
@@ -149,176 +155,193 @@ export function SettingsDialog({
   const claimed = new Set((providers.data ?? []).map((p) => p.settingsSection).filter(Boolean) as string[]);
   const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id) && !claimed.has(s.id));
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="wide">
-      <DialogHead title="Settings" aside={<Tag tone="neutral">local · this machine</Tag>} />
-      <DialogBody>
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Appearance</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              Three themes, one token block. Every colour in the app resolves from a single declaration set, so a theme is a class on the document —
-              not a second copy of the stylesheet.
-            </p>
+  const panes: Pane[] = [
+    {
+      id: "appearance",
+      label: "Appearance",
+      icon: "i-sun",
+      group: "app",
+      render: () => (
+        <>
+          <SectionHead title="Appearance">
+            Three themes, one token block. Every colour in the app resolves from a single declaration set, so a theme is a class on the document — not
+            a second copy of the stylesheet.
+          </SectionHead>
+          <div className="row" style={{ gap: "var(--space-3)", flexWrap: "wrap" }}>
+            <ThemeSwitch />
+            <p className="meta-txt">Applies immediately and crossfades. Persisted with the rest of your settings.</p>
           </div>
-        </div>
-        <div className="row" style={{ gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <ThemeSwitch />
-          <p className="meta-txt">Applies immediately and crossfades. Persisted with the rest of your settings.</p>
-        </div>
-        <ThemePreview />
+          <ThemePreview />
 
-        <hr className="rule" />
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Tokens</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              Resolved values for the theme you are looking at now. Switch above and this table re-resolves — nothing here is hard-coded.
-            </p>
-          </div>
-        </div>
-        <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
-          <table className="tok-table">
-            <thead>
-              <tr>
-                <th>Role</th>
-                <th>Token</th>
-                <th>Where it lands</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TOKENS.map(([role, token, where]) => (
-                <tr key={token}>
-                  <td>
-                    <span className="chip" style={{ background: `var(${token})` }} />
-                    {role}
-                  </td>
-                  <td className="mono">{token}</td>
-                  <td>{where}</td>
+          <hr className="rule" />
+          <SectionHead title="Tokens">
+            Resolved values for the theme you are looking at now. Switch above and this table re-resolves — nothing here is hard-coded.
+          </SectionHead>
+          <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
+            <table className="tok-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Token</th>
+                  <th>Where it lands</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {llm && (
-          <>
-        <hr className="rule" />
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Assistant</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              The direct provider used for extraction, dedup judging and gap checks. Delegated execution goes to your own CLI agents instead.
-            </p>
+              </thead>
+              <tbody>
+                {TOKENS.map(([role, token, where]) => (
+                  <tr key={token}>
+                    <td>
+                      <span className="chip" style={{ background: `var(${token})` }} />
+                      {role}
+                    </td>
+                    <td className="mono">{token}</td>
+                    <td>{where}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-        <div className="panel stack-3">
+        </>
+      )
+    },
+    ...(llm
+      ? [
+          {
+            id: "assistant",
+            label: "Assistant",
+            icon: "i-panel" as IconId,
+            group: "app" as const,
+            render: () => (
+              <>
+                <SectionHead title="Assistant">
+                  The direct provider used for extraction, dedup judging and gap checks. Delegated execution goes to your own CLI agents instead.
+                </SectionHead>
+                <div className="panel stack-3">
+                  <div className="grid-2">
+                    <div className="field">
+                      <label htmlFor="stBase">Base URL</label>
+                      <input id="stBase" className="input num" value={llm.baseURL ?? ""} onChange={(e) => commit({ baseURL: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="stModel">Model</label>
+                      <input id="stModel" className="input num" value={llm.model ?? ""} onChange={(e) => commit({ model: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="stKey">API key</label>
+                    <input id="stKey" className="input num" type="password" value={llm.apiKey ?? ""} onChange={(e) => commit({ apiKey: e.target.value })} />
+                    <span className="meta-txt">Stored on this machine only. Never sent anywhere but the base URL above.</span>
+                  </div>
+                </div>
+              </>
+            )
+          }
+        ]
+      : []),
+    {
+      id: "agents",
+      label: "Agent access",
+      icon: "i-lock",
+      group: "app",
+      render: () => (
+        <>
+          <SectionHead title="Agent access">What your coding agents may do to this backlog, and what they may not.</SectionHead>
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="stBase">Base URL</label>
-              <input id="stBase" className="input num" value={llm?.baseURL ?? ""} onChange={(e) => commit({ baseURL: e.target.value })} />
+            <div className="panel">
+              <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
+                <LiveDot />
+                <Eyebrow>MCP · listening</Eyebrow>
+              </div>
+              <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
+                {mcp.data ?? "not running"}
+              </p>
+              <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
+                Writes arrive with the <Num>baseVersion</Num> the agent read. A stale version is rejected, never merged.
+              </p>
             </div>
-            <div className="field">
-              <label htmlFor="stModel">Model</label>
-              <input id="stModel" className="input num" value={llm?.model ?? ""} onChange={(e) => commit({ model: e.target.value })} />
+            <div className="panel">
+              <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
+                <Icon name="i-lock" size={14} style={{ color: "var(--meta)" }} />
+                <Eyebrow>Human work is protected</Eyebrow>
+              </div>
+              <ul className="dash">
+                <li>Locked fields reject agent writes with a typed error</li>
+                <li>Every write is recorded in the oplog with its author</li>
+                <li>
+                  <Num>⌘Z</Num> reverts any write, agent or human
+                </li>
+              </ul>
             </div>
           </div>
-          <div className="field">
-            <label htmlFor="stKey">API key</label>
-            <input id="stKey" className="input num" type="password" value={llm?.apiKey ?? ""} onChange={(e) => commit({ apiKey: e.target.value })} />
-            <span className="meta-txt">Stored on this machine only. Never sent anywhere but the base URL above.</span>
+        </>
+      )
+    },
+    {
+      id: "data",
+      label: "Data",
+      icon: "i-archive",
+      group: "app",
+      render: () => (
+        <>
+          <SectionHead title="Data">
+            One SQLite file holds every project on this machine, and the oplog inside it is the whole history. A project can also publish a copy of
+            itself as text to a destination you choose — that copy is what a teammate clones, and the database itself never leaves.
+          </SectionHead>
+          <div className="panel">
+            <div className="field">
+              <label htmlFor="stDb">Database file</label>
+              <input id="stDb" className="input num" readOnly value={dbPath.data ?? ""} />
+              <span className="meta-txt">Local-first. Back it up by copying the file — or give a project a destination in its own settings.</span>
+            </div>
           </div>
-        </div>
-          </>
-        )}
-
-        {pluginSections.map((section) => (
-          <PluginCard
-            key={section.id}
+        </>
+      )
+    },
+    ...pluginSections.map(
+      (section): Pane => ({
+        id: section.id,
+        label: section.title,
+        icon: "i-plug",
+        group: "plugins",
+        render: () => (
+          <PluginPane
             section={section}
             stored={settings.data?.[section.id]}
             onCommit={(next, revert) => settings.data && save.mutate({ ...settings.data, [section.id]: next }, { onError: revert })}
           />
-        ))}
+        )
+      })
+    ),
+    { id: "plugins", label: "Manage plugins", icon: "i-plug", group: "plugins", render: () => <PluginsPanel /> }
+  ];
 
-        {onOpenPlugins && (
-          <>
-            <hr className="rule" />
-            <div className="sec-head">
-              <div>
-                <h3 className="sec-title">Plugins</h3>
-                <p className="sec-lede" style={{ marginTop: 4 }}>
-                  Every card above this one was drawn from a plugin's own schema. Which plugins are loaded — and which modules the app may not be
-                  left without — is managed on its own sheet.
-                </p>
-              </div>
-            </div>
-            <div className="panel row-between">
-              <p className="meta-txt dense" style={{ margin: 0 }}>
-                Switch a plugin off and its tools, channels, badges and settings cards go with it.
-              </p>
-              <button type="button" className="btn btn-secondary" onClick={onOpenPlugins}>
-                <Icon name="i-plug" size={14} /> Manage plugins
-              </button>
-            </div>
-          </>
-        )}
+  // A plugin switched off takes its pane with it, so the menu falls back rather than emptying the body.
+  const current = panes.find((p) => p.id === active) ?? panes[0];
+  const rows = (group: Pane["group"]) =>
+    panes
+      .filter((p) => p.group === group)
+      .map((p) => (
+        <button key={p.id} type="button" className="side-row" aria-current={p.id === current.id} onClick={() => setActive(p.id)}>
+          <Icon className="ico" name={p.icon} size={14} />
+          <span className="side-name">{p.label}</span>
+        </button>
+      ));
 
-        <hr className="rule" />
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Agent access</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              What your coding agents may do to this backlog, and what they may not.
-            </p>
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="sheet-settings">
+      <DialogHead title="Settings" aside={<Tag tone="neutral">local · this machine</Tag>} />
+      <div className="dlg-split">
+        <nav className="dlg-nav" aria-label="Settings sections">
+          <div className="side-group">
+            <Eyebrow className="side-label">App</Eyebrow>
+            {rows("app")}
           </div>
-        </div>
-        <div className="grid-2">
-          <div className="panel">
-            <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
-              <LiveDot />
-              <Eyebrow>MCP · listening</Eyebrow>
-            </div>
-            <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
-              {mcp.data ?? "not running"}
-            </p>
-            <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
-              Writes arrive with the <Num>baseVersion</Num> the agent read. A stale version is rejected, never merged.
-            </p>
+          <div className="side-group">
+            <Eyebrow className="side-label">Plugins</Eyebrow>
+            {rows("plugins")}
           </div>
-          <div className="panel">
-            <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
-              <Icon name="i-lock" size={14} style={{ color: "var(--meta)" }} />
-              <Eyebrow>Human work is protected</Eyebrow>
-            </div>
-            <ul className="dash">
-              <li>Locked fields reject agent writes with a typed error</li>
-              <li>Every write is recorded in the oplog with its author</li>
-              <li>
-                <Num>⌘Z</Num> reverts any write, agent or human
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <hr className="rule" />
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Data</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              One SQLite file holds every project on this machine, and the oplog inside it is the whole history. A project can also publish a copy of
-              itself as text to a destination you choose — that copy is what a teammate clones, and the database itself never leaves.
-            </p>
-          </div>
-        </div>
-        <div className="panel">
-          <div className="field">
-            <label htmlFor="stDb">Database file</label>
-            <input id="stDb" className="input num" readOnly value={dbPath.data ?? ""} />
-            <span className="meta-txt">Local-first. Back it up by copying the file — or give a project a destination in its own settings.</span>
-          </div>
-        </div>
-      </DialogBody>
+        </nav>
+        <DialogBody>{current.render()}</DialogBody>
+      </div>
       <DialogFoot>
         <button type="button" className="btn btn-secondary" onClick={() => onOpenChange(false)}>
           Done
