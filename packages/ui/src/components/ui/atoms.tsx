@@ -15,6 +15,21 @@ export const Eyebrow = ({ children, className, ...rest }: React.HTMLAttributes<H
   </p>
 );
 
+/** Every settings pane opens with one of these; the menu row beside it repeats the title. */
+export const SectionHead = ({ title, aside, children }: { title: string; aside?: React.ReactNode; children?: React.ReactNode }) => (
+  <div className="sec-head">
+    <div>
+      <h3 className="sec-title">{title}</h3>
+      {children && (
+        <p className="sec-lede" style={{ marginTop: 4 }}>
+          {children}
+        </p>
+      )}
+    </div>
+    {aside && <div style={{ marginLeft: "auto" }}>{aside}</div>}
+  </div>
+);
+
 export const Kbd = ({ children }: { children: React.ReactNode }) => <span className="kbd">{children}</span>;
 
 export const Spacer = () => <div className="spacer" />;

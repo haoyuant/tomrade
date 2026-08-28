@@ -4,7 +4,6 @@ import { Icon } from "~/components/icons";
 import { BoardSettingsDialog } from "~/components/dialogs/BoardSettingsDialog";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
-import { PluginsDialog } from "~/components/dialogs/PluginsDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
 import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
@@ -50,8 +49,8 @@ export function Workspace() {
   const [conflict, setConflict] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
   const [newIssue, setNewIssue] = useState(false);
-  const [settings, setSettings] = useState(false);
-  const [plugins, setPlugins] = useState(false);
+  /** null when shut; the pane to land on when open, "" for wherever it was left. */
+  const [settings, setSettings] = useState<string | null>(null);
   const [viewSettings, setViewSettings] = useState(false);
   const [boardSettings, setBoardSettings] = useState(false);
   const [projectSettings, setProjectSettings] = useState(false);
@@ -84,7 +83,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings || viewSettings || boardSettings || projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || boardSettings || projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -131,7 +130,7 @@ export function Workspace() {
         setProjectMenu(true);
       } else if (meta && e.key === ",") {
         e.preventDefault();
-        setSettings(true);
+        setSettings("");
       } else if (meta && key === "z" && !e.shiftKey) {
         // a text field owns its own undo stack; never preventDefault over it
         if (typing) return;
@@ -157,7 +156,7 @@ export function Workspace() {
       <TitleBar
         onOpenPalette={() => setPalette(true)}
         onNewIssue={() => setNewIssue(true)}
-        onOpenSettings={() => setSettings(true)}
+        onOpenSettings={() => setSettings("")}
         onOpenProjectSettings={openProjectSettings}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
@@ -207,23 +206,15 @@ export function Workspace() {
           toggleAssistant: () => setAiOpen((v) => !v),
           toggleSidebar: () => setSideOpen((v) => !v),
           undo: runUndo,
-          openSettings: () => setSettings(true),
-          openPlugins: () => setPlugins(true),
+          openSettings: () => setSettings(""),
+          openPlugins: () => setSettings("plugins"),
           openBoardSettings,
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true)
         }}
       />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
-      <SettingsDialog
-        open={settings}
-        onOpenChange={setSettings}
-        onOpenPlugins={() => {
-          setSettings(false);
-          setPlugins(true);
-        }}
-      />
-      <PluginsDialog open={plugins} onOpenChange={setPlugins} />
+      <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
       <ViewSettingsDialog
         open={viewSettings}
         onOpenChange={setViewSettings}

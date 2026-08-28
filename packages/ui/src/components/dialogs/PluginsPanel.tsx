@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { ModuleView, PluginView } from "@tomrade/plugins";
 import { Icon } from "~/components/icons";
-import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
-import { Eyebrow, Tag } from "~/components/ui/atoms";
+import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { usePlugins, useSetPluginEnabled } from "~/lib/queries";
 import { cn } from "~/lib/utils";
 
@@ -124,8 +123,12 @@ function PluginRow({
  * may not be left without. Switching a row is live — cordis unloads it and
  * everything that injected it — so the only refusal is the one that would empty
  * a required module.
+ *
+ * A pane of Settings rather than a sheet of its own: everything here is reached
+ * from the same menu as the cards these plugins draw, so a second overlay on
+ * top of the first bought nothing.
  */
-export function PluginsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function PluginsPanel() {
   const plugins = usePlugins();
   const setEnabled = useSetPluginEnabled();
   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
@@ -141,79 +144,54 @@ export function PluginsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="Plugins" className="wide">
-      <DialogHead
-        title="Plugins"
-        // `.tag` is a flex box, so whitespace between elements would be dropped: one string.
-        aside={<Tag tone="neutral">{`${running} of ${rows.length} running`}</Tag>}
-      />
-      <DialogBody>
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Modules</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              A module is a capability, named by the service key that carries it. Which plugin fills one is never declared — it is read off the
-              running context, so a plugin that loads further plugins is credited with what they provide. A required module may not be left empty.
-            </p>
-          </div>
-        </div>
-        <ModuleTable modules={modules} />
-        {unfilled.length > 0 && (
-          <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
-            Nothing provides {unfilled.map((m) => m.title).join(", ")}. The app is running without {unfilled.length > 1 ? "them" : "it"}.
-          </p>
-        )}
+    <>
+      <SectionHead title="Modules">
+        A module is a capability, named by the service key that carries it. Which plugin fills one is never declared — it is read off the running
+        context, so a plugin that loads further plugins is credited with what they provide. A required module may not be left empty.
+      </SectionHead>
+      <ModuleTable modules={modules} />
+      {unfilled.length > 0 && (
+        <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
+          Nothing provides {unfilled.map((m) => m.title).join(", ")}. The app is running without {unfilled.length > 1 ? "them" : "it"}.
+        </p>
+      )}
 
-        <hr className="rule" />
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Installed</h3>
-            <p className="sec-lede" style={{ marginTop: 4 }}>
-              One row per plugin, in the order the composition lists them. A switch takes effect at once: the plugin unloads with its tools,
-              channels, badges and settings cards, and everything that injected it goes too. The choice is written to your patch file, so it
-              survives a restart. A plugin that holds up a required module on its own has no switch to throw — the module would be left empty.
-            </p>
-          </div>
-        </div>
-        <div>
-          {rows.map((plugin) => (
-            <PluginRow
-              key={plugin.id}
-              plugin={plugin}
-              busy={setEnabled.isPending}
-              error={refused?.id === plugin.id ? refused.message : undefined}
-              onToggle={(enabled) => toggle(plugin.id, enabled)}
-            />
-          ))}
-        </div>
-        {!rows.length && <p className="meta-txt">Nothing to show — the composition has not been read.</p>}
+      <hr className="rule" />
+      {/* `.tag` is a flex box, so whitespace between elements would be dropped: one string. */}
+      <SectionHead title="Installed" aside={<Tag tone="neutral">{`${running} of ${rows.length} running`}</Tag>}>
+        One row per plugin, in the order the composition lists them. A switch takes effect at once: the plugin unloads with its tools, channels,
+        badges and settings panes, and everything that injected it goes too. The choice is written to your patch file, so it survives a restart. A
+        plugin that holds up a required module on its own has no switch to throw — the module would be left empty.
+      </SectionHead>
+      <div>
+        {rows.map((plugin) => (
+          <PluginRow
+            key={plugin.id}
+            plugin={plugin}
+            busy={setEnabled.isPending}
+            error={refused?.id === plugin.id ? refused.message : undefined}
+            onToggle={(enabled) => toggle(plugin.id, enabled)}
+          />
+        ))}
+      </div>
+      {!rows.length && <p className="meta-txt">Nothing to show — the composition has not been read.</p>}
 
-        <hr className="rule" />
-        <div className="sec-head">
-          <div>
-            <h3 className="sec-title">Adding one</h3>
-          </div>
-        </div>
-        <div className="panel">
-          <Eyebrow>Not from here — yet</Eyebrow>
-          <ul className="dash" style={{ marginTop: "var(--space-3)" }}>
-            <li>
-              A plugin is a row in <span className="mono">tomrade.yml</span>, or in your own{" "}
-              <span className="mono">tomrade.patch.yml</span>, which may add rows the app does not ship.
-            </li>
-            <li>
-              Swapping the plugin behind a required module is a change of <span className="mono">name</span> on its row: a service key has one
-              owner, so a replacement cannot be switched on beside the plugin it replaces.
-            </li>
-            <li>Browsing and installing from here is a later thing. This dialog manages what is already listed.</li>
-          </ul>
-        </div>
-      </DialogBody>
-      <DialogFoot>
-        <button type="button" className="btn btn-secondary" onClick={() => onOpenChange(false)}>
-          Done
-        </button>
-      </DialogFoot>
-    </Dialog>
+      <hr className="rule" />
+      <SectionHead title="Adding one" />
+      <div className="panel">
+        <Eyebrow>Not from here — yet</Eyebrow>
+        <ul className="dash" style={{ marginTop: "var(--space-3)" }}>
+          <li>
+            A plugin is a row in <span className="mono">tomrade.yml</span>, or in your own <span className="mono">tomrade.patch.yml</span>, which
+            may add rows the app does not ship.
+          </li>
+          <li>
+            Swapping the plugin behind a required module is a change of <span className="mono">name</span> on its row: a service key has one owner,
+            so a replacement cannot be switched on beside the plugin it replaces.
+          </li>
+          <li>Browsing and installing from here is a later thing. This pane manages what is already listed.</li>
+        </ul>
+      </div>
+    </>
   );
 }
