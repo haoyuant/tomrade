@@ -11,6 +11,7 @@ import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { keys, useMcpUrl, useProjects } from "~/lib/queries";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { OpenProjectDialog } from "./OpenProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 interface Facts {
@@ -110,10 +111,12 @@ function ProjectCard({
 }
 
 export function ProjectsScreen() {
+  const navigate = useNavigate();
   const projects = useProjects();
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [openOpen, setOpenOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
   const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
@@ -144,6 +147,9 @@ export function ProjectsScreen() {
           Projects
         </span>
         <Spacer />
+        <button type="button" className="btn btn-secondary no-drag" onClick={() => setOpenOpen(true)}>
+          <Icon name="i-search" size={14} /> Open a project…
+        </button>
         <button type="button" className="btn btn-primary no-drag" onClick={() => setNewOpen(true)}>
           <Icon name="i-plus" size={14} /> New project
         </button>
@@ -159,7 +165,7 @@ export function ProjectsScreen() {
               <h1 className="sec-title">Projects</h1>
               <p className="sec-lede" style={{ marginTop: 4 }}>
                 Every project is a workspace on this machine. Each board is a workstream that owns its issues; views slice a board without moving
-                anything.
+                anything. A project can publish a copy of itself to a folder or a repository — open one here to work on it too.
               </p>
             </div>
           </div>
@@ -229,6 +235,11 @@ export function ProjectsScreen() {
       </StatusBar>
 
       <NewProjectDialog open={newOpen} onOpenChange={setNewOpen} />
+      <OpenProjectDialog
+        open={openOpen}
+        onOpenChange={setOpenOpen}
+        onOpened={(projectId) => void navigate({ to: "/p/$projectId", params: { projectId } })}
+      />
       <ProjectSettingsDialog
         project={list.find((p) => p.id === configuring) ?? null}
         projects={list}

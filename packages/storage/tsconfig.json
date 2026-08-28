@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../contributions"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../domain"
+    },
+    {
+      "path": "../ipc"
+    },
+    {
+      "path": "../write"
+    }
+  ]
+}

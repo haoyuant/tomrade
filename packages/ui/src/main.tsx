@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
+import { invalidateProject } from "./lib/queries.js";
 import { watchWindowChrome } from "./lib/window-chrome.js";
 import "./styles/app.css";
 
@@ -16,7 +17,12 @@ const queryClient = new QueryClient({
 watchWindowChrome();
 
 // A plugin loading or unloading changes what the palette, cards and status bar show.
-if (window.tomrade) subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
+if (window.tomrade) {
+  subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
+  // A destination was published to, or its copy replaced this project's rows.
+  // An import spares nothing, so neither does this.
+  subscribe("storage.changed", (projectId) => invalidateProject(queryClient, projectId));
+}
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

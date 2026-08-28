@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommandScope } from "@tomrade/contributions";
+import type { StorageBinding, StorageProviderView, StorageStatus } from "@tomrade/storage";
 import type {
   AppSettings,
   Board,
@@ -31,6 +32,10 @@ export const keys = {
   settingsSections: ["settings", "sections"] as const,
   mcp: ["mcp"] as const,
   dbPath: ["dbPath"] as const,
+  storageProviders: ["storage", "providers"] as const,
+  storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
+  storageBinding: (projectId: string) => ["storage", "binding", projectId] as const,
+  storageConnection: (providerId: string) => ["storage", "connection", providerId] as const,
   contributions: ["contributions"] as const,
   commands: ["contributions", "commands"] as const,
   badges: (projectId: string) => ["contributions", "badges", projectId] as const,
@@ -45,6 +50,19 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
   void qc.invalidateQueries({ queryKey: keys.oplog });
   void qc.invalidateQueries({ queryKey: ["history"] });
   void qc.invalidateQueries({ queryKey: keys.contributions });
+}
+
+/**
+ * Everything keyed by one project. `invalidateWorkspace` deliberately leaves
+ * boards, views and ranks alone — a board write cannot change them — but an
+ * import from a destination replaces every row, so this one spares nothing.
+ */
+export function invalidateProject(qc: QueryClient, projectId: string): void {
+  invalidateWorkspace(qc, projectId);
+  for (const key of [keys.boards(projectId), keys.views(projectId), keys.projects, keys.storageStatus(projectId), keys.storageBinding(projectId)]) {
+    void qc.invalidateQueries({ queryKey: key });
+  }
+  void qc.invalidateQueries({ queryKey: ["ranks"] });
 }
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => invoke("projects.list") });
@@ -245,6 +263,88 @@ export function useSaveSettings() {
   return useMutation({
     mutationFn: (next: AppSettings) => invoke("settings.set", next),
     onSuccess: (saved) => qc.setQueryData(keys.settings, saved)
+  });
+}
+
+/* ── where a project is stored ─────────────────────────────────────────── */
+
+export const useStorageProviders = () => useQuery({ queryKey: keys.storageProviders, queryFn: (): Promise<StorageProviderView[]> => invoke("storage.providers") });
+
+export const useStorageBinding = (projectId: string) =>
+  useQuery({ queryKey: keys.storageBinding(projectId), queryFn: (): Promise<StorageBinding | null> => invoke("storage.binding", projectId) });
+
+/** Contacts the remote, so it is asked for on open and after an action — never polled. */
+export const useStorageStatus = (projectId: string) =>
+  useQuery({ queryKey: keys.storageStatus(projectId), queryFn: (): Promise<StorageStatus> => invoke("storage.status", projectId), retry: false, staleTime: 10_000 });
+
+/** Point a project at a destination and publish it there. */
+export function useBindStorage(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.bind", projectId, args.providerId, args.config),
+    onSettled: () => invalidateProject(qc, projectId)
+  });
+}
+
+/** Forget the destination. Nothing there is deleted. */
+export function useUnbindStorage(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("storage.unbind", projectId),
+    onSettled: () => invalidateProject(qc, projectId)
+  });
+}
+
+/** Take theirs, then publish ours. A refusal is the point, so the caller shows it. */
+export function useSyncStorage(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("storage.sync", projectId),
+    onSettled: () => invalidateProject(qc, projectId)
+  });
+}
+
+/** Whether a destination's account is connected, and as whom. Never the secret. */
+export const useStorageConnection = (providerId: string | undefined) =>
+  useQuery({
+    queryKey: keys.storageConnection(providerId ?? ""),
+    queryFn: () => invoke("storage.connection", providerId!),
+    enabled: !!providerId,
+    retry: false
+  });
+
+/** Collected where it is needed; the provider keeps it per machine. */
+export function useConnectStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { providerId: string; secret: string }) => invoke("storage.connect", args.providerId, args.secret),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["storage"] })
+  });
+}
+
+export function useDisconnectStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (providerId: string) => invoke("storage.disconnect", providerId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["storage"] })
+  });
+}
+
+/** Imperative on purpose: nothing is listed until someone asks to choose. */
+export function useBrowseStorage() {
+  return useMutation({ mutationFn: (providerId: string) => invoke("storage.browse", providerId) });
+}
+
+export function useDraftStorage() {
+  return useMutation({ mutationFn: (args: { providerId: string; name: string }) => invoke("storage.draft", args.providerId, args.name) });
+}
+
+/** Bring in a project this machine does not know; resolves to its id. */
+export function useAttachProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.attach", args.providerId, args.config),
+    onSuccess: (projectId) => invalidateProject(qc, projectId)
   });
 }
 
