@@ -1,0 +1,28 @@
+{
+  "name": "@tomrade/storage-git",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A git repository as a destination: clone, fast-forward pull, commit, push — and the base the hosting providers build on",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/storage": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

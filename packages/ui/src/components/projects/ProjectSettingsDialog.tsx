@@ -4,7 +4,8 @@ import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
 import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
-import { useBoards, useItems, useLabels, useRemoveProject, useUpdateProject, useViews } from "~/lib/queries";
+import { useBoards, useItems, useLabels, useRemoveProject, useStorageBinding, useUpdateProject, useViews } from "~/lib/queries";
+import { StorageBlock } from "./StorageBlock";
 import { useToast } from "~/lib/toast";
 
 /** What the project holds, counted off its own rows so the sheet can never
@@ -183,6 +184,8 @@ function SettingsFace({ project, onClose, onRequestDelete }: { project: Project;
           </p>
         </div>
 
+        <StorageBlock projectId={project.id} />
+
         <div>
           <Eyebrow>Archive</Eyebrow>
           <div className="cfg-row" style={{ marginTop: "var(--space-2)" }}>
@@ -229,7 +232,7 @@ function SettingsFace({ project, onClose, onRequestDelete }: { project: Project;
 }
 
 /** The plain-English list of what goes with the project. */
-function consequences(project: Project, facts: Facts, last: boolean): string[] {
+function consequences(project: Project, facts: Facts, last: boolean, published: boolean): string[] {
   const out = [
     `${plural(facts.workstreams, "board")} and ${plural(facts.scopes, "cross-board scope")}, with the ${plural(facts.views, "saved view")} on them`,
     `${plural(facts.issues, "issue")}${facts.epics ? ` and ${plural(facts.epics, "epic")}` : ""}${facts.open ? `, ${facts.open} still open` : ""}`,
@@ -242,6 +245,7 @@ function consequences(project: Project, facts: Facts, last: boolean): string[] {
   ].filter(Boolean);
   if (provenance.length) out.push(`${provenance.join(", ")} — agents are not asked either`);
   out.push(`the key prefix ${project.keyPrefix} and its counter, so nothing is ever handed those keys again`);
+  if (published) out.push("nothing at the destination — its published copy is left exactly where it is, to delete there or to attach again");
   if (last) out.push("the last project on this machine — Tomrade seeds a fresh, empty one the next time it opens");
   return out;
 }
@@ -270,7 +274,8 @@ function DeleteFace({
   const facts = useFacts(project.id);
   const [typed, setTyped] = useState("");
   const matches = typed.trim() === project.name.trim();
-  const lost = consequences(project, facts, last);
+  const published = !!useStorageBinding(project.id).data;
+  const lost = consequences(project, facts, last, published);
 
   const destroy = () => {
     if (!matches || remove.isPending) return;
@@ -324,7 +329,11 @@ function DeleteFace({
               if (e.key === "Enter") destroy();
             }}
           />
-          <span className="meta-txt">The database file is untouched, and every other project in it carries on.</span>
+          <span className="meta-txt">
+            {published
+              ? "This deletes only what is on this machine. The copy at the destination is left where it is."
+              : "The database file is untouched, and every other project in it carries on."}
+          </span>
         </div>
       </DialogBody>
       <DialogFoot>

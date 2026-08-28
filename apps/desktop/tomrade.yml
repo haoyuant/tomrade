@@ -38,6 +38,12 @@ modules:
   - id: ipc
     title: Renderer channels
     required: true
+  # The registry, not the destinations. storage-git and storage-github register
+  # providers into it and hold no module of their own, so either can go without
+  # taking a project's own copy with it.
+  - id: storage
+    title: Destinations
+    required: true
   # Optional, and listed so the manager can say who fills them and what is
   # lost by switching the last one off.
   - id: llm
@@ -66,6 +72,21 @@ plugins:
     name: "@tomrade/settings"
     config:
       path: "${userData}/settings.json"
+  # Where each project's shareable copy lives. An unbound project is a local
+  # project: the live SQLite file in userData is the only copy it has.
+  - id: storage
+    name: "@tomrade/storage"
+    config:
+      path: "${userData}/storage.json"
+  - id: storage-git
+    name: "@tomrade/storage-git"
+    config:
+      root: "${userData}/remotes"
+  # GitHub is a hosting choice on top of storage-git, not a peer of the others.
+  - id: storage-github
+    name: "@tomrade/storage-github"
+    config:
+      root: "${userData}/remotes"
   - id: llm
     name: "@tomrade/llm"
   - id: tools
@@ -78,6 +99,8 @@ plugins:
       port: 19090
   - id: ipc
     name: ./dist/ipc.js
+  - id: shell
+    name: ./dist/shell.js
   - id: contributions
     name: "@tomrade/contributions"
   # A third-party plugin: it edits nothing above, it is only listed here.

@@ -14,6 +14,7 @@ export type { Items } from "@tomrade/items";
 export type { Boards, Views } from "@tomrade/boards";
 export type { Projects } from "@tomrade/projects";
 export type { Settings, SettingsSection, SettingsSectionView } from "@tomrade/settings";
+export type { ProjectState, Storage, StorageHandle, StorageProvider, StorageProviderView, StorageStatus, SyncState } from "@tomrade/storage";
 export type { LLMProvider, CompletionRequest } from "@tomrade/llm";
 export type { Assistant, AiChatResult } from "@tomrade/assistant";
 export type { Mcp } from "@tomrade/mcp";

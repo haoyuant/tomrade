@@ -38,6 +38,7 @@
     "@tomrade/plugins": "workspace:*",
     "@tomrade/projects": "workspace:*",
     "@tomrade/settings": "workspace:*",
+    "@tomrade/storage": "workspace:*",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",

@@ -85,6 +85,14 @@ plugins:
     config: {}
 ```
 
+One TypeScript rule, because it costs an afternoon the first time: **import
+`cordis` before any `@tomrade/*` package, in the file that reaches it first.**
+A `declare module "cordis"` inside a package loaded before cordis itself
+*declares a new module* rather than augmenting the real one, and every later
+file then sees a `Context` with no `inject`, `plugin` or `get`. Alphabetical
+file order decides who is first, so a bare `import type {} from "cordis";` at
+the top of a barrel or a channels file is the cheap insurance.
+
 `name` is a package name or a path relative to the file it appears in.
 `disabled: true` skips a row. `electron . --dump-config` prints every row with
 its state — `active`, `failed` with the error, `pending` with the services it is
@@ -111,6 +119,7 @@ consumer follows.
 | `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections |
 | `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
+| `ctx.storage` | spine registry | `@tomrade/storage` | Where a project's shareable copy lives: providers, the text artifact, flush/refresh |
 | `ctx.llm` | seam | `@tomrade/llm` | `completeJson(schema, request)`; OpenAI-compatible by default |
 | `ctx.assistant` | — | `@tomrade/assistant` | Chat routing over `ctx.tools` |
 | `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
@@ -233,6 +242,98 @@ migrations may only create, alter or drop tables named `plugin_<namespace>_*`;
 the registry refuses anything else. Read and write your tables through
 `ctx.db.prepare()`; write core tables only through their services, so the
 policy and the oplog see it.
+
+## Destinations
+
+A project's live SQLite file always sits in `<userData>`. What the user chooses
+is where its *shareable copy* goes, and that copy is **text**: a `.tomrade/`
+folder holding `project.json`, one `state/<table>.jsonl` per core table sorted
+by id, and a `.gitignore` that keeps a database out. The serialisation is
+deterministic, so an unchanged project produces no diff and no commit.
+
+A **provider** moves that folder and nothing else. It never sees SQLite.
+
+```ts
+ctx.storage.register({
+  id: "acme-drive",
+  title: "Acme Drive",
+  configSchema: z.object({ folder: z.string().meta({ format: "directory" }) }),
+  defaults: { folder: "" },
+  // Resolve the destination from the config ALONE — an attach must open it
+  // before it can read which project is inside.
+  async open(config, { create }) {
+    return {
+      location: config.folder,
+      dir: config.folder,
+      pull: async () => ({ changed: false }),
+      push: async (message) => {},
+      status: async () => ({ state: "synced", location: config.folder }),
+      dispose: async () => {}
+    };
+  }
+});
+```
+
+`register` is an effect: the provider, and its option in every project's
+settings, goes when the plugin unloads. `configSchema` is rendered by the
+renderer from `z.toJSONSchema()`, so a provider ships no UI code — and a
+`format: "password"` field in it is **refused at registration**, because a
+per-project config is committed alongside the code. Credentials belong in a
+`ctx.settings` section the provider registers, named in `settingsSection`.
+
+A destination that needs an account declares a `connection`, and the renderer
+collects it **where it is used** — in the project's own destination block —
+rather than in a settings card the user has to go and find first:
+
+```ts
+connection: {
+  prompt: { label: "Personal access token", help: "…", url: "https://…/tokens/new" },
+  status: () => Promise<{ connected: boolean; label?: string; detail?: string }>,
+  connect: (secret: string) => Promise<{ connected: boolean; label?: string }>,
+  disconnect: () => Promise<void>
+}
+```
+
+The secret is still the provider's to keep, in its own `ctx.settings` section,
+because one account serves every project and none of it may reach a config that
+gets committed. But a section a storage provider claims through
+`settingsSection` is **not drawn again** by the settings dialog — the connection
+block is where it lives. Verify before storing: a credential that does not work
+should never be saved.
+
+Two more optional capabilities remove typing. `browse()` lists what the account
+already has as ready-made configs, and `draft(name)` builds a whole config from
+a name alone, for a destination that does not exist yet. A provider offering
+both means the user picks from a list or types one name — never four fields.
+
+The states a project can be in are decided by content, not by trust: the
+artifact's own digest is compared with the one last published, so `ahead`,
+`behind` and `diverged` read the same whether a change arrived by git, by
+rsync or by hand. `flush` refuses to overwrite a destination that has moved,
+`refresh` refuses to discard local work that has not been published, and
+neither ever deletes a copy holding writes the other side lacks.
+
+| Call | Does |
+|---|---|
+| `ctx.storage.bind(projectId, providerId, config)` | Point a project at a destination and publish it there |
+| `ctx.storage.unbind(projectId)` | Forget the destination. Nothing there is deleted |
+| `ctx.storage.flush(projectId)` | Publish. Skips entirely when the bytes would be identical |
+| `ctx.storage.refresh(projectId)` | Take the destination's copy, when local is clean |
+| `ctx.storage.sync(projectId)` | `refresh`, then `flush` |
+| `ctx.storage.attach(providerId, config)` | Bring in a project this machine does not know; returns its id |
+| `ctx.storage.statusFor(projectId)` | `local` / `synced` / `ahead` / `behind` / `diverged` / `offline` / `error` / `unavailable`. Contacts the remote, so poll it sparingly |
+
+An **unbound project is a local project**: there is no `local` provider to keep
+in step, and `statusFor` answers `local`. Events are `storage/registered`,
+`storage/unregistered`, `storage/synced` and `storage/imported`; the renderer
+hears `storage.changed(projectId)` and refetches everything keyed by it.
+
+`@tomrade/storage-git` adds git as a mechanism — a clone under `<userData>`,
+fast-forward-only pulls, commits of *only* its own subtree so it is safe inside
+the user's own checkout, and a push that is reported rather than forced when it
+would not fast-forward. `@tomrade/storage-github` adds only what git cannot do
+alone: find a repository and make one. A hosting provider for GitLab or Gitea is
+`createGitProvider` plus a REST client, in a row of its own.
 
 ## Settings
 

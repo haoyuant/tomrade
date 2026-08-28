@@ -74,6 +74,15 @@ const run = async () => {
   await ctx.plugins.setEnabled("llm", true);
   check("putting it back restores the assistant", ctx.get("assistant") !== undefined && view("assistant")?.state === "active");
 
+  // A destination provider registers into ctx.storage rather than providing a
+  // key of its own, so it holds no module and one can go without the registry.
+  await ctx.plugins.setEnabled("storage-git", false);
+  check("a destination provider switches off", !ctx.storage.has("git"), ctx.storage.describe().map((p) => p.id).join(","));
+  check("the registry it registered into stays", module("storage")?.providers.join() === "storage");
+  check("and the destinations it did not own are untouched", ctx.storage.has("folder"));
+  await ctx.plugins.setEnabled("storage-git", true);
+  check("putting it back re-registers it", ctx.storage.has("git"));
+
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
   app.exit(failed.length ? 1 : 0);

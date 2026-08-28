@@ -56,6 +56,15 @@ importers:
       '@tomrade/settings':
         specifier: workspace:*
         version: link:../../packages/settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
+      '@tomrade/storage-git':
+        specifier: workspace:*
+        version: link:../../packages/storage-git
+      '@tomrade/storage-github':
+        specifier: workspace:*
+        version: link:../../packages/storage-github
       '@tomrade/tools':
         specifier: workspace:*
         version: link:../../packages/tools
@@ -371,6 +380,9 @@ importers:
       '@tomrade/settings':
         specifier: workspace:*
         version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@tomrade/tools':
         specifier: workspace:*
         version: link:../tools
@@ -428,6 +440,81 @@ importers:
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/storage:
+    dependencies:
+      '@tomrade/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/write':
+        specifier: workspace:*
+        version: link:../write
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/storage-git:
+    dependencies:
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/storage-github:
+    dependencies:
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomrade/storage-git':
+        specifier: workspace:*
+        version: link:../storage-git
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
@@ -567,6 +654,9 @@ importers:
       '@tomrade/settings':
         specifier: workspace:*
         version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@types/react':
         specifier: ^19.2.0
         version: 19.2.18
