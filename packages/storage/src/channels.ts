@@ -4,7 +4,7 @@
 import type {} from "cordis";
 import type {} from "@tomrade/ipc";
 import type { StorageBinding } from "./bindings.js";
-import type { StorageProviderView, StorageStatus } from "./types.js";
+import type { ConnectionState, StorageProviderView, StorageStatus } from "./types.js";
 
 declare module "@tomrade/ipc" {
   interface Channels {
@@ -17,6 +17,11 @@ declare module "@tomrade/ipc" {
     /** Bring in a project this machine does not know; returns its id. */
     "storage.attach": (providerId: string, config: Record<string, unknown>) => string;
     "storage.browse": (providerId: string) => { label: string; config: unknown }[];
+    /** A config for a destination that does not exist yet, from a name alone. */
+    "storage.draft": (providerId: string, name: string) => unknown;
+    "storage.connection": (providerId: string) => ConnectionState;
+    "storage.connect": (providerId: string, secret: string) => ConnectionState;
+    "storage.disconnect": (providerId: string) => void;
   }
   interface Broadcasts {
     /** This project's rows or its sync state moved; refetch everything keyed by it. */

@@ -35,6 +35,7 @@ export const keys = {
   storageProviders: ["storage", "providers"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
   storageBinding: (projectId: string) => ["storage", "binding", projectId] as const,
+  storageConnection: (providerId: string) => ["storage", "connection", providerId] as const,
   contributions: ["contributions"] as const,
   commands: ["contributions", "commands"] as const,
   badges: (projectId: string) => ["contributions", "badges", projectId] as const,
@@ -301,6 +302,41 @@ export function useSyncStorage(projectId: string) {
     mutationFn: () => invoke("storage.sync", projectId),
     onSettled: () => invalidateProject(qc, projectId)
   });
+}
+
+/** Whether a destination's account is connected, and as whom. Never the secret. */
+export const useStorageConnection = (providerId: string | undefined) =>
+  useQuery({
+    queryKey: keys.storageConnection(providerId ?? ""),
+    queryFn: () => invoke("storage.connection", providerId!),
+    enabled: !!providerId,
+    retry: false
+  });
+
+/** Collected where it is needed; the provider keeps it per machine. */
+export function useConnectStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { providerId: string; secret: string }) => invoke("storage.connect", args.providerId, args.secret),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["storage"] })
+  });
+}
+
+export function useDisconnectStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (providerId: string) => invoke("storage.disconnect", providerId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["storage"] })
+  });
+}
+
+/** Imperative on purpose: nothing is listed until someone asks to choose. */
+export function useBrowseStorage() {
+  return useMutation({ mutationFn: (providerId: string) => invoke("storage.browse", providerId) });
+}
+
+export function useDraftStorage() {
+  return useMutation({ mutationFn: (args: { providerId: string; name: string }) => invoke("storage.draft", args.providerId, args.name) });
 }
 
 /** Bring in a project this machine does not know; resolves to its id. */

@@ -772,6 +772,35 @@ const run = async () => {
   check("a project can stop using a destination", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
   check("nothing at the destination is deleted with the binding", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
 
+  // A destination that needs an account asks for it here, where it is used —
+  // and stays closed until it has one, so nothing is typed into a dead form.
+  await pick(`document.querySelector('#stgProvider')`, "github");
+  await sleep(700);
+  check("a destination that needs an account asks for it inline", (await $(`!!document.querySelector('#stgSecret')`)) === true);
+  check("its own fields stay shut until the account is connected", (await $(`!!document.querySelector('#sf-stg-owner')`)) === false);
+  check(
+    "publishing is impossible without the account",
+    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].every(b => !/Publish here/.test(b.textContent) || b.disabled)`)) === true
+  );
+  check(
+    "it says where to get one",
+    (await $(`[...document.querySelectorAll('.dlg-body .btn-ghost')].some(b => /github\.com/.test(b.textContent))`)) === true
+  );
+  await shot("30-destination-connect");
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(700);
+
+  // The account is stored per machine, but it is not a screen of its own: the
+  // provider claims that section, and Settings does not draw it twice.
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
+  await sleep(900);
+  const cardTitles = `[...document.querySelectorAll('.dlg-body .sec-title')].map(t => t.textContent).join(' | ')`;
+  check("a plugin's own settings card is still drawn", (await $(cardTitles)).includes("Stale issues"));
+  check("but a destination's account is not a settings card", (await $(cardTitles)).includes("GitHub") === false);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
+
   return results;
 };
 

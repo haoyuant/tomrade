@@ -8,6 +8,8 @@ declare module "@tomrade/ipc" {
     "shell.pickDirectory": (title?: string) => string | null;
     /** Reveal a path in Finder/Explorer, so a destination can be inspected. */
     "shell.reveal": (target: string) => void;
+    /** Open a link in the real browser — the renderer must never navigate away from the app. */
+    "shell.openExternal": (url: string) => void;
   }
 }
 
@@ -32,6 +34,11 @@ export const shell = {
 
     ctx.ipc.handle("shell.reveal", (target) => {
       electronShell.showItemInFolder(target);
+    });
+
+    ctx.ipc.handle("shell.openExternal", (url) => {
+      // Only ever the web: a file:// or custom scheme from a plugin is not ours to run.
+      if (/^https?:\/\//i.test(url)) void electronShell.openExternal(url);
     });
   }
 };

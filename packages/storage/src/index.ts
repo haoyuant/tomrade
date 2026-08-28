@@ -21,6 +21,8 @@ export {
   ForeignProjectError,
   NewerSchemaError,
   UnknownProviderError,
+  type ConnectionState,
+  type ProviderConnection,
   type StorageHandle,
   type StorageProvider,
   type StorageProviderView,

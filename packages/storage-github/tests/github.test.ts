@@ -81,6 +81,51 @@ describe("the GitHub provider", () => {
     expect((section!.schema as { properties: { token: { format?: string } } }).properties.token.format).toBe("password");
   });
 
+  it("asks for its account where it is used, not in a settings card of its own", async () => {
+    const { storage, settings } = await machine();
+    const provider = storage.describe().find((p) => p.id === "github")!;
+    // The renderer draws this inline; it also knows where to send the user for one.
+    expect(provider.connection?.label).toMatch(/token/i);
+    expect(provider.connection?.url).toMatch(/^https:\/\/github\.com\//);
+    expect(provider.creatable).toBe(true);
+    // The section still exists — it is where the token is kept — but the provider
+    // claims it, and the settings dialog skips any section a provider claims.
+    expect(settings.sections().find((x) => x.id === "github")).toBeDefined();
+    expect(provider.settingsSection).toBe("github");
+    expect(await storage.connection("github")).toEqual({ connected: false });
+  });
+
+  it("verifies a token before storing it, and never stores one that fails", async () => {
+    const { storage, settings } = await machine();
+    stubGitHub({ "GET /user": { status: 401, body: { message: "Bad credentials" } } });
+    await expect(storage.connect("github", "ghp_wrong")).rejects.toThrow(/Bad credentials/);
+    expect((settings.get().github as { token: string }).token).toBe("");
+
+    stubGitHub({ "GET /user": { body: { login: "haoyuant" } } });
+    expect(await storage.connect("github", "  ghp_good  ")).toEqual({ connected: true, label: "@haoyuant" });
+    expect((settings.get().github as { token: string }).token).toBe("ghp_good");
+    expect(await storage.connection("github")).toEqual({ connected: true, label: "@haoyuant" });
+
+    await storage.disconnect("github");
+    expect((settings.get().github as { token: string }).token).toBe("");
+    expect(await storage.connection("github")).toEqual({ connected: false });
+  });
+
+  it("refuses an empty token without asking GitHub", async () => {
+    const { storage } = await machine();
+    const calls = stubGitHub({});
+    expect(await storage.connect("github", "   ")).toMatchObject({ connected: false });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("makes a whole destination out of a name", async () => {
+    const { storage } = await machine("ghp_test");
+    stubGitHub({ "GET /user": { body: { login: "haoyuant" } } });
+    expect(await storage.draft("github", "backlog")).toEqual({ owner: "haoyuant", repo: "backlog", branch: "main", path: "" });
+    // An owner can be named outright, and a name is made safe for a URL.
+    expect(await storage.draft("github", "acme/the backlog")).toEqual({ owner: "acme", repo: "the-backlog", branch: "main", path: "" });
+  });
+
   it("lists repositories a token can see, as ready-made configs", async () => {
     const { storage } = await machine("ghp_test");
     stubGitHub({

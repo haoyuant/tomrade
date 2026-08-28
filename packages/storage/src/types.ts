@@ -34,6 +34,30 @@ export interface StorageHandle {
   dispose(): Promise<void>;
 }
 
+/**
+ * A destination that needs an account behind it. Generic on purpose: the
+ * renderer draws "connect", "connected as", and "disconnect" without knowing
+ * which host it is talking to.
+ *
+ * The secret is the provider's to keep — per machine, in its own settings
+ * section — because one account serves every project. It must never reach a
+ * project's config, which is committed alongside the code.
+ */
+export interface ProviderConnection {
+  /** What to ask for, and where the user gets it. */
+  prompt: { label: string; help?: string; url?: string };
+  status(): Promise<ConnectionState>;
+  connect(secret: string): Promise<ConnectionState>;
+  disconnect(): Promise<void>;
+}
+
+export interface ConnectionState {
+  connected: boolean;
+  /** Who we are connected as, for the renderer to show — never the secret. */
+  label?: string;
+  detail?: string;
+}
+
 export interface StorageProvider<C = unknown> {
   /** Stable across releases: the binding stores this id, not a package name. */
   id: string;
@@ -54,8 +78,12 @@ export interface StorageProvider<C = unknown> {
    * so a location that depended on the id could not be opened to find it.
    */
   open(config: C, opts: { create: boolean }): Promise<StorageHandle>;
-  /** Candidates for "open an existing project" — repositories a token can see, recent folders. */
+  /** Candidates the user picks from, so nothing has to be typed by hand. */
   browse?(): Promise<{ label: string; config: C }[]>;
+  /** A config for a destination that does not exist yet, from a name alone. */
+  draft?(name: string): Promise<C> | C;
+  /** Set when the destination needs an account; the renderer collects it inline. */
+  connection?: ProviderConnection;
 }
 
 /** What the renderer gets: the schema as JSON Schema, so a form is drawn without the provider's code. */
@@ -66,8 +94,12 @@ export interface StorageProviderView {
   schema: Record<string, unknown>;
   defaults: unknown;
   settingsSection?: string;
-  /** Whether this provider can list candidates for an attach. */
+  /** Whether this provider can list candidates to pick from. */
   browsable: boolean;
+  /** Whether a destination can be created from a name alone. */
+  creatable: boolean;
+  /** Present when an account is needed; what to ask for and where to get it. */
+  connection?: ProviderConnection["prompt"];
 }
 
 export class UnknownProviderError extends Error {

@@ -58,6 +58,18 @@ export class GitHub {
     return this.call("GET", "/user");
   }
 
+  /** A token's account never changes, so ask once per token. */
+  private known = new Map<string, string>();
+
+  async whoami(): Promise<string> {
+    const token = this.token();
+    const hit = this.known.get(token);
+    if (hit) return hit;
+    const { login } = await this.login();
+    this.known.set(token, login);
+    return login;
+  }
+
   async exists(owner: string, repo: string): Promise<Repo | null> {
     try {
       return await this.call<Repo>("GET", `/repos/${owner}/${repo}`);

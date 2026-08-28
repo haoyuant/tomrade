@@ -29,6 +29,9 @@ export interface GitProviderOptions<C> {
   configSchema: z.ZodType<C>;
   defaults: C;
   settingsSection?: string;
+  /** Passed through: a hosting provider supplies the account and the shortcuts. */
+  connection?: StorageProvider<C>["connection"];
+  draft?: StorageProvider<C>["draft"];
   toTarget(config: C): Promise<GitTarget> | GitTarget;
   /** Bring the destination into existence — create the repository, say. */
   ensureRemote?(config: C, target: GitTarget): Promise<void>;
@@ -85,6 +88,8 @@ export function createGitProvider<C>(opts: GitProviderOptions<C>, runtime: GitRu
     defaults: opts.defaults,
     settingsSection: opts.settingsSection,
     browse: opts.browse,
+    draft: opts.draft,
+    connection: opts.connection,
 
     async open(config, { create }): Promise<StorageHandle> {
       const target = await opts.toTarget(config);

@@ -6,7 +6,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { Eyebrow, LiveDot, Num, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
-import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections } from "~/lib/queries";
+import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 
 /** Each preview re-declares the token block locally, so all three themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -121,6 +121,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const save = useSaveSettings();
   const mcp = useMcpUrl();
   const dbPath = useDbPath();
+  const providers = useStorageProviders();
   const [llm, setLlm] = useState<LlmSettings | null | undefined>(undefined);
 
   useEffect(() => {
@@ -133,7 +134,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     setLlm(next);
     save.mutate({ ...settings.data, llm: next });
   };
-  const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id));
+  // A destination's account is asked for where it is used — in a project's own
+  // settings — so the section behind it is storage, not a screen. Whoever claims
+  // one draws it; this dialog does not draw it twice.
+  const claimed = new Set((providers.data ?? []).map((p) => p.settingsSection).filter(Boolean) as string[]);
+  const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id) && !claimed.has(s.id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="wide">

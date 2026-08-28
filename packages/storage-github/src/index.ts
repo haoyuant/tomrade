@@ -5,6 +5,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomrade/settings";
 import type {} from "@tomrade/storage";
+import type { ProviderConnection } from "@tomrade/storage";
 import { createGitProvider, type GitRuntime, type GitTarget } from "@tomrade/storage-git";
 import { GitHub, GitHubError } from "./api.js";
 
@@ -21,16 +22,22 @@ export type GitHubPluginConfig = z.infer<typeof GitHubPluginConfig>;
 /** Per-project and non-secret, so it can be committed beside the code it tracks. */
 const RepoConfig = z.object({
   owner: z.string().min(1).meta({ title: "Owner" }).describe("GitHub user or organisation"),
-  repo: z.string().min(1).meta({ title: "Repository" }).describe("Repository name — created for you if a token is set and it does not exist"),
+  repo: z.string().min(1).meta({ title: "Repository" }).describe("Created for you if it does not exist yet"),
   branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the backlog is committed on"),
   path: z.string().default("").meta({ title: "Subdirectory" }).describe("Where in the repository to commit; blank for the root")
 });
 type RepoConfig = z.infer<typeof RepoConfig>;
 
+/**
+ * Where the token is kept — per machine, because one account serves every
+ * project. It is deliberately NOT a card of its own in Settings: the connection
+ * is made where it is needed, in a project's own destination block, and the
+ * settings dialog skips any section a storage provider claims.
+ */
 const TOKEN_SECTION = {
   id: "github",
   title: "GitHub",
-  description: "A personal access token with `repo` scope. Used to find and create repositories; pushing uses it too when your own git credentials cannot reach the remote.",
+  description: "The GitHub account Tomrade publishes with. Connected from a project's destination settings.",
   schema: z.object({ token: z.string().meta({ format: "password" }) }),
   defaults: { token: "" },
   order: 20
@@ -51,6 +58,33 @@ export const storageGithub = {
     const api = new GitHub(token);
     const runtime: GitRuntime = { root: config.root, binary: config.binary };
 
+    const connection: ProviderConnection = {
+      prompt: {
+        label: "Personal access token",
+        help: "A token with repo scope. Tomrade finds and creates repositories with it, and pushes with it when your own git credentials cannot reach the remote.",
+        url: "https://github.com/settings/tokens/new?scopes=repo&description=Tomrade"
+      },
+      async status() {
+        if (!token()) return { connected: false };
+        try {
+          return { connected: true, label: `@${await api.whoami()}` };
+        } catch (error) {
+          return { connected: false, detail: error instanceof GitHubError ? error.message : "Could not reach GitHub" };
+        }
+      },
+      async connect(secret) {
+        const trimmed = secret.trim();
+        if (!trimmed) return { connected: false, detail: "Paste a token first" };
+        // Verified before it is stored: a token that does not work is never saved.
+        const login = await new GitHub(() => trimmed).whoami();
+        ctx.settings.set({ ...ctx.settings.get(), github: { token: trimmed } });
+        return { connected: true, label: `@${login}` };
+      },
+      async disconnect() {
+        ctx.settings.set({ ...ctx.settings.get(), github: { token: "" } });
+      }
+    };
+
     ctx.storage.register(
       createGitProvider<RepoConfig>(
         {
@@ -60,6 +94,16 @@ export const storageGithub = {
           configSchema: RepoConfig,
           defaults: { owner: "", repo: "", branch: "main", path: "" },
           settingsSection: "github",
+          connection,
+
+          /** "backlog" or "acme/backlog" — the account fills in the rest. */
+          async draft(name) {
+            const trimmed = name.trim();
+            const [first, second] = trimmed.split("/");
+            const owner = second ? first : await api.whoami();
+            const repo = (second ?? first).replace(/[^A-Za-z0-9._-]/g, "-");
+            return { owner, repo, branch: "main", path: "" };
+          },
 
           // A token, when there is one, authenticates the push; without one the
           // user's own SSH keys or credential helper are used instead.

@@ -8,7 +8,7 @@ import type {} from "./channels.js";
 import { Bindings, type StorageBinding } from "./bindings.js";
 import { folderProvider } from "./providers/folder.js";
 import { digestState, exportState, importState, projectIdOf, readArtifact, writeArtifact, type ProjectState } from "./state.js";
-import { DivergedError, ForeignProjectError, UnknownProviderError, type StorageHandle, type StorageProvider, type StorageProviderView, type StorageStatus } from "./types.js";
+import { DivergedError, ForeignProjectError, UnknownProviderError, type ConnectionState, type StorageHandle, type StorageProvider, type StorageProviderView, type StorageStatus } from "./types.js";
 
 declare module "cordis" {
   interface Context {
@@ -79,6 +79,10 @@ export class Storage extends Service {
       ctx.ipc.handle("storage.sync", (projectId) => ctx.storage.sync(projectId));
       ctx.ipc.handle("storage.attach", (providerId, config) => ctx.storage.attach(providerId, config));
       ctx.ipc.handle("storage.browse", (providerId) => ctx.storage.browse(providerId));
+      ctx.ipc.handle("storage.draft", (providerId, name) => ctx.storage.draft(providerId, name));
+      ctx.ipc.handle("storage.connection", (providerId) => ctx.storage.connection(providerId));
+      ctx.ipc.handle("storage.connect", (providerId, secret) => ctx.storage.connect(providerId, secret));
+      ctx.ipc.handle("storage.disconnect", (providerId) => ctx.storage.disconnect(providerId));
     });
 
     this.ctx.inject(["contributions"], (ctx) => {
@@ -147,7 +151,9 @@ export class Storage extends Service {
         schema: z.toJSONSchema(p.configSchema) as Record<string, unknown>,
         defaults: p.defaults,
         settingsSection: p.settingsSection,
-        browsable: typeof p.browse === "function"
+        browsable: typeof p.browse === "function",
+        creatable: typeof p.draft === "function",
+        connection: p.connection?.prompt
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -159,6 +165,34 @@ export class Storage extends Service {
   browse(providerId: string): Promise<{ label: string; config: unknown }[]> {
     const provider = this.get(providerId);
     return provider.browse ? provider.browse() : Promise.resolve([]);
+  }
+
+  /** A config for a destination that does not exist yet, from a name alone. */
+  async draft(providerId: string, name: string): Promise<unknown> {
+    const provider = this.get(providerId);
+    if (!provider.draft) throw new Error(`"${provider.title}" cannot make a destination from a name`);
+    return provider.draft(name);
+  }
+
+  /** Whether a provider has the account it needs, and as whom. Never the secret. */
+  async connection(providerId: string): Promise<ConnectionState> {
+    const provider = this.get(providerId);
+    if (!provider.connection) return { connected: true };
+    return provider.connection.status();
+  }
+
+  /**
+   * Collected where it is needed rather than in a settings card of its own: the
+   * provider keeps it per machine, because one account serves every project.
+   */
+  async connect(providerId: string, secret: string): Promise<ConnectionState> {
+    const provider = this.get(providerId);
+    if (!provider.connection) return { connected: true };
+    return provider.connection.connect(secret);
+  }
+
+  async disconnect(providerId: string): Promise<void> {
+    await this.get(providerId).connection?.disconnect();
   }
 
   /** The last computed state, for surfaces that must answer synchronously. */

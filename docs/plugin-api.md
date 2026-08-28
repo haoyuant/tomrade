@@ -231,6 +231,31 @@ renderer from `z.toJSONSchema()`, so a provider ships no UI code — and a
 per-project config is committed alongside the code. Credentials belong in a
 `ctx.settings` section the provider registers, named in `settingsSection`.
 
+A destination that needs an account declares a `connection`, and the renderer
+collects it **where it is used** — in the project's own destination block —
+rather than in a settings card the user has to go and find first:
+
+```ts
+connection: {
+  prompt: { label: "Personal access token", help: "…", url: "https://…/tokens/new" },
+  status: () => Promise<{ connected: boolean; label?: string; detail?: string }>,
+  connect: (secret: string) => Promise<{ connected: boolean; label?: string }>,
+  disconnect: () => Promise<void>
+}
+```
+
+The secret is still the provider's to keep, in its own `ctx.settings` section,
+because one account serves every project and none of it may reach a config that
+gets committed. But a section a storage provider claims through
+`settingsSection` is **not drawn again** by the settings dialog — the connection
+block is where it lives. Verify before storing: a credential that does not work
+should never be saved.
+
+Two more optional capabilities remove typing. `browse()` lists what the account
+already has as ready-made configs, and `draft(name)` builds a whole config from
+a name alone, for a destination that does not exist yet. A provider offering
+both means the user picks from a list or types one name — never four fields.
+
 The states a project can be in are decided by content, not by trust: the
 artifact's own digest is compared with the one last published, so `ahead`,
 `behind` and `diverged` read the same whether a change arrived by git, by
