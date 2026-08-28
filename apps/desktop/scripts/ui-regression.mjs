@@ -801,6 +801,40 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
+  // ── opening a project someone else published ────────────────────────
+  // The round trip that matters for a team: publish, leave, and come back to it
+  // from the destination alone — no clone by hand, no id typed in.
+  const handoffDir = path.join(WORK, "handoff");
+  const handoff = repos.projects.create({ name: "Handoff", keyPrefix: "HND" });
+  repos.items.create({ title: "written on the other machine", projectId: handoff.id, boardId: repos.boards.defaultFor(handoff.id).id, by: "human" });
+  await ctx.storage.bind(handoff.id, "folder", { dir: handoffDir });
+  repos.projects.remove(handoff.id);
+  check("the destination keeps the project after it leaves this machine", fs.existsSync(path.join(handoffDir, ".tomrade", "project.json")));
+
+  await $(`location.hash = '#/';true`);
+  await sleep(400);
+  win.webContents.reload();
+  await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+  await sleep(2600);
+  check("the project it left is gone from the grid", (await $(`[...document.querySelectorAll('.proj-name')].some(n => n.textContent === 'Handoff')`)) === false);
+
+  await press(`[...document.querySelectorAll('.titlebar .btn')].find(b => /Open a project/.test(b.textContent))`);
+  await sleep(800);
+  check("opening a project asks where it is, not only for a folder", (await $(`!!document.querySelector('#opProvider')`)) === true);
+  check(
+    "every destination can be opened from, not just a folder",
+    (await $(`[...document.querySelectorAll('#opProvider option')].map(o => o.value).join()`)) === "folder,git,github"
+  );
+  await shot("31-open-a-project");
+
+  await typeInto("#sf-op-dir", handoffDir);
+  await sleep(400);
+  await press(`document.querySelector('.dlg-foot .btn-primary')`);
+  await sleep(2600);
+  check("the project comes back from its destination", repos.projects.get(handoff.id) !== null);
+  check("it keeps the id agents already know", (await $(`location.hash`)).includes(handoff.id));
+  check("its issues and its key prefix came with it", repos.items.list({ projectId: handoff.id })[0]?.key === "HND-1");
+
   return results;
 };
 

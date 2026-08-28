@@ -9,10 +9,9 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
-import { keys, useAttachProject, useMcpUrl, useProjects } from "~/lib/queries";
-import { pickDirectory } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { keys, useMcpUrl, useProjects } from "~/lib/queries";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { OpenProjectDialog } from "./OpenProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 interface Facts {
@@ -115,10 +114,9 @@ export function ProjectsScreen() {
   const navigate = useNavigate();
   const projects = useProjects();
   const mcp = useMcpUrl();
-  const attach = useAttachProject();
-  const toast = useToast();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [openOpen, setOpenOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
   const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
@@ -136,19 +134,6 @@ export function ProjectsScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /** A teammate's project arrives as a folder — usually one they committed to a repository. */
-  const openFolder = async () => {
-    const dir = await pickDirectory("Choose a project folder");
-    if (!dir) return;
-    attach.mutate(
-      { providerId: "folder", config: { dir } },
-      {
-        onSuccess: (projectId) => void navigate({ to: "/p/$projectId", params: { projectId } }),
-        onError: (error) => toast({ body: error instanceof Error ? error.message : String(error) })
-      }
-    );
-  };
-
   const boardQueries = useQueries({
     queries: list.map((p) => ({ queryKey: keys.boards(p.id), queryFn: () => invoke("boards.list", p.id) }))
   });
@@ -162,8 +147,8 @@ export function ProjectsScreen() {
           Projects
         </span>
         <Spacer />
-        <button type="button" className="btn btn-secondary no-drag" disabled={attach.isPending} onClick={() => void openFolder()}>
-          <Icon name="i-search" size={14} /> {attach.isPending ? "Opening…" : "Open a project folder…"}
+        <button type="button" className="btn btn-secondary no-drag" onClick={() => setOpenOpen(true)}>
+          <Icon name="i-search" size={14} /> Open a project…
         </button>
         <button type="button" className="btn btn-primary no-drag" onClick={() => setNewOpen(true)}>
           <Icon name="i-plus" size={14} /> New project
@@ -250,6 +235,11 @@ export function ProjectsScreen() {
       </StatusBar>
 
       <NewProjectDialog open={newOpen} onOpenChange={setNewOpen} />
+      <OpenProjectDialog
+        open={openOpen}
+        onOpenChange={setOpenOpen}
+        onOpened={(projectId) => void navigate({ to: "/p/$projectId", params: { projectId } })}
+      />
       <ProjectSettingsDialog
         project={list.find((p) => p.id === configuring) ?? null}
         projects={list}
