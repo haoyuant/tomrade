@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@tomrade/domain": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",

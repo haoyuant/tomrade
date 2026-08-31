@@ -1,5 +1,6 @@
 import type { Context } from "cordis";
 import type { Author, OplogEntity, OplogOp } from "@tomrade/domain";
+import { writeContext } from "./context.js";
 
 /** What a repository is about to commit. Policy listeners read it and either throw or call next(). */
 export interface WriteIntent<T = unknown> {
@@ -13,6 +14,8 @@ export interface WriteIntent<T = unknown> {
   after: T | null;
   /** For an update: only the fields the caller asked to change. */
   patch?: Record<string, unknown>;
+  /** The agent run this write belongs to; stamped from the ambient WriteContext. */
+  runId?: string;
 }
 
 declare module "cordis" {
@@ -28,6 +31,7 @@ declare module "cordis" {
  * A listener that neither refuses nor delegates is a bug, and is reported as one.
  */
 export function write<R>(ctx: Context, intent: WriteIntent, commit: () => R): R {
+  if (intent.runId === undefined) intent.runId = writeContext.getStore()?.runId;
   let committed = false;
   const result = ctx.waterfall("write/pre-commit", intent, () => {
     committed = true;

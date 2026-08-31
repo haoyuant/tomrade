@@ -1,11 +1,45 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { Author } from "@tomrade/domain";
+import { writeContext } from "@tomrade/write";
+
+/** One tool call as the run's ledger remembers it. */
+export interface LedgerEntry {
+  seq: number;
+  tool: string;
+  args: unknown;
+  ok: boolean;
+  /** One line of what came back (or the error message). */
+  summary: string;
+  ms: number;
+}
+
+/**
+ * One agent run, as tools and policies see it. Every write made while a tool
+ * executes under a run is stamped with `id` in the oplog, which is what makes
+ * the whole run revertible at once.
+ */
+export interface RunHandle {
+  id: string;
+  threadId: string;
+  projectId: string;
+  author: Author;
+  ledger: {
+    all(): LedgerEntry[];
+    find(pred: (entry: LedgerEntry) => boolean): LedgerEntry | undefined;
+  };
+  /** Rule ids the user explicitly waived for this run (through ask_user). */
+  waivers: Set<string>;
+  /** Run-scoped scratch space; proposals live here between tool calls. */
+  scratch: Map<string, unknown>;
+}
 
 export interface ToolInvocation {
   by: Author;
   /** The project the caller is scoped to; tools default their filters to it. */
   projectId?: string;
+  /** Present when the call belongs to an agent run; policies read its ledger. */
+  run?: RunHandle;
 }
 
 export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
@@ -14,6 +48,8 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   description: string;
   input: S;
   execute(args: z.output<S>, invocation: ToolInvocation): unknown;
+  /** How to undo this tool's non-oplog effects; undoRun calls it for ledger entries whose tool declares one. */
+  revert?(args: z.output<S>, result: unknown, invocation: ToolInvocation): void | Promise<void>;
 }
 
 export interface ToolCall {
@@ -21,6 +57,7 @@ export interface ToolCall {
   args: unknown;
   by: Author;
   projectId?: string;
+  run?: RunHandle;
 }
 
 export type ToolOutcome = { ok: true; result: unknown } | { ok: false; error: unknown };
@@ -102,9 +139,11 @@ export class Tools extends Service {
     if (!tool) throw new UnknownToolError(name);
     const parsed = tool.input.safeParse(rawArgs ?? {});
     if (!parsed.success) throw new ToolInputError(name, parsed.error.issues);
-    const call: ToolCall = { name, args: parsed.data, by: invocation.by, projectId: invocation.projectId };
+    const call: ToolCall = { name, args: parsed.data, by: invocation.by, projectId: invocation.projectId, run: invocation.run };
     try {
-      const result = await this.ctx.waterfall("tools/pre-execute", call, async () => tool.execute(parsed.data, invocation));
+      const gated = () => this.ctx.waterfall("tools/pre-execute", call, async () => tool.execute(parsed.data, invocation));
+      // Writes made anywhere under this call carry the run id in the oplog.
+      const result = await (invocation.run ? writeContext.run({ runId: invocation.run.id, author: invocation.by }, gated) : gated());
       this.ctx.emit("tools/result", call, { ok: true, result });
       return result;
     } catch (error) {

@@ -62,12 +62,20 @@ export interface OplogEntry {
   after: unknown | null;
   by: Author;
   at: number;
+  /** The agent run this write belongs to; null for a write made outside one. */
+  runId: string | null;
 }
 
 export interface UndoResult {
   entry: OplogEntry;
   /** One line describing what was reverted, for the toast. */
   summary: string;
+}
+
+/** Result of reverting one agent run. `kept` names writes left in place because someone edited the entity afterwards. */
+export interface UndoRunResult {
+  reverted: number;
+  kept: { entity: OplogEntity; entityId: string; label: string; reason: string }[];
 }
 
 export interface CreateItemInput {

@@ -1,5 +1,5 @@
 import type { Db } from "@tomrade/db";
-import { InUseError, type Board, type Item, type OplogEntry, type UndoResult, type View } from "@tomrade/domain";
+import { InUseError, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomrade/domain";
 import { rowToEntry, type OplogRow } from "./rows.js";
 
 interface ItemSnapshot extends Item {
@@ -140,6 +140,42 @@ function restoreBoard(db: Db, board: BoardSnapshot): void {
   }
 }
 
+/** Apply the inverse of one entry. Throws InUseError when a created board now owns issues. */
+function revertEntry(db: Db, entry: OplogEntry): void {
+  if (entry.entity === "item") {
+    if (entry.op === "create") {
+      db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
+      db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
+    } else if (entry.before) {
+      restoreItem(db, entry.before as ItemSnapshot);
+    }
+  } else if (entry.entity === "board") {
+    if (entry.op === "create") {
+      const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(entry.entityId) as { n: number }).n;
+      if (owned > 0) throw new InUseError(entry.entityId, `That board now owns ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
+      db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE board_id = ?)").run(entry.entityId);
+      db.prepare("DELETE FROM views WHERE board_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM boards WHERE id = ?").run(entry.entityId);
+    } else if (entry.before) {
+      restoreBoard(db, entry.before as BoardSnapshot);
+    }
+  } else if (entry.entity === "view") {
+    if (entry.op === "create") {
+      db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
+    } else if (entry.before) {
+      restoreView(db, entry.before as ViewSnapshot);
+    }
+  }
+}
+
+const labelOf = (entry: OplogEntry): string => {
+  const named = (entry.before ?? entry.after) as { key?: string; name?: string } | null;
+  return named?.key ?? named?.name ?? entry.entityId;
+};
+
 /**
  * Walk the oplog backwards, newest first, across every entity it records. The
  * entry is consumed, so a second call reverts the write before it. A purge
@@ -152,40 +188,76 @@ export function undoLast(db: Db, entityId?: string): UndoResult | null {
   if (!row) return null;
 
   const entry: OplogEntry = rowToEntry(row);
-  const named = (entry.before ?? entry.after) as { key?: string; name?: string } | null;
-  const label = named?.key ?? named?.name ?? entry.entityId;
-
   db.transaction(() => {
-    if (entry.entity === "item") {
-      if (entry.op === "create") {
-        db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
-        db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
-        db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
-        db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
-      } else if (entry.before) {
-        restoreItem(db, entry.before as ItemSnapshot);
-      }
-    } else if (entry.entity === "board") {
-      if (entry.op === "create") {
-        const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(entry.entityId) as { n: number }).n;
-        if (owned > 0) throw new InUseError(entry.entityId, `That board now owns ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
-        db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE board_id = ?)").run(entry.entityId);
-        db.prepare("DELETE FROM views WHERE board_id = ?").run(entry.entityId);
-        db.prepare("DELETE FROM boards WHERE id = ?").run(entry.entityId);
-      } else if (entry.before) {
-        restoreBoard(db, entry.before as BoardSnapshot);
-      }
-    } else if (entry.entity === "view") {
-      if (entry.op === "create") {
-        db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
-        db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
-      } else if (entry.before) {
-        restoreView(db, entry.before as ViewSnapshot);
-      }
-    }
+    revertEntry(db, entry);
     db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
   });
 
   const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : "Reverted";
-  return { entry, summary: `${verb} ${label}` };
+  return { entry, summary: `${verb} ${labelOf(entry)}` };
+}
+
+/** What stands at `id` right now, for deciding whether a snapshot is still current. */
+function currentStamp(db: Db, entity: string, id: string): { exists: boolean; stamp: number | null } {
+  const sql =
+    entity === "item"
+      ? "SELECT version AS stamp FROM items WHERE id = ?"
+      : entity === "board"
+        ? "SELECT updated_at AS stamp FROM boards WHERE id = ?"
+        : "SELECT updated_at AS stamp FROM views WHERE id = ?";
+  const row = db.prepare(sql).get(id) as { stamp: number } | undefined;
+  return { exists: !!row, stamp: row?.stamp ?? null };
+}
+
+const stampOf = (entity: string, snapshot: unknown): number | null => {
+  const s = snapshot as { version?: number; updatedAt?: number } | null;
+  return (entity === "item" ? s?.version : s?.updatedAt) ?? null;
+};
+
+/**
+ * Revert every write one run made, newest first, in one transaction. An entity
+ * someone else edited afterwards is left in place and reported, never silently
+ * overwritten; the run's remaining oplog rows stay behind as the audit trail.
+ */
+export function undoRun(db: Db, runId: string): UndoRunResult {
+  const rows = db.prepare("SELECT * FROM oplog WHERE run_id = ? ORDER BY seq DESC").all(runId) as OplogRow[];
+  const kept: UndoRunResult["kept"] = [];
+  let reverted = 0;
+
+  db.transaction(() => {
+    for (const row of rows) {
+      const entry = rowToEntry(row);
+      const keep = (reason: string) => kept.push({ entity: entry.entity, entityId: entry.entityId, label: labelOf(entry), reason });
+      if (entry.op === "purge") {
+        keep("a permanent delete cannot be restored");
+        continue;
+      }
+      const current = currentStamp(db, entry.entity, entry.entityId);
+      if (entry.op === "create" || entry.op === "update") {
+        if (entry.op === "update" && !current.exists) {
+          keep("deleted after this run");
+          continue;
+        }
+        if (current.exists && current.stamp !== stampOf(entry.entity, entry.after)) {
+          keep("edited after this run");
+          continue;
+        }
+      } else if (entry.op === "delete" && current.exists) {
+        keep("already restored");
+        continue;
+      }
+      try {
+        // A created row that is already gone leaves nothing to do; consuming
+        // the entry is still right, so ⌘Z never replays this run's writes.
+        if (current.exists || entry.op === "delete") revertEntry(db, entry);
+        db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
+        reverted += 1;
+      } catch (err) {
+        if (err instanceof InUseError) keep(err.message);
+        else throw err;
+      }
+    }
+  });
+
+  return { reverted, kept };
 }

@@ -1,7 +1,17 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { LlmSettings } from "@tomrade/domain";
 import type { SettingsSection } from "@tomrade/settings";
+import { AnthropicModel } from "./anthropic.js";
+import { LlmError } from "./errors.js";
+import { collect, userMessage, type ChatModel, type ChatRequest, type LlmRole } from "./model.js";
+import { OpenAiCompatible } from "./openai.js";
+import { withPromptTools } from "./prompt-tools.js";
+
+export * from "./model.js";
+export { LlmError } from "./errors.js";
+export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
+export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
+export { withPromptTools } from "./prompt-tools.js";
 
 export interface CompletionRequest {
   system: string;
@@ -9,93 +19,167 @@ export interface CompletionRequest {
   temperature?: number;
 }
 
-/** The seam. Anything that can return one JSON document matching a schema can provide it. */
+/** The structured seam: one JSON document matching a schema. Kept from v1; compound tools live on it. */
 export interface LLMProvider {
   completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T>;
 }
 
+export interface LlmStatus {
+  ok: boolean;
+  reason?: string;
+  profile?: { id: string; title: string; provider: string; model: string };
+}
+
+/**
+ * The model seam. `conversation` is what an engine reasons with; `worker` is
+ * what compound tools and workflow steps generate content with — often cheaper.
+ */
+export interface LlmService extends LLMProvider {
+  for(role: LlmRole): ChatModel;
+  ready(role: LlmRole): LlmStatus;
+}
+
 declare module "cordis" {
   interface Context {
-    llm: LLMProvider;
+    llm: LlmService;
   }
 }
 
-export class LlmError extends Error {
-  constructor(
-    message: string,
-    public readonly cause?: unknown
-  ) {
-    super(message);
-    this.name = "LlmError";
-  }
+export const modelProfileSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().default(""),
+  provider: z.enum(["openai-compatible", "anthropic"]),
+  baseURL: z.string().optional(),
+  apiKey: z.string().default(""),
+  model: z.string().min(1),
+  /** Render tools into the prompt for a model without native tool calling. Degraded. */
+  promptTools: z.boolean().optional()
+});
+export type ModelProfile = z.infer<typeof modelProfileSchema>;
+
+export interface ModelsSettings {
+  profiles: ModelProfile[];
+  roles: { conversation: string; worker: string };
 }
 
-export const LLM_SECTION: SettingsSection<LlmSettings> = {
-  id: "llm",
-  title: "Assistant",
-  description: "The direct provider used for extraction, dedup judging and gap checks. Any OpenAI-compatible endpoint works.",
-  schema: z.object({ apiKey: z.string(), baseURL: z.string(), model: z.string() }),
-  defaults: {
-    apiKey: process.env.LLM_API_KEY ?? "",
-    baseURL: process.env.LLM_BASE_URL ?? "https://api.deepseek.com",
-    model: process.env.LLM_MODEL ?? "deepseek-chat"
-  },
+export const MODELS_SECTION: SettingsSection<ModelsSettings> = {
+  id: "models",
+  title: "Models",
+  description: "Model profiles, and which one each role uses. The conversation model reasons in the assistant; the worker model generates content inside tools and can be cheaper.",
+  schema: z.object({
+    profiles: z.array(modelProfileSchema).default([]),
+    roles: z
+      .object({ conversation: z.string().default(""), worker: z.string().default("") })
+      .default({ conversation: "", worker: "" })
+  }),
+  defaults: { profiles: [], roles: { conversation: "", worker: "" } },
   order: 10
 };
 
-/** OpenAI-compatible chat/completions over fetch, with one bounded validate-and-repair retry. */
-export class Llm extends Service implements LLMProvider {
+const parseCandidates = (content: string): string[] => [content, content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "")];
+
+/** ctx.llm: profiles + roles from settings, adapters cached until settings change. */
+export class Llm extends Service implements LlmService {
   static provide = "llm";
   static inject = ["settings"];
+
+  private cache = new Map<string, ChatModel>();
 
   constructor(ctx: Context) {
     super(ctx, "llm");
   }
 
   [Service.init]() {
-    this.ctx.settings.register(LLM_SECTION);
+    this.ctx.settings.register(MODELS_SECTION);
+    this.migrateLegacy();
+    this.ctx.on("settings/changed", () => this.cache.clear());
+  }
+
+  private models(): ModelsSettings {
+    return (this.ctx.settings.get().models as ModelsSettings | undefined) ?? MODELS_SECTION.defaults;
+  }
+
+  private profileFor(role: LlmRole): ModelProfile | undefined {
+    const { profiles, roles } = this.models();
+    return profiles.find((p) => p.id === roles[role]) ?? profiles[0];
+  }
+
+  ready(role: LlmRole): LlmStatus {
+    const profile = this.profileFor(role);
+    if (!profile) return { ok: false, reason: "No model profile configured — add one in Settings → Assistant" };
+    // A local endpoint (Ollama, LM Studio) needs no key; Anthropic always does.
+    if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: `Profile "${profile.title || profile.id}" has no API key` };
+    return { ok: true, profile: { id: profile.id, title: profile.title || profile.model, provider: profile.provider, model: profile.model } };
+  }
+
+  for(role: LlmRole): ChatModel {
+    const profile = this.profileFor(role);
+    if (!profile) throw new LlmError("No model profile configured — add one in Settings → Assistant");
+    const key = JSON.stringify(profile);
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+    const base: ChatModel =
+      profile.provider === "anthropic"
+        ? new AnthropicModel({ apiKey: profile.apiKey, model: profile.model, baseURL: profile.baseURL })
+        : new OpenAiCompatible({ baseURL: profile.baseURL ?? "https://api.deepseek.com", apiKey: profile.apiKey, model: profile.model });
+    const model = profile.promptTools ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
+    this.cache.set(key, model);
+    return model;
   }
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
-    const { apiKey, baseURL, model } = this.ctx.settings.get().llm ?? LLM_SECTION.defaults;
-    if (!apiKey) throw new LlmError("LLM API key not configured");
-    const res = await fetch(baseURL.replace(/\/$/, "") + "/chat/completions", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
+    const model = this.for("worker");
+    const out = await collect(
+      model.chat({
+        system: request.system,
+        messages: [userMessage(request.user)],
+        json: model.capabilities.json,
         temperature: request.temperature ?? 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: request.system },
-          { role: "user", content: request.user }
-        ]
+        maxTokens: 8000
       })
-    });
-    if (!res.ok) throw new LlmError("LLM request failed " + res.status + ": " + (await res.text().catch(() => "")).slice(0, 300));
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) throw new LlmError("LLM returned no content");
-
-    const candidates = [content, content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "")];
+    );
+    if (!out.text) throw new LlmError("LLM returned no content");
     let lastError: unknown;
-    for (const text of candidates) {
+    for (const candidate of parseCandidates(out.text.trim())) {
       try {
-        return schema.parse(JSON.parse(text));
+        return schema.parse(JSON.parse(candidate));
       } catch (err) {
         lastError = err;
       }
     }
     throw new LlmError("LLM output failed schema validation", lastError);
   }
+
+  /** A v1 `llm` section with a key becomes the first profile, bound to both roles. */
+  private migrateLegacy(): void {
+    const all = this.ctx.settings.get();
+    const models = all.models as ModelsSettings | undefined;
+    const legacy = all.llm as { apiKey?: string; baseURL?: string; model?: string } | undefined;
+    if (models?.profiles?.length || !legacy?.apiKey || !legacy.model) return;
+    this.ctx.settings.set({
+      ...all,
+      models: {
+        profiles: [{ id: "default", title: legacy.model, provider: "openai-compatible", baseURL: legacy.baseURL ?? "https://api.deepseek.com", apiKey: legacy.apiKey, model: legacy.model }],
+        roles: { conversation: "default", worker: "default" }
+      }
+    });
+  }
 }
 
-/** Deterministic provider for tests and offline demos. */
-export class FakeLlm implements LLMProvider {
+/** Deterministic provider for tests and offline demos: structured calls only. */
+export class FakeLlm implements LlmService {
   constructor(private readonly respond: (system: string, user: string) => unknown) {}
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
     return schema.parse(this.respond(request.system, request.user));
+  }
+
+  for(): ChatModel {
+    throw new LlmError("FakeLlm has no chat model; use fakeChat() in tests that run an engine");
+  }
+
+  ready(): LlmStatus {
+    return { ok: false, reason: "FakeLlm answers completeJson only" };
   }
 }
 
@@ -104,6 +188,49 @@ export const fakeLlm = (respond: (system: string, user: string) => unknown) => (
   name: "fake-llm",
   apply(ctx: Context) {
     ctx.provide("llm", new FakeLlm(respond));
+  }
+});
+
+export interface FakeTurn {
+  text?: string;
+  toolCalls?: { name: string; args: unknown; id?: string }[];
+}
+
+/** Scripted ChatModel: each chat() call plays the next turn and records the request. */
+export class FakeChatModel implements ChatModel {
+  capabilities = { tools: true, streaming: true, json: true };
+  requests: ChatRequest[] = [];
+  private step = 0;
+
+  constructor(private readonly turns: FakeTurn[] | ((request: ChatRequest, step: number) => FakeTurn)) {}
+
+  async *chat(request: ChatRequest) {
+    this.requests.push(request);
+    const turn = typeof this.turns === "function" ? this.turns(request, this.step) : (this.turns[this.step] ?? { text: "(script exhausted)" });
+    this.step += 1;
+    if (turn.text) yield { type: "text", delta: turn.text } as const;
+    let n = 0;
+    for (const call of turn.toolCalls ?? []) {
+      yield { type: "tool_call", id: call.id ?? `fake_${this.step}_${n}`, name: call.name, args: call.args } as const;
+      n += 1;
+    }
+    yield { type: "stop", reason: n > 0 ? ("tool_use" as const) : ("end" as const) } as const;
+  }
+}
+
+/** A plugin providing ctx.llm where both roles chat through `model` and completeJson answers via `respond`. */
+export const fakeChat = (model: ChatModel, respond?: (system: string, user: string) => unknown) => ({
+  name: "fake-chat",
+  apply(ctx: Context) {
+    const service: LlmService = {
+      for: () => model,
+      ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
+      completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
+        if (!respond) throw new LlmError("fakeChat was given no completeJson responder");
+        return schema.parse(respond(request.system, request.user));
+      }
+    };
+    ctx.provide("llm", service);
   }
 });
 

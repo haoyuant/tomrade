@@ -26,6 +26,7 @@ export function migrateCore(db: Sqlite): void {
     addColumn(db, "items", "board_id", "TEXT NOT NULL DEFAULT ''");
     addColumn(db, "items", "key_num", "INTEGER NOT NULL DEFAULT 0");
     addColumn(db, "items", "priority", "INTEGER NOT NULL DEFAULT 2");
+    addColumn(db, "oplog", "run_id", "TEXT");
 
     // Orphan project_ids are included: left unkeyed they would break the unique
     // key index created straight after this runs.
