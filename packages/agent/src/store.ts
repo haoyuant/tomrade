@@ -355,4 +355,33 @@ export class AgentStore {
   changesOf(runId: string): number {
     return (this.db.prepare("SELECT COUNT(*) AS n FROM oplog WHERE run_id = ?").get(runId) as { n: number }).n;
   }
+
+  /** What the run netted out to, per entity — the facts behind "Changed N". */
+  changedEntities(runId: string): { key: string; label: string; op: "created" | "updated" | "deleted" }[] {
+    const rows = this.db.prepare("SELECT entity, entity_id, op, before_json, after_json FROM oplog WHERE run_id = ? ORDER BY seq ASC").all(runId) as {
+      entity: string;
+      entity_id: string;
+      op: string;
+      before_json: string | null;
+      after_json: string | null;
+    }[];
+    const net = new Map<string, { first: string; last: string; snap: { key?: string; name?: string; title?: string } }>();
+    for (const row of rows) {
+      const snap = JSON.parse(row.after_json ?? row.before_json ?? "{}") as { key?: string; name?: string; title?: string };
+      const seen = net.get(row.entity_id);
+      if (seen) {
+        seen.last = row.op;
+        if (row.after_json) seen.snap = snap;
+      } else {
+        net.set(row.entity_id, { first: row.op, last: row.op, snap });
+      }
+    }
+    const out: { key: string; label: string; op: "created" | "updated" | "deleted" }[] = [];
+    for (const { first, last, snap } of net.values()) {
+      if (first === "create" && (last === "delete" || last === "purge")) continue; // net nothing
+      const op = first === "create" ? "created" : last === "delete" ? "deleted" : "updated";
+      out.push({ key: snap.key ?? snap.name ?? "·", label: snap.title ?? (snap.key ? "" : (snap.name ?? "")), op });
+    }
+    return out.slice(0, 60);
+  }
 }

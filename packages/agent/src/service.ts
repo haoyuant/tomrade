@@ -537,7 +537,7 @@ export class Agent extends Service {
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
     const changes = this.store.changesOf(rc.run.id);
-    if (changes > 0) this.appendAndBroadcast(rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes }, rc.run.id);
+    if (changes > 0) this.appendAndBroadcast(rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.run.id) }, rc.run.id);
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
     const run = this.store.endRun(rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, costUsd: result.costUsd, changes });
     this.broadcast(rc.threadId, { type: "done", run });

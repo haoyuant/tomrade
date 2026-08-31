@@ -1328,3 +1328,21 @@ html.overlay-open .titlebar .btn-primary {
 @media (prefers-reduced-motion: reduce) {
   .working .w-tick, .working .w-dots span { animation: none; }
 }
+
+/* Item keys in prose: one word wide, the card one click away. */
+.kref { display: inline-block; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--fg-2); font-size: 0.86em; text-decoration: none; white-space: nowrap; }
+a.kref:hover { border-color: var(--accent); color: var(--accent); }
+.kref.dead { opacity: 0.6; }
+.rf-list { border: 1px solid var(--border-soft); border-top: 0; border-radius: 0 0 var(--radius-sm) var(--radius-sm); background: var(--surface); margin: 0; }
+.rf-list summary { cursor: pointer; list-style: none; padding: 3px 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--meta); }
+.rf-list summary::-webkit-details-marker { display: none; }
+.rf-list summary::before { content: "▸ "; }
+.rf-list[open] summary::before { content: "▾ "; }
+.rf-row { display: flex; align-items: baseline; gap: 7px; padding: 3px 10px 3px 12px; border-top: 1px solid var(--border-soft); font-size: var(--text-xs); }
+.rf-row .rf-op { width: 10px; flex-shrink: 0; }
+.rf-row .op-created { color: var(--ok, #2f6b3a); }
+.rf-row .op-deleted { color: var(--danger); }
+.rf-row .op-updated { color: var(--meta); }
+.rf-row .rf-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.run-wrap .run-foot { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.run-wrap:not(:has(.rf-list)) .run-foot { border-radius: var(--radius-sm); }

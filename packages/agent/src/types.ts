@@ -11,7 +11,7 @@ export type Block =
   | { type: "question"; id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean }
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
   | { type: "status"; text: string }
-  | { type: "changes"; runId: string; count: number }
+  | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
   | { type: "note"; text: string }
   | { type: "error"; text: string };
 
