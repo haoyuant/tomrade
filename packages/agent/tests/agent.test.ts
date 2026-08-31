@@ -121,6 +121,38 @@ describe("the loop engine on the platform", () => {
   });
 });
 
+describe("crash recovery", () => {
+  it("reconciles a run left running by a killed process when the app restarts", async () => {
+    const dbPath = path.join(os.tmpdir(), `tomrade-agent-restart-${Date.now()}-${Math.random()}.db`);
+    const plugins = [Tools, [...tmpSettings()], Agent] as const;
+
+    const first = await fresh({ dbPath, plugins: [...plugins] });
+    const thread = first.ctx.agent.newThread(first.project.id);
+    const stale = first.ctx.agent.store.beginRun(thread.id, "loop"); // the process dies mid-turn — no dispose, no cleanup
+    expect(stale.status).toBe("running");
+    await first.ctx.fiber.dispose();
+
+    // The next launch is a new process against the same file — this is what "app restart" means here.
+    const second = await fresh({ dbPath, plugins: [Tools, [...tmpSettings()], Agent] });
+    const after = second.ctx.agent.store.run(stale.id)!;
+    expect(after.status).toBe("cancelled");
+    expect(after.error).toContain("Interrupted");
+    const note = second.ctx.agent.store.messages(thread.id).find((m) => m.runId === stale.id && m.block.type === "note");
+    expect(note && note.block.type === "note" && note.block.text).toContain("Interrupted");
+  });
+
+  it("cancel() reconciles a run with no in-memory process instead of silently doing nothing", async () => {
+    const { agent, project } = await boot([{ text: "hi" }]);
+    const thread = agent.newThread(project.id);
+    const stale = agent.store.beginRun(thread.id, "loop"); // never went through send(), so it's not in activeById
+
+    expect(agent.cancel(stale.id)).toBe(true);
+    expect(agent.store.run(stale.id)!.status).toBe("cancelled");
+    // already terminal — cancelling again is a genuine no-op
+    expect(agent.cancel(stale.id)).toBe(false);
+  });
+});
+
 describe("the scripted engine", () => {
   it("walks the intake wizard deterministically and stores the dossier card", async () => {
     const { ctx, agent, project } = await boot([]);

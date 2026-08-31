@@ -159,6 +159,7 @@ export class Agent extends Service {
   [Service.init]() {
     this.ctx.db.migrate("agent", MIGRATIONS);
     this.store = new AgentStore(this.ctx.db);
+    this.store.reconcileInterrupted();
     this.ctx.settings.register(AGENT_SECTION);
     this.registerPlatformTools();
     this.loadUserPlaybooks();
@@ -323,8 +324,17 @@ export class Agent extends Service {
 
   cancel(runId: string): boolean {
     const rc = this.activeById.get(runId);
-    if (!rc) return false;
-    rc.abort.abort();
+    if (rc) {
+      rc.abort.abort();
+      return true;
+    }
+    // No in-memory RunCtx — e.g. the process restarted since this run began.
+    // Reconcile directly against the DB row so the button isn't a silent no-op.
+    const run = this.store.run(runId);
+    if (!run || run.status !== "running") return false;
+    const changes = this.store.changesOf(runId);
+    const view = this.store.endRun(runId, { status: "cancelled", stop: "cancelled", error: "Interrupted — no active process to cancel.", changes });
+    this.broadcast(run.threadId, { type: "done", run: view });
     return true;
   }
 
