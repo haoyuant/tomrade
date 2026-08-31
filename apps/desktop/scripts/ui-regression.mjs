@@ -565,7 +565,8 @@ const run = async () => {
 
   // ── assistant panel ────────────────────────────────────────────────
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
-  check("the context chip states what it can see", (await $(`!!document.querySelector('.ai-head .tag')?.textContent.includes('·')`)) === true);
+  check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-head .chip-btn')?.textContent ?? '').trim().length > 0`)) === true);
+  check("an empty thread introduces the agent", (await $(`!!document.querySelector('.ai-scroll .turn-ai, .ai-scroll .agent-empty')`)) === true);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'j',metaKey:true,bubbles:true}));true`);
   await sleep(600);
   check("⌘J collapses the assistant to its rail", (await $(`!!document.querySelector('.ai-rail')`)) === true);
