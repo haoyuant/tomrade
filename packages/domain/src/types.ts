@@ -211,22 +211,3 @@ export interface AppSettings {
   [section: string]: unknown;
 }
 
-export interface ChatTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ExtractCandidate {
-  title: string;
-  body: string | null;
-  kind: ItemKind;
-}
-
-export interface GapCandidate extends ExtractCandidate {
-  reason: string;
-}
-
-export interface DedupResult {
-  isDuplicate: boolean;
-  duplicates: { id: string; reason: string }[];
-}

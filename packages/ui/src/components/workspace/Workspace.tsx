@@ -11,7 +11,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { usePanelOpen } from "~/lib/panel";
 import { useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
-import { AiPanel, aiOpenKey } from "./AiPanel";
+import { AgentPanel, aiOpenKey } from "./AgentPanel";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
@@ -184,16 +184,7 @@ export function Workspace() {
           />
         )}
 
-        <AiPanel
-          open={aiOpen}
-          onToggle={setAiOpen}
-          scope={{
-            projectId: ws.project.id,
-            label: `${ws.board.name} · ${ws.view.name}${ws.dirty ? " (filtered)" : ""} · ${ws.visible.length}`,
-            trace: `list_items · board=${ws.board.name} view=${ws.view.name}${ws.filterCount ? ` · ${ws.filterCount} filter${ws.filterCount > 1 ? "s" : ""}` : ""}`,
-            placeholder: `Ask about ${ws.board.name}…`
-          }}
-        />
+        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={ws.project.id} onOpenSettings={() => setSettings("assistant")} />
       </div>
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} />

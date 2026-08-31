@@ -48,7 +48,7 @@ modules:
   # lost by switching the last one off.
   - id: llm
     title: Language model
-  - id: assistant
+  - id: agent
     title: Assistant
   - id: mcp
     title: MCP server
@@ -91,8 +91,24 @@ plugins:
     name: "@tomrade/llm"
   - id: tools
     name: "@tomrade/tools"
-  - id: assistant
-    name: "@tomrade/assistant"
+  # The platform: threads, runs, the ledger, run-scoped undo, and the
+  # engine/workflow/playbook/policy registries. It conducts nothing itself.
+  - id: agent
+    name: "@tomrade/agent"
+    config:
+      playbooksDir: "${userData}/playbooks"
+  # Engines are conductors; several can be installed, a thread picks one.
+  - id: engine-loop
+    name: "@tomrade/engine-loop"
+  - id: engine-scripted
+    name: "@tomrade/engine-scripted"
+  - id: engine-claude-code
+    name: "@tomrade/engine-claude-code"
+  - id: engine-codex
+    name: "@tomrade/engine-codex"
+  # The backlog method: playbooks, workflows, compound tools, the dedup policy.
+  - id: agent-backlog
+    name: "@tomrade/agent-backlog"
   - id: mcp
     name: "@tomrade/mcp"
     config:
