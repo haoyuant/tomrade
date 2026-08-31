@@ -277,9 +277,14 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
     if (saved && panel.current) panel.current.style.width = `${saved}px`;
   }, [open]);
 
+  // After layout, so a working line or question that just mounted is inside scrollHeight.
   useEffect(() => {
-    if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [detail.data?.messages.length, live?.text]);
+    const el = scroll.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [detail.data?.messages.length, live?.text, runningRun?.id, pending?.question.id]);
 
   useEffect(() => {
     if (!busy) composer.current?.focus();
