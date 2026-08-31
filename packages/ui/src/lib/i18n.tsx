@@ -79,6 +79,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // time…) in step with the active locale before children read them this render — cheaper
   // than threading a locale prop through every call site that formats one of those strings.
   setDomainLocale(locale);
+  if (typeof document !== "undefined") document.documentElement.lang = locale;
 
   const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key), vars), [locale]);
 
