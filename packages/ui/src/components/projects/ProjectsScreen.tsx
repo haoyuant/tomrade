@@ -8,6 +8,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { keys, useMcpUrl, useProjects } from "~/lib/queries";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { OpenProjectDialog } from "./OpenProjectDialog";
@@ -57,41 +58,42 @@ function ProjectCard({
   onOpenSettings: () => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   return (
     <div className="proj-cell">
       <button
         type="button"
         className="proj"
-        title={`Open ${project.name}`}
+        title={t("projectsScreen.openProjectTitle", { name: project.name })}
         onClick={() => void navigate({ to: "/p/$projectId", params: { projectId: project.id } })}
       >
         <div className="row" style={{ gap: 7 }}>
           <Icon name={project.archived ? "i-archive" : "i-stack"} size={15} style={{ color: project.archived ? "var(--meta)" : "var(--accent)" }} />
-          <Eyebrow>{project.archived ? "Archived" : "Active"}</Eyebrow>
+          <Eyebrow>{project.archived ? t("projectsScreen.archived") : t("projectsScreen.active")}</Eyebrow>
         </div>
         <h2 className="proj-name" style={{ marginTop: "var(--space-3)" }}>
           {project.name}
         </h2>
-        <p className="proj-desc">{project.description ?? "No description yet."}</p>
+        <p className="proj-desc">{project.description ?? t("projectsScreen.noDescription")}</p>
         <div className="proj-boards">
-          {boardNames.length ? boardNames.map((n) => <Tag key={n} tone="neutral">{n}</Tag>) : <Tag tone="neutral">No boards</Tag>}
+          {boardNames.length ? boardNames.map((n) => <Tag key={n} tone="neutral">{n}</Tag>) : <Tag tone="neutral">{t("projectsScreen.noBoards")}</Tag>}
         </div>
         <div className="proj-foot">
           <span className="stat-pair">
             <span className="stat-v">{facts?.boards ?? "—"}</span>
-            <span className="stat-k">boards</span>
+            <span className="stat-k">{t("projectsScreen.boardsStat")}</span>
           </span>
           <span className="stat-pair">
             <span className="stat-v plain">{facts?.open ?? "—"}</span>
-            <span className="stat-k">open</span>
+            <span className="stat-k">{t("projectsScreen.openStat")}</span>
           </span>
           <span className="stat-pair">
             <span className="stat-v plain">{facts?.total ?? "—"}</span>
-            <span className="stat-k">issues</span>
+            <span className="stat-k">{t("projectsScreen.issuesStat")}</span>
           </span>
           <span className="stat-pair" style={{ marginLeft: "auto", textAlign: "right" }}>
             <span className="stat-k num">{facts?.lastWrite ? agoLabel(facts.lastWrite) : "—"}</span>
-            <span className="stat-k">last write</span>
+            <span className="stat-k">{t("projectsScreen.lastWriteStat")}</span>
           </span>
         </div>
       </button>
@@ -99,8 +101,8 @@ function ProjectCard({
         type="button"
         className="btn btn-icon proj-gear"
         aria-haspopup="dialog"
-        title={`Settings for ${project.name}`}
-        aria-label={`Settings for ${project.name}`}
+        title={t("projectsScreen.settingsForTitle", { name: project.name })}
+        aria-label={t("projectsScreen.settingsForTitle", { name: project.name })}
         onClick={onOpenSettings}
       >
         <Icon name="i-gear" size={15} />
@@ -111,6 +113,7 @@ function ProjectCard({
 
 export function ProjectsScreen() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const projects = useProjects();
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -140,19 +143,25 @@ export function ProjectsScreen() {
   return (
     <div className="app">
       <header className="titlebar">
-        <span className="crumb-title">Tomrade</span>
+        <span className="crumb-title">{t("projectsScreen.brand")}</span>
         <span className="crumb-sep">/</span>
         <span className="crumb-title" style={{ color: "var(--muted)" }}>
-          Projects
+          {t("projectsScreen.crumbProjects")}
         </span>
         <Spacer />
         <button type="button" className="btn btn-secondary no-drag" onClick={() => setOpenOpen(true)}>
-          <Icon name="i-search" size={14} /> Open a project…
+          <Icon name="i-search" size={14} /> {t("projectsScreen.openProject")}
         </button>
         <button type="button" className="btn btn-primary no-drag" onClick={() => setNewOpen(true)}>
-          <Icon name="i-plus" size={14} /> New project
+          <Icon name="i-plus" size={14} /> {t("projectsScreen.newProject")}
         </button>
-        <button type="button" className="btn btn-icon no-drag" title="Settings — ⌘," aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+        <button
+          type="button"
+          className="btn btn-icon no-drag"
+          title={t("projectsScreen.settingsShortcutTitle")}
+          aria-label={t("projectsScreen.settingsAria")}
+          onClick={() => setSettingsOpen(true)}
+        >
           <Icon name="i-gear" size={17} />
         </button>
       </header>
@@ -161,10 +170,9 @@ export function ProjectsScreen() {
         <div className="wrap wrap-wide">
           <div className="sec-head">
             <div>
-              <h1 className="sec-title">Projects</h1>
+              <h1 className="sec-title">{t("projectsScreen.crumbProjects")}</h1>
               <p className="sec-lede" style={{ marginTop: 4 }}>
-                Every project is a workspace on this machine. Each board is a workstream that owns its issues; views slice a board without moving
-                anything. A project can publish a copy of itself to a folder or a repository — open one here to work on it too.
+                {t("projectsScreen.leadParagraph")}
               </p>
             </div>
           </div>
@@ -181,19 +189,17 @@ export function ProjectsScreen() {
             ))}
             <button type="button" className="proj-new" onClick={() => setNewOpen(true)}>
               <Icon name="i-plus" size={20} />
-              <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>New project</span>
-              <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>
-                Creates a “Main” board and the two cross-board scopes.
-              </span>
+              <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>{t("projectsScreen.newProject")}</span>
+              <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>{t("projectsScreen.newProjectCardDesc")}</span>
             </button>
           </div>
 
           <hr className="rule" />
           <div className="sec-head">
             <div>
-              <h2 className="sec-title">Agents</h2>
+              <h2 className="sec-title">{t("projectsScreen.agentsTitle")}</h2>
               <p className="sec-lede" style={{ marginTop: 4 }}>
-                Coding agents read and write this backlog over MCP. Their writes carry provenance and stay reversible.
+                {t("projectsScreen.agentsLede")}
               </p>
             </div>
           </div>
@@ -201,17 +207,17 @@ export function ProjectsScreen() {
             <div className="panel">
               <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
                 <LiveDot />
-                <Eyebrow>MCP server · listening</Eyebrow>
+                <Eyebrow>{t("projectsScreen.mcpListening")}</Eyebrow>
               </div>
               <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
-                {mcp.data ?? "not running"}
+                {mcp.data ?? t("projectsScreen.notRunning")}
               </p>
               <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
-                Point Claude Code, Cline or any MCP client at this endpoint to list, read and write issues.
+                {t("projectsScreen.mcpHint")}
               </p>
             </div>
             <div className="panel">
-              <Eyebrow style={{ marginBottom: "var(--space-3)" }}>Tools exposed</Eyebrow>
+              <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("projectsScreen.toolsExposed")}</Eyebrow>
               <ul className="dash">
                 <li>
                   <Num>list_boards</Num> · <Num>list_items</Num> · <Num>get_item</Num> · <Num>create_item</Num>
@@ -222,7 +228,7 @@ export function ProjectsScreen() {
                 <li>
                   <Num>change_status</Num> · <Num>delete_item</Num>
                 </li>
-                <li>Writes on human-locked items are rejected, not merged</li>
+                <li>{t("projectsScreen.lockedWritesBullet")}</li>
               </ul>
             </div>
           </div>

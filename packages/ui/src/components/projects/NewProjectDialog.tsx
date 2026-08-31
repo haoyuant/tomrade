@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow } from "~/components/ui/atoms";
+import { useI18n } from "~/lib/i18n";
 import { useCreateProject, useDbPath } from "~/lib/queries";
 
 /** Prefix preview mirrors keyPrefixFor() in the domain: first three letters, uppercased. */
 const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ISS";
 
 export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t, tx } = useI18n();
   const create = useCreateProject();
   const dbPath = useDbPath();
   const navigate = useNavigate();
@@ -37,17 +39,17 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="New project">
-      <DialogHead title="New project" />
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("newProjectDialog.dialogLabel")}>
+      <DialogHead title={t("newProjectDialog.dialogLabel")} />
       <DialogBody className="stack-4">
         <div className="field">
-          <label htmlFor="npName">Project name</label>
+          <label htmlFor="npName">{t("newProjectDialog.projectNameLabel")}</label>
           <input
             id="npName"
             autoFocus
             className="input"
             autoComplete="off"
-            placeholder="e.g. Tomrade Docs"
+            placeholder={t("newProjectDialog.namePlaceholder")}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -59,21 +61,27 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
           />
           {error ? (
             <span className="meta-txt" style={{ color: "var(--danger)" }}>
-              A project needs a name.
+              {t("newProjectDialog.nameRequiredError")}
             </span>
           ) : (
             <span className="meta-txt">
-              Issues will be keyed <span className="num">{key}-1</span>, <span className="num">{key}-2</span>, …
+              {tx("newProjectDialog.issueKeyPreview", { a: <span className="num">{key}-1</span>, b: <span className="num">{key}-2</span> })}
             </span>
           )}
         </div>
         <div className="grid-2">
           <div className="field">
-            <label htmlFor="npDesc">Description</label>
-            <input id="npDesc" className="input" placeholder="What this workspace is for" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <label htmlFor="npDesc">{t("newProjectDialog.descriptionLabel")}</label>
+            <input
+              id="npDesc"
+              className="input"
+              placeholder={t("newProjectDialog.descriptionPlaceholder")}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </div>
           <div className="field">
-            <label htmlFor="npPrefix">Issue key prefix</label>
+            <label htmlFor="npPrefix">{t("newProjectDialog.issueKeyPrefixLabel")}</label>
             <input
               id="npPrefix"
               className="input num"
@@ -84,35 +92,33 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
               // whatever it is handed and the key it makes is permanent.
               onChange={(e) => setPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
             />
-            <span className="meta-txt">Derived from the name if left blank, and fixed once the project exists.</span>
+            <span className="meta-txt">{t("newProjectDialog.prefixNote")}</span>
           </div>
         </div>
         <div className="field">
-          <label htmlFor="npFile">Stored on this machine</label>
+          <label htmlFor="npFile">{t("newProjectDialog.storedOnMachineLabel")}</label>
           <input id="npFile" className="input num" readOnly value={dbPath.data ?? ""} />
-          <span className="meta-txt">
-            Every project lives in this file to begin with. Give it a destination — a folder, or a git repository — in its own settings, and it
-            publishes a copy of itself there as text.
-          </span>
+          <span className="meta-txt">{t("newProjectDialog.storedNote")}</span>
         </div>
         <div>
-          <Eyebrow>Created with the project</Eyebrow>
+          <Eyebrow>{t("newProjectDialog.createdWithProject")}</Eyebrow>
           <ul className="dash" style={{ marginTop: "var(--space-2)" }}>
+            <li>{tx("newProjectDialog.mainBoardBullet", { main: <span className="num">Main</span> })}</li>
             <li>
-              A <span className="num">Main</span> board, with the view every board is guaranteed to have
-            </li>
-            <li>
-              Two cross-board scopes: <span className="num">Recently updated</span> and <span className="num">Epics</span>
+              {tx("newProjectDialog.crossBoardBullet", {
+                recent: <span className="num">Recently updated</span>,
+                epics: <span className="num">Epics</span>
+              })}
             </li>
           </ul>
         </div>
       </DialogBody>
       <DialogFoot>
         <button type="button" className="btn btn-ghost" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t("newProjectDialog.cancel")}
         </button>
         <button type="button" className="btn btn-primary" onClick={submit}>
-          Create project
+          {t("newProjectDialog.createProject")}
         </button>
       </DialogFoot>
     </Dialog>

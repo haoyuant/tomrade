@@ -49,7 +49,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   // Plugin commands arrive as data and run in the main process against the current scope.
   const pluginGroups = new Map<string, NonNullable<typeof commands.data>>();
   for (const c of commands.data ?? []) {
-    const group = c.group ?? "Plugins";
+    const group = c.group ?? t("commandPalette.pluginsGroupFallback");
     pluginGroups.set(group, [...(pluginGroups.get(group) ?? []), c]);
   }
   const runPlugin = (id: string) =>
@@ -62,20 +62,20 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="scrim" />
-        <RadixDialog.Content className="palette" aria-label="Command palette">
-          <RadixDialog.Title className="sr-only">Command palette</RadixDialog.Title>
+        <RadixDialog.Content className="palette" aria-label={t("commandPalette.ariaLabel")}>
+          <RadixDialog.Title className="sr-only">{t("commandPalette.title")}</RadixDialog.Title>
           <Command loop>
             <Command.Input
               className="palette-input"
-              placeholder="Jump to a board, an issue, or run a command…"
-              aria-label="Search"
+              placeholder={t("commandPalette.searchPlaceholder")}
+              aria-label={t("commandPalette.searchAria")}
               value={search}
               onValueChange={setSearch}
             />
             <Command.List className="palette-list">
-              <Command.Empty className="palette-empty">Nothing matches “{search}”.</Command.Empty>
+              <Command.Empty className="palette-empty">{t("commandPalette.noMatches", { query: search })}</Command.Empty>
 
-              <Command.Group heading="Spaces & views" className="eyebrow palette-group">
+              <Command.Group heading={t("commandPalette.spacesViews")} className="eyebrow palette-group">
                 {ws.boards.flatMap((board) =>
                   ws.views
                     .filter((v) => v.boardId === board.id)
@@ -96,7 +96,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 )}
               </Command.Group>
 
-              <Command.Group heading="Issues" className="eyebrow palette-group">
+              <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
                 {ws.items.filter(isTicket).slice(0, 60).map((item) => (
                   <Command.Item
                     key={item.id}
@@ -113,21 +113,29 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 ))}
               </Command.Group>
 
-              <Command.Group heading="Actions" className="eyebrow palette-group">
+              <Command.Group heading={t("commandPalette.actionsGroup")} className="eyebrow palette-group">
                 {[
-                  { label: "New issue", kb: "⌘N", run: actions.newIssue },
-                  { label: "Toggle assistant panel", kb: "⌘J", run: actions.toggleAssistant },
-                  { label: "Toggle sidebar", kb: "⌘B", run: actions.toggleSidebar },
-                  { label: "Undo last write", kb: "⌘Z", run: actions.undo },
-                  ...(Object.keys(GROUPS) as GroupBy[]).map((g) => ({ label: `Group by ${GROUPS[g].label.toLowerCase()}`, kb: undefined, run: () => setGroup(g) })),
-                  { label: "Clear all filters", kb: undefined, run: () => ws.setQuery({ ...ws.query, labels: [], epics: [], priorities: [], provenance: [] }) },
-                  { label: "Switch project", kb: "⌘P", run: actions.openProjectMenu },
-                  { label: "All projects", kb: undefined, run: () => void navigate({ to: "/" }) },
-                  { label: "Settings", kb: "⌘,", run: actions.openSettings },
-                  { label: "Plugins", kb: undefined, run: actions.openPlugins },
-                  { label: "Board settings", kb: undefined, run: actions.openBoardSettings },
-                  { label: "Project settings", kb: undefined, run: actions.openProjectSettings },
-                  ...THEME_OPTIONS.filter((opt) => opt.value !== "system").map((opt) => ({ label: `Theme · ${t(opt.labelKey)}`, kb: undefined, run: () => setPreference(opt.value) }))
+                  { label: t("commandPalette.newIssue"), kb: "⌘N", run: actions.newIssue },
+                  { label: t("commandPalette.toggleAssistant"), kb: "⌘J", run: actions.toggleAssistant },
+                  { label: t("commandPalette.toggleSidebar"), kb: "⌘B", run: actions.toggleSidebar },
+                  { label: t("commandPalette.undoLastWrite"), kb: "⌘Z", run: actions.undo },
+                  ...(Object.keys(GROUPS) as GroupBy[]).map((g) => ({
+                    label: t("commandPalette.groupBy", { group: GROUPS[g].label.toLowerCase() }),
+                    kb: undefined,
+                    run: () => setGroup(g)
+                  })),
+                  { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, labels: [], epics: [], priorities: [], provenance: [] }) },
+                  { label: t("commandPalette.switchProject"), kb: "⌘P", run: actions.openProjectMenu },
+                  { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
+                  { label: t("commandPalette.settings"), kb: "⌘,", run: actions.openSettings },
+                  { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
+                  { label: t("commandPalette.boardSettings"), kb: undefined, run: actions.openBoardSettings },
+                  { label: t("commandPalette.projectSettings"), kb: undefined, run: actions.openProjectSettings },
+                  ...THEME_OPTIONS.filter((opt) => opt.value !== "system").map((opt) => ({
+                    label: t("commandPalette.themeAction", { label: t(opt.labelKey) }),
+                    kb: undefined,
+                    run: () => setPreference(opt.value)
+                  }))
                 ].map((action) => (
                   <Command.Item key={action.label} value={action.label} className="palette-row" onSelect={() => run(action.run)}>
                     <Icon name="i-chev" size={14} style={{ color: "var(--meta)" }} />

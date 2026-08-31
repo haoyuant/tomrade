@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
+import { useI18n } from "~/lib/i18n";
 import { useWorkspace } from "./context";
 
 /**
@@ -26,11 +27,12 @@ export function TitleBar({
 }) {
   const { project, projects, board, view, boards, items } = useWorkspace();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const open = items.filter((i) => i.status !== "done" && i.status !== "cancelled").length;
 
   return (
     <header className="titlebar">
-      <Link to="/" className="btn btn-icon no-drag" title="Projects home" aria-label="Projects home">
+      <Link to="/" className="btn btn-icon no-drag" title={t("titleBar.projectsHome")} aria-label={t("titleBar.projectsHome")}>
         <Icon name="i-home" size={16} />
       </Link>
       <span className="title-sep" />
@@ -38,30 +40,36 @@ export function TitleBar({
         <Menu
           open={projectMenuOpen}
           onOpenChange={setProjectMenuOpen}
-          label="Projects"
+          label={t("titleBar.projectsLabel")}
           wide
           trigger={
-            <button type="button" id="projSwitch" className="btn btn-ghost" title="Switch project — ⌘P" style={{ padding: "4px 8px" }}>
+            <button type="button" id="projSwitch" className="btn btn-ghost" title={t("titleBar.switchProjectTitle")} style={{ padding: "4px 8px" }}>
               <Icon className="ico" name="i-stack" size={15} />
               <span>{project.name}</span>
               <Icon className="chev" name="i-chevdown" size={13} />
             </button>
           }
         >
-          <MenuHead title="Projects" aside="local · this machine" />
+          <MenuHead title={t("titleBar.projectsLabel")} aside={t("settingsDialog.localMachine")} />
           {projects.map((p) => (
             <MenuRadioItem
               key={p.id}
               checked={p.id === project.id}
               name={p.name}
-              sub={p.archived ? "Archived" : p.id === project.id ? `${boards.filter((b) => !b.across).length} boards · ${open} open` : p.description ?? "Local project"}
+              sub={
+                p.archived
+                  ? t("titleBar.archived")
+                  : p.id === project.id
+                    ? t("titleBar.boardsOpenSummary", { boards: boards.filter((b) => !b.across).length, open })
+                    : (p.description ?? t("titleBar.localProject"))
+              }
               mark={<Icon name={p.archived ? "i-archive" : "i-stack"} size={13} style={{ color: p.id === project.id ? "var(--accent)" : "var(--meta)" }} />}
               onSelect={() => void navigate({ to: "/p/$projectId", params: { projectId: p.id } })}
             />
           ))}
           <div className="menu-foot">
-            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name="Project settings" onSelect={onOpenProjectSettings} />
-            <MenuLinkItem icon={<Icon name="i-home" size={13} />} name="All projects" onSelect={() => void navigate({ to: "/" })} />
+            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("titleBar.projectSettings")} onSelect={onOpenProjectSettings} />
+            <MenuLinkItem icon={<Icon name="i-home" size={13} />} name={t("titleBar.allProjects")} onSelect={() => void navigate({ to: "/" })} />
           </div>
         </Menu>
       </div>
@@ -72,16 +80,16 @@ export function TitleBar({
         {view.name}
       </span>
       <Spacer />
-      <button type="button" className="btn btn-ghost no-drag" onClick={onOpenPalette} title="Command palette">
+      <button type="button" className="btn btn-ghost no-drag" onClick={onOpenPalette} title={t("titleBar.commandPaletteTitle")}>
         <Icon name="i-search" size={14} />
-        <span>Search</span>
+        <span>{t("titleBar.search")}</span>
         <Kbd>⌘K</Kbd>
       </button>
-      <button type="button" className="btn btn-primary no-drag" onClick={onNewIssue} title="New issue — ⌘N">
+      <button type="button" className="btn btn-primary no-drag" onClick={onNewIssue} title={t("titleBar.newIssueTitle")}>
         <Icon name="i-plus" size={14} />
-        New
+        {t("titleBar.newButton")}
       </button>
-      <button type="button" className="btn btn-icon no-drag" onClick={onOpenSettings} title="Settings — ⌘," aria-label="Settings">
+      <button type="button" className="btn btn-icon no-drag" onClick={onOpenSettings} title={t("titleBar.settingsTitle")} aria-label={t("titleBar.settingsAria")}>
         <Icon name="i-gear" size={17} />
       </button>
     </header>
@@ -91,6 +99,7 @@ export function TitleBar({
 /** Railed, or hidden under 990px, the sidebar is gone — so this answers the same question it does. */
 export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => void }) {
   const { board, boards, view, boardViews, items, visible, openSpace } = useWorkspace();
+  const { t, tx } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const count = (b: (typeof boards)[number]) => items.filter((i) => b.across || i.boardId === b.id).length;
 
@@ -121,23 +130,23 @@ export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => 
         <Menu
           open={menuOpen}
           onOpenChange={setMenuOpen}
-          label="Boards and cross-board views"
+          label={t("titleBar.boardsMenuLabel")}
           trigger={
-            <button type="button" className="btn btn-icon" aria-label="Switch board" title="Boards and cross-board views">
+            <button type="button" className="btn btn-icon" aria-label={t("titleBar.switchBoardAria")} title={t("titleBar.boardsMenuLabel")}>
               <Icon name="i-board" size={16} />
             </button>
           }
         >
-          {group("Boards", boards.filter((b) => !b.across))}
-          {group("Across boards", boards.filter((b) => b.across))}
+          {group(t("titleBar.boardsGroup"), boards.filter((b) => !b.across))}
+          {group(t("sidebar.acrossBoards"), boards.filter((b) => b.across))}
         </Menu>
       </div>
       <h1 className="board-title">{board.name}</h1>
       <div className="board-facts">
         {board.subtitle && <span className="tag neutral num">{board.subtitle}</span>}
         <span className="meta-txt">
-          <span className="num">{visible.length}</span> shown of <span className="num">{count(board)}</span> ·{" "}
-          <span className="num">{boardViews.length}</span> view{boardViews.length === 1 ? "" : "s"}
+          {tx("titleBar.shownOf", { shown: <span className="num">{visible.length}</span>, total: <span className="num">{count(board)}</span> })} ·{" "}
+          {tx("titleBar.viewsCount", { n: <span className="num">{boardViews.length}</span> })}
         </span>
       </div>
       <Spacer />
@@ -146,13 +155,13 @@ export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => 
         <button
           type="button"
           className="btn btn-ghost"
-          aria-label="Board settings"
+          aria-label={t("titleBar.boardSettingsAria")}
           aria-haspopup="dialog"
-          title="Name, glyph, the issues this board owns, and its saved views"
+          title={t("titleBar.boardSettingsTooltip")}
           onClick={onOpenBoardSettings}
         >
           <Icon name="i-board" size={14} />
-          <span className="lbl">Board settings</span>
+          <span className="lbl">{t("titleBar.boardSettingsAria")}</span>
         </button>
       )}
       <span className="sr-only">{view.name}</span>

@@ -11,6 +11,7 @@ import {
   queryFromView,
   type BoardQuery
 } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useBadges, useBoards, useItems, useLabels, useProjects, useViewRanks, useViews } from "~/lib/queries";
 
 export interface WorkspaceValue {
@@ -65,6 +66,7 @@ export function WorkspaceProvider({
   children: (value: WorkspaceValue) => ReactNode;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const projects = useProjects();
   const boards = useBoards(projectId);
   const views = useViews(projectId);
@@ -168,7 +170,7 @@ export function WorkspaceProvider({
         <main className="sheet">
           <div className="wrap">
             <p className="meta-txt">
-              {gone ? "That project has been deleted." : missing ? "That board is no longer in this project." : "Opening the workspace…"}
+              {gone ? t("workspaceContext.projectDeleted") : missing ? t("workspaceContext.boardGone") : t("workspaceContext.opening")}
             </p>
           </div>
         </main>

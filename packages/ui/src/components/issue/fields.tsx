@@ -3,6 +3,7 @@ import type { Board, Item, ItemStatus, Patch, Priority } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { usePatchItem, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
@@ -22,6 +23,7 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
   const patch = usePatchItem(projectId);
   const undo = useUndo(projectId);
   const toast = useToast();
+  const { tx } = useI18n();
 
   const write = useCallback<IssueWrite>(
     (item, next, said) => {
@@ -33,18 +35,12 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
           // that says nothing reads as an edit that silently did not happen
           onError: (err) =>
             toast({
-              body: /conflict/i.test(err.message) ? (
-                <>
-                  An agent wrote to <span className="num">{item.key}</span> first — it re-read, so try again.
-                </>
-              ) : (
-                err.message
-              )
+              body: /conflict/i.test(err.message) ? tx("fields.conflictToast", { key: <span className="num">{item.key}</span> }) : err.message
             })
         }
       );
     },
-    [patch, toast, undo]
+    [patch, toast, undo, tx]
   );
 
   return { write, pending: patch.isPending };
@@ -90,32 +86,34 @@ function Picker({
 }
 
 export function StatusField({ item, write }: FieldProps) {
+  const { t, tx } = useI18n();
   return (
     <Picker
-      label="Status"
+      label={t("detailPane.fieldStatus")}
       value={item.status}
       mark={<StatusMark status={item.status} size={13} />}
       options={STATUS_KEYS.map((s) => ({ value: s, name: STATUS[s].label }))}
       onPick={(v) => {
         const next = v as ItemStatus;
         if (next === item.status) return;
-        write(item, { status: next }, <>Moved <span className="num">{item.key}</span> to {STATUS[next].label}</>);
+        write(item, { status: next }, tx("fields.movedToStatusToast", { key: <span className="num">{item.key}</span>, status: STATUS[next].label }));
       }}
     />
   );
 }
 
 export function PriorityField({ item, write }: FieldProps) {
+  const { t, tx } = useI18n();
   return (
     <Picker
-      label="Priority"
+      label={t("detailPane.fieldPriority")}
       value={String(item.priority)}
       mark={<PriorityGlyph priority={item.priority} size={13} always />}
       options={PRIORITIES.map((p) => ({ value: String(p), name: PRIORITY_LABEL[p] }))}
       onPick={(v) => {
         const next = Number(v) as Priority;
         if (next === item.priority) return;
-        write(item, { priority: next }, <>Set <span className="num">{item.key}</span> to {PRIORITY_LABEL[next]} priority</>);
+        write(item, { priority: next }, tx("fields.setPriorityToast", { key: <span className="num">{item.key}</span>, priority: PRIORITY_LABEL[next] }));
       }}
     />
   );
@@ -123,23 +121,30 @@ export function PriorityField({ item, write }: FieldProps) {
 
 /** Epics are items, so the option value is an item id and "" means unparented. */
 export function EpicField({ item, write, epics }: FieldProps & { epics: Item[] }) {
+  const { t, tx } = useI18n();
   const candidates = epics.filter((e) => e.id !== item.id);
   return (
     <Picker
-      label="Parent epic"
+      label={t("fields.parentEpicLabel")}
       value={item.parentId ?? ""}
       mark={item.parentId ? <Icon name="i-stack" size={12} style={{ color: "var(--meta)" }} /> : undefined}
       options={[
-        { value: "", name: "None" },
+        { value: "", name: t("common.none") },
         ...candidates.map((e) => ({ value: e.id, name: e.title })),
         // an epic deleted out from under us, or one this project cannot list
-        ...(item.parentId && !candidates.some((e) => e.id === item.parentId) ? [{ value: item.parentId, name: "Epic" }] : [])
+        ...(item.parentId && !candidates.some((e) => e.id === item.parentId) ? [{ value: item.parentId, name: t("detailPane.fieldEpic") }] : [])
       ]}
       onPick={(v) => {
         const next = v || null;
         if (next === item.parentId) return;
         const name = candidates.find((e) => e.id === next)?.title;
-        write(item, { parentId: next }, next ? <>Linked <span className="num">{item.key}</span> to {name ?? "its epic"}</> : <>Unlinked <span className="num">{item.key}</span> from its epic</>);
+        write(
+          item,
+          { parentId: next },
+          next
+            ? tx("fields.linkedToast", { key: <span className="num">{item.key}</span>, name: name ?? t("fields.itsEpicFallback") })
+            : tx("fields.unlinkedToast", { key: <span className="num">{item.key}</span> })
+        );
       }}
     />
   );
@@ -150,20 +155,21 @@ export function EpicField({ item, write, epics }: FieldProps & { epics: Item[] }
  * a cross-board scope owns nothing, so scopes are never offered as a target.
  */
 export function BoardField({ item, write, boards }: FieldProps & { boards: Board[] }) {
+  const { t, tx } = useI18n();
   const workstreams = boards.filter((b) => !b.across);
   return (
     <Picker
-      label="Board"
+      label={t("detailPane.fieldBoard")}
       value={item.boardId}
       options={
         workstreams.some((b) => b.id === item.boardId)
           ? workstreams.map((b) => ({ value: b.id, name: b.name }))
-          : [{ value: item.boardId, name: "Board" }, ...workstreams.map((b) => ({ value: b.id, name: b.name }))]
+          : [{ value: item.boardId, name: t("detailPane.fieldBoard") }, ...workstreams.map((b) => ({ value: b.id, name: b.name }))]
       }
       onPick={(v) => {
         if (v === item.boardId) return;
-        const name = workstreams.find((b) => b.id === v)?.name ?? "another board";
-        write(item, { boardId: v }, <>Moved <span className="num">{item.key}</span> to {name}</>);
+        const name = workstreams.find((b) => b.id === v)?.name ?? t("fields.anotherBoardFallback");
+        write(item, { boardId: v }, tx("fields.movedToBoardToast", { key: <span className="num">{item.key}</span>, name }));
       }}
     />
   );
@@ -175,6 +181,7 @@ export function BoardField({ item, write, boards }: FieldProps & { boards: Board
  * anything new.
  */
 export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabulary: string[] }) {
+  const { t, tx } = useI18n();
   const listId = useId();
   const [adding, setAdding] = useState(false);
   // Enter unmounts the input, and an unmount can still blur — `item` is a
@@ -189,18 +196,18 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
     settled.current = true;
     const name = raw.trim();
     if (!name || item.labels.includes(name)) return;
-    write(item, { labels: [...item.labels, name].sort() }, <>Added <b>{name}</b> to <span className="num">{item.key}</span></>);
+    write(item, { labels: [...item.labels, name].sort() }, tx("fields.addedLabelToast", { name: <b>{name}</b>, key: <span className="num">{item.key}</span> }));
   };
 
   const remove = (name: string) =>
-    write(item, { labels: item.labels.filter((l) => l !== name) }, <>Removed <b>{name}</b> from <span className="num">{item.key}</span></>);
+    write(item, { labels: item.labels.filter((l) => l !== name) }, tx("fields.removedLabelToast", { name: <b>{name}</b>, key: <span className="num">{item.key}</span> }));
 
   return (
     <span className="labset">
       {item.labels.map((l) => (
         <span key={l} className="tag faint lab">
           {l}
-          <button type="button" className="lab-x" aria-label={`Remove label ${l}`} title={`Remove ${l}`} onClick={() => remove(l)}>
+          <button type="button" className="lab-x" aria-label={t("fields.removeLabelAria", { name: l })} title={t("fields.removeLabelTitle", { name: l })} onClick={() => remove(l)}>
             <Icon name="i-close" size={9} />
           </button>
         </span>
@@ -211,8 +218,8 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
             autoFocus
             className="lab-in"
             list={unused.length ? listId : undefined}
-            aria-label="New label"
-            placeholder="label…"
+            aria-label={t("fields.newLabelAria")}
+            placeholder={t("fields.labelPlaceholder")}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -239,13 +246,13 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
         <button
           type="button"
           className="lab-add"
-          title="Add a label to this issue"
+          title={t("fields.addLabelTitle")}
           onClick={() => {
             settled.current = false;
             setAdding(true);
           }}
         >
-          <Icon name="i-plus" size={10} /> Label
+          <Icon name="i-plus" size={10} /> {t("fields.labelButtonText")}
         </button>
       )}
     </span>
@@ -257,6 +264,7 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
  * only a human can set or clear it. Status stays agent-writable either way.
  */
 export function LockButton({ item, write, className }: FieldProps & { className?: string }) {
+  const { t, tx } = useI18n();
   const locked = item.humanLocked;
   return (
     <button
@@ -264,17 +272,19 @@ export function LockButton({ item, write, className }: FieldProps & { className?
       className={cn("btn", className ?? "btn-ghost")}
       data-on={locked}
       aria-pressed={locked}
-      title={locked ? "Let agents write the title and body again" : "Stop agents writing the title and body"}
+      title={locked ? t("fields.lockButtonUnlockTitle") : t("fields.lockButtonLockTitle")}
       onClick={() =>
         write(
           item,
           { humanLocked: !locked },
-          locked ? <>Unlocked <span className="num">{item.key}</span></> : <>Locked the title and body of <span className="num">{item.key}</span></>
+          locked
+            ? tx("fields.unlockedToast", { key: <span className="num">{item.key}</span> })
+            : tx("fields.lockedToast", { key: <span className="num">{item.key}</span> })
         )
       }
     >
       <Icon name="i-lock" size={13} />
-      <span className="lbl">{locked ? "Unlock" : "Lock"}</span>
+      <span className="lbl">{locked ? t("fields.unlockLabel") : t("fields.lockLabel")}</span>
     </button>
   );
 }
@@ -307,6 +317,7 @@ export function InlineText({
   submit: "enter" | "mod-enter";
   onSave: (next: string) => void;
 }) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   // Escape unmounts the textarea, and an unmount can still fire blur — without
@@ -338,7 +349,7 @@ export function InlineText({
       <button
         type="button"
         className={cn("inline-edit", !heading && className)}
-        title="Click to edit"
+        title={t("fields.clickToEdit")}
         onClick={() => {
           discarded.current = false;
           setEditing(true);
@@ -384,28 +395,30 @@ export function InlineText({
 
 /** Title and body, wired to the write path. The lock never blocks a human. */
 export function IssueTitle({ item, write, heading }: FieldProps & { heading: "h1" | "h2" }) {
+  const { t, tx } = useI18n();
   return (
     <InlineText
       value={item.title}
-      placeholder="Untitled issue"
-      ariaLabel="Issue title"
+      placeholder={t("fields.untitledIssue")}
+      ariaLabel={t("fields.issueTitleAria")}
       className={heading === "h1" ? "issue-title" : "detail-title"}
       heading={heading}
       submit="enter"
-      onSave={(next) => next && write(item, { title: next }, <>Retitled <span className="num">{item.key}</span></>)}
+      onSave={(next) => next && write(item, { title: next }, tx("fields.retitledToast", { key: <span className="num">{item.key}</span> }))}
     />
   );
 }
 
 export function IssueBody({ item, write, className }: FieldProps & { className: string }) {
+  const { t, tx } = useI18n();
   return (
     <InlineText
       value={item.body ?? ""}
-      placeholder="No description yet. Click to write one."
-      ariaLabel="Issue description"
+      placeholder={t("fields.noDescriptionPlaceholder")}
+      ariaLabel={t("fields.issueDescriptionAria")}
       className={className}
       submit="mod-enter"
-      onSave={(next) => write(item, { body: next || null }, <>Edited the description of <span className="num">{item.key}</span></>)}
+      onSave={(next) => write(item, { body: next || null }, tx("fields.editedDescriptionToast", { key: <span className="num">{item.key}</span> }))}
     />
   );
 }

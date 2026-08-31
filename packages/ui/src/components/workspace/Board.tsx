@@ -6,6 +6,7 @@ import { move } from "@dnd-kit/helpers";
 import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { columnKeyOf, columnLabel, patchForColumn } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useCreateItem, usePatchItem, useSetViewRank, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { Card } from "./Card";
@@ -40,6 +41,7 @@ function SortableCard({ item, index, column, onOpen, onNudge }: { item: Item; in
 
 /** Creation in context: the column supplies whichever field the board groups by. */
 function Composer({ columnKey, onDone }: { columnKey: string; onDone: () => void }) {
+  const { t, tx } = useI18n();
   const { project, board, query } = useWorkspace();
   const create = useCreateItem(project.id);
   const undo = useUndo(project.id);
@@ -62,7 +64,7 @@ function Composer({ columnKey, onDone }: { columnKey: string; onDone: () => void
       {
         onSuccess: (item) => {
           onDone();
-          toast({ body: <>Created <span className="num">{item.key}</span></>, onUndo: () => undo.mutate(item.id) });
+          toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
         }
       }
     );
@@ -73,7 +75,7 @@ function Composer({ columnKey, onDone }: { columnKey: string; onDone: () => void
       <input
         autoFocus
         className="input"
-        placeholder="Title, sized for one PR…"
+        placeholder={t("board.composerPlaceholder")}
         style={{ fontSize: 14, border: 0, background: "transparent", padding: "2px 4px" }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -103,6 +105,7 @@ function Column({
   onOpen: (item: Item) => void;
   onNudge: (item: Item, d: -1 | 1) => void;
 }) {
+  const { t } = useI18n();
   const { query, epicNames, board, filterCount } = useWorkspace();
   const [composing, setComposing] = useState(false);
   // Low priority lets a card win the collision, so an empty column still accepts a drop.
@@ -114,15 +117,15 @@ function Column({
 
   const empty =
     query.group === "priority"
-      ? `Nothing at ${label.toLowerCase()} priority${filterCount ? " matches these filters" : " on this board"}.`
+      ? t(filterCount ? "board.emptyPriorityFiltered" : "board.emptyPriorityPlain", { label: label.toLowerCase() })
       : query.group === "epic"
         ? columnKey === "none"
-          ? "Every issue here has a parent epic."
-          : `Nothing in “${label}”${filterCount ? " matches these filters" : " yet"}. Drag an issue here to link it.`
-        : `No issues in ${label.toLowerCase()}${filterCount ? " match these filters" : ""}. Drag one here or add below.`;
+          ? t("board.emptyEpicNone")
+          : t(filterCount ? "board.emptyEpicFiltered" : "board.emptyEpicPlain", { label })
+        : t(filterCount ? "board.emptyStatusFiltered" : "board.emptyStatusPlain", { label: label.toLowerCase() });
 
   return (
-    <section className={`col${isDropTarget ? " drop-target" : ""}`} role="group" aria-label={`${label} — ${cards.length} issue${cards.length === 1 ? "" : "s"}`}>
+    <section className={`col${isDropTarget ? " drop-target" : ""}`} role="group" aria-label={t("board.columnAria", { label, n: cards.length })}>
       <div className="col-head">
         <span className="col-num">{String(index + 1).padStart(2, "0")}</span>
         <span className="col-name">{label}</span>
@@ -137,7 +140,7 @@ function Column({
         {/* a cross-board space has no one board to write into, so it defers to the New issue sheet */}
         {!board.across && !composing && (
           <button type="button" className="btn btn-ghost" style={{ justifyContent: "flex-start", marginTop: 2 }} onClick={() => setComposing(true)}>
-            <Icon name="i-plus" size={13} /> New issue
+            <Icon name="i-plus" size={13} /> {t("board.newIssue")}
           </button>
         )}
       </div>
@@ -146,6 +149,7 @@ function Column({
 }
 
 export function Board({ onConflict }: { onConflict: (title: string) => void }) {
+  const { tx } = useI18n();
   const { project, view, board, query, visible, select, ranks, epicNames } = useWorkspace();
   const patch = usePatchItem(project.id);
   const setRank = useSetViewRank(project.id);
@@ -204,7 +208,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
           toast({
             body: (
               <>
-                Moved <span className="num">{item.key}</span> to {columnLabel(targetColumn, query.group, epicNames)}
+                {tx("board.movedToast", { key: <span className="num">{item.key}</span>, column: columnLabel(targetColumn, query.group, epicNames) })}
               </>
             ),
             onUndo: () => undo.mutate(item.id)
@@ -220,7 +224,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
     const to = from + direction;
     if (from < 0) return;
     if (to < 0 || to >= query.columns.length) {
-      toast({ body: <><span className="num">{item.key}</span> is already in the {direction < 0 ? "first" : "last"} column</> });
+      toast({ body: <>{tx(direction < 0 ? "board.alreadyFirst" : "board.alreadyLast", { key: <span className="num">{item.key}</span> })}</> });
       return;
     }
     write(item, query.columns[to], null, query.columns[from]);

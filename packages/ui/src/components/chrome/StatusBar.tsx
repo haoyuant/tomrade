@@ -2,23 +2,33 @@ import type { Item, OplogEntry } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
 import { agoLabel } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useMcpUrl, useOplog, useStatusItems } from "~/lib/queries";
 
 const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp$/, "") : null);
 
 /** The most recent write, with its author — the agent collaboration at rest. */
 function Ribbon({ entry }: { entry: OplogEntry }) {
+  const { t, tx } = useI18n();
   const after = (entry.after ?? entry.before) as Item | null;
-  const verb = entry.op === "create" ? "created" : entry.op === "delete" ? "deleted" : entry.op === "purge" ? "permanently deleted" : "updated";
+  const verbKey =
+    entry.op === "create"
+      ? "statusBar.verbCreated"
+      : entry.op === "delete"
+        ? "statusBar.verbDeleted"
+        : entry.op === "purge"
+          ? "statusBar.verbPurged"
+          : "statusBar.verbUpdated";
   return (
     <span className="status-item">
       {entry.by.startsWith("ai:") && <span className="ribbon-tick" />}
-      <Num>{entry.by}</Num> {verb} {after?.key ?? entry.entity} · {agoLabel(entry.at)}
+      {tx("statusBar.ribbon", { author: <Num>{entry.by}</Num>, verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
     </span>
   );
 }
 
 export function StatusBar({ projectId, onUndo, children }: { projectId?: string; onUndo?: () => void; children?: React.ReactNode }) {
+  const { t } = useI18n();
   const mcp = useMcpUrl();
   const oplog = useOplog(1);
   const plugins = useStatusItems(projectId);
@@ -27,7 +37,7 @@ export function StatusBar({ projectId, onUndo, children }: { projectId?: string;
   return (
     <footer className="statusbar">
       <span className="status-item">
-        <LiveDot /> MCP <Num>{host(mcp.data ?? null) ?? "offline"}</Num>
+        <LiveDot /> {t("statusBar.mcpLabel")} <Num>{host(mcp.data ?? null) ?? t("statusBar.offline")}</Num>
       </span>
       {latest && <Ribbon entry={latest} />}
       {plugins.data?.map((s) => (
@@ -36,8 +46,8 @@ export function StatusBar({ projectId, onUndo, children }: { projectId?: string;
         </span>
       ))}
       {onUndo && (
-        <button type="button" className="btn btn-ghost" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} title="Undo — ⌘Z">
-          <Icon name="i-undo" size={13} /> Undo
+        <button type="button" className="btn btn-ghost" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} title={t("statusBar.undoTitle")}>
+          <Icon name="i-undo" size={13} /> {t("toast.undo")}
         </button>
       )}
       <Spacer />

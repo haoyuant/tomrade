@@ -3,6 +3,7 @@ import type { ChatTurn, Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
+import { useI18n } from "~/lib/i18n";
 import { invalidateWorkspace } from "~/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -55,12 +56,12 @@ export interface AiScope {
 }
 
 export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (open: boolean) => void; scope: AiScope }) {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "assistant",
-      content:
-        "I can read this board and write to it over the same path your CLI agents use. Every write I make is recorded as ai:mcp in the oplog and stays undoable."
+      content: t("aiPanel.introMessage")
     }
   ]);
   const [draft, setDraft] = useState("");
@@ -136,31 +137,31 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
         <button
           type="button"
           className="btn btn-icon"
-          title="Expand assistant — ⌘J"
-          aria-label="Expand assistant panel"
+          title={t("aiPanel.expandTitle", { cmd: "⌘J" })}
+          aria-label={t("aiPanel.expandAria")}
           onClick={() => onToggle(true)}
         >
           <Icon name="i-panel" size={15} />
         </button>
-        <span className="rail-label">Assistant</span>
+        <span className="rail-label">{t("settingsDialog.assistantLabel")}</span>
       </div>
     );
   }
 
   return (
     <aside className="ai" ref={panel}>
-      <div className="ai-resize" title="Drag to resize" onMouseDown={startResize} />
+      <div className="ai-resize" title={t("aiPanel.resizeTitle")} onMouseDown={startResize} />
       <div className="ai-head">
-        <h2 style={{ fontSize: "var(--text-base)" }}>Assistant</h2>
-        <span className="tag faint" title="What the assistant can see">
+        <h2 style={{ fontSize: "var(--text-base)" }}>{t("settingsDialog.assistantLabel")}</h2>
+        <span className="tag faint" title={t("aiPanel.scopeTitle")}>
           {scope.label}
         </span>
         <Spacer />
         <button
           type="button"
           className="btn btn-icon"
-          title="Collapse panel — ⌘J"
-          aria-label="Collapse assistant panel"
+          title={t("aiPanel.collapseTitle", { cmd: "⌘J" })}
+          aria-label={t("aiPanel.collapseAria")}
           onClick={() => onToggle(false)}
         >
           <Icon name="i-panel" size={15} />
@@ -181,7 +182,11 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
               </div>
               <div className="turn-body">
                 {turn.trace && <p className="turn-think">{turn.trace}</p>}
-                {turn.pending && <p className="ai-pending" style={{ marginTop: 6 }}>Reading the board…</p>}
+                {turn.pending && (
+                  <p className="ai-pending" style={{ marginTop: 6 }}>
+                    {t("aiPanel.readingBoard")}
+                  </p>
+                )}
                 {turn.error && <p className="ai-error" style={{ marginTop: 6 }}>{turn.error}</p>}
                 {turn.tool && <ToolCard tool={turn.tool} />}
                 {turn.content && <p style={{ marginTop: turn.trace || turn.tool ? "var(--space-3)" : 0 }}>{turn.content}</p>}
@@ -198,7 +203,7 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
           className="input"
           style={{ flex: 1, minWidth: 0 }}
           placeholder={scope.placeholder}
-          aria-label="Message the assistant"
+          aria-label={t("aiPanel.messageAria")}
           value={draft}
           disabled={pending}
           onChange={(e) => setDraft(e.target.value)}
@@ -207,7 +212,7 @@ export function AiPanel({ open, onToggle, scope }: { open: boolean; onToggle: (o
           }}
         />
         <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => void send()}>
-          Send
+          {t("aiPanel.sendButton")}
         </button>
       </div>
     </aside>
