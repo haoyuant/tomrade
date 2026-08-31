@@ -54,3 +54,14 @@ describe("findSimilar without a model", () => {
     expect(none.matches).toHaveLength(0);
   });
 });
+
+describe("findSimilarBatch without a model", () => {
+  it("answers every proposal from one pass", async () => {
+    const { findSimilarBatch } = await import("@tomrade/agent-backlog");
+    const existing = [item("Send interval water reminders"), item("Export data as CSV")];
+    const results = await findSimilarBatch(null, [{ title: "Send water reminders at intervals" }, { title: "Add a dark theme" }], existing);
+    expect(results).toHaveLength(2);
+    expect(results[0].verdict).not.toBe("none");
+    expect(results[1].matches).toHaveLength(0);
+  });
+});

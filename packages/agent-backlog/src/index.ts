@@ -10,10 +10,10 @@ import { defineTool, type RunHandle } from "@tomrade/tools";
 import { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier, type RequiredField } from "./dossier.js";
 import { applyPlan, findGaps, generatePlan, planSchema, type Plan } from "./plan.js";
 import { PLAYBOOKS } from "./playbooks.js";
-import { findSimilar, overlap } from "./similar.js";
+import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
 
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
-export { findSimilar, overlap, tokens } from "./similar.js";
+export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
 export { applyPlan, findGaps, generatePlan, planSchema, type ApplyOutcome, type Plan } from "./plan.js";
 export { PLAYBOOKS } from "./playbooks.js";
 
@@ -63,9 +63,22 @@ export default {
         name: "find_similar",
         title: "Find similar items",
         description:
-          "Check a proposed item against the existing backlog before creating it. Returns a duplicate/related/none verdict with matches — related matches often name the right parent epic.",
-        input: z.object({ title: z.string().min(1), body: z.string().optional(), limit: z.number().int().min(1).max(20).optional() }),
-        execute: ({ title, body, limit }, inv) => findSimilar(llm(), { title, body }, existingOf(inv.projectId), limit)
+          "Check proposed items against the existing backlog before creating them. Pass one {title, body?} — or {titles: [...]} to check MANY AT ONCE for the cost of one call (always batch when you have several). Returns a duplicate/related/none verdict with matches; related matches often name the right parent epic.",
+        input: z.object({
+          title: z.string().min(1).optional(),
+          body: z.string().optional(),
+          titles: z.array(z.string().min(1)).max(20).optional(),
+          limit: z.number().int().min(1).max(20).optional()
+        }),
+        execute: async ({ title, body, titles, limit }, inv) => {
+          const existing = existingOf(inv.projectId);
+          if (titles?.length) {
+            const results = await findSimilarBatch(llm(), titles.map((t) => ({ title: t })), existing, limit);
+            return { results: titles.map((t, i) => ({ title: t, ...results[i] })) };
+          }
+          if (!title) throw new Error("pass title, or titles for a batch");
+          return findSimilar(llm(), { title, body }, existing, limit);
+        }
       })
     );
 
@@ -196,9 +209,11 @@ export default {
       async before(call, next) {
         if (call.name !== "create_item" || call.run.waivers.has(DEDUP_RULE)) return next();
         const title = ((call.args as { title?: string }).title ?? "").trim();
-        const checked = call.run.ledger.find(
-          (e) => e.ok && e.tool === "find_similar" && overlap(((e.args as { title?: string })?.title ?? ""), title) >= 0.3
-        );
+        const queried = (args: unknown): string[] => {
+          const a = args as { title?: string; titles?: string[] };
+          return [a.title ?? "", ...(a.titles ?? [])].filter(Boolean);
+        };
+        const checked = call.run.ledger.find((e) => e.ok && e.tool === "find_similar" && queried(e.args).some((q) => overlap(q, title) >= 0.3));
         if (!checked) {
           throw new Error(
             `Duplicate check required before creating "${title}": call find_similar({ title: ${JSON.stringify(title)} }) first — or, if the user explicitly wants it anyway, ask_user with waiveRule "${DEDUP_RULE}".`
