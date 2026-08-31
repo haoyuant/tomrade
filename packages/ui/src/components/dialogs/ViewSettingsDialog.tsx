@@ -3,6 +3,7 @@ import type { Priority } from "@tomrade/domain";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { GROUPS, PRIORITIES, STATUS_KEYS, columnKeyOf, columnLabel, filterFromQuery } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
@@ -18,6 +19,7 @@ export function ViewSettingsDialog({
   onOpenChange: (open: boolean) => void;
   onOpenBoardSettings: () => void;
 }) {
+  const { t, tx } = useI18n();
   const ws = useWorkspace();
   const updateView = useUpdateView(ws.project.id);
   const toast = useToast();
@@ -48,22 +50,22 @@ export function ViewSettingsDialog({
     updateView.mutate({ id: ws.view.id, patch });
     ws.setQuery({ ...ws.query, columns, wip });
     onOpenChange(false);
-    toast({ body: <>Saved <span className="num">{patch.name}</span></> });
+    toast({ body: <>{tx("viewSettingsDialog.savedToast", { name: <span className="num">{patch.name}</span> })}</> });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="View settings" className="sheet-view">
-      <DialogHead title="View settings" aside={<Tag tone="neutral">{ws.board.name}</Tag>} />
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("viewSettingsDialog.dialogLabel")} className="sheet-view">
+      <DialogHead title={t("viewSettingsDialog.dialogLabel")} aside={<Tag tone="neutral">{ws.board.name}</Tag>} />
       <DialogBody className="stack-4">
         <div className="field">
-          <label htmlFor="vsName">View name</label>
+          <label htmlFor="vsName">{t("viewSettingsDialog.viewNameLabel")}</label>
           <input id="vsName" className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
           <Eyebrow>
-            Columns
+            {t("viewSettingsDialog.columnsLabel")}
             <span className="meta-txt" style={{ textTransform: "none", letterSpacing: 0, marginLeft: 6 }}>
-              · grouped by {GROUPS[ws.query.group].label.toLowerCase()}
+              {t("viewSettingsDialog.groupedBySuffix", { group: GROUPS[ws.query.group].label.toLowerCase() })}
             </span>
           </Eyebrow>
           <div style={{ marginTop: "var(--space-2)" }}>
@@ -77,13 +79,13 @@ export function ViewSettingsDialog({
                   <span className="meta-txt num">{count}</span>
                   {ws.query.group === "status" && (
                     <label className="meta-txt" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      WIP
+                      {t("viewSettingsDialog.wipLabel")}
                       <input
                         className="wip-in"
                         type="number"
                         min={0}
                         placeholder="—"
-                        aria-label={`WIP limit for ${label}`}
+                        aria-label={t("viewSettingsDialog.wipAria", { label })}
                         value={wip[key] ?? ""}
                         onChange={(e) => {
                           const value = parseInt(e.target.value, 10);
@@ -97,31 +99,35 @@ export function ViewSettingsDialog({
                       />
                     </label>
                   )}
-                  <button type="button" className="switch" role="switch" aria-checked={on} aria-label={`Show ${label}`} onClick={() => toggle(key)} />
+                  <button
+                    type="button"
+                    className="switch"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={t("viewSettingsDialog.showAria", { label })}
+                    onClick={() => toggle(key)}
+                  />
                 </div>
               );
             })}
           </div>
           <p className="meta-txt" style={{ marginTop: "var(--space-2)", color: columns.length ? undefined : "var(--warn)" }}>
             {columns.length
-              ? `${columns.length} column${columns.length > 1 ? "s" : ""} shown · issues in hidden columns keep their ${ws.query.group}`
-              : "Every column is off — this view would render blank."}
+              ? t("viewSettingsDialog.columnsShown", { n: columns.length, group: GROUPS[ws.query.group].label.toLowerCase() })
+              : t("viewSettingsDialog.allColumnsOff")}
           </p>
         </div>
-        <p className="meta-txt dense">
-          Grouping and filters are set on the board itself, in the bar above the columns. Saving here writes the name, the columns and whatever that
-          bar is currently showing into this view.
-        </p>
+        <p className="meta-txt dense">{t("viewSettingsDialog.footNote")}</p>
       </DialogBody>
       <DialogFoot>
         <button type="button" className="btn btn-ghost" aria-haspopup="dialog" style={{ marginRight: "auto" }} onClick={onOpenBoardSettings}>
-          Board settings →
+          {t("viewSettingsDialog.boardSettings")}
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t("viewSettingsDialog.cancel")}
         </button>
         <button type="button" className="btn btn-secondary" onClick={save}>
-          Save view
+          {t("viewSettingsDialog.saveView")}
         </button>
       </DialogFoot>
     </Dialog>

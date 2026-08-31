@@ -8,14 +8,19 @@ import { invoke } from "./api";
  */
 declare module "@tomrade/ipc" {
   interface Channels {
-    "shell.pickDirectory": (title?: string) => string | null;
+    "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
   }
 }
 
-/** Null when the user cancels, or when there is no shell (a browser tab). */
-export const pickDirectory = (title?: string): Promise<string | null> => invoke("shell.pickDirectory", title).catch(() => null);
+/**
+ * Null when the user cancels, or when there is no shell (a browser tab). `title`
+ * and `buttonLabel` come from the caller already localized — the main process
+ * has no renderer locale of its own to draw them from.
+ */
+export const pickDirectory = (title?: string, buttonLabel?: string): Promise<string | null> =>
+  invoke("shell.pickDirectory", title, buttonLabel).catch(() => null);
 
 export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(() => {});
 

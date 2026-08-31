@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
+import { useI18n } from "~/lib/i18n";
 
 export interface ToastSpec {
   /** Rich body: fragments so an issue key can carry the mono treatment. */
@@ -44,6 +45,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
  * button that expires while you are tabbing to it is not an affordance.
  */
 function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const { t } = useI18n();
   const [held, setHeld] = useState(false);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
@@ -74,15 +76,15 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
             dismiss.current();
           }}
         >
-          <Icon name="i-undo" size={12} /> Undo
+          <Icon name="i-undo" size={12} /> {t("toast.undo")}
         </button>
       )}
       <button
         type="button"
         className="btn btn-icon"
         style={{ padding: 4 }}
-        title="Dismiss"
-        aria-label="Dismiss notification"
+        title={t("toast.dismiss")}
+        aria-label={t("toast.dismissAria")}
         onClick={() => dismiss.current()}
       >
         <Icon name="i-close" size={12} />

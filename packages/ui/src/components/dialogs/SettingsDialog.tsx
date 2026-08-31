@@ -3,50 +3,42 @@ import type { LlmSettings } from "@tomrade/domain";
 import type { SettingsSectionView } from "@tomrade/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
+import { STATUS } from "~/lib/domain";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 
 /** Each preview re-declares the token block locally, so all three themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
-const MODES = [
-  { cls: "", name: "Paper", hex: "#f5f4ed" },
-  { cls: "dark", name: "Ink", hex: "#141413" },
-  { cls: "matcha", name: "Matcha", hex: "oklch .275 .022 142" }
-];
-
-const TOKENS = [
-  ["Canvas", "--bg", "Page and board background"],
-  ["Surface", "--surface", "Cards, panels, title bar"],
-  ["Raised", "--surface-warm", "Active sidebar row, secondary buttons"],
-  ["Primary text", "--fg", "Issue titles, headings"],
-  ["Subtext", "--muted", "Ledes, descriptions"],
-  ["Metadata", "--meta", "Issue IDs, dates, counts"],
-  ["Border", "--border", "Every hairline in the app"],
-  ["Accent", "--accent", "Column numbers, provenance ticks, one CTA"]
-] as const;
-
 function ThemePreview() {
+  const { t } = useI18n();
+  const modes = [
+    { cls: "", nameKey: "theme.paper" as const, hex: "#f5f4ed" },
+    { cls: "dark", nameKey: "theme.ink" as const, hex: "#141413" },
+    { cls: "matcha", nameKey: "theme.matcha" as const, hex: "oklch .275 .022 142" }
+  ];
   return (
     <div className="mode-grid" style={{ marginTop: "var(--space-5)" }}>
-      {MODES.map((m) => (
-        <div className={`mode ${m.cls}`} key={m.name}>
+      {modes.map((m) => (
+        <div className={`mode ${m.cls}`} key={m.nameKey}>
           <div className="mode-top">
-            <span className="mode-name">{m.name}</span>
+            <span className="mode-name">{t(m.nameKey)}</span>
             <span className="mode-hex num">{m.hex}</span>
           </div>
           <div className="mini-col">
             <span className="mini-num">02</span>
-            <span className="mini-lbl">Doing</span>
+            <span className="mini-lbl">{STATUS.doing.label}</span>
           </div>
           <div className="mini-card">
             <span />
             <span>
               <span className="mini-m">TOM-31</span>
               <br />
-              <span className="mini-t">AI panel: resize, collapse to rail</span>
+              <span className="mini-t">{t("settingsDialog.previewIssueA")}</span>
             </span>
           </div>
           <div className="mini-card">
@@ -56,12 +48,12 @@ function ThemePreview() {
             <span>
               <span className="mini-m">TOM-142</span>
               <br />
-              <span className="mini-t">Add boards and view_item_rank</span>
+              <span className="mini-t">{t("settingsDialog.previewIssueB")}</span>
             </span>
           </div>
           <div className="swatches">
-            {["--surface", "--surface-warm", "--muted", "--accent"].map((t) => (
-              <span key={t} className="sw" style={{ background: `var(${t})` }} />
+            {["--surface", "--surface-warm", "--muted", "--accent"].map((tok) => (
+              <span key={tok} className="sw" style={{ background: `var(${tok})` }} />
             ))}
           </div>
         </div>
@@ -71,7 +63,7 @@ function ThemePreview() {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["theme", "llm"]);
+const HAND_DRAWN = new Set(["theme", "language", "llm"]);
 
 /** A plugin's settings pane. Edits commit as they are made and fall back to the stored value if refused. */
 function PluginPane({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
@@ -125,6 +117,7 @@ export function SettingsDialog({
   /** Opens on this pane. Empty leaves the sheet on whichever one it was left showing. */
   pane?: string;
 }) {
+  const { t, tx } = useI18n();
   const settings = useSettings();
   const sections = useSettingsSections();
   const save = useSaveSettings();
@@ -155,46 +148,52 @@ export function SettingsDialog({
   const claimed = new Set((providers.data ?? []).map((p) => p.settingsSection).filter(Boolean) as string[]);
   const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id) && !claimed.has(s.id));
 
+  const TOKENS: [MessageKey, string, MessageKey][] = [
+    ["settingsDialog.tokenCanvas", "--bg", "settingsDialog.tokenCanvasWhere"],
+    ["settingsDialog.tokenSurface", "--surface", "settingsDialog.tokenSurfaceWhere"],
+    ["settingsDialog.tokenRaised", "--surface-warm", "settingsDialog.tokenRaisedWhere"],
+    ["settingsDialog.tokenPrimaryText", "--fg", "settingsDialog.tokenPrimaryTextWhere"],
+    ["settingsDialog.tokenSubtext", "--muted", "settingsDialog.tokenSubtextWhere"],
+    ["settingsDialog.tokenMetadata", "--meta", "settingsDialog.tokenMetadataWhere"],
+    ["settingsDialog.tokenBorder", "--border", "settingsDialog.tokenBorderWhere"],
+    ["settingsDialog.tokenAccent", "--accent", "settingsDialog.tokenAccentWhere"]
+  ];
+
   const panes: Pane[] = [
     {
       id: "appearance",
-      label: "Appearance",
+      label: t("settingsDialog.appearanceLabel"),
       icon: "i-sun",
       group: "app",
       render: () => (
         <>
-          <SectionHead title="Appearance">
-            Three themes, one token block. Every colour in the app resolves from a single declaration set, so a theme is a class on the document — not
-            a second copy of the stylesheet.
-          </SectionHead>
+          <SectionHead title={t("settingsDialog.appearanceLabel")}>{t("settingsDialog.appearanceLede")}</SectionHead>
           <div className="row" style={{ gap: "var(--space-3)", flexWrap: "wrap" }}>
             <ThemeSwitch />
-            <p className="meta-txt">Applies immediately and crossfades. Persisted with the rest of your settings.</p>
+            <p className="meta-txt">{t("settingsDialog.appearanceApplies")}</p>
           </div>
           <ThemePreview />
 
           <hr className="rule" />
-          <SectionHead title="Tokens">
-            Resolved values for the theme you are looking at now. Switch above and this table re-resolves — nothing here is hard-coded.
-          </SectionHead>
+          <SectionHead title={t("settingsDialog.tokensLabel")}>{t("settingsDialog.tokensLede")}</SectionHead>
           <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
             <table className="tok-table">
               <thead>
                 <tr>
-                  <th>Role</th>
-                  <th>Token</th>
-                  <th>Where it lands</th>
+                  <th>{t("settingsDialog.colRole")}</th>
+                  <th>{t("settingsDialog.colToken")}</th>
+                  <th>{t("settingsDialog.colWhere")}</th>
                 </tr>
               </thead>
               <tbody>
-                {TOKENS.map(([role, token, where]) => (
+                {TOKENS.map(([roleKey, token, whereKey]) => (
                   <tr key={token}>
                     <td>
                       <span className="chip" style={{ background: `var(${token})` }} />
-                      {role}
+                      {t(roleKey)}
                     </td>
                     <td className="mono">{token}</td>
-                    <td>{where}</td>
+                    <td>{t(whereKey)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -203,33 +202,46 @@ export function SettingsDialog({
         </>
       )
     },
+    {
+      id: "language",
+      label: t("settingsDialog.languageLabel"),
+      icon: "i-globe",
+      group: "app",
+      render: () => (
+        <>
+          <SectionHead title={t("settingsDialog.languageLabel")}>{t("settingsDialog.languageLede")}</SectionHead>
+          <div className="row" style={{ gap: "var(--space-3)", flexWrap: "wrap" }}>
+            <LanguageSwitch />
+            <p className="meta-txt">{t("settingsDialog.languageApplies")}</p>
+          </div>
+        </>
+      )
+    },
     ...(llm
       ? [
           {
             id: "assistant",
-            label: "Assistant",
+            label: t("settingsDialog.assistantLabel"),
             icon: "i-panel" as IconId,
             group: "app" as const,
             render: () => (
               <>
-                <SectionHead title="Assistant">
-                  The direct provider used for extraction, dedup judging and gap checks. Delegated execution goes to your own CLI agents instead.
-                </SectionHead>
+                <SectionHead title={t("settingsDialog.assistantLabel")}>{t("settingsDialog.assistantLede")}</SectionHead>
                 <div className="panel stack-3">
                   <div className="grid-2">
                     <div className="field">
-                      <label htmlFor="stBase">Base URL</label>
+                      <label htmlFor="stBase">{t("settingsDialog.baseUrlLabel")}</label>
                       <input id="stBase" className="input num" value={llm.baseURL ?? ""} onChange={(e) => commit({ baseURL: e.target.value })} />
                     </div>
                     <div className="field">
-                      <label htmlFor="stModel">Model</label>
+                      <label htmlFor="stModel">{t("settingsDialog.modelLabel")}</label>
                       <input id="stModel" className="input num" value={llm.model ?? ""} onChange={(e) => commit({ model: e.target.value })} />
                     </div>
                   </div>
                   <div className="field">
-                    <label htmlFor="stKey">API key</label>
+                    <label htmlFor="stKey">{t("settingsDialog.apiKeyLabel")}</label>
                     <input id="stKey" className="input num" type="password" value={llm.apiKey ?? ""} onChange={(e) => commit({ apiKey: e.target.value })} />
-                    <span className="meta-txt">Stored on this machine only. Never sent anywhere but the base URL above.</span>
+                    <span className="meta-txt">{t("settingsDialog.apiKeyNote")}</span>
                   </div>
                 </div>
               </>
@@ -239,36 +251,34 @@ export function SettingsDialog({
       : []),
     {
       id: "agents",
-      label: "Agent access",
+      label: t("settingsDialog.agentsLabel"),
       icon: "i-lock",
       group: "app",
       render: () => (
         <>
-          <SectionHead title="Agent access">What your coding agents may do to this backlog, and what they may not.</SectionHead>
+          <SectionHead title={t("settingsDialog.agentsLabel")}>{t("settingsDialog.agentsLede")}</SectionHead>
           <div className="grid-2">
             <div className="panel">
               <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
                 <LiveDot />
-                <Eyebrow>MCP · listening</Eyebrow>
+                <Eyebrow>{t("settingsDialog.mcpListening")}</Eyebrow>
               </div>
               <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
-                {mcp.data ?? "not running"}
+                {mcp.data ?? t("settingsDialog.notRunning")}
               </p>
               <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
-                Writes arrive with the <Num>baseVersion</Num> the agent read. A stale version is rejected, never merged.
+                {tx("settingsDialog.mcpNote", { baseVersion: <Num>baseVersion</Num> })}
               </p>
             </div>
             <div className="panel">
               <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
                 <Icon name="i-lock" size={14} style={{ color: "var(--meta)" }} />
-                <Eyebrow>Human work is protected</Eyebrow>
+                <Eyebrow>{t("settingsDialog.humanProtected")}</Eyebrow>
               </div>
               <ul className="dash">
-                <li>Locked fields reject agent writes with a typed error</li>
-                <li>Every write is recorded in the oplog with its author</li>
-                <li>
-                  <Num>⌘Z</Num> reverts any write, agent or human
-                </li>
+                <li>{t("settingsDialog.lockedFieldsBullet")}</li>
+                <li>{t("settingsDialog.oplogBullet")}</li>
+                <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>⌘Z</Num> })}</li>
               </ul>
             </div>
           </div>
@@ -277,20 +287,17 @@ export function SettingsDialog({
     },
     {
       id: "data",
-      label: "Data",
+      label: t("settingsDialog.dataLabel"),
       icon: "i-archive",
       group: "app",
       render: () => (
         <>
-          <SectionHead title="Data">
-            One SQLite file holds every project on this machine, and the oplog inside it is the whole history. A project can also publish a copy of
-            itself as text to a destination you choose — that copy is what a teammate clones, and the database itself never leaves.
-          </SectionHead>
+          <SectionHead title={t("settingsDialog.dataLabel")}>{t("settingsDialog.dataLede")}</SectionHead>
           <div className="panel">
             <div className="field">
-              <label htmlFor="stDb">Database file</label>
+              <label htmlFor="stDb">{t("settingsDialog.dbFileLabel")}</label>
               <input id="stDb" className="input num" readOnly value={dbPath.data ?? ""} />
-              <span className="meta-txt">Local-first. Back it up by copying the file — or give a project a destination in its own settings.</span>
+              <span className="meta-txt">{t("settingsDialog.dbFileNote")}</span>
             </div>
           </div>
         </>
@@ -311,7 +318,7 @@ export function SettingsDialog({
         )
       })
     ),
-    { id: "plugins", label: "Manage plugins", icon: "i-plug", group: "plugins", render: () => <PluginsPanel /> }
+    { id: "plugins", label: t("settingsDialog.manageLabel"), icon: "i-plug", group: "plugins", render: () => <PluginsPanel /> }
   ];
 
   // A plugin switched off takes its pane with it, so the menu falls back rather than emptying the body.
@@ -327,16 +334,16 @@ export function SettingsDialog({
       ));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="Settings" className="sheet-settings">
-      <DialogHead title="Settings" aside={<Tag tone="neutral">local · this machine</Tag>} />
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("settingsDialog.dialogLabel")} className="sheet-settings">
+      <DialogHead title={t("settingsDialog.dialogLabel")} aside={<Tag tone="neutral">{t("settingsDialog.localMachine")}</Tag>} />
       <div className="dlg-split">
-        <nav className="dlg-nav" aria-label="Settings sections">
+        <nav className="dlg-nav" aria-label={t("settingsDialog.navAriaLabel")}>
           <div className="side-group">
-            <Eyebrow className="side-label">App</Eyebrow>
+            <Eyebrow className="side-label">{t("settingsDialog.groupApp")}</Eyebrow>
             {rows("app")}
           </div>
           <div className="side-group">
-            <Eyebrow className="side-label">Plugins</Eyebrow>
+            <Eyebrow className="side-label">{t("settingsDialog.groupPlugins")}</Eyebrow>
             {rows("plugins")}
           </div>
         </nav>
@@ -344,7 +351,7 @@ export function SettingsDialog({
       </div>
       <DialogFoot>
         <button type="button" className="btn btn-secondary" onClick={() => onOpenChange(false)}>
-          Done
+          {t("common.done")}
         </button>
       </DialogFoot>
     </Dialog>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Icon } from "~/components/icons";
+import { useI18n } from "~/lib/i18n";
 import { pickDirectory } from "~/lib/shell";
 
 /** The slice of JSON Schema the renderer draws. Anything else falls back to text. */
@@ -46,6 +47,7 @@ export function SchemaField({
   onChange: (value: unknown) => void;
   disabled?: boolean;
 }) {
+  const { t } = useI18n();
   const inputId = `sf-${id}-${name}`;
   const label = schema.title ?? name;
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
@@ -54,7 +56,7 @@ export function SchemaField({
 
   const choose = async () => {
     setPicking(true);
-    const chosen = await pickDirectory(`Choose a folder for ${label}`);
+    const chosen = await pickDirectory(t("common.chooseFolderFor", { label }), t("common.chooseButton"));
     setPicking(false);
     if (chosen) onChange(chosen);
   };
@@ -87,7 +89,7 @@ export function SchemaField({
               would otherwise be a different destination. */}
           <button type="button" className="btn btn-secondary" disabled={disabled || picking} onClick={() => void choose()}>
             <Icon name="i-search" size={13} />
-            {picking ? "Choosing…" : "Choose…"}
+            {picking ? t("common.choosing") : t("common.choose")}
           </button>
         </div>
       ) : (

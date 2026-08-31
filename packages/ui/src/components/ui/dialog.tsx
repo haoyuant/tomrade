@@ -1,6 +1,7 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
+import { useI18n } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
 
 /**
@@ -52,6 +53,7 @@ export function Dialog({
 }
 
 export function DialogHead({ title, aside, children }: { title: string; aside?: ReactNode; children?: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="dlg-head">
       <h2 className="dlg-title">{title}</h2>
@@ -59,7 +61,7 @@ export function DialogHead({ title, aside, children }: { title: string; aside?: 
       <div className="spacer" />
       {children}
       <RadixDialog.Close asChild>
-        <button type="button" className="btn btn-icon" aria-label={`Close ${title.toLowerCase()}`}>
+        <button type="button" className="btn btn-icon" aria-label={t("common.closeTitled", { title: title.toLowerCase() })}>
           <Icon name="i-close" size={15} />
         </button>
       </RadixDialog.Close>

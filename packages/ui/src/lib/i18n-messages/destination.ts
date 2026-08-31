@@ -1,0 +1,40 @@
+export const destination = {
+  en: {
+    connectedPlain: "Connected",
+    connectedAs: "Connected as {{label}}",
+    disconnect: "Disconnect",
+    disconnectedToast: "Disconnected. Published copies are left where they are.",
+    connectedToast: "Connected {{label}}",
+    notAccepted: "That was not accepted",
+    connecting: "Connecting…",
+    connect: "Connect",
+    getOneFrom: "Get one from {{host}}",
+    chooseExisting: "Choose an existing one…",
+    findByName: "Find it by name",
+    findPlaceholder: "Start typing…",
+    asking: "Asking…",
+    nothingToChoose: "Nothing to choose from yet.",
+    createLabel: "Create {{name}}",
+    createSub: "Made when you publish, and private if the host allows it",
+    cancel: "Cancel"
+  },
+  zh: {
+    connectedPlain: "已连接",
+    connectedAs: "已以 {{label}} 身份连接",
+    disconnect: "断开连接",
+    disconnectedToast: "已断开连接。已发布的副本仍留在原处。",
+    connectedToast: "已连接 {{label}}",
+    notAccepted: "未被接受",
+    connecting: "连接中…",
+    connect: "连接",
+    getOneFrom: "从 {{host}} 获取",
+    chooseExisting: "选择已有的…",
+    findByName: "按名称查找",
+    findPlaceholder: "开始输入…",
+    asking: "正在查询…",
+    nothingToChoose: "暂时没有可选项。",
+    createLabel: "创建 {{name}}",
+    createSub: "在发布时创建，若托管方支持则为私有",
+    cancel: "取消"
+  }
+};

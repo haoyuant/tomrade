@@ -6,6 +6,7 @@ import type { GroupBy } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
 import { GROUPS, isTicket, queryWithGroup } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useCommands, useRunCommand } from "~/lib/queries";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { useToast } from "~/lib/toast";
@@ -27,6 +28,7 @@ export interface PaletteActions {
 export function CommandPalette({ open, onOpenChange, actions }: { open: boolean; onOpenChange: (open: boolean) => void; actions: PaletteActions }) {
   const ws = useWorkspace();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { setPreference } = useTheme();
   const toast = useToast();
   const commands = useCommands();
@@ -125,7 +127,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   { label: "Plugins", kb: undefined, run: actions.openPlugins },
                   { label: "Board settings", kb: undefined, run: actions.openBoardSettings },
                   { label: "Project settings", kb: undefined, run: actions.openProjectSettings },
-                  ...THEME_OPTIONS.filter((t) => t.value !== "system").map((t) => ({ label: `Theme · ${t.label}`, kb: undefined, run: () => setPreference(t.value) }))
+                  ...THEME_OPTIONS.filter((opt) => opt.value !== "system").map((opt) => ({ label: `Theme · ${t(opt.labelKey)}`, kb: undefined, run: () => setPreference(opt.value) }))
                 ].map((action) => (
                   <Command.Item key={action.label} value={action.label} className="palette-row" onSelect={() => run(action.run)}>
                     <Icon name="i-chev" size={14} style={{ color: "var(--meta)" }} />

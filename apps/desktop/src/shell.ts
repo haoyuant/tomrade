@@ -5,7 +5,7 @@ import type {} from "@tomrade/ipc";
 declare module "@tomrade/ipc" {
   interface Channels {
     /** Native folder picker. Null when the user cancels. */
-    "shell.pickDirectory": (title?: string) => string | null;
+    "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
     /** Reveal a path in Finder/Explorer, so a destination can be inspected. */
     "shell.reveal": (target: string) => void;
     /** Open a link in the real browser — the renderer must never navigate away from the app. */
@@ -21,12 +21,12 @@ export const shell = {
   name: "shell",
   inject: ["ipc"],
   apply(ctx: Context) {
-    ctx.ipc.handle("shell.pickDirectory", async (title) => {
+    ctx.ipc.handle("shell.pickDirectory", async (title, buttonLabel) => {
       const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const options = {
         title: title ?? "Choose a folder",
         properties: ["openDirectory" as const, "createDirectory" as const],
-        buttonLabel: "Choose"
+        buttonLabel: buttonLabel ?? "Choose"
       };
       const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : (result.filePaths[0] ?? null);

@@ -16,6 +16,7 @@ describe("settings", () => {
     const p = file();
     const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
     expect(ctx.settings.get().theme).toBe("system");
+    expect(ctx.settings.get().language).toBe("system");
     const changes: string[] = [];
     ctx.on("settings/changed", (next, previous) => changes.push(`${previous.theme}->${next.theme}`));
     ctx.settings.set({ ...ctx.settings.get(), theme: "dark" });
@@ -45,7 +46,7 @@ describe("settings", () => {
     expect((card.schema.properties as Record<string, unknown>).days).toMatchObject({ type: "integer" });
 
     await fiber.dispose();
-    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme"]);
+    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "language"]);
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
 });
