@@ -117,7 +117,10 @@ export class Mcp extends Service {
       const srv = app.listen(this.config.port, this.config.host, () => resolve(srv));
       srv.on("error", reject);
     });
-    this.url = `http://${this.config.host}:${(server.address() as AddressInfo).port}/mcp`;
+    const address = server.address();
+    // A race with a dying predecessor can yield a bound-then-dropped socket; name the problem instead of a null deref.
+    if (!address || typeof address === "string") throw new Error(`MCP could not bind ${this.config.host}:${this.config.port} — is another Tomrade still running?`);
+    this.url = `http://${this.config.host}:${(address as AddressInfo).port}/mcp`;
     this.ctx.logger.info(`MCP server ready: ${this.url}`);
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("mcp.url", () => ctx.mcp.url);
