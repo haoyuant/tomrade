@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentEvent, ThreadDetail } from "@tomrade/agent";
-import { useEffect } from "react";
+import type { AgentEvent, AgentSettings, PlaybookSource, ThreadDetail } from "@tomrade/agent";
+import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
-import { invalidateWorkspace } from "./queries";
+import { useI18n } from "./i18n";
+import { invalidateWorkspace, useSaveSettings, useSettings } from "./queries";
+import { useToast } from "./toast";
 
 export const agentKeys = {
   threads: (projectId: string) => ["agent", "threads", projectId] as const,
   thread: (threadId: string) => ["agent", "thread", threadId] as const,
   engines: ["agent", "engines"] as const,
-  playbooks: ["agent", "playbooks"] as const
+  playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const
 };
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agentKeys.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
@@ -17,6 +19,54 @@ export const useAgentThread = (threadId: string | null) =>
   useQuery({ queryKey: agentKeys.thread(threadId ?? ""), queryFn: () => invoke("agent.thread", threadId!), enabled: !!threadId });
 
 export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
+
+export const usePlaybooks = (projectId?: string) =>
+  useQuery({ queryKey: agentKeys.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });
+
+const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
+
+/**
+ * Surfaces playbook id collisions the user has not ruled on: one toast per id,
+ * naming the version in effect, with a button per version. Picking one records
+ * it in settings.agent.playbookChoices; plain dismissal asks again next visit.
+ */
+export function usePlaybookConflictNotice(projectId: string): void {
+  const playbooks = usePlaybooks(projectId);
+  const settings = useSettings();
+  const save = useSaveSettings();
+  const toast = useToast();
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const noticed = useRef(new Set<string>());
+
+  useEffect(() => {
+    const entries = playbooks.data;
+    const app = settings.data;
+    if (!entries || !app) return;
+    const agent = (app.agent as AgentSettings | undefined) ?? EMPTY_AGENT_SETTINGS;
+    const sourceLabel: Record<PlaybookSource, string> = {
+      plugin: t("playbooks.sourcePlugin"),
+      user: t("playbooks.sourceUser"),
+      project: t("playbooks.sourceProject")
+    };
+    const record = (id: string, source: PlaybookSource) =>
+      save.mutate(
+        { ...app, agent: { ...agent, playbookChoices: { ...agent.playbookChoices, [id]: source } } },
+        { onSuccess: () => qc.invalidateQueries({ queryKey: ["agent", "playbooks"] }) }
+      );
+    for (const entry of entries) {
+      if (!entry.shadows.length || agent.playbookChoices?.[entry.id] || noticed.current.has(entry.id)) continue;
+      noticed.current.add(entry.id);
+      toast({
+        body: t("playbooks.conflictBody", { title: entry.title, source: sourceLabel[entry.source] }),
+        actions: [
+          { label: t("playbooks.keepCurrent"), run: () => record(entry.id, entry.source) },
+          ...entry.shadows.map((s) => ({ label: t("playbooks.useSource", { source: sourceLabel[s] }), run: () => record(entry.id, s) }))
+        ]
+      });
+    }
+  }, [playbooks.data, settings.data, save, toast, t, qc]);
+}
 
 export function useNewThread(projectId: string) {
   const qc = useQueryClient();

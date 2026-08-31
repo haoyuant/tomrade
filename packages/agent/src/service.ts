@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
-import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import type {} from "@tomrade/db";
 import type {} from "@tomrade/oplog";
@@ -11,6 +9,7 @@ import type { UndoRunResult } from "@tomrade/domain";
 import type { LlmService } from "@tomrade/llm";
 import type { SettingsSection } from "@tomrade/settings";
 import { defineTool, type RunHandle, type LedgerEntry } from "@tomrade/tools";
+import { loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, type PendingRecord } from "./store.js";
 import {
   isSuspended,
@@ -23,6 +22,7 @@ import {
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
+  type PlaybookSource,
   type RunView,
   type Suspended,
   type ThreadMessage,
@@ -60,7 +60,7 @@ declare module "@tomrade/ipc" {
     "agent.revert": (runId: string) => UndoRunResult;
     "agent.engines": () => EngineView[];
     "agent.setEngine": (threadId: string, engineId: string) => ThreadSummary;
-    "agent.playbooks": () => PlaybookIndexEntry[];
+    "agent.playbooks": (projectId?: string) => PlaybookIndexEntry[];
   }
   interface Broadcasts {
     "agent.event": (threadId: string, event: AgentEvent) => void;
@@ -83,6 +83,8 @@ export interface AgentSettings {
   /** A plan pauses for confirmation when it would write more items than this; 0 = never pause. */
   confirmWritesOver: number;
   engines: Record<string, unknown>;
+  /** Per-playbook-id: which source wins when several carry the same id. Absent = most specific wins. */
+  playbookChoices: Record<string, PlaybookSource>;
 }
 
 export const AGENT_SECTION: SettingsSection<AgentSettings> = {
@@ -92,9 +94,10 @@ export const AGENT_SECTION: SettingsSection<AgentSettings> = {
   schema: z.object({
     defaultEngine: z.string().default("loop"),
     confirmWritesOver: z.number().int().min(0).default(0),
-    engines: z.record(z.string(), z.unknown()).default({})
+    engines: z.record(z.string(), z.unknown()).default({}),
+    playbookChoices: z.record(z.string(), z.enum(["plugin", "user", "project"])).default({})
   }),
-  defaults: { defaultEngine: "loop", confirmWritesOver: 0, engines: {} },
+  defaults: { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} },
   order: 11
 };
 
@@ -124,13 +127,6 @@ const summarize = (value: unknown): string => {
   return String(value);
 };
 
-const frontmatter = (raw: string): { meta: Record<string, unknown>; body: string } => {
-  const match = /^---\n([\s\S]*?)\n---\n?/.exec(raw);
-  if (!match) return { meta: {}, body: raw.trim() };
-  const meta = parseYaml(match[1]) as Record<string, unknown> | null;
-  return { meta: meta ?? {}, body: raw.slice(match[0].length).trim() };
-};
-
 /**
  * The platform every engine runs on. Owns the threads, the runs, the ledger,
  * the cards, suspended workflows and run-scoped undo; holds no opinion about
@@ -145,7 +141,9 @@ export class Agent extends Service {
 
   private engines = new Map<string, Engine>();
   private workflows = new Map<string, WorkflowSpec>();
-  private playbooks = new Map<string, Playbook>();
+  private playbooks = new Map<string, PlaybookVariants>();
+  /** Playbooks read from each project's shared copy; refreshed when a run starts. */
+  private projectPlaybooks = new Map<string, Map<string, Playbook>>();
   private activeByThread = new Map<string, RunCtx>();
   private activeById = new Map<string, RunCtx>();
 
@@ -173,7 +171,10 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.revert", (runId) => ctx.agent.revert(runId));
       ctx.ipc.handle("agent.engines", () => ctx.agent.engineViews());
       ctx.ipc.handle("agent.setEngine", (threadId, engineId) => ctx.agent.setEngine(threadId, engineId));
-      ctx.ipc.handle("agent.playbooks", () => ctx.agent.playbookIndex());
+      ctx.ipc.handle("agent.playbooks", async (projectId) => {
+        if (projectId) await ctx.agent.refreshProjectPlaybooks(projectId);
+        return ctx.agent.playbookIndex(projectId);
+      });
     });
     return () => {
       for (const rc of this.activeById.values()) rc.abort.abort();
@@ -192,10 +193,20 @@ export class Agent extends Service {
   }
 
   playbook(playbook: Omit<Playbook, "tools"> & { tools?: string[] }): () => void {
-    if (this.playbooks.has(playbook.id)) throw new Error(`playbook "${playbook.id}" is already registered`);
+    // Two PLUGINS claiming one id is a programming error. A user SKILL.md with
+    // the same id is not: both variants are kept, and which one wins is the
+    // user's call (settings.agent.playbookChoices; most specific by default).
+    if (this.playbooks.get(playbook.id)?.plugin) throw new Error(`playbook "${playbook.id}" is already registered by a plugin`);
     return this.ctx.effect(() => {
-      this.playbooks.set(playbook.id, { ...playbook, tools: playbook.tools ?? [] });
-      return () => this.playbooks.delete(playbook.id);
+      const variants = this.playbooks.get(playbook.id) ?? {};
+      variants.plugin = { ...playbook, tools: playbook.tools ?? [] };
+      this.playbooks.set(playbook.id, variants);
+      return () => {
+        const v = this.playbooks.get(playbook.id);
+        if (!v) return;
+        delete v.plugin;
+        if (!v.user) this.playbooks.delete(playbook.id);
+      };
     }, `agent.playbook(${playbook.id})`);
   }
 
@@ -264,14 +275,40 @@ export class Agent extends Service {
     );
   }
 
-  playbookIndex(): PlaybookIndexEntry[] {
-    return [...this.playbooks.values()]
-      .map(({ id, title, when, tools }) => ({ id, title, when, tools }))
+  playbookIndex(projectId?: string): PlaybookIndexEntry[] {
+    const choices = this.settingsOf().playbookChoices ?? {};
+    const ids = new Set<string>(this.playbooks.keys());
+    const project = projectId ? this.projectPlaybooks.get(projectId) : undefined;
+    for (const id of project?.keys() ?? []) ids.add(id);
+    return [...ids]
+      .flatMap((id) => {
+        const resolved = resolvePlaybook({ ...this.playbooks.get(id), project: project?.get(id) }, choices[id]);
+        return resolved ? [resolved.entry] : [];
+      })
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  openPlaybook(id: string): string | null {
-    return this.playbooks.get(id)?.body ?? null;
+  openPlaybook(id: string, projectId?: string): string | null {
+    const project = projectId ? this.projectPlaybooks.get(projectId)?.get(id) : undefined;
+    const resolved = resolvePlaybook({ ...this.playbooks.get(id), project }, (this.settingsOf().playbookChoices ?? {})[id]);
+    return resolved?.winner.body ?? null;
+  }
+
+  /**
+   * Re-read `.tomrade/playbooks/` from the project's shared copy, when the
+   * project has one. Called when a run starts and when the panel asks for the
+   * index — never fatal: a project without storage simply has none.
+   */
+  async refreshProjectPlaybooks(projectId: string): Promise<void> {
+    const storage = this.ctx.get("storage") as { artifactDirFor(projectId: string): Promise<string | null> } | undefined;
+    let loaded: Playbook[] = [];
+    try {
+      const dir = storage?.artifactDirFor ? await storage.artifactDirFor(projectId) : null;
+      if (dir) loaded = loadPlaybookDir(path.join(dir, "playbooks"), (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
+    } catch (err) {
+      this.ctx.logger.warn(`project playbooks for ${projectId} failed to load: ${message(err)}`);
+    }
+    this.projectPlaybooks.set(projectId, new Map(loaded.map((pb) => [pb.id, pb])));
   }
 
   settingsOf(): AgentSettings {
@@ -415,7 +452,7 @@ export class Agent extends Service {
       delta: (text) => this.broadcast(thread.id, { type: "delta", runId: run.id, text }),
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
       tools,
-      playbooks: { index: () => this.playbookIndex(), open: (id) => this.openPlaybook(id) },
+      playbooks: { index: () => this.playbookIndex(thread.projectId), open: (id) => this.openPlaybook(id, thread.projectId) },
       workflows: {
         list: () =>
           [...this.workflows.values()].map((spec) => ({
@@ -441,6 +478,7 @@ export class Agent extends Service {
         result = { stop: "asked" };
         return;
       }
+      await this.refreshProjectPlaybooks(rc.projectId);
       const settings = this.settingsOf();
       const engineOptions = settings.engines[rc.engine.id];
       const pending = this.store.pending(rc.threadId);
@@ -610,9 +648,9 @@ export class Agent extends Service {
         title: "Open a playbook",
         description: "Load the full body of one playbook from the index into view.",
         input: z.object({ id: z.string().min(1) }),
-        execute: ({ id }) => {
-          const body = this.openPlaybook(id);
-          if (body === null) throw new Error(`unknown playbook "${id}" — available: ${[...this.playbooks.keys()].join(", ") || "(none)"}`);
+        execute: ({ id }, inv) => {
+          const body = this.openPlaybook(id, inv.projectId);
+          if (body === null) throw new Error(`unknown playbook "${id}" — available: ${this.playbookIndex(inv.projectId).map((e) => e.id).join(", ") || "(none)"}`);
           return { id, body };
         }
       })
@@ -671,28 +709,15 @@ export class Agent extends Service {
     );
   }
 
-  /** `<playbooksDir>/<name>/SKILL.md` — the same file format Claude Code skills use. */
+  /** `<playbooksDir>/<name>/SKILL.md` — the user slot; a plugin's id may coexist. */
   private loadUserPlaybooks(): void {
-    const dir = this.config.playbooksDir;
-    if (!dir || !fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const file = path.join(dir, entry.name, "SKILL.md");
-      if (!fs.existsSync(file)) continue;
-      try {
-        const { meta, body } = frontmatter(fs.readFileSync(file, "utf8"));
-        const id = typeof meta.name === "string" ? meta.name : entry.name;
-        if (this.playbooks.has(id)) continue;
-        this.playbooks.set(id, {
-          id,
-          title: typeof meta.title === "string" ? meta.title : id,
-          when: typeof meta.description === "string" ? meta.description : "",
-          tools: Array.isArray(meta.tools) ? meta.tools.filter((t): t is string => typeof t === "string") : [],
-          body
-        });
-      } catch (err) {
-        this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`);
-      }
+    if (!this.config.playbooksDir) return;
+    const loaded = loadPlaybookDir(this.config.playbooksDir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
+    for (const playbook of loaded) {
+      const variants = this.playbooks.get(playbook.id) ?? {};
+      if (variants.user) continue;
+      variants.user = playbook;
+      this.playbooks.set(playbook.id, variants);
     }
   }
 }

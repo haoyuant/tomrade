@@ -3,6 +3,8 @@ import type {} from "cordis";
 export { Agent, AgentConfig, AGENT_SECTION, type AgentSettings, type ThreadDetail } from "./service.js";
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
+export { frontmatter, loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
+export { HOUSE_RULES, promptSections } from "./prompt.js";
 export {
   isSuspended,
   type AgentEvent,
@@ -14,6 +16,7 @@ export {
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
+  type PlaybookSource,
   type RunStatus,
   type RunView,
   type Suspended,

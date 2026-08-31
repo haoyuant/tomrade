@@ -115,6 +115,15 @@ describe("ctx.storage", () => {
     expect(await storage.statusFor(project.id)).toMatchObject({ state: "local", location: null });
   });
 
+  it("names the artifact dir for a bound project, and null for a local one", async () => {
+    const { ctx, storage, project } = await withStorage();
+    expect(await storage.artifactDirFor(project.id)).toBeNull();
+    const dir = tmp("dest");
+    await storage.bind(project.id, "folder", { dir });
+    expect(await storage.artifactDirFor(project.id)).toBe(path.join(dir, ".tomrade"));
+    await ctx.fiber.dispose();
+  });
+
   it("binds to a folder, publishes, and reports ahead then synced", async () => {
     const { storage, project, items, board } = await withStorage();
     const dir = tmp("dest");

@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { AgentSettings } from "@tomrade/agent";
+import type { AgentSettings, PlaybookSource } from "@tomrade/agent";
 import type { AppSettings } from "@tomrade/domain";
 import type { ModelProfile, ModelsSettings } from "@tomrade/llm";
-import { useEngines } from "~/lib/agent";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEngines, usePlaybooks } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomrade/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -335,7 +336,7 @@ const PRESETS = [
 ];
 
 const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { conversation: "", worker: "" } };
-const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {} };
+const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
 function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (next: AppSettings) => void }) {
@@ -481,6 +482,56 @@ function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (n
           <span className="meta-txt">{t("settingsDialog.confirmWritesNote")}</span>
         </div>
       </div>
+
+      <hr className="rule" />
+      <SectionHead title={t("playbooks.settingsTitle")}>{t("playbooks.settingsLede")}</SectionHead>
+      <div className="panel stack-3">
+        <PlaybooksBlock agent={agent} onSave={saveAgent} />
+      </div>
+    </>
+  );
+}
+
+/** Every registered playbook by id; an id carried by several sources grows a picker for which version wins. */
+function PlaybooksBlock({ agent, onSave }: { agent: AgentSettings; onSave: (next: AgentSettings) => void }) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const playbooks = usePlaybooks();
+  const sourceTag: Record<PlaybookSource, string> = {
+    plugin: t("playbooks.tagPlugin"),
+    user: t("playbooks.tagUser"),
+    project: t("playbooks.tagProject")
+  };
+  const choose = (id: string, source: PlaybookSource) => {
+    onSave({ ...agent, playbookChoices: { ...agent.playbookChoices, [id]: source } });
+    void qc.invalidateQueries({ queryKey: ["agent", "playbooks"] });
+  };
+  if (!playbooks.data?.length) return <p className="meta-txt">{t("playbooks.settingsEmpty")}</p>;
+  return (
+    <>
+      {playbooks.data.map((entry) => (
+        <div className="profile-row" key={entry.id}>
+          <span className="p-title">{entry.title}</span>
+          <span className="p-model num">{entry.id}</span>
+          {entry.shadows.length ? (
+            <select
+              className="input"
+              style={{ maxWidth: 220 }}
+              aria-label={t("playbooks.versionLabel")}
+              value={entry.source}
+              onChange={(e) => choose(entry.id, e.target.value as PlaybookSource)}
+            >
+              {[entry.source, ...entry.shadows].map((source) => (
+                <option key={source} value={source}>
+                  {sourceTag[source]}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Tag tone="neutral">{sourceTag[entry.source]}</Tag>
+          )}
+        </div>
+      ))}
     </>
   );
 }

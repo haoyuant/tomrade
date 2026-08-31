@@ -223,6 +223,6 @@ export default {
       }
     });
 
-    for (const playbook of PLAYBOOKS) ctx.agent.playbook({ ...playbook, tools: [...playbook.tools] });
+    for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
   }
 };
