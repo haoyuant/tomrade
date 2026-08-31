@@ -7,6 +7,8 @@ export interface ToastSpec {
   body: ReactNode;
   /** When set, the toast carries an inline Undo that calls it. */
   onUndo?: () => void;
+  /** Choices the toast offers; picking one runs it and dismisses. The X remains a no-op dismiss. */
+  actions?: { label: string; run: () => void }[];
 }
 
 interface Toast extends ToastSpec {
@@ -79,6 +81,20 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
           <Icon name="i-undo" size={12} /> {t("toast.undo")}
         </button>
       )}
+      {toast.actions?.map((action) => (
+        <button
+          key={action.label}
+          type="button"
+          className="btn btn-ghost"
+          style={{ padding: "3px 9px", fontSize: "var(--text-xs)" }}
+          onClick={() => {
+            action.run();
+            dismiss.current();
+          }}
+        >
+          {action.label}
+        </button>
+      ))}
       <button
         type="button"
         className="btn btn-icon"

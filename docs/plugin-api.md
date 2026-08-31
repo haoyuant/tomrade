@@ -225,8 +225,14 @@ ctx.agent.workflow({
 });
 
 // A PLAYBOOK is methodology for model-driven engines: the `when` line lives in
-// every prompt, the body loads on demand (open_playbook). SKILL.md files in
-// <userData>/playbooks/<name>/ register the same way, editable without a plugin.
+// every prompt, the body loads on demand (open_playbook). Three sources carry
+// them — plugins (this call, or SKILL.md files the plugin ships and reads with
+// loadPlaybookDir), the user's <userData>/playbooks/<name>/SKILL.md folders,
+// and a project's .tomrade/playbooks/ in its shared copy. The same id from
+// several sources is a conflict, not an error: the most specific wins
+// (project > user > plugin) until the user records a choice in
+// settings.agent.playbookChoices — the workspace offers that choice in a toast,
+// and the Assistant settings pane keeps a picker per conflicted id.
 ctx.agent.playbook({ id: "acme.review", title: "Review", when: "the user asks for a review", body: "…" });
 
 // A POLICY is an invariant in code: it runs on tools/pre-execute for calls that

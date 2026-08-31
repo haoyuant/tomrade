@@ -93,16 +93,27 @@ export interface WorkflowInfo {
   canStartEmpty: boolean;
 }
 
+/** Where a playbook came from. Same id from several sources is a conflict the user can settle in settings. */
+export type PlaybookSource = "plugin" | "user" | "project";
+
+/** A methodology document: the `when` line lives in every prompt, the body loads on demand. */
+export interface Playbook {
+  id: string;
+  title: string;
+  when: string;
+  tools: string[];
+  body: string;
+}
+
 export interface PlaybookIndexEntry {
   id: string;
   title: string;
   when: string;
   tools: string[];
-}
-
-/** A methodology document: the `when` line lives in every prompt, the body loads on demand. */
-export interface Playbook extends PlaybookIndexEntry {
-  body: string;
+  /** The source that won for this id. */
+  source: PlaybookSource;
+  /** Sources that also carry this id and lost — non-empty means a conflict. */
+  shadows: PlaybookSource[];
 }
 
 export interface TurnInput {

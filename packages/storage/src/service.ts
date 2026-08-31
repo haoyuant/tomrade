@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { Db } from "@tomrade/db";
@@ -7,7 +8,7 @@ import type {} from "@tomrade/write";
 import type {} from "./channels.js";
 import { Bindings, type StorageBinding } from "./bindings.js";
 import { folderProvider } from "./providers/folder.js";
-import { digestState, exportState, importState, projectIdOf, readArtifact, writeArtifact, type ProjectState } from "./state.js";
+import { ARTIFACT_DIR, digestState, exportState, importState, projectIdOf, readArtifact, writeArtifact, type ProjectState } from "./state.js";
 import { DivergedError, ForeignProjectError, UnknownProviderError, type ConnectionState, type StorageHandle, type StorageProvider, type StorageProviderView, type StorageStatus } from "./types.js";
 
 declare module "cordis" {
@@ -200,6 +201,21 @@ export class Storage extends Service {
 
   cachedState(projectId: string): StorageStatus["state"] {
     return this.lastState.get(projectId) ?? (this.bindings.get(projectId) ? "synced" : "local");
+  }
+
+  /**
+   * The project's `.tomrade/` directory in its shared copy, or null when the
+   * project lives only in the local database. What travels beside the state
+   * files (playbooks, docs) is read from here by whoever needs it.
+   */
+  async artifactDirFor(projectId: string): Promise<string | null> {
+    if (!this.bindings.get(projectId)) return null;
+    try {
+      const handle = await this.handleFor(projectId);
+      return path.join(handle.dir, ARTIFACT_DIR);
+    } catch {
+      return null;
+    }
   }
 
   private async handleFor(projectId: string): Promise<StorageHandle> {

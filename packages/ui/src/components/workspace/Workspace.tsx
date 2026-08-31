@@ -9,6 +9,7 @@ import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
 import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { useI18n } from "~/lib/i18n";
+import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -39,6 +40,7 @@ function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => 
 
 export function Workspace() {
   const ws = useWorkspace();
+  usePlaybookConflictNotice(ws.project.id);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
   const toast = useToast();
