@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Block, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
+import type { AgentSettings, Block, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine } from "~/lib/agent";
+import { useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -137,6 +138,7 @@ function Row({ m, runs, pending, onAnswer, onRevert, busy }: { m: ThreadMessage;
 
 export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open: boolean; onToggle: (open: boolean) => void; projectId: string; onOpenSettings: () => void }) {
   const threads = useAgentThreads(projectId);
+  const settings = useSettings();
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
   const threadId = (chosenThread && threads.data?.some((t) => t.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
   const detail = useAgentThread(threadId);
@@ -163,7 +165,11 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
   const busy = !!runningRun || send.isPending || answer.isPending;
   const pending = detail.data?.pending ?? null;
   const runs = new Map((detail.data?.runs ?? []).map((r) => [r.id, r]));
-  const engine = engines.data?.find((e) => e.id === detail.data?.thread.engine);
+  // No thread yet: the chip shows what a new thread WOULD get, and picking an
+  // engine creates the thread right there instead of doing silently nothing.
+  const defaultEngine = (settings.data?.agent as AgentSettings | undefined)?.defaultEngine ?? "loop";
+  const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
+  const engine = engines.data?.find((e) => e.id === currentEngineId);
   const noEngineReady = engines.data ? !engines.data.some((e) => e.ok) : false;
 
   useEffect(() => {
@@ -238,7 +244,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
           label="Engine"
           trigger={
             <button type="button" className="tag chip-btn" title="Who conducts this thread">
-              {engine ? engine.title : "Engine"}
+              {engine?.title ?? currentEngineId}
               {engine && !engine.ok && <Icon name="i-warn" size={11} />}
             </button>
           }
@@ -247,10 +253,14 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
           {(engines.data ?? []).map((e) => (
             <MenuRadioItem
               key={e.id}
-              checked={e.id === detail.data?.thread.engine}
+              checked={e.id === currentEngineId}
               name={e.title}
               sub={e.ok ? undefined : e.reason}
-              onSelect={() => threadId && !busy && setEngine.mutate({ threadId, engineId: e.id })}
+              onSelect={() => {
+                if (busy || e.id === currentEngineId) return;
+                if (threadId) setEngine.mutate({ threadId, engineId: e.id });
+                else void newThread.mutateAsync(e.id).then((t) => pickThread(t.id));
+              }}
             />
           ))}
           <MenuActionItem icon={<Icon name="i-gear" size={13} />} name="Manage models & engines…" onSelect={onOpenSettings} />
