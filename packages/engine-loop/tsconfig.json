@@ -9,16 +9,7 @@
   ],
   "references": [
     {
-      "path": "../boards"
-    },
-    {
-      "path": "../domain"
-    },
-    {
-      "path": "../ipc"
-    },
-    {
-      "path": "../items"
+      "path": "../agent"
     },
     {
       "path": "../llm"

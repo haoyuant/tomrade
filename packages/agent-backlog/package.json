@@ -1,9 +1,9 @@
 {
-  "name": "@tomrade/assistant",
+  "name": "@tomrade/agent-backlog",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.assistant \u2014 chat routing over the tool registry, plus the structured LLM workflows",
+  "description": "The backlog method: intake and planning playbooks, the dossier, find_similar/find_gaps, the plan-and-apply workflow, and the dedup-before-create policy",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -17,11 +17,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomrade/agent": "workspace:*",
     "@tomrade/boards": "workspace:*",
+    "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/llm": "workspace:*",
+    "@tomrade/settings": "workspace:*",
     "@tomrade/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"

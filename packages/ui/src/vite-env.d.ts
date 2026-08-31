@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { Invoke, Subscribe } from "@tomrade/ipc";
-import type {} from "@tomrade/assistant";
+import type {} from "@tomrade/agent";
 import type {} from "@tomrade/boards";
 import type {} from "@tomrade/contributions";
 import type {} from "@tomrade/db";

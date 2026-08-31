@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 2;
+export const CORE_SCHEMA_VERSION = 3;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS oplog (
   before_json   TEXT,
   after_json    TEXT,
   by            TEXT NOT NULL,
-  at            INTEGER NOT NULL
+  at            INTEGER NOT NULL,
+  run_id        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS plugin_migrations (
@@ -120,4 +121,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_name ON labels(project_id, name);
 CREATE INDEX IF NOT EXISTS idx_item_labels_label ON item_labels(label_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON item_relations(to_item_id);
 CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge';
+CREATE INDEX IF NOT EXISTS idx_oplog_run ON oplog(run_id) WHERE run_id IS NOT NULL;
 `;

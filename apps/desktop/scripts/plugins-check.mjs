@@ -64,15 +64,16 @@ const run = async () => {
   check("and switches back on", view("stale")?.state === "active");
   check("its tools come back", ctx.tools.list().some((t) => t.name === "list_stale_items"));
 
-  // An optional module: the assistant injects it, so both come down together.
-  await ctx.plugins.setEnabled("llm", false);
-  check("an optional module can be emptied", module("llm")?.providers.length === 0);
-  check("what injected it unloaded too", ctx.get("assistant") === undefined);
-  check("and the row says why it is not running", view("assistant")?.state === "pending", JSON.stringify(view("assistant")));
+  // An optional module: every engine injects the agent platform, so switching
+  // it off takes all the conductors down together — and back.
+  await ctx.plugins.setEnabled("agent", false);
+  check("an optional module can be emptied", module("agent")?.providers.length === 0);
+  check("what injected it unloaded too", ctx.get("agent") === undefined && ctx.tools.list().every((t) => t.name !== "plan_and_apply"));
+  check("and the row says why it is not running", view("engine-loop")?.state === "pending", JSON.stringify(view("engine-loop")));
   check("the spine is untouched", ctx.get("db") !== undefined && ctx.get("items") !== undefined);
 
-  await ctx.plugins.setEnabled("llm", true);
-  check("putting it back restores the assistant", ctx.get("assistant") !== undefined && view("assistant")?.state === "active");
+  await ctx.plugins.setEnabled("agent", true);
+  check("putting it back restores the engines", ctx.get("agent") !== undefined && view("engine-loop")?.state === "active" && ctx.tools.list().some((t) => t.name === "plan_and_apply"));
 
   // A destination provider registers into ctx.storage rather than providing a
   // key of its own, so it holds no module and one can go without the registry.

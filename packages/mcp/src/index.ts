@@ -7,6 +7,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import type { Author } from "@tomrade/domain";
 import type {} from "@tomrade/ipc";
 import type {} from "@tomrade/tools";
 
@@ -35,6 +36,18 @@ export type McpConfig = z.infer<typeof McpConfig>;
 const textResult = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] });
 const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
 
+/**
+ * An agent run announcing itself: a session opened with the binding's token in
+ * `X-Tomrade-Run` executes tools through the run's own gateway, so the ledger,
+ * the policies and run-scoped undo see a CLI agent exactly as they see the
+ * in-process engine.
+ */
+export interface RunBinding {
+  author: Author;
+  projectId?: string;
+  execute(name: string, args: unknown): Promise<unknown>;
+}
+
 const sessionIdOf = (req: express.Request): string | undefined => {
   const header = req.headers["mcp-session-id"];
   if (typeof header === "string") return header;
@@ -44,9 +57,11 @@ const sessionIdOf = (req: express.Request): string | undefined => {
 };
 
 /**
- * Every tool in the registry appears here as `tomrade.<name>`, executed as
- * ai:mcp through the same guarded path the assistant uses. Sessions read the
- * registry when they open, so a plugin loaded later is visible to the next one.
+ * Every tool in the registry appears here under its own name (the server name
+ * is the namespace), executed as ai:mcp through the same guarded path every
+ * surface uses — or through a run's gateway when the session presented a run
+ * token. Sessions read the registry when they open, so a plugin loaded later
+ * is visible to the next one.
  */
 export class Mcp extends Service {
   static provide = "mcp";
@@ -54,6 +69,8 @@ export class Mcp extends Service {
   static Config = McpConfig;
 
   url: string | null = null;
+
+  private bindings = new Map<string, RunBinding>();
 
   constructor(
     ctx: Context,
@@ -69,7 +86,10 @@ export class Mcp extends Service {
     app.post("/mcp", async (req, res) => {
       const existing = transports.get(sessionIdOf(req) ?? "");
       if (existing) return existing.handleRequest(req, res, req.body);
-      const server = this.session();
+      const header = req.headers["x-tomrade-run"];
+      const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
+      const token = typeof header === "string" ? header : bearer;
+      const server = this.session(token ? this.bindings.get(token) : undefined);
       const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
@@ -97,7 +117,10 @@ export class Mcp extends Service {
       const srv = app.listen(this.config.port, this.config.host, () => resolve(srv));
       srv.on("error", reject);
     });
-    this.url = `http://${this.config.host}:${(server.address() as AddressInfo).port}/mcp`;
+    const address = server.address();
+    // A race with a dying predecessor can yield a bound-then-dropped socket; name the problem instead of a null deref.
+    if (!address || typeof address === "string") throw new Error(`MCP could not bind ${this.config.host}:${this.config.port} — is another Tomrade still running?`);
+    this.url = `http://${this.config.host}:${(address as AddressInfo).port}/mcp`;
     this.ctx.logger.info(`MCP server ready: ${this.url}`);
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("mcp.url", () => ctx.mcp.url);
@@ -110,11 +133,20 @@ export class Mcp extends Service {
     };
   }
 
-  private session(): McpServer {
+  /** Reversible: the token dies with the run (or the plugin) that registered it. */
+  bindRun(token: string, binding: RunBinding): () => void {
+    return this.ctx.effect(() => {
+      this.bindings.set(token, binding);
+      return () => this.bindings.delete(token);
+    }, `mcp.bindRun`);
+  }
+
+  private session(binding?: RunBinding): McpServer {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
     for (const tool of this.ctx.tools.list()) {
-      server.registerTool(`${MCP_SERVER_NAME}.${tool.name}`, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
+      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
         try {
+          if (binding) return textResult(await binding.execute(tool.name, args));
           return textResult(await this.ctx.tools.execute(tool.name, args, { by: "ai:mcp" }));
         } catch (e) {
           return errorResult(e);

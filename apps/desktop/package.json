@@ -17,10 +17,15 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
-    "@tomrade/assistant": "workspace:*",
+    "@tomrade/agent": "workspace:*",
+    "@tomrade/agent-backlog": "workspace:*",
     "@tomrade/boards": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
+    "@tomrade/engine-claude-code": "workspace:*",
+    "@tomrade/engine-codex": "workspace:*",
+    "@tomrade/engine-loop": "workspace:*",
+    "@tomrade/engine-scripted": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/llm": "workspace:*",

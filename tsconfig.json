@@ -8,7 +8,10 @@
       "path": "./examples/stale"
     },
     {
-      "path": "./packages/assistant"
+      "path": "./packages/agent"
+    },
+    {
+      "path": "./packages/agent-backlog"
     },
     {
       "path": "./packages/boards"
@@ -21,6 +24,18 @@
     },
     {
       "path": "./packages/domain"
+    },
+    {
+      "path": "./packages/engine-claude-code"
+    },
+    {
+      "path": "./packages/engine-codex"
+    },
+    {
+      "path": "./packages/engine-loop"
+    },
+    {
+      "path": "./packages/engine-scripted"
     },
     {
       "path": "./packages/ipc"
