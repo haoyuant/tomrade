@@ -21,7 +21,7 @@ export const newIssueDialog = {
     statusLabel: "状态",
     priorityLabel: "优先级",
     boardLabel: "看板",
-    parentEpicLabel: "所属史诗",
+    parentEpicLabel: "所属需求组",
     noneOption: "无",
     cancel: "取消",
     createIssue: "创建工作项",

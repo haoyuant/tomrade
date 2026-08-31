@@ -89,7 +89,7 @@ export const projectSettingsDialog = {
 
     whatProjectHolds: "此项目包含的内容",
     holdsSummary: "{{workstreams}} 个看板和 {{scopes}} 个跨看板范围 · {{views}} 个已保存视图 · {{issues}} 个工作项，{{open}} 个未完成{{epicsClause}} · {{labels}} 个标签{{lastWriteClause}}",
-    epicsClause: "，其中 {{n}} 个归于史诗之下",
+    epicsClause: "，其中 {{n}} 个归于需求组之下",
     lastWriteClause: " · 最后写入 {{when}}",
     boardNote: "看板的名称、图标与视图在看板自身上配置。这个面板只负责它们所在的这个容器。",
 
@@ -126,8 +126,8 @@ export const projectSettingsDialog = {
     viewMany: "{{n}} 个已保存视图",
     issueOne: "{{n}} 个工作项",
     issueMany: "{{n}} 个工作项",
-    epicOne: "{{n}} 个史诗",
-    epicMany: "{{n}} 个史诗",
+    epicOne: "{{n}} 个需求组",
+    epicMany: "{{n}} 个需求组",
     labelOne: "{{n}} 个标签",
     labelMany: "{{n}} 个标签",
 

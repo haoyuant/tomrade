@@ -40,8 +40,8 @@ export const deleteIssueDialog = {
     notUndoable: "这个操作{{strong}}。Tomrade 中其他所有写入都可以用 {{cmdz}} 撤回，因为操作日志保留着快照——唯独这一次会连同历史一起删除，所以之后没有任何东西可以恢复。",
     notUndoableStrong: "不可撤销",
     alsoTakes: "删除 {{key}} 还会一并带走：",
-    childrenNoteOne: "有 {{n}} 个工作项挂在它下面。它会被释放为「无史诗」，而不是被删除——但这次重新归属同样不可撤销。",
-    childrenNoteMany: "有 {{n}} 个工作项挂在它下面。它们会被释放为「无史诗」，而不是被删除——但这次重新归属同样不可撤销。",
+    childrenNoteOne: "有 {{n}} 个工作项挂在它下面。它会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",
+    childrenNoteMany: "有 {{n}} 个工作项挂在它下面。它们会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",
     keyRetired: "编号 {{key}} 会随之退役——项目计数器不会回退，这个编号不会再分配给任何工作项。",
 
     cancel: "取消",

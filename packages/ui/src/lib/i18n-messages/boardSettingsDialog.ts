@@ -53,13 +53,13 @@ export const boardSettingsDialog = {
 
     defGroupedBy: "按{{group}}分组",
     defLabels: "标签：{{list}}",
-    defEpics: "史诗：{{list}}",
+    defEpics: "需求组：{{list}}",
     defPriority: "优先级：{{list}}",
     defLastWrite: "最后写入：{{list}}",
     defColumns: "{{n}} 列",
     defWip: "WIP {{list}}",
     noneWord: "无",
-    epicFallback: "史诗",
+    epicFallback: "需求组",
 
     boardNameLabel: "看板名称",
     sidebarGlyphLabel: "侧栏图标",

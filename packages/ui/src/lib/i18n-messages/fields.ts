@@ -37,13 +37,13 @@ export const fields = {
     conflictToast: "An agent wrote to {{key}} first — it re-read, so try again."
   },
   zh: {
-    parentEpicLabel: "所属史诗",
+    parentEpicLabel: "所属需求组",
 
     movedToStatusToast: "已将 {{key}} 移动到{{status}}",
     setPriorityToast: "已将 {{key}} 设为{{priority}}优先级",
     linkedToast: "已将 {{key}} 关联到 {{name}}",
-    itsEpicFallback: "其史诗",
-    unlinkedToast: "已取消 {{key}} 与其史诗的关联",
+    itsEpicFallback: "其需求组",
+    unlinkedToast: "已取消 {{key}} 与其需求组的关联",
     movedToBoardToast: "已将 {{key}} 移动到 {{name}}",
     anotherBoardFallback: "另一个看板",
     addedLabelToast: "已将 {{name}} 添加到 {{key}}",

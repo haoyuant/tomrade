@@ -27,7 +27,7 @@ export const detailPane = {
   zh: {
     fieldStatus: "状态",
     fieldPriority: "优先级",
-    fieldEpic: "史诗",
+    fieldEpic: "需求组",
     fieldLabelsCol: "标签",
     fieldBoard: "看板",
     fieldVersion: "版本",

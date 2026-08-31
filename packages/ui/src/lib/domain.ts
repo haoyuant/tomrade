@@ -49,7 +49,7 @@ export const PRIORITY_LABEL: string[] = [...PRIORITY_LABEL_BY_LOCALE.en];
 
 const GROUP_LABEL: Record<Locale, Record<GroupBy, string>> = {
   en: { status: "Status", priority: "Priority", epic: "Epic" },
-  zh: { status: "状态", priority: "优先级", epic: "史诗" }
+  zh: { status: "状态", priority: "优先级", epic: "需求组" }
 };
 
 export const GROUPS: Record<GroupBy, { label: string; icon: IconId }> = {
@@ -70,8 +70,8 @@ const BOARD_GLYPH_LABEL: Record<Locale, readonly string[]> = {
   zh: ["面板", "堆叠", "插头", "显示器", "看板", "筛选", "缺陷", "柱状"]
 };
 
-const NO_EPIC_LABEL: Record<Locale, string> = { en: "No epic", zh: "无史诗" };
-const EPIC_FALLBACK_LABEL: Record<Locale, string> = { en: "Epic", zh: "史诗" };
+const NO_EPIC_LABEL: Record<Locale, string> = { en: "No epic", zh: "无需求组" };
+const EPIC_FALLBACK_LABEL: Record<Locale, string> = { en: "Epic", zh: "需求组" };
 const ALL_BOARDS_LABEL: Record<Locale, string> = { en: "all boards", zh: "全部看板" };
 
 /** Called once per render from `I18nProvider`; see the file-level comment above. */
@@ -146,10 +146,10 @@ export function describeWrite(entry: OplogEntry): string {
     if (before.parentId !== after.parentId)
       return after.parentId
         ? zh
-          ? "将该工作项关联到了史诗"
+          ? "将该工作项关联到了需求组"
           : "linked the issue to an epic"
         : zh
-          ? "取消了该工作项与史诗的关联"
+          ? "取消了该工作项与需求组的关联"
           : "unlinked the issue from its epic";
     if (before.labels.join() !== after.labels.join()) return zh ? "修改了标签" : "changed the labels";
     if (before.boardId !== after.boardId) return zh ? "将该工作项移动到了其他看板" : "moved the issue to another board";

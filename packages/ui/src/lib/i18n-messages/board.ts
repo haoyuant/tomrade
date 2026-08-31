@@ -18,7 +18,7 @@ export const board = {
   zh: {
     emptyPriorityFiltered: "「{{label}}」优先级下没有符合这些筛选条件的内容。",
     emptyPriorityPlain: "此看板上没有「{{label}}」优先级的工作项。",
-    emptyEpicNone: "这里的每个工作项都已挂在某个史诗下。",
+    emptyEpicNone: "这里的每个工作项都已挂在某个需求组下。",
     emptyEpicFiltered: "「{{label}}」下没有符合这些筛选条件的内容。将工作项拖到这里即可关联。",
     emptyEpicPlain: "「{{label}}」下暂时还没有内容。将工作项拖到这里即可关联。",
     emptyStatusFiltered: "「{{label}}」中没有符合这些筛选条件的工作项。",
