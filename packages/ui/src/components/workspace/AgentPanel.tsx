@@ -58,18 +58,47 @@ function CardBlock({ block }: { block: Block & { type: "card" } }) {
   );
 }
 
-function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "question" }; pending: PendingView | null; onAnswer: (id: string, value: string) => void; busy: boolean }) {
+/**
+ * Selecting only marks; Confirm submits. Multi-select when the asker said the
+ * options combine. The block stays in the transcript after it is answered,
+ * dimmed — the chosen value is the user message right below it.
+ */
+function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "question" }; pending: PendingView | null; onAnswer: (id: string, value: string | string[]) => void; busy: boolean }) {
   const live = pending?.question.id === block.id;
+  const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (option: string) =>
+    setPicked((prev) => (block.multiple ? (prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option]) : prev[0] === option ? [] : [option]));
   return (
-    <div className="q-block">
+    <div className={live ? "q-ask" : "q-ask done"}>
+      <span className="q-eyebrow">{live ? (block.multiple ? "Waiting on you · pick any" : "Waiting on you · pick one") : "Asked"}</span>
       <p>{block.text}</p>
       {block.options && (
         <div className="chips">
           {block.options.map((option) => (
-            <button key={option} type="button" className="chip-opt" disabled={!live || busy} onClick={() => onAnswer(block.id, option)}>
+            <button
+              key={option}
+              type="button"
+              className={picked.includes(option) ? "chip-opt sel" : "chip-opt"}
+              aria-pressed={picked.includes(option)}
+              disabled={!live || busy}
+              onClick={() => toggle(option)}
+            >
               {option}
             </button>
           ))}
+        </div>
+      )}
+      {live && block.options && (
+        <div className="q-confirm">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy || picked.length === 0}
+            onClick={() => onAnswer(block.id, block.multiple ? picked : picked[0])}
+          >
+            Confirm{block.multiple && picked.length > 0 ? ` (${picked.length})` : ""}
+          </button>
+          <span className="meta-txt">Nothing runs until you confirm — or type a reply below.</span>
         </div>
       )}
     </div>
@@ -99,7 +128,7 @@ function RunFoot({ block, run, onRevert, busy }: { block: Block & { type: "chang
   );
 }
 
-function Row({ m, runs, pending, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; onAnswer: (id: string, value: string) => void; onRevert: (runId: string) => void; busy: boolean }) {
+function Row({ m, runs, pending, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     return (
@@ -219,7 +248,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
     send.mutate({ threadId: target, text });
   };
 
-  const doAnswer = (questionId: string, value: string) => {
+  const doAnswer = (questionId: string, value: string | string[]) => {
     if (!threadId || busy) return;
     answer.mutate({ threadId, questionId, value });
   };

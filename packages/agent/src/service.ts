@@ -555,7 +555,7 @@ export class Agent extends Service {
         name: "ask_user",
         title: "Ask the user",
         description:
-          "Ask the user a question, optionally with options rendered as buttons. The question is posted and your turn ends; the reply arrives as the next user message. Set waiveRule/waiveOn to record an explicit rule waiver when the user picks one of those options.",
+          "Ask the user a question, optionally with options rendered as buttons. The question is posted and your turn ends; the reply arrives as the next user message. Set multiple: true whenever the options are combinable (the user then picks any subset and confirms). Set waiveRule/waiveOn to record an explicit rule waiver when the user picks one of those options.",
         input: z.object({
           question: z.string().min(1),
           options: z.array(z.string()).optional(),
