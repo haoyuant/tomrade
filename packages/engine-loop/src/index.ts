@@ -123,6 +123,7 @@ export function createLoopEngine(ctx: Context): Engine {
         );
         usage.inputTokens += collected.usage.inputTokens;
         usage.outputTokens += collected.usage.outputTokens;
+        io.progress(usage);
         if (collected.text.trim()) io.emit({ type: "text", text: collected.text.trim() });
         if (collected.stop === "refusal") return { stop: "error", error: "the model declined to answer", usage };
         if (!collected.toolCalls.length) return { stop: "end", usage };

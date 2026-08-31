@@ -371,10 +371,13 @@ export class Agent extends Service {
       scratch: new Map()
     };
     const emit = (block: Block) => void this.appendAndBroadcast(thread.id, block.type === "note" ? "system" : "agent", block, run.id);
+    const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) =>
+      this.broadcast(thread.id, { type: "progress", runId: run.id, ...p });
     const tools = {
       describe: () => this.ctx.tools.describe(),
       execute: async (name: string, args: unknown): Promise<unknown> => {
         const t0 = Date.now();
+        progress({ activity: name });
         try {
           const result = await this.ctx.tools.execute(name, args, { by: engine.author, projectId: thread.projectId, run: handle });
           const ms = Date.now() - t0;
@@ -382,6 +385,7 @@ export class Agent extends Service {
           const summary = suspended ? "waiting for the user" : summarize(result);
           entries.push({ seq: entries.length + 1, tool: name, args, ok: true, summary, ms });
           this.store.appendLedger(run.id, entries.length, name, args, true, summary, ms);
+          progress({ activity: null });
           if (!suspended) emit({ type: "trace", tool: name, args, ok: true, summary, ms });
           return result;
         } catch (err) {
@@ -389,6 +393,7 @@ export class Agent extends Service {
           const summary = message(err);
           entries.push({ seq: entries.length + 1, tool: name, args, ok: false, summary, ms });
           this.store.appendLedger(run.id, entries.length, name, args, false, summary, ms);
+          progress({ activity: null });
           emit({ type: "trace", tool: name, args, ok: false, summary, ms });
           throw err;
         }
@@ -398,6 +403,7 @@ export class Agent extends Service {
     const io: TurnIO = {
       emit,
       delta: (text) => this.broadcast(thread.id, { type: "delta", runId: run.id, text }),
+      progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
       tools,
       playbooks: { index: () => this.playbookIndex(), open: (id) => this.openPlaybook(id) },
       workflows: {

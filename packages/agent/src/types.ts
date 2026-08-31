@@ -75,11 +75,12 @@ export interface PendingView {
   accepts: "options" | "text";
 }
 
-/** Pushed to the renderer over the `agent.event` broadcast. */
+/** Pushed to the renderer over the `agent.event` broadcast. `progress` is transient — never persisted. */
 export type AgentEvent =
   | { type: "run"; run: RunView }
   | { type: "message"; message: ThreadMessage }
   | { type: "delta"; runId: string; text: string }
+  | { type: "progress"; runId: string; activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }
   | { type: "card"; card: CardView }
   | { type: "pending"; pending: PendingView | null }
   | { type: "done"; run: RunView };
@@ -122,6 +123,8 @@ export interface TurnIO {
   /** Persist + broadcast one finished block. Text streams through delta() first. */
   emit(block: Block): void;
   delta(text: string): void;
+  /** Live token totals for the working line; call whenever the count grows. */
+  progress(usage: { inputTokens?: number; outputTokens?: number }): void;
   tools: {
     describe(): ToolDescriptor[];
     /** Run-bound and ledgered; throws on refusal or failure so the engine can feed the error back. */

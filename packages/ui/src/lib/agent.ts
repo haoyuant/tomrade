@@ -57,7 +57,18 @@ export function useRevertRun(projectId: string, threadId: string | null) {
  * The live wire: blocks and deltas land in the query cache as they happen, a
  * finished run refetches, a run that wrote invalidates the board.
  */
-export function useAgentEvents(projectId: string, threadId: string | null, onDelta: (runId: string, text: string | null) => void): void {
+export interface RunProgress {
+  runId: string;
+  activity: string | null;
+  usage: { inputTokens: number; outputTokens: number } | null;
+}
+
+export function useAgentEvents(
+  projectId: string,
+  threadId: string | null,
+  onDelta: (runId: string, text: string | null) => void,
+  onProgress: (progress: RunProgress | null) => void
+): void {
   const qc = useQueryClient();
   useEffect(() => {
     return subscribe("agent.event", (eventThreadId: string, event: AgentEvent) => {
@@ -70,6 +81,9 @@ export function useAgentEvents(projectId: string, threadId: string | null, onDel
       switch (event.type) {
         case "delta":
           onDelta(event.runId, event.text);
+          break;
+        case "progress":
+          onProgress({ runId: event.runId, activity: event.activity !== undefined ? event.activity : null, usage: event.usage ?? null });
           break;
         case "message":
           if (event.message.block.type === "text" && event.message.role === "agent") onDelta(event.message.runId ?? "", null);
@@ -86,11 +100,12 @@ export function useAgentEvents(projectId: string, threadId: string | null, onDel
           break;
         case "done":
           onDelta(event.run.id, null);
+          onProgress(null);
           void qc.invalidateQueries({ queryKey: key });
           void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
           if (event.run.changes > 0) invalidateWorkspace(qc, projectId);
           break;
       }
     });
-  }, [projectId, threadId, qc, onDelta]);
+  }, [projectId, threadId, qc, onDelta, onProgress]);
 }

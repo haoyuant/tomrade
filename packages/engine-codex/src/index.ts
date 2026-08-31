@@ -96,6 +96,7 @@ export function createCodexEngine(ctx: Context): Engine {
             else if (line.type === "turn.completed") {
               usage.inputTokens += line.usage?.input_tokens ?? 0;
               usage.outputTokens += line.usage?.output_tokens ?? 0;
+              io.progress(usage);
             } else if (line.type === "error") failure = line.message ?? "codex reported an error";
           }
         });

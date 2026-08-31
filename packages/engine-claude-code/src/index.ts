@@ -24,7 +24,7 @@ interface StreamLine {
   type?: string;
   subtype?: string;
   session_id?: string;
-  message?: { content?: ({ type: string; text?: string; name?: string; input?: unknown } | Record<string, unknown>)[] };
+  message?: { content?: ({ type: string; text?: string; name?: string; input?: unknown } | Record<string, unknown>)[]; usage?: { input_tokens?: number; output_tokens?: number } };
   event?: { type?: string; delta?: { type?: string; text?: string } };
   result?: unknown;
   is_error?: boolean;
@@ -118,6 +118,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
             } else if (line.type === "stream_event") {
               if (line.event?.type === "content_block_delta" && line.event.delta?.type === "text_delta" && line.event.delta.text) io.delta(line.event.delta.text);
             } else if (line.type === "assistant") {
+              if (line.message?.usage) {
+                usage.inputTokens += line.message.usage.input_tokens ?? 0;
+                usage.outputTokens += line.message.usage.output_tokens ?? 0;
+                io.progress(usage);
+              }
               for (const block of line.message?.content ?? []) {
                 if (block.type === "text" && typeof block.text === "string" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
                 else if (block.type === "tool_use" && typeof block.name === "string" && !block.name.startsWith("mcp__"))
@@ -126,8 +131,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
             } else if (line.type === "result") {
               session = line.session_id ?? session;
               costUsd = line.total_cost_usd;
-              usage.inputTokens += line.usage?.input_tokens ?? 0;
-              usage.outputTokens += line.usage?.output_tokens ?? 0;
+              // per-message usage was already streamed; the result's total wins over the running sum
+              if (line.usage) {
+                usage.inputTokens = Math.max(usage.inputTokens, line.usage.input_tokens ?? 0);
+                usage.outputTokens = Math.max(usage.outputTokens, line.usage.output_tokens ?? 0);
+              }
               if (line.is_error) failure = typeof line.result === "string" ? line.result : (line.subtype ?? "Claude Code reported an error");
             }
           }

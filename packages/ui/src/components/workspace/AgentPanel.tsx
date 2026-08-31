@@ -3,12 +3,40 @@ import type { AgentSettings, Block, PendingView, RunView, ThreadMessage } from "
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
-import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine } from "~/lib/agent";
+import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, type RunProgress } from "~/lib/agent";
 import { useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
 const MAX_W = 616;
 const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}` };
+
+const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+/** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far. */
+function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; progress: RunProgress | null; streaming: boolean }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const label = progress?.activity ?? (streaming ? "writing" : "thinking");
+  return (
+    <p className="working" aria-live="off">
+      <span className="w-tick" />
+      <span className="num w-label">{label}</span>
+      <span className="w-dots">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span className="num w-meta">
+        {secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`}
+        {progress?.usage ? ` · ↑${tokens(progress.usage.inputTokens)} ↓${tokens(progress.usage.outputTokens)} tok` : ""}
+      </span>
+    </p>
+  );
+}
 
 const ago = (at: number): string => {
   const mins = Math.round((Date.now() - at) / 60_000);
@@ -181,6 +209,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
 
   const [draft, setDraft] = useState("");
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
+  const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -188,7 +217,10 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
   const onDelta = useCallback((runId: string, text: string | null) => {
     setLive((prev) => (text === null ? null : prev && prev.runId === runId ? { runId, text: prev.text + text } : { runId, text }));
   }, []);
-  useAgentEvents(projectId, threadId, onDelta);
+  const onProgress = useCallback((next: RunProgress | null) => {
+    setProgress((prev) => (next === null ? null : { runId: next.runId, activity: next.activity ?? prev?.activity ?? null, usage: next.usage ?? prev?.usage ?? null }));
+  }, []);
+  useAgentEvents(projectId, threadId, onDelta, onProgress);
 
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
   const busy = !!runningRun || send.isPending || answer.isPending;
@@ -352,7 +384,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
             </div>
           </div>
         )}
-        {busy && !live && <p className="ai-pending" style={{ marginLeft: 22 }}>Working…</p>}
+        {runningRun && <WorkingLine startedAt={runningRun.startedAt} progress={progress} streaming={!!live} />}
       </div>
 
       <div className="ai-foot">
