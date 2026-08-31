@@ -77,6 +77,16 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
           <Icon name="i-undo" size={12} /> Undo
         </button>
       )}
+      <button
+        type="button"
+        className="btn btn-icon"
+        style={{ padding: 4 }}
+        title="Dismiss"
+        aria-label="Dismiss notification"
+        onClick={() => dismiss.current()}
+      >
+        <Icon name="i-close" size={12} />
+      </button>
     </div>
   );
 }
