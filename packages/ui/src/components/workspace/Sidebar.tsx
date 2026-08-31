@@ -3,11 +3,13 @@ import type { Board } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { boardSubtitle } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useCreateBoard, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { boardCount, useWorkspace } from "./context";
 
 function BoardRow({ board }: { board: Board }) {
+  const { t } = useI18n();
   const { items, board: active, openSpace, views } = useWorkspace();
   const count = boardCount(items, board);
   const saved = views.filter((v) => v.boardId === board.id).length;
@@ -17,7 +19,7 @@ function BoardRow({ board }: { board: Board }) {
       type="button"
       className="side-row is-board"
       aria-current={current}
-      title={`${board.note ?? boardSubtitle(board)} · ${saved} saved view${saved === 1 ? "" : "s"}`}
+      title={`${board.note ?? boardSubtitle(board)} · ${t("sidebar.savedViewsSuffix", { n: saved })}`}
       // already here: switching would throw away the live query for no reason
       onClick={() => !current && openSpace(board.id)}
     >
@@ -36,6 +38,7 @@ function BoardRow({ board }: { board: Board }) {
  * view every board is guaranteed to have, switches to it, and stays undoable.
  */
 function NewBoardRow() {
+  const { t, tx } = useI18n();
   const { project, openSpace } = useWorkspace();
   const create = useCreateBoard(project.id);
   const undo = useUndo(project.id);
@@ -46,7 +49,7 @@ function NewBoardRow() {
     return (
       <button type="button" className="side-row side-add" style={{ marginTop: 2 }} onClick={() => setEditing(true)}>
         <Icon className="ico" name="i-plus" size={14} />
-        <span className="side-name">New board</span>
+        <span className="side-name">{t("sidebar.newBoard")}</span>
       </button>
     );
   }
@@ -62,11 +65,7 @@ function NewBoardRow() {
           setEditing(false);
           openSpace(board.id, board.defaultViewId);
           toast({
-            body: (
-              <>
-                Created board <span className="num">{trimmed}</span> · All work view added
-              </>
-            ),
+            body: <>{tx("sidebar.createdBoardToast", { name: <span className="num">{trimmed}</span> })}</>,
             onUndo: () => undo.mutate(board.id)
           });
         }
@@ -79,8 +78,8 @@ function NewBoardRow() {
       <Icon className="ico" name="i-board" size={15} />
       <input
         autoFocus
-        aria-label="New board name"
-        placeholder="Workstream name…"
+        aria-label={t("sidebar.newBoardNameAria")}
+        placeholder={t("sidebar.workstreamPlaceholder")}
         style={{
           flex: 1,
           minWidth: 0,
@@ -113,6 +112,7 @@ function NewBoardRow() {
  * rail the assistant folds to, and the board head grows its own switcher.
  */
 export function Sidebar({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
+  const { t } = useI18n();
   const { boards } = useWorkspace();
   const workstreams = boards.filter((b) => !b.across);
   const scopes = boards.filter((b) => b.across);
@@ -120,10 +120,10 @@ export function Sidebar({ open, onToggle }: { open: boolean; onToggle: (open: bo
   if (!open) {
     return (
       <div className="rail side-rail">
-        <button type="button" className="btn btn-icon" title="Expand sidebar — ⌘B" aria-label="Expand sidebar" onClick={() => onToggle(true)}>
+        <button type="button" className="btn btn-icon" title={t("sidebar.expandSidebar")} aria-label={t("sidebar.expandSidebar")} onClick={() => onToggle(true)}>
           <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
         </button>
-        <span className="rail-label">Boards</span>
+        <span className="rail-label">{t("sidebar.boardsRailLabel")}</span>
       </div>
     );
   }
@@ -131,9 +131,9 @@ export function Sidebar({ open, onToggle }: { open: boolean; onToggle: (open: bo
   return (
     <nav className="sidebar">
       <div className="side-head">
-        <Eyebrow>Boards</Eyebrow>
+        <Eyebrow>{t("sidebar.boardsEyebrow")}</Eyebrow>
         <Spacer />
-        <button type="button" className="btn btn-icon" title="Collapse sidebar — ⌘B" aria-label="Collapse sidebar" onClick={() => onToggle(false)}>
+        <button type="button" className="btn btn-icon" title={t("sidebar.collapseSidebar")} aria-label={t("sidebar.collapseSidebar")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
         </button>
       </div>
@@ -147,7 +147,7 @@ export function Sidebar({ open, onToggle }: { open: boolean; onToggle: (open: bo
       </div>
       {scopes.length > 0 && (
         <div className="side-group">
-          <Eyebrow className="side-label">Across boards</Eyebrow>
+          <Eyebrow className="side-label">{t("sidebar.acrossBoards")}</Eyebrow>
           <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
             {scopes.map((b) => (
               <BoardRow key={b.id} board={b} />

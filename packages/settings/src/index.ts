@@ -52,6 +52,14 @@ const THEME: SettingsSection<AppSettings["theme"]> = {
   order: 0
 };
 
+const LANGUAGE: SettingsSection<AppSettings["language"]> = {
+  id: "language",
+  title: "Language",
+  schema: z.enum(["system", "en", "zh"]),
+  defaults: "system",
+  order: 1
+};
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export class Settings extends Service {
@@ -76,6 +84,7 @@ export class Settings extends Service {
       // first run
     }
     this.register(THEME);
+    this.register(LANGUAGE);
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
       ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));

@@ -31,6 +31,7 @@ export const ICON_IDS = [
   "i-filter",
   "i-plug",
   "i-monitor",
+  "i-globe",
   "i-check",
   "i-tag",
   "i-pen",
@@ -81,6 +82,7 @@ export function IconSprite() {
         <symbol id="i-filter" viewBox="0 0 14 14"><path d="M1.8 3.2h10.4L8.3 7.6v4l-2.6-1.4V7.6Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
         <symbol id="i-plug" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M5.2 1.8v3M8.8 1.8v3M3.4 4.8h7.2v2.1a3.6 3.6 0 0 1-3.6 3.6 3.6 3.6 0 0 1-3.6-3.6Z"/><path d="M7 10.5v1.7"/></g></symbol>
         <symbol id="i-monitor" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><rect x="1.6" y="2.4" width="10.8" height="7.4" rx="1.2"/><path d="M5 12.2h4"/></g></symbol>
+        <symbol id="i-globe" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.1"><circle cx="7" cy="7" r="5.2"/><ellipse cx="7" cy="7" rx="2.3" ry="5.2"/><path d="M1.9 7h10.2M2.6 4.1h8.8M2.6 9.9h8.8"/></g></symbol>
         <symbol id="i-check" viewBox="0 0 14 14"><path d="M2.9 7.4 5.7 10.2 11.1 4.2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></symbol>
         <symbol id="i-tag" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M7.8 2.1h4.1v4.1l-5.7 5.7L2.1 7.8Z"/><circle cx="9.6" cy="4.4" r="0.85"/></g></symbol>
         <symbol id="i-pen" viewBox="0 0 14 14"><path d="M9.3 2.4 11.6 4.7 5.3 11 2.4 11.6 3 8.7Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></symbol>

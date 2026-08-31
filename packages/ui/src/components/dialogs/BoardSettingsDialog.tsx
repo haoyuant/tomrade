@@ -4,6 +4,7 @@ import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, GROUPS, PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_FILL, STATUS_KEYS, provenanceOf, queryFromView } from "~/lib/domain";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useMoveItemsToBoard, useRemoveView, useUpdateBoard, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "~/components/workspace/context";
@@ -11,16 +12,20 @@ import type { View } from "@tomrade/domain";
 
 /** What a view resolves to, in one line, so a roster row can never advertise
  *  something the board disagrees with. */
-function viewDefinition(view: View, epicNames: Map<string, string>): string {
+function viewDefinition(view: View, epicNames: Map<string, string>, t: (key: MessageKey, vars?: Record<string, string | number>) => string): string {
   const f = view.filter ?? {};
-  const bits = [`grouped by ${GROUPS[view.groupBy].label.toLowerCase()}`];
-  if (f.labels?.length) bits.push(`labels: ${f.labels.join(", ")}`);
-  if (f.epics?.length) bits.push(`epics: ${f.epics.map((e) => (e === "none" ? "none" : (epicNames.get(e) ?? "epic"))).join(", ")}`);
-  if (f.priorities?.length) bits.push(`priority: ${f.priorities.map((p) => PRIORITY_LABEL[p]).join(", ")}`);
-  if (f.provenance?.length) bits.push(`last write: ${f.provenance.map((p) => PROVENANCE[p]).join(", ")}`);
-  bits.push(`${view.columns.length} columns`);
+  const bits = [t("boardSettingsDialog.defGroupedBy", { group: GROUPS[view.groupBy].label.toLowerCase() })];
+  if (f.labels?.length) bits.push(t("boardSettingsDialog.defLabels", { list: f.labels.join(", ") }));
+  if (f.epics?.length) {
+    const noneWord = t("boardSettingsDialog.noneWord");
+    const epicFallback = t("boardSettingsDialog.epicFallback");
+    bits.push(t("boardSettingsDialog.defEpics", { list: f.epics.map((e) => (e === "none" ? noneWord : (epicNames.get(e) ?? epicFallback))).join(", ") }));
+  }
+  if (f.priorities?.length) bits.push(t("boardSettingsDialog.defPriority", { list: f.priorities.map((p) => PRIORITY_LABEL[p]).join(", ") }));
+  if (f.provenance?.length) bits.push(t("boardSettingsDialog.defLastWrite", { list: f.provenance.map((p) => PROVENANCE[p]).join(", ") }));
+  bits.push(t("boardSettingsDialog.defColumns", { n: view.columns.length }));
   const wip = Object.entries(view.wip ?? {});
-  if (wip.length) bits.push(`WIP ${wip.map(([k, n]) => `${STATUS[k as ItemStatus]?.label.toLowerCase() ?? k} ${n}`).join(", ")}`);
+  if (wip.length) bits.push(t("boardSettingsDialog.defWip", { list: wip.map(([k, n]) => `${STATUS[k as ItemStatus]?.label.toLowerCase() ?? k} ${n}`).join(", ") }));
   return bits.join(" · ");
 }
 
@@ -30,6 +35,7 @@ function viewDefinition(view: View, epicNames: Map<string, string>): string {
  * mirrors, the issues carrying its id, and the roster of views saved on it.
  */
 export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t, tx } = useI18n();
   const ws = useWorkspace();
   const updateBoard = useUpdateBoard(ws.project.id);
   const updateView = useUpdateView(ws.project.id);
@@ -64,16 +70,17 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
   /* every option carries the count it would move, so the control never offers
      a scope without saying how much work it touches */
   const scopes = useMemo(() => {
-    const rows = [{ value: "all", label: `All ${owned.length} issue${owned.length === 1 ? "" : "s"}` }];
+    const rows = [{ value: "all", label: t("boardSettingsDialog.allIssues", { n: owned.length }) }];
     for (const k of STATUS_KEYS) {
       const n = owned.filter((i) => i.status === k).length;
-      if (n) rows.push({ value: `s:${k}`, label: `Status · ${STATUS[k].label} (${n})` });
+      if (n) rows.push({ value: `s:${k}`, label: t("boardSettingsDialog.statusScope", { label: STATUS[k].label, n }) });
     }
     for (const l of [...new Set(owned.flatMap((i) => i.labels))].sort()) {
-      rows.push({ value: `l:${l}`, label: `Label · ${l} (${owned.filter((i) => i.labels.includes(l)).length})` });
+      rows.push({ value: `l:${l}`, label: t("boardSettingsDialog.labelScope", { label: l, n: owned.filter((i) => i.labels.includes(l)).length }) });
     }
     return rows;
-  }, [owned]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [owned, t]);
 
   const matching = owned.filter((i) => (scope === "all" ? true : scope.startsWith("s:") ? i.status === scope.slice(2) : i.labels.includes(scope.slice(2))));
   const destBoard = ws.boards.find((b) => b.id === dest);
@@ -82,7 +89,7 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
     if (!destBoard || !matching.length) return;
     moveItems.mutate(
       { from: ws.board.id, to: destBoard.id, itemIds: matching.map((i) => i.id) },
-      { onSuccess: (n) => toast({ body: <>Moved <span className="num">{n}</span> issue{n === 1 ? "" : "s"} to {destBoard.name}</> }) }
+      { onSuccess: (n) => toast({ body: <>{tx("boardSettingsDialog.movedToast", { n: <span className="num">{n}</span>, name: destBoard.name })}</> }) }
     );
   };
 
@@ -95,20 +102,20 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
     for (const v of ws.boardViews) if (!roster.includes(v.id)) removeView.mutate(v.id);
     if (!roster.includes(ws.view.id)) ws.openSpace(ws.board.id, roster[0]);
     onOpenChange(false);
-    toast({ body: <>Saved <span className="num">{name.trim() || ws.board.name}</span></> });
+    toast({ body: <>{tx("boardSettingsDialog.savedToast", { name: <span className="num">{name.trim() || ws.board.name}</span> })}</> });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="Board settings" className="sheet-board">
-      <DialogHead title="Board settings" aside={<Tag tone="neutral">{subtitle || name}</Tag>} />
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("boardSettingsDialog.dialogLabel")} className="sheet-board">
+      <DialogHead title={t("boardSettingsDialog.dialogLabel")} aside={<Tag tone="neutral">{subtitle || name}</Tag>} />
       <DialogBody className="stack-4">
         <div className="field">
-          <label htmlFor="bsName">Board name</label>
+          <label htmlFor="bsName">{t("boardSettingsDialog.boardNameLabel")}</label>
           <input id="bsName" autoFocus className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="grid-2">
           <div className="field">
-            <label htmlFor="bsIcon">Sidebar glyph</label>
+            <label htmlFor="bsIcon">{t("boardSettingsDialog.sidebarGlyphLabel")}</label>
             <select id="bsIcon" className="select" value={icon} onChange={(e) => setIcon(e.target.value as IconId)}>
               {BOARD_GLYPHS.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -118,17 +125,26 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
             </select>
           </div>
           <div className="field">
-            <label htmlFor="bsPkg">Workspace package</label>
-            <input id="bsPkg" className="input num" placeholder="packages/…" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} />
+            <label htmlFor="bsPkg">{t("boardSettingsDialog.workspacePkgLabel")}</label>
+            <input
+              id="bsPkg"
+              className="input num"
+              placeholder={t("boardSettingsDialog.workspacePkgPlaceholder")}
+              value={subtitle}
+              onChange={(e) => setSubtitle(e.target.value)}
+            />
           </div>
         </div>
 
         <div>
-          <Eyebrow>Issues on this board</Eyebrow>
+          <Eyebrow>{t("boardSettingsDialog.issuesOnBoard")}</Eyebrow>
           <p className="meta-txt dense" style={{ margin: "6px 0 var(--space-3)" }}>
-            <Num>{owned.length}</Num> issue{owned.length === 1 ? "" : "s"} carry <Num>board_id = {ws.board.id.slice(0, 8)}</Num>
-            {aiWrites > 0 && <>, <Num>{aiWrites}</Num> last written by the agent</>}
-            {locked > 0 && <>, <Num>{locked}</Num> locked against agent writes</>}.
+            {tx("boardSettingsDialog.issuesCarryBoardId", {
+              n: <Num>{owned.length}</Num>,
+              boardId: <Num>board_id = {ws.board.id.slice(0, 8)}</Num>
+            })}
+            {aiWrites > 0 && tx("boardSettingsDialog.aiWritesClause", { n: <Num>{aiWrites}</Num> })}
+            {locked > 0 && tx("boardSettingsDialog.lockedClause", { n: <Num>{locked}</Num> })}.
           </p>
           <div className="bs-bar" role="img" aria-label={distribution.map((d) => `${STATUS[d.k].label} ${d.n}`).join(", ")}>
             {distribution.map((d) => (
@@ -146,16 +162,28 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
         </div>
 
         <div>
-          <Eyebrow>Move issues to another board</Eyebrow>
+          <Eyebrow>{t("boardSettingsDialog.moveToAnotherBoard")}</Eyebrow>
           <div className="row" style={{ marginTop: "var(--space-2)", gap: "var(--space-2)" }}>
-            <select className="select" style={{ flex: 1, minWidth: 0 }} aria-label="Which issues to move" value={scope} onChange={(e) => setScope(e.target.value)}>
+            <select
+              className="select"
+              style={{ flex: 1, minWidth: 0 }}
+              aria-label={t("boardSettingsDialog.whichIssuesAria")}
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+            >
               {scopes.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>
               ))}
             </select>
-            <select className="select" style={{ flex: 1, minWidth: 0 }} aria-label="Destination board" value={dest} onChange={(e) => setDest(e.target.value)}>
+            <select
+              className="select"
+              style={{ flex: 1, minWidth: 0 }}
+              aria-label={t("boardSettingsDialog.destinationBoardAria")}
+              value={dest}
+              onChange={(e) => setDest(e.target.value)}
+            >
               {others.map((b) => (
                 <option key={b.id} value={b.id}>
                   → {b.name}
@@ -163,23 +191,22 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
               ))}
             </select>
             <button type="button" className="btn btn-secondary" disabled={!matching.length || !destBoard} onClick={move}>
-              Move
+              {t("boardSettingsDialog.moveButton")}
             </button>
           </div>
           <p className="meta-txt dense" style={{ marginTop: 6 }}>
             {!destBoard ? (
-              "No other board in this project to move work to."
+              t("boardSettingsDialog.noOtherBoard")
             ) : (
               <>
-                <Num>{matching.length}</Num> issue{matching.length === 1 ? "" : "s"} would change board. Status, rank and history stay — moving a
-                workstream is a deliberate act, which is why dragging a card never does it.
+                {t("boardSettingsDialog.moveCount", { n: matching.length })} {t("boardSettingsDialog.moveNote")}
               </>
             )}
           </p>
         </div>
 
         <div>
-          <Eyebrow>Saved views</Eyebrow>
+          <Eyebrow>{t("boardSettingsDialog.savedViews")}</Eyebrow>
           <div style={{ marginTop: "var(--space-2)" }}>
             {rosterViews.map((view, i) => (
               <div className="cfg-row" key={view.id}>
@@ -188,24 +215,22 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
                   type="radio"
                   name="bsDefault"
                   checked={i === 0}
-                  aria-label={`Open ${view.name} first on this board`}
+                  aria-label={t("boardSettingsDialog.openFirstAria", { name: view.name })}
                   onChange={() => setRoster((r) => [view.id, ...r.filter((id) => id !== view.id)])}
                 />
                 <span className="bs-stack">
                   <span className="cfg-name">{view.name}</span>
                   <span className="bs-sub">
-                    {i === 0 ? "opens first · " : ""}
-                    {viewDefinition(view, ws.epicNames)}
+                    {i === 0 ? t("boardSettingsDialog.opensFirst") : ""}
+                    {viewDefinition(view, ws.epicNames, t)}
                   </span>
                 </span>
-                <span className="meta-txt num">
-                  {viewCount(ws.items, ws.board, view, [...ws.epics.map((e) => e.id), "none"])}
-                </span>
+                <span className="meta-txt num">{viewCount(ws.items, ws.board, view, [...ws.epics.map((e) => e.id), "none"])}</span>
                 <button
                   type="button"
                   className="btn btn-icon"
-                  title="Remove from this board"
-                  aria-label={`Remove ${view.name} from this board`}
+                  title={t("boardSettingsDialog.removeFromBoardTitle")}
+                  aria-label={t("boardSettingsDialog.removeFromBoardAria", { name: view.name })}
                   disabled={roster.length < 2}
                   onClick={() => setRoster((r) => r.filter((id) => id !== view.id))}
                 >
@@ -214,21 +239,20 @@ export function BoardSettingsDialog({ open, onOpenChange }: { open: boolean; onO
               </div>
             ))}
             <p className="meta-txt" style={{ marginTop: "var(--space-3)" }}>
-              <Num>{roster.length}</Num> view{roster.length === 1 ? "" : "s"} · a new one is saved from the bar above the columns
+              {t("boardSettingsDialog.rosterCount", { n: roster.length })}
             </p>
           </div>
           <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-            Grouping, filters and columns belong to a view and are set on the board itself — this is the roster: which view opens first, and which
-            ones stay.
+            {t("boardSettingsDialog.rosterNote")}
           </p>
         </div>
       </DialogBody>
       <DialogFoot>
         <button type="button" className="btn btn-ghost" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t("boardSettingsDialog.cancel")}
         </button>
         <button type="button" className="btn btn-secondary" onClick={save}>
-          Save board
+          {t("boardSettingsDialog.saveBoard")}
         </button>
       </DialogFoot>
     </Dialog>

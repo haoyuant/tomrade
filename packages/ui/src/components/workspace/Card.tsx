@@ -2,6 +2,7 @@ import type { Item } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { PriorityGlyph, ProvenanceMark, StatusMark, Tag } from "~/components/ui/atoms";
 import { timeAgo } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useWorkspace } from "./context";
 
 export interface CardProps {
@@ -19,6 +20,7 @@ export interface CardProps {
  * a keyboard, and the tooltip is where that gets discovered.
  */
 export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardProps) {
+  const { t } = useI18n();
   const { board, boards, query, epicNames, selectedId, badges } = useWorkspace();
   const marks = badges[item.id] ?? [];
   const owner = board.across ? boards.find((b) => b.id === item.boardId) : undefined;
@@ -33,7 +35,7 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
       tabIndex={0}
       data-selected={item.id === selectedId}
       aria-keyshortcuts="ArrowLeft ArrowRight"
-      title="Enter to open · ← → to move column"
+      title={t("card.keyboardHint")}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -54,7 +56,7 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
           <PriorityGlyph priority={item.priority} />
           <span className="card-id">{item.key}</span>
           {owner && (
-            <span className="card-board" title={`Owned by the ${owner.name} board`}>
+            <span className="card-board" title={t("card.ownedByBoard", { board: owner.name })}>
               <Icon name={owner.icon as IconId} size={11} />
               {owner.name}
             </span>

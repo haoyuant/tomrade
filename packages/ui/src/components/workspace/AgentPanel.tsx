@@ -5,6 +5,8 @@ import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
+import { timeAgo } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, type RunProgress } from "~/lib/agent";
 import { useItems, useSettings } from "~/lib/queries";
 
@@ -16,13 +18,14 @@ const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` 
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far. */
 function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; progress: RunProgress | null; streaming: boolean }) {
+  const { t } = useI18n();
   const [, setTick] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, []);
   const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-  const label = progress?.activity ?? (streaming ? "writing" : "thinking");
+  const label = progress?.activity ?? (streaming ? t("agentPanel.writing") : t("agentPanel.thinking"));
   return (
     <p className="working" aria-live="off">
       <span className="w-tick" />
@@ -33,20 +36,12 @@ function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; pr
         <span />
       </span>
       <span className="num w-meta">
-        {secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`}
+        {secs < 60 ? t("agentPanel.secondsShort", { n: secs }) : t("agentPanel.minSecShort", { m: Math.floor(secs / 60), s: String(secs % 60).padStart(2, "0") })}
         {progress?.usage ? ` · ↑${tokens(progress.usage.inputTokens)} ↓${tokens(progress.usage.outputTokens)} tok` : ""}
       </span>
     </p>
   );
 }
-
-const ago = (at: number): string => {
-  const mins = Math.round((Date.now() - at) / 60_000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
-};
 
 const KEY_RE = /([A-Z][A-Z0-9]{1,9}-\d+)/g;
 
@@ -115,13 +110,14 @@ function CardBlock({ block }: { block: Block & { type: "card" } }) {
  * dimmed — the chosen value is the user message right below it.
  */
 function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "question" }; pending: PendingView | null; onAnswer: (id: string, value: string | string[]) => void; busy: boolean }) {
+  const { t } = useI18n();
   const live = pending?.question.id === block.id;
   const [picked, setPicked] = useState<string[]>([]);
   const toggle = (option: string) =>
     setPicked((prev) => (block.multiple ? (prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option]) : prev[0] === option ? [] : [option]));
   return (
     <div className={live ? "q-ask" : "q-ask done"}>
-      <span className="q-eyebrow">{live ? (block.multiple ? "Waiting on you · pick any" : "Waiting on you · pick one") : "Asked"}</span>
+      <span className="q-eyebrow">{live ? t(block.multiple ? "agentPanel.waitingPickAny" : "agentPanel.waitingPickOne") : t("agentPanel.asked")}</span>
       <p>{block.text}</p>
       {block.options && (
         <div className="chips">
@@ -147,9 +143,9 @@ function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "
             disabled={busy || picked.length === 0}
             onClick={() => onAnswer(block.id, block.multiple ? picked : picked[0])}
           >
-            Confirm{block.multiple && picked.length > 0 ? ` (${picked.length})` : ""}
+            {block.multiple && picked.length > 0 ? t("agentPanel.confirmCount", { n: picked.length }) : t("agentPanel.confirm")}
           </button>
-          <span className="meta-txt">Nothing runs until you confirm — or type a reply below.</span>
+          <span className="meta-txt">{t("agentPanel.confirmNote")}</span>
         </div>
       )}
     </div>
@@ -157,21 +153,18 @@ function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "
 }
 
 function RunFoot({ block, run, byKey, projectId, onRevert, busy }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; projectId: string; onRevert: (runId: string) => void; busy: boolean }) {
+  const { t } = useI18n();
   const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null].filter(Boolean).join(" · ") : "";
   return (
     <div className="run-wrap">
     <div className="run-foot">
       {run?.reverted ? (
-        <span className="rf-note">
-          Reverted{run.keptOnRevert > 0 ? ` · kept ${run.keptOnRevert}` : ""}
-        </span>
+        <span className="rf-note">{run.keptOnRevert > 0 ? t("agentPanel.revertedKept", { n: run.keptOnRevert }) : t("agentPanel.revertedPlain")}</span>
       ) : (
         <>
-          <span className="rf-note">
-            Changed <span className="num">{block.count}</span> item{block.count === 1 ? "" : "s"}
-          </span>
+          <span className="rf-note">{t(block.count === 1 ? "agentPanel.changedOne" : "agentPanel.changedMany", { n: block.count })}</span>
           <button type="button" className="btn btn-ghost rf-btn" disabled={busy} onClick={() => onRevert(block.runId)}>
-            <Icon name="i-undo" size={12} /> Revert
+            <Icon name="i-undo" size={12} /> {t("agentPanel.revert")}
           </button>
         </>
       )}
@@ -179,7 +172,7 @@ function RunFoot({ block, run, byKey, projectId, onRevert, busy }: { block: Bloc
     </div>
     {!!block.items?.length && (
       <details className="rf-list">
-        <summary>what changed</summary>
+        <summary>{t("agentPanel.whatChanged")}</summary>
         {block.items.map((it, i) => (
           <div className="rf-row" key={i}>
             <span className={`rf-op num op-${it.op}`}>{OP_GLYPH[it.op]}</span>
@@ -231,11 +224,12 @@ function Row({ m, runs, pending, byKey, projectId, onAnswer, onRevert, busy }: {
 }
 
 export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open: boolean; onToggle: (open: boolean) => void; projectId: string; onOpenSettings: () => void }) {
+  const { t } = useI18n();
   const threads = useAgentThreads(projectId);
   const settings = useSettings();
   const itemsQ = useItems(projectId);
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
-  const threadId = (chosenThread && threads.data?.some((t) => t.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
+  const threadId = (chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
   const detail = useAgentThread(threadId);
   const engines = useEngines();
   const newThread = useNewThread(projectId);
@@ -332,29 +326,29 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
   if (!open) {
     return (
       <div className="rail ai-rail">
-        <button type="button" className="btn btn-icon" title="Expand assistant — ⌘J" aria-label="Expand assistant panel" onClick={() => onToggle(true)}>
+        <button type="button" className="btn btn-icon" title={t("agentPanel.expandAssistant")} aria-label={t("agentPanel.expandAssistantAria")} onClick={() => onToggle(true)}>
           <Icon name="i-panel" size={15} />
         </button>
-        <span className="rail-label">Assistant</span>
+        <span className="rail-label">{t("agentPanel.assistantLabel")}</span>
       </div>
     );
   }
 
   return (
     <aside className="ai" ref={panel}>
-      <div className="ai-resize" title="Drag to resize" onMouseDown={startResize} />
+      <div className="ai-resize" title={t("agentPanel.dragToResize")} onMouseDown={startResize} />
       <div className="ai-head">
-        <h2 style={{ fontSize: "var(--text-base)" }}>Assistant</h2>
+        <h2 style={{ fontSize: "var(--text-base)" }}>{t("agentPanel.assistantLabel")}</h2>
         <Menu
-          label="Engine"
+          label={t("agentPanel.engineLabel")}
           trigger={
-            <button type="button" className="tag chip-btn" title="Who conducts this thread">
+            <button type="button" className="tag chip-btn" title={t("agentPanel.whoConducts")}>
               {engine?.title ?? currentEngineId}
               {engine && !engine.ok && <Icon name="i-warn" size={11} />}
             </button>
           }
         >
-          <MenuHead title="Who does the work" />
+          <MenuHead title={t("agentPanel.whoDoesWork")} />
           {(engines.data ?? []).map((e) => (
             <MenuRadioItem
               key={e.id}
@@ -364,33 +358,33 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
               onSelect={() => {
                 if (busy || e.id === currentEngineId) return;
                 if (threadId) setEngine.mutate({ threadId, engineId: e.id });
-                else void newThread.mutateAsync(e.id).then((t) => pickThread(t.id));
+                else void newThread.mutateAsync(e.id).then((th) => pickThread(th.id));
               }}
             />
           ))}
-          <MenuActionItem icon={<Icon name="i-gear" size={13} />} name="Manage models & engines…" onSelect={onOpenSettings} />
+          <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={onOpenSettings} />
         </Menu>
         <Spacer />
         <Menu
-          label="Threads"
+          label={t("agentPanel.threadsLabel")}
           align="end"
           trigger={
-            <button type="button" className="btn btn-icon" title="Threads" aria-label="Threads">
+            <button type="button" className="btn btn-icon" title={t("agentPanel.threadsLabel")} aria-label={t("agentPanel.threadsLabel")}>
               <Icon name="i-stack" size={14} />
             </button>
           }
         >
-          <MenuHead title="Threads" />
-          {(threads.data ?? []).slice(0, 12).map((t) => (
-            <MenuRadioItem key={t.id} checked={t.id === threadId} name={t.title || "New thread"} sub={ago(t.updatedAt)} onSelect={() => pickThread(t.id)} />
+          <MenuHead title={t("agentPanel.threadsLabel")} />
+          {(threads.data ?? []).slice(0, 12).map((th) => (
+            <MenuRadioItem key={th.id} checked={th.id === threadId} name={th.title || t("agentPanel.newThread")} sub={timeAgo(th.updatedAt)} onSelect={() => pickThread(th.id)} />
           ))}
           <MenuActionItem
             icon={<Icon name="i-plus" size={13} />}
-            name="New thread"
-            onSelect={() => void newThread.mutateAsync(undefined).then((t) => pickThread(t.id))}
+            name={t("agentPanel.newThread")}
+            onSelect={() => void newThread.mutateAsync(undefined).then((th) => pickThread(th.id))}
           />
         </Menu>
-        <button type="button" className="btn btn-icon" title="Collapse panel — ⌘J" aria-label="Collapse assistant panel" onClick={() => onToggle(false)}>
+        <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} />
         </button>
       </div>
@@ -398,11 +392,15 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
       <div className="ai-scroll" ref={scroll} role="log" aria-live="polite" aria-busy={busy}>
         {noEngineReady && (
           <div className="agent-empty">
-            <p>To start, give the assistant a brain:</p>
+            <p>{t("agentPanel.giveABrain")}</p>
             <button type="button" className="btn btn-secondary" onClick={onOpenSettings}>
-              Connect a model API
+              {t("agentPanel.connectModelApi")}
             </button>
-            <ul className="dash">{(engines.data ?? []).filter((e) => !e.ok).map((e) => <li key={e.id}>{e.title}: {e.reason}</li>)}</ul>
+            <ul className="dash">
+              {(engines.data ?? []).filter((e) => !e.ok).map((e) => (
+                <li key={e.id}>{t("agentPanel.engineReasonLine", { title: e.title, reason: e.reason ?? "" })}</li>
+              ))}
+            </ul>
           </div>
         )}
         {!detail.data?.messages.length && !noEngineReady && (
@@ -411,7 +409,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
               <span className="prov-tick" style={{ height: 12 }} />
             </div>
             <div className="turn-body">
-              <p>I can read this board and write to it. Every write I make is attributed, grouped by run, and revertible in one click.</p>
+              <p>{t("agentPanel.introMessage")}</p>
             </div>
           </div>
         )}
@@ -436,8 +434,8 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
           ref={composer}
           className="input"
           style={{ flex: 1, minWidth: 0 }}
-          placeholder={pending ? "Answer, or pick an option above…" : "Message the assistant…"}
-          aria-label="Message the assistant"
+          placeholder={pending ? t("agentPanel.answerPlaceholder") : t("agentPanel.messagePlaceholder")}
+          aria-label={t("agentPanel.messageAria")}
           value={draft}
           disabled={busy}
           onChange={(e) => setDraft(e.target.value)}
@@ -447,11 +445,11 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
         />
         {runningRun ? (
           <button type="button" className="btn btn-secondary" onClick={() => cancel.mutate(runningRun.id)}>
-            Stop
+            {t("agentPanel.stop")}
           </button>
         ) : (
           <button type="button" className="btn btn-secondary" disabled={busy || !draft.trim()} onClick={() => void doSend()}>
-            Send
+            {t("agentPanel.send")}
           </button>
         )}
       </div>

@@ -5,17 +5,20 @@ import { ProjectsScreen } from "~/components/projects/ProjectsScreen";
 import { Workspace } from "~/components/workspace/Workspace";
 import { WorkspaceProvider } from "~/components/workspace/context";
 import { invoke } from "~/lib/api";
+import { I18nProvider } from "~/lib/i18n";
 import { ThemeProvider } from "~/lib/theme";
 import { ToastProvider } from "~/lib/toast";
 
 const rootRoute = createRootRoute({
   component: () => (
-    <ThemeProvider>
-      <ToastProvider>
-        <IconSprite />
-        <Outlet />
-      </ToastProvider>
-    </ThemeProvider>
+    <I18nProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <IconSprite />
+          <Outlet />
+        </ToastProvider>
+      </ThemeProvider>
+    </I18nProvider>
   )
 });
 

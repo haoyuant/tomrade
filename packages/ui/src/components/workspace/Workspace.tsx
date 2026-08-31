@@ -8,6 +8,7 @@ import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
 import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
+import { useI18n } from "~/lib/i18n";
 import { usePanelOpen } from "~/lib/panel";
 import { useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -24,14 +25,13 @@ import { useWorkspace } from "./context";
 const THREE_PANE_FLOOR = 1380;
 
 function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => void }) {
+  const { t, tx } = useI18n();
   return (
     <div className="banner" role="alert">
       <Icon className="b-mark" name="i-warn" size={15} />
-      <span>
-        Version conflict on “{title}”. An agent wrote to it while this board was open — the board re-fetched, so try the move again.
-      </span>
+      <span>{tx("workspace.conflictBanner", { title })}</span>
       <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto", padding: "3px 8px" }} onClick={onDismiss}>
-        Dismiss
+        {t("workspace.dismiss")}
       </button>
     </div>
   );
@@ -39,6 +39,7 @@ function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => 
 
 export function Workspace() {
   const ws = useWorkspace();
+  const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
   const toast = useToast();
   const navigate = useNavigate();
@@ -71,9 +72,9 @@ export function Workspace() {
 
   const runUndo = useCallback(() => {
     undo.mutate(undefined, {
-      onSuccess: (result) => toast({ body: result ? result.summary : "Nothing left to undo" })
+      onSuccess: (result) => toast({ body: result ? result.summary : t("workspace.nothingToUndo") })
     });
-  }, [undo, toast]);
+  }, [undo, toast, t]);
 
   // Opening the detail below the three-pane floor rails the assistant, so
   // every pane stays in normal flow and nothing ever overlaps.
@@ -96,11 +97,11 @@ export function Workspace() {
   // A cross-board space borrows every board and owns nothing to configure.
   const openBoardSettings = useCallback(() => {
     if (ws.board.across) {
-      toast({ body: <><span className="num">{ws.board.name}</span> borrows every board — nothing to configure</> });
+      toast({ body: <>{tx("workspace.borrowsEveryBoard", { name: <span className="num">{ws.board.name}</span> })}</> });
       return;
     }
     setBoardSettings(true);
-  }, [ws.board.across, ws.board.name, toast]);
+  }, [ws.board.across, ws.board.name, toast, tx]);
 
   // .overlay-open is how the stylesheet demotes the chrome's primary button
   useEffect(() => {

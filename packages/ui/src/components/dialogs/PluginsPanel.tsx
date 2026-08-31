@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ModuleView, PluginView } from "@tomrade/plugins";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { usePlugins, useSetPluginEnabled } from "~/lib/queries";
 import { cn } from "~/lib/utils";
 
@@ -12,32 +13,34 @@ const TONE: Record<PluginView["state"], "faint" | "neutral" | "strong"> = {
   disabled: "faint"
 };
 
-const LABEL: Record<PluginView["state"], string> = {
-  active: "running",
-  pending: "waiting",
-  failed: "failed",
-  disabled: "off"
+const LABEL_KEY: Record<PluginView["state"], MessageKey> = {
+  active: "pluginsPanel.stateRunning",
+  pending: "pluginsPanel.stateWaiting",
+  failed: "pluginsPanel.stateFailed",
+  disabled: "pluginsPanel.stateOff"
 };
 
 /** The one line under a row that says what it is doing, or why it is not. */
-function detailOf(plugin: PluginView): string {
+function useDetailOf(plugin: PluginView): string {
+  const { t } = useI18n();
   if (plugin.state === "failed" && plugin.error) return plugin.error;
-  if (plugin.state === "pending") return `Waiting for ${plugin.waitingFor?.join(", ") ?? "a service that never arrived"}`;
+  if (plugin.state === "pending") return t("pluginsPanel.waitingFor", { list: plugin.waitingFor?.join(", ") ?? t("pluginsPanel.waitingForFallback") });
   const parts: string[] = [];
-  if (plugin.provides.length) parts.push(`Provides ${plugin.provides.join(", ")}`);
-  if (plugin.injects.length) parts.push(`needs ${plugin.injects.join(", ")}`);
-  return parts.length ? parts.join(" · ") : "Adds to what is already there — it provides no service of its own";
+  if (plugin.provides.length) parts.push(t("pluginsPanel.provides", { list: plugin.provides.join(", ") }));
+  if (plugin.injects.length) parts.push(t("pluginsPanel.needs", { list: plugin.injects.join(", ") }));
+  return parts.length ? parts.join(" · ") : t("pluginsPanel.addsNothing");
 }
 
 function ModuleTable({ modules }: { modules: ModuleView[] }) {
+  const { t } = useI18n();
   return (
     <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
       <table className="tok-table">
         <thead>
           <tr>
-            <th>Module</th>
-            <th>Provided by</th>
-            <th>Kind</th>
+            <th>{t("pluginsPanel.colModule")}</th>
+            <th>{t("pluginsPanel.colProvidedBy")}</th>
+            <th>{t("pluginsPanel.colKind")}</th>
           </tr>
         </thead>
         <tbody>
@@ -54,8 +57,8 @@ function ModuleTable({ modules }: { modules: ModuleView[] }) {
                   {module.title}
                 </span>
               </td>
-              <td className="mono">{module.providers.join(", ") || "nothing"}</td>
-              <td>{module.required ? "Required" : "Optional"}</td>
+              <td className="mono">{module.providers.join(", ") || t("pluginsPanel.nothing")}</td>
+              <td>{module.required ? t("pluginsPanel.required") : t("pluginsPanel.optional")}</td>
             </tr>
           ))}
         </tbody>
@@ -75,11 +78,13 @@ function PluginRow({
   busy: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
+  const { t } = useI18n();
+  const detail = useDetailOf(plugin);
   const on = plugin.state !== "disabled";
   const locked = plugin.holds.length > 0;
   // Stated once in the lede above, so the row carries only which modules it
   // holds; the sentence lives on the control that will not move.
-  const why = locked ? `The only plugin providing ${plugin.holds.join(", ")}. Add another provider before switching it off.` : undefined;
+  const why = locked ? t("pluginsPanel.holdsWhy", { list: plugin.holds.join(", ") }) : undefined;
   return (
     <>
       <div className={cn("cfg-row", !on && "off")} data-id={plugin.id}>
@@ -90,20 +95,20 @@ function PluginRow({
         />
         <div className="cfg-name">
           {plugin.id} <span className="meta-txt mono">{plugin.name}</span>
-          <div className="meta-txt dense">{detailOf(plugin)}</div>
+          <div className="meta-txt dense">{detail}</div>
         </div>
         {locked && (
           <Tag tone="faint" title={why}>
-            {`holds ${plugin.holds.join(", ")}`}
+            {t("pluginsPanel.holdsTag", { list: plugin.holds.join(", ") })}
           </Tag>
         )}
-        <Tag tone={TONE[plugin.state]}>{LABEL[plugin.state]}</Tag>
+        <Tag tone={TONE[plugin.state]}>{t(LABEL_KEY[plugin.state])}</Tag>
         <button
           type="button"
           className="switch"
           role="switch"
           aria-checked={on}
-          aria-label={`Enable ${plugin.id}`}
+          aria-label={t("pluginsPanel.enableAria", { id: plugin.id })}
           disabled={locked || busy}
           title={why}
           onClick={() => onToggle(!on)}
@@ -129,6 +134,7 @@ function PluginRow({
  * top of the first bought nothing.
  */
 export function PluginsPanel() {
+  const { t, tx } = useI18n();
   const plugins = usePlugins();
   const setEnabled = useSetPluginEnabled();
   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
@@ -145,23 +151,21 @@ export function PluginsPanel() {
 
   return (
     <>
-      <SectionHead title="Modules">
-        A module is a capability, named by the service key that carries it. Which plugin fills one is never declared — it is read off the running
-        context, so a plugin that loads further plugins is credited with what they provide. A required module may not be left empty.
-      </SectionHead>
+      <SectionHead title={t("pluginsPanel.modulesTitle")}>{t("pluginsPanel.modulesLede")}</SectionHead>
       <ModuleTable modules={modules} />
       {unfilled.length > 0 && (
         <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
-          Nothing provides {unfilled.map((m) => m.title).join(", ")}. The app is running without {unfilled.length > 1 ? "them" : "it"}.
+          {t("pluginsPanel.nothingProvides", {
+            list: unfilled.map((m) => m.title).join(", "),
+            pronoun: t(unfilled.length > 1 ? "pluginsPanel.pronounThem" : "pluginsPanel.pronounIt")
+          })}
         </p>
       )}
 
       <hr className="rule" />
       {/* `.tag` is a flex box, so whitespace between elements would be dropped: one string. */}
-      <SectionHead title="Installed" aside={<Tag tone="neutral">{`${running} of ${rows.length} running`}</Tag>}>
-        One row per plugin, in the order the composition lists them. A switch takes effect at once: the plugin unloads with its tools, channels,
-        badges and settings panes, and everything that injected it goes too. The choice is written to your patch file, so it survives a restart. A
-        plugin that holds up a required module on its own has no switch to throw — the module would be left empty.
+      <SectionHead title={t("pluginsPanel.installedTitle")} aside={<Tag tone="neutral">{t("pluginsPanel.runningOfTotal", { running, total: rows.length })}</Tag>}>
+        {t("pluginsPanel.installedLede")}
       </SectionHead>
       <div>
         {rows.map((plugin) => (
@@ -174,22 +178,16 @@ export function PluginsPanel() {
           />
         ))}
       </div>
-      {!rows.length && <p className="meta-txt">Nothing to show — the composition has not been read.</p>}
+      {!rows.length && <p className="meta-txt">{t("pluginsPanel.emptyRows")}</p>}
 
       <hr className="rule" />
-      <SectionHead title="Adding one" />
+      <SectionHead title={t("pluginsPanel.addingTitle")} />
       <div className="panel">
-        <Eyebrow>Not from here — yet</Eyebrow>
+        <Eyebrow>{t("pluginsPanel.notFromHereYet")}</Eyebrow>
         <ul className="dash" style={{ marginTop: "var(--space-3)" }}>
-          <li>
-            A plugin is a row in <span className="mono">tomrade.yml</span>, or in your own <span className="mono">tomrade.patch.yml</span>, which
-            may add rows the app does not ship.
-          </li>
-          <li>
-            Swapping the plugin behind a required module is a change of <span className="mono">name</span> on its row: a service key has one owner,
-            so a replacement cannot be switched on beside the plugin it replaces.
-          </li>
-          <li>Browsing and installing from here is a later thing. This pane manages what is already listed.</li>
+          <li>{tx("pluginsPanel.addingBullet1", { yml: <span className="mono">tomrade.yml</span>, patchYml: <span className="mono">tomrade.patch.yml</span> })}</li>
+          <li>{tx("pluginsPanel.addingBullet2", { name: <span className="mono">name</span> })}</li>
+          <li>{t("pluginsPanel.addingBullet3")}</li>
         </ul>
       </div>
     </>

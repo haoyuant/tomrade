@@ -1,0 +1,90 @@
+export const agentPanel = {
+  en: {
+    writing: "writing",
+    thinking: "thinking",
+    secondsShort: "{{n}}s",
+    minSecShort: "{{m}}m{{s}}s",
+
+    waitingPickAny: "Waiting on you · pick any",
+    waitingPickOne: "Waiting on you · pick one",
+    asked: "Asked",
+    confirm: "Confirm",
+    confirmCount: "Confirm ({{n}})",
+    confirmNote: "Nothing runs until you confirm — or type a reply below.",
+
+    revertedPlain: "Reverted",
+    revertedKept: "Reverted · kept {{n}}",
+    changedOne: "Changed {{n}} item",
+    changedMany: "Changed {{n}} items",
+    revert: "Revert",
+    whatChanged: "what changed",
+
+    expandAssistant: "Expand assistant — ⌘J",
+    expandAssistantAria: "Expand assistant panel",
+    assistantLabel: "Assistant",
+    dragToResize: "Drag to resize",
+    engineLabel: "Engine",
+    whoConducts: "Who conducts this thread",
+    whoDoesWork: "Who does the work",
+    manageModelsEngines: "Manage models & engines…",
+    threadsLabel: "Threads",
+    newThread: "New thread",
+    collapsePanel: "Collapse panel — ⌘J",
+    collapseAssistantAria: "Collapse assistant panel",
+
+    giveABrain: "To start, give the assistant a brain:",
+    connectModelApi: "Connect a model API",
+    engineReasonLine: "{{title}}: {{reason}}",
+    introMessage: "I can read this board and write to it. Every write I make is attributed, grouped by run, and revertible in one click.",
+
+    answerPlaceholder: "Answer, or pick an option above…",
+    messagePlaceholder: "Message the assistant…",
+    messageAria: "Message the assistant",
+    stop: "Stop",
+    send: "Send"
+  },
+  zh: {
+    writing: "正在写入",
+    thinking: "正在思考",
+    secondsShort: "{{n}}秒",
+    minSecShort: "{{m}}分{{s}}秒",
+
+    waitingPickAny: "等待你的选择 · 可多选",
+    waitingPickOne: "等待你的选择 · 单选",
+    asked: "已提问",
+    confirm: "确认",
+    confirmCount: "确认（{{n}}）",
+    confirmNote: "在你确认之前不会执行任何操作——也可以直接在下方输入回复。",
+
+    revertedPlain: "已撤销",
+    revertedKept: "已撤销 · 保留了 {{n}} 项",
+    changedOne: "变更了 {{n}} 个工作项",
+    changedMany: "变更了 {{n}} 个工作项",
+    revert: "撤销",
+    whatChanged: "查看变更内容",
+
+    expandAssistant: "展开助手 — ⌘J",
+    expandAssistantAria: "展开助手面板",
+    assistantLabel: "助手",
+    dragToResize: "拖动以调整宽度",
+    engineLabel: "引擎",
+    whoConducts: "由谁主导此对话",
+    whoDoesWork: "由谁执行工作",
+    manageModelsEngines: "管理模型与引擎…",
+    threadsLabel: "对话",
+    newThread: "新对话",
+    collapsePanel: "收起面板 — ⌘J",
+    collapseAssistantAria: "收起助手面板",
+
+    giveABrain: "首先，给助手配上一个大脑：",
+    connectModelApi: "连接模型 API",
+    engineReasonLine: "{{title}}：{{reason}}",
+    introMessage: "我可以读取这个看板并对它进行写入。我做出的每一次写入都会标明来源、按运行归组，并且可以一键撤销。",
+
+    answerPlaceholder: "在此回答，或在上方选择一个选项…",
+    messagePlaceholder: "给助手发消息…",
+    messageAria: "给助手发消息",
+    stop: "停止",
+    send: "发送"
+  }
+};

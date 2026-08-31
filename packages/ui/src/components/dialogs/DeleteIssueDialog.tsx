@@ -2,19 +2,20 @@ import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Num, Tag } from "~/components/ui/atoms";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { usePurgeItem } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 
 /** The plain-English list of what goes with the issue, and what does not. */
-function consequences(item: Item, items: Item[]): string[] {
-  const out = ["its whole activity trail — every oplog row this issue ever wrote"];
-  if (item.labels.length) out.push(`${item.labels.length} label link${item.labels.length === 1 ? "" : "s"}`);
+function consequences(item: Item, items: Item[], t: (key: MessageKey, vars?: Record<string, string | number>) => string): string[] {
+  const out = [t("deleteIssueDialog.activityTrail")];
+  if (item.labels.length) out.push(t(item.labels.length === 1 ? "deleteIssueDialog.labelLinkOne" : "deleteIssueDialog.labelLinkMany", { n: item.labels.length }));
 
   const blockedBy = items.filter((i) => i.id !== item.id && i.blocks.includes(item.id)).length;
   const edges = item.blocks.length + blockedBy;
-  if (edges) out.push(`${edges} blocks relation${edges === 1 ? "" : "s"}, cut in both directions`);
+  if (edges) out.push(t(edges === 1 ? "deleteIssueDialog.blocksRelationOne" : "deleteIssueDialog.blocksRelationMany", { n: edges }));
 
-  out.push("its place in every saved view's manual order");
+  out.push(t("deleteIssueDialog.manualOrder"));
   return out;
 }
 
@@ -47,13 +48,14 @@ export function DeleteIssueDialog({
   /** Ran after the purge lands: drop the selection, or leave a dead route. */
   onDeleted?: () => void;
 }) {
+  const { t, tx } = useI18n();
   const purge = usePurgeItem(projectId);
   const toast = useToast();
 
   // Any issue can be a parent — `parent_id` carries no kind constraint, and an
   // agent may set it over MCP — so this never asks whether the target is an epic.
   const children = item ? items.filter((i) => i.parentId === item.id) : [];
-  const lost = item ? consequences(item, items) : [];
+  const lost = item ? consequences(item, items, t) : [];
 
   const destroy = () => {
     if (!item) return;
@@ -65,17 +67,11 @@ export function DeleteIssueDialog({
         onSuccess: () => {
           onOpenChange(false);
           onDeleted?.();
-          toast({ body: <>Permanently deleted <span className="num">{item.key}</span> — <span className="num">⌘Z</span> cannot bring it back</> });
+          toast({ body: <>{tx("deleteIssueDialog.deletedToast", { key: <span className="num">{item.key}</span>, cmdz: <span className="num">⌘Z</span> })}</> });
         },
         onError: (err) =>
           toast({
-            body: /conflict/i.test(err.message) ? (
-              <>
-                An agent rewrote <span className="num">{item.key}</span> while this was open — it re-read, so check it still deserves deleting.
-              </>
-            ) : (
-              err.message
-            )
+            body: /conflict/i.test(err.message) ? tx("deleteIssueDialog.conflictToast", { key: <span className="num">{item.key}</span> }) : err.message
           })
       }
     );
@@ -86,23 +82,30 @@ export function DeleteIssueDialog({
   // unmounting never gives it one. Radix cannot cover for that either — these
   // dialogs render no Trigger for its own restore to aim at.
   return (
-    <Dialog open={!!item} onOpenChange={onOpenChange} label={item ? `Delete ${item.key} permanently` : "Delete issue"} className="sheet-md">
+    <Dialog
+      open={!!item}
+      onOpenChange={onOpenChange}
+      label={item ? t("deleteIssueDialog.dialogLabelWithKey", { key: item.key }) : t("deleteIssueDialog.dialogLabelEmpty")}
+      className="sheet-md"
+    >
       {item && (
         <>
-          <DialogHead title="Delete permanently" aside={<Tag tone="neutral">{item.key}</Tag>} />
+          <DialogHead title={t("deleteIssueDialog.headTitle")} aside={<Tag tone="neutral">{item.key}</Tag>} />
           <DialogBody className="stack-4">
             <p className="dlg-sub">{item.title}</p>
 
             <div className="dangerbar">
               <Icon className="b-mark" name="i-warn" size={15} />
               <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
-                This is <strong>not undoable</strong>. Every other write in Tomrade can be walked back with <span className="num">⌘Z</span>, because
-                the oplog keeps a snapshot — this one deletes that history too, so there is nothing left to restore from.
+                {tx("deleteIssueDialog.notUndoable", {
+                  strong: <strong>{t("deleteIssueDialog.notUndoableStrong")}</strong>,
+                  cmdz: <span className="num">⌘Z</span>
+                })}
               </p>
             </div>
 
             <div>
-              <p className="meta-txt dense">Deleting <Num>{item.key}</Num> also takes:</p>
+              <p className="meta-txt dense">{tx("deleteIssueDialog.alsoTakes", { key: <Num>{item.key}</Num> })}</p>
               <ul className="del-list">
                 {lost.map((line) => (
                   <li key={line}>{line}</li>
@@ -112,23 +115,22 @@ export function DeleteIssueDialog({
 
             {children.length > 0 && (
               <p className="meta-txt dense">
-                <Num>{children.length}</Num> issue{children.length === 1 ? "" : "s"} sit{children.length === 1 ? "s" : ""} under it.{" "}
-                {children.length === 1 ? "It is" : "They are"} released to “No epic”, not deleted — and that reparenting is not undoable either.
+                {tx(children.length === 1 ? "deleteIssueDialog.childrenNoteOne" : "deleteIssueDialog.childrenNoteMany", {
+                  n: <Num>{children.length}</Num>
+                })}
               </p>
             )}
 
-            <p className="meta-txt dense">
-              The key <Num>{item.key}</Num> is retired with it — the project counter never rewinds, so nothing is ever handed that number again.
-            </p>
+            <p className="meta-txt dense">{tx("deleteIssueDialog.keyRetired", { key: <Num>{item.key}</Num> })}</p>
           </DialogBody>
           <DialogFoot>
             {/* Cancel takes the focus: Enter on an irreversible sheet must not destroy. */}
             <button type="button" autoFocus className="btn btn-secondary" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("deleteIssueDialog.cancel")}
             </button>
             <button type="button" className="btn btn-danger" disabled={purge.isPending} onClick={destroy}>
               <Icon name="i-trash" size={13} />
-              {purge.isPending ? "Deleting…" : `Delete ${item.key} forever`}
+              {purge.isPending ? t("deleteIssueDialog.deleting") : t("deleteIssueDialog.deleteForever", { key: item.key })}
             </button>
           </DialogFoot>
         </>

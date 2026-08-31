@@ -2,6 +2,7 @@ import type * as React from "react";
 import type { Item, ItemStatus, Priority } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { PRIORITY_LABEL, STATUS, provenanceOf } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
 
 /** Numbers that stack get tabular-nums. Not prose. */
@@ -46,13 +47,14 @@ export const StatusMark = ({ status, size = 12 }: { status: ItemStatus; size?: n
 
 /** Suppressed at Medium — the default value, so a glyph always means something. */
 export function PriorityGlyph({ priority, size = 12, always = false }: { priority: Priority; size?: number; always?: boolean }) {
+  const { t } = useI18n();
   if (priority === 2 && !always) return null;
   return (
     <Icon
       className={cn("prio", priority === 4 && "urgent")}
       name={`p-${priority}` as `p-${0 | 1 | 2 | 3 | 4}`}
       size={size}
-      aria-label={`${PRIORITY_LABEL[priority]} priority`}
+      aria-label={t("common.priorityAria", { priority: PRIORITY_LABEL[priority] })}
     />
   );
 }
@@ -62,9 +64,10 @@ export function PriorityGlyph({ priority, size = 12, always = false }: { priorit
  * glyph, human writes nothing. It sits in the gutter and never becomes a badge.
  */
 export function ProvenanceMark({ item, height = 17 }: { item: Item; height?: number }) {
+  const { t } = useI18n();
   const prov = provenanceOf(item);
-  if (prov === "ai") return <span className="prov-tick" style={{ height }} title="Last written by an agent" />;
-  if (prov === "locked") return <Icon className="prov-lock" name="i-lock" size={12} aria-label="Human-locked" />;
+  if (prov === "ai") return <span className="prov-tick" style={{ height }} title={t("common.agentWrite")} />;
+  if (prov === "locked") return <Icon className="prov-lock" name="i-lock" size={12} aria-label={t("common.humanLocked")} />;
   return null;
 }
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { StorageProviderView } from "@tomrade/storage";
 import { Icon } from "~/components/icons";
+import { useI18n } from "~/lib/i18n";
 import {
   useBrowseStorage,
   useConnectStorage,
@@ -20,6 +21,7 @@ export const message = (error: unknown): string => (error instanceof Error ? err
  * whether it took.
  */
 export function ConnectionPanel({ provider }: { provider: StorageProviderView }) {
+  const { t, tx } = useI18n();
   const state = useStorageConnection(provider.id);
   const connect = useConnectStorage();
   const disconnect = useDisconnectStorage();
@@ -35,7 +37,7 @@ export function ConnectionPanel({ provider }: { provider: StorageProviderView })
       {
         onSuccess: (next) => {
           setSecret("");
-          toast({ body: next.connected ? <>Connected {next.label ?? ""}</> : <>{next.detail ?? "That was not accepted"}</> });
+          toast({ body: next.connected ? t("destination.connectedToast", { label: next.label ?? "" }) : (next.detail ?? t("destination.notAccepted")) });
         },
         onError: (error) => toast({ body: message(error) })
       }
@@ -46,14 +48,14 @@ export function ConnectionPanel({ provider }: { provider: StorageProviderView })
     return (
       <div className="cfg-row" style={{ marginTop: "var(--space-3)" }}>
         <Icon name="i-check" size={15} style={{ color: "var(--accent)" }} />
-        <span className="cfg-name">Connected{state.data.label ? ` as ${state.data.label}` : ""}</span>
+        <span className="cfg-name">{state.data.label ? t("destination.connectedAs", { label: state.data.label }) : t("destination.connectedPlain")}</span>
         <button
           type="button"
           className="btn btn-ghost"
           disabled={disconnect.isPending}
-          onClick={() => disconnect.mutate(provider.id, { onSuccess: () => toast({ body: <>Disconnected. Published copies are left where they are.</> }) })}
+          onClick={() => disconnect.mutate(provider.id, { onSuccess: () => toast({ body: t("destination.disconnectedToast") }) })}
         >
-          Disconnect
+          {t("destination.disconnect")}
         </button>
       </div>
     );
@@ -77,7 +79,7 @@ export function ConnectionPanel({ provider }: { provider: StorageProviderView })
             }}
           />
           <button type="button" className="btn btn-secondary" disabled={!secret.trim() || connect.isPending} onClick={submit}>
-            {connect.isPending ? "Connecting…" : "Connect"}
+            {connect.isPending ? t("destination.connecting") : t("destination.connect")}
           </button>
         </div>
         {prompt.help && <span className="meta-txt">{prompt.help}</span>}
@@ -90,7 +92,7 @@ export function ConnectionPanel({ provider }: { provider: StorageProviderView })
       {prompt.url && (
         <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => openExternal(prompt.url!)}>
           <Icon name="i-plug" size={13} />
-          Get one from {hostOf(prompt.url)}
+          {tx("destination.getOneFrom", { host: hostOf(prompt.url) })}
         </button>
       )}
     </div>
@@ -110,6 +112,7 @@ const hostOf = (url: string): string => {
  * lists it, and one that can make a destination from a name offers that too.
  */
 export function DestinationPicker({ provider, onPick }: { provider: StorageProviderView; onPick: (config: Record<string, unknown>) => void }) {
+  const { t } = useI18n();
   const browse = useBrowseStorage();
   const draft = useDraftStorage();
   const toast = useToast();
@@ -133,7 +136,7 @@ export function DestinationPicker({ provider, onPick }: { provider: StorageProvi
         }}
       >
         <Icon name="i-search" size={13} />
-        Choose an existing one…
+        {t("destination.chooseExisting")}
       </button>
     );
   }
@@ -141,11 +144,19 @@ export function DestinationPicker({ provider, onPick }: { provider: StorageProvi
   return (
     <div className="panel stack-3" style={{ marginTop: "var(--space-3)" }}>
       <div className="field">
-        <label htmlFor="stgFilter">Find it by name</label>
-        <input id="stgFilter" autoFocus className="input" autoComplete="off" placeholder="Start typing…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <label htmlFor="stgFilter">{t("destination.findByName")}</label>
+        <input
+          id="stgFilter"
+          autoFocus
+          className="input"
+          autoComplete="off"
+          placeholder={t("destination.findPlaceholder")}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
       </div>
-      {browse.isPending && <p className="meta-txt dense">Asking…</p>}
-      {!browse.isPending && !results.length && <p className="meta-txt dense">Nothing to choose from yet.</p>}
+      {browse.isPending && <p className="meta-txt dense">{t("destination.asking")}</p>}
+      {!browse.isPending && !results.length && <p className="meta-txt dense">{t("destination.nothingToChoose")}</p>}
       <div className="stack-2" style={{ maxHeight: 220, overflowY: "auto" }}>
         {shown.map((row) => (
           <button
@@ -185,14 +196,14 @@ export function DestinationPicker({ provider, onPick }: { provider: StorageProvi
               <Icon name="i-plus" size={13} />
             </span>
             <span className="m-stack">
-              <span className="m-name">Create {filter.trim()}</span>
-              <span className="m-sub">Made when you publish, and private if the host allows it</span>
+              <span className="m-name">{t("destination.createLabel", { name: filter.trim() })}</span>
+              <span className="m-sub">{t("destination.createSub")}</span>
             </span>
           </button>
         )}
       </div>
       <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => setOpen(false)}>
-        Cancel
+        {t("destination.cancel")}
       </button>
     </div>
   );

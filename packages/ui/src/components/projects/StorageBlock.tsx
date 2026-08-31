@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { agoLabel } from "~/lib/domain";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBindStorage, useStorageBinding, useStorageConnection, useStorageProviders, useStorageStatus, useSyncStorage, useUnbindStorage } from "~/lib/queries";
 import { ConnectionPanel, DestinationPicker, message } from "./destination";
 import { reveal } from "~/lib/shell";
@@ -16,18 +17,22 @@ const LOCAL = "";
  * State is shape-coded first: an icon and a word carry it, and the tone only
  * confirms. Three of these need a human, and they say so.
  */
-const STATE: Record<SyncState, { label: string; tone: "faint" | "neutral" | "strong"; hint: string; warn?: boolean }> = {
-  local: { label: "This machine", tone: "neutral", hint: "The only copy is the database on this machine." },
-  synced: { label: "Published", tone: "faint", hint: "The destination holds exactly what this project holds." },
-  ahead: { label: "Not yet published", tone: "neutral", hint: "Local changes are waiting to be published." },
-  behind: { label: "Changes waiting", tone: "neutral", hint: "The destination has changes this machine has not taken yet." },
-  diverged: { label: "Both sides changed", tone: "strong", hint: "This machine and the destination both moved on. Nothing is overwritten until you choose.", warn: true },
-  offline: { label: "Cannot reach it", tone: "strong", hint: "The destination did not answer. Local work is safe and will publish when it does.", warn: true },
-  error: { label: "Something is wrong", tone: "strong", hint: "The destination could not be read.", warn: true },
-  unavailable: { label: "Provider not loaded", tone: "strong", hint: "The plugin that knows this destination is not loaded, so it cannot be reached.", warn: true }
-};
+function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: string; tone: "faint" | "neutral" | "strong"; hint: string; warn?: boolean }> {
+  return {
+    local: { label: t("storageBlock.stateLocalLabel"), tone: "neutral", hint: t("storageBlock.stateLocalHint") },
+    synced: { label: t("storageBlock.stateSyncedLabel"), tone: "faint", hint: t("storageBlock.stateSyncedHint") },
+    ahead: { label: t("storageBlock.stateAheadLabel"), tone: "neutral", hint: t("storageBlock.stateAheadHint") },
+    behind: { label: t("storageBlock.stateBehindLabel"), tone: "neutral", hint: t("storageBlock.stateBehindHint") },
+    diverged: { label: t("storageBlock.stateDivergedLabel"), tone: "strong", hint: t("storageBlock.stateDivergedHint"), warn: true },
+    offline: { label: t("storageBlock.stateOfflineLabel"), tone: "strong", hint: t("storageBlock.stateOfflineHint"), warn: true },
+    error: { label: t("storageBlock.stateErrorLabel"), tone: "strong", hint: t("storageBlock.stateErrorHint"), warn: true },
+    unavailable: { label: t("storageBlock.stateUnavailableLabel"), tone: "strong", hint: t("storageBlock.stateUnavailableHint"), warn: true }
+  };
+}
 
 export function StorageBlock({ projectId }: { projectId: string }) {
+  const { t, tx } = useI18n();
+  const STATE = stateOf(t);
   const providers = useStorageProviders();
   const binding = useStorageBinding(projectId);
   const status = useStorageStatus(projectId);
@@ -62,7 +67,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
       unbind.mutate(undefined, {
         onSuccess: () => {
           setEdit(null);
-          toast({ body: <>Stored on this machine only — the files at the old destination were left alone</> });
+          toast({ body: t("storageBlock.localOnlyToast") });
         },
         onError: (error) => toast({ body: message(error) })
       });
@@ -73,7 +78,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
       {
         onSuccess: (next) => {
           setEdit(null);
-          toast({ body: <>Published to <span className="num">{next.location ?? edit.provider}</span></> });
+          toast({ body: <>{tx("storageBlock.publishedToast", { location: <span className="num">{next.location ?? edit.provider}</span> })}</> });
         },
         onError: (error) => toast({ body: message(error) })
       }
@@ -82,13 +87,14 @@ export function StorageBlock({ projectId }: { projectId: string }) {
 
   const syncNow = () =>
     sync.mutate(undefined, {
-      onSuccess: (next) => toast({ body: <>{STATE[next.state].label} · <span className="num">{next.location ?? ""}</span></> }),
+      onSuccess: (next) =>
+        toast({ body: <>{tx("storageBlock.syncedToast", { label: STATE[next.state].label, location: <span className="num">{next.location ?? ""}</span> })}</> }),
       onError: (error) => toast({ body: message(error) })
     });
 
   return (
     <div>
-      <Eyebrow>Where this project is stored</Eyebrow>
+      <Eyebrow>{t("storageBlock.whereStored")}</Eyebrow>
 
       <div className="cfg-row" style={{ marginTop: "var(--space-2)" }}>
         <Icon
@@ -102,22 +108,20 @@ export function StorageBlock({ projectId }: { projectId: string }) {
       </div>
 
       <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-        {status.data?.detail ? `${state.hint} ${status.data.detail}.` : state.hint}
+        {status.data?.detail ? t("storageBlock.hintWithDetail", { hint: state.hint, detail: status.data.detail }) : state.hint}
       </p>
 
       <div className="field" style={{ marginTop: "var(--space-3)" }}>
-        <label htmlFor="stgProvider">Destination</label>
+        <label htmlFor="stgProvider">{t("storageBlock.destinationLabel")}</label>
         <select id="stgProvider" className="input" disabled={busy} value={selected} onChange={(e) => choose(e.target.value)}>
-          <option value={LOCAL}>This machine only</option>
+          <option value={LOCAL}>{t("storageBlock.thisMachineOnly")}</option>
           {(providers.data ?? []).map((p) => (
             <option key={p.id} value={p.id}>
               {p.title}
             </option>
           ))}
         </select>
-        <span className="meta-txt">
-          {provider?.description ?? "The live database always stays on this machine. A destination receives a copy of the project as text."}
-        </span>
+        <span className="meta-txt">{provider?.description ?? t("storageBlock.providerDescFallback")}</span>
       </div>
 
       {provider?.connection && <ConnectionPanel provider={provider} />}
@@ -139,33 +143,37 @@ export function StorageBlock({ projectId }: { projectId: string }) {
                 onChange={(value) => setEdit({ provider: selected, config: { ...config, [name]: value } })}
               />
             ))}
-            {provider.connection && (
-              <p className="meta-txt dense">
-                These travel with the project — a teammate who clones it gets them. The account above stays on this machine.
-              </p>
-            )}
+            {provider.connection && <p className="meta-txt dense">{t("storageBlock.travelWithProjectNote")}</p>}
           </div>
         </>
       )}
 
       <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
         <button type="button" className="btn btn-secondary" disabled={!dirty || busy || !ready} onClick={save}>
-          {bind.isPending ? "Publishing…" : unbind.isPending ? "Detaching…" : selected === LOCAL ? "Stop using a destination" : dirty && bound !== LOCAL && selected !== bound ? "Move here" : "Publish here"}
+          {bind.isPending
+            ? t("storageBlock.publishing")
+            : unbind.isPending
+              ? t("storageBlock.detaching")
+              : selected === LOCAL
+                ? t("storageBlock.stopUsingDestination")
+                : dirty && bound !== LOCAL && selected !== bound
+                  ? t("storageBlock.moveHere")
+                  : t("storageBlock.publishHere")}
         </button>
         {bound !== LOCAL && !dirty && (
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={syncNow}>
             <Icon name="i-undo" size={13} />
-            {sync.isPending ? "Syncing…" : "Sync now"}
+            {sync.isPending ? t("storageBlock.syncing") : t("storageBlock.syncNow")}
           </button>
         )}
         {dirty && (
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setEdit(null)}>
-            Cancel
+            {t("storageBlock.cancel")}
           </button>
         )}
         {bound !== LOCAL && status.data?.location && !status.data.location.includes("·") && (
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => reveal(status.data!.location!)}>
-            Reveal
+            {t("storageBlock.reveal")}
           </button>
         )}
       </div>
@@ -173,10 +181,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
       {state.warn && status.data?.state === "diverged" && (
         <div className="dangerbar" style={{ marginTop: "var(--space-3)" }}>
           <Icon className="b-mark" name="i-warn" size={15} />
-          <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
-            Both this machine and the destination changed. Neither is overwritten: publishing and syncing both refuse until the two agree. Take the
-            destination's copy by hand, or move this project to a destination of its own.
-          </p>
+          <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>{t("storageBlock.divergedWarning")}</p>
         </div>
       )}
     </div>

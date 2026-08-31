@@ -15,17 +15,18 @@ import {
   type IssueWrite
 } from "~/components/issue/fields";
 import { PROVENANCE, agoLabel, describeWrite, ledgerMarkOf, provenanceOf } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useHistory, useSections } from "~/lib/queries";
 import { useWorkspace } from "./context";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
 function LockBar() {
+  const { t, tx } = useI18n();
   return (
     <div className="lockbar">
       <Icon name="i-lock" size={15} style={{ color: "var(--meta)", flexShrink: 0, marginTop: 2 }} />
       <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
-        Title and body are <strong>human-locked</strong>. Agents can still read this issue and change its status, but a write to the locked fields is
-        rejected with a typed error rather than merged.
+        {tx("detailPane.lockedNotice", { strong: <strong>{t("detailPane.lockedNoticeStrong")}</strong> })}
       </p>
     </div>
   );
@@ -33,20 +34,19 @@ function LockBar() {
 
 /** Derived from the oplog itself, so it can never drift from the data it describes. */
 export function Ledger({ itemId }: { itemId: string }) {
+  const { t, tx } = useI18n();
   const history = useHistory(itemId);
   const rows = history.data ?? [];
   return (
     <section className="detail-sect">
-      <Eyebrow>Activity · append-only oplog</Eyebrow>
+      <Eyebrow>{t("detailPane.activityHeading")}</Eyebrow>
       <div className="ledger">
         {rows.map((entry) => (
           <LedgerRow key={entry.seq} entry={entry} />
         ))}
-        {rows.length === 0 && <p className="meta-txt">No writes recorded yet.</p>}
+        {rows.length === 0 && <p className="meta-txt">{t("detailPane.noWritesYet")}</p>}
       </div>
-      <p className="meta-txt detail-note">
-        Every row above is reversible. <span className="num">⌘Z</span> walks the oplog backwards, newest first.
-      </p>
+      <p className="meta-txt detail-note">{tx("detailPane.ledgerFooter", { cmdz: <span className="num">⌘Z</span> })}</p>
     </section>
   );
 }
@@ -91,6 +91,7 @@ export function PluginSections({ itemId, variant = "pane" }: { itemId: string; v
 
 /** Shared by the docked pane and the standalone issue sheet. */
 export function LedgerRow({ entry }: { entry: OplogEntry }) {
+  const { t } = useI18n();
   const after = (entry.after ?? entry.before) as Item | null;
   const mark = ledgerMarkOf(entry);
   return (
@@ -101,55 +102,62 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
       </span>
       <span className="ledger-txt">
         <b>{entry.by}</b> {describeWrite(entry)}
-        {after ? <> · version <span className="num">{after.version}</span></> : null} · {agoLabel(entry.at)}
+        {after ? (
+          <>
+            {" "}
+            · {t("detailPane.versionWord")} <span className="num">{after.version}</span>
+          </>
+        ) : null}{" "}
+        · {agoLabel(entry.at)}
       </span>
     </div>
   );
 }
 
 export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
+  const { t } = useI18n();
   const { epics, boards, labels } = useWorkspace();
   const prov = provenanceOf(item);
   return (
     <dl className="fieldstrip">
       <div className="field-row">
-        <dt>Status</dt>
+        <dt>{t("detailPane.fieldStatus")}</dt>
         <dd>
           <StatusField item={item} write={write} />
         </dd>
       </div>
       <div className="field-row">
-        <dt>Priority</dt>
+        <dt>{t("detailPane.fieldPriority")}</dt>
         <dd>
           <PriorityField item={item} write={write} />
         </dd>
       </div>
       <div className="field-row">
-        <dt>Epic</dt>
+        <dt>{t("detailPane.fieldEpic")}</dt>
         <dd>
           <EpicField item={item} write={write} epics={epics} />
         </dd>
       </div>
       <div className="field-row">
-        <dt>Labels</dt>
+        <dt>{t("detailPane.fieldLabelsCol")}</dt>
         <dd>
           <LabelsField item={item} write={write} vocabulary={labels} />
         </dd>
       </div>
       <div className="field-row">
-        <dt>Board</dt>
+        <dt>{t("detailPane.fieldBoard")}</dt>
         <dd>
           <BoardField item={item} write={write} boards={boards} />
         </dd>
       </div>
       <div className="field-row">
-        <dt>Version</dt>
+        <dt>{t("detailPane.fieldVersion")}</dt>
         <dd>
           <span className="num">{item.version}</span>
         </dd>
       </div>
       <div className="field-row">
-        <dt>Last write</dt>
+        <dt>{t("detailPane.fieldLastWrite")}</dt>
         <dd>
           {prov === "ai" && <span className="prov-tick" style={{ height: 12 }} />}
           {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={13} />}
@@ -207,6 +215,7 @@ function DetailBody({
   onClose: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const { project, boards, items, select } = useWorkspace();
   const { write } = useIssueWriter(project.id);
   const owner = boards.find((b) => b.id === item.boardId);
@@ -224,16 +233,22 @@ function DetailBody({
         <button
           type="button"
           className="btn btn-icon is-danger purge-btn"
-          title={`Delete ${item.key} permanently`}
-          aria-label={`Delete ${item.key} permanently`}
+          title={t("deleteIssueDialog.dialogLabelWithKey", { key: item.key })}
+          aria-label={t("deleteIssueDialog.dialogLabelWithKey", { key: item.key })}
           onClick={onDelete}
         >
           <Icon name="i-trash" size={15} />
         </button>
-        <button type="button" className="btn btn-icon" title={expanded ? "Collapse" : "Expand"} aria-label={expanded ? "Collapse detail" : "Expand detail"} onClick={onToggleExpand}>
+        <button
+          type="button"
+          className="btn btn-icon"
+          title={expanded ? t("detailPane.collapseTitle") : t("detailPane.expandTitle")}
+          aria-label={expanded ? t("detailPane.collapseDetailAria") : t("detailPane.expandDetailAria")}
+          onClick={onToggleExpand}
+        >
           <Icon name={expanded ? "i-shrink" : "i-expand"} size={15} />
         </button>
-        <button type="button" className="btn btn-icon" aria-label="Close detail" onClick={onClose}>
+        <button type="button" className="btn btn-icon" aria-label={t("detailPane.closeDetailAria")} onClick={onClose}>
           <Icon name="i-close" size={15} />
         </button>
       </div>
@@ -246,7 +261,7 @@ function DetailBody({
             <IssueBody item={item} write={write} className="issue-body" />
             {blocks.length > 0 && (
               <section className="detail-sect">
-                <Eyebrow>Blocks</Eyebrow>
+                <Eyebrow>{t("detailPane.blocksHeading")}</Eyebrow>
                 {blocks.map((b) => (
                   <button key={b.id} type="button" className="rel-row" onClick={() => select(b.id)}>
                     <StatusMark status={b.status} size={13} />

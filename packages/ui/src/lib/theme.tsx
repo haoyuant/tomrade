@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { AppSettings, ThemePreference } from "@tomrade/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
+import type { MessageKey } from "./i18n";
 
 export type ResolvedTheme = "light" | "dark" | "matcha";
 
@@ -19,11 +20,11 @@ const mq = () => window.matchMedia("(prefers-color-scheme: dark)");
 const resolve = (p: ThemePreference): ResolvedTheme => (p === "system" ? (mq().matches ? "dark" : "light") : p);
 
 /** Paper is the only light mode; Ink and Matcha are both dark. */
-export const THEME_OPTIONS: { value: ThemePreference; label: string; icon: "i-monitor" | "i-sun" | "i-moon" | "i-leaf" }[] = [
-  { value: "system", label: "System", icon: "i-monitor" },
-  { value: "light", label: "Paper", icon: "i-sun" },
-  { value: "dark", label: "Ink", icon: "i-moon" },
-  { value: "matcha", label: "Matcha", icon: "i-leaf" }
+export const THEME_OPTIONS: { value: ThemePreference; labelKey: MessageKey; icon: "i-monitor" | "i-sun" | "i-moon" | "i-leaf" }[] = [
+  { value: "system", labelKey: "theme.system", icon: "i-monitor" },
+  { value: "light", labelKey: "theme.paper", icon: "i-sun" },
+  { value: "dark", labelKey: "theme.ink", icon: "i-moon" },
+  { value: "matcha", labelKey: "theme.matcha", icon: "i-leaf" }
 ];
 
 function paint(next: ResolvedTheme, animate: boolean): void {

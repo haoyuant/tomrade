@@ -509,6 +509,31 @@ const run = async () => {
   // the tallest pane and the shortest one leave the sheet exactly the same size
   check("the sheet keeps its frame across panes", (await $(sheetBox)) === boxOnAppearance);
   await checkCentred("settings on its shortest pane");
+
+  // ── language ─────────────────────────────────────────────────────────
+  // The stored preference is 'system', and this harness's OS/Electron locale
+  // is English, so the sheet — and the html lang attribute — start in English.
+  await press(settingsNav("Language"));
+  await sleep(600);
+  check("the Language pane is reachable from the side menu", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Language");
+  check("language defaults to System", (await $(`document.querySelector('.dlg-body .theme-seg[aria-pressed="true"]')?.textContent`)) === "System");
+  check("the html lang attribute starts as en", (await $(`document.documentElement.lang`)) === "en");
+  await shot("17-settings-language");
+  await press(`document.querySelectorAll('.dlg-body .theme-seg')[2]`); // System, English, 中文
+  await sleep(700);
+  check("choosing 中文 relabels the dialog itself", (await $(`document.querySelector('.dlg-head .dlg-title')?.textContent`)) === "设置");
+  check(
+    "the side menu re-renders in the chosen language",
+    (await $(`[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`)).includes("外观")
+  );
+  check("shared vocabulary outside the dialog follows the language too", (await $(`document.querySelector('.dlg-foot .btn-secondary')?.textContent`)) === "完成");
+  check("the html lang attribute follows the chosen language", (await $(`document.documentElement.lang`)) === "zh");
+  await shot("17-settings-language-zh");
+  await press(`document.querySelectorAll('.dlg-body .theme-seg')[1]`); // back to English, so every later check keeps asserting English text
+  await sleep(700);
+  check("choosing English reverts the dialog", (await $(`document.querySelector('.dlg-head .dlg-title')?.textContent`)) === "Settings");
+  check("the html lang attribute reverts to en", (await $(`document.documentElement.lang`)) === "en");
+
   await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
   await sleep(700);
   check("the demotion lifts with the overlay", (await $(`document.documentElement.classList.contains('overlay-open')`)) === false);

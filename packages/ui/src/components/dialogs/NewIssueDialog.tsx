@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import type { ItemStatus, Priority } from "@tomrade/domain";
 import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useCreateItem, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
 
 export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t, tx } = useI18n();
   const ws = useWorkspace();
   const create = useCreateItem(ws.project.id);
   const undo = useUndo(ws.project.id);
@@ -43,25 +45,25 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         onSuccess: (item) => {
           onOpenChange(false);
           setTitle("");
-          toast({ body: <>Created <span className="num">{item.key}</span></>, onUndo: () => undo.mutate(item.id) });
+          toast({ body: <>{tx("newIssueDialog.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
         }
       }
     );
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label="New issue" className="sheet-md">
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("newIssueDialog.dialogLabel")} className="sheet-md">
       <div style={{ padding: "var(--space-4)", borderBottom: "1px solid var(--border)" }}>
-        <h2 className="dlg-title">New issue</h2>
+        <h2 className="dlg-title">{t("newIssueDialog.title")}</h2>
       </div>
       <div style={{ padding: "var(--space-4)" }} className="stack-3">
         <div className="field">
-          <label htmlFor="niTitle">Title</label>
+          <label htmlFor="niTitle">{t("newIssueDialog.titleFieldLabel")}</label>
           <input
             id="niTitle"
             autoFocus
             className="input"
-            placeholder="Something sized for one PR…"
+            placeholder={t("newIssueDialog.titlePlaceholder")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -71,7 +73,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </div>
         <div className="grid-2">
           <div className="field">
-            <label htmlFor="niStatus">Status</label>
+            <label htmlFor="niStatus">{t("newIssueDialog.statusLabel")}</label>
             <select id="niStatus" className="select" value={status} onChange={(e) => setStatus(e.target.value as ItemStatus)}>
               {statusOptions.map((s) => (
                 <option key={s} value={s}>
@@ -81,7 +83,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </select>
           </div>
           <div className="field">
-            <label htmlFor="niPrio">Priority</label>
+            <label htmlFor="niPrio">{t("newIssueDialog.priorityLabel")}</label>
             <select id="niPrio" className="select" value={priority} onChange={(e) => setPriority(Number(e.target.value) as Priority)}>
               {PRIORITIES.map((p) => (
                 <option key={p} value={p}>
@@ -93,7 +95,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </div>
         <div className="grid-2">
           <div className="field">
-            <label htmlFor="niBoard">Board</label>
+            <label htmlFor="niBoard">{t("newIssueDialog.boardLabel")}</label>
             <select id="niBoard" className="select" value={boardId} onChange={(e) => setBoardId(e.target.value)}>
               {workstreams.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -103,9 +105,9 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </select>
           </div>
           <div className="field">
-            <label htmlFor="niEpic">Parent epic</label>
+            <label htmlFor="niEpic">{t("newIssueDialog.parentEpicLabel")}</label>
             <select id="niEpic" className="select" value={parentId} onChange={(e) => setParentId(e.target.value)}>
-              <option value="">None</option>
+              <option value="">{t("newIssueDialog.noneOption")}</option>
               {ws.epics.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.title}
@@ -117,11 +119,11 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <div className="row" style={{ justifyContent: "flex-end", marginTop: "var(--space-2)" }}>
           <DialogClose asChild>
             <button type="button" className="btn btn-ghost">
-              Cancel
+              {t("newIssueDialog.cancel")}
             </button>
           </DialogClose>
           <button type="button" className="btn btn-primary" onClick={submit}>
-            Create issue
+            {t("newIssueDialog.createIssue")}
           </button>
         </div>
       </div>

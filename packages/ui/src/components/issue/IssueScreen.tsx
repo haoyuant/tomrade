@@ -22,6 +22,7 @@ import {
   useIssueWriter
 } from "~/components/issue/fields";
 import { PROVENANCE, STATUS, agoLabel, provenanceOf } from "~/lib/domain";
+import { useI18n } from "~/lib/i18n";
 import { useBoards, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
@@ -32,6 +33,7 @@ const nextStatus = (status: ItemStatus): ItemStatus | null => {
 };
 
 export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: string }) {
+  const { t, tx } = useI18n();
   const items = useItems(projectId);
   const boards = useBoards(projectId);
   const labels = useLabels(projectId);
@@ -49,12 +51,12 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
       <div className="app">
         <header className="titlebar">
           <Link to="/" className="btn btn-ghost no-drag" style={{ padding: "4px 8px" }}>
-            <Icon name="i-back" size={14} /> Projects
+            <Icon name="i-back" size={14} /> {t("issueScreen.backProjects")}
           </Link>
         </header>
         <main className="sheet">
           <div className="issue-wrap">
-            <p className="meta-txt">{items.isLoading ? "Loading…" : "That issue is not in this project."}</p>
+            <p className="meta-txt">{items.isLoading ? t("issueScreen.loading") : t("issueScreen.notInProject")}</p>
           </div>
         </main>
         <StatusBar projectId={projectId} />
@@ -69,14 +71,14 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const next = nextStatus(item.status);
 
   const advance = () => {
-    if (next) write(item, { status: next }, <>Moved <span className="num">{item.key}</span> to {STATUS[next].label}</>);
+    if (next) write(item, { status: next }, tx("fields.movedToStatusToast", { key: <span className="num">{item.key}</span>, status: STATUS[next].label }));
   };
 
   return (
     <div className="app">
       <header className="titlebar">
         <button type="button" className="btn btn-ghost no-drag" style={{ padding: "4px 8px" }} onClick={() => void navigate({ to: "/p/$projectId", params: { projectId } })}>
-          <Icon name="i-back" size={14} /> <span>{board?.name ?? "Board"}</span>
+          <Icon name="i-back" size={14} /> <span>{board?.name ?? t("detailPane.fieldBoard")}</span>
         </button>
         <span className="crumb-sep">/</span>
         <span className="crumb-title num">{item.key}</span>
@@ -85,18 +87,18 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         <button
           type="button"
           className="btn btn-icon is-danger purge-btn no-drag"
-          title={`Delete ${item.key} permanently`}
-          aria-label={`Delete ${item.key} permanently`}
+          title={t("deleteIssueDialog.dialogLabelWithKey", { key: item.key })}
+          aria-label={t("deleteIssueDialog.dialogLabelWithKey", { key: item.key })}
           onClick={() => setDeleting(true)}
         >
           <Icon name="i-trash" size={15} />
         </button>
         {next && (
           <button type="button" className="btn btn-primary no-drag" onClick={advance}>
-            Move to {STATUS[next].label}
+            {t("issueScreen.moveToButton", { status: STATUS[next].label })}
           </button>
         )}
-        <button type="button" className="btn btn-icon no-drag" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+        <button type="button" className="btn btn-icon no-drag" title={t("settingsDialog.dialogLabel")} aria-label={t("settingsDialog.dialogLabel")} onClick={() => setSettingsOpen(true)}>
           <Icon name="i-gear" size={17} />
         </button>
       </header>
@@ -113,31 +115,31 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
             <div className="fieldstrip">
               <span className="fs-item">
-                <span className="fs-k">Status</span>
+                <span className="fs-k">{t("detailPane.fieldStatus")}</span>
                 <span className="fs-v">
                   <StatusField item={item} write={write} />
                 </span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Priority</span>
+                <span className="fs-k">{t("detailPane.fieldPriority")}</span>
                 <span className="fs-v">
                   <PriorityField item={item} write={write} />
                 </span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Epic</span>
+                <span className="fs-k">{t("detailPane.fieldEpic")}</span>
                 <span className="fs-v">
                   <EpicField item={item} write={write} epics={epics} />
                 </span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Labels</span>
+                <span className="fs-k">{t("detailPane.fieldLabelsCol")}</span>
                 <span className="fs-v">
                   <LabelsField item={item} write={write} vocabulary={labels.data ?? []} />
                 </span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Board</span>
+                <span className="fs-k">{t("detailPane.fieldBoard")}</span>
                 <span className="fs-v">
                   <BoardField item={item} write={write} boards={boards.data ?? []} />
                 </span>
@@ -145,15 +147,15 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               {/* Kind is structure: an epic names a column, so it is not a field
                   you flip in passing. */}
               <span className="fs-item">
-                <span className="fs-k">Kind</span>
-                <span className="fs-v">{item.kind === "epic" ? "Epic" : "Ticket · one PR"}</span>
+                <span className="fs-k">{t("issueScreen.fieldKind")}</span>
+                <span className="fs-v">{item.kind === "epic" ? t("detailPane.fieldEpic") : t("issueScreen.kindTicket")}</span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Version</span>
+                <span className="fs-k">{t("detailPane.fieldVersion")}</span>
                 <span className="fs-v num">{item.version}</span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">Last write</span>
+                <span className="fs-k">{t("detailPane.fieldLastWrite")}</span>
                 <span className="fs-v">
                   {prov === "ai" && <span className="prov-tick" style={{ height: 12 }} />}
                   {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={13} />}
@@ -166,8 +168,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               <div className="lockbar">
                 <Icon name="i-lock" size={15} style={{ color: "var(--meta)", flexShrink: 0, marginTop: 2 }} />
                 <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
-                  Title and body are <strong>human-locked</strong>. Agents can still read this issue and change its status, but a write to the locked
-                  fields is rejected with a typed error rather than merged.
+                  {tx("detailPane.lockedNotice", { strong: <strong>{t("detailPane.lockedNoticeStrong")}</strong> })}
                 </p>
               </div>
             )}
@@ -176,7 +177,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               <IssueBody item={item} write={write} className="bp-body" />
               {blocks.length > 0 && (
                 <>
-                  <h3>Blocks</h3>
+                  <h3>{t("detailPane.blocksHeading")}</h3>
                   <div style={{ marginTop: "var(--space-2)" }}>
                     {blocks.map((b) => (
                       <button
@@ -198,14 +199,14 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             <PluginSections itemId={item.id} variant="sheet" />
 
             <hr className="rule" />
-            <Eyebrow style={{ marginBottom: "var(--space-3)" }}>Activity · append-only oplog</Eyebrow>
+            <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("detailPane.activityHeading")}</Eyebrow>
             <div className="ledger">
               {(history.data ?? []).map((entry) => (
                 <LedgerRow key={entry.seq} entry={entry} />
               ))}
             </div>
             <p className="meta-txt dense" style={{ marginTop: "var(--space-4)" }}>
-              Every row above is reversible. <span className="num">⌘Z</span> walks the oplog backwards, newest first.
+              {tx("detailPane.ledgerFooter", { cmdz: <span className="num">⌘Z</span> })}
             </p>
           </div>
         </main>

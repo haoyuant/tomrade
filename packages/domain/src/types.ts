@@ -198,6 +198,9 @@ export type ViewPatch = Partial<Pick<View, "name" | "icon" | "groupBy" | "column
 
 export type ThemePreference = "system" | "light" | "dark" | "matcha";
 
+/** 'system' follows the OS locale, falling back to English when that locale isn't supported. */
+export type LanguagePreference = "system" | "en" | "zh";
+
 export interface LlmSettings {
   apiKey: string;
   baseURL: string;
@@ -207,6 +210,7 @@ export interface LlmSettings {
 /** Settings are sections keyed by id; plugins register their own. */
 export interface AppSettings {
   theme: ThemePreference;
+  language: LanguagePreference;
   llm?: LlmSettings;
   [section: string]: unknown;
 }
