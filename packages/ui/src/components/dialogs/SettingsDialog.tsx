@@ -1,5 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { LlmSettings } from "@tomrade/domain";
+import type { AgentSettings } from "@tomrade/agent";
+import type { AppSettings } from "@tomrade/domain";
+import type { ModelProfile, ModelsSettings } from "@tomrade/llm";
+import { useEngines } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomrade/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -63,7 +66,7 @@ function ThemePreview() {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["theme", "language", "llm"]);
+const HAND_DRAWN = new Set(["theme", "language", "models", "agent"]);
 
 /** A plugin's settings pane. Edits commit as they are made and fall back to the stored value if refused. */
 function PluginPane({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
@@ -124,24 +127,12 @@ export function SettingsDialog({
   const mcp = useMcpUrl();
   const dbPath = useDbPath();
   const providers = useStorageProviders();
-  const [llm, setLlm] = useState<LlmSettings | null | undefined>(undefined);
   const [active, setActive] = useState("appearance");
-
-  useEffect(() => {
-    if (settings.data && llm === undefined) setLlm(settings.data.llm ?? null);
-  }, [settings.data, llm]);
 
   // The palette sends you straight to a pane; ⌘, leaves you on the last one.
   useEffect(() => {
     if (open && pane) setActive(pane);
   }, [open, pane]);
-
-  const commit = (patch: Partial<LlmSettings>) => {
-    if (!settings.data || !llm) return;
-    const next = { ...llm, ...patch };
-    setLlm(next);
-    save.mutate({ ...settings.data, llm: next });
-  };
   // A destination's account is asked for where it is used — in a project's own
   // settings — so the section behind it is storage, not a screen. Whoever claims
   // one draws it; this dialog does not draw it twice.
@@ -217,38 +208,13 @@ export function SettingsDialog({
         </>
       )
     },
-    ...(llm
-      ? [
-          {
-            id: "assistant",
-            label: t("settingsDialog.assistantLabel"),
-            icon: "i-panel" as IconId,
-            group: "app" as const,
-            render: () => (
-              <>
-                <SectionHead title={t("settingsDialog.assistantLabel")}>{t("settingsDialog.assistantLede")}</SectionHead>
-                <div className="panel stack-3">
-                  <div className="grid-2">
-                    <div className="field">
-                      <label htmlFor="stBase">{t("settingsDialog.baseUrlLabel")}</label>
-                      <input id="stBase" className="input num" value={llm.baseURL ?? ""} onChange={(e) => commit({ baseURL: e.target.value })} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="stModel">{t("settingsDialog.modelLabel")}</label>
-                      <input id="stModel" className="input num" value={llm.model ?? ""} onChange={(e) => commit({ model: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="stKey">{t("settingsDialog.apiKeyLabel")}</label>
-                    <input id="stKey" className="input num" type="password" value={llm.apiKey ?? ""} onChange={(e) => commit({ apiKey: e.target.value })} />
-                    <span className="meta-txt">{t("settingsDialog.apiKeyNote")}</span>
-                  </div>
-                </div>
-              </>
-            )
-          }
-        ]
-      : []),
+    {
+      id: "assistant",
+      label: t("settingsDialog.assistantLabel"),
+      icon: "i-panel" as IconId,
+      group: "app" as const,
+      render: () => (settings.data ? <AssistantPane settings={settings.data} onSave={(next) => save.mutate(next)} /> : null)
+    },
     {
       id: "agents",
       label: t("settingsDialog.agentsLabel"),
@@ -355,5 +321,215 @@ export function SettingsDialog({
         </button>
       </DialogFoot>
     </Dialog>
+  );
+}
+
+const PRESETS = [
+  { titleKey: "settingsDialog.presetDeepseek" as const, provider: "openai-compatible" as const, baseURL: "https://api.deepseek.com", model: "deepseek-chat" },
+  { titleKey: "settingsDialog.presetAnthropic" as const, provider: "anthropic" as const, baseURL: "", model: "claude-sonnet-5" },
+  { titleKey: "settingsDialog.presetOpenai" as const, provider: "openai-compatible" as const, baseURL: "https://api.openai.com/v1", model: "" },
+  { titleKey: "settingsDialog.presetKimi" as const, provider: "openai-compatible" as const, baseURL: "https://api.moonshot.cn/v1", model: "" },
+  { titleKey: "settingsDialog.presetOpenrouter" as const, provider: "openai-compatible" as const, baseURL: "https://openrouter.ai/api/v1", model: "" },
+  { titleKey: "settingsDialog.presetOllama" as const, provider: "openai-compatible" as const, baseURL: "http://127.0.0.1:11434/v1", model: "" },
+  { titleKey: "settingsDialog.presetCustom" as const, provider: "openai-compatible" as const, baseURL: "", model: "" }
+];
+
+const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { conversation: "", worker: "" } };
+const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {} };
+
+/** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
+function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (next: AppSettings) => void }) {
+  const { t } = useI18n();
+  const engines = useEngines();
+  const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
+  const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
+  const [editing, setEditing] = useState<ModelProfile | null>(null);
+
+  const saveModels = (next: ModelsSettings) => onSave({ ...settings, models: next });
+  const saveAgent = (next: AgentSettings) => onSave({ ...settings, agent: next });
+
+  const upsert = (profile: ModelProfile) => {
+    const rest = models.profiles.filter((p) => p.id !== profile.id);
+    const roles = {
+      conversation: models.roles.conversation || profile.id,
+      worker: models.roles.worker || profile.id
+    };
+    saveModels({ profiles: [...rest, profile], roles });
+    setEditing(null);
+  };
+
+  const remove = (id: string) => {
+    const profiles = models.profiles.filter((p) => p.id !== id);
+    const fallback = profiles[0]?.id ?? "";
+    saveModels({
+      profiles,
+      roles: {
+        conversation: models.roles.conversation === id ? fallback : models.roles.conversation,
+        worker: models.roles.worker === id ? fallback : models.roles.worker
+      }
+    });
+  };
+
+  const roleSelect = (role: "conversation" | "worker", label: string, help: string) => (
+    <div className="field">
+      <label htmlFor={`role-${role}`}>{label}</label>
+      <select
+        id={`role-${role}`}
+        className="input"
+        value={models.roles[role] || models.profiles[0]?.id || ""}
+        onChange={(e) => saveModels({ ...models, roles: { ...models.roles, [role]: e.target.value } })}
+      >
+        {models.profiles.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.title || p.model}
+          </option>
+        ))}
+      </select>
+      <span className="meta-txt">{help}</span>
+    </div>
+  );
+
+  return (
+    <>
+      <SectionHead title={t("settingsDialog.modelsTitle")}>{t("settingsDialog.modelsLede")}</SectionHead>
+      <div className="panel stack-3">
+        {models.profiles.length === 0 && <p className="meta-txt">{t("settingsDialog.noProfileYet")}</p>}
+        {models.profiles.map((p) => (
+          <div className="profile-row" key={p.id}>
+            <span className="p-title">{p.title || p.model}</span>
+            <span className="p-model num">{p.provider === "anthropic" ? "anthropic" : (p.baseURL ?? "")} · {p.model}</span>
+            <button type="button" className="btn btn-ghost" onClick={() => setEditing(p)}>
+              {t("common.edit")}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => remove(p.id)}>
+              {t("common.remove")}
+            </button>
+          </div>
+        ))}
+        {editing ? (
+          <ProfileForm profile={editing} onCancel={() => setEditing(null)} onSave={upsert} />
+        ) : (
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {PRESETS.map((preset) => {
+              const title = t(preset.titleKey);
+              return (
+                <button
+                  key={preset.titleKey}
+                  type="button"
+                  className="chip-opt"
+                  onClick={() =>
+                    setEditing({
+                      id: `p${Date.now().toString(36)}`,
+                      title: preset.titleKey === "settingsDialog.presetCustom" ? "" : title,
+                      provider: preset.provider,
+                      baseURL: preset.baseURL || undefined,
+                      apiKey: "",
+                      model: preset.model
+                    })
+                  }
+                >
+                  + {title}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {models.profiles.length > 0 && (
+          <div className="grid-2">
+            {roleSelect("conversation", t("settingsDialog.conversationRoleLabel"), t("settingsDialog.conversationRoleHelp"))}
+            {roleSelect("worker", t("settingsDialog.workerRoleLabel"), t("settingsDialog.workerRoleHelp"))}
+          </div>
+        )}
+      </div>
+
+      <hr className="rule" />
+      <SectionHead title={t("settingsDialog.enginesTitle")}>{t("settingsDialog.enginesLede")}</SectionHead>
+      <div className="panel stack-3">
+        <div className="field">
+          <label htmlFor="stEngine">{t("settingsDialog.defaultEngineLabel")}</label>
+          <select
+            id="stEngine"
+            className="input"
+            value={agent.defaultEngine}
+            onChange={(e) => saveAgent({ ...agent, defaultEngine: e.target.value })}
+          >
+            {(engines.data ?? []).map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <ul className="dash">
+          {(engines.data ?? []).map((e) => (
+            <li key={e.id}>
+              {e.title} — {e.ok ? t("settingsDialog.engineReady") : (e.reason ?? t("settingsDialog.engineUnavailable"))}
+            </li>
+          ))}
+        </ul>
+        <div className="field">
+          <label htmlFor="stConfirm">{t("settingsDialog.confirmWritesLabel")}</label>
+          <input
+            id="stConfirm"
+            className="input num"
+            type="number"
+            min={0}
+            style={{ maxWidth: 120 }}
+            value={agent.confirmWritesOver}
+            onChange={(e) => saveAgent({ ...agent, confirmWritesOver: Math.max(0, Number(e.target.value) || 0) })}
+          />
+          <span className="meta-txt">{t("settingsDialog.confirmWritesNote")}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onSave: (p: ModelProfile) => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState<ModelProfile>(profile);
+  const set = (patch: Partial<ModelProfile>) => setDraft((d) => ({ ...d, ...patch }));
+  const valid = draft.model.trim().length > 0 && (draft.provider !== "anthropic" || draft.apiKey.trim().length > 0);
+  return (
+    <div className="panel stack-3" style={{ background: "var(--bg)" }}>
+      <div className="grid-2">
+        <div className="field">
+          <label htmlFor="pfTitle">{t("settingsDialog.profileNameLabel")}</label>
+          <input id="pfTitle" className="input" value={draft.title} placeholder={draft.model || t("settingsDialog.myModelPlaceholder")} onChange={(e) => set({ title: e.target.value })} />
+        </div>
+        <div className="field">
+          <label htmlFor="pfProvider">{t("settingsDialog.profileProviderLabel")}</label>
+          <select id="pfProvider" className="input" value={draft.provider} onChange={(e) => set({ provider: e.target.value as ModelProfile["provider"] })}>
+            <option value="openai-compatible">{t("settingsDialog.providerOpenaiCompatible")}</option>
+            <option value="anthropic">{t("settingsDialog.providerAnthropic")}</option>
+          </select>
+        </div>
+      </div>
+      <div className="grid-2">
+        {draft.provider === "openai-compatible" && (
+          <div className="field">
+            <label htmlFor="pfBase">{t("settingsDialog.baseUrlLabel")}</label>
+            <input id="pfBase" className="input num" value={draft.baseURL ?? ""} onChange={(e) => set({ baseURL: e.target.value })} />
+          </div>
+        )}
+        <div className="field">
+          <label htmlFor="pfModel">{t("settingsDialog.modelLabel")}</label>
+          <input id="pfModel" className="input num" value={draft.model} onChange={(e) => set({ model: e.target.value })} />
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="pfKey">{t("settingsDialog.apiKeyLabel")}</label>
+        <input id="pfKey" className="input num" type="password" value={draft.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+        <span className="meta-txt">{t("settingsDialog.localEndpointNote")}</span>
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => onSave({ ...draft, title: draft.title || draft.model })}>
+          {t("settingsDialog.saveProfile")}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          {t("common.cancel")}
+        </button>
+      </div>
+    </div>
   );
 }

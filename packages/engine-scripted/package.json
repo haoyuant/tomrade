@@ -1,0 +1,26 @@
+{
+  "name": "@tomrade/engine-scripted",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The no-model conductor: a menu of registered workflows, run deterministically — offline and keyless",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/agent": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

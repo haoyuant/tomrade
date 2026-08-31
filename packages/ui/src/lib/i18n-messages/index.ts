@@ -1,4 +1,4 @@
-import { aiPanel } from "./aiPanel";
+import { agentPanel } from "./agentPanel";
 import { board } from "./board";
 import { boardSettingsDialog } from "./boardSettingsDialog";
 import { card } from "./card";
@@ -61,7 +61,7 @@ export const en = {
   issueScreen: issueScreen.en,
   detailPane: detailPane.en,
   fields: fields.en,
-  aiPanel: aiPanel.en
+  agentPanel: agentPanel.en
 };
 
 export const zh: typeof en = {
@@ -97,5 +97,5 @@ export const zh: typeof en = {
   issueScreen: issueScreen.zh,
   detailPane: detailPane.zh,
   fields: fields.zh,
-  aiPanel: aiPanel.zh
+  agentPanel: agentPanel.zh
 };

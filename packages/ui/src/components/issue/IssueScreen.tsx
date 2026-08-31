@@ -6,7 +6,7 @@ import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { usePanelOpen } from "~/lib/panel";
-import { AiPanel, aiOpenKey } from "~/components/workspace/AiPanel";
+import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
 import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
@@ -211,11 +211,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
           </div>
         </main>
 
-        <AiPanel
-          open={aiOpen}
-          onToggle={setAiOpen}
-          scope={{ projectId, label: item.key, trace: `get_item · ${item.key}`, placeholder: t("issueScreen.aiPlaceholder", { key: item.key }) }}
-        />
+        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={projectId} onOpenSettings={() => setSettingsOpen(true)} />
       </div>
 
       <StatusBar projectId={projectId} onUndo={() => undo.mutate(undefined)}>

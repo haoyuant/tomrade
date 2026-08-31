@@ -10,6 +10,7 @@ export interface OplogRow {
   after_json: string | null;
   by: string;
   at: number;
+  run_id: string | null;
 }
 
 export function rowToEntry(r: OplogRow): OplogEntry {
@@ -22,6 +23,7 @@ export function rowToEntry(r: OplogRow): OplogEntry {
     before: r.before_json ? JSON.parse(r.before_json) : null,
     after: r.after_json ? JSON.parse(r.after_json) : null,
     by: r.by as Author,
-    at: r.at
+    at: r.at,
+    runId: r.run_id
   };
 }

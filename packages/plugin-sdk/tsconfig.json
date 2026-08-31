@@ -9,7 +9,7 @@
   ],
   "references": [
     {
-      "path": "../assistant"
+      "path": "../agent"
     },
     {
       "path": "../boards"

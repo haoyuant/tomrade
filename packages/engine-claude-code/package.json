@@ -1,0 +1,29 @@
+{
+  "name": "@tomrade/engine-claude-code",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The user's own Claude Code as a conductor: spawned headless, tools over MCP, sessions resumed per thread — policies, ledger and run-scoped undo apply unchanged",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/agent": "workspace:*",
+    "@tomrade/mcp": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

@@ -2,7 +2,7 @@
 
 **Tomrade** ("Tom" + "comrade") — a local-first backlog + knowledge workbench for solo devs and tiny teams, and a partner for your coding agents.
 
-Chat with an LLM → it extracts requirements → specs → epics → **features sized for one PR**. Tomrade tracks what exists (dedup) and what's missing (gaps), and protects human work as the highest priority. Claude Code / Codex / Cursor agents read and write Tomrade over **MCP**.
+Talk to the agent → it shapes the requirement with you → plans epics and **features sized for one PR** → writes the whole tree in one revertible run. Tomrade tracks what exists (dedup) and what's missing (gaps), and protects human work as the highest priority. Claude Code / Codex / Cursor agents read and write Tomrade over **MCP** — or take the conductor's seat themselves.
 
 ## Product decisions (direction of record)
 
@@ -10,9 +10,7 @@ Chat with an LLM → it extracts requirements → specs → epics → **features
 2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
 3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
 4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A third-party plugin uses the same mechanism with the same rights — see [`docs/plugin-api.md`](docs/plugin-api.md) and [`examples/stale`](examples/stale).
-5. **Two seams, not one.**
-   - `ctx.llm` — direct API calls (DeepSeek/Claude/OpenAI + zod validate-and-repair) for cheap structured work: extraction, dedup-judging, gap-checking.
-   - `ctx.agentExecutor` — delegate execution to the user's own CLI agents (`claude -p`, `codex exec`). Reserved, not yet provided: Tomrade plans and records; the CLI agent executes.
+5. **One agent platform, pluggable conductors.** `ctx.agent` owns what every conductor needs — threads, runs, the per-run ledger, cards, suspended workflows, run-scoped undo — and holds no opinion about what to do next. **Engines** decide that, and are plugins: `engine-loop` (a conversation model over the tool registry, guided by playbooks), `engine-scripted` (menu-driven, no model, offline), `engine-claude-code` / `engine-codex` (the user's own CLI agents, tools over MCP). Deterministic multi-step jobs are **workflows** — typed, resumable step machines exposed as tools to every engine; invariants are **policies** on `tools/pre-execute` (an agent create without a duplicate check is refused, whoever conducts). `ctx.llm` stays the model seam: profiles (DeepSeek/Anthropic/OpenAI-compatible/local) with `conversation` and `worker` roles.
 6. **One tool registry, every surface.** A tool registered on `ctx.tools` appears in the in-app assistant's prompt and on the MCP server at once. There is no per-surface code.
 7. **MCP server is a first-class interface.** VS Code coding agents list/read/write/search tickets over MCP (`@modelcontextprotocol/sdk`, TS). This is the product's open API.
 8. **Data shaped for future sync.** UUID PKs, `updated_at` + `updated_by` + `version` per row, an append-only **oplog** (feeds undo today, sync later). A permanent delete is the single exception: it removes the purged item's own rows and leaves a tombstone.
@@ -20,9 +18,9 @@ Chat with an LLM → it extracts requirements → specs → epics → **features
 
 ## Explicitly NOT doing
 
-- No enterprise write path: no changesets / approval gates / three-way merge / field provenance tables.
+- No approval gates: an agent run applies immediately, and **one click reverts the whole run** (oplog rows carry the `run_id`). No changesets / three-way merge / field provenance tables.
 - No event sourcing / reactive reaction model. Plain transactional writes; policy is a synchronous waterfall in front of the commit.
-- No agent loop, turn driver, compaction, sandboxes or subagents. The `agentExecutor` seam is the whole answer.
+- No orchestration graphs and no per-message intent router: one engine conducts a thread; composition happens through workflows-as-tools.
 - No code evaluation in configuration. `tomrade.yml` is static YAML with `${userData}`-style substitution and nothing more.
 - No profile or bundle layering. One file plus one patch file, merged by id.
 - No renderer plugin bundles. Plugins contribute data — commands, badges, status items, sections, settings cards — and the UI draws it with its own primitives.
@@ -42,12 +40,16 @@ packages/items        ctx.items        issues, labels, relations (+ their tools 
 packages/boards       ctx.boards, ctx.views
 packages/projects     ctx.projects
 packages/tools        ctx.tools        one registry, guarded execute
-packages/llm          ctx.llm          the LLM seam (OpenAI-compatible by default, FakeLlm for tests)
+packages/llm          ctx.llm          model profiles + roles; chat-with-tools + structured JSON; OpenAI-compatible & Anthropic adapters
 packages/settings     ctx.settings     file-backed; sections registered by zod schema
 packages/storage      ctx.storage      where a project's shareable copy lives; the text artifact; flush/refresh
 packages/storage-git  —                a git repository as a destination (the base the hosting providers use)
 packages/storage-github —              GitHub: repository discovery and creation on top of storage-git
-packages/assistant    ctx.assistant    chat routing over ctx.tools; extract / dedup / gap workflows
+packages/agent        ctx.agent        the platform: threads, runs, ledger, cards, workflows, run undo, registries
+packages/engine-loop  —                the hybrid conversational conductor
+packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu
+packages/engine-claude-code —          Claude Code as conductor (headless, MCP run bindings); engine-codex likewise
+packages/agent-backlog —               the backlog method: playbooks, dossier, find_similar, plan_and_apply, dedup policy
 packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
 packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
 packages/contributions ctx.contributions  declarative UI contributions
@@ -96,7 +98,7 @@ Run `pnpm dev`. The MCP server listens on `http://127.0.0.1:19090/mcp` (shown in
 
 Every registered tool is exposed as `tomrade.<name>`: `list_boards`, `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `delete_item`, `extract_tickets`, `gap_analysis` — plus whatever plugins add (`list_stale_items` from the example). Views are deliberately invisible to MCP. `delete_item` is the *reversible* delete; there is no purge tool, and the refusal lives in the write policy, not in the absence of a tool.
 
-AI writes are recorded as `ai:mcp` (or `ai:assistant`, `ai:<plugin>`) in the oplog, carry the `baseVersion` the caller read — a write tool that omits it asserts the version it reads itself — and are rejected when the item is human-locked or the version is stale.
+AI writes are recorded as `ai:mcp` (or `ai:agent`, `ai:claude-code`, `ai:<plugin>`) in the oplog, carry the `baseVersion` the caller read — a write tool that omits it asserts the version it reads itself — and are rejected when the item is human-locked or the version is stale.
 
 ## Working on it
 

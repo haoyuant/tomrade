@@ -120,15 +120,16 @@ consumer follows.
 | `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
 | `ctx.storage` | spine registry | `@tomrade/storage` | Where a project's shareable copy lives: providers, the text artifact, flush/refresh |
-| `ctx.llm` | seam | `@tomrade/llm` | `completeJson(schema, request)`; OpenAI-compatible by default |
-| `ctx.assistant` | — | `@tomrade/assistant` | Chat routing over `ctx.tools` |
+| `ctx.llm` | seam | `@tomrade/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
+| `ctx.agent` | spine registry | `@tomrade/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
 | `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
 | `ctx.plugins` | — | `@tomrade/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
 
-Reserved, not yet declared or provided: `ctx.agentExecutor` (delegation to
-`claude -p`, `codex exec`), `ctx.search` (FTS5, later a vector column),
-`ctx.sync`. A plugin may provide any of them today; until a first-party
-declaration lands it augments `Context` with the key itself.
+Reserved, not yet declared or provided: `ctx.search` (FTS5, later a vector
+column), `ctx.sync`. A plugin may provide either today; until a first-party
+declaration lands it augments `Context` with the key itself. (The old
+`ctx.agentExecutor` reservation is fulfilled: a CLI agent is an **engine** —
+see below.)
 
 ### Providing a seam
 
@@ -189,6 +190,65 @@ what it provided. Nothing here makes a plugin safe — `write-policy` provides n
 service, holds no module, and is therefore switchable, which is the same thing
 the contract says about removing its row by hand.
 
+## The agent
+
+`ctx.agent` is the platform every conductor runs on. It owns the threads, the
+runs, the per-run ledger, cards (durable thread state such as the requirement
+dossier), suspended workflows, and run-scoped undo (`oplog.undoRun`); it holds
+no opinion about what to do next. Four registrations extend it, all effects:
+
+```ts
+// An ENGINE takes turns: it reads the thread, emits blocks, calls tools.
+ctx.agent.engine({
+  id: "acme", title: "Acme", author: "ai:acme",
+  available: async () => ({ ok: true }),
+  async turn(input, io) {
+    const items = await io.tools.execute("list_items", { status: "backlog" });
+    io.emit({ type: "text", text: `${(items as unknown[]).length} in the backlog.` });
+    return { stop: "end" };
+  }
+});
+
+// A WORKFLOW is a typed, resumable step machine, exposed to every engine as a
+// tool named by its id. Control flow is code; a step that returns `ask`
+// suspends — the platform persists the state and feeds the user's next
+// on-script answer back into the same step.
+ctx.agent.workflow({
+  id: "release_wizard", title: "Release wizard", description: "…",
+  input: z.object({}), state: z.object({ version: z.string() }), entry: "ask",
+  steps: {
+    ask: (state, io, answer) =>
+      answer === undefined
+        ? { ask: { text: "Which version?", freeText: true }, state }
+        : { done: { version: String(answer) } }
+  }
+});
+
+// A PLAYBOOK is methodology for model-driven engines: the `when` line lives in
+// every prompt, the body loads on demand (open_playbook). SKILL.md files in
+// <userData>/playbooks/<name>/ register the same way, editable without a plugin.
+ctx.agent.playbook({ id: "acme.review", title: "Review", when: "the user asks for a review", body: "…" });
+
+// A POLICY is an invariant in code: it runs on tools/pre-execute for calls that
+// belong to an agent run and can read the run's ledger and waivers. Throw to
+// refuse — the message reaches the model, which self-corrects.
+ctx.agent.policy({
+  id: "one-doc-per-run",
+  before: (call, next) => (call.name === "write_doc" && call.run.ledger.find((e) => e.tool === "write_doc") ? Promise.reject(new Error("one document per run")) : next())
+});
+```
+
+Engines emit **blocks** — text, trace, question, card, status, changes, note —
+and the panel draws them with the design system's own primitives; a
+third-party engine ships no UI code. While a workflow is suspended, on-script
+input resumes it deterministically; off-script input goes to the engine, which
+holds `resume_workflow` / `cancel_workflow`. Every tool call an engine makes is
+run-bound: the oplog rows it produces carry the `run_id`, which is what makes
+"Changed 15 items · Revert" one click. A CLI agent (Claude Code, Codex) is an
+engine like any other: it gets the tools over MCP with a per-run token
+(`ctx.mcp.bindRun`), so the ledger, the policies and the revert apply to it
+unchanged.
+
 ## Events
 
 Events are the policy layer. `emit` announces; `waterfall` decides — a listener
@@ -200,7 +260,7 @@ inside a SQLite transaction.
 |---|---|---|
 | `write/pre-commit` | waterfall | Refuse or allow a mutation before it lands. `WriteIntent` carries `entity`, `op`, `id`, `by`, `baseVersion`, `before`, `after`, `patch`. |
 | `write/committed` | emit | A durable fact: the rows and the oplog entry exist. |
-| `tools/pre-execute` | waterfall | Refuse or allow a tool call, first-party or plugin, whoever invokes it. |
+| `tools/pre-execute` | waterfall | Refuse or allow a tool call, first-party or plugin, whoever invokes it. `ToolCall.run` is present when it belongs to an agent run. |
 | `tools/result` | emit | The outcome of a tool call, success or failure. |
 | `settings/changed` | emit | Settings were saved; providers re-read. |
 
@@ -222,11 +282,12 @@ ctx.tools.register(defineTool({ name, title, description, input: z.object({...})
 ```
 
 Names are global and unique. `execute` receives validated `args` and
-`{ by, projectId }`; use `inv.by` as the author of any write and
-`inv.projectId` as the default scope. A registered tool appears on every
-surface at once: the in-app assistant's prompt is generated from
-`ctx.tools.describe()`, and each MCP session registers `tomrade.<name>` from
-`ctx.tools.list()`. There is no per-surface code to write.
+`{ by, projectId, run? }`; use `inv.by` as the author of any write,
+`inv.projectId` as the default scope, and `inv.run` (present inside an agent
+run) for the ledger and run-scoped state. A registered tool appears on every
+surface at once: engines see it via `io.tools.describe()`, and each MCP
+session registers it under its own name — the server name is the namespace.
+There is no per-surface code to write.
 
 ## Storage
 
@@ -396,9 +457,9 @@ return type. Every renderer write is a human write; channel handlers pass
 
 ## What is deliberately not here
 
-- No agent loop, turn driver, compaction or sandbox. Tomrade plans and records;
-  the user's CLI agent executes. That delegation is the unbuilt
-  `ctx.agentExecutor` seam.
+- No orchestration graph and no per-message intent router. One engine conducts
+  a thread; determinism lives in workflows and policies, judgment in the
+  engine's model — and a CLI agent can be the engine.
 - No code evaluation in configuration. `tomrade.yml` is static YAML with
   `${userData}`-style substitution and nothing more.
 - No profile or bundle layering. One file, one patch file, merged by id.
