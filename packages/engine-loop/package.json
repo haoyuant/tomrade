@@ -1,0 +1,29 @@
+{
+  "name": "@tomrade/engine-loop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The hybrid loop engine: a conversation model reasons over the tool registry, guided by playbooks, bounded by budgets",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/agent": "workspace:*",
+    "@tomrade/llm": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

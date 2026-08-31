@@ -86,8 +86,10 @@ export class Mcp extends Service {
     app.post("/mcp", async (req, res) => {
       const existing = transports.get(sessionIdOf(req) ?? "");
       if (existing) return existing.handleRequest(req, res, req.body);
-      const token = req.headers["x-tomrade-run"];
-      const server = this.session(typeof token === "string" ? this.bindings.get(token) : undefined);
+      const header = req.headers["x-tomrade-run"];
+      const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
+      const token = typeof header === "string" ? header : bearer;
+      const server = this.session(token ? this.bindings.get(token) : undefined);
       const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {

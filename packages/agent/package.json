@@ -1,0 +1,36 @@
+{
+  "name": "@tomrade/agent",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.agent — the platform every engine runs on: threads, runs, the ledger, blocks, suspended workflows, run-scoped undo, and the engine/workflow/playbook/policy registries",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/db": "workspace:*",
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/llm": "workspace:*",
+    "@tomrade/oplog": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "@tomrade/write": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}
