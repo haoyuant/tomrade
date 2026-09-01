@@ -19,6 +19,7 @@ import {
   type CardView,
   type Engine,
   type EngineView,
+  type FocusRef,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
@@ -54,7 +55,7 @@ declare module "@tomrade/ipc" {
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (threadId: string) => ThreadDetail;
     "agent.newThread": (projectId: string, engine?: string) => ThreadSummary;
-    "agent.send": (threadId: string, text: string) => { runId: string };
+    "agent.send": (threadId: string, text: string, focus?: FocusRef[]) => { runId: string };
     "agent.answer": (threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
     "agent.revert": (runId: string) => UndoRunResult;
@@ -166,7 +167,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
       ctx.ipc.handle("agent.thread", (threadId) => ctx.agent.thread(threadId));
       ctx.ipc.handle("agent.newThread", (projectId, engine) => ctx.agent.newThread(projectId, engine));
-      ctx.ipc.handle("agent.send", (threadId, text) => ctx.agent.send(threadId, { kind: "text", text }));
+      ctx.ipc.handle("agent.send", (threadId, text, focus) => ctx.agent.send(threadId, { kind: "text", text, focus }));
       ctx.ipc.handle("agent.answer", (threadId, questionId, value) => ctx.agent.send(threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.revert", (runId) => ctx.agent.revert(runId));
@@ -359,7 +360,8 @@ export class Agent extends Service {
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
-    this.appendAndBroadcast(threadId, "user", { type: "text", text }, null);
+    const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
+    this.appendAndBroadcast(threadId, "user", focus ? { type: "text", text, focus } : { type: "text", text }, null);
     if (!thread.title) this.store.touchThread(threadId, { title: text.slice(0, 60) });
 
     const run = this.store.beginRun(threadId, engine.id);
@@ -502,6 +504,7 @@ export class Agent extends Service {
         cards: this.store.cards(rc.threadId),
         brief: this.store.brief(rc.projectId),
         pending: pending ? this.pendingView(pending) : null,
+        focus: input.kind === "text" && input.focus?.length ? input.focus : undefined,
         options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions
       };
       result = await rc.engine.turn(turnInput, rc.io);

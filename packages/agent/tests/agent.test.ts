@@ -45,6 +45,30 @@ describe("the loop engine on the platform", () => {
     expect(blocks.some((b) => b.type === "text" && b.text.includes("never rains"))).toBe(true);
   });
 
+  it("carries what the user was viewing into the prompt and persists it on the message", async () => {
+    let history: ChatRequest["messages"] = [];
+    const { ctx, agent, project } = await boot((req) => {
+      history = req.messages;
+      return { text: "Raised it." };
+    });
+    const thread = agent.newThread(project.id);
+    const { runId } = agent.send(thread.id, {
+      kind: "text",
+      text: "把这个的优先级提一下",
+      focus: [
+        { kind: "item", id: "it_1", key: "TOM-7", title: "Fix login" },
+        { kind: "board", id: "bd_1", title: "Sprint" }
+      ]
+    });
+    const run = await settled(ctx, runId);
+    expect(run.status).toBe("done");
+    const userText = history[0]?.content[0]?.type === "text" ? history[0].content[0].text : "";
+    expect(userText).toContain('(viewing: item TOM-7 "Fix login", board "Sprint" [bd_1])');
+    // the snapshot lives on the message, so later turns and the panel both see it
+    const stored = agent.store.messages(thread.id).find((m) => m.role === "user")?.block;
+    expect(stored?.type === "text" && stored.focus?.[0]?.key).toBe("TOM-7");
+  });
+
   it("recovers from the dedup policy refusal, then creates once", async () => {
     const title = "Award a badge for a 7-day streak";
     const script = (req: ChatRequest, step: number): FakeTurn => {

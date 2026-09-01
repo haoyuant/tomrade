@@ -4,9 +4,22 @@ import type { Author } from "@tomrade/domain";
 import type { LlmService } from "@tomrade/llm";
 import type { RunHandle, ToolDescriptor } from "@tomrade/tools";
 
+/**
+ * What the user was looking at when they sent a message. Kinds are open on
+ * purpose — a plugin can put its own surface on screen (a future "doc").
+ * Purely a hint for resolving "this/current"; tools still take explicit ids.
+ */
+export interface FocusRef {
+  kind: string;
+  id: string;
+  /** Human-readable key where the entity has one (items do, boards don't). */
+  key?: string;
+  title: string;
+}
+
 /** Everything the panel knows how to draw. Engines emit these; the UI has no engine-specific code. */
 export type Block =
-  | { type: "text"; text: string }
+  | { type: "text"; text: string; focus?: FocusRef[] }
   | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number }
   | { type: "question"; id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean }
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
@@ -64,7 +77,7 @@ export interface CardView {
 }
 
 export type UserInput =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; focus?: FocusRef[] }
   | { kind: "answer"; questionId: string; value: string | string[] };
 
 export interface PendingView {
@@ -126,6 +139,8 @@ export interface TurnInput {
   brief: string | null;
   /** A question still waiting that the platform did NOT route — off-script input lands here. */
   pending: PendingView | null;
+  /** What was on the user's screen when they sent the triggering message; deixis resolves here. */
+  focus?: FocusRef[];
   /** Parsed engine options from settings (validated against Engine.options). */
   options: unknown;
 }
