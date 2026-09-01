@@ -30,12 +30,15 @@ async function settled(ctx: Context, runId: string, timeout = 8000): Promise<Run
 }
 
 describe("the Claude Code engine", () => {
-  it("maps stream-json to blocks, stores the session id, and resumes with it", async () => {
+  it("maps stream-json to blocks, passes the picked model and effort, and resumes with the session id", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-"));
     const bin = path.join(dir, "claude.sh");
     fs.writeFileSync(bin, FAKE, { mode: 0o755 });
     const settingsPath = path.join(dir, "settings.json");
-    fs.writeFileSync(settingsPath, JSON.stringify({ agent: { defaultEngine: "claude-code", confirmWritesOver: 0, engines: { "claude-code": { command: bin } } } }));
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ agent: { defaultEngine: "claude-code", confirmWritesOver: 0, engines: { "claude-code": { command: bin, model: "opus", effort: "high" } } } })
+    );
 
     const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
     await settle();
@@ -53,6 +56,8 @@ describe("the Claude Code engine", () => {
     expect(args1).toContain("--output-format");
     expect(args1).toContain("mcp__tomrade__*");
     expect(args1).toContain("dontAsk");
+    expect(args1).toContain("--model\nopus");
+    expect(args1).toContain("--effort\nhigh");
     expect(args1).not.toContain("--resume");
 
     const second = ctx.agent.send(thread.id, { kind: "text", text: "again" });

@@ -80,6 +80,7 @@ export class OpenAiCompatible implements ChatModel {
     };
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
+    if (request.effort) body.reasoning_effort = request.effort;
     if (request.tools?.length) {
       body.tools = request.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
       const choice = request.toolChoice;

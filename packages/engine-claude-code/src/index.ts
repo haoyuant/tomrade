@@ -13,6 +13,8 @@ export const ClaudeCodeOptions = z.object({
   command: z.string().default("claude"),
   /** Passed as --model; empty = whatever the user's Claude Code is configured with. */
   model: z.string().optional(),
+  /** Passed as --effort; the CLI validates the level, so new levels need no release here. */
+  effort: z.string().optional(),
   maxTurns: z.number().int().min(1).max(200).default(24),
   maxBudgetUsd: z.number().positive().optional(),
   /** Claude Code's own tools to allow besides the tomrade MCP tools (e.g. "WebSearch", "Read", "Bash"). */
@@ -39,6 +41,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     title: "Claude Code",
     author: "ai:claude-code",
     options: ClaudeCodeOptions,
+    picks: () => [
+      // aliases the CLI resolves itself, so they don't go stale with releases
+      { key: "model", title: "Model", choices: [{ value: "sonnet" }, { value: "opus" }, { value: "haiku" }], freeText: true },
+      { key: "effort", title: "Effort", choices: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }, { value: "max" }] }
+    ],
     async available() {
       if (probe && Date.now() - probe.at < 30_000) return probe.state;
       const bin = await binaryOk("claude");
@@ -100,6 +107,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
       ];
       if (options.maxBudgetUsd) args.push("--max-budget-usd", String(options.maxBudgetUsd));
       if (options.model) args.push("--model", options.model);
+      if (options.effort) args.push("--effort", options.effort);
       if (io.resume) args.push("--resume", io.resume);
 
       const usage = { inputTokens: 0, outputTokens: 0 };

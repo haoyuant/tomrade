@@ -36,7 +36,11 @@ export interface LlmStatus {
  */
 export interface LlmService extends LLMProvider {
   for(role: LlmRole): ChatModel;
+  /** A specific profile by id, regardless of role bindings. Throws on an unknown id. */
+  forProfile(id: string): ChatModel;
   ready(role: LlmRole): LlmStatus;
+  /** The configured profiles, for pickers. */
+  profiles(): { id: string; title: string }[];
 }
 
 declare module "cordis" {
@@ -115,6 +119,20 @@ export class Llm extends Service implements LlmService {
   for(role: LlmRole): ChatModel {
     const profile = this.profileFor(role);
     if (!profile) throw new LlmError("No model profile configured — add one in Settings → Assistant");
+    return this.adapterOf(profile);
+  }
+
+  forProfile(id: string): ChatModel {
+    const profile = this.models().profiles.find((p) => p.id === id);
+    if (!profile) throw new LlmError(`Unknown model profile "${id}" — pick another in the panel or Settings → Assistant`);
+    return this.adapterOf(profile);
+  }
+
+  profiles(): { id: string; title: string }[] {
+    return this.models().profiles.map((p) => ({ id: p.id, title: p.title || p.model }));
+  }
+
+  private adapterOf(profile: ModelProfile): ChatModel {
     const key = JSON.stringify(profile);
     const cached = this.cache.get(key);
     if (cached) return cached;
@@ -178,6 +196,14 @@ export class FakeLlm implements LlmService {
     throw new LlmError("FakeLlm has no chat model; use fakeChat() in tests that run an engine");
   }
 
+  forProfile(): ChatModel {
+    throw new LlmError("FakeLlm has no chat model; use fakeChat() in tests that run an engine");
+  }
+
+  profiles(): { id: string; title: string }[] {
+    return [];
+  }
+
   ready(): LlmStatus {
     return { ok: false, reason: "FakeLlm answers completeJson only" };
   }
@@ -224,6 +250,8 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
   apply(ctx: Context) {
     const service: LlmService = {
       for: () => model,
+      forProfile: () => model,
+      profiles: () => [{ id: "fake", title: "fake" }],
       ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
         if (!respond) throw new LlmError("fakeChat was given no completeJson responder");

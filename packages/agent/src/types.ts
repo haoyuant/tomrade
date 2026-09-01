@@ -167,7 +167,18 @@ export interface Engine {
   available(): Promise<{ ok: boolean; reason?: string }>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
+  /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
+  picks?(): EnginePick[];
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
+}
+
+/** One quick-pick knob: "model" and "effort" keys get localized group labels; other keys show `title`. */
+export interface EnginePick {
+  key: string;
+  title: string;
+  choices: { value: string; label?: string }[];
+  /** Choices are suggestions only — settings may hold any string (e.g. a model id the CLI knows). */
+  freeText?: boolean;
 }
 
 export interface EngineView {
@@ -175,6 +186,7 @@ export interface EngineView {
   title: string;
   ok: boolean;
   reason?: string;
+  picks?: EnginePick[];
 }
 
 export interface WorkflowQuestion {
