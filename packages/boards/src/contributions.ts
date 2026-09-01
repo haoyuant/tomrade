@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Board, BoardPatch, CreateBoardInput, CreatedBoard, CreateViewInput, View, ViewPatch } from "@tomrade/domain";
+import type { Board, BoardPatch, CreateBoardInput, CreatedBoard, View, ViewPatch } from "@tomrade/domain";
 import { defineTool } from "@tomrade/tools";
 import type {} from "@tomrade/ipc";
 
@@ -12,9 +12,7 @@ declare module "@tomrade/ipc" {
     "boards.remove": (id: string) => void;
     "boards.moveItems": (from: string, to: string, itemIds: string[]) => number;
     "views.list": (projectId: string) => View[];
-    "views.create": (input: CreateViewInput) => View;
     "views.update": (id: string, patch: ViewPatch) => View;
-    "views.remove": (id: string) => void;
     "views.ranks": (viewId: string) => Record<string, number>;
     "views.setRank": (viewId: string, itemId: string, rank: number) => void;
   }
@@ -40,9 +38,7 @@ export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("boards.remove", (id) => ctx.boards.remove(id));
   ctx.ipc.handle("boards.moveItems", (from, to, itemIds) => ctx.boards.moveItems(from, to, itemIds));
   ctx.ipc.handle("views.list", (projectId) => ctx.views.listForProject(projectId));
-  ctx.ipc.handle("views.create", (input) => ctx.views.create(input));
   ctx.ipc.handle("views.update", (id, patch) => ctx.views.update(id, patch));
-  ctx.ipc.handle("views.remove", (id) => ctx.views.remove(id));
   ctx.ipc.handle("views.ranks", (viewId) => ctx.views.ranks(viewId));
   ctx.ipc.handle("views.setRank", (viewId, itemId, rank) => ctx.views.setRank(viewId, itemId, rank));
 }

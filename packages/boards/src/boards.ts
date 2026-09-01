@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
-import { insertDefaultView, type Db } from "@tomrade/db";
+import { insertBuiltinViews, type Db } from "@tomrade/db";
 import type { Oplog } from "@tomrade/oplog";
 import { write } from "@tomrade/write";
 import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput, type CreatedBoard } from "@tomrade/domain";
@@ -73,7 +73,7 @@ export class Boards extends Service {
     return board;
   }
 
-  /** A new board always gets the All work view, so it can never open empty. */
+  /** A new board always gets its four built-in views, so it can never open empty. */
   create(input: CreateBoardInput, by: Author = "human"): CreatedBoard {
     const now = Date.now();
     const nextRank =
@@ -100,7 +100,7 @@ export class Boards extends Service {
              VALUES (@id, @projectId, @name, @icon, @subtitle, @across, @sort, @note, @rank, @createdAt, @updatedAt)`
           )
           .run({ ...board, across: board.across ? 1 : 0 });
-        const defaultViewId = insertDefaultView(this.db, board.id, now);
+        const defaultViewId = insertBuiltinViews(this.db, board.id, now);
         this.oplog.append({ entity: "board", op: "create", entityId: board.id, baseVersion: null, before: null, after: board, by, at: now });
         return { ...board, defaultViewId };
       })

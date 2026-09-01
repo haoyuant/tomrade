@@ -9,7 +9,6 @@ import type {
   CreatedBoard,
   CreateItemInput,
   CreateProjectInput,
-  CreateViewInput,
   Item,
   Patch,
   Project,
@@ -221,29 +220,10 @@ export function useMoveItemsToBoard(projectId: string) {
   });
 }
 
-export function useCreateView(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: CreateViewInput): Promise<View> => invoke("views.create", input),
-    onSuccess: (view) => {
-      qc.setQueryData<View[]>(keys.views(projectId), (prev) => (prev ? [...prev, view] : prev));
-      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-    }
-  });
-}
-
 export function useUpdateView(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; patch: ViewPatch }) => invoke("views.update", args.id, args.patch),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.views(projectId) })
-  });
-}
-
-export function useRemoveView(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => invoke("views.remove", id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.views(projectId) })
   });
 }

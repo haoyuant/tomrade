@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 3;
+export const CORE_SCHEMA_VERSION = 4;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -31,12 +31,15 @@ CREATE TABLE IF NOT EXISTS boards (
   updated_at    INTEGER NOT NULL
 );
 
+-- name/icon/group_by are legacy columns the app no longer reads; kept for
+-- schema stability. kind is the four-value built-in view identity.
 CREATE TABLE IF NOT EXISTS views (
   id            TEXT PRIMARY KEY,
   board_id      TEXT NOT NULL,
   name          TEXT NOT NULL,
   icon          TEXT NOT NULL DEFAULT 'i-board',
   group_by      TEXT NOT NULL DEFAULT 'status',
+  kind          TEXT NOT NULL DEFAULT 'status',
   columns_json  TEXT NOT NULL DEFAULT '[]',
   filter_json   TEXT NOT NULL DEFAULT '{}',
   wip_json      TEXT NOT NULL DEFAULT '{}',

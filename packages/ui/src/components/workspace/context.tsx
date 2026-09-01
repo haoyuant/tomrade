@@ -2,17 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useNavigate } from "@tanstack/react-router";
 import type { Badge } from "@tomrade/contributions";
 import type { Board, Item, Project, View } from "@tomrade/domain";
-import {
-  columnKeyOf,
-  filterCount,
-  isDirty,
-  isTicket,
-  itemsFor,
-  queryFromView,
-  type BoardQuery
-} from "~/lib/domain";
+import { columnKeyOf, filterCount, filterFromQuery, isTicket, itemsFor, queryFromView, type BoardQuery } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useBadges, useBoards, useItems, useLabels, useProjects, useViewRanks, useViews } from "~/lib/queries";
+import { useBadges, useBoards, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";
 
 export interface WorkspaceValue {
   project: Project;
@@ -23,16 +15,14 @@ export interface WorkspaceValue {
   labels: string[];
   board: Board;
   view: View;
-  /** Views saved on the active board, in roster order. */
+  /** The active board's four built-in views, in their fixed order. */
   boardViews: View[];
   /** Epics are items; the epic grouping's column space is their ids. */
   epics: Item[];
   epicNames: Map<string, string>;
-  /** The live query — the render source of truth, a clone of the saved view. */
+  /** The live query — the render source of truth. Filter edits auto-save to the view a moment after they land. */
   query: BoardQuery;
   setQuery: (next: BoardQuery) => void;
-  savedQuery: BoardQuery;
-  dirty: boolean;
   filterCount: number;
   /** Issues on this board that pass the query and land in a shown column. */
   visible: Item[];
@@ -74,6 +64,7 @@ export function WorkspaceProvider({
   const labels = useLabels(projectId);
   const ranks = useViewRanks(viewId);
   const badges = useBadges(projectId);
+  const updateView = useUpdateView(projectId);
   const [selectedId, select] = useState<string | null>(null);
 
   const project = projects.data?.find((p) => p.id === projectId);
@@ -109,6 +100,18 @@ export function WorkspaceProvider({
     });
   }, [epicKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A facet edit is a live, unsaved query until this settles it onto the view a
+  // beat later — there is no separate "save this view" step to forget.
+  const filterKey = query ? JSON.stringify(filterFromQuery(query)) : null;
+  useEffect(() => {
+    if (!view || !query) return;
+    const nextFilter = filterFromQuery(query);
+    if (JSON.stringify(nextFilter) === JSON.stringify(view.filter ?? {})) return;
+    const timer = setTimeout(() => updateView.mutate({ id: view.id, patch: { filter: nextFilter } }), 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey, view?.id]);
+
   const settled = !projects.isLoading && !boards.isLoading && !views.isLoading;
 
   const openSpace = useCallback(
@@ -139,8 +142,6 @@ export function WorkspaceProvider({
       epicNames: new Map(epics.map((e) => [e.id, e.title])),
       query,
       setQuery: (next: BoardQuery) => setQuery(next),
-      savedQuery,
-      dirty: isDirty(query, savedQuery),
       filterCount: filterCount(query),
       visible: itemsFor(all, board, query, rankMap),
       owned,

@@ -1,5 +1,5 @@
 import type { Db } from "@tomrade/db";
-import { InUseError, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomrade/domain";
+import { InUseError, VIEW_KIND_META, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View, type ViewKind } from "@tomrade/domain";
 import { rowToEntry, type OplogRow } from "./rows.js";
 
 interface ViewRow {
@@ -8,6 +8,7 @@ interface ViewRow {
   name: string;
   icon: string;
   group_by: string;
+  kind: string;
   columns_json: string;
   filter_json: string;
   wip_json: string;
@@ -82,19 +83,25 @@ function restoreItem(db: Db, item: Item): void {
 }
 
 function restoreView(db: Db, view: ViewSnapshot): void {
+  // A snapshot written before `kind` replaced the freeform name/groupBy pair
+  // (view rename/removal predates this build) still carries the old fields.
+  const legacy = view as unknown as { groupBy?: ViewKind };
+  const kind: ViewKind = view.kind ?? legacy.groupBy ?? "status";
+  const meta = VIEW_KIND_META[kind] ?? VIEW_KIND_META.status;
   db.prepare(
-    `INSERT INTO views (id, board_id, name, icon, group_by, columns_json, filter_json, wip_json, rank, created_at, updated_at)
-     VALUES (@id, @boardId, @name, @icon, @groupBy, @columns, @filter, @wip, @rank, @createdAt, @updatedAt)
+    `INSERT INTO views (id, board_id, name, icon, group_by, kind, columns_json, filter_json, wip_json, rank, created_at, updated_at)
+     VALUES (@id, @boardId, @name, @icon, @groupBy, @kind, @columns, @filter, @wip, @rank, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
-       name = excluded.name, icon = excluded.icon, group_by = excluded.group_by,
+       name = excluded.name, icon = excluded.icon, group_by = excluded.group_by, kind = excluded.kind,
        columns_json = excluded.columns_json, filter_json = excluded.filter_json,
        wip_json = excluded.wip_json, rank = excluded.rank, updated_at = excluded.updated_at`
   ).run({
     id: view.id,
     boardId: view.boardId,
-    name: view.name,
-    icon: view.icon,
-    groupBy: view.groupBy,
+    name: meta.name,
+    icon: meta.icon,
+    groupBy: meta.groupBy,
+    kind,
     columns: JSON.stringify(view.columns),
     filter: JSON.stringify(view.filter),
     wip: JSON.stringify(view.wip),
@@ -129,11 +136,13 @@ function restoreBoard(db: Db, board: BoardSnapshot): void {
     updatedAt: board.updatedAt
   });
   for (const v of board.views ?? []) {
+    // A snapshot taken before `kind` existed carries only group_by; back-fill from it.
+    const row = v as ViewRow & { kind?: string };
     db.prepare(
-      `INSERT INTO views (id, board_id, name, icon, group_by, columns_json, filter_json, wip_json, rank, created_at, updated_at)
-       VALUES (@id, @board_id, @name, @icon, @group_by, @columns_json, @filter_json, @wip_json, @rank, @created_at, @updated_at)
+      `INSERT INTO views (id, board_id, name, icon, group_by, kind, columns_json, filter_json, wip_json, rank, created_at, updated_at)
+       VALUES (@id, @board_id, @name, @icon, @group_by, @kind, @columns_json, @filter_json, @wip_json, @rank, @created_at, @updated_at)
        ON CONFLICT(id) DO NOTHING`
-    ).run(v);
+    ).run({ ...row, kind: row.kind ?? row.group_by });
   }
 }
 

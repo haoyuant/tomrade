@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Priority } from "@tomrade/domain";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
-import { GROUPS, PRIORITIES, STATUS_KEYS, columnKeyOf, columnLabel, filterFromQuery } from "~/lib/domain";
+import { GROUPS, PRIORITIES, STATUS_KEYS, VIEW_KINDS, columnKeyOf, columnLabel, filterFromQuery } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -23,13 +23,12 @@ export function ViewSettingsDialog({
   const ws = useWorkspace();
   const updateView = useUpdateView(ws.project.id);
   const toast = useToast();
-  const [name, setName] = useState(ws.view.name);
+  const kindLabel = VIEW_KINDS[ws.view.kind].label;
   const [columns, setColumns] = useState(ws.query.columns);
   const [wip, setWip] = useState(ws.query.wip);
 
   useEffect(() => {
     if (!open) return;
-    setName(ws.view.name);
     setColumns(ws.query.columns);
     setWip(ws.query.wip);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -46,21 +45,17 @@ export function ViewSettingsDialog({
 
   const save = () => {
     if (!columns.length) return;
-    const patch = { name: name.trim() || ws.view.name, groupBy: ws.query.group, columns, wip, filter: filterFromQuery(ws.query) };
+    const patch = { columns, wip, filter: filterFromQuery(ws.query) };
     updateView.mutate({ id: ws.view.id, patch });
     ws.setQuery({ ...ws.query, columns, wip });
     onOpenChange(false);
-    toast({ body: <>{tx("viewSettingsDialog.savedToast", { name: <span className="num">{patch.name}</span> })}</> });
+    toast({ body: <>{tx("viewSettingsDialog.savedToast", { name: <span className="num">{kindLabel}</span> })}</> });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label={t("viewSettingsDialog.dialogLabel")} className="sheet-view">
-      <DialogHead title={t("viewSettingsDialog.dialogLabel")} aside={<Tag tone="neutral">{ws.board.name}</Tag>} />
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("viewSettingsDialog.dialogLabel", { kind: kindLabel })} className="sheet-view">
+      <DialogHead title={t("viewSettingsDialog.dialogLabel", { kind: kindLabel })} aside={<Tag tone="neutral">{ws.board.name}</Tag>} />
       <DialogBody className="stack-4">
-        <div className="field">
-          <label htmlFor="vsName">{t("viewSettingsDialog.viewNameLabel")}</label>
-          <input id="vsName" className="input" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
         <div>
           <Eyebrow>
             {t("viewSettingsDialog.columnsLabel")}
