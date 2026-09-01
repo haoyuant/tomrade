@@ -153,13 +153,18 @@ export interface CreateBoardInput {
   rank?: number;
 }
 
-/** A created board carries the id of the All work view it was given. */
+/** A created board carries the id of the Status view it was given. */
 export type CreatedBoard = Board & { defaultViewId: string };
 
 export type BoardPatch = Partial<Pick<Board, "name" | "icon" | "subtitle" | "note" | "rank">>;
 
 /** What each board column represents. Dragging writes this field. */
 export type GroupBy = "status" | "priority" | "epic";
+
+/** The app's four built-in views. Fixed — never created, renamed or removed by a user. */
+export type ViewKind = "status" | "priority" | "epic" | "dependencies";
+
+export const VIEW_KINDS: readonly ViewKind[] = ["status", "priority", "epic", "dependencies"];
 
 export interface ViewFilter {
   labels?: string[];
@@ -169,13 +174,11 @@ export interface ViewFilter {
   provenance?: Provenance[];
 }
 
-/** A saved slice of one board: grouping, visible columns, filter, WIP caps. */
+/** One of a board's four built-in views: visible columns, filter, WIP caps. */
 export interface View {
   id: string;
   boardId: string;
-  name: string;
-  icon: string;
-  groupBy: GroupBy;
+  kind: ViewKind;
   columns: string[];
   filter: ViewFilter;
   /** WIP cap per column key. Advisory — a drop is never blocked. */
@@ -185,18 +188,7 @@ export interface View {
   updatedAt: number;
 }
 
-export interface CreateViewInput {
-  boardId: string;
-  name: string;
-  icon?: string;
-  groupBy?: GroupBy;
-  columns?: string[];
-  filter?: ViewFilter;
-  wip?: Record<string, number>;
-  rank?: number;
-}
-
-export type ViewPatch = Partial<Pick<View, "name" | "icon" | "groupBy" | "columns" | "filter" | "wip" | "rank">>;
+export type ViewPatch = Partial<Pick<View, "columns" | "filter" | "wip">>;
 
 export type ThemePreference = "system" | "light" | "dark" | "matcha";
 

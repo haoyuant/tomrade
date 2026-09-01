@@ -16,19 +16,11 @@ export const queryBar = {
     clearFacet: "Clear {{name}}",
     nothingToFilterGeneric: "Nothing to filter by on this board.",
 
-    saveToView: "Save to view",
-    saveToViewTitle: "Write these filters and this grouping into “{{name}}”",
-    reset: "Reset",
-    resetTitle: "Back to the saved “{{name}}” view",
     groupColumnsByAria: "Group columns by",
     oneColumnPerTitle: "One column per {{group}}",
-    graphModeTitle: "Arrange as a graph: {{title}}",
-    newView: "New view",
-    newViewDefaultName: "New view",
-    newViewTitle: "Save the filters and grouping above as a new view of this board",
-    columns: "Columns",
-    columnsTitle: "Which columns this view shows, and their WIP limits",
-    savedToast: "Saved {{name}} on {{board}}"
+    dependenciesTitle: "Arrange as a dependency graph",
+    viewSettings: "View settings",
+    viewSettingsTitle: "Which columns this view shows, and their WIP limits"
   },
   zh: {
     labelName: "标签",
@@ -47,18 +39,10 @@ export const queryBar = {
     clearFacet: "清除{{name}}筛选",
     nothingToFilterGeneric: "此看板上没有可筛选的内容。",
 
-    saveToView: "保存到视图",
-    saveToViewTitle: "将这些筛选与分组写入「{{name}}」",
-    reset: "重置",
-    resetTitle: "恢复到已保存的「{{name}}」视图",
     groupColumnsByAria: "列的分组方式",
     oneColumnPerTitle: "按{{group}}各占一列",
-    graphModeTitle: "以关系图排列：{{title}}",
-    newView: "新建视图",
-    newViewDefaultName: "新视图",
-    newViewTitle: "将上方的筛选与分组另存为此看板的一个新视图",
-    columns: "列设置",
-    columnsTitle: "此视图显示哪些列，以及它们的 WIP 上限",
-    savedToast: "已将 {{name}} 保存到 {{board}}"
+    dependenciesTitle: "以依赖关系图排列",
+    viewSettings: "视图设置",
+    viewSettingsTitle: "此视图显示哪些列，以及它们的 WIP 上限"
   }
 };

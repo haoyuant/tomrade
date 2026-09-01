@@ -16,7 +16,7 @@ describe("projects", () => {
     const all = boards.list(project.id);
     expect(all.filter((b) => !b.across).map((b) => b.name)).toEqual(["Main"]);
     expect(all.filter((b) => b.across).map((b) => b.name)).toEqual(["Recently updated", "Epics"]);
-    expect(views.listForBoard(all[0].id).map((v) => v.name)).toEqual(["All work"]);
+    expect(views.listForBoard(all[0].id).map((v) => v.kind)).toEqual(["status", "priority", "epic", "dependencies"]);
   });
 
   it("derives a key prefix from the project name", () => {

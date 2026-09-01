@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Sqlite } from "./sqlite.js";
 import { CORE_SCHEMA_VERSION } from "./schema.js";
-import { seedProjectBoards } from "./seed.js";
+import { seedProjectBoards, VIEW_KINDS, type ViewKindSeed } from "./seed.js";
 
 function columns(db: Sqlite, table: string): Set<string> {
   return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
@@ -8,6 +9,54 @@ function columns(db: Sqlite, table: string): Set<string> {
 
 function addColumn(db: Sqlite, table: string, name: string, ddl: string): void {
   if (!columns(db, table).has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`);
+}
+
+const VIEW_KIND_META: Record<ViewKindSeed, { name: string; icon: string; groupBy: string }> = {
+  status: { name: "Status", icon: "s-doing", groupBy: "status" },
+  priority: { name: "Priority", icon: "i-bars", groupBy: "priority" },
+  epic: { name: "Epic", icon: "i-stack", groupBy: "epic" },
+  dependencies: { name: "Dependencies", icon: "i-graph", groupBy: "status" }
+};
+
+/**
+ * Collapses every board down to exactly one view per built-in kind. A view
+ * whose (backfilled) kind already matches one is kept — the oldest by rank
+ * wins a duplicate — everything else on the board is dropped; a kind with no
+ * match gets a fresh, empty-columns row. Additive in spirit (nothing outside
+ * `views` is touched) but this table's rows are deliberately reconciled, not
+ * just backfilled: the old free-form "saved views" model is being retired.
+ */
+function reconcileBuiltinViews(db: Sqlite, now: number): void {
+  const boards = db.prepare("SELECT id FROM boards").all() as { id: string }[];
+  for (const board of boards) {
+    const rows = db.prepare("SELECT id, kind FROM views WHERE board_id = ? ORDER BY rank ASC, created_at ASC").all(board.id) as {
+      id: string;
+      kind: string | null;
+    }[];
+    const byKind = new Map<ViewKindSeed, string>();
+    const extra: string[] = [];
+    for (const row of rows) {
+      const kind = row.kind && (VIEW_KINDS as readonly string[]).includes(row.kind) ? (row.kind as ViewKindSeed) : null;
+      if (kind && !byKind.has(kind)) byKind.set(kind, row.id);
+      else extra.push(row.id);
+    }
+    VIEW_KINDS.forEach((kind, rank) => {
+      const meta = VIEW_KIND_META[kind];
+      const existingId = byKind.get(kind);
+      if (existingId) {
+        db.prepare("UPDATE views SET kind = ?, group_by = ?, rank = ? WHERE id = ?").run(kind, meta.groupBy, rank, existingId);
+      } else {
+        db.prepare(
+          `INSERT INTO views (id, board_id, name, icon, group_by, kind, columns_json, filter_json, wip_json, rank, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, '[]', '{}', '{}', ?, ?, ?)`
+        ).run(randomUUID(), board.id, meta.name, meta.icon, meta.groupBy, kind, rank, now, now);
+      }
+    });
+    for (const id of extra) {
+      db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(id);
+      db.prepare("DELETE FROM views WHERE id = ?").run(id);
+    }
+  }
 }
 
 /**
@@ -27,6 +76,9 @@ export function migrateCore(db: Sqlite): void {
     addColumn(db, "items", "key_num", "INTEGER NOT NULL DEFAULT 0");
     addColumn(db, "items", "priority", "INTEGER NOT NULL DEFAULT 2");
     addColumn(db, "oplog", "run_id", "TEXT");
+    addColumn(db, "views", "kind", "TEXT");
+    db.exec("UPDATE views SET kind = group_by WHERE kind IS NULL");
+    reconcileBuiltinViews(db, now);
 
     // Orphan project_ids are included: left unkeyed they would break the unique
     // key index created straight after this runs.

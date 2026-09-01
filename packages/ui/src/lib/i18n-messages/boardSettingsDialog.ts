@@ -2,16 +2,6 @@ export const boardSettingsDialog = {
   en: {
     dialogLabel: "Board settings",
 
-    defGroupedBy: "grouped by {{group}}",
-    defLabels: "labels: {{list}}",
-    defEpics: "epics: {{list}}",
-    defPriority: "priority: {{list}}",
-    defLastWrite: "last write: {{list}}",
-    defColumns: "{{n}} columns",
-    defWip: "WIP {{list}}",
-    noneWord: "none",
-    epicFallback: "epic",
-
     boardNameLabel: "Board name",
     sidebarGlyphLabel: "Sidebar glyph",
     workspacePkgLabel: "Workspace package",
@@ -33,15 +23,6 @@ export const boardSettingsDialog = {
     statusScope: "Status · {{label}} ({{n}})",
     labelScope: "Label · {{label}} ({{n}})",
 
-    savedViews: "Saved views",
-    openFirstAria: "Open {{name}} first on this board",
-    opensFirst: "opens first · ",
-    removeFromBoardTitle: "Remove from this board",
-    removeFromBoardAria: "Remove {{name}} from this board",
-    rosterCount: "{{n}} views · a new one is saved from the bar above the columns",
-    rosterNote:
-      "Grouping, filters and columns belong to a view and are set on the board itself — this is the roster: which view opens first, and which ones stay.",
-
     movedToast: "Moved {{n}} issues to {{name}}",
     savedToast: "Saved {{name}}",
 
@@ -50,16 +31,6 @@ export const boardSettingsDialog = {
   },
   zh: {
     dialogLabel: "看板设置",
-
-    defGroupedBy: "按{{group}}分组",
-    defLabels: "标签：{{list}}",
-    defEpics: "需求组：{{list}}",
-    defPriority: "优先级：{{list}}",
-    defLastWrite: "最后写入：{{list}}",
-    defColumns: "{{n}} 列",
-    defWip: "WIP {{list}}",
-    noneWord: "无",
-    epicFallback: "需求组",
 
     boardNameLabel: "看板名称",
     sidebarGlyphLabel: "侧栏图标",
@@ -81,14 +52,6 @@ export const boardSettingsDialog = {
     allIssues: "全部 {{n}} 个工作项",
     statusScope: "状态 · {{label}}（{{n}}）",
     labelScope: "标签 · {{label}}（{{n}}）",
-
-    savedViews: "已保存的视图",
-    openFirstAria: "在此看板上优先打开 {{name}}",
-    opensFirst: "优先打开 · ",
-    removeFromBoardTitle: "从此看板移除",
-    removeFromBoardAria: "从此看板移除 {{name}}",
-    rosterCount: "共 {{n}} 个视图 · 新视图可在列上方的工具栏中保存",
-    rosterNote: "分组、筛选与列属于视图，且都在看板本身上设置——这里管理的是视图名录：哪个视图优先打开，哪些视图保留。",
 
     movedToast: "已将 {{n}} 个工作项移动到 {{name}}",
     savedToast: "已保存 {{name}}",

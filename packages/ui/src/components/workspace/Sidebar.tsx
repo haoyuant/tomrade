@@ -9,17 +9,15 @@ import { useToast } from "~/lib/toast";
 import { boardCount, useWorkspace } from "./context";
 
 function BoardRow({ board }: { board: Board }) {
-  const { t } = useI18n();
-  const { items, board: active, openSpace, views } = useWorkspace();
+  const { items, board: active, openSpace } = useWorkspace();
   const count = boardCount(items, board);
-  const saved = views.filter((v) => v.boardId === board.id).length;
   const current = board.id === active.id;
   return (
     <button
       type="button"
       className="side-row is-board"
       aria-current={current}
-      title={`${board.note ?? boardSubtitle(board)} · ${t("sidebar.savedViewsSuffix", { n: saved })}`}
+      title={board.note ?? boardSubtitle(board)}
       // already here: switching would throw away the live query for no reason
       onClick={() => !current && openSpace(board.id)}
     >
@@ -34,8 +32,8 @@ function BoardRow({ board }: { board: Board }) {
 }
 
 /**
- * Creating a board is a real write: it makes the workstream and the All work
- * view every board is guaranteed to have, switches to it, and stays undoable.
+ * Creating a board is a real write: it makes the workstream and its four
+ * built-in views, switches to it, and stays undoable.
  */
 function NewBoardRow() {
   const { t, tx } = useI18n();

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
+import { VIEW_KINDS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useWorkspace } from "./context";
 
@@ -77,7 +78,7 @@ export function TitleBar({
       <span className="crumb-title">{board.name}</span>
       <span className="crumb-sep">/</span>
       <span className="crumb-title" style={{ color: "var(--muted)" }}>
-        {view.name}
+        {VIEW_KINDS[view.kind].label}
       </span>
       <Spacer />
       <button type="button" className="btn btn-ghost no-drag" onClick={onOpenPalette} title={t("titleBar.commandPaletteTitle")}>
@@ -98,7 +99,7 @@ export function TitleBar({
 
 /** Railed, or hidden under 990px, the sidebar is gone — so this answers the same question it does. */
 export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => void }) {
-  const { board, boards, view, boardViews, items, visible, openSpace } = useWorkspace();
+  const { board, boards, view, items, visible, openSpace } = useWorkspace();
   const { t, tx } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const count = (b: (typeof boards)[number]) => items.filter((i) => b.across || i.boardId === b.id).length;
@@ -145,8 +146,7 @@ export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => 
       <div className="board-facts">
         {board.subtitle && <span className="tag neutral num">{board.subtitle}</span>}
         <span className="meta-txt">
-          {tx("titleBar.shownOf", { shown: <span className="num">{visible.length}</span>, total: <span className="num">{count(board)}</span> })} ·{" "}
-          {tx("titleBar.viewsCount", { n: <span className="num">{boardViews.length}</span> })}
+          {tx("titleBar.shownOf", { shown: <span className="num">{visible.length}</span>, total: <span className="num">{count(board)}</span> })}
         </span>
       </div>
       <Spacer />
@@ -164,7 +164,7 @@ export function BoardHead({ onOpenBoardSettings }: { onOpenBoardSettings: () => 
           <span className="lbl">{t("titleBar.boardSettingsAria")}</span>
         </button>
       )}
-      <span className="sr-only">{view.name}</span>
+      <span className="sr-only">{VIEW_KINDS[view.kind].label}</span>
     </div>
   );
 }

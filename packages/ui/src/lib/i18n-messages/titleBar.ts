@@ -18,9 +18,8 @@ export const titleBar = {
     switchBoardAria: "Switch board",
     boardsGroup: "Boards",
     shownOf: "{{shown}} shown of {{total}}",
-    viewsCount: "{{n}} views",
     boardSettingsAria: "Board settings",
-    boardSettingsTooltip: "Name, glyph, the issues this board owns, and its saved views"
+    boardSettingsTooltip: "Name, glyph, and the issues this board owns"
   },
   zh: {
     projectsHome: "项目主页",
@@ -41,8 +40,7 @@ export const titleBar = {
     switchBoardAria: "切换看板",
     boardsGroup: "看板",
     shownOf: "已显示 {{shown}} / 共 {{total}}",
-    viewsCount: "{{n}} 个视图",
     boardSettingsAria: "看板设置",
-    boardSettingsTooltip: "名称、图标、此看板拥有的工作项及其已保存的视图"
+    boardSettingsTooltip: "名称、图标，以及此看板拥有的工作项"
   }
 };

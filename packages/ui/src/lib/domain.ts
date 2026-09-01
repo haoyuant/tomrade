@@ -1,4 +1,4 @@
-import type { Board, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter } from "@tomrade/domain";
+import type { Board, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter, ViewKind } from "@tomrade/domain";
 import type { IconId } from "~/components/icons";
 import type { Locale } from "./i18n";
 
@@ -58,6 +58,19 @@ export const GROUPS: Record<GroupBy, { label: string; icon: IconId }> = {
   epic: { label: GROUP_LABEL.en.epic, icon: "i-stack" }
 };
 
+/** The single contributed graph the "dependencies" built-in view renders. */
+export const DEPENDENCIES_GRAPH_ID = "deps";
+
+const VIEW_KIND_LABEL: Record<Locale, string> = { en: "Dependencies", zh: "依赖关系" };
+
+/** The app's four built-in views, in their fixed, always-the-same order. */
+export const VIEW_KINDS: Record<ViewKind, { label: string; icon: IconId }> = {
+  status: GROUPS.status,
+  priority: GROUPS.priority,
+  epic: GROUPS.epic,
+  dependencies: { label: VIEW_KIND_LABEL.en, icon: "i-graph" }
+};
+
 const PROVENANCE_BY_LOCALE: Record<Locale, Record<Provenance, string>> = {
   en: { ai: "ai:mcp", human: "human", locked: "human-locked" },
   zh: { ai: "ai:mcp", human: "人工", locked: "人工锁定" }
@@ -80,12 +93,14 @@ export function setDomainLocale(locale: Locale): void {
   for (const k of STATUS_KEYS) STATUS[k].label = STATUS_LABEL[locale][k];
   PRIORITY_LABEL.splice(0, PRIORITY_LABEL.length, ...PRIORITY_LABEL_BY_LOCALE[locale]);
   for (const g of Object.keys(GROUPS) as GroupBy[]) GROUPS[g].label = GROUP_LABEL[locale][g];
+  VIEW_KINDS.dependencies.label = VIEW_KIND_LABEL[locale];
   for (const p of Object.keys(PROVENANCE) as Provenance[]) PROVENANCE[p] = PROVENANCE_BY_LOCALE[locale][p];
   for (let i = 0; i < BOARD_GLYPHS.length; i++) BOARD_GLYPHS[i][1] = BOARD_GLYPH_LABEL[locale][i];
 }
 
+/** What a never-customized built-in view shows. Epic's real space is its live epic ids, resolved by the caller. */
 export const DEFAULT_COLUMNS: Record<GroupBy, string[]> = {
-  status: ["todo", "doing", "verifying", "done"],
+  status: ["backlog", "todo", "doing", "verifying", "done", "cancelled"],
   priority: ["4", "3", "2", "1"],
   epic: []
 };
@@ -168,14 +183,12 @@ export function ledgerMarkOf(entry: OplogEntry): "tick" | "lock" | null {
 }
 
 /* ═══ the live query ═══════════════════════════════════════════════════
-   A saved view is a stored query; the bar edits a live copy of it. Nothing
-   renders from the view directly, so "saved" and "showing" can differ and
-   the difference is always visible. */
+   A saved view is a stored query; the bar edits a live copy of it, and a
+   filter edit auto-saves onto the view a moment after it lands. */
 
 export interface BoardQuery {
   group: GroupBy;
-  /** A contributed graph id puts the board region in graph mode. Transient —
-   *  never saved to the view, and excluded from the dirty signature. */
+  /** A contributed graph id puts the board region in graph mode. Transient — never saved to the view. */
   graph: string | null;
   columns: string[];
   wip: Record<string, number>;
@@ -185,12 +198,15 @@ export interface BoardQuery {
   provenance: Provenance[];
 }
 
+/** Switching between the four built-in views is real navigation — each one loads its own saved columns/WIP/filter, falling to its mode's defaults when never customized. */
 export function queryFromView(view: View, epicColumns: string[]): BoardQuery {
   const f = view.filter ?? {};
-  const columns = view.groupBy === "epic" && !view.columns.length ? epicColumns : [...view.columns];
+  const group: GroupBy = view.kind === "dependencies" ? "status" : view.kind;
+  const fallback = group === "epic" ? epicColumns : DEFAULT_COLUMNS[group];
+  const columns = view.columns.length ? [...view.columns] : [...fallback];
   return {
-    group: view.groupBy,
-    graph: null,
+    group,
+    graph: view.kind === "dependencies" ? DEPENDENCIES_GRAPH_ID : null,
     columns,
     wip: { ...(view.wip ?? {}) },
     labels: [...(f.labels ?? [])],
@@ -198,19 +214,6 @@ export function queryFromView(view: View, epicColumns: string[]): BoardQuery {
     priorities: [...(f.priorities ?? [])],
     provenance: [...(f.provenance ?? [])]
   };
-}
-
-/**
- * Switching grouping restores the saved columns when it lands back on the saved
- * mode, and falls to the mode's defaults otherwise. One implementation, shared by
- * the segmented control and the palette.
- */
-export function queryWithGroup(q: BoardQuery, group: GroupBy, saved: BoardQuery, epicColumns: string[]): BoardQuery {
-  // Picking a column grouping is also the way out of a contributed graph mode.
-  if (q.group === group) return q.graph ? { ...q, graph: null } : q;
-  if (group === saved.group) return { ...q, group, graph: null, columns: [...saved.columns], wip: { ...saved.wip } };
-  const columns = group === "epic" ? epicColumns : DEFAULT_COLUMNS[group];
-  return { ...q, group, graph: null, columns: [...columns], wip: {} };
 }
 
 export function filterFromQuery(q: BoardQuery): ViewFilter {
@@ -221,21 +224,6 @@ export function filterFromQuery(q: BoardQuery): ViewFilter {
   if (q.provenance.length) f.provenance = [...q.provenance];
   return f;
 }
-
-const signature = (q: BoardQuery) =>
-  JSON.stringify([
-    q.group,
-    q.columns,
-    Object.keys(q.wip)
-      .sort()
-      .map((k) => `${k}:${q.wip[k]}`),
-    [...q.labels].sort(),
-    [...q.epics].sort(),
-    [...q.priorities].sort(),
-    [...q.provenance].sort()
-  ]);
-
-export const isDirty = (q: BoardQuery, saved: BoardQuery) => signature(q) !== signature(saved);
 
 export const filterCount = (q: BoardQuery) => q.labels.length + q.epics.length + q.priorities.length + q.provenance.length;
 

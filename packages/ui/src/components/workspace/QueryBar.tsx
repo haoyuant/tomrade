@@ -1,21 +1,10 @@
 import { useState, type ReactNode } from "react";
-import type { GroupBy, Item, Priority, Provenance } from "@tomrade/domain";
-import { ICON_IDS, Icon, type IconId } from "~/components/icons";
+import type { Item, Priority, Provenance, ViewKind } from "@tomrade/domain";
+import { Icon, type IconId } from "~/components/icons";
 import { Menu, MenuCheckItem, MenuEmpty, MenuFoot, MenuHead } from "~/components/ui/menu";
 import { PriorityGlyph } from "~/components/ui/atoms";
-import {
-  GROUPS,
-  PRIORITIES,
-  PRIORITY_LABEL,
-  PROVENANCE,
-  filterFromQuery,
-  provenanceOf,
-  queryWithGroup,
-  type BoardQuery
-} from "~/lib/domain";
+import { PRIORITIES, PRIORITY_LABEL, PROVENANCE, VIEW_KINDS, provenanceOf, type BoardQuery } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCreateView, useGraphs, useUpdateView } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 
 type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
@@ -169,40 +158,15 @@ function FacetButton({ facet }: { facet: Facet }) {
 }
 
 export function QueryBar({ onOpenViewSettings }: { onOpenViewSettings: () => void }) {
-  const { t, tx } = useI18n();
+  const { t } = useI18n();
   const ws = useWorkspace();
-  const updateView = useUpdateView(ws.project.id);
-  const createView = useCreateView(ws.project.id);
-  const toast = useToast();
   const facets = getFacets(t);
-  const graphs = useGraphs();
 
-  const epicColumns = [...ws.epics.map((e) => e.id), "none"];
-  const setGroup = (group: GroupBy) => ws.setQuery(queryWithGroup(ws.query, group, ws.savedQuery, epicColumns));
-  const setGraph = (id: string) => ws.setQuery(ws.query.graph === id ? ws.query : { ...ws.query, graph: id });
-  const graphIcon = (icon?: string): IconId => ((ICON_IDS as readonly string[]).includes(icon ?? "") ? (icon as IconId) : "i-graph");
-
-  const saveToView = () => {
-    updateView.mutate({
-      id: ws.view.id,
-      patch: { groupBy: ws.query.group, columns: ws.query.columns, wip: ws.query.wip, filter: filterFromQuery(ws.query) }
-    });
-    toast({ body: <>{tx("queryBar.savedToast", { name: <span className="num">{ws.view.name}</span>, board: ws.board.name })}</> });
-  };
-
-  const newView = () => {
-    createView.mutate(
-      {
-        boardId: ws.board.id,
-        name: t("queryBar.newViewDefaultName"),
-        icon: "i-filter",
-        groupBy: ws.query.group,
-        columns: ws.query.columns,
-        wip: ws.query.wip,
-        filter: filterFromQuery(ws.query)
-      },
-      { onSuccess: (view) => ws.openSpace(ws.board.id, view.id) }
-    );
+  /** Switching kind is real navigation: each of the four built-in views loads its own saved columns/WIP. */
+  const switchKind = (kind: ViewKind) => {
+    if (kind === ws.view.kind) return;
+    const target = ws.boardViews.find((v) => v.kind === kind);
+    if (target) ws.openSpace(ws.board.id, target.id);
   };
 
   return (
@@ -211,67 +175,28 @@ export function QueryBar({ onOpenViewSettings }: { onOpenViewSettings: () => voi
         <FacetButton key={f.key} facet={f} />
       ))}
 
-      {/* the saved view and the live query have drifted apart — say so, and offer both ways out */}
-      {ws.dirty && (
-        <>
-          <span className="qb-sep" />
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ padding: "5px 9px" }}
-            title={t("queryBar.saveToViewTitle", { name: ws.view.name })}
-            onClick={saveToView}
-          >
-            <Icon name="i-check" size={13} /> <span className="lbl">{t("queryBar.saveToView")}</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ padding: "5px 9px" }}
-            title={t("queryBar.resetTitle", { name: ws.view.name })}
-            onClick={() => ws.setQuery(ws.savedQuery)}
-          >
-            {t("queryBar.reset")}
-          </button>
-        </>
-      )}
-
       <div className="qb-right">
         <div className="seg quiet" role="group" aria-label={t("queryBar.groupColumnsByAria")}>
-          {(Object.keys(GROUPS) as GroupBy[]).map((g) => (
+          {(Object.keys(VIEW_KINDS) as ViewKind[]).map((k) => (
             <button
-              key={g}
+              key={k}
               type="button"
-              aria-pressed={!ws.query.graph && ws.query.group === g}
-              title={t("queryBar.oneColumnPerTitle", { group: GROUPS[g].label.toLowerCase() })}
-              onClick={() => setGroup(g)}
+              className={k === "dependencies" ? "seg-graph" : undefined}
+              aria-pressed={ws.view.kind === k}
+              title={k === "dependencies" ? t("queryBar.dependenciesTitle") : t("queryBar.oneColumnPerTitle", { group: VIEW_KINDS[k].label.toLowerCase() })}
+              onClick={() => switchKind(k)}
             >
-              <Icon className="ico" name={GROUPS[g].icon} size={13} />
-              <span className="seg-lbl">{GROUPS[g].label}</span>
-            </button>
-          ))}
-          {/* Contributed graph modes sit in the same control: a graph is one
-              more way to arrange the same slice, not a different place. */}
-          {(graphs.data ?? []).map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              className="seg-graph"
-              aria-pressed={ws.query.graph === g.id}
-              title={t("queryBar.graphModeTitle", { title: g.title })}
-              onClick={() => setGraph(g.id)}
-            >
-              <Icon className="ico" name={graphIcon(g.icon)} size={13} />
-              <span className="seg-lbl">{g.title}</span>
+              <Icon className="ico" name={VIEW_KINDS[k].icon} size={13} />
+              <span className="seg-lbl">{VIEW_KINDS[k].label}</span>
             </button>
           ))}
         </div>
-        <button type="button" className="btn btn-ghost" style={{ padding: "5px 9px" }} title={t("queryBar.newViewTitle")} onClick={newView}>
-          <Icon name="i-plus" size={14} /> <span className="lbl">{t("queryBar.newView")}</span>
-        </button>
-        <button type="button" className="btn btn-ghost" style={{ padding: "5px 9px" }} title={t("queryBar.columnsTitle")} onClick={onOpenViewSettings}>
-          <Icon name="i-sliders" size={14} /> <span className="lbl">{t("queryBar.columns")}</span>
-        </button>
+        {/* the dependencies view is a graph canvas — it has no columns/WIP to configure */}
+        {ws.view.kind !== "dependencies" && (
+          <button type="button" className="btn btn-ghost" style={{ padding: "5px 9px" }} title={t("queryBar.viewSettingsTitle")} onClick={onOpenViewSettings}>
+            <Icon name="i-sliders" size={14} /> <span className="lbl">{t("queryBar.viewSettings")}</span>
+          </button>
+        )}
       </div>
     </div>
   );

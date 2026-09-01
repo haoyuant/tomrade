@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
-import type { GroupBy } from "@tomrade/domain";
-import { Icon, type IconId } from "~/components/icons";
+import type { ViewKind } from "@tomrade/domain";
+import { Icon } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
-import { GROUPS, isTicket, queryWithGroup } from "~/lib/domain";
+import { VIEW_KINDS, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCommands, useRunCommand } from "~/lib/queries";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
@@ -44,7 +44,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     fn();
   };
 
-  const setGroup = (group: GroupBy) => ws.setQuery(queryWithGroup(ws.query, group, ws.savedQuery, epicColumns));
+  const switchKind = (boardId: string, kind: ViewKind) => {
+    const target = ws.views.find((v) => v.boardId === boardId && v.kind === kind);
+    if (target) ws.openSpace(boardId, target.id);
+  };
 
   // Plugin commands arrive as data and run in the main process against the current scope.
   const pluginGroups = new Map<string, NonNullable<typeof commands.data>>();
@@ -82,13 +85,13 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                     .map((view) => (
                       <Command.Item
                         key={`${board.id}:${view.id}`}
-                        value={`${board.name} ${view.name}`}
+                        value={`${board.name} ${VIEW_KINDS[view.kind].label}`}
                         className="palette-row"
                         onSelect={() => run(() => ws.openSpace(board.id, view.id))}
                       >
-                        <Icon name={view.icon as IconId} size={14} style={{ color: "var(--meta)" }} />
+                        <Icon name={VIEW_KINDS[view.kind].icon} size={14} style={{ color: "var(--meta)" }} />
                         <span className="p-label">
-                          {board.name} · {view.name}
+                          {board.name} · {VIEW_KINDS[view.kind].label}
                         </span>
                         <span className="card-id">{viewCount(ws.items, board, view, epicColumns)}</span>
                       </Command.Item>
@@ -119,10 +122,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   { label: t("commandPalette.toggleAssistant"), kb: "⌘J", run: actions.toggleAssistant },
                   { label: t("commandPalette.toggleSidebar"), kb: "⌘B", run: actions.toggleSidebar },
                   { label: t("commandPalette.undoLastWrite"), kb: "⌘Z", run: actions.undo },
-                  ...(Object.keys(GROUPS) as GroupBy[]).map((g) => ({
-                    label: t("commandPalette.groupBy", { group: GROUPS[g].label.toLowerCase() }),
+                  ...(Object.keys(VIEW_KINDS) as ViewKind[]).map((k) => ({
+                    label: k === "dependencies" ? t("commandPalette.dependenciesView") : t("commandPalette.groupBy", { group: VIEW_KINDS[k].label.toLowerCase() }),
                     kb: undefined,
-                    run: () => setGroup(g)
+                    run: () => switchKind(ws.board.id, k)
                   })),
                   { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, labels: [], epics: [], priorities: [], provenance: [] }) },
                   { label: t("commandPalette.switchProject"), kb: "⌘P", run: actions.openProjectMenu },

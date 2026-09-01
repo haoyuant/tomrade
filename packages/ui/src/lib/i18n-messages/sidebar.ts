@@ -1,8 +1,7 @@
 export const sidebar = {
   en: {
-    savedViewsSuffix: "{{n}} saved views",
     newBoard: "New board",
-    createdBoardToast: "Created board {{name}} · All work view added",
+    createdBoardToast: "Created board {{name}}",
     newBoardNameAria: "New board name",
     workstreamPlaceholder: "Workstream name…",
     expandSidebar: "Expand sidebar — ⌘B",
@@ -12,9 +11,8 @@ export const sidebar = {
     acrossBoards: "Across boards"
   },
   zh: {
-    savedViewsSuffix: "{{n}} 个已保存视图",
     newBoard: "新建看板",
-    createdBoardToast: "已创建看板 {{name}} · 已添加「全部工作」视图",
+    createdBoardToast: "已创建看板 {{name}}",
     newBoardNameAria: "新看板名称",
     workstreamPlaceholder: "工作流名称…",
     expandSidebar: "展开侧栏 — ⌘B",

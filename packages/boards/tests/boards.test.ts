@@ -7,12 +7,12 @@ import { InUseError } from "@tomrade/domain";
 import { fresh } from "@tomrade/testkit";
 
 describe("boards", () => {
-  it("a new board always gets the All work view", async () => {
+  it("a new board always gets its four built-in views", async () => {
     const { boards, views, project } = await fresh();
     const b = boards.create({ projectId: project.id, name: "UI", icon: "i-panel", subtitle: "packages/ui" });
     const list = views.listForBoard(b.id);
-    expect(list.map((v) => v.name)).toEqual(["All work"]);
-    expect(list[0].columns).toEqual(["backlog", "todo", "doing", "verifying", "done", "cancelled"]);
+    expect(list.map((v) => v.kind)).toEqual(["status", "priority", "epic", "dependencies"]);
+    expect(list.every((v) => v.columns.length === 0)).toBe(true);
     expect(b.defaultViewId).toBe(list[0].id);
   });
 
@@ -51,21 +51,17 @@ describe("boards", () => {
 });
 
 describe("views", () => {
-  it("stores grouping, columns, filter and WIP caps", async () => {
+  it("update writes columns, filter and WIP caps onto a built-in view", async () => {
     const { views, board } = await fresh();
-    const v = views.create({
-      boardId: board.id,
-      name: "Sprint 12",
-      icon: "i-clock",
-      groupBy: "status",
+    const v = views.listForBoard(board.id).find((v) => v.kind === "status")!;
+    const next = views.update(v.id, {
       columns: ["todo", "doing", "verifying", "done"],
       filter: { labels: ["bug"], priorities: [3, 4] },
       wip: { doing: 3 }
     });
-    const read = views.get(v.id)!;
-    expect(read.columns).toEqual(["todo", "doing", "verifying", "done"]);
-    expect(read.filter).toEqual({ labels: ["bug"], priorities: [3, 4] });
-    expect(read.wip).toEqual({ doing: 3 });
+    expect(next.columns).toEqual(["todo", "doing", "verifying", "done"]);
+    expect(next.filter).toEqual({ labels: ["bug"], priorities: [3, 4] });
+    expect(next.wip).toEqual({ doing: 3 });
   });
 
   it("per-view rank is sparse and falls back to items.rank", async () => {
@@ -77,16 +73,6 @@ describe("views", () => {
     expect(views.ranks(v.id)).toEqual({ [a.id]: 1.5 });
     views.setRank(v.id, a.id, 2.5);
     expect(views.ranks(v.id)).toEqual({ [a.id]: 2.5 });
-  });
-
-  it("removing a view drops its ranks", async () => {
-    const { views, items, board } = await fresh();
-    const v = views.create({ boardId: board.id, name: "Temp" });
-    const a = items.create({ title: "A", boardId: board.id, by: "human" });
-    views.setRank(v.id, a.id, 1);
-    views.remove(v.id);
-    expect(views.get(v.id)).toBeNull();
-    expect(views.ranks(v.id)).toEqual({});
   });
 });
 
@@ -108,16 +94,14 @@ describe("destructive writes", () => {
     expect(boards.moveItems(board.id, dest.id, [a.id, b.id])).toBe(1);
   });
 
-  it("undoing a board delete restores the views it was deleted with", async () => {
+  it("undoing a board delete restores its four built-in views", async () => {
     const { oplog, boards, views, project } = await fresh();
     const b = boards.create({ projectId: project.id, name: "Temp" });
-    const extra = views.create({ boardId: b.id, name: "Sprint" });
     boards.remove(b.id);
     expect(views.listForBoard(b.id).length).toBe(0);
     oplog.undoLast();
     expect(boards.get(b.id)?.name).toBe("Temp");
-    expect(views.listForBoard(b.id).map((v) => v.name).sort()).toEqual(["All work", "Sprint"]);
-    expect(views.get(extra.id)).not.toBeNull();
+    expect(views.listForBoard(b.id).map((v) => v.kind).sort()).toEqual(["dependencies", "epic", "priority", "status"]);
   });
 
   it("undoing a board create is refused once work has been moved onto it", async () => {
@@ -129,25 +113,13 @@ describe("destructive writes", () => {
     expect(boards.get(dest.id)).not.toBeNull();
   });
 
-  it("removing a view is undoable, ranks included", async () => {
-    const { oplog, views, items, board } = await fresh();
-    const v = views.create({ boardId: board.id, name: "Temp" });
-    const a = items.create({ title: "A", boardId: board.id, by: "human" });
-    views.setRank(v.id, a.id, 4);
-    views.remove(v.id);
-    expect(views.get(v.id)).toBeNull();
-    oplog.undoLast();
-    expect(views.get(v.id)?.name).toBe("Temp");
-    expect(views.ranks(v.id)).toEqual({ [a.id]: 4 });
-  });
-
   it("editing a view is undoable and does not consume an item's undo", async () => {
     const { oplog, views, items, board } = await fresh();
-    const v = views.listForBoard(board.id)[0];
+    const v = views.listForBoard(board.id).find((v) => v.kind === "status")!;
     const a = items.create({ title: "A", boardId: board.id, by: "human" });
-    views.update(v.id, { name: "Renamed" });
+    views.update(v.id, { columns: ["todo"] });
     oplog.undoLast();
-    expect(views.get(v.id)?.name).toBe("All work");
+    expect(views.get(v.id)?.columns).toEqual([]);
     expect(items.get(a.id)).not.toBeNull();
   });
 });
