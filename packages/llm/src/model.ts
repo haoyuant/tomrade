@@ -1,6 +1,6 @@
 import type { z } from "zod";
 
-export type LlmRole = "conversation" | "worker";
+export type LlmRole = "worker";
 
 export type ContentBlock =
   | { type: "text"; text: string }
