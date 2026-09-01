@@ -1376,3 +1376,36 @@ a.kref:hover { border-color: var(--accent); color: var(--accent); }
 .rf-row .rf-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .run-wrap .run-foot { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
 .run-wrap:not(:has(.rf-list)) .run-foot { border-radius: var(--radius-sm); }
+
+/* ─── dependency graph (board region in graph mode) ──────────────────── */
+.graph-region { position: relative; flex: 1; min-height: 0; }
+.graph-region .react-flow__node { cursor: grab; }
+.graph-region .react-flow__node:active { cursor: grabbing; }
+.gnode { position: relative; }
+.gnode .card { cursor: grab; }
+.graph-region .react-flow__node.selected .card,
+.graph-region .react-flow__node:focus-visible .card { box-shadow: var(--focus-ring); }
+.graph-region .react-flow__handle {
+  width: 9px; height: 9px;
+  background: var(--surface); border: 1.5px solid var(--meta);
+}
+.graph-region .react-flow__handle:hover { border-color: var(--accent); }
+.graph-region .react-flow__edge { cursor: pointer; }
+.graph-region .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent) !important; }
+.graph-region .react-flow__connectionline { stroke: var(--accent); }
+.graph-empty { position: absolute; top: 40%; left: 0; right: 0; text-align: center; pointer-events: none; }
+.graph-foot {
+  position: absolute; bottom: var(--space-2); left: var(--space-4); right: var(--space-4);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  pointer-events: none;
+}
+.graph-foot > * { pointer-events: auto; }
+
+/* dependency chips in the field strips: a label chip that opens an issue */
+.lab.dep { padding-left: 5px; }
+.dep-open {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: transparent; border: 0; padding: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.dep-open:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-xs); }

@@ -148,7 +148,7 @@ const run = async () => {
   check("sidebar lists four workstreams plus two cross-board scopes", boardRows === 6);
   check("one sidebar row is current", (await $(`document.querySelectorAll('.side-row[aria-current="true"]').length`)) === 1);
   check("query bar renders four facets", (await $(`document.querySelectorAll('.qb-btn').length`)) === 4);
-  check("grouping segmented control has three modes", (await $(`document.querySelectorAll('.seg.quiet button').length`)) === 3);
+  check("grouping segmented control has three modes and the contributed graph", (await $(`document.querySelectorAll('.seg.quiet button').length`)) === 4);
   const columns = await $(`document.querySelectorAll('.col').length`);
   check("board renders the view's columns", columns >= 4);
   check("cards render with a mono issue key", (await $(`!!document.querySelector('.card .card-id')?.textContent.match(/^TOM-\\d+$/)`)) === true);
@@ -309,11 +309,71 @@ const run = async () => {
   await $(`document.querySelectorAll('.seg.quiet button')[0].click();true`);
   await sleep(600);
 
+  // ── dependency graph ────────────────────────────────────────────────
+  // The fourth segment is contributed by @tomrade/deps-graph: same slice,
+  // arranged as blocker → blocked. Expectations are computed from the
+  // repository, so the section holds whatever the seed happens to contain.
+  await $(`document.querySelectorAll('.seg.quiet button')[3].click();true`);
+  await sleep(1400);
+  check("the graph segment renders the canvas", (await $(`!!document.querySelector('.graph-region .react-flow')`)) === true);
+  const graphBoardId = (await $(`location.hash`)).match(/\/b\/([^/]+)\//)[1];
+  const graphBoard = repos.boards.get(graphBoardId);
+  const ownedNow = () =>
+    repos.items.list({ projectId: project.id }).filter((i) => i.kind !== "epic" && (graphBoard.across || i.boardId === graphBoardId));
+  const edgesAmong = (owned) => {
+    const ids = new Set(owned.map((i) => i.id));
+    return owned.flatMap((i) => i.blocks.filter((t) => ids.has(t))).length;
+  };
+  const graphOwned = ownedNow();
+  check("the graph draws a card node per owned issue", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === graphOwned.length);
+  check("the dependencies draw as arrows", (await $(`document.querySelectorAll('.react-flow__edge').length`)) === edgesAmong(graphOwned));
+
+  await press(`document.querySelector('.react-flow__node .card')`);
+  await sleep(900);
+  check("a graph node opens the detail pane", (await $(`!!document.querySelector('.detail')`)) === true);
+
+  // Edit the dependency from the pane while the graph is on screen: the write
+  // goes through Item.blocks, and the canvas refetches the arrows.
+  const depKey = await $(`document.querySelector('.detail .card-id')?.textContent`);
+  const depOpen = () => repos.items.list({ projectId: project.id }).find((i) => i.key === depKey);
+  const reaches = (fromId, toId) => {
+    const byId = new Map(repos.items.list({ projectId: project.id }).map((i) => [i.id, i]));
+    const queue = [fromId];
+    const seen = new Set();
+    while (queue.length) {
+      for (const next of byId.get(queue.pop())?.blocks ?? []) {
+        if (next === toId) return true;
+        if (!seen.has(next)) seen.add(next), queue.push(next);
+      }
+    }
+    return false;
+  };
+  const depSel = depOpen();
+  const depTarget = graphOwned.find((c) => c.id !== depSel.id && !depSel.blocks.includes(c.id) && !reaches(c.id, depSel.id));
+  const depEdgesBefore = await $(`document.querySelectorAll('.react-flow__edge').length`);
+  await press(`document.querySelectorAll('.detail .field-row')[5].querySelector('.lab-add')`);
+  await sleep(300);
+  await typeInto(".detail .dep-in", `${depTarget.key} ${depTarget.title}`);
+  await $(`(() => { const i = document.querySelector('.detail .dep-in'); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true; })()`);
+  await sleep(1100);
+  check("the Blocks field writes the dependency", depOpen().blocks.includes(depTarget.id));
+  check("the canvas picks the new arrow up", (await $(`document.querySelectorAll('.react-flow__edge').length`)) === depEdgesBefore + 1);
+  await shot("08b-graph-dependencies");
+
+  await press(`[...document.querySelectorAll('.detail .field-row')[5].querySelectorAll('.lab.dep')].find(c => c.textContent.includes('${depTarget.key}'))?.querySelector('.lab-x')`);
+  await sleep(1100);
+  check("the chip's × cuts the link again", !depOpen().blocks.includes(depTarget.id));
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(400);
+  await $(`document.querySelectorAll('.seg.quiet button')[0].click();true`);
+  await sleep(700);
+
   // ── detail pane ─────────────────────────────────────────────────────
   await $(`document.querySelector('.card').click();true`);
   await sleep(900);
   check("a card opens the detail pane", (await $(`!!document.querySelector('.detail')`)) === true);
-  check("the detail prints the field strip", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 7);
+  check("the detail prints the field strip", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 9);
   check("the activity ledger reads the oplog", (await $(`document.querySelectorAll('.detail .ledger-row').length`)) > 0);
   check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .fsel').length`)) === 4);
   await shot("09-detail-docked");
@@ -627,10 +687,10 @@ const run = async () => {
   await sleep(1600);
   check("the issue route renders the standalone sheet", (await $(`!!document.querySelector('.issue-wrap')`)) === true);
   check("the ledger names the write, not just 'updated'", (await $(`[...document.querySelectorAll('.ledger-txt')].some(n => /locked title and body|set status to/.test(n.textContent))`)) === true);
-  check("the field strip lays out horizontally", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 8);
+  check("the field strip lays out horizontally", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10);
   check("the standalone sheet is editable too", (await $(`document.querySelectorAll('.issue-wrap .fsel').length`)) === 4);
   check("a locked issue explains the lock", (await $(`!!document.querySelector('.lockbar')`)) === true);
-  check("blocked issues are listed as relations", (await $(`document.querySelectorAll('.rel-row').length`)) === 3);
+  check("dependencies render as chips that open the issue", (await $(`document.querySelectorAll('.issue-wrap .lab.dep').length`)) >= 3);
   await shot("20-issue-detail");
 
   // ── permanent delete ────────────────────────────────────────────────
@@ -652,7 +712,7 @@ const run = async () => {
   await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
   await sleep(2600);
   check("the issue sheet offers a permanent delete", (await $(`!!document.querySelector('.titlebar .purge-btn')`)) === true);
-  check("the delete control is not a ninth field", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 8);
+  check("the delete control is not an eleventh field", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10);
 
   await $(`document.querySelector('.titlebar .purge-btn').focus();true`);
   await press(`document.querySelector('.titlebar .purge-btn')`);

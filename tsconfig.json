@@ -23,6 +23,9 @@
       "path": "./packages/db"
     },
     {
+      "path": "./packages/deps-graph"
+    },
+    {
       "path": "./packages/domain"
     },
     {

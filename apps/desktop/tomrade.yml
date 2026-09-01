@@ -109,6 +109,10 @@ plugins:
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomrade/agent-backlog"
+  # The dependency lens over Item.blocks: the Dependencies graph and the
+  # "blocked" badge. Optional — the platform stores the edges either way.
+  - id: deps-graph
+    name: "@tomrade/deps-graph"
   - id: mcp
     name: "@tomrade/mcp"
     config:

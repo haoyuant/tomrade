@@ -37,6 +37,17 @@ export class PurgeNotPermittedError extends Error {
   }
 }
 
+/** A blocks edit refused because "blocked until done" only means something on a DAG. */
+export class DependencyCycleError extends Error {
+  constructor(
+    public readonly itemId: string,
+    public readonly path: string[]
+  ) {
+    super(`Blocking ${path[path.length - 1]} would close a cycle: ${path.join(" → ")}`);
+    this.name = "DependencyCycleError";
+  }
+}
+
 /** A destructive write refused because something still depends on the target. */
 export class InUseError extends Error {
   constructor(

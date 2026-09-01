@@ -72,12 +72,14 @@ function restoreItem(db: Db, item: ItemSnapshot): void {
     if (label) db.prepare("INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)").run(item.id, label.id);
   }
 
-  // A delete cut edges in both directions, so both are restored; INSERT OR
-  // IGNORE keeps this safe for an update snapshot where nothing was removed.
+  // Outgoing edges are replaced to match the snapshot — an update can add or
+  // remove blocks now, so an undo has to take back both kinds of change.
+  db.prepare("DELETE FROM item_relations WHERE from_item_id = ? AND kind = 'blocks'").run(item.id);
   for (const blocked of item.blocks ?? []) {
     if (wasPurged(db, blocked)) continue;
     db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(item.id, blocked);
   }
+  // Incoming edges exist only on a delete snapshot, where the delete cut them.
   for (const blocker of item.blockedBy ?? []) {
     if (wasPurged(db, blocker)) continue;
     db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(blocker, item.id);

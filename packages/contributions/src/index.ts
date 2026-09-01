@@ -46,6 +46,30 @@ export interface StatusItem {
   text(scope: { projectId?: string }): string | null;
 }
 
+export interface GraphEdge {
+  /** Item ids. The renderer draws nodes for the items it already shows. */
+  from: string;
+  to: string;
+  tone?: BadgeTone | "danger";
+  title?: string;
+}
+
+/**
+ * A way of arranging the board's issues as nodes and arrows. The renderer owns
+ * the canvas and the item cards; the plugin says only which arrows exist.
+ */
+export interface GraphSpec {
+  id: string;
+  title: string;
+  /** Icon id from the renderer's sprite; unknown names fall back. */
+  icon?: string;
+  /** "blocks" lets the canvas edit edges by writing Item.blocks patches. */
+  edits?: "blocks";
+  compute(items: Item[], scope: { projectId: string }): GraphEdge[];
+}
+
+export type GraphInfo = Omit<GraphSpec, "compute">;
+
 export interface SectionRow {
   label: string;
   value: string;
@@ -78,6 +102,8 @@ declare module "@tomrade/ipc" {
     "contributions.badges": (projectId: string) => Record<string, Badge[]>;
     "contributions.statusItems": (scope: { projectId?: string }) => { id: string; text: string }[];
     "contributions.sections": (itemId: string) => SectionView[];
+    "contributions.graphs": () => GraphInfo[];
+    "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
   }
   interface Broadcasts {
     "contributions.changed": () => void;
@@ -92,6 +118,7 @@ export class Contributions extends Service {
   private badgeMap = new Map<string, BadgeProvider>();
   private statusMap = new Map<string, StatusItem>();
   private sectionMap = new Map<string, Section>();
+  private graphMap = new Map<string, GraphSpec>();
   private notify: () => void = () => {};
 
   constructor(ctx: Context) {
@@ -105,6 +132,8 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.badges", (projectId) => ctx.contributions.badgesFor(projectId));
       ctx.ipc.handle("contributions.statusItems", (scope) => ctx.contributions.statusItems(scope));
       ctx.ipc.handle("contributions.sections", (itemId) => ctx.contributions.sectionsFor(itemId));
+      ctx.ipc.handle("contributions.graphs", () => ctx.contributions.graphs());
+      ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
       this.notify = () => ctx.ipc.send("contributions.changed");
       return () => {
         this.notify = () => {};
@@ -126,6 +155,10 @@ export class Contributions extends Service {
 
   section(def: Section): () => void {
     return this.add(this.sectionMap, def, "section");
+  }
+
+  graph(def: GraphSpec): () => void {
+    return this.add(this.graphMap, def, "graph");
   }
 
   commands(): CommandView[] {
@@ -155,6 +188,16 @@ export class Contributions extends Service {
       const text = s.text(scope);
       return text ? [{ id: s.id, text }] : [];
     });
+  }
+
+  graphs(): GraphInfo[] {
+    return [...this.graphMap.values()].map(({ compute: _compute, ...info }) => info);
+  }
+
+  graphEdges(id: string, scope: { projectId: string }): GraphEdge[] {
+    const graph = this.graphMap.get(id);
+    if (!graph) throw new Error(`Unknown graph: ${id}`);
+    return graph.compute(this.ctx.items.list({ projectId: scope.projectId }), scope);
   }
 
   sectionsFor(itemId: string): SectionView[] {

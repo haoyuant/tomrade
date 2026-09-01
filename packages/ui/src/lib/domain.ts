@@ -174,6 +174,9 @@ export function ledgerMarkOf(entry: OplogEntry): "tick" | "lock" | null {
 
 export interface BoardQuery {
   group: GroupBy;
+  /** A contributed graph id puts the board region in graph mode. Transient —
+   *  never saved to the view, and excluded from the dirty signature. */
+  graph: string | null;
   columns: string[];
   wip: Record<string, number>;
   labels: string[];
@@ -187,6 +190,7 @@ export function queryFromView(view: View, epicColumns: string[]): BoardQuery {
   const columns = view.groupBy === "epic" && !view.columns.length ? epicColumns : [...view.columns];
   return {
     group: view.groupBy,
+    graph: null,
     columns,
     wip: { ...(view.wip ?? {}) },
     labels: [...(f.labels ?? [])],
@@ -202,10 +206,11 @@ export function queryFromView(view: View, epicColumns: string[]): BoardQuery {
  * the segmented control and the palette.
  */
 export function queryWithGroup(q: BoardQuery, group: GroupBy, saved: BoardQuery, epicColumns: string[]): BoardQuery {
-  if (q.group === group) return q;
-  if (group === saved.group) return { ...q, group, columns: [...saved.columns], wip: { ...saved.wip } };
+  // Picking a column grouping is also the way out of a contributed graph mode.
+  if (q.group === group) return q.graph ? { ...q, graph: null } : q;
+  if (group === saved.group) return { ...q, group, graph: null, columns: [...saved.columns], wip: { ...saved.wip } };
   const columns = group === "epic" ? epicColumns : DEFAULT_COLUMNS[group];
-  return { ...q, group, columns: [...columns], wip: {} };
+  return { ...q, group, graph: null, columns: [...columns], wip: {} };
 }
 
 export function filterFromQuery(q: BoardQuery): ViewFilter {

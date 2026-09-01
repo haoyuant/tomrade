@@ -35,7 +35,7 @@ export type {
   WorkflowSpec
 } from "@tomrade/agent";
 export type { Mcp } from "@tomrade/mcp";
-export type { Contributions, Command, CommandResult, CommandScope, Badge, BadgeProvider, BadgeTone, StatusItem, Section, SectionRow } from "@tomrade/contributions";
+export type { Contributions, Command, CommandResult, CommandScope, Badge, BadgeProvider, BadgeTone, GraphEdge, GraphInfo, GraphSpec, StatusItem, Section, SectionRow } from "@tomrade/contributions";
 export type { Ipc, Channels, Broadcasts, ChannelHandler, Invoke } from "@tomrade/ipc";
 
 /** Identity with types: an object plugin with `name`, optional `inject`/`Config`, and `apply(ctx, config)`. */

@@ -1,0 +1,25 @@
+{
+  "name": "@tomrade/deps-graph",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Dependency graph over Item.blocks: contributes the Dependencies board graph and a 'blocked' badge for issues waiting on unfinished work. First-party, but optional — remove the row and nothing else changes.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

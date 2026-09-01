@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { GroupBy, Item, Priority, Provenance } from "@tomrade/domain";
-import { Icon, type IconId } from "~/components/icons";
+import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { Menu, MenuCheckItem, MenuEmpty, MenuFoot, MenuHead } from "~/components/ui/menu";
 import { PriorityGlyph } from "~/components/ui/atoms";
 import {
@@ -14,7 +14,7 @@ import {
   type BoardQuery
 } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCreateView, useUpdateView } from "~/lib/queries";
+import { useCreateView, useGraphs, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 
@@ -175,9 +175,12 @@ export function QueryBar({ onOpenViewSettings }: { onOpenViewSettings: () => voi
   const createView = useCreateView(ws.project.id);
   const toast = useToast();
   const facets = getFacets(t);
+  const graphs = useGraphs();
 
   const epicColumns = [...ws.epics.map((e) => e.id), "none"];
   const setGroup = (group: GroupBy) => ws.setQuery(queryWithGroup(ws.query, group, ws.savedQuery, epicColumns));
+  const setGraph = (id: string) => ws.setQuery(ws.query.graph === id ? ws.query : { ...ws.query, graph: id });
+  const graphIcon = (icon?: string): IconId => ((ICON_IDS as readonly string[]).includes(icon ?? "") ? (icon as IconId) : "i-graph");
 
   const saveToView = () => {
     updateView.mutate({
@@ -239,12 +242,27 @@ export function QueryBar({ onOpenViewSettings }: { onOpenViewSettings: () => voi
             <button
               key={g}
               type="button"
-              aria-pressed={ws.query.group === g}
+              aria-pressed={!ws.query.graph && ws.query.group === g}
               title={t("queryBar.oneColumnPerTitle", { group: GROUPS[g].label.toLowerCase() })}
               onClick={() => setGroup(g)}
             >
               <Icon className="ico" name={GROUPS[g].icon} size={13} />
               <span className="seg-lbl">{GROUPS[g].label}</span>
+            </button>
+          ))}
+          {/* Contributed graph modes sit in the same control: a graph is one
+              more way to arrange the same slice, not a different place. */}
+          {(graphs.data ?? []).map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className="seg-graph"
+              aria-pressed={ws.query.graph === g.id}
+              title={t("queryBar.graphModeTitle", { title: g.title })}
+              onClick={() => setGraph(g.id)}
+            >
+              <Icon className="ico" name={graphIcon(g.icon)} size={13} />
+              <span className="seg-lbl">{g.title}</span>
             </button>
           ))}
         </div>

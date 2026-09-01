@@ -27,6 +27,7 @@ import { titleBar } from "./titleBar";
 import { toast } from "./toast";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
+import { graphView } from "./graphView";
 import { workspaceContext } from "./workspaceContext";
 
 export const en = {
@@ -57,6 +58,7 @@ export const en = {
   workspace: workspace.en,
   board: board.en,
   card: card.en,
+  graphView: graphView.en,
   queryBar: queryBar.en,
   workspaceContext: workspaceContext.en,
 
@@ -94,6 +96,7 @@ export const zh: typeof en = {
   workspace: workspace.zh,
   board: board.zh,
   card: card.zh,
+  graphView: graphView.zh,
   queryBar: queryBar.zh,
   workspaceContext: workspaceContext.zh,
 
