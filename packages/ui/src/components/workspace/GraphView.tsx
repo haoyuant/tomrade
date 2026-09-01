@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -12,6 +12,7 @@ import {
   type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type NodeProps
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
@@ -83,25 +84,32 @@ function Canvas() {
   const shownIds = useMemo(() => new Set(shown.map((i) => i.id)), [shown]);
   const edges = useMemo(() => (serverEdges.data ?? []).filter((e) => shownIds.has(e.from) && shownIds.has(e.to)), [serverEdges.data, shownIds]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<IssueNode>([]);
+  const [nodes, setNodes, onNodesChangeInternal] = useNodesState<IssueNode>([]);
 
-  // Re-derive nodes from the live items; a position someone dragged survives
-  // the refetch, only new nodes take the computed one.
+  // Only a completed drag earns a sticky position; everything else is
+  // re-laid-out on every data change so a stale pre-edges-loaded layout
+  // (dagre with no edges yet — see `layout`) never survives once the real
+  // edges arrive.
+  const dragged = useRef(new Map<string, { x: number; y: number }>());
+  const onNodesChange = (changes: NodeChange<IssueNode>[]) => {
+    for (const c of changes) if (c.type === "position" && c.position && c.dragging === false) dragged.current.set(c.id, c.position);
+    onNodesChangeInternal(changes);
+  };
+
   const edgeShape = edges.map((e) => `${e.from}>${e.to}`).join();
   useEffect(() => {
     const placed = layout(shown, edges);
-    setNodes((current) => {
-      const kept = new Map(current.map((n) => [n.id, n.position]));
-      return shown.map((item) => ({
+    setNodes(
+      shown.map((item) => ({
         id: item.id,
         type: "issue" as const,
-        position: kept.get(item.id) ?? placed.get(item.id) ?? { x: 0, y: 0 },
+        position: dragged.current.get(item.id) ?? placed.get(item.id) ?? { x: 0, y: 0 },
         data: { item },
         deletable: false,
         connectable: editable,
         selected: item.id === ws.selectedId
-      }));
-    });
+      }))
+    );
   }, [shown, edgeShape, editable, ws.selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const flowEdges = useMemo<Edge[]>(
