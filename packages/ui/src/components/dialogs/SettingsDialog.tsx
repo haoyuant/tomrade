@@ -3,7 +3,7 @@ import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tom
 import type { AppSettings } from "@tomrade/domain";
 import type { ModelProfile, ModelsSettings } from "@tomrade/llm";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEngines, usePlaybooks } from "~/lib/agent";
+import { agentKeys, useEngines, usePlaybooks } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomrade/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -122,6 +122,7 @@ export function SettingsDialog({
   pane?: string;
 }) {
   const { t, tx } = useI18n();
+  const qc = useQueryClient();
   const settings = useSettings();
   const sections = useSettingsSections();
   const save = useSaveSettings();
@@ -214,7 +215,15 @@ export function SettingsDialog({
       label: t("settingsDialog.assistantLabel"),
       icon: "i-panel" as IconId,
       group: "app" as const,
-      render: () => (settings.data ? <AssistantPane settings={settings.data} onSave={(next) => save.mutate(next)} /> : null)
+      render: () =>
+        settings.data ? (
+          <AssistantPane
+            settings={settings.data}
+            // A profile or an engine override can change what an engine's row shows (readiness, its Model
+            // choices) — stale beyond useEngines' own staleTime otherwise, so a save here refreshes it right away.
+            onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: agentKeys.engines }) })}
+          />
+        ) : null
     },
     {
       id: "agents",
@@ -335,7 +344,7 @@ const PRESETS = [
   { titleKey: "settingsDialog.presetCustom" as const, provider: "openai-compatible" as const, baseURL: "", model: "" }
 ];
 
-const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { conversation: "", worker: "" } };
+const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
 const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
@@ -351,44 +360,15 @@ function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (n
 
   const upsert = (profile: ModelProfile) => {
     const rest = models.profiles.filter((p) => p.id !== profile.id);
-    const roles = {
-      conversation: models.roles.conversation || profile.id,
-      worker: models.roles.worker || profile.id
-    };
-    saveModels({ profiles: [...rest, profile], roles });
+    saveModels({ profiles: [...rest, profile], roles: { worker: models.roles.worker || profile.id } });
     setEditing(null);
   };
 
   const remove = (id: string) => {
     const profiles = models.profiles.filter((p) => p.id !== id);
     const fallback = profiles[0]?.id ?? "";
-    saveModels({
-      profiles,
-      roles: {
-        conversation: models.roles.conversation === id ? fallback : models.roles.conversation,
-        worker: models.roles.worker === id ? fallback : models.roles.worker
-      }
-    });
+    saveModels({ profiles, roles: { worker: models.roles.worker === id ? fallback : models.roles.worker } });
   };
-
-  const roleSelect = (role: "conversation" | "worker", label: string, help: string) => (
-    <div className="field">
-      <label htmlFor={`role-${role}`}>{label}</label>
-      <select
-        id={`role-${role}`}
-        className="input"
-        value={models.roles[role] || models.profiles[0]?.id || ""}
-        onChange={(e) => saveModels({ ...models, roles: { ...models.roles, [role]: e.target.value } })}
-      >
-        {models.profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.title || p.model}
-          </option>
-        ))}
-      </select>
-      <span className="meta-txt">{help}</span>
-    </div>
-  );
 
   return (
     <>
@@ -436,9 +416,21 @@ function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (n
           </div>
         )}
         {models.profiles.length > 0 && (
-          <div className="grid-2">
-            {roleSelect("conversation", t("settingsDialog.conversationRoleLabel"), t("settingsDialog.conversationRoleHelp"))}
-            {roleSelect("worker", t("settingsDialog.workerRoleLabel"), t("settingsDialog.workerRoleHelp"))}
+          <div className="field">
+            <label htmlFor="role-worker">{t("settingsDialog.workerRoleLabel")}</label>
+            <select
+              id="role-worker"
+              className="input"
+              value={models.roles.worker || models.profiles[0]?.id || ""}
+              onChange={(e) => saveModels({ ...models, roles: { worker: e.target.value } })}
+            >
+              {models.profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title || p.model}
+                </option>
+              ))}
+            </select>
+            <span className="meta-txt">{t("settingsDialog.workerRoleHelp")}</span>
           </div>
         )}
       </div>
@@ -550,22 +542,17 @@ function EngineRow({
   const { t } = useI18n();
   const [open, setOpen] = useState(isDefault);
   const hasPicks = !!engine.picks?.length;
+  const toggle = () => hasPicks && setOpen((o) => !o);
   return (
     <div className="eng-row">
-      <div className="eng-head">
-        <label className="eng-pick">
+      <div className={`eng-head${hasPicks ? " eng-head-toggle" : ""}`} onClick={toggle}>
+        <label className="eng-pick" onClick={(e) => e.stopPropagation()}>
           <input type="radio" className="bs-radio" name="defaultEngine" checked={isDefault} onChange={onMakeDefault} />
           <span>{engine.title}</span>
         </label>
         <span className="meta-txt eng-state">{engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}</span>
         {hasPicks && (
-          <button
-            type="button"
-            className="btn btn-icon"
-            aria-expanded={open}
-            aria-label={t("settingsDialog.engineToggleAria", { title: engine.title })}
-            onClick={() => setOpen((o) => !o)}
-          >
+          <button type="button" className="btn btn-icon" aria-expanded={open} aria-label={t("settingsDialog.engineToggleAria", { title: engine.title })}>
             <Icon name={open ? "i-chevdown" : "i-chev"} size={12} />
           </button>
         )}
@@ -587,40 +574,53 @@ function EngineRow({
   );
 }
 
-/** One engine quick-pick knob. Free text over suggestions where the engine allows it (datalist),
- *  so any value the CLI knows still works; a strict list draws as a select. */
+const CUSTOM_PICK = "__custom__";
+
+/** One engine quick-pick knob, drawn as a select. A native `<input list>` datalist filters its
+ *  suggestions to those matching the current text, which hid the other presets once one was
+ *  already chosen — so a free-text pick instead gets a "Custom…" entry that reveals a plain
+ *  text input, keeping every preset reachable while any value the CLI knows still works. */
 function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView; pick: EnginePick; value: string; onCommit: (value: string) => void }) {
   const { t } = useI18n();
+  const isPreset = (v: string) => v === "" || pick.choices.some((c) => c.value === v);
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const [custom, setCustom] = useState(!isPreset(value));
+  useEffect(() => {
+    setDraft(value);
+    setCustom(!isPreset(value));
+  }, [value]);
   const commit = (next: string) => {
     setDraft(next);
     onCommit(next);
+  };
+  const onSelect = (v: string) => {
+    if (v === CUSTOM_PICK) {
+      setCustom(true);
+      return;
+    }
+    setCustom(false);
+    commit(v);
   };
   const title = pick.key === "model" || pick.key === "profile" ? t("settingsDialog.modelLabel") : pick.key === "effort" ? t("settingsDialog.effortLabel") : pick.title;
   const id = `engPick-${engine.id}-${pick.key}`;
   return (
     <div className="field">
       <label htmlFor={id}>{title}</label>
-      {pick.freeText ? (
+      <select id={id} className="input" value={custom ? CUSTOM_PICK : draft} onChange={(e) => onSelect(e.target.value)}>
+        <option value="">{t("settingsDialog.pickDefaultOption")}</option>
+        {pick.choices.map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label ?? c.value}
+          </option>
+        ))}
+        {pick.freeText && <option value={CUSTOM_PICK}>{t("settingsDialog.pickCustomOption")}</option>}
+      </select>
+      {pick.key === "profile" && <span className="meta-txt">{t("settingsDialog.engineProfileNote")}</span>}
+      {pick.freeText && (
         <>
-          <input id={id} className="input num" list={`${id}-list`} value={draft} placeholder={t("settingsDialog.pickDefaultOption")} onChange={(e) => commit(e.target.value)} />
-          <datalist id={`${id}-list`}>
-            {pick.choices.map((c) => (
-              <option key={c.value} value={c.value} />
-            ))}
-          </datalist>
+          {custom && <input id={`${id}-custom`} className="input num" value={draft} onChange={(e) => commit(e.target.value)} />}
           <span className="meta-txt">{t("settingsDialog.engineModelNote")}</span>
         </>
-      ) : (
-        <select id={id} className="input" value={draft} onChange={(e) => commit(e.target.value)}>
-          <option value="">{t("settingsDialog.pickDefaultOption")}</option>
-          {pick.choices.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label ?? c.value}
-            </option>
-          ))}
-        </select>
       )}
     </div>
   );

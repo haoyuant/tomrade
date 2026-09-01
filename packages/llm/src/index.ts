@@ -31,14 +31,16 @@ export interface LlmStatus {
 }
 
 /**
- * The model seam. `conversation` is what an engine reasons with; `worker` is
- * what compound tools and workflow steps generate content with — often cheaper.
+ * The model seam. An engine picks its own profile per thread (falling back to
+ * the first configured one); `worker` is what compound tools and workflow
+ * steps generate content with — often cheaper.
  */
 export interface LlmService extends LLMProvider {
   for(role: LlmRole): ChatModel;
   /** A specific profile by id, regardless of role bindings. Throws on an unknown id. */
   forProfile(id: string): ChatModel;
-  ready(role: LlmRole): LlmStatus;
+  /** Whether the first configured profile is usable — what an engine without its own pick falls back to. */
+  ready(): LlmStatus;
   /** The configured profiles, for pickers. */
   profiles(): { id: string; title: string }[];
 }
@@ -63,20 +65,18 @@ export type ModelProfile = z.infer<typeof modelProfileSchema>;
 
 export interface ModelsSettings {
   profiles: ModelProfile[];
-  roles: { conversation: string; worker: string };
+  roles: { worker: string };
 }
 
 export const MODELS_SECTION: SettingsSection<ModelsSettings> = {
   id: "models",
   title: "Models",
-  description: "Model profiles, and which one each role uses. The conversation model reasons in the assistant; the worker model generates content inside tools and can be cheaper.",
+  description: "Model profiles. Each engine picks its own per thread, in Engines below; the worker role generates content inside tools and can be cheaper.",
   schema: z.object({
     profiles: z.array(modelProfileSchema).default([]),
-    roles: z
-      .object({ conversation: z.string().default(""), worker: z.string().default("") })
-      .default({ conversation: "", worker: "" })
+    roles: z.object({ worker: z.string().default("") }).default({ worker: "" })
   }),
-  defaults: { profiles: [], roles: { conversation: "", worker: "" } },
+  defaults: { profiles: [], roles: { worker: "" } },
   order: 10
 };
 
@@ -108,8 +108,8 @@ export class Llm extends Service implements LlmService {
     return profiles.find((p) => p.id === roles[role]) ?? profiles[0];
   }
 
-  ready(role: LlmRole): LlmStatus {
-    const profile = this.profileFor(role);
+  ready(): LlmStatus {
+    const profile = this.models().profiles[0];
     if (!profile) return { ok: false, reason: "No model profile configured — add one in Settings → Assistant" };
     // A local endpoint (Ollama, LM Studio) needs no key; Anthropic always does.
     if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: `Profile "${profile.title || profile.id}" has no API key` };
@@ -178,7 +178,7 @@ export class Llm extends Service implements LlmService {
       ...all,
       models: {
         profiles: [{ id: "default", title: legacy.model, provider: "openai-compatible", baseURL: legacy.baseURL ?? "https://api.deepseek.com", apiKey: legacy.apiKey, model: legacy.model }],
-        roles: { conversation: "default", worker: "default" }
+        roles: { worker: "default" }
       }
     });
   }

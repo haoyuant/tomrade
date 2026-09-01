@@ -159,6 +159,7 @@ export class Agent extends Service {
     this.store = new AgentStore(this.ctx.db);
     this.store.reconcileInterrupted();
     this.ctx.settings.register(AGENT_SECTION);
+    this.migrateConversationRole();
     this.registerPlatformTools();
     this.loadUserPlaybooks();
     this.ctx.inject(["ipc"], (ctx) => {
@@ -313,6 +314,17 @@ export class Agent extends Service {
 
   settingsOf(): AgentSettings {
     return (this.ctx.settings.get().agent as AgentSettings | undefined) ?? AGENT_SECTION.defaults;
+  }
+
+  /** The old global "conversation" model role becomes the loop engine's own profile override, so a multi-profile pick survives. */
+  private migrateConversationRole(): void {
+    const all = this.ctx.settings.get();
+    const legacy = (all.models as { roles?: { conversation?: string } } | undefined)?.roles?.conversation;
+    if (!legacy) return;
+    const agent = this.settingsOf();
+    const loop = (agent.engines.loop ?? {}) as Record<string, unknown>;
+    if (loop.profile !== undefined) return;
+    this.ctx.settings.set({ ...all, agent: { ...agent, engines: { ...agent.engines, loop: { ...loop, profile: legacy } } } });
   }
 
   newThread(projectId: string, engine?: string): ThreadSummary {
