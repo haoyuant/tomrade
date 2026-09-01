@@ -205,7 +205,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
           </div>
         </main>
 
-        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={projectId} onOpenSettings={() => setSettingsOpen(true)} />
+        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={projectId} onOpenSettings={() => setSettingsOpen(true)} onOpenIssue={openIssue} />
       </div>
 
       <StatusBar projectId={projectId} onUndo={() => undo.mutate(undefined)}>

@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
 import type { AgentSettings, Block, EnginePick, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
 import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
@@ -45,20 +44,20 @@ function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; pr
 
 const KEY_RE = /([A-Z][A-Z0-9]{1,9}-\d+)/g;
 
-/** An item key in prose: one word wide, live title on hover, the full card one click away. */
-function KeyRef({ text, item, projectId }: { text: string; item: Item | undefined; projectId: string }) {
+/** An item key in prose: one word wide, live title on hover, the sidebar detail one click away — same as clicking the card on the board. */
+function KeyRef({ text, item, onOpenIssue }: { text: string; item: Item | undefined; onOpenIssue: (id: string) => void }) {
   if (!item) return <span className="kref dead num">{text}</span>;
   return (
-    <Link className="kref num" to="/p/$projectId/i/$itemId" params={{ projectId, itemId: item.key }} title={`${item.title} · ${item.status}`}>
+    <button type="button" className="kref num" title={`${item.title} · ${item.status}`} onClick={() => onOpenIssue(item.id)}>
       {text}
-    </Link>
+    </button>
   );
 }
 
 /** Plain text with keys linked. Deliberately not a markdown renderer — the engines are told to write plainly. */
-function linkify(text: string, byKey: Map<string, Item>, projectId: string): ReactNode[] {
+function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void): ReactNode[] {
   return text.split(KEY_RE).map((part, i) =>
-    i % 2 === 1 ? <KeyRef key={i} text={part} item={byKey.get(part)} projectId={projectId} /> : <Fragment key={i}>{part}</Fragment>
+    i % 2 === 1 ? <KeyRef key={i} text={part} item={byKey.get(part)} onOpenIssue={onOpenIssue} /> : <Fragment key={i}>{part}</Fragment>
   );
 }
 
@@ -152,7 +151,7 @@ function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "
   );
 }
 
-function RunFoot({ block, run, byKey, projectId, onRevert, busy }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; projectId: string; onRevert: (runId: string) => void; busy: boolean }) {
+function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onRevert: (runId: string) => void; busy: boolean }) {
   const { t } = useI18n();
   const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null].filter(Boolean).join(" · ") : "";
   return (
@@ -176,7 +175,7 @@ function RunFoot({ block, run, byKey, projectId, onRevert, busy }: { block: Bloc
         {block.items.map((it, i) => (
           <div className="rf-row" key={i}>
             <span className={`rf-op num op-${it.op}`}>{OP_GLYPH[it.op]}</span>
-            <KeyRef text={it.key} item={byKey.get(it.key)} projectId={projectId} />
+            <KeyRef text={it.key} item={byKey.get(it.key)} onOpenIssue={onOpenIssue} />
             <span className="rf-label" title={it.label}>{it.label}</span>
           </div>
         ))}
@@ -186,7 +185,7 @@ function RunFoot({ block, run, byKey, projectId, onRevert, busy }: { block: Bloc
   );
 }
 
-function Row({ m, runs, pending, byKey, projectId, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; projectId: string; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
+function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     return (
@@ -199,7 +198,7 @@ function Row({ m, runs, pending, byKey, projectId, onAnswer, onRevert, busy }: {
   if (b.type === "note") return <p className="agent-note">{b.text}</p>;
   const body =
     b.type === "text" ? (
-      b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, projectId)}</p>)
+      b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue)}</p>)
     ) : b.type === "trace" ? (
       <Trace block={b} />
     ) : b.type === "question" ? (
@@ -207,7 +206,7 @@ function Row({ m, runs, pending, byKey, projectId, onAnswer, onRevert, busy }: {
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
-      <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} projectId={projectId} onRevert={onRevert} busy={busy} />
+      <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} />
     ) : b.type === "error" ? (
       <p className="ai-error">{b.text}</p>
     ) : b.type === "status" ? (
@@ -223,7 +222,7 @@ function Row({ m, runs, pending, byKey, projectId, onAnswer, onRevert, busy }: {
   );
 }
 
-export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open: boolean; onToggle: (open: boolean) => void; projectId: string; onOpenSettings: () => void }) {
+export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIssue }: { open: boolean; onToggle: (open: boolean) => void; projectId: string; onOpenSettings: () => void; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
   const threads = useAgentThreads(projectId);
   const settings = useSettings();
@@ -405,7 +404,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
           </div>
         )}
         {(detail.data?.messages ?? []).map((m) => (
-          <Row key={m.id} m={m} runs={runs} pending={pending} byKey={byKey} projectId={projectId} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} />
+          <Row key={m.id} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} />
         ))}
         {live?.text && (
           <div className="turn turn-ai">
