@@ -34,6 +34,8 @@ export interface Item {
   labels: string[];
   /** Ids of the items this one blocks. */
   blocks: string[];
+  /** Ids of the items that block this one — the inverse of their `blocks`. */
+  blockedBy: string[];
   updatedAt: number;
   updatedBy: Author;
   version: number;
@@ -41,7 +43,7 @@ export interface Item {
   humanLocked: boolean;
 }
 
-export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "priority" | "parentId" | "rank" | "boardId" | "labels" | "humanLocked">>;
+export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "priority" | "parentId" | "rank" | "boardId" | "labels" | "blocks" | "humanLocked">>;
 
 export type OplogEntity = "item" | "board" | "view";
 

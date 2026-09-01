@@ -4,7 +4,7 @@
  * mutation lands in the oplog, and undo restores state.
  */
 import { describe, expect, it } from "vitest";
-import { ConflictError, HumanLockedError, NotFoundError, PurgeNotPermittedError, provenanceOf } from "@tomrade/domain";
+import { ConflictError, DependencyCycleError, HumanLockedError, NotFoundError, PurgeNotPermittedError, provenanceOf } from "@tomrade/domain";
 import { fresh } from "@tomrade/testkit";
 
 describe("items (write path)", () => {
@@ -63,6 +63,57 @@ describe("items (write path)", () => {
     expect(items.get(a.id)?.blocks).toEqual([b.id]);
     expect(items.get(b.id)?.blocks).toEqual([]);
     items.removeRelation(a.id, b.id);
+    expect(items.get(a.id)?.blocks).toEqual([]);
+  });
+
+  it("blocks edit through update: logged, versioned, and normalized", async () => {
+    const { items, oplog, board } = await fresh();
+    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const b = items.create({ title: "B", boardId: board.id, by: "human" });
+    const updated = items.update(a.id, { blocks: [b.id, b.id, a.id] }, "human", { baseVersion: 1 });
+    expect(updated.blocks).toEqual([b.id]);
+    expect(updated.version).toBe(2);
+    expect(items.get(a.id)?.blocks).toEqual([b.id]);
+    const entry = oplog.historyFor("item", a.id, 1)[0];
+    expect((entry.before as { blocks: string[] }).blocks).toEqual([]);
+    expect((entry.after as { blocks: string[] }).blocks).toEqual([b.id]);
+    expect(items.update(a.id, { blocks: [] }, "human").blocks).toEqual([]);
+    expect(items.get(a.id)?.blocks).toEqual([]);
+  });
+
+  it("a blocks edit that would close a cycle is refused, direct or transitive", async () => {
+    const { items, board } = await fresh();
+    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const b = items.create({ title: "B", boardId: board.id, by: "human" });
+    const c = items.create({ title: "C", boardId: board.id, by: "human" });
+    items.update(a.id, { blocks: [b.id] }, "human");
+    items.update(b.id, { blocks: [c.id] }, "human");
+    expect(() => items.update(c.id, { blocks: [a.id] }, "human")).toThrow(DependencyCycleError);
+    expect(() => items.update(b.id, { blocks: [c.id, a.id] }, "human")).toThrow(DependencyCycleError);
+    expect(items.get(c.id)?.blocks).toEqual([]);
+    // replacing the edge that made the path is fine — the check runs on the proposed graph
+    expect(items.update(a.id, { blocks: [c.id] }, "human").blocks).toEqual([c.id]);
+  });
+
+  it("blocks targets must exist in the same project", async () => {
+    const { items, projects, board } = await fresh();
+    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const elsewhere = projects.create({ name: "Elsewhere", keyPrefix: "ELS" });
+    const foreign = items.create({ title: "F", projectId: elsewhere.id, boardId: board.id, by: "human" });
+    expect(() => items.update(a.id, { blocks: ["ghost"] }, "human")).toThrow(NotFoundError);
+    expect(() => items.update(a.id, { blocks: [foreign.id] }, "human")).toThrow(NotFoundError);
+  });
+
+  it("undo of a blocks edit restores the edges exactly", async () => {
+    const { items, oplog, board } = await fresh();
+    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const b = items.create({ title: "B", boardId: board.id, by: "human" });
+    const c = items.create({ title: "C", boardId: board.id, by: "human" });
+    items.update(a.id, { blocks: [b.id] }, "human");
+    items.update(a.id, { blocks: [c.id] }, "human");
+    oplog.undoLast(a.id);
+    expect(items.get(a.id)?.blocks).toEqual([b.id]);
+    oplog.undoLast(a.id);
     expect(items.get(a.id)?.blocks).toEqual([]);
   });
 

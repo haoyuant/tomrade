@@ -3,7 +3,7 @@ import { Context, Service } from "cordis";
 import type { Db } from "@tomrade/db";
 import type { Oplog } from "@tomrade/oplog";
 import { write } from "@tomrade/write";
-import { NotFoundError, type Author, type CreateItemInput, type Item, type ItemKind, type ItemStatus, type ListItemsFilter, type Patch, type Priority } from "@tomrade/domain";
+import { DependencyCycleError, NotFoundError, type Author, type CreateItemInput, type Item, type ItemKind, type ItemStatus, type ListItemsFilter, type Patch, type Priority } from "@tomrade/domain";
 import { registerChannels } from "./channels.js";
 import { registerTools } from "./tools.js";
 
@@ -34,7 +34,7 @@ interface ItemRow {
 
 const SELECT_ITEM = "SELECT i.*, COALESCE(p.key_prefix, 'TOM') AS key_prefix FROM items i LEFT JOIN projects p ON p.id = i.project_id";
 
-function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks"> {
+function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks" | "blockedBy"> {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -68,7 +68,7 @@ function groupBy<T, V>(rows: T[], key: (r: T) => string, value: (r: T) => V): Ma
 
 /** better-sqlite3 cannot bind booleans. */
 function toSqlParams(item: Item): Record<string, unknown> {
-  const { labels: _labels, blocks: _blocks, key: _key, ...rest } = item;
+  const { labels: _labels, blocks: _blocks, blockedBy: _blockedBy, key: _key, ...rest } = item;
   return { ...rest, humanLocked: item.humanLocked ? 1 : 0 };
 }
 
@@ -149,6 +149,7 @@ export class Items extends Service {
       rank: input.rank ?? 0,
       labels: input.labels ?? [],
       blocks: [],
+      blockedBy: [],
       updatedAt: now,
       updatedBy: input.by,
       version: 1,
@@ -177,6 +178,7 @@ export class Items extends Service {
   update(id: string, patch: Patch, by: Author, opts: { baseVersion?: number } = {}): Item {
     const existing = this.get(id);
     if (!existing) throw new NotFoundError(id);
+    if (patch.blocks) patch = { ...patch, blocks: this.checkBlocks(existing, patch.blocks) };
     const next: Item = { ...existing, ...patch, updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
     return write(this.ctx, { entity: "item", op: "update", id, by, baseVersion: opts.baseVersion, before: existing, after: next, patch }, () =>
       this.db.transaction(() => {
@@ -189,6 +191,7 @@ export class Items extends Service {
           )
           .run(toSqlParams(next));
         if (patch.labels) this.writeLabels(id, next.projectId, next.labels);
+        if (patch.blocks) this.writeBlocks(id, next.blocks);
         this.oplog.append({ entity: "item", op: "update", entityId: id, baseVersion: existing.version, before: existing, after: next, by, at: next.updatedAt });
         return next;
       })
@@ -199,12 +202,11 @@ export class Items extends Service {
   delete(id: string, by: Author): void {
     const existing = this.get(id);
     if (!existing) throw new NotFoundError(id);
-    const blockedBy = (this.db.prepare("SELECT from_item_id FROM item_relations WHERE kind = 'blocks' AND to_item_id = ?").all(id) as { from_item_id: string }[]).map((r) => r.from_item_id);
     write(this.ctx, { entity: "item", op: "delete", id, by, before: existing, after: null }, () =>
       this.db.transaction(() => {
         this.detach(id);
         this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
-        this.oplog.append({ entity: "item", op: "delete", entityId: id, baseVersion: existing.version, before: { ...existing, blockedBy }, after: null, by, at: Date.now() });
+        this.oplog.append({ entity: "item", op: "delete", entityId: id, baseVersion: existing.version, before: existing, after: null, by, at: Date.now() });
       })
     );
   }
@@ -236,6 +238,55 @@ export class Items extends Service {
     );
   }
 
+  /**
+   * "Blocked until done" only means something on a DAG, so a patch that would
+   * close a loop is refused before the write path ever sees it. Returns the
+   * normalized list: de-duplicated, self-edges dropped, every target a live
+   * item of the same project.
+   */
+  private checkBlocks(item: Item, raw: string[]): string[] {
+    const targets = [...new Set(raw)].filter((t) => t !== item.id);
+    if (targets.length) {
+      const placeholders = targets.map(() => "?").join(",");
+      const known = new Set(
+        (this.db.prepare(`SELECT id FROM items WHERE project_id = ? AND id IN (${placeholders})`).all(item.projectId, ...targets) as { id: string }[]).map((r) => r.id)
+      );
+      for (const t of targets) if (!known.has(t)) throw new NotFoundError(t);
+    }
+    // The proposed graph: everyone else's edges as stored, this item's replaced.
+    const edges = new Map<string, string[]>([[item.id, targets]]);
+    const rel = this.db
+      .prepare("SELECT r.from_item_id AS f, r.to_item_id AS t FROM item_relations r JOIN items i ON i.id = r.from_item_id WHERE r.kind = 'blocks' AND i.project_id = ? AND r.from_item_id != ?")
+      .all(item.projectId, item.id) as { f: string; t: string }[];
+    for (const { f, t } of rel) {
+      const bucket = edges.get(f);
+      if (bucket) bucket.push(t);
+      else edges.set(f, [t]);
+    }
+    const keyOf = (id: string) => (this.db.prepare("SELECT i.key_num, COALESCE(p.key_prefix, 'TOM') AS kp FROM items i LEFT JOIN projects p ON p.id = i.project_id WHERE i.id = ?").get(id) as { key_num: number; kp: string } | undefined);
+    const label = (id: string) => {
+      const row = keyOf(id);
+      return row ? `${row.kp}-${row.key_num}` : id;
+    };
+    const seen = new Set<string>();
+    const walk = (node: string, path: string[]): void => {
+      for (const nxt of edges.get(node) ?? []) {
+        if (nxt === item.id) throw new DependencyCycleError(item.id, [...path, nxt].map(label));
+        if (seen.has(nxt)) continue;
+        seen.add(nxt);
+        walk(nxt, [...path, nxt]);
+      }
+    };
+    walk(item.id, [item.id]);
+    return targets;
+  }
+
+  /** Replace an item's outgoing edges to match the patched list. */
+  private writeBlocks(itemId: string, targets: string[]): void {
+    this.db.prepare("DELETE FROM item_relations WHERE from_item_id = ? AND kind = 'blocks'").run(itemId);
+    for (const t of targets) this.db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(itemId, t);
+  }
+
   /** Record that `id` blocks `blockedId`. */
   addRelation(id: string, blockedId: string): void {
     this.db.prepare("INSERT OR IGNORE INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(id, blockedId);
@@ -265,11 +316,12 @@ export class Items extends Service {
       .prepare(`SELECT il.item_id, l.name FROM item_labels il JOIN labels l ON l.id = il.label_id WHERE il.item_id IN (${placeholders}) ORDER BY l.name`)
       .all(...ids) as { item_id: string; name: string }[];
     const relRows = this.db
-      .prepare(`SELECT from_item_id, to_item_id FROM item_relations WHERE kind = 'blocks' AND from_item_id IN (${placeholders})`)
-      .all(...ids) as { from_item_id: string; to_item_id: string }[];
+      .prepare(`SELECT from_item_id, to_item_id FROM item_relations WHERE kind = 'blocks' AND (from_item_id IN (${placeholders}) OR to_item_id IN (${placeholders}))`)
+      .all(...ids, ...ids) as { from_item_id: string; to_item_id: string }[];
     const labels = groupBy(labelRows, (r) => r.item_id, (r) => r.name);
     const blocks = groupBy(relRows, (r) => r.from_item_id, (r) => r.to_item_id);
-    return rows.map((row) => ({ ...baseItem(row), labels: labels.get(row.id) ?? [], blocks: blocks.get(row.id) ?? [] }));
+    const blockedBy = groupBy(relRows, (r) => r.to_item_id, (r) => r.from_item_id);
+    return rows.map((row) => ({ ...baseItem(row), labels: labels.get(row.id) ?? [], blocks: blocks.get(row.id) ?? [], blockedBy: blockedBy.get(row.id) ?? [] }));
   }
 
   /** Replace an item's labels, creating any that are new to the project. */

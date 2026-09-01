@@ -1,9 +1,10 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { Item, OplogEntry } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
-import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
+import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import {
   BoardField,
+  DepsField,
   EpicField,
   IssueBody,
   IssueTitle,
@@ -116,7 +117,7 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
 
 export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
   const { t } = useI18n();
-  const { epics, boards, labels } = useWorkspace();
+  const { epics, boards, labels, items, select } = useWorkspace();
   const prov = provenanceOf(item);
   return (
     <dl className="fieldstrip">
@@ -142,6 +143,18 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
         <dt>{t("detailPane.fieldLabelsCol")}</dt>
         <dd>
           <LabelsField item={item} write={write} vocabulary={labels} />
+        </dd>
+      </div>
+      <div className="field-row">
+        <dt>{t("detailPane.fieldBlockedBy")}</dt>
+        <dd>
+          <DepsField item={item} write={write} items={items} mode="blockedBy" onOpen={select} />
+        </dd>
+      </div>
+      <div className="field-row">
+        <dt>{t("detailPane.fieldBlocks")}</dt>
+        <dd>
+          <DepsField item={item} write={write} items={items} mode="blocks" onOpen={select} />
         </dd>
       </div>
       <div className="field-row">
@@ -216,10 +229,9 @@ function DetailBody({
   onDelete: () => void;
 }) {
   const { t } = useI18n();
-  const { project, boards, items, select } = useWorkspace();
+  const { project, boards } = useWorkspace();
   const { write } = useIssueWriter(project.id);
   const owner = boards.find((b) => b.id === item.boardId);
-  const blocks = item.blocks.map((id) => items.find((i) => i.id === id)).filter((i): i is Item => !!i);
 
   return (
     <>
@@ -259,18 +271,6 @@ function DetailBody({
           <div className="detail-main">
             {item.humanLocked && <LockBar />}
             <IssueBody item={item} write={write} className="issue-body" />
-            {blocks.length > 0 && (
-              <section className="detail-sect">
-                <Eyebrow>{t("detailPane.blocksHeading")}</Eyebrow>
-                {blocks.map((b) => (
-                  <button key={b.id} type="button" className="rel-row" onClick={() => select(b.id)}>
-                    <StatusMark status={b.status} size={13} />
-                    <span className="r-t">{b.title}</span>
-                    <span className="card-id">{b.key}</span>
-                  </button>
-                ))}
-              </section>
-            )}
             <PluginSections itemId={item.id} />
           </div>
           <aside className="detail-side">

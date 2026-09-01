@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import type { Board, Item, ItemStatus, Patch, Priority } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
-import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
+import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { usePatchItem, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -420,5 +420,122 @@ export function IssueBody({ item, write, className }: FieldProps & { className: 
       submit="mod-enter"
       onSave={(next) => write(item, { body: next || null }, tx("fields.editedDescriptionToast", { key: <span className="num">{item.key}</span> }))}
     />
+  );
+}
+
+/** Ids reachable from `start` along `blocks` edges, `start` excluded. */
+function reachableFrom(start: string, items: Item[]): Set<string> {
+  const blocksOf = new Map(items.map((i) => [i.id, i.blocks]));
+  const seen = new Set<string>();
+  const queue = [start];
+  while (queue.length) {
+    for (const next of blocksOf.get(queue.pop()!) ?? []) {
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return seen;
+}
+
+/**
+ * One edge list, editable from either end. `blockedBy` edits write to the
+ * *other* issue — the edge is stored on the blocker — which is why every chip
+ * and toast still names both sides. Candidates that would close a cycle are
+ * not offered; the service refuses them anyway, this just keeps the datalist
+ * honest.
+ */
+export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { items: Item[]; mode: "blocks" | "blockedBy"; onOpen: (id: string) => void }) {
+  const { t, tx } = useI18n();
+  const listId = useId();
+  const [adding, setAdding] = useState(false);
+  const settled = useRef(false);
+
+  const related = mode === "blocks" ? item.blocks.map((id) => items.find((i) => i.id === id)).filter((i): i is Item => !!i) : items.filter((i) => i.blocks.includes(item.id));
+  const relatedIds = new Set(related.map((r) => r.id));
+  // For "blocks", a candidate that reaches this issue would close a loop; for
+  // "blocked by", one this issue reaches would.
+  const looped = mode === "blocks" ? (c: Item) => reachableFrom(c.id, items).has(item.id) : (c: Item) => reachableFrom(item.id, items).has(c.id);
+  const candidates = items.filter((c) => isTicket(c) && c.id !== item.id && !relatedIds.has(c.id) && !looped(c));
+
+  const said = (verbKey: "fields.addedBlocksToast" | "fields.removedBlocksToast" | "fields.addedBlockedByToast" | "fields.removedBlockedByToast", other: Item) =>
+    tx(verbKey, { key: <span className="num">{item.key}</span>, other: <span className="num">{other.key}</span> });
+
+  const add = (raw: string) => {
+    setAdding(false);
+    if (settled.current) return;
+    settled.current = true;
+    const text = raw.trim();
+    if (!text) return;
+    const keyPart = text.split(" ")[0];
+    const target = candidates.find((c) => c.key === keyPart) ?? candidates.find((c) => c.title === text);
+    if (!target) return;
+    if (mode === "blocks") write(item, { blocks: [...item.blocks, target.id] }, said("fields.addedBlocksToast", target));
+    else write(target, { blocks: [...target.blocks, item.id] }, said("fields.addedBlockedByToast", target));
+  };
+
+  const remove = (other: Item) => {
+    if (mode === "blocks") write(item, { blocks: item.blocks.filter((id) => id !== other.id) }, said("fields.removedBlocksToast", other));
+    else write(other, { blocks: other.blocks.filter((id) => id !== item.id) }, said("fields.removedBlockedByToast", other));
+  };
+
+  return (
+    <span className="labset">
+      {related.map((r) => (
+        <span key={r.id} className="tag faint lab dep">
+          <button type="button" className="dep-open" title={r.title} onClick={() => onOpen(r.id)}>
+            <StatusMark status={r.status} size={11} />
+            <span className="num">{r.key}</span>
+          </button>
+          <button type="button" className="lab-x" aria-label={t("fields.removeDepAria", { key: r.key })} title={t("fields.removeDepTitle", { key: r.key })} onClick={() => remove(r)}>
+            <Icon name="i-close" size={9} />
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <>
+          <input
+            autoFocus
+            className="lab-in dep-in"
+            list={candidates.length ? listId : undefined}
+            aria-label={t(mode === "blocks" ? "fields.newBlocksAria" : "fields.newBlockedByAria")}
+            placeholder={t("fields.depPlaceholder")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add(e.currentTarget.value);
+              }
+              if (e.key === "Escape") {
+                // the expanded pane is a dialog; Escape belongs to this input first
+                e.stopPropagation();
+                settled.current = true;
+                setAdding(false);
+              }
+            }}
+            onBlur={(e) => add(e.currentTarget.value)}
+          />
+          {candidates.length > 0 && (
+            <datalist id={listId}>
+              {candidates.map((c) => (
+                <option key={c.id} value={`${c.key} ${c.title}`} />
+              ))}
+            </datalist>
+          )}
+        </>
+      ) : (
+        <button
+          type="button"
+          className="lab-add"
+          title={t(mode === "blocks" ? "fields.addBlocksTitle" : "fields.addBlockedByTitle")}
+          onClick={() => {
+            settled.current = false;
+            setAdding(true);
+          }}
+        >
+          <Icon name="i-plus" size={10} /> {t("fields.depButtonText")}
+        </button>
+      )}
+    </span>
   );
 }

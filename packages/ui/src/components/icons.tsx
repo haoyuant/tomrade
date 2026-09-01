@@ -39,6 +39,7 @@ export const ICON_IDS = [
   "i-clock",
   "i-send",
   "i-stop",
+  "i-graph",
   "s-backlog",
   "s-todo",
   "s-doing",
@@ -92,6 +93,7 @@ export function IconSprite() {
         <symbol id="i-pen" viewBox="0 0 14 14"><path d="M9.3 2.4 11.6 4.7 5.3 11 2.4 11.6 3 8.7Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></symbol>
         <symbol id="i-sliders" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M1.9 4.6h10.2M1.9 9.4h10.2"/></g><g fill="currentColor"><circle cx="5.2" cy="4.6" r="1.7"/><circle cx="9" cy="9.4" r="1.7"/></g></symbol>
         <symbol id="i-clock" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.2"/><path d="M7 4.2V7l2 1.4"/></g></symbol>
+        <symbol id="i-graph" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="3.2" cy="3.4" r="1.7"/><circle cx="10.8" cy="5.4" r="1.7"/><circle cx="5.6" cy="10.6" r="1.7"/><path d="M4.8 4 9.2 4.9M4.4 9.2 3.5 5.1M7.2 9.9 9.7 6.8" strokeLinecap="round"/></g></symbol>
     
         {/* status marks: shape-coded, legible without colour */}
         <symbol id="s-backlog" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.1" fill="none" stroke="currentColor" strokeWidth="1.3" strokeDasharray="2 2.1"/></symbol>

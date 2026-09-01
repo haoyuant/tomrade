@@ -7,11 +7,12 @@ import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { usePanelOpen } from "~/lib/panel";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
-import { Eyebrow, Spacer, StatusMark } from "~/components/ui/atoms";
+import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
+  DepsField,
   EpicField,
   IssueBody,
   IssueTitle,
@@ -66,7 +67,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
   const board = boards.data?.find((b) => b.id === item.boardId);
   const epics = (items.data ?? []).filter((i) => i.kind === "epic");
-  const blocks = item.blocks.map((id) => items.data?.find((i) => i.id === id)).filter((i): i is Item => !!i);
+  const openIssue = (id: string) => void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: id } });
   const prov = provenanceOf(item);
   const next = nextStatus(item.status);
 
@@ -139,6 +140,18 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
                 </span>
               </span>
               <span className="fs-item">
+                <span className="fs-k">{t("detailPane.fieldBlockedBy")}</span>
+                <span className="fs-v">
+                  <DepsField item={item} write={write} items={items.data ?? []} mode="blockedBy" onOpen={openIssue} />
+                </span>
+              </span>
+              <span className="fs-item">
+                <span className="fs-k">{t("detailPane.fieldBlocks")}</span>
+                <span className="fs-v">
+                  <DepsField item={item} write={write} items={items.data ?? []} mode="blocks" onOpen={openIssue} />
+                </span>
+              </span>
+              <span className="fs-item">
                 <span className="fs-k">{t("detailPane.fieldBoard")}</span>
                 <span className="fs-v">
                   <BoardField item={item} write={write} boards={boards.data ?? []} />
@@ -175,25 +188,6 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
             <div className="body-prose">
               <IssueBody item={item} write={write} className="bp-body" />
-              {blocks.length > 0 && (
-                <>
-                  <h3>{t("detailPane.blocksHeading")}</h3>
-                  <div style={{ marginTop: "var(--space-2)" }}>
-                    {blocks.map((b) => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        className="rel-row"
-                        onClick={() => void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: b.id } })}
-                      >
-                        <StatusMark status={b.status} size={13} />
-                        <span className="r-t">{b.title}</span>
-                        <span className="card-id">{b.key}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
             </div>
 
             <PluginSections itemId={item.id} variant="sheet" />

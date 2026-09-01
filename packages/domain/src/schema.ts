@@ -33,6 +33,7 @@ export const patchSchema = z.object({
   status: itemStatusSchema.optional(),
   priority: prioritySchema.optional(),
   labels: z.array(z.string()).optional(),
+  blocks: z.array(z.string()).optional(),
   parentId: z.string().nullable().optional(),
   rank: z.number().optional()
 });

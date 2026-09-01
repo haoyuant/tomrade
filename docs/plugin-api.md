@@ -116,7 +116,7 @@ consumer follows.
 | `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams and their slices |
 | `ctx.projects` | spine | `@tomrade/projects` | The container; outside the oplog and undo |
 | `ctx.tools` | spine | `@tomrade/tools` | The registry and guarded `execute` |
-| `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections |
+| `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs |
 | `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
 | `ctx.storage` | spine registry | `@tomrade/storage` | Where a project's shareable copy lives: providers, the text artifact, flush/refresh |
@@ -279,7 +279,10 @@ bug; the helper asserts that a listener either refused or delegated.
 
 Exceptions, deliberately: projects are managed by humans through the UI and sit
 outside the oplog; `views.setRank`, `items.addRelation` and `boards.moveItems`
-are not logged today.
+are not logged today. Dependency edits have a logged path: `blocks` is a patch
+field on `items.update`, versioned and undoable, and a patch that would close a
+cycle is refused with `DependencyCycleError` — `addRelation` remains the raw,
+unguarded helper for seeding.
 
 ## Tools
 
@@ -432,6 +435,7 @@ ctx.contributions.command({ id: "hello.say", title: "Say hello", group: "Hello",
 ctx.contributions.badge({ id: "hello", compute: (items) => ({ [items[0]?.id]: [{ id: "hi", label: "hi", tone: "strong" }] }) });
 ctx.contributions.statusItem({ id: "hello", text: ({ projectId }) => "hello" });
 ctx.contributions.section({ id: "hello", title: "Hello", render: (item) => ({ rows: [{ label: "Key", value: item.key }] }) });
+ctx.contributions.graph({ id: "hello", title: "Hello", icon: "i-graph", compute: (items) => items.flatMap((i) => (i.parentId ? [{ from: i.parentId, to: i.id }] : [])) });
 ```
 
 Commands appear in the palette under their group and run in the main process
@@ -440,6 +444,17 @@ on every board refresh over the project's items. Status items render in the
 status bar; sections in the detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
 refetches.
+
+A **graph** is one more way to arrange the board: its entry joins the
+status/priority/epic segmented control, and the renderer draws the same issue
+cards on an interactive canvas with the plugin's edges as arrows. The plugin
+returns item-id pairs (`{ from, to, tone?, title? }`) — no layout, no pixels;
+the current view's filters still apply, and edges whose ends are filtered out
+are not drawn. A graph that declares `edits: "blocks"` gets an editable canvas:
+dragging between cards and deleting an arrow write `Item.blocks` patches
+through the ordinary guarded path. `@tomrade/deps-graph` is the shipped
+example — the Dependencies graph plus a `blocked` badge for issues waiting on
+unfinished work.
 
 ## Channels
 

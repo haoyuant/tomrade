@@ -17,6 +17,7 @@ import { AgentPanel, aiOpenKey } from "./AgentPanel";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
+import { GraphView } from "./GraphView";
 import { QueryBar } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { BoardHead, TitleBar } from "./TitleBar";
@@ -171,7 +172,7 @@ export function Workspace() {
           <BoardHead onOpenBoardSettings={openBoardSettings} />
           <QueryBar onOpenViewSettings={() => setViewSettings(true)} />
           {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
-          <Board onConflict={setConflict} />
+          {ws.query.graph ? <GraphView /> : <Board onConflict={setConflict} />}
         </section>
 
         {selected && (
