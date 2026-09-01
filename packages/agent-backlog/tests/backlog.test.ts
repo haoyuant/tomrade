@@ -18,6 +18,7 @@ const item = (title: string, extra: Partial<Item> = {}): Item => ({
   rank: 0,
   labels: [],
   blocks: [],
+  blockedBy: [],
   updatedAt: 0,
   updatedBy: "human",
   version: 1,

@@ -34,7 +34,7 @@ interface ItemRow {
 
 const SELECT_ITEM = "SELECT i.*, COALESCE(p.key_prefix, 'TOM') AS key_prefix FROM items i LEFT JOIN projects p ON p.id = i.project_id";
 
-function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks"> {
+function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks" | "blockedBy"> {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -68,7 +68,7 @@ function groupBy<T, V>(rows: T[], key: (r: T) => string, value: (r: T) => V): Ma
 
 /** better-sqlite3 cannot bind booleans. */
 function toSqlParams(item: Item): Record<string, unknown> {
-  const { labels: _labels, blocks: _blocks, key: _key, ...rest } = item;
+  const { labels: _labels, blocks: _blocks, blockedBy: _blockedBy, key: _key, ...rest } = item;
   return { ...rest, humanLocked: item.humanLocked ? 1 : 0 };
 }
 
@@ -149,6 +149,7 @@ export class Items extends Service {
       rank: input.rank ?? 0,
       labels: input.labels ?? [],
       blocks: [],
+      blockedBy: [],
       updatedAt: now,
       updatedBy: input.by,
       version: 1,
@@ -201,12 +202,11 @@ export class Items extends Service {
   delete(id: string, by: Author): void {
     const existing = this.get(id);
     if (!existing) throw new NotFoundError(id);
-    const blockedBy = (this.db.prepare("SELECT from_item_id FROM item_relations WHERE kind = 'blocks' AND to_item_id = ?").all(id) as { from_item_id: string }[]).map((r) => r.from_item_id);
     write(this.ctx, { entity: "item", op: "delete", id, by, before: existing, after: null }, () =>
       this.db.transaction(() => {
         this.detach(id);
         this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
-        this.oplog.append({ entity: "item", op: "delete", entityId: id, baseVersion: existing.version, before: { ...existing, blockedBy }, after: null, by, at: Date.now() });
+        this.oplog.append({ entity: "item", op: "delete", entityId: id, baseVersion: existing.version, before: existing, after: null, by, at: Date.now() });
       })
     );
   }
@@ -316,11 +316,12 @@ export class Items extends Service {
       .prepare(`SELECT il.item_id, l.name FROM item_labels il JOIN labels l ON l.id = il.label_id WHERE il.item_id IN (${placeholders}) ORDER BY l.name`)
       .all(...ids) as { item_id: string; name: string }[];
     const relRows = this.db
-      .prepare(`SELECT from_item_id, to_item_id FROM item_relations WHERE kind = 'blocks' AND from_item_id IN (${placeholders})`)
-      .all(...ids) as { from_item_id: string; to_item_id: string }[];
+      .prepare(`SELECT from_item_id, to_item_id FROM item_relations WHERE kind = 'blocks' AND (from_item_id IN (${placeholders}) OR to_item_id IN (${placeholders}))`)
+      .all(...ids, ...ids) as { from_item_id: string; to_item_id: string }[];
     const labels = groupBy(labelRows, (r) => r.item_id, (r) => r.name);
     const blocks = groupBy(relRows, (r) => r.from_item_id, (r) => r.to_item_id);
-    return rows.map((row) => ({ ...baseItem(row), labels: labels.get(row.id) ?? [], blocks: blocks.get(row.id) ?? [] }));
+    const blockedBy = groupBy(relRows, (r) => r.to_item_id, (r) => r.from_item_id);
+    return rows.map((row) => ({ ...baseItem(row), labels: labels.get(row.id) ?? [], blocks: blocks.get(row.id) ?? [], blockedBy: blockedBy.get(row.id) ?? [] }));
   }
 
   /** Replace an item's labels, creating any that are new to the project. */

@@ -34,6 +34,8 @@ export interface Item {
   labels: string[];
   /** Ids of the items this one blocks. */
   blocks: string[];
+  /** Ids of the items that block this one — the inverse of their `blocks`. */
+  blockedBy: string[];
   updatedAt: number;
   updatedBy: Author;
   version: number;
