@@ -16,6 +16,7 @@ declare module "@tomrade/ipc" {
 export interface WindowOptions {
   preload: string;
   uiIndex: string;
+  icon: string;
   devServerUrl?: string;
 }
 
@@ -26,6 +27,7 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     title: "Tomrade",
+    icon: opts.icon,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false }

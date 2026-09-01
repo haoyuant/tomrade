@@ -9,7 +9,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(1);
 const patchFlag = argv.indexOf("--patch");
 
+const iconPath = path.join(here, "../assets/icon.png");
+
 app.whenReady().then(async () => {
+  // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
+  // runs Electron's own bundled app; the Dock icon has to be set explicitly.
+  if (process.platform === "darwin") app.dock?.setIcon(iconPath);
+
   const userData = app.getPath("userData");
   const { ctx, dump } = await boot({
     configFile: path.join(here, "../tomrade.yml"),
@@ -41,6 +47,7 @@ app.whenReady().then(async () => {
     createWindow(ctx, {
       preload: path.join(here, "../preload.cjs"),
       uiIndex: path.join(here, "../../../packages/ui/dist/index.html"),
+      icon: iconPath,
       devServerUrl: process.env.VITE_DEV_SERVER_URL
     });
   open();
