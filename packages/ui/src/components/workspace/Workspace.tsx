@@ -188,7 +188,7 @@ export function Workspace() {
           />
         )}
 
-        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={ws.project.id} onOpenSettings={() => setSettings("assistant")} />
+        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={ws.project.id} onOpenSettings={() => setSettings("assistant")} onOpenIssue={ws.select} />
       </div>
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} />
