@@ -12,6 +12,7 @@ export {
   type Block,
   type CardView,
   type Engine,
+  type EnginePick,
   type EngineView,
   type PendingView,
   type Playbook,

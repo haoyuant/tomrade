@@ -37,6 +37,8 @@ export const ICON_IDS = [
   "i-pen",
   "i-sliders",
   "i-clock",
+  "i-send",
+  "i-stop",
   "s-backlog",
   "s-todo",
   "s-doing",
@@ -69,6 +71,8 @@ export function IconSprite() {
         <symbol id="i-gear" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round"><circle cx="7" cy="7" r="4.15"/><circle cx="7" cy="7" r="1.8"/><path d="M11.15 7H12.75M7 2.85V1.25M2.85 7H1.25M7 11.15V12.75M9.94 4.06 11.07 2.93M4.06 4.06 2.93 2.93M4.06 9.94 2.93 11.07M9.94 9.94 11.07 11.07"/></g></symbol>
         <symbol id="i-undo" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.4 5.4h6.2a3.4 3.4 0 1 1 0 6.8H5.2"/><path d="M4.8 2.9 2.3 5.4l2.5 2.5"/></g></symbol>
         <symbol id="i-search" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="6.2" cy="6.2" r="3.9"/><path d="M9.2 9.2 12 12"/></g></symbol>
+        <symbol id="i-send" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 3.2v3a1.8 1.8 0 0 1-1.8 1.8H3.4"/><path d="M5.8 5.6 3.4 8l2.4 2.4"/></g></symbol>
+        <symbol id="i-stop" viewBox="0 0 14 14"><rect x="3.8" y="3.8" width="6.4" height="6.4" rx="1.2" fill="currentColor"/></symbol>
         <symbol id="i-chev" viewBox="0 0 14 14"><path d="M5.2 3.4 8.9 7l-3.7 3.6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></symbol>
         <symbol id="i-chevdown" viewBox="0 0 14 14"><path d="M3.6 5.4 7 8.8l3.4-3.4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></symbol>
         <symbol id="i-expand" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M8.4 2.2h3.4v3.4M5.6 11.8H2.2V8.4M11.8 2.2 7.9 6.1M2.2 11.8l3.9-3.9"/></g></symbol>

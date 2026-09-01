@@ -8,6 +8,10 @@ import { ToolInputError } from "@tomrade/tools";
 export const LoopOptions = z.object({
   /** auto: the playbook index guides the model; none: the bare loop. */
   guidance: z.enum(["auto", "none"]).default("auto"),
+  /** A model profile id; empty = whatever the conversation role is bound to. */
+  profile: z.string().optional(),
+  /** Reasoning effort, where the profile's endpoint has the knob (OpenAI-compatible). */
+  effort: z.string().optional(),
   maxSteps: z.number().int().min(1).max(64).default(24),
   maxTokens: z.number().int().min(256).default(8192)
 });
@@ -66,10 +70,18 @@ export function createLoopEngine(ctx: Context): Engine {
       if (!llm) return { ok: false, reason: "No language model plugin is loaded" };
       return llm.ready("conversation");
     },
+    picks: () => {
+      const profiles = ctx.get("llm")?.profiles() ?? [];
+      return [
+        // one profile needs no picker — it is the default either way
+        ...(profiles.length > 1 ? [{ key: "profile", title: "Model", choices: profiles.map((p) => ({ value: p.id, label: p.title })) }] : []),
+        { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
+      ];
+    },
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       if (!io.llm) return { stop: "error", error: "no language model available" };
       const options = LoopOptions.parse(input.options ?? {});
-      const model = io.llm.for("conversation");
+      const model = options.profile ? io.llm.forProfile(options.profile) : io.llm.for("conversation");
       const tools: ToolSpec[] = io.tools
         .describe()
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -86,7 +98,8 @@ export function createLoopEngine(ctx: Context): Engine {
               messages,
               tools,
               toolChoice: invalidStreak >= 2 ? "none" : undefined,
-              maxTokens: options.maxTokens
+              maxTokens: options.maxTokens,
+              effort: options.effort
             },
             io.signal
           ),

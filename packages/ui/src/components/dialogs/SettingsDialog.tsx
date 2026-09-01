@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { AgentSettings, PlaybookSource } from "@tomrade/agent";
+import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomrade/agent";
 import type { AppSettings } from "@tomrade/domain";
 import type { ModelProfile, ModelsSettings } from "@tomrade/llm";
 import { useQueryClient } from "@tanstack/react-query";
@@ -446,28 +446,25 @@ function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (n
       <hr className="rule" />
       <SectionHead title={t("settingsDialog.enginesTitle")}>{t("settingsDialog.enginesLede")}</SectionHead>
       <div className="panel stack-3">
-        <div className="field">
-          <label htmlFor="stEngine">{t("settingsDialog.defaultEngineLabel")}</label>
-          <select
-            id="stEngine"
-            className="input"
-            value={agent.defaultEngine}
-            onChange={(e) => saveAgent({ ...agent, defaultEngine: e.target.value })}
-          >
-            {(engines.data ?? []).map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.title}
-              </option>
-            ))}
-          </select>
-        </div>
-        <ul className="dash">
+        <div className="eng-list" role="radiogroup" aria-label={t("settingsDialog.defaultEngineLabel")}>
           {(engines.data ?? []).map((e) => (
-            <li key={e.id}>
-              {e.title} — {e.ok ? t("settingsDialog.engineReady") : (e.reason ?? t("settingsDialog.engineUnavailable"))}
-            </li>
+            <EngineRow
+              key={e.id}
+              engine={e}
+              isDefault={agent.defaultEngine === e.id}
+              onMakeDefault={() => saveAgent({ ...agent, defaultEngine: e.id })}
+              options={(agent.engines[e.id] ?? {}) as Record<string, unknown>}
+              onCommit={(key, value) => {
+                const opts = (agent.engines[e.id] ?? {}) as Record<string, unknown>;
+                const next = { ...opts };
+                if (value.trim()) next[key] = value.trim();
+                else delete next[key];
+                saveAgent({ ...agent, engines: { ...agent.engines, [e.id]: next } });
+              }}
+            />
           ))}
-        </ul>
+        </div>
+        <p className="meta-txt">{t("settingsDialog.engineListNote")}</p>
         <div className="field">
           <label htmlFor="stConfirm">{t("settingsDialog.confirmWritesLabel")}</label>
           <input
@@ -533,6 +530,99 @@ function PlaybooksBlock({ agent, onSave }: { agent: AgentSettings; onSave: (next
         </div>
       ))}
     </>
+  );
+}
+
+/** One activated engine: the radio makes it the conductor of new threads; the chevron unfolds its knobs. */
+function EngineRow({
+  engine,
+  isDefault,
+  onMakeDefault,
+  options,
+  onCommit
+}: {
+  engine: EngineView;
+  isDefault: boolean;
+  onMakeDefault: () => void;
+  options: Record<string, unknown>;
+  onCommit: (key: string, value: string) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(isDefault);
+  const hasPicks = !!engine.picks?.length;
+  return (
+    <div className="eng-row">
+      <div className="eng-head">
+        <label className="eng-pick">
+          <input type="radio" className="bs-radio" name="defaultEngine" checked={isDefault} onChange={onMakeDefault} />
+          <span>{engine.title}</span>
+        </label>
+        <span className="meta-txt eng-state">{engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}</span>
+        {hasPicks && (
+          <button
+            type="button"
+            className="btn btn-icon"
+            aria-expanded={open}
+            aria-label={t("settingsDialog.engineToggleAria", { title: engine.title })}
+            onClick={() => setOpen((o) => !o)}
+          >
+            <Icon name={open ? "i-chevdown" : "i-chev"} size={12} />
+          </button>
+        )}
+      </div>
+      {open && hasPicks && (
+        <div className="eng-body grid-2">
+          {(engine.picks ?? []).map((pick) => (
+            <EnginePickField
+              key={pick.key}
+              engine={engine}
+              pick={pick}
+              value={typeof options[pick.key] === "string" ? (options[pick.key] as string) : ""}
+              onCommit={(value) => onCommit(pick.key, value)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One engine quick-pick knob. Free text over suggestions where the engine allows it (datalist),
+ *  so any value the CLI knows still works; a strict list draws as a select. */
+function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView; pick: EnginePick; value: string; onCommit: (value: string) => void }) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = (next: string) => {
+    setDraft(next);
+    onCommit(next);
+  };
+  const title = pick.key === "model" || pick.key === "profile" ? t("settingsDialog.modelLabel") : pick.key === "effort" ? t("settingsDialog.effortLabel") : pick.title;
+  const id = `engPick-${engine.id}-${pick.key}`;
+  return (
+    <div className="field">
+      <label htmlFor={id}>{title}</label>
+      {pick.freeText ? (
+        <>
+          <input id={id} className="input num" list={`${id}-list`} value={draft} placeholder={t("settingsDialog.pickDefaultOption")} onChange={(e) => commit(e.target.value)} />
+          <datalist id={`${id}-list`}>
+            {pick.choices.map((c) => (
+              <option key={c.value} value={c.value} />
+            ))}
+          </datalist>
+          <span className="meta-txt">{t("settingsDialog.engineModelNote")}</span>
+        </>
+      ) : (
+        <select id={id} className="input" value={draft} onChange={(e) => commit(e.target.value)}>
+          <option value="">{t("settingsDialog.pickDefaultOption")}</option>
+          {pick.choices.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label ?? c.value}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
   );
 }
 

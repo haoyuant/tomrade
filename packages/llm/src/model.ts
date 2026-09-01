@@ -26,6 +26,8 @@ export interface ChatRequest {
   toolChoice?: "auto" | "none" | { name: string };
   maxTokens?: number;
   temperature?: number;
+  /** Reasoning effort where the endpoint has the knob (OpenAI-compatible `reasoning_effort`); others ignore it. */
+  effort?: string;
   /** Ask for a single JSON document; adapters that can enforce it do. */
   json?: boolean;
 }

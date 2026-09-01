@@ -10,7 +10,9 @@ import type {} from "@tomrade/mcp";
 
 export const CodexOptions = z.object({
   command: z.string().default("codex"),
-  model: z.string().optional()
+  model: z.string().optional(),
+  /** Passed as -c model_reasoning_effort=…; the CLI validates the level. */
+  effort: z.string().optional()
 });
 export type CodexOptions = z.infer<typeof CodexOptions>;
 
@@ -31,6 +33,10 @@ export function createCodexEngine(ctx: Context): Engine {
     title: "Codex",
     author: "ai:codex",
     options: CodexOptions,
+    picks: () => [
+      { key: "model", title: "Model", choices: [{ value: "gpt-5-codex" }, { value: "gpt-5" }], freeText: true },
+      { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
+    ],
     async available() {
       if (probe && Date.now() - probe.at < 30_000) return probe.state;
       const bin = await binaryOk("codex");
@@ -76,7 +82,8 @@ export function createCodexEngine(ctx: Context): Engine {
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
         `mcp_servers.tomrade.bearer_token_env_var="${TOKEN_ENV}"`,
-        ...(options.model ? ["-m", options.model] : [])
+        ...(options.model ? ["-m", options.model] : []),
+        ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])
       ];
       const args = io.resume ? ["exec", "resume", io.resume, ...shared, prompt] : ["exec", ...shared, prompt];
 

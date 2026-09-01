@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import type { AgentSettings, Block, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
+import type { AgentSettings, Block, EnginePick, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
 import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
@@ -8,7 +8,7 @@ import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/m
 import { timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, type RunProgress } from "~/lib/agent";
-import { useItems, useSettings } from "~/lib/queries";
+import { useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -261,10 +261,26 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
   const byKey = new Map((itemsQ.data ?? []).map((i) => [i.key, i]));
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
   // engine creates the thread right there instead of doing silently nothing.
-  const defaultEngine = (settings.data?.agent as AgentSettings | undefined)?.defaultEngine ?? "loop";
+  const agentSettings = settings.data?.agent as AgentSettings | undefined;
+  const defaultEngine = agentSettings?.defaultEngine ?? "loop";
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
   const engine = engines.data?.find((e) => e.id === currentEngineId);
   const noEngineReady = engines.data ? !engines.data.some((e) => e.ok) : false;
+
+  // Quick picks ride on the engine's global options — the same knobs settings edits.
+  const saveSettings = useSaveSettings();
+  const engineOptions = (agentSettings?.engines?.[currentEngineId] ?? {}) as Record<string, unknown>;
+  const picks = engine?.picks ?? [];
+  const pickValue = (key: string) => (typeof engineOptions[key] === "string" && engineOptions[key] ? (engineOptions[key] as string) : null);
+  const setPick = (key: string, value: string | null) => {
+    if (!settings.data || !agentSettings) return;
+    const next = { ...engineOptions };
+    if (value) next[key] = value;
+    else delete next[key];
+    saveSettings.mutate({ ...settings.data, agent: { ...agentSettings, engines: { ...agentSettings.engines, [currentEngineId]: next } } });
+  };
+  const pickTitle = (pick: EnginePick) =>
+    pick.key === "model" || pick.key === "profile" ? t("agentPanel.modelHead") : pick.key === "effort" ? t("agentPanel.effortHead") : pick.title;
 
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
@@ -339,31 +355,6 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
       <div className="ai-resize" title={t("agentPanel.dragToResize")} onMouseDown={startResize} />
       <div className="ai-head">
         <h2 style={{ fontSize: "var(--text-base)" }}>{t("agentPanel.assistantLabel")}</h2>
-        <Menu
-          label={t("agentPanel.engineLabel")}
-          trigger={
-            <button type="button" className="tag chip-btn" title={t("agentPanel.whoConducts")}>
-              {engine?.title ?? currentEngineId}
-              {engine && !engine.ok && <Icon name="i-warn" size={11} />}
-            </button>
-          }
-        >
-          <MenuHead title={t("agentPanel.whoDoesWork")} />
-          {(engines.data ?? []).map((e) => (
-            <MenuRadioItem
-              key={e.id}
-              checked={e.id === currentEngineId}
-              name={e.title}
-              sub={e.ok ? undefined : e.reason}
-              onSelect={() => {
-                if (busy || e.id === currentEngineId) return;
-                if (threadId) setEngine.mutate({ threadId, engineId: e.id });
-                else void newThread.mutateAsync(e.id).then((th) => pickThread(th.id));
-              }}
-            />
-          ))}
-          <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={onOpenSettings} />
-        </Menu>
         <Spacer />
         <Menu
           label={t("agentPanel.threadsLabel")}
@@ -430,28 +421,90 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings }: { open
       </div>
 
       <div className="ai-foot">
-        <input
-          ref={composer}
-          className="input"
-          style={{ flex: 1, minWidth: 0 }}
-          placeholder={pending ? t("agentPanel.answerPlaceholder") : t("agentPanel.messagePlaceholder")}
-          aria-label={t("agentPanel.messageAria")}
-          value={draft}
-          disabled={busy}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void doSend();
-          }}
-        />
-        {runningRun ? (
-          <button type="button" className="btn btn-secondary" onClick={() => cancel.mutate(runningRun.id)}>
-            {t("agentPanel.stop")}
-          </button>
-        ) : (
-          <button type="button" className="btn btn-secondary" disabled={busy || !draft.trim()} onClick={() => void doSend()}>
-            {t("agentPanel.send")}
-          </button>
-        )}
+        <div className="ai-composer">
+          <input
+            ref={composer}
+            className="ai-input"
+            placeholder={pending ? t("agentPanel.answerPlaceholder") : t("agentPanel.messagePlaceholder")}
+            aria-label={t("agentPanel.messageAria")}
+            value={draft}
+            disabled={busy}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void doSend();
+            }}
+          />
+          {runningRun ? (
+            <button type="button" className="btn btn-icon ai-send" title={t("agentPanel.stop")} aria-label={t("agentPanel.stop")} onClick={() => cancel.mutate(runningRun.id)}>
+              <Icon name="i-stop" size={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-icon ai-send"
+              title={t("agentPanel.send")}
+              aria-label={t("agentPanel.send")}
+              disabled={busy || !draft.trim()}
+              onClick={() => void doSend()}
+            >
+              <Icon name="i-send" size={14} />
+            </button>
+          )}
+        </div>
+        <div className="ai-knobs">
+          <Menu
+            label={t("agentPanel.engineLabel")}
+            align="end"
+            trigger={
+              <button type="button" className="tag chip-btn" title={t("agentPanel.whoConducts")}>
+                {engine?.title ?? currentEngineId}
+                {engine && !engine.ok && <Icon name="i-warn" size={11} />}
+                <Icon name="i-chevdown" size={9} />
+              </button>
+            }
+          >
+            <MenuHead title={t("agentPanel.whoDoesWork")} />
+            {(engines.data ?? []).map((e) => (
+              <MenuRadioItem
+                key={e.id}
+                checked={e.id === currentEngineId}
+                name={e.title}
+                sub={e.ok ? undefined : e.reason}
+                onSelect={() => {
+                  if (busy || e.id === currentEngineId) return;
+                  if (threadId) setEngine.mutate({ threadId, engineId: e.id });
+                  else void newThread.mutateAsync(e.id).then((th) => pickThread(th.id));
+                }}
+              />
+            ))}
+            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={onOpenSettings} />
+          </Menu>
+          {picks.map((pick) => {
+            const current = pickValue(pick.key);
+            const shown = current ? (pick.choices.find((c) => c.value === current)?.label ?? current) : pickTitle(pick);
+            return (
+              <Menu
+                key={pick.key}
+                label={pickTitle(pick)}
+                align="end"
+                trigger={
+                  <button type="button" className={`tag chip-btn${current ? "" : " is-quiet"}`} title={pickTitle(pick)}>
+                    {shown}
+                    <Icon name="i-chevdown" size={9} />
+                  </button>
+                }
+              >
+                <MenuHead title={pickTitle(pick)} />
+                <MenuRadioItem checked={!current} name={t("agentPanel.pickDefault")} onSelect={() => setPick(pick.key, null)} />
+                {pick.choices.map((c) => (
+                  <MenuRadioItem key={c.value} checked={c.value === current} name={c.label ?? c.value} onSelect={() => setPick(pick.key, c.value)} />
+                ))}
+                {/* a value typed by hand in settings still shows as what's in charge */}
+                {current && !pick.choices.some((c) => c.value === current) && <MenuRadioItem checked name={current} onSelect={() => {}} />}
+              </Menu>
+            );
+          })}
+        </div>
       </div>
     </aside>
   );

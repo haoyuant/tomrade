@@ -267,7 +267,7 @@ export class Agent extends Service {
       [...this.engines.values()].map(async (engine) => {
         try {
           const state = await engine.available();
-          return { id: engine.id, title: engine.title, ok: state.ok, reason: state.reason };
+          return { id: engine.id, title: engine.title, ok: state.ok, reason: state.reason, picks: engine.picks?.() };
         } catch (err) {
           return { id: engine.id, title: engine.title, ok: false, reason: message(err) };
         }
