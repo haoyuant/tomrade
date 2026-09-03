@@ -11,6 +11,9 @@ const patchFlag = argv.indexOf("--patch");
 
 const iconPath = path.join(here, "../assets/icon.png");
 
+// A second checkout can run beside the real one without sharing — or migrating — its database.
+if (process.env.TOMRADE_USER_DATA) app.setPath("userData", path.resolve(process.env.TOMRADE_USER_DATA));
+
 app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
