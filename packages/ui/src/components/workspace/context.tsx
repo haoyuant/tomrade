@@ -1,39 +1,79 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Badge } from "@tomrade/contributions";
-import type { Board, Item, Project, View } from "@tomrade/domain";
+import type { Board, FieldDef, Item, Layout, Patch, Project, QueryContext, View, ViewQuery } from "@tomrade/domain";
 import { columnKeyOf, filterCount, filterFromQuery, isTicket, itemsFor, queryFromView, type BoardQuery } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useBadges, useBoards, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";
 
+/** One option of a groupable / filterable field, in display terms. */
+export interface FieldOptionView {
+  key: string;
+  name: string;
+  description?: string | null;
+  /** Sprite icon for boards (workstreams); other fields draw their own marks by id. */
+  icon?: string;
+}
+
+/**
+ * The contract between the workspace shell (provider, sidebar, query bar,
+ * dialogs) and the layouts (Board, Table, Graph, Card). Layouts read the live
+ * query and the field vocabulary from here and never touch the saved view or
+ * the field registry directly.
+ */
 export interface WorkspaceValue {
   project: Project;
   projects: Project[];
-  boards: Board[];
   views: View[];
-  items: Item[];
-  labels: string[];
-  board: Board;
+  /** The saved view the route names. */
   view: View;
-  /** The active board's four built-in views, in their fixed order. */
-  boardViews: View[];
-  /** Epics are items; the epic grouping's column space is their ids. */
+  /** Workstreams — the built-in `board` field's options. */
+  boards: Board[];
+  /** Every field the project has, built-ins first, in rank order. */
+  fields: FieldDef[];
+  fieldById: Map<string, FieldDef>;
+  /** Every item in the project, epics included. */
+  items: Item[];
+  /** Every ticket (epics excluded), filter ignored. */
+  owned: Item[];
   epics: Item[];
   epicNames: Map<string, string>;
-  /** The live query — the render source of truth. Filter edits auto-save to the view a moment after they land. */
-  query: BoardQuery;
-  setQuery: (next: BoardQuery) => void;
+  labels: string[];
+
+  /** The live draft — the render source of truth. Differs from `view` until saved. */
+  query: ViewQuery;
+  setQuery: (next: ViewQuery) => void;
+  layout: Layout;
+  setLayout: (next: Layout) => void;
+  /** Whether the draft differs from the saved view. */
+  dirty: boolean;
+  saveView: () => void;
+  discardChanges: () => void;
+  saveAsNewView: (name: string) => void;
   filterCount: number;
-  /** Issues on this board that pass the query and land in a shown column. */
+
+  /** Tickets passing the filter, in sort order (sortBy, else manual rank, then recency). Column visibility is not applied. */
   visible: Item[];
-  /** Every issue the board owns, filter ignored. */
-  owned: Item[];
   ranks: Record<string, number>;
   /** Plugin badges per item id, computed in the main process. */
   badges: Record<string, Badge[]>;
+
   selectedId: string | null;
   select: (id: string | null) => void;
-  openSpace: (boardId: string, viewId?: string) => void;
+  openView: (viewId: string) => void;
+
+  /** A field's options in its display order: statuses, priorities urgent-first, epics, workstreams, custom options, the checkbox's one tick. Labels list the project's vocabulary. */
+  optionsOf: (fieldId: string) => FieldOptionView[];
+  /** Every key a group can take, empty key included where the field allows it. */
+  groupSpace: (fieldId: string) => string[];
+  /** Display name for a group key; the empty key reads "No <field>" (or "Unchecked"). */
+  groupLabel: (fieldId: string, key: string) => string;
+  /** Board layout: the columns actually shown — `query.columns` when set (unknown keys dropped), else the whole space. */
+  columnKeys: string[];
+  /** What a drop into `key` of `fieldId` writes; null when that field cannot be written that way. */
+  patchFor: (fieldId: string, key: string) => Patch | null;
+  /** For `compareItems`: option order and names resolved from the vocabulary above. */
+  queryCtx: QueryContext;
 }
 
 const Ctx = createContext<WorkspaceValue | null>(null);

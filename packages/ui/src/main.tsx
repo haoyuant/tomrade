@@ -7,6 +7,7 @@ import { subscribe } from "./lib/api.js";
 import { invalidateProject } from "./lib/queries.js";
 import { watchWindowChrome } from "./lib/window-chrome.js";
 import "./styles/app.css";
+import "./styles/layouts.css";
 
 // Local SQLite over IPC: refetching on focus buys nothing, invalidation is explicit.
 const queryClient = new QueryClient({

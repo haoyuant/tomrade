@@ -22,6 +22,7 @@ import { queryBar } from "./queryBar";
 import { settingsDialog } from "./settingsDialog";
 import { sidebar } from "./sidebar";
 import { statusBar } from "./statusBar";
+import { table } from "./table";
 import { storageBlock } from "./storageBlock";
 import { theme } from "./theme";
 import { titleBar } from "./titleBar";
@@ -60,6 +61,7 @@ export const en = {
   workspace: workspace.en,
   board: board.en,
   card: card.en,
+  table: table.en,
   graphView: graphView.en,
   queryBar: queryBar.en,
   workspaceContext: workspaceContext.en,
@@ -99,6 +101,7 @@ export const zh: typeof en = {
   workspace: workspace.zh,
   board: board.zh,
   card: card.zh,
+  table: table.zh,
   graphView: graphView.zh,
   queryBar: queryBar.zh,
   workspaceContext: workspaceContext.zh,
