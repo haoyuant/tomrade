@@ -7,9 +7,9 @@ import type {
   Board,
   BoardPatch,
   CreateBoardInput,
-  CreatedBoard,
   CreateItemInput,
   CreateProjectInput,
+  CreateViewInput,
   Item,
   Patch,
   Project,
@@ -185,12 +185,9 @@ export function useSetViewRank(projectId: string) {
 export function useCreateBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Omit<CreateBoardInput, "projectId">): Promise<CreatedBoard> => invoke("boards.create", { ...input, projectId }),
-    onSuccess: (board) => {
-      // the caller navigates straight to board.defaultViewId, so both caches see it before the refetch lands
-      qc.setQueryData<Board[]>(keys.boards(projectId), (prev) => (prev ? [...prev, board] : prev));
+    mutationFn: (input: Omit<CreateBoardInput, "projectId">): Promise<Board> => invoke("boards.create", { ...input, projectId }),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
       void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
@@ -210,7 +207,7 @@ export function useRemoveBoard(projectId: string) {
     mutationFn: (id: string) => invoke("boards.remove", id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
 }
@@ -223,11 +220,41 @@ export function useMoveItemsToBoard(projectId: string) {
   });
 }
 
+/* ── saved views ────────────────────────────────────────────────────────
+   Every view write is logged, so the oplog ribbon refetches alongside. */
+
+export function useCreateView(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Omit<CreateViewInput, "projectId">): Promise<View> => invoke("views.create", { ...input, projectId }),
+    onSuccess: (view) => {
+      // the caller navigates straight to the new view, so the cache sees it before the refetch lands
+      qc.setQueryData<View[]>(keys.views(projectId), (prev) => (prev ? [...prev, view] : prev));
+      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
+    }
+  });
+}
+
 export function useUpdateView(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; patch: ViewPatch }) => invoke("views.update", args.id, args.patch),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.views(projectId) })
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
+    }
+  });
+}
+
+export function useRemoveView(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => invoke("views.remove", id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
+    }
   });
 }
 

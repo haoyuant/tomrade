@@ -1,14 +1,14 @@
-import type { Board, BuiltinFieldId, FieldDef, FieldType, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter, ViewKind } from "@tomrade/domain";
-import type { IconId } from "~/components/icons";
+import type { BuiltinFieldId, FieldDef, FieldType, FilterOp, Item, ItemStatus, Layout, OplogEntry, Priority, Provenance } from "@tomrade/domain";
+import { ICON_IDS, type IconId } from "~/components/icons";
 import type { Locale } from "./i18n";
 
 /**
- * Vocabulary shared by nearly every screen (status, priority, group and
- * provenance words; relative timestamps) lives here as mutable tables rather
- * than routed through the generic `t()` key system — `setDomainLocale` swaps
- * the values in place, so every existing `STATUS[k].label` / `timeAgo(...)`
- * call site picks up the active language with no change of its own. Any
- * component that reads one of these should also call `useI18n()` for
+ * Vocabulary shared by nearly every screen (status, priority, field, layout
+ * and provenance words; relative timestamps) lives here as mutable tables
+ * rather than routed through the generic `t()` key system — `setDomainLocale`
+ * swaps the values in place, so every existing `STATUS[k].label` /
+ * `timeAgo(...)` call site picks up the active language with no change of its
+ * own. Any component that reads one of these should also call `useI18n()` for
  * something else on the same render, so it re-renders when the locale flips.
  */
 let currentLocale: Locale = "en";
@@ -47,30 +47,6 @@ const PRIORITY_LABEL_BY_LOCALE: Record<Locale, readonly string[]> = {
 };
 export const PRIORITY_LABEL: string[] = [...PRIORITY_LABEL_BY_LOCALE.en];
 
-const GROUP_LABEL: Record<Locale, Record<GroupBy, string>> = {
-  en: { status: "Status", priority: "Priority", epic: "Epic" },
-  zh: { status: "状态", priority: "优先级", epic: "需求组" }
-};
-
-export const GROUPS: Record<GroupBy, { label: string; icon: IconId }> = {
-  status: { label: GROUP_LABEL.en.status, icon: "s-doing" },
-  priority: { label: GROUP_LABEL.en.priority, icon: "i-bars" },
-  epic: { label: GROUP_LABEL.en.epic, icon: "i-stack" }
-};
-
-/** The single contributed graph the "dependencies" built-in view renders. */
-export const DEPENDENCIES_GRAPH_ID = "deps";
-
-const VIEW_KIND_LABEL: Record<Locale, string> = { en: "Dependencies", zh: "依赖关系" };
-
-/** The app's four built-in views, in their fixed, always-the-same order. */
-export const VIEW_KINDS: Record<ViewKind, { label: string; icon: IconId }> = {
-  status: GROUPS.status,
-  priority: GROUPS.priority,
-  epic: GROUPS.epic,
-  dependencies: { label: VIEW_KIND_LABEL.en, icon: "i-graph" }
-};
-
 const PROVENANCE_BY_LOCALE: Record<Locale, Record<Provenance, string>> = {
   en: { ai: "ai:mcp", human: "human", locked: "human-locked" },
   zh: { ai: "ai:mcp", human: "人工", locked: "人工锁定" }
@@ -79,52 +55,11 @@ const PROVENANCE_BY_LOCALE: Record<Locale, Record<Provenance, string>> = {
 export const PROVENANCE: Record<Provenance, string> = { ...PROVENANCE_BY_LOCALE.en };
 
 const BOARD_GLYPH_LABEL: Record<Locale, readonly string[]> = {
-  en: ["Panel", "Stack", "Plug", "Monitor", "Board", "Filter", "Bug", "Bars"],
-  zh: ["面板", "堆叠", "插头", "显示器", "看板", "筛选", "缺陷", "柱状"]
+  en: ["Panel", "Stack", "Plug", "Monitor", "Board", "Filter", "Bug", "Bars", "Graph", "Clock", "Tag"],
+  zh: ["面板", "堆叠", "插头", "显示器", "看板", "筛选", "缺陷", "柱状", "关系图", "时钟", "标签"]
 };
 
-const FIELD_LABEL_BY_LOCALE: Record<Locale, Record<BuiltinFieldId, string>> = {
-  en: { title: "Title", status: "Status", priority: "Priority", epic: "Epic", labels: "Labels", board: "Board", updated: "Updated", key: "Key", provenance: "Last write" },
-  zh: { title: "标题", status: "状态", priority: "优先级", epic: "需求组", labels: "标签", board: "看板", updated: "更新时间", key: "编号", provenance: "最后写入" }
-};
-
-/** Built-in field names, localized in place like the tables above. */
-export const FIELD_LABEL: Record<BuiltinFieldId, string> = { ...FIELD_LABEL_BY_LOCALE.en };
-
-const FIELD_TYPE_LABEL_BY_LOCALE: Record<Locale, Record<FieldType, string>> = {
-  en: { text: "Text", number: "Number", date: "Date", select: "Single select", labels: "Labels", item: "Item" },
-  zh: { text: "文本", number: "数字", date: "日期", select: "单选", labels: "标签", item: "工作项" }
-};
-
-export const FIELD_TYPE_LABEL: Record<FieldType, string> = { ...FIELD_TYPE_LABEL_BY_LOCALE.en };
-
-/** A custom field is named by its owner; a built-in by the active locale. */
-export const fieldLabel = (def: FieldDef): string => (def.builtin ? (FIELD_LABEL[def.id as BuiltinFieldId] ?? def.name) : def.name);
-
-const NO_EPIC_LABEL: Record<Locale, string> = { en: "No epic", zh: "无需求组" };
-const EPIC_FALLBACK_LABEL: Record<Locale, string> = { en: "Epic", zh: "需求组" };
-const ALL_BOARDS_LABEL: Record<Locale, string> = { en: "all boards", zh: "全部看板" };
-
-/** Called once per render from `I18nProvider`; see the file-level comment above. */
-export function setDomainLocale(locale: Locale): void {
-  currentLocale = locale;
-  for (const k of STATUS_KEYS) STATUS[k].label = STATUS_LABEL[locale][k];
-  PRIORITY_LABEL.splice(0, PRIORITY_LABEL.length, ...PRIORITY_LABEL_BY_LOCALE[locale]);
-  for (const g of Object.keys(GROUPS) as GroupBy[]) GROUPS[g].label = GROUP_LABEL[locale][g];
-  VIEW_KINDS.dependencies.label = VIEW_KIND_LABEL[locale];
-  for (const p of Object.keys(PROVENANCE) as Provenance[]) PROVENANCE[p] = PROVENANCE_BY_LOCALE[locale][p];
-  for (const f of Object.keys(FIELD_LABEL) as BuiltinFieldId[]) FIELD_LABEL[f] = FIELD_LABEL_BY_LOCALE[locale][f];
-  for (const ty of Object.keys(FIELD_TYPE_LABEL) as FieldType[]) FIELD_TYPE_LABEL[ty] = FIELD_TYPE_LABEL_BY_LOCALE[locale][ty];
-  for (let i = 0; i < BOARD_GLYPHS.length; i++) BOARD_GLYPHS[i][1] = BOARD_GLYPH_LABEL[locale][i];
-}
-
-/** What a never-customized built-in view shows. Epic's real space is its live epic ids, resolved by the caller. */
-export const DEFAULT_COLUMNS: Record<GroupBy, string[]> = {
-  status: ["backlog", "todo", "doing", "verifying", "done", "cancelled"],
-  priority: ["4", "3", "2", "1"],
-  epic: []
-};
-
+/** The glyphs a workstream or a view may carry in the sidebar. */
 export const BOARD_GLYPHS: [IconId, string][] = [
   ["i-panel", "Panel"],
   ["i-stack", "Stack"],
@@ -133,8 +68,91 @@ export const BOARD_GLYPHS: [IconId, string][] = [
   ["i-board", "Board"],
   ["i-filter", "Filter"],
   ["i-bug", "Bug"],
-  ["i-bars", "Bars"]
+  ["i-bars", "Bars"],
+  ["i-graph", "Graph"],
+  ["i-clock", "Clock"],
+  ["i-tag", "Tag"]
 ];
+
+const FIELD_LABEL_BY_LOCALE: Record<Locale, Record<BuiltinFieldId, string>> = {
+  en: { title: "Title", status: "Status", priority: "Priority", epic: "Epic", labels: "Labels", board: "Workstream", updated: "Updated", key: "Key", provenance: "Last write" },
+  zh: { title: "标题", status: "状态", priority: "优先级", epic: "需求组", labels: "标签", board: "工作流", updated: "更新时间", key: "编号", provenance: "最后写入" }
+};
+
+/** Built-in field names, localized in place like the tables above. */
+export const FIELD_LABEL: Record<BuiltinFieldId, string> = { ...FIELD_LABEL_BY_LOCALE.en };
+
+const FIELD_TYPE_LABEL_BY_LOCALE: Record<Locale, Record<FieldType, string>> = {
+  en: { text: "Text", number: "Number", date: "Date", select: "Single select", checkbox: "Checkbox", labels: "Labels", item: "Item" },
+  zh: { text: "文本", number: "数字", date: "日期", select: "单选", checkbox: "勾选框", labels: "标签", item: "工作项" }
+};
+
+export const FIELD_TYPE_LABEL: Record<FieldType, string> = { ...FIELD_TYPE_LABEL_BY_LOCALE.en };
+
+/** Stored icon names come from the database; an unknown one falls back rather than rendering nothing. */
+export const viewIcon = (name: string): IconId => ((ICON_IDS as readonly string[]).includes(name) ? (name as IconId) : "i-board");
+
+/** A custom field is named by its owner; a built-in by the active locale. */
+export const fieldLabel = (def: FieldDef): string => (def.builtin ? (FIELD_LABEL[def.id as BuiltinFieldId] ?? def.name) : def.name);
+
+const LAYOUT_LABEL_BY_LOCALE: Record<Locale, Record<Layout, string>> = {
+  en: { board: "Board", table: "Table", graph: "Graph" },
+  zh: { board: "看板", table: "表格", graph: "关系图" }
+};
+
+/** The three ways a view draws the backlog. */
+export const LAYOUT_LABEL: Record<Layout, { label: string; icon: IconId }> = {
+  board: { label: LAYOUT_LABEL_BY_LOCALE.en.board, icon: "i-board" },
+  table: { label: LAYOUT_LABEL_BY_LOCALE.en.table, icon: "i-bars" },
+  graph: { label: LAYOUT_LABEL_BY_LOCALE.en.graph, icon: "i-graph" }
+};
+
+const FILTER_OP_BY_LOCALE: Record<Locale, Record<FilterOp, string>> = {
+  en: { in: "is", "not-in": "is not", contains: "contains", gte: "≥", lte: "≤" },
+  zh: { in: "是", "not-in": "不是", contains: "包含", gte: "≥", lte: "≤" }
+};
+
+export const FILTER_OP_LABEL: Record<FilterOp, string> = { ...FILTER_OP_BY_LOCALE.en };
+
+/**
+ * What the layouts draw when a view has not chosen its fields. The view
+ * settings sheet edits against the same list, so both agree on "default".
+ */
+export const DEFAULT_SHOWN_FIELDS: Record<Layout, string[]> = {
+  board: ["status", "priority", "epic", "labels", "board"],
+  table: ["status", "priority", "epic", "labels", "board", "updated"],
+  graph: ["status", "priority", "labels"]
+};
+
+const EMPTY_LABEL_BY_LOCALE: Record<Locale, { epic: string; board: string; checkbox: string; generic: string; checked: string; manual: string }> = {
+  en: { epic: "No epic", board: "No workstream", checkbox: "Unchecked", generic: "No {{name}}", checked: "Checked", manual: "Manual" },
+  zh: { epic: "无需求组", board: "无工作流", checkbox: "未勾选", generic: "无{{name}}", checked: "已勾选", manual: "手动" }
+};
+
+/** The name of a field's empty group: "No epic", "Unchecked", "No Due"… */
+export function emptyGroupLabel(def: FieldDef): string {
+  const words = EMPTY_LABEL_BY_LOCALE[currentLocale];
+  if (def.id === "epic") return words.epic;
+  if (def.id === "board") return words.board;
+  if (def.type === "checkbox") return words.checkbox;
+  return words.generic.replace("{{name}}", fieldLabel(def));
+}
+
+export const checkedLabel = (): string => EMPTY_LABEL_BY_LOCALE[currentLocale].checked;
+export const manualSortLabel = (): string => EMPTY_LABEL_BY_LOCALE[currentLocale].manual;
+
+/** Called once per render from `I18nProvider`; see the file-level comment above. */
+export function setDomainLocale(locale: Locale): void {
+  currentLocale = locale;
+  for (const k of STATUS_KEYS) STATUS[k].label = STATUS_LABEL[locale][k];
+  PRIORITY_LABEL.splice(0, PRIORITY_LABEL.length, ...PRIORITY_LABEL_BY_LOCALE[locale]);
+  for (const p of Object.keys(PROVENANCE) as Provenance[]) PROVENANCE[p] = PROVENANCE_BY_LOCALE[locale][p];
+  for (let i = 0; i < BOARD_GLYPHS.length; i++) BOARD_GLYPHS[i][1] = BOARD_GLYPH_LABEL[locale][i];
+  for (const f of Object.keys(FIELD_LABEL) as BuiltinFieldId[]) FIELD_LABEL[f] = FIELD_LABEL_BY_LOCALE[locale][f];
+  for (const ty of Object.keys(FIELD_TYPE_LABEL) as FieldType[]) FIELD_TYPE_LABEL[ty] = FIELD_TYPE_LABEL_BY_LOCALE[locale][ty];
+  for (const l of Object.keys(LAYOUT_LABEL) as Layout[]) LAYOUT_LABEL[l].label = LAYOUT_LABEL_BY_LOCALE[locale][l];
+  for (const op of Object.keys(FILTER_OP_LABEL) as FilterOp[]) FILTER_OP_LABEL[op] = FILTER_OP_BY_LOCALE[locale][op];
+}
 
 export function provenanceOf(item: Item): Provenance {
   if (item.humanLocked) return "locked";
@@ -187,7 +205,8 @@ export function describeWrite(entry: OplogEntry): string {
           ? "取消了该工作项与需求组的关联"
           : "unlinked the issue from its epic";
     if (before.labels.join() !== after.labels.join()) return zh ? "修改了标签" : "changed the labels";
-    if (before.boardId !== after.boardId) return zh ? "将该工作项移动到了其他看板" : "moved the issue to another board";
+    if (before.boardId !== after.boardId) return zh ? "将该工作项移动到了其他工作流" : "moved the issue to another workstream";
+    if (JSON.stringify(before.fields ?? {}) !== JSON.stringify(after.fields ?? {})) return zh ? "修改了字段值" : "changed a field";
     if (before.title !== after.title) return zh ? "编辑了标题" : "edited the title";
     if (before.body !== after.body) return zh ? "编辑了描述" : "edited the description";
     if (before.rank !== after.rank) return zh ? "调整了该工作项的顺序" : "reordered the issue";
@@ -202,90 +221,5 @@ export function ledgerMarkOf(entry: OplogEntry): "tick" | "lock" | null {
   return entry.by.startsWith("ai:") ? "tick" : null;
 }
 
-/* ═══ the live query ═══════════════════════════════════════════════════
-   A saved view is a stored query; the bar edits a live copy of it, and a
-   filter edit auto-saves onto the view a moment after it lands. */
-
-export interface BoardQuery {
-  group: GroupBy;
-  /** A contributed graph id puts the board region in graph mode. Transient — never saved to the view. */
-  graph: string | null;
-  columns: string[];
-  wip: Record<string, number>;
-  labels: string[];
-  epics: string[];
-  priorities: Priority[];
-  provenance: Provenance[];
-}
-
-/** Switching between the four built-in views is real navigation — each one loads its own saved columns/WIP/filter, falling to its mode's defaults when never customized. */
-export function queryFromView(view: View, epicColumns: string[]): BoardQuery {
-  const f = view.filter ?? {};
-  const group: GroupBy = view.kind === "dependencies" ? "status" : view.kind;
-  const fallback = group === "epic" ? epicColumns : DEFAULT_COLUMNS[group];
-  const columns = view.columns.length ? [...view.columns] : [...fallback];
-  return {
-    group,
-    graph: view.kind === "dependencies" ? DEPENDENCIES_GRAPH_ID : null,
-    columns,
-    wip: { ...(view.wip ?? {}) },
-    labels: [...(f.labels ?? [])],
-    epics: [...(f.epics ?? [])],
-    priorities: [...(f.priorities ?? [])],
-    provenance: [...(f.provenance ?? [])]
-  };
-}
-
-export function filterFromQuery(q: BoardQuery): ViewFilter {
-  const f: ViewFilter = {};
-  if (q.labels.length) f.labels = [...q.labels];
-  if (q.epics.length) f.epics = [...q.epics];
-  if (q.priorities.length) f.priorities = [...q.priorities];
-  if (q.provenance.length) f.provenance = [...q.provenance];
-  return f;
-}
-
-export const filterCount = (q: BoardQuery) => q.labels.length + q.epics.length + q.priorities.length + q.provenance.length;
-
-/** Which column an item falls into, given the grouping. */
-export function columnKeyOf(item: Item, group: GroupBy): string {
-  if (group === "priority") return String(item.priority);
-  if (group === "epic") return item.parentId ?? "none";
-  return item.status;
-}
-
-export function columnLabel(key: string, group: GroupBy, epicNames: Map<string, string>): string {
-  if (group === "priority") return PRIORITY_LABEL[Number(key) as Priority];
-  if (group === "epic") return key === "none" ? NO_EPIC_LABEL[currentLocale] : (epicNames.get(key) ?? EPIC_FALLBACK_LABEL[currentLocale]);
-  return STATUS[key as ItemStatus]?.label ?? key;
-}
-
-/** The patch a drop into `key` writes. Never the board — moving a workstream is deliberate. */
-export function patchForColumn(key: string, group: GroupBy) {
-  if (group === "priority") return { priority: Number(key) as Priority };
-  if (group === "epic") return { parentId: key === "none" ? null : key };
-  return { status: key as ItemStatus };
-}
-
-/** The board owns the issue; the query only slices it. */
-export function matchesQuery(item: Item, q: BoardQuery): boolean {
-  if (q.labels.length && !q.labels.some((l) => item.labels.includes(l))) return false;
-  if (q.epics.length && !q.epics.includes(item.parentId ?? "none")) return false;
-  if (q.priorities.length && !q.priorities.includes(item.priority)) return false;
-  if (q.provenance.length && !q.provenance.includes(provenanceOf(item))) return false;
-  return true;
-}
-
-/** A cross-board space borrows every issue; a board owns only its own. */
-export const inBoard = (item: Item, board: Board) => board.across || item.boardId === board.id;
-
 /** Epics are structure, not cards: they name the epic columns and never fill one. */
 export const isTicket = (item: Item) => item.kind !== "epic";
-
-export function itemsFor(items: Item[], board: Board, q: BoardQuery, ranks: Record<string, number> = {}): Item[] {
-  const out = items.filter((i) => isTicket(i) && inBoard(i, board) && matchesQuery(i, q) && q.columns.includes(columnKeyOf(i, q.group)));
-  if (board.sort === "recent") return out.sort((a, b) => b.updatedAt - a.updatedAt);
-  return out.sort((a, b) => (ranks[a.id] ?? a.rank) - (ranks[b.id] ?? b.rank) || b.updatedAt - a.updatedAt);
-}
-
-export const boardSubtitle = (board: Board) => board.subtitle ?? (board.across ? ALL_BOARDS_LABEL[currentLocale] : "");

@@ -1,10 +1,29 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Badge } from "@tomrade/contributions";
-import type { Board, FieldDef, Item, Layout, Patch, Project, QueryContext, View, ViewQuery } from "@tomrade/domain";
-import { columnKeyOf, filterCount, filterFromQuery, isTicket, itemsFor, queryFromView, type BoardQuery } from "~/lib/domain";
+import {
+  BUILTIN_FIELDS,
+  CHECKED,
+  EMPTY_KEY,
+  compareItems,
+  groupSpaceOf,
+  matchesFilter,
+  normalizeQuery,
+  patchForGroup,
+  type Board,
+  type FieldDef,
+  type Item,
+  type Layout,
+  type Patch,
+  type Project,
+  type QueryContext,
+  type View,
+  type ViewQuery
+} from "@tomrade/domain";
+import { PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_KEYS, checkedLabel, emptyGroupLabel, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useBadges, useBoards, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";
+import { useBadges, useBoards, useCreateView, useFields, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";
+import { useToast } from "~/lib/toast";
 
 /** One option of a groupable / filterable field, in display terms. */
 export interface FieldOptionView {
@@ -84,135 +103,245 @@ export function useWorkspace(): WorkspaceValue {
   return value;
 }
 
-export function WorkspaceProvider({
-  projectId,
-  boardId,
-  viewId,
-  children
-}: {
-  projectId: string;
-  boardId: string;
-  viewId: string;
-  children: (value: WorkspaceValue) => ReactNode;
-}) {
+interface Draft {
+  layout: Layout;
+  query: ViewQuery;
+}
+
+/** JSON with sorted keys, so two equal drafts compare equal whatever order their keys were written in. */
+function canon(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canon).join(",")}]`;
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canon(o[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+const draftOf = (view: View): Draft => ({ layout: view.layout, query: normalizeQuery(view.query) });
+
+/** Tickets a saved view resolves to, ignoring column visibility — the count beside its name. */
+export const viewCount = (items: Item[], view: View): number => items.filter((i) => isTicket(i) && matchesFilter(i, view.query.filter)).length;
+
+export function WorkspaceProvider({ projectId, viewId, children }: { projectId: string; viewId: string; children: (value: WorkspaceValue) => ReactNode }) {
   const navigate = useNavigate();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const toast = useToast();
   const projects = useProjects();
   const boards = useBoards(projectId);
   const views = useViews(projectId);
   const items = useItems(projectId);
   const labels = useLabels(projectId);
+  const fieldsQuery = useFields(projectId);
   const ranks = useViewRanks(viewId);
   const badges = useBadges(projectId);
   const updateView = useUpdateView(projectId);
+  const createView = useCreateView(projectId);
   const [selectedId, select] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
 
   const project = projects.data?.find((p) => p.id === projectId);
-  const board = boards.data?.find((b) => b.id === boardId);
   const view = views.data?.find((v) => v.id === viewId);
 
-  const epics = useMemo(() => (items.data ?? []).filter((i) => i.kind === "epic"), [items.data]);
-  const epicColumns = useMemo(() => [...epics.map((e) => e.id), "none"], [epics]);
+  const saved = useMemo(() => (view ? draftOf(view) : null), [view]);
+  const savedCanon = saved ? canon(saved) : null;
 
-  const savedQuery = useMemo(() => (view ? queryFromView(view, epicColumns) : null), [view, epicColumns]);
-  const [query, setQuery] = useState<BoardQuery | null>(savedQuery);
-
-  // Switching board or view rebinds the live query to whatever was saved.
+  // Switching views, or the saved layout/query changing underneath (a save,
+  // an undo, another window), rebinds the draft to what is saved. A rename
+  // changes neither, so it never costs an unsaved filter.
+  const lastView = useRef<string | null>(null);
+  const lastSaved = useRef<string | null>(null);
   useEffect(() => {
-    setQuery(savedQuery);
-    select(null);
-  }, [viewId, boardId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const switched = lastView.current !== viewId;
+    const changed = lastSaved.current !== savedCanon;
+    lastView.current = viewId;
+    lastSaved.current = savedCanon;
+    if (switched) {
+      setDraft(null);
+      select(null);
+    } else if (changed) setDraft(null);
+  }, [viewId, savedCanon]);
+  const live = draft ?? saved;
+  const dirty = !!saved && !!draft && canon(draft) !== canon(saved);
 
-  useEffect(() => {
-    if (!query && savedQuery) setQuery(savedQuery);
-  }, [query, savedQuery]);
+  const all = items.data ?? [];
+  const fields = fieldsQuery.data ?? (BUILTIN_FIELDS as FieldDef[]);
+  const fieldById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
+  const epics = useMemo(() => all.filter((i) => i.kind === "epic"), [all]);
+  const epicNames = useMemo(() => new Map(epics.map((e) => [e.id, e.title])), [epics]);
+  const boardList = boards.data ?? [];
+  const labelList = labels.data ?? [];
 
-  // Epic columns are epic ids, so creating or deleting an epic changes the key
-  // space a live epic-grouped query is written against.
-  const epicKey = epicColumns.join();
-  useEffect(() => {
-    setQuery((current) => {
-      if (!current || current.group !== "epic") return current;
-      const known = new Set(epicColumns);
-      const kept = current.columns.filter((c) => known.has(c));
-      const added = epicColumns.filter((c) => !current.columns.includes(c));
-      return kept.length === current.columns.length && !added.length ? current : { ...current, columns: [...kept, ...added] };
-    });
-  }, [epicKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // A facet edit is a live, unsaved query until this settles it onto the view a
-  // beat later — there is no separate "save this view" step to forget.
-  const filterKey = query ? JSON.stringify(filterFromQuery(query)) : null;
-  useEffect(() => {
-    if (!view || !query) return;
-    const nextFilter = filterFromQuery(query);
-    if (JSON.stringify(nextFilter) === JSON.stringify(view.filter ?? {})) return;
-    const timer = setTimeout(() => updateView.mutate({ id: view.id, patch: { filter: nextFilter } }), 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, view?.id]);
-
-  const settled = !projects.isLoading && !boards.isLoading && !views.isLoading;
-
-  const openSpace = useCallback(
-    (nextBoardId: string, nextViewId?: string) => {
-      const target = nextViewId ?? (views.data ?? []).filter((v) => v.boardId === nextBoardId).sort((a, b) => a.rank - b.rank)[0]?.id;
-      if (!target) return;
-      void navigate({ to: "/p/$projectId/b/$boardId/v/$viewId", params: { projectId, boardId: nextBoardId, viewId: target } });
+  // `locale` is a dependency on purpose: the tables below are localized in place.
+  const optionsOf = useCallback(
+    (fieldId: string): FieldOptionView[] => {
+      void locale;
+      const def = fieldById.get(fieldId);
+      if (!def) return [];
+      switch (fieldId) {
+        case "status":
+          return STATUS_KEYS.map((s) => ({ key: s, name: STATUS[s].label }));
+        case "priority":
+          return ["4", "3", "2", "1", "0"].map((p) => ({ key: p, name: PRIORITY_LABEL[Number(p)] }));
+        case "provenance":
+          return (["human", "ai", "locked"] as const).map((p) => ({ key: p, name: PROVENANCE[p] }));
+        case "epic":
+          return epics.map((e) => ({ key: e.id, name: e.title }));
+        case "board":
+          return boardList.map((b) => ({ key: b.id, name: b.name, description: b.subtitle, icon: b.icon }));
+        case "labels":
+          return labelList.map((l) => ({ key: l, name: l }));
+        default:
+          if (def.type === "checkbox") return [{ key: String(CHECKED), name: checkedLabel() }];
+          return def.options.map((o) => ({ key: o.id, name: o.name, description: o.description }));
+      }
     },
-    [navigate, projectId, views.data]
+    [fieldById, epics, boardList, labelList, locale]
+  );
+
+  const groupSpace = useCallback(
+    (fieldId: string): string[] => {
+      const def = fieldById.get(fieldId);
+      return def ? groupSpaceOf(def, optionsOf(fieldId).map((o) => ({ id: o.key }))) : [];
+    },
+    [fieldById, optionsOf]
+  );
+
+  const groupLabel = useCallback(
+    (fieldId: string, key: string): string => {
+      const def = fieldById.get(fieldId);
+      if (!def) return key;
+      if (key === EMPTY_KEY) return emptyGroupLabel(def);
+      return optionsOf(fieldId).find((o) => o.key === key)?.name ?? key;
+    },
+    [fieldById, optionsOf]
+  );
+
+  const queryCtx = useMemo<QueryContext>(
+    () => ({
+      defs: fieldById,
+      optionRank: (fieldId, key) => optionsOf(fieldId).findIndex((o) => o.key === key),
+      optionName: (fieldId, key) => optionsOf(fieldId).find((o) => o.key === key)?.name ?? ""
+    }),
+    [fieldById, optionsOf]
+  );
+
+  const settled = !projects.isLoading && !views.isLoading;
+
+  const openView = useCallback(
+    (nextViewId: string) => void navigate({ to: "/p/$projectId/v/$viewId", params: { projectId, viewId: nextViewId } }),
+    [navigate, projectId]
   );
 
   const value = useMemo<WorkspaceValue | null>(() => {
-    if (!project || !board || !view || !savedQuery || !query) return null;
-    const all = items.data ?? [];
-    const owned = all.filter((i) => isTicket(i) && (board.across || i.boardId === board.id));
+    if (!project || !view || !saved || !live) return null;
     const rankMap = ranks.data ?? {};
+    const rankOf = (i: Item) => rankMap[i.id] ?? i.rank;
+    const owned = all.filter(isTicket);
+    const visible = owned.filter((i) => matchesFilter(i, live.query.filter)).sort((a, b) => compareItems(a, b, live.query.sortBy, queryCtx, rankOf));
+    const columnBy = live.query.columnBy ?? "status";
+    const space = groupSpace(columnBy);
+    const chosen = live.query.columns.filter((k) => space.includes(k));
+    const setQuery = (next: ViewQuery) => setDraft({ layout: live.layout, query: normalizeQuery(next) });
+    const setLayout = (next: Layout) => setDraft({ layout: next, query: live.query });
     return {
       project,
       projects: projects.data ?? [],
-      boards: boards.data ?? [],
       views: views.data ?? [],
-      items: all,
-      labels: labels.data ?? [],
-      board,
       view,
-      boardViews: (views.data ?? []).filter((v) => v.boardId === board.id).sort((a, b) => a.rank - b.rank),
-      epics,
-      epicNames: new Map(epics.map((e) => [e.id, e.title])),
-      query,
-      setQuery: (next: BoardQuery) => setQuery(next),
-      filterCount: filterCount(query),
-      visible: itemsFor(all, board, query, rankMap),
+      boards: boardList,
+      fields,
+      fieldById,
+      items: all,
       owned,
+      epics,
+      epicNames,
+      labels: labelList,
+      query: live.query,
+      setQuery,
+      layout: live.layout,
+      setLayout,
+      dirty,
+      saveView: () => {
+        if (!dirty) return;
+        updateView.mutate({ id: view.id, patch: { layout: live.layout, query: live.query } }, { onSuccess: () => setDraft(null), onError: (err) => toast({ body: err.message }) });
+      },
+      discardChanges: () => setDraft(null),
+      saveAsNewView: (name: string) => {
+        createView.mutate(
+          { name, icon: view.icon, layout: live.layout, query: live.query },
+          {
+            onSuccess: (created) => {
+              setDraft(null);
+              openView(created.id);
+            },
+            onError: (err) => toast({ body: err.message })
+          }
+        );
+      },
+      filterCount: live.query.filter.length,
+      visible,
       ranks: rankMap,
       badges: badges.data ?? {},
       selectedId,
       select,
-      openSpace
+      openView,
+      optionsOf,
+      groupSpace,
+      groupLabel,
+      columnKeys: chosen.length ? chosen : space,
+      patchFor: (fieldId: string, key: string): Patch | null => patchForGroup(fieldId, key, fieldById.get(fieldId)),
+      queryCtx
     };
-  }, [project, projects.data, board, boards.data, view, views.data, items.data, labels.data, epics, savedQuery, query, ranks.data, badges.data, selectedId, openSpace]);
+  }, [
+    project,
+    projects.data,
+    view,
+    views.data,
+    saved,
+    live,
+    dirty,
+    boardList,
+    fields,
+    fieldById,
+    all,
+    epics,
+    epicNames,
+    labelList,
+    ranks.data,
+    badges.data,
+    selectedId,
+    openView,
+    optionsOf,
+    groupSpace,
+    groupLabel,
+    queryCtx,
+    updateView,
+    createView,
+    toast
+  ]);
 
-  // Deleting the open board or view strands this route; the project loader knows
-  // how to pick a surviving one. Deleting the project strands that loader too,
-  // and then only home is left.
+  // Deleting the open view strands this route; the project loader knows how to
+  // pick a surviving one. Deleting the project strands that loader too, and
+  // then only home is left.
   useEffect(() => {
     if (!settled) return;
     if (!project) void navigate({ to: "/", replace: true });
-    else if (!board || !view) void navigate({ to: "/p/$projectId", params: { projectId }, replace: true });
-  }, [settled, project, board, view, navigate, projectId]);
+    else if (!view) void navigate({ to: "/p/$projectId", params: { projectId }, replace: true });
+  }, [settled, project, view, navigate, projectId]);
 
   if (!value) {
     const gone = settled && !project;
-    const missing = settled && (!board || !view);
+    const missing = settled && !view;
     return (
       <div className="app">
         <header className="titlebar" />
         <main className="sheet">
           <div className="wrap">
-            <p className="meta-txt">
-              {gone ? t("workspaceContext.projectDeleted") : missing ? t("workspaceContext.boardGone") : t("workspaceContext.opening")}
-            </p>
+            <p className="meta-txt">{gone ? t("workspaceContext.projectDeleted") : missing ? t("workspaceContext.viewGone") : t("workspaceContext.opening")}</p>
           </div>
         </main>
         <footer className="statusbar" />
@@ -222,12 +351,3 @@ export function WorkspaceProvider({
   return <Ctx.Provider value={value}>{children(value)}</Ctx.Provider>;
 }
 
-/** How many issues a board holds, ignoring every filter. */
-export const boardCount = (items: Item[], board: Board) => items.filter((i) => isTicket(i) && (board.across || i.boardId === board.id)).length;
-
-/** How many issues a saved view resolves to on its board. */
-export function viewCount(items: Item[], board: Board, view: View, epicColumns: string[]): number {
-  return itemsFor(items, board, queryFromView(view, epicColumns)).length;
-}
-
-export { columnKeyOf };

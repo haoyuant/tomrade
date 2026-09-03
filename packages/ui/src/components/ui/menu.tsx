@@ -115,9 +115,15 @@ export function MenuRadioItem({
 
 /** A footer row that opens something *over* this screen: no arrow, because
  *  nothing is being left behind. */
-export function MenuActionItem({ icon, name, onSelect }: { icon: ReactNode; name: string; onSelect: () => void }) {
+export function MenuActionItem({ icon, name, onSelect, keepOpen }: { icon: ReactNode; name: string; onSelect: () => void; /** For a row that opens a second stage inside the same menu. */ keepOpen?: boolean }) {
   return (
-    <RadixMenu.Item className="menu-row m-link" onSelect={onSelect}>
+    <RadixMenu.Item
+      className="menu-row m-link"
+      onSelect={(e) => {
+        if (keepOpen) e.preventDefault();
+        onSelect();
+      }}
+    >
       <span className="m-mark">{icon}</span>
       <span className="m-name">{name}</span>
     </RadixMenu.Item>

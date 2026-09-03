@@ -15,20 +15,20 @@ export const projectSettingsDialog = {
     projectIdNote: "What an agent names over MCP — {{cmd}}.",
 
     whatProjectHolds: "What this project holds",
-    holdsSummary: "{{workstreams}} boards and {{scopes}} cross-board scopes · {{views}} saved views · {{issues}} issues, {{open}} open{{epicsClause}} · {{labels}} labels{{lastWriteClause}}",
+    holdsSummary: "{{workstreams}} workstreams · {{views}} saved views · {{issues}} issues, {{open}} open{{epicsClause}} · {{labels}} labels{{lastWriteClause}}",
     epicsClause: " under {{n}} epics",
     lastWriteClause: " · last write {{when}}",
-    boardNote: "A board's name, glyph and views are configured on the board itself. This sheet answers only for the container they sit in.",
+    boardNote: "Workstreams and custom fields are managed in the Fields sheet; views are configured on themselves. This sheet answers only for the container they sit in.",
 
     archiveLabel: "Archive",
     archived: "Archived",
     active: "Active",
     archiveAria: "Archive this project",
     archiveNote:
-      "Archiving marks the project in the switcher and on the projects grid. It locks nothing — boards, issues and agents over MCP carry on exactly as before.",
+      "Archiving marks the project in the switcher and on the projects grid. It locks nothing — views, issues and agents over MCP carry on exactly as before.",
 
     deleteThisProject: "Delete this project",
-    deleteWarning: "Takes every board, view and issue inside it, and their whole history with them. {{cmdz}} cannot reach it.",
+    deleteWarning: "Takes every workstream, view and issue inside it, and their whole history with them. {{cmdz}} cannot reach it.",
     deleteButton: "Delete project",
 
     cancel: "Cancel",
@@ -46,10 +46,8 @@ export const projectSettingsDialog = {
     deleteForever: "Delete forever",
     deletedToast: "Permanently deleted {{name}} and everything in it",
 
-    boardOne: "{{n}} board",
-    boardMany: "{{n}} boards",
-    scopeOne: "{{n}} cross-board scope",
-    scopeMany: "{{n}} cross-board scopes",
+    boardOne: "{{n}} workstream",
+    boardMany: "{{n}} workstreams",
     viewOne: "{{n}} saved view",
     viewMany: "{{n}} saved views",
     issueOne: "{{n}} issue",
@@ -59,7 +57,7 @@ export const projectSettingsDialog = {
     labelOne: "{{n}} label",
     labelMany: "{{n}} labels",
 
-    consequenceBoardsScopesViews: "{{boards}} and {{scopes}}, with the {{views}} on them",
+    consequenceWorkstreamsViews: "{{boards}} and {{views}}",
     consequenceIssues: "{{issues}}{{epicsClause}}{{openClause}}",
     consequenceIssuesEpicsClause: " and {{epics}}",
     consequenceIssuesOpenClause: ", {{n}} still open",
@@ -88,19 +86,19 @@ export const projectSettingsDialog = {
     projectIdNote: "智能体在 MCP 中用来指代它的名字 —— {{cmd}}。",
 
     whatProjectHolds: "此项目包含的内容",
-    holdsSummary: "{{workstreams}} 个看板和 {{scopes}} 个跨看板范围 · {{views}} 个已保存视图 · {{issues}} 个工作项，{{open}} 个未完成{{epicsClause}} · {{labels}} 个标签{{lastWriteClause}}",
+    holdsSummary: "{{workstreams}} 个工作流 · {{views}} 个已保存视图 · {{issues}} 个工作项，{{open}} 个未完成{{epicsClause}} · {{labels}} 个标签{{lastWriteClause}}",
     epicsClause: "，其中 {{n}} 个归于需求组之下",
     lastWriteClause: " · 最后写入 {{when}}",
-    boardNote: "看板的名称、图标与视图在看板自身上配置。这个面板只负责它们所在的这个容器。",
+    boardNote: "工作流与自定义字段在「字段」面板中管理，视图在其自身上配置。这个面板只负责它们所在的这个容器。",
 
     archiveLabel: "归档",
     archived: "已归档",
     active: "进行中",
     archiveAria: "归档此项目",
-    archiveNote: "归档只会在切换器和项目网格上标记该项目，不会锁定任何东西——看板、工作项以及通过 MCP 工作的智能体都会照常运行。",
+    archiveNote: "归档只会在切换器和项目网格上标记该项目，不会锁定任何东西——视图、工作项以及通过 MCP 工作的智能体都会照常运行。",
 
     deleteThisProject: "删除此项目",
-    deleteWarning: "会带走它内部的每一个看板、视图与工作项，以及它们的全部历史。{{cmdz}} 无法触及此操作。",
+    deleteWarning: "会带走它内部的每一个工作流、视图与工作项，以及它们的全部历史。{{cmdz}} 无法触及此操作。",
     deleteButton: "删除项目",
 
     cancel: "取消",
@@ -118,10 +116,8 @@ export const projectSettingsDialog = {
     deleteForever: "永久删除",
     deletedToast: "已永久删除 {{name}} 及其中的一切",
 
-    boardOne: "{{n}} 个看板",
-    boardMany: "{{n}} 个看板",
-    scopeOne: "{{n}} 个跨看板范围",
-    scopeMany: "{{n}} 个跨看板范围",
+    boardOne: "{{n}} 个工作流",
+    boardMany: "{{n}} 个工作流",
     viewOne: "{{n}} 个已保存视图",
     viewMany: "{{n}} 个已保存视图",
     issueOne: "{{n}} 个工作项",
@@ -131,7 +127,7 @@ export const projectSettingsDialog = {
     labelOne: "{{n}} 个标签",
     labelMany: "{{n}} 个标签",
 
-    consequenceBoardsScopesViews: "{{boards}}和{{scopes}}，以及挂在它们上面的{{views}}",
+    consequenceWorkstreamsViews: "{{boards}}和{{views}}",
     consequenceIssues: "{{issues}}{{epicsClause}}{{openClause}}",
     consequenceIssuesEpicsClause: "和{{epics}}",
     consequenceIssuesOpenClause: "，其中 {{n}} 个仍未完成",

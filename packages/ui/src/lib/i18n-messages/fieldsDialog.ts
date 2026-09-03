@@ -40,6 +40,24 @@ export const fieldsDialog = {
     confirmDelete: "Delete {{name}}",
     deletedToast: "Deleted {{name}}",
 
+    workstreamNote: "Workstreams are this field's options. Every issue belongs to exactly one, so the last one stays, and one that still holds issues asks where they go.",
+    workstreamsEyebrow: "Workstreams",
+    workstreamIconAria: "Workstream glyph",
+    workstreamNameAria: "Workstream name",
+    workstreamPkgAria: "Workstream package",
+    workstreamPkgPlaceholder: "packages/…",
+    removeWorkstreamTitle: "Remove {{name}}",
+    removeWorkstreamAria: "Remove workstream {{name}}",
+    removedWorkstreamToast: "Removed {{name}}",
+    moveIssuesTo: "Move its {{n}} issues to",
+    destinationAria: "Destination workstream",
+    moveAndRemove: "Move and remove",
+    movedWorkstreamToast: "Moved {{n}} issues to {{name}}",
+    newWorkstreamAria: "New workstream name",
+    newWorkstreamPlaceholder: "New workstream…",
+    addWorkstream: "Add workstream",
+    addedWorkstreamToast: "Added {{name}}",
+
     close: "Close"
   },
   zh: {
@@ -82,6 +100,24 @@ export const fieldsDialog = {
     deleteWarningNone: "尚无工作项持有该字段的值，不会带走其它任何内容。",
     confirmDelete: "删除 {{name}}",
     deletedToast: "已删除 {{name}}",
+
+    workstreamNote: "工作流是这个字段的选项。每个工作项都恰好属于一个，所以最后一个不能删除，仍持有工作项的那个在离开前会问它们去哪里。",
+    workstreamsEyebrow: "工作流",
+    workstreamIconAria: "工作流图标",
+    workstreamNameAria: "工作流名称",
+    workstreamPkgAria: "工作流对应的包",
+    workstreamPkgPlaceholder: "packages/…",
+    removeWorkstreamTitle: "移除 {{name}}",
+    removeWorkstreamAria: "移除工作流 {{name}}",
+    removedWorkstreamToast: "已移除 {{name}}",
+    moveIssuesTo: "把它的 {{n}} 个工作项移到",
+    destinationAria: "目标工作流",
+    moveAndRemove: "移动并移除",
+    movedWorkstreamToast: "已将 {{n}} 个工作项移到 {{name}}",
+    newWorkstreamAria: "新工作流名称",
+    newWorkstreamPlaceholder: "新工作流…",
+    addWorkstream: "添加工作流",
+    addedWorkstreamToast: "已添加 {{name}}",
 
     close: "关闭"
   }

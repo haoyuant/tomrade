@@ -105,9 +105,8 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
           <ul className="dash" style={{ marginTop: "var(--space-2)" }}>
             <li>{tx("newProjectDialog.mainBoardBullet", { main: <span className="num">Main</span> })}</li>
             <li>
-              {tx("newProjectDialog.crossBoardBullet", {
-                recent: <span className="num">Recently updated</span>,
-                epics: <span className="num">Epics</span>
+              {tx("newProjectDialog.defaultViewsBullet", {
+                views: <span className="num">Board · Table · Epics · Dependencies</span>
               })}
             </li>
           </ul>

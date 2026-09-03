@@ -1,24 +1,24 @@
 export const sidebar = {
   en: {
-    newBoard: "New board",
-    createdBoardToast: "Created board {{name}}",
-    newBoardNameAria: "New board name",
-    workstreamPlaceholder: "Workstream name…",
+    newView: "New view",
+    createdViewToast: "Created view {{name}}",
+    newViewNameAria: "New view name",
+    viewNamePlaceholder: "View name…",
     expandSidebar: "Expand sidebar — ⌘B",
     collapseSidebar: "Collapse sidebar — ⌘B",
-    boardsRailLabel: "Boards",
-    boardsEyebrow: "Boards",
-    acrossBoards: "Across boards"
+    viewsRailLabel: "Views",
+    viewsEyebrow: "Views",
+    fields: "Fields"
   },
   zh: {
-    newBoard: "新建看板",
-    createdBoardToast: "已创建看板 {{name}}",
-    newBoardNameAria: "新看板名称",
-    workstreamPlaceholder: "工作流名称…",
+    newView: "新建视图",
+    createdViewToast: "已创建视图 {{name}}",
+    newViewNameAria: "新视图名称",
+    viewNamePlaceholder: "视图名称…",
     expandSidebar: "展开侧栏 — ⌘B",
     collapseSidebar: "收起侧栏 — ⌘B",
-    boardsRailLabel: "看板",
-    boardsEyebrow: "看板",
-    acrossBoards: "跨看板"
+    viewsRailLabel: "视图",
+    viewsEyebrow: "视图",
+    fields: "字段"
   }
 };

@@ -40,7 +40,7 @@ const run = async () => {
   });
   // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
   ctx.projects.remove("default");
-  const repos = { db: ctx.db, items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views };
+  const repos = { db: ctx.db, items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields };
   const { project } = seedDesignProject(repos);
 
   const win = new BrowserWindow({

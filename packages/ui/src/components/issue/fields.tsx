@@ -150,13 +150,10 @@ export function EpicField({ item, write, epics }: FieldProps & { epics: Item[] }
   );
 }
 
-/**
- * The owning board, not a view: an issue belongs to exactly one workstream and
- * a cross-board scope owns nothing, so scopes are never offered as a target.
- */
+/** The Workstream field: an issue belongs to exactly one, so there is no empty option. */
 export function BoardField({ item, write, boards }: FieldProps & { boards: Board[] }) {
   const { t, tx } = useI18n();
-  const workstreams = boards.filter((b) => !b.across);
+  const workstreams = boards;
   return (
     <Picker
       label={t("detailPane.fieldBoard")}

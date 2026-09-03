@@ -24,28 +24,25 @@ const rootRoute = createRootRoute({
 
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: ProjectsScreen });
 
-/** Opening a project resolves to its first board and that board's first view. */
+/** Opening a project resolves to its first saved view. */
 const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/p/$projectId",
   loader: async ({ params }) => {
-    const boards = await invoke("boards.list", params.projectId);
-    const board = boards.find((b) => !b.across) ?? boards[0];
-    if (!board) throw redirect({ to: "/" });
     const views = await invoke("views.list", params.projectId);
-    const view = views.filter((v) => v.boardId === board.id).sort((a, b) => a.rank - b.rank)[0];
+    const view = [...views].sort((a, b) => a.rank - b.rank)[0];
     if (!view) throw redirect({ to: "/" });
-    throw redirect({ to: "/p/$projectId/b/$boardId/v/$viewId", params: { projectId: params.projectId, boardId: board.id, viewId: view.id } });
+    throw redirect({ to: "/p/$projectId/v/$viewId", params: { projectId: params.projectId, viewId: view.id } });
   }
 });
 
-const boardRoute = createRoute({
+const viewRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/p/$projectId/b/$boardId/v/$viewId",
-  component: function BoardRoute() {
-    const { projectId, boardId, viewId } = boardRoute.useParams();
+  path: "/p/$projectId/v/$viewId",
+  component: function ViewRoute() {
+    const { projectId, viewId } = viewRoute.useParams();
     return (
-      <WorkspaceProvider projectId={projectId} boardId={boardId} viewId={viewId}>
+      <WorkspaceProvider projectId={projectId} viewId={viewId}>
         {() => <Workspace />}
       </WorkspaceProvider>
     );
@@ -61,7 +58,7 @@ const issueRoute = createRoute({
   }
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectRoute, boardRoute, issueRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, projectRoute, viewRoute, issueRoute]);
 
 // Hash history: the production build is loaded from file://, where a path-based
 // history has nothing to resolve a reload against.

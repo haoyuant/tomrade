@@ -3,21 +3,30 @@ import { CollisionPriority } from "@dnd-kit/abstract";
 import { DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
-import type { Item } from "@tomrade/domain";
+import { EMPTY_KEY, groupKeyOf, type Item, type Patch } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
-import { columnKeyOf, columnLabel, patchForColumn } from "~/lib/domain";
+import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem, usePatchItem, useSetViewRank, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { Card } from "./Card";
-import { useWorkspace } from "./context";
+import { useWorkspace, type WorkspaceValue } from "./context";
+import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 
-type Columns = Record<string, Item[]>;
+/** One drop target is one lane × column pair; the lane key is "" when there are no swimlanes. Keys are ids, words or digits, never "|". */
+const SEP = "|";
+const cellKey = (lane: string, col: string) => `${lane}${SEP}${col}`;
+const splitCell = (key: string) => {
+  const i = key.indexOf(SEP);
+  return { lane: key.slice(0, i), col: key.slice(i + 1) };
+};
+
+type Cells = Record<string, Item[]>;
 
 /**
  * Returns null when a midpoint is impossible — equal or inverted neighbours,
  * which is the common case while every card still sits at the default rank 0.
- * The caller renumbers the column instead of storing a value that changes nothing.
+ * The caller renumbers the cell instead of storing a value that changes nothing.
  */
 function rankBetween(prev: number | undefined, next: number | undefined): number | null {
   if (prev === undefined && next === undefined) return 0;
@@ -34,40 +43,31 @@ function rankBetween(prev: number | undefined, next: number | undefined): number
  */
 const effectiveRank = (item: Item, ranks: Record<string, number>) => ranks[item.id] ?? item.rank;
 
-function SortableCard({ item, index, column, onOpen, onNudge }: { item: Item; index: number; column: string; onOpen: () => void; onNudge: (d: -1 | 1) => void }) {
-  const { ref, isDragging } = useSortable({ id: item.id, index, type: "card", accept: "card", group: column });
+function SortableCard({ item, index, cell, onOpen, onNudge }: { item: Item; index: number; cell: string; onOpen: () => void; onNudge: (d: -1 | 1) => void }) {
+  const { ref, isDragging } = useSortable({ id: item.id, index, type: "card", accept: "card", group: cell });
   return <Card item={item} onOpen={onOpen} onNudge={onNudge} dragging={isDragging} dragHandleRef={ref as (node: HTMLElement | null) => void} />;
 }
 
-/** Creation in context: the column supplies whichever field the board groups by. */
-function Composer({ columnKey, onDone }: { columnKey: string; onDone: () => void }) {
+/** Creation in context: the column and the lane supply their fields, the filter the rest. */
+function Composer({ seed, onDone }: { seed: Patch; onDone: () => void }) {
   const { t, tx } = useI18n();
-  const { project, board, query } = useWorkspace();
-  const create = useCreateItem(project.id);
-  const undo = useUndo(project.id);
+  const ws = useWorkspace();
+  const create = useCreateItem(ws.project.id);
+  const undo = useUndo(ws.project.id);
   const toast = useToast();
 
   const submit = (title: string) => {
     const trimmed = title.trim();
     if (!trimmed) return onDone();
-    const seeded = patchForColumn(columnKey, query.group);
-    create.mutate(
-      {
-        title: trimmed,
-        boardId: board.id,
-        status: "status" in seeded ? seeded.status : "todo",
-        priority: "priority" in seeded ? seeded.priority : query.priorities[0],
-        // an armed filter supplies the rest, so a new issue cannot vanish the moment it is created
-        parentId: "parentId" in seeded ? seeded.parentId : query.epics.find((e) => e !== "none") ?? null,
-        labels: query.labels.slice(0, 1)
+    const input = toCreateInput(trimmed, mergePatch(seedFromFilter(ws.query, ws.fieldById), seed), ws.boards[0]?.id ?? "");
+    if (!input) return onDone();
+    create.mutate(input, {
+      onSuccess: (item) => {
+        onDone();
+        toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
       },
-      {
-        onSuccess: (item) => {
-          onDone();
-          toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
-        }
-      }
-    );
+      onError: (err) => toast({ body: err.message })
+    });
   };
 
   return (
@@ -92,123 +92,164 @@ function Composer({ columnKey, onDone }: { columnKey: string; onDone: () => void
   );
 }
 
+function ColumnHead({ index, label, count, cap }: { index: number; label: string; count: number; cap: number | undefined }) {
+  const over = cap !== undefined && count > cap;
+  return (
+    <div className="col-head">
+      <span className="col-num">{String(index + 1).padStart(2, "0")}</span>
+      <span className="col-name">{label}</span>
+      <span className={`col-count num${over ? " over" : ""}`}>{cap !== undefined ? `${count} / ${cap}` : count}</span>
+    </div>
+  );
+}
+
 function Column({
-  columnKey,
+  cell,
   index,
+  label,
   cards,
+  head,
+  seed,
   onOpen,
   onNudge
 }: {
-  columnKey: string;
+  cell: string;
   index: number;
+  label: string;
   cards: Item[];
+  /** Shown once per column: at the top of a plain board, or in the shared header row above swimlanes. */
+  head: { count: number; cap: number | undefined } | null;
+  /** What creating here writes; null hides the composer (the column's field cannot be written). */
+  seed: Patch | null;
   onOpen: (item: Item) => void;
   onNudge: (item: Item, d: -1 | 1) => void;
 }) {
   const { t } = useI18n();
-  const { query, epicNames, board, filterCount } = useWorkspace();
+  const { filterCount, query } = useWorkspace();
   const [composing, setComposing] = useState(false);
   // Low priority lets a card win the collision, so an empty column still accepts a drop.
-  const { ref, isDropTarget } = useDroppable({ id: columnKey, type: "column", accept: "card", collisionPriority: CollisionPriority.Low });
-
-  const label = columnLabel(columnKey, query.group, epicNames);
-  const cap = query.wip[columnKey];
-  const over = cap !== undefined && cards.length > cap;
-
-  const empty =
-    query.group === "priority"
-      ? t(filterCount ? "board.emptyPriorityFiltered" : "board.emptyPriorityPlain", { label: label.toLowerCase() })
-      : query.group === "epic"
-        ? columnKey === "none"
-          ? t("board.emptyEpicNone")
-          : t(filterCount ? "board.emptyEpicFiltered" : "board.emptyEpicPlain", { label })
-        : t(filterCount ? "board.emptyStatusFiltered" : "board.emptyStatusPlain", { label: label.toLowerCase() });
+  const { ref, isDropTarget } = useDroppable({ id: cell, type: "column", accept: "card", collisionPriority: CollisionPriority.Low });
+  const sorted = query.sortBy.length > 0;
 
   return (
-    <section className={`col${isDropTarget ? " drop-target" : ""}`} role="group" aria-label={t("board.columnAria", { label, n: cards.length })}>
-      <div className="col-head">
-        <span className="col-num">{String(index + 1).padStart(2, "0")}</span>
-        <span className="col-name">{label}</span>
-        <span className={`col-count num${over ? " over" : ""}`}>{cap !== undefined ? `${cards.length} / ${cap}` : cards.length}</span>
-      </div>
+    <section className={`col${isDropTarget ? " drop-target" : ""}`} role="group" aria-label={t("board.columnAria", { label, n: cards.length })} data-column={splitCell(cell).col}>
+      {head && <ColumnHead index={index} label={label} count={head.count} cap={head.cap} />}
       <div className="col-body" ref={ref as (node: HTMLElement | null) => void}>
-        {cards.length === 0 && !composing && <p className="col-empty">{empty}</p>}
+        {cards.length === 0 && !composing && <p className="col-empty">{t(filterCount ? "board.emptyFiltered" : "board.emptyPlain", { label })}</p>}
         {cards.map((item, i) => (
-          <SortableCard key={item.id} item={item} index={i} column={columnKey} onOpen={() => onOpen(item)} onNudge={(d) => onNudge(item, d)} />
+          <SortableCard key={item.id} item={item} index={i} cell={cell} onOpen={() => onOpen(item)} onNudge={(d) => onNudge(item, d)} />
         ))}
-        {composing && <Composer columnKey={columnKey} onDone={() => setComposing(false)} />}
-        {/* a cross-board space has no one board to write into, so it defers to the New issue sheet */}
-        {!board.across && !composing && (
+        {composing && seed && <Composer seed={seed} onDone={() => setComposing(false)} />}
+        {seed && !composing && (
           <button type="button" className="btn btn-ghost" style={{ justifyContent: "flex-start", marginTop: 2 }} onClick={() => setComposing(true)}>
             <Icon name="i-plus" size={13} /> {t("board.newIssue")}
           </button>
         )}
+        {sorted && cards.length > 1 && <p className="sort-lock meta-txt dense">{t("board.sortLock")}</p>}
       </div>
     </section>
   );
 }
 
+/** The write a drop or a nudge makes: the column's field, the lane's field, or both, in one patch. */
+function patchForMove(ws: WorkspaceValue, from: { lane: string; col: string }, to: { lane: string; col: string }): Patch | null | "refused" {
+  const cb = ws.query.columnBy ?? "status";
+  let patch: Patch = {};
+  if (to.col !== from.col) {
+    const p = ws.patchFor(cb, to.col);
+    if (!p) return "refused";
+    patch = mergePatch(patch, p);
+  }
+  if (ws.query.groupBy && to.lane !== from.lane) {
+    const p = ws.patchFor(ws.query.groupBy, to.lane);
+    if (!p) return "refused";
+    patch = mergePatch(patch, p);
+  }
+  return Object.keys(patch).length ? patch : null;
+}
+
 export function Board({ onConflict }: { onConflict: (title: string) => void }) {
-  const { tx } = useI18n();
-  const { project, view, board, query, visible, select, ranks, epicNames } = useWorkspace();
+  const { t, tx } = useI18n();
+  const ws = useWorkspace();
+  const { project, view, query, visible, select, ranks, columnKeys, groupSpace, groupLabel, patchFor, fieldById } = ws;
   const patch = usePatchItem(project.id);
   const setRank = useSetViewRank(project.id);
   const toast = useToast();
   const undo = useUndo(project.id);
 
-  const server = useMemo<Columns>(() => {
-    const out: Columns = {};
-    for (const key of query.columns) out[key] = [];
+  const cb = query.columnBy ?? "status";
+  const groupBy = query.groupBy;
+  const lanes = useMemo(() => (groupBy ? groupSpace(groupBy) : [""]), [groupBy, groupSpace]);
+
+  const server = useMemo<Cells>(() => {
+    const out: Cells = {};
+    for (const lane of lanes) for (const col of columnKeys) out[cellKey(lane, col)] = [];
     for (const item of visible) {
-      const key = columnKeyOf(item, query.group);
+      const key = cellKey(groupBy ? groupKeyOf(item, groupBy) : "", groupKeyOf(item, cb));
       if (out[key]) out[key].push(item);
     }
     return out;
-  }, [visible, query.columns, query.group]);
+  }, [visible, lanes, columnKeys, groupBy, cb]);
 
-  const [columns, setColumns] = useState<Columns>(server);
-  const columnsRef = useRef(columns);
-  columnsRef.current = columns;
+  const [cells, setCells] = useState<Cells>(server);
+  const cellsRef = useRef(cells);
+  cellsRef.current = cells;
   const dragging = useRef(false);
-  const origin = useRef<{ column: string; version: number; item: Item } | null>(null);
+  const origin = useRef<{ cell: string; item: Item } | null>(null);
   const refocus = useRef<string | null>(null);
+  /** Lanes the user shut, plus `!key` for empty lanes the user opened (an empty lane starts shut). */
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!dragging.current) setColumns(server);
+    if (!dragging.current) setCells(server);
   }, [server]);
 
-  /** One pass over the column when a midpoint is not available. */
-  const renumber = (column: string) => {
-    (columnsRef.current[column] ?? []).forEach((card, i) => setRank.mutate({ viewId: view.id, itemId: card.id, rank: i }));
+  const columnCount = (col: string) => lanes.reduce((n, lane) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
+  const laneCount = (lane: string) => columnKeys.reduce((n, col) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
+
+  /** One pass over the cell when a midpoint is not available. */
+  const renumber = (cell: string) => {
+    (cellsRef.current[cell] ?? []).forEach((card, i) => setRank.mutate({ viewId: view.id, itemId: card.id, rank: i }));
   };
 
-  const write = (item: Item, targetColumn: string, order: { column: string; rank: number | null } | null, fromColumn: string) => {
-    const changed = targetColumn !== fromColumn;
-    // A recency-sorted space orders by last write, so a manual rank there would
-    // be stored and never honoured.
-    const manual = board.sort === "recent" ? null : order;
-    if (!changed && !manual) return;
+  const write = (item: Item, fromCell: string, toCell: string, order: { rank: number | null } | null) => {
+    const from = splitCell(fromCell);
+    const to = splitCell(toCell);
+    const fieldPatch = patchForMove(ws, from, to);
+    if (fieldPatch === "refused") {
+      setCells(server);
+      const field = fieldById.get(to.col !== from.col ? cb : (groupBy ?? cb));
+      toast({ body: t("board.cannotDropToast", { field: field ? fieldLabel(field) : cb }) });
+      return;
+    }
+    // A sorted board orders by its sort keys, so a manual rank there would be stored and never honoured.
+    const manual = query.sortBy.length ? null : order;
+    if (!fieldPatch && !manual) return;
     // The order write waits on the field write: a refused move must not leave a
     // rank behind for a card that never went anywhere.
     const commitOrder = () => {
       if (!manual) return;
-      if (manual.rank === null) renumber(manual.column);
+      if (manual.rank === null) renumber(toCell);
       else setRank.mutate({ viewId: view.id, itemId: item.id, rank: manual.rank });
     };
-    if (!changed) return commitOrder();
+    if (!fieldPatch) return commitOrder();
     patch.mutate(
-      { id: item.id, patch: patchForColumn(targetColumn, query.group), baseVersion: item.version },
+      { id: item.id, patch: fieldPatch, baseVersion: item.version },
       {
         onError: (err) => {
-          setColumns(server);
+          setCells(server);
           if (err instanceof Error && /conflict/i.test(err.message)) onConflict(item.title);
+          else toast({ body: err.message });
         },
         onSuccess: () => (
           commitOrder(),
           toast({
             body: (
               <>
-                {tx("board.movedToast", { key: <span className="num">{item.key}</span>, column: columnLabel(targetColumn, query.group, epicNames) })}
+                {tx("board.movedToast", {
+                  key: <span className="num">{item.key}</span>,
+                  column: to.col !== from.col ? groupLabel(cb, to.col) : groupLabel(groupBy ?? cb, to.lane)
+                })}
               </>
             ),
             onUndo: () => undo.mutate(item.id)
@@ -218,16 +259,17 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
     );
   };
 
-  /** The keyboard equivalent of a drag: one column left or right, same write path. */
+  /** The keyboard equivalent of a drag: one column left or right in the same lane, same write path. */
   const nudge = (item: Item, direction: -1 | 1) => {
-    const from = query.columns.indexOf(columnKeyOf(item, query.group));
+    const lane = groupBy ? groupKeyOf(item, groupBy) : "";
+    const from = columnKeys.indexOf(groupKeyOf(item, cb));
     const to = from + direction;
     if (from < 0) return;
-    if (to < 0 || to >= query.columns.length) {
+    if (to < 0 || to >= columnKeys.length) {
       toast({ body: <>{tx(direction < 0 ? "board.alreadyFirst" : "board.alreadyLast", { key: <span className="num">{item.key}</span> })}</> });
       return;
     }
-    write(item, query.columns[to], null, query.columns[from]);
+    write(item, cellKey(lane, columnKeys[from]), cellKey(lane, columnKeys[to]), null);
     // the card is remounted in its new column, so focus has to be handed back
     refocus.current = item.id;
   };
@@ -242,7 +284,42 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
       node.focus();
       refocus.current = null;
     }
-  }, [columns]);
+  }, [cells]);
+
+  const isShut = (lane: string, n: number) => (n === 0 ? !toggled.has(`!${lane}`) : toggled.has(lane));
+  const toggleLane = (lane: string, n: number) =>
+    setToggled((current) => {
+      const next = new Set(current);
+      const key = n === 0 ? `!${lane}` : lane;
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const seedFor = (lane: string, col: string): Patch | null => {
+    const colPatch = patchFor(cb, col);
+    if (!colPatch) return null;
+    if (!groupBy) return colPatch;
+    const lanePatch = patchFor(groupBy, lane);
+    return lanePatch ? mergePatch(colPatch, lanePatch) : null;
+  };
+
+  const renderColumn = (lane: string, col: string, i: number, withHead: boolean) => {
+    const cell = cellKey(lane, col);
+    return (
+      <Column
+        key={cell}
+        cell={cell}
+        index={i}
+        label={groupLabel(cb, col)}
+        cards={cells[cell] ?? []}
+        head={withHead ? { count: columnCount(col), cap: query.wip[col] } : null}
+        seed={seedFor(lane, col)}
+        onOpen={(item) => select(item.id)}
+        onNudge={nudge}
+      />
+    );
+  };
 
   return (
     <DragDropProvider
@@ -250,29 +327,52 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
         const id = event.operation.source?.id;
         if (id == null) return;
         const item = visible.find((i) => i.id === String(id));
+        const cell = Object.keys(cellsRef.current).find((key) => cellsRef.current[key].some((c) => c.id === String(id)));
         dragging.current = true;
-        origin.current = item ? { column: columnKeyOf(item, query.group), version: item.version, item } : null;
+        origin.current = item && cell ? { cell, item } : null;
       }}
-      onDragOver={(event) => setColumns((current) => move(current, event))}
+      onDragOver={(event) => setCells((current) => move(current, event))}
       onDragEnd={(event) => {
         dragging.current = false;
         const start = origin.current;
         origin.current = null;
-        if (event.canceled || !start) return setColumns(server);
-        const target = Object.keys(columnsRef.current).find((key) => columnsRef.current[key].some((c) => c.id === start.item.id));
-        if (!target) return setColumns(server);
-        const arr = columnsRef.current[target];
+        if (event.canceled || !start) return setCells(server);
+        const target = Object.keys(cellsRef.current).find((key) => cellsRef.current[key].some((c) => c.id === start.item.id));
+        if (!target) return setCells(server);
+        const arr = cellsRef.current[target];
         const pos = arr.findIndex((c) => c.id === start.item.id);
         const before = arr[pos - 1] ? effectiveRank(arr[pos - 1], ranks) : undefined;
         const after = arr[pos + 1] ? effectiveRank(arr[pos + 1], ranks) : undefined;
-        write(start.item, target, { column: target, rank: rankBetween(before, after) }, start.column);
+        write(start.item, start.cell, target, { rank: rankBetween(before, after) });
       }}
     >
-      <div className="col-track">
-        {query.columns.map((key, i) => (
-          <Column key={key} columnKey={key} index={i} cards={columns[key] ?? []} onOpen={(item) => select(item.id)} onNudge={nudge} />
-        ))}
-      </div>
+      {groupBy ? (
+        <div className="lanes" data-group-by={groupBy}>
+          <div className="lane-cols lane-cols-head" role="row">
+            {columnKeys.map((col, i) => (
+              <div className="col" key={col} data-column={col}>
+                <ColumnHead index={i} label={groupLabel(cb, col)} count={columnCount(col)} cap={query.wip[col]} />
+              </div>
+            ))}
+          </div>
+          {lanes.map((lane) => {
+            const n = laneCount(lane);
+            const shut = isShut(lane, n);
+            return (
+              <section className={`lane${shut ? " collapsed" : ""}`} key={lane || EMPTY_KEY} data-lane={lane || EMPTY_KEY} aria-label={t("board.laneAria", { label: groupLabel(groupBy, lane), n })}>
+                <button type="button" className="lane-head" aria-expanded={!shut} title={t(shut ? "board.expandLane" : "board.collapseLane")} onClick={() => toggleLane(lane, n)}>
+                  <Icon className="lane-chev" name="i-chev" size={12} />
+                  <span className="lane-name">{groupLabel(groupBy, lane)}</span>
+                  <span className="lane-count num">{n}</span>
+                </button>
+                {!shut && <div className="lane-cols">{columnKeys.map((col, i) => renderColumn(lane, col, i, false))}</div>}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="col-track">{columnKeys.map((col, i) => renderColumn("", col, i, true))}</div>
+      )}
     </DragDropProvider>
   );
 }

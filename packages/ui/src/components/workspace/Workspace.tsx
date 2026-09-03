@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
-import { BoardSettingsDialog } from "~/components/dialogs/BoardSettingsDialog";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
@@ -12,7 +11,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
-import { useUndo } from "~/lib/queries";
+import { useCreateView, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { AgentPanel, aiOpenKey } from "./AgentPanel";
 import { Board } from "./Board";
@@ -21,7 +20,8 @@ import { DetailPane } from "./DetailPane";
 import { GraphView } from "./GraphView";
 import { QueryBar } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
-import { BoardHead, TitleBar } from "./TitleBar";
+import { Table } from "./Table";
+import { TitleBar, ViewHead } from "./TitleBar";
 import { useWorkspace } from "./context";
 
 /** Below this the three panes cannot all hold their minimum. */
@@ -45,6 +45,7 @@ export function Workspace() {
   usePlaybookConflictNotice(ws.project.id);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
+  const createView = useCreateView(ws.project.id);
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -57,7 +58,6 @@ export function Workspace() {
   /** null when shut; the pane to land on when open, "" for wherever it was left. */
   const [settings, setSettings] = useState<string | null>(null);
   const [viewSettings, setViewSettings] = useState(false);
-  const [boardSettings, setBoardSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [projectSettings, setProjectSettings] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
@@ -89,7 +89,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || boardSettings || fieldsOpen || projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -99,14 +99,21 @@ export function Workspace() {
     requestAnimationFrame(() => setProjectSettings(true));
   }, []);
 
-  // A cross-board space borrows every board and owns nothing to configure.
-  const openBoardSettings = useCallback(() => {
-    if (ws.board.across) {
-      toast({ body: <>{tx("workspace.borrowsEveryBoard", { name: <span className="num">{ws.board.name}</span> })}</> });
-      return;
-    }
-    setBoardSettings(true);
-  }, [ws.board.across, ws.board.name, toast, tx]);
+  // The palette cannot ask for a name, so a view made from it opens under a
+  // placeholder and is renamed in the head.
+  const newView = useCallback(() => {
+    const name = t("workspace.untitledView", { n: ws.views.length + 1 });
+    createView.mutate(
+      { name, icon: "i-board", layout: "board", query: { columnBy: "status" } },
+      {
+        onSuccess: (view) => {
+          ws.openView(view.id);
+          toast({ body: <>{tx("workspace.createdViewToast", { name: <span className="num">{name}</span> })}</>, onUndo: () => undo.mutate(view.id) });
+        },
+        onError: (err) => toast({ body: err.message })
+      }
+    );
+  }, [createView, t, tx, toast, undo, ws]);
 
   // .overlay-open is how the stylesheet demotes the chrome's primary button
   useEffect(() => {
@@ -169,12 +176,12 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <Sidebar open={sideOpen} onToggle={setSideOpen} />
-        <section className="board-region">
-          <BoardHead onOpenBoardSettings={openBoardSettings} />
-          <QueryBar onOpenViewSettings={() => setViewSettings(true)} />
+        <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={() => setFieldsOpen(true)} />
+        <section className="board-region" data-layout={ws.layout}>
+          <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
+          <QueryBar />
           {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
-          {ws.query.graph ? <GraphView /> : <Board onConflict={setConflict} />}
+          {ws.layout === "graph" ? <GraphView /> : ws.layout === "table" ? <Table onConflict={setConflict} /> : <Board onConflict={setConflict} />}
         </section>
 
         {selected && (
@@ -200,12 +207,13 @@ export function Workspace() {
         onOpenChange={setPalette}
         actions={{
           newIssue: () => setNewIssue(true),
+          newView,
           toggleAssistant: () => setAiOpen((v) => !v),
           toggleSidebar: () => setSideOpen((v) => !v),
           undo: runUndo,
           openSettings: () => setSettings(""),
           openPlugins: () => setSettings("plugins"),
-          openBoardSettings,
+          openViewSettings: () => setViewSettings(true),
           openFields: () => setFieldsOpen(true),
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true)
@@ -214,15 +222,7 @@ export function Workspace() {
       <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
-      <ViewSettingsDialog
-        open={viewSettings}
-        onOpenChange={setViewSettings}
-        onOpenBoardSettings={() => {
-          setViewSettings(false);
-          openBoardSettings();
-        }}
-      />
-      <BoardSettingsDialog open={boardSettings} onOpenChange={setBoardSettings} />
+      <ViewSettingsDialog open={viewSettings} onOpenChange={setViewSettings} />
       <ProjectSettingsDialog
         project={projectSettings ? ws.project : null}
         projects={ws.projects}

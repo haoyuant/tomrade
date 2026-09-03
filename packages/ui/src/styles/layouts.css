@@ -1,2 +1,107 @@
 /* ─── layouts: board swimlanes, table, graph ───────────────────────────
- * Owned by the layouts pass; app.css holds the tokens and the shell. */
+ * Owned by the layouts pass; app.css holds the tokens and the shell. Every
+ * colour here is a token from app.css — a layout adds structure, not hue. */
+
+/* board · swimlanes ─────────────────────────────────────────────────────
+ * One shared header row, then a stack of lanes whose column rows line up
+ * under it; the whole stack scrolls both ways as one surface. */
+.lanes {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-4) var(--space-4);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.lane-cols { display: flex; gap: var(--space-4); min-width: max-content; }
+.lane-cols-head {
+  position: sticky; top: 0; z-index: 2;
+  padding-top: var(--space-4);
+  background: var(--bg);
+}
+.lane-cols-head .col-head { margin-bottom: 0; }
+.lane-cols .col { min-height: 0; }
+.lane { border-top: 1px solid var(--border-soft); }
+.lane:first-of-type { border-top: 0; }
+.lane-head {
+  position: sticky; left: 0;
+  display: flex; align-items: center; gap: var(--space-2);
+  width: 100%; padding: var(--space-3) 0 var(--space-2);
+  border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left;
+  font-family: var(--font-display); font-size: var(--text-base);
+}
+.lane-head:hover .lane-name { color: var(--accent); }
+.lane-head:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.lane-chev { color: var(--meta); transition: transform var(--motion-fast) var(--ease-standard); transform: rotate(90deg); }
+.lane.collapsed .lane-chev { transform: rotate(0deg); }
+.lane-name { line-height: 1.2; }
+.lane-count { font-size: var(--text-xs); color: var(--meta); }
+.lane.collapsed .lane-head { color: var(--muted); padding-bottom: var(--space-3); }
+.lane .lane-cols { padding-bottom: var(--space-3); }
+.lane .col-body { min-height: 56px; }
+
+/* the column foot when a sort is on: order is the sort's, not the mouse's */
+.sort-lock { padding: var(--space-2) var(--space-2) 0; color: var(--meta); }
+
+/* table ────────────────────────────────────────────────────────────────── */
+.tbl-wrap {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-4) var(--space-4);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.tbl { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 14px; color: var(--fg-2); }
+.tbl-cell {
+  padding: 6px var(--space-3); vertical-align: middle; text-align: left;
+  border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+.tbl-head .tbl-cell {
+  position: sticky; top: 0; z-index: 2;
+  padding-top: var(--space-4); padding-bottom: var(--space-2);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 400;
+  letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--meta);
+}
+.tbl-th-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit;
+  cursor: pointer;
+}
+.tbl-th-btn:hover, .tbl-th-btn[data-sort] { color: var(--fg); }
+.tbl-th-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.tbl-sort { color: var(--accent); }
+/* the title column stays put while the rest scrolls */
+.tbl-title-cell { position: sticky; left: 0; z-index: 1; background: var(--bg); min-width: 280px; max-width: 480px; white-space: normal; }
+.tbl-head .tbl-title-cell { z-index: 3; }
+.tbl-row:hover .tbl-cell { background: var(--surface); }
+.tbl-row[data-selected="true"] .tbl-cell { background: var(--surface-warm); }
+.tbl-row[data-selected="true"] .tbl-title-cell { box-shadow: inset 2px 0 0 var(--accent); }
+.tbl-title {
+  display: flex; align-items: baseline; gap: var(--space-2); width: 100%;
+  padding: 0; border: 0; background: transparent; color: var(--fg); text-align: left; cursor: pointer;
+  font-family: var(--font-display); font-weight: 500; font-size: 14px; line-height: var(--leading-card);
+}
+.tbl-title:hover .tbl-title-text { color: var(--accent); }
+.tbl-title:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.tbl-title .card-id { flex-shrink: 0; }
+.tbl-title-text { min-width: 0; overflow-wrap: anywhere; }
+.tbl-dim { color: var(--meta); font-size: var(--text-sm); }
+.tbl-prov { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); }
+.tbl-cell .fsel, .tbl-cell .fval { margin-inline-start: 0; }
+.tbl-cell .labset { flex-wrap: nowrap; }
+/* a group heading spans every column and reads like a lane head */
+.tbl-group .tbl-cell {
+  padding-top: var(--space-4); padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-display); font-size: var(--text-base); color: var(--fg);
+  position: sticky; left: 0; background: var(--bg);
+}
+.tbl-group-count { margin-left: var(--space-2); font-size: var(--text-xs); color: var(--meta); }
+.tbl-new .tbl-cell, .tbl-empty .tbl-cell { border-bottom: 0; position: sticky; left: 0; }
+.tbl-new-input { max-width: 480px; font-size: 14px; }
+
+/* card · a custom field printed as quiet text beside the labels */
+.card-field {
+  font-family: var(--font-display); font-size: var(--text-xs); line-height: 1.5;
+  color: var(--meta); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

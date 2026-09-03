@@ -23,7 +23,7 @@ import {
   StatusField,
   useIssueWriter
 } from "~/components/issue/fields";
-import { PROVENANCE, STATUS, agoLabel, provenanceOf } from "~/lib/domain";
+import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 
@@ -163,7 +163,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
                 .filter((f) => !f.builtin)
                 .map((def) => (
                   <span className="fs-item" key={def.id} data-field={def.id}>
-                    <span className="fs-k">{def.name}</span>
+                    <span className="fs-k">{fieldLabel(def)}</span>
                     <span className="fs-v">
                       <CustomField item={item} write={write} def={def} />
                     </span>

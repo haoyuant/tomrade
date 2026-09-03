@@ -1,14 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import type { FieldDef, FieldType, Item } from "@tomrade/domain";
-import { Icon } from "~/components/icons";
+import type { Board, FieldDef, FieldType, Item } from "@tomrade/domain";
+import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
-import { FIELD_TYPE_LABEL, fieldLabel } from "~/lib/domain";
+import { BOARD_GLYPHS, FIELD_TYPE_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useAddFieldOption, useCreateField, useFields, useItems, useRemoveField, useRemoveFieldOption, useUpdateField, useUpdateFieldOption } from "~/lib/queries";
+import {
+  useAddFieldOption,
+  useBoards,
+  useCreateBoard,
+  useCreateField,
+  useFields,
+  useItems,
+  useMoveItemsToBoard,
+  useRemoveBoard,
+  useRemoveField,
+  useRemoveFieldOption,
+  useUpdateBoard,
+  useUpdateField,
+  useUpdateFieldOption
+} from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 
-const CUSTOM_TYPES: FieldType[] = ["text", "number", "date", "select"];
+const CUSTOM_TYPES: FieldType[] = ["text", "number", "date", "select", "checkbox"];
 
 const holders = (items: Item[], fieldId: string) => items.filter((i) => fieldId in i.fields).length;
 
@@ -48,9 +62,9 @@ function FieldRow({ def, count, selected, onSelect }: { def: FieldDef; count: nu
       {def.builtin && <Icon name="i-lock" size={12} style={{ color: "var(--meta)" }} aria-hidden />}
     </>
   );
-  if (!onSelect) return <div className="cfg-row fld-row is-builtin">{body}</div>;
+  if (!onSelect) return <div className="cfg-row fld-row is-builtin" data-field={def.id}>{body}</div>;
   return (
-    <button type="button" className={`cfg-row fld-row${selected ? " is-selected" : ""}`} aria-pressed={selected} onClick={onSelect}>
+    <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-pressed={selected} onClick={onSelect}>
       {body}
     </button>
   );
@@ -193,10 +207,151 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   );
 }
 
+/** One workstream: glyph, name, package, how many issues it holds, and the way out. */
+function WorkstreamRow({ board, count, others, projectId }: { board: Board; count: number; others: Board[]; projectId: string }) {
+  const { t, tx } = useI18n();
+  const toast = useToast();
+  const update = useUpdateBoard(projectId);
+  const remove = useRemoveBoard(projectId);
+  const move = useMoveItemsToBoard(projectId);
+  const items = useItems(projectId);
+  const [removing, setRemoving] = useState(false);
+  const [dest, setDest] = useState(others[0]?.id ?? "");
+  const fail = (err: Error) => toast({ body: err.message });
+
+  const removeNow = () =>
+    remove.mutate(board.id, { onSuccess: () => toast({ body: tx("fieldsDialog.removedWorkstreamToast", { name: <b>{board.name}</b> }) }), onError: fail });
+
+  const moveThenRemove = () => {
+    const target = others.find((b) => b.id === dest);
+    if (!target) return;
+    const ids = (items.data ?? []).filter((i) => i.boardId === board.id).map((i) => i.id);
+    move.mutate(
+      { from: board.id, to: target.id, itemIds: ids },
+      {
+        onSuccess: (n) => {
+          toast({ body: tx("fieldsDialog.movedWorkstreamToast", { n: <span className="num">{n}</span>, name: <b>{target.name}</b> }) });
+          removeNow();
+        },
+        onError: fail
+      }
+    );
+  };
+
+  return (
+    <div className="fld-opt fld-ws" data-board={board.id}>
+      <select
+        className="fld-ws-icon"
+        aria-label={t("fieldsDialog.workstreamIconAria")}
+        value={viewIcon(board.icon)}
+        onChange={(e) => update.mutate({ id: board.id, patch: { icon: e.target.value as IconId } }, { onError: fail })}
+      >
+        {BOARD_GLYPHS.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-opt-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
+      <RenameInput
+        value={board.subtitle ?? ""}
+        ariaLabel={t("fieldsDialog.workstreamPkgAria")}
+        className="input fld-opt-desc num"
+        placeholder={t("fieldsDialog.workstreamPkgPlaceholder")}
+        onSave={(subtitle) => update.mutate({ id: board.id, patch: { subtitle: subtitle || null } }, { onError: fail })}
+      />
+      <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
+      {removing && count > 0 ? (
+        <span className="row" style={{ gap: 6, gridColumn: "1 / -1" }}>
+          <span className="meta-txt">{t("fieldsDialog.moveIssuesTo", { n: count })}</span>
+          <select className="select" style={{ flex: 1 }} aria-label={t("fieldsDialog.destinationAria")} value={dest} onChange={(e) => setDest(e.target.value)}>
+            {others.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn btn-danger" disabled={!dest} onClick={moveThenRemove}>
+            {t("fieldsDialog.moveAndRemove")}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setRemoving(false)}>
+            {t("common.cancel")}
+          </button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-icon"
+          title={t("fieldsDialog.removeWorkstreamTitle", { name: board.name })}
+          aria-label={t("fieldsDialog.removeWorkstreamAria", { name: board.name })}
+          disabled={others.length === 0}
+          onClick={() => (count > 0 ? setRemoving(true) : removeNow())}
+        >
+          <Icon name="i-close" size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The built-in Workstream field's options are the project's boards. Every
+ * issue belongs to one, so a workstream that still holds issues asks where
+ * they go before it leaves, and the last one never can.
+ */
+function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item[] }) {
+  const { t, tx } = useI18n();
+  const toast = useToast();
+  const boards = useBoards(projectId);
+  const create = useCreateBoard(projectId);
+  const [newName, setNewName] = useState("");
+  const list = boards.data ?? [];
+
+  const add = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    create.mutate(
+      { name, icon: "i-board", subtitle: slug ? `packages/${slug}` : null },
+      { onSuccess: (b) => (setNewName(""), toast({ body: tx("fieldsDialog.addedWorkstreamToast", { name: <b>{b.name}</b> }) })), onError: (err) => toast({ body: err.message }) }
+    );
+  };
+
+  return (
+    <div className="fld-editor stack-3" data-editor="workstream">
+      <p className="meta-txt dense">{t("fieldsDialog.workstreamNote")}</p>
+      <div>
+        <Eyebrow>{t("fieldsDialog.workstreamsEyebrow")}</Eyebrow>
+        <div className="stack-1" style={{ marginTop: "var(--space-2)" }}>
+          {list.map((b) => (
+            <WorkstreamRow key={b.id} board={b} count={items.filter((i) => i.boardId === b.id).length} others={list.filter((o) => o.id !== b.id)} projectId={projectId} />
+          ))}
+          <div className="row" style={{ gap: "var(--space-2)" }}>
+            <input
+              className="input"
+              aria-label={t("fieldsDialog.newWorkstreamAria")}
+              placeholder={t("fieldsDialog.newWorkstreamPlaceholder")}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") add();
+              }}
+            />
+            <button type="button" className="btn btn-ghost" disabled={!newName.trim()} onClick={add}>
+              <Icon name="i-plus" size={13} /> {t("fieldsDialog.addWorkstream")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The project's field registry. Built-ins are listed so the whole vocabulary a
- * view can use is in one place; only custom fields are editable, and every
- * edit lands live — a field is schema, not a draft.
+ * view can use is in one place; only custom fields — and the Workstream
+ * field's options — are editable, and every edit lands live: a field is schema,
+ * not a draft.
  */
 export function FieldsDialog({ projectId, projectName, open, onOpenChange }: { projectId: string; projectName: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
@@ -244,13 +399,21 @@ export function FieldsDialog({ projectId, projectName, open, onOpenChange }: { p
         <div>
           <Eyebrow>{t("fieldsDialog.builtinEyebrow")}</Eyebrow>
           <div className="fld-list" style={{ marginTop: "var(--space-2)" }}>
-            {builtin.map((f) => (
-              <FieldRow key={f.id} def={f} count={null} />
-            ))}
+            {builtin.map((f) =>
+              f.id === "board" ? (
+                <FieldRow key={f.id} def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
+              ) : (
+                <FieldRow key={f.id} def={f} count={null} />
+              )
+            )}
           </div>
-          <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-            {t("fieldsDialog.builtinNote")}
-          </p>
+          {selectedId === "board" ? (
+            <WorkstreamEditor projectId={projectId} items={rows} />
+          ) : (
+            <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
+              {t("fieldsDialog.builtinNote")}
+            </p>
+          )}
         </div>
 
         <div>

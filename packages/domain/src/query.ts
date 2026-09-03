@@ -142,7 +142,7 @@ export function compareItems(a: Item, b: Item, sortBy: SortKey[], ctx: QueryCont
 export function groupSpaceOf(def: FieldDef, options: { id: string }[]): string[] {
   if (def.type === "checkbox") return [String(CHECKED), EMPTY_KEY];
   const keys = options.map((o) => o.id);
-  // Fixed vocabularies are total: every item has a status and a priority.
-  if (def.id === "status" || def.id === "priority" || def.id === "provenance") return keys;
+  // Total fields: every item has a status, a priority, a provenance and a workstream.
+  if (def.id === "status" || def.id === "priority" || def.id === "provenance" || def.id === "board") return keys;
   return [...keys, EMPTY_KEY];
 }

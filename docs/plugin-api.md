@@ -114,7 +114,7 @@ consumer follows.
 | `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast` |
 | `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
 | `ctx.fields` | spine | `@tomrade/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
-| `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams and their slices |
+| `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams (the options of the built-in Workstream field) and the project's saved views |
 | `ctx.projects` | spine | `@tomrade/projects` | The container; outside the oplog and undo |
 | `ctx.tools` | spine | `@tomrade/tools` | The registry and guarded `execute` |
 | `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs |
@@ -300,6 +300,21 @@ surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
 There is no per-surface code to write.
 
+## Views
+
+A **view** is a saved way of looking at a project's backlog: a name, an icon,
+a **layout** — `board`, `table` or `graph` — and a `ViewQuery`: `filter`
+clauses, `columnBy` (the field a board's columns stand for), `groupBy`
+(swimlanes on a board, sections in a table), `sortBy` (empty means the manual
+order kept in `view_item_rank`), the `fields` shown, `wip` caps and, for a
+graph, the contributed `graph`. Views belong to the project; `ctx.views`
+creates, updates, reorders and removes them through `write()`, and a project
+always keeps at least one. Agents do not see views — they query fields.
+
+**Workstreams** are the options of the built-in `board` field: `ctx.boards`
+manages them, every issue carries exactly one (`items.board_id`), and a
+workstream that still holds issues, or is the project's last, refuses to go.
+
 ## Fields
 
 Every attribute a view can filter, sort or group by is a **field**. Built-in
@@ -480,12 +495,11 @@ status bar; sections in the detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
 refetches.
 
-A **graph** is one more way to arrange the board: its entry joins the
-status/priority/epic segmented control, and the renderer draws the same issue
-cards on an interactive canvas with the plugin's edges as arrows. The plugin
-returns item-id pairs (`{ from, to, tone?, title? }`) — no layout, no pixels;
-the current view's filters still apply, and edges whose ends are filtered out
-are not drawn. A graph that declares `edits: "blocks"` gets an editable canvas:
+A **graph** is what a view with the Graph layout draws: the renderer puts the
+same issue cards on an interactive canvas with the plugin's edges as arrows,
+and the view's `query.graph` names which contributed graph. The plugin returns
+item-id pairs (`{ from, to, tone?, title? }`) — no layout, no pixels; the view's
+filter still applies, and edges whose ends are filtered out are not drawn. A graph that declares `edits: "blocks"` gets an editable canvas:
 dragging between cards and deleting an arrow write `Item.blocks` patches
 through the ordinary guarded path. `@tomrade/deps-graph` is the shipped
 example — the Dependencies graph plus a `blocked` badge for issues waiting on

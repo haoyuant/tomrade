@@ -8,7 +8,7 @@ export const fields = {
     itsEpicFallback: "its epic",
     unlinkedToast: "Unlinked {{key}} from its epic",
     movedToBoardToast: "Moved {{key}} to {{name}}",
-    anotherBoardFallback: "another board",
+    anotherBoardFallback: "another workstream",
     addedLabelToast: "Added {{name}} to {{key}}",
     removedLabelToast: "Removed {{name}} from {{key}}",
 
@@ -62,7 +62,7 @@ export const fields = {
     itsEpicFallback: "其需求组",
     unlinkedToast: "已取消 {{key}} 与其需求组的关联",
     movedToBoardToast: "已将 {{key}} 移动到 {{name}}",
-    anotherBoardFallback: "另一个看板",
+    anotherBoardFallback: "另一个工作流",
     addedLabelToast: "已将 {{name}} 添加到 {{key}}",
     removedLabelToast: "已从 {{key}} 移除 {{name}}",
 

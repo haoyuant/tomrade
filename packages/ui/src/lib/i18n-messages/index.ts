@@ -1,6 +1,5 @@
 import { agentPanel } from "./agentPanel";
 import { board } from "./board";
-import { boardSettingsDialog } from "./boardSettingsDialog";
 import { card } from "./card";
 import { commandPalette } from "./commandPalette";
 import { common } from "./common";
@@ -39,7 +38,6 @@ export const en = {
   settingsDialog: settingsDialog.en,
   playbooks: playbooks.en,
   pluginsPanel: pluginsPanel.en,
-  boardSettingsDialog: boardSettingsDialog.en,
   deleteIssueDialog: deleteIssueDialog.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
@@ -79,7 +77,6 @@ export const zh: typeof en = {
   settingsDialog: settingsDialog.zh,
   playbooks: playbooks.zh,
   pluginsPanel: pluginsPanel.zh,
-  boardSettingsDialog: boardSettingsDialog.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,

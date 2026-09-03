@@ -16,7 +16,7 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
-import { PROVENANCE, agoLabel, describeWrite, ledgerMarkOf, provenanceOf } from "~/lib/domain";
+import { PROVENANCE, agoLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useSections } from "~/lib/queries";
 import { useWorkspace } from "./context";
@@ -169,7 +169,7 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
       {/* custom fields follow the built-ins, in the order the project ranks them */}
       {custom.map((def) => (
         <div className="field-row" key={def.id} data-field={def.id}>
-          <dt>{def.name}</dt>
+          <dt>{fieldLabel(def)}</dt>
           <dd>
             <CustomField item={item} write={write} def={def} />
           </dd>

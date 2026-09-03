@@ -14,33 +14,42 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const undo = useUndo(ws.project.id);
   const toast = useToast();
 
-  // An issue belongs to exactly one board, so a cross-board space has to ask.
-  const workstreams = ws.boards.filter((b) => !b.across);
+  // Whatever the view is filtering on becomes the default, so the issue you just made is still on screen.
+  const pinned = (fieldId: string): string[] =>
+    ws.query.filter.filter((c) => c.field === fieldId && c.op === "in").flatMap((c) => c.values.filter((v): v is string | number => v !== null).map(String));
+  const columnStatuses = (ws.query.columnBy ?? "status") === "status" ? (ws.columnKeys as ItemStatus[]) : STATUS_KEYS;
+  const defaults = () => ({
+    boardId: pinned("board")[0] ?? ws.boards[0]?.id ?? "",
+    status: (pinned("status")[0] ?? (columnStatuses.includes("todo") ? "todo" : columnStatuses[0]) ?? "todo") as ItemStatus,
+    priority: (pinned("priority").length ? Math.max(...pinned("priority").map(Number)) : 2) as Priority,
+    parentId: pinned("epic")[0] ?? ""
+  });
+  const workstreams = ws.boards;
   const [title, setTitle] = useState("");
-  const [boardId, setBoardId] = useState(ws.board.across ? (workstreams[0]?.id ?? "") : ws.board.id);
-  const [status, setStatus] = useState<ItemStatus>((ws.query.group === "status" ? ws.query.columns[0] : "todo") as ItemStatus);
-  // whatever the query bar is filtering on becomes the default, so the issue you just made is still on screen
-  const [priority, setPriority] = useState<Priority>(ws.query.priorities.length ? (Math.max(...ws.query.priorities) as Priority) : 2);
-  const [parentId, setParentId] = useState(ws.query.epics.find((e) => e !== "none") ?? "");
+  const [boardId, setBoardId] = useState(defaults().boardId);
+  const [status, setStatus] = useState<ItemStatus>(defaults().status);
+  const [priority, setPriority] = useState<Priority>(defaults().priority);
+  const [parentId, setParentId] = useState(defaults().parentId);
 
-  const statusOptions = ws.query.group === "status" ? (ws.query.columns as ItemStatus[]) : STATUS_KEYS;
+  const statusOptions = columnStatuses;
 
-  // The sheet outlives its own open/close, so it reseeds from whatever the board
+  // The sheet outlives its own open/close, so it reseeds from whatever the view
   // is showing now rather than from whatever it showed when the workspace mounted.
   useEffect(() => {
     if (!open) return;
+    const d = defaults();
     setTitle("");
-    setBoardId(ws.board.across ? (workstreams[0]?.id ?? "") : ws.board.id);
-    setStatus((ws.query.group === "status" ? ws.query.columns[0] : "todo") as ItemStatus);
-    setPriority(ws.query.priorities.length ? (Math.max(...ws.query.priorities) as Priority) : 2);
-    setParentId(ws.query.epics.find((e) => e !== "none") ?? "");
+    setBoardId(d.boardId);
+    setStatus(d.status);
+    setPriority(d.priority);
+    setParentId(d.parentId);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
     create.mutate(
-      { title: trimmed, boardId, status, priority, parentId: parentId || null, labels: ws.query.labels.slice(0, 1) },
+      { title: trimmed, boardId, status, priority, parentId: parentId || null, labels: pinned("labels").slice(0, 1) },
       {
         onSuccess: (item) => {
           onOpenChange(false);

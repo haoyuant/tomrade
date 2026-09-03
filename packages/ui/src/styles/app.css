@@ -360,22 +360,12 @@ strong { font-weight: 500; }
 .side-add { color: var(--muted); font-size: var(--text-sm); }
 .side-add:hover { color: var(--fg); }
 
-/* A sidebar row is a BOARD — a workstream that owns its issues. Views used to
- * hang under it as a tree, but a view is a slice of one board, not a place you
- * navigate to: they now live in the board space as tabs. The sidebar answers
- * "which workstream", the board space answers "which slice of it". */
-.side-row.is-board {
-  align-items: flex-start; color: var(--fg);
-  padding-top: 6px; padding-bottom: 6px;
-}
-.side-row.is-board .ico { margin-top: 3px; }
-.side-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.side-pkg {
-  font-family: var(--font-mono); font-size: 11px; line-height: 1.4; color: var(--meta);
-  letter-spacing: var(--tracking-label);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.side-row.is-board .side-count { margin-top: 2px; }
+/* A sidebar row is a VIEW — one saved way of looking at the project's backlog,
+ * whatever its layout. Workstreams are a field, not a place, so they live in
+ * the query bar and the Fields sheet rather than here. */
+.side-row.is-view { color: var(--fg); }
+.side-foot { margin-top: auto; padding-top: var(--space-4); }
+.side-foot .side-row { color: var(--meta); }
 
 /* ─── board region ───────────────────────────────────────────────────── */
 .board-region { display: flex; flex-direction: column; min-height: 0;
@@ -403,6 +393,16 @@ strong { font-weight: 500; }
   border-bottom: 1px solid var(--border);
 }
 .board-title { font-size: var(--text-lg); line-height: var(--leading-tight); white-space: nowrap; }
+/* the view's name renames in place: the read view is the heading itself, the write view an input the same size */
+.view-head .view-ico { color: var(--meta); flex-shrink: 0; }
+.view-title { min-width: 0; }
+.view-name { font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; margin: 0 -6px; border-radius: var(--radius-sm); cursor: text; }
+.view-name:hover { background: var(--surface-warm); }
+.view-name:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.view-name-input { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 1px 5px; margin: 0 -6px; min-width: 12ch; }
+.view-name-input:focus { outline: none; box-shadow: var(--focus-ring); }
+.view-dirty { text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.layout-seg { flex-shrink: 0; }
 .board-facts { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex-wrap: nowrap; overflow: hidden; }
 .board-facts > * { white-space: nowrap; flex-shrink: 0; }
 
@@ -440,6 +440,42 @@ strong { font-weight: 500; }
 .qb-btn[data-on="true"]:hover,
 .qb-btn[data-on="true"][aria-expanded="true"] { background: var(--tag-bg-base); color: var(--tag-fg); }
 .qb-val { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: var(--tracking-label); }
+
+/* ─── filter chips · one per clause, armed by construction ─────────────
+ * A chip is the clause in words. Its body opens the same editor that made it;
+ * the × takes it off. The add control is the only unarmed filter button. */
+.qb-chip {
+  display: inline-flex; align-items: stretch; max-width: 100%;
+  border-radius: var(--radius-sm); background: var(--tag-bg-soft); color: var(--tag-fg);
+  box-shadow: var(--elev-ring-accent);
+}
+.qb-chip-edit {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  padding: 5px 4px 5px 8px; border: 0; background: transparent; color: inherit;
+  font-family: var(--font-display); font-size: var(--text-sm); letter-spacing: var(--tracking-label);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.qb-chip-edit .ico { color: inherit; flex-shrink: 0; opacity: 0.8; }
+.qb-chip-edit > span { overflow: hidden; text-overflow: ellipsis; }
+.qb-chip-edit:hover, .qb-chip-edit[aria-expanded="true"] { background: var(--tag-bg-base); }
+.qb-chip-edit:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.qb-chip-x {
+  display: inline-flex; align-items: center; padding: 0 7px 0 5px; border: 0;
+  background: transparent; color: inherit; opacity: 0.6; cursor: pointer;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.qb-chip-x:hover { opacity: 1; background: var(--tag-bg-base); }
+.qb-chip-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.qb-add[data-on="true"] { background: transparent; color: var(--muted); box-shadow: var(--elev-ring); }
+.qb-add[data-on="true"] .ico, .qb-add[data-on="true"] .chev { color: var(--meta); }
+/* the unsaved cluster: the draft differs from the view, and both ways out sit together */
+.qb-dirty { display: flex; align-items: center; gap: 6px; }
+/* a popover that holds inputs; the design's menu box, sized for a form */
+.menu.pop { min-width: 260px; max-height: none; overflow: visible; }
+.pop-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.pop-field { display: flex; flex-direction: column; gap: 4px; padding: 0 var(--space-2); }
+.pop-field .input { font-size: var(--text-sm); padding: 5px 8px; }
 
 /* ─── the view controls · one cluster, at the end of the query bar ──────
  * There is no view picker in the chrome. Grouping, saving a new view and
@@ -1001,6 +1037,10 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .fld-row.is-builtin .cfg-name { color: var(--muted); }
 .fld-editor { margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
 .fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
+/* a workstream row adds a glyph and a count in front of the way out */
+.fld-ws { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto auto; }
+.fld-ws-icon { width: 74px; padding: 5px 6px; font-size: var(--text-sm); }
+.vs-fields, .vs-columns { display: flex; flex-direction: column; }
 .stack-1 { display: flex; flex-direction: column; gap: var(--space-1); }
 .wip-in { width: 68px; padding: 4px 7px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: 13px; text-align: right; background: var(--bg); color: var(--fg);
