@@ -196,7 +196,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 `pnpm --filter @tomrade/desktop test:ui` boots the same plugin tree the app
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port — over a
 throwaway database seeded with the prototype's sample project
-(`apps/desktop/scripts/seed.mjs`). It asserts 218 behaviours and writes a
+(`apps/desktop/scripts/seed.mjs`). It asserts 239 behaviours and writes a
 screenshot per screen and per theme into `apps/desktop/scripts/shots/`. It
 needs the dev server up (`pnpm dev:ui`) *and* a built backend — it loads
 `apps/desktop/dist` and every plugin's `dist`, so a new channel is invisible to

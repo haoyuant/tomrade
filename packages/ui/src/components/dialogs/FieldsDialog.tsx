@@ -26,8 +26,20 @@ const CUSTOM_TYPES: FieldType[] = ["text", "number", "date", "select", "checkbox
 
 const holders = (items: Item[], fieldId: string) => items.filter((i) => fieldId in i.fields).length;
 
-/** Blur commits, Escape restores — a one-line rename that never needs a Save button. */
+/**
+ * Enter and blur commit, Escape restores — a one-line rename that never needs a
+ * Save button. Enter commits directly rather than through blur, because an
+ * unfocused window fires no focus events at all.
+ */
 function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { value: string; ariaLabel: string; className?: string; placeholder?: string; onSave: (next: string) => void }) {
+  const settled = useRef(false);
+  const commit = (el: HTMLInputElement) => {
+    if (settled.current) return;
+    settled.current = true;
+    const next = el.value.trim();
+    if (next && next !== value) onSave(next);
+    else el.value = value;
+  };
   return (
     <input
       key={value}
@@ -35,19 +47,22 @@ function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { val
       aria-label={ariaLabel}
       placeholder={placeholder}
       defaultValue={value}
+      onFocus={() => {
+        settled.current = false;
+      }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           e.currentTarget.value = value;
+          settled.current = true;
           e.currentTarget.blur();
         }
-        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Enter") {
+          commit(e.currentTarget);
+          e.currentTarget.blur();
+        }
       }}
-      onBlur={(e) => {
-        const next = e.currentTarget.value.trim();
-        if (next && next !== value) onSave(next);
-        else e.currentTarget.value = value;
-      }}
+      onBlur={(e) => commit(e.currentTarget)}
     />
   );
 }

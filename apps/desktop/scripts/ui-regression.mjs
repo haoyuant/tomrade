@@ -143,18 +143,20 @@ const run = async () => {
   // ── enter the project ───────────────────────────────────────────────
   await $(`document.querySelectorAll('.proj')[0].click();true`);
   await sleep(1800);
-  check("board route resolves to a board and a view", /\/p\/.+\/b\/.+\/v\/.+/.test(await $(`location.hash`)));
-  const boardRows = await $(`document.querySelectorAll('.side-row.is-board').length`);
-  check("sidebar lists four workstreams plus two cross-board scopes", boardRows === 6);
+  check("project route resolves to a view", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)));
+  const allViews = repos.views.listForProject(project.id);
+  check("sidebar lists every saved view", (await $(`document.querySelectorAll('.side-row.is-view').length`)) === allViews.length);
+  check("the project opens on its first view", (await $(`location.hash`)).includes(allViews[0].id));
   check("one sidebar row is current", (await $(`document.querySelectorAll('.side-row[aria-current="true"]').length`)) === 1);
-  check("query bar renders four facets", (await $(`document.querySelectorAll('.qb-btn').length`)) === 4);
-  check("grouping segmented control has three modes and the contributed graph", (await $(`document.querySelectorAll('.seg.quiet button').length`)) === 4);
+  check("query bar offers a filter and the three axes", (await $(`!!document.querySelector('.qb-add') && !!document.querySelector('.qb-column-by') && !!document.querySelector('.qb-group-by') && !!document.querySelector('.qb-sort')`)) === true);
+  check("the view head switches between three layouts", (await $(`document.querySelectorAll('.layout-seg button[data-layout]').length`)) === 3);
+  check("a saved view is not marked unsaved", (await $(`!!document.querySelector('.view-dirty')`)) === false);
   const columns = await $(`document.querySelectorAll('.col').length`);
   check("board renders the view's columns", columns >= 4);
   check("cards render with a mono issue key", (await $(`!!document.querySelector('.card .card-id')?.textContent.match(/^TOM-\\d+$/)`)) === true);
   check("column numbers are zero-padded", (await $(`document.querySelector('.col-num')?.textContent`)) === "01");
   check("provenance ticks appear in the card gutter", (await $(`document.querySelectorAll('.card .prov-tick').length`)) > 0);
-  check("a WIP cap prints as count / cap", (await $(`[...document.querySelectorAll('.col-count')].some(n => n.textContent.includes('/'))`)) === true);
+  check("cards name their workstream when the view does not pin one", (await $(`document.querySelectorAll('.card-board').length`)) > 0);
   await shot("04-board-paper");
 
   // ── keyboard move: ← → is the same write path as a drag ─────────────
@@ -199,8 +201,8 @@ const run = async () => {
       await sleep(1600);
     }
     const landed = repos.items.get(dragged.id);
-    check("a pointer drag writes the grouped field", landed.status === "doing");
-    check("a drag never changes the board", landed.boardId === dragged.boardId);
+    check("a pointer drag writes the column's field", landed.status === "doing");
+    check("a status drop leaves the workstream alone", landed.boardId === dragged.boardId);
     if (landed.status === "doing") await shot("21-after-drag");
     repos.items.update(dragged.id, { status: "verifying" }, "human");
     await $(`location.reload();true`);
@@ -245,7 +247,7 @@ const run = async () => {
     await sleep(3200);
     check("the dropped order survives a refetch", (await columnOrder()) === shown);
     check(
-      "neither drag changed the board",
+      "neither drag changed the workstream",
       [first.key, second?.key].filter(Boolean).every((k) => repos.items.getByKey(project.id, k)?.boardId === first.boardId)
     );
     await shot("22-drag-order");
@@ -270,56 +272,71 @@ const run = async () => {
   check("the banner dismisses", (await $(`!!document.querySelector('.banner')`)) === false);
 
   // ── filters ─────────────────────────────────────────────────────────
-  await press(`document.querySelectorAll('.qb-btn')[0]`);
+  // The filter menu lists every filterable field; a choice field stays in the
+  // menu as a counted check list, so one filter is two presses.
+  const menuRow = (text) => `[...document.querySelectorAll('.menu-row')].find(r => r.textContent.trim().startsWith('${text}'))`;
+  await press(`document.querySelector('.qb-add')`);
   await sleep(500);
-  check("a facet menu opens with counted options", (await $(`document.querySelectorAll('.menu-row .m-count').length`)) > 0);
-  await shot("06-facet-menu");
+  check("the filter menu lists the fields", (await $(`document.querySelectorAll('.menu-row').length`)) >= 8);
+  await press(menuRow("Labels"));
+  await sleep(500);
+  check("a choice field opens as a counted check list", (await $(`document.querySelectorAll('.menu-row[aria-checked]').length`)) > 0);
+  await shot("06-filter-menu");
   const shown = await $(`document.querySelectorAll('.card').length`);
-  await press(`document.querySelectorAll('.menu-row')[0]`);
+  await press(`document.querySelectorAll('.menu-row[aria-checked]')[0]`);
   await sleep(700);
   check("selecting a label narrows the board", (await $(`document.querySelectorAll('.card').length`)) < shown);
-  check("the menu stays open for multi-select", (await $(`document.querySelectorAll('.menu-row').length`)) > 0);
-  await press(`document.querySelector('.board-title')`);
+  check("the menu stays open for multi-select", (await $(`document.querySelectorAll('.menu-row[aria-checked]').length`)) > 0);
+  await press(`document.querySelector('.view-title')`);
   await sleep(400);
   check("a pointer outside dismisses the menu", (await $(`document.querySelectorAll('.menu-row').length`)) === 0);
-  check("an armed facet reads as a tag", (await $(`!!document.querySelector('.qb-btn[data-on="true"]')`)) === true);
-  check("drift from the saved view offers Save to view", (await $(`!!document.querySelector('.query-bar .btn-secondary')`)) === true);
+  check("an armed filter reads as a chip", (await $(`!!document.querySelector('.qb-chip[data-field="labels"]')`)) === true);
+  check("drift from the saved view offers Save view", (await $(`!!document.querySelector('.qb-dirty .qb-save')`)) === true);
+  check("and marks the head unsaved", (await $(`!!document.querySelector('.view-dirty')`)) === true);
   await shot("07-board-filtered");
-  await $(`[...document.querySelectorAll('.query-bar .btn-ghost')].find(b=>b.textContent.trim()==='Reset').click();true`);
+  await press(`document.querySelector('.qb-discard')`);
   await sleep(600);
-  check("Reset returns to the saved view", (await $(`!!document.querySelector('.qb-btn[data-on="true"]')`)) === false);
-  // re-picking the board you are already on must not throw the live query away
-  await press(`document.querySelectorAll('.qb-btn')[0]`);
+  check("Discard returns to the saved view", (await $(`!!document.querySelector('.qb-chip')`)) === false && (await $(`!!document.querySelector('.qb-dirty')`)) === false);
+  // re-picking the view you are already on must not throw the live query away
+  await press(`document.querySelector('.qb-add')`);
   await sleep(400);
-  await press(`document.querySelectorAll('.menu-row')[0]`);
+  await press(menuRow("Labels"));
+  await sleep(400);
+  await press(`document.querySelectorAll('.menu-row[aria-checked]')[0]`);
   await sleep(500);
-  await press(`document.querySelector('.board-title')`);
+  await press(`document.querySelector('.view-title')`);
   await sleep(400);
   await press(`document.querySelector('.side-row[aria-current="true"]')`);
   await sleep(700);
-  check("re-picking the current board keeps the live query", (await $(`!!document.querySelector('.qb-btn[data-on="true"]')`)) === true);
-  await press(`[...document.querySelectorAll('.query-bar .btn-ghost')].find(b=>b.textContent.trim()==='Reset')`);
+  check("re-picking the current view keeps the live query", (await $(`!!document.querySelector('.qb-chip[data-field="labels"]')`)) === true);
+  await press(`document.querySelector('.qb-discard')`);
   await sleep(600);
 
-  // ── grouping ────────────────────────────────────────────────────────
-  await $(`document.querySelectorAll('.seg.quiet button')[1].click();true`);
+  // ── column by ───────────────────────────────────────────────────────
+  await press(`document.querySelector('.qb-column-by')`);
+  await sleep(500);
+  await press(menuRow("Priority"));
   await sleep(700);
-  check("grouping by priority relabels the columns", (await $(`document.querySelector('.col-name')?.textContent`)) === "Urgent");
+  check("column by priority relabels the columns", (await $(`document.querySelector('.col-name')?.textContent`)) === "Urgent");
   await shot("08-board-by-priority");
-  await $(`document.querySelectorAll('.seg.quiet button')[0].click();true`);
+  await press(`document.querySelector('.qb-column-by')`);
+  await sleep(400);
+  await press(menuRow("Workstream"));
+  await sleep(700);
+  check("column by workstream makes one column per workstream", (await $(`document.querySelectorAll('.col').length`)) === repos.boards.list(project.id).length);
+  await shot("08a-board-by-workstream");
+  await press(`document.querySelector('.qb-discard')`);
   await sleep(600);
 
   // ── dependency graph ────────────────────────────────────────────────
-  // The fourth segment is contributed by @tomrade/deps-graph: same slice,
-  // arranged as blocker → blocked. Expectations are computed from the
-  // repository, so the section holds whatever the seed happens to contain.
-  await $(`document.querySelectorAll('.seg.quiet button')[3].click();true`);
+  // The Graph layout draws the graph @tomrade/deps-graph contributes: same
+  // filtered set, arranged as blocker → blocked. Expectations are computed
+  // from the repository, so the section holds whatever the seed contains.
+  await press(`document.querySelector('.layout-seg button[data-layout="graph"]')`);
   await sleep(1400);
-  check("the graph segment renders the canvas", (await $(`!!document.querySelector('.graph-region .react-flow')`)) === true);
-  const graphBoardId = (await $(`location.hash`)).match(/\/b\/([^/]+)\//)[1];
-  const graphBoard = repos.boards.get(graphBoardId);
-  const ownedNow = () =>
-    repos.items.list({ projectId: project.id }).filter((i) => i.kind !== "epic" && (graphBoard.across || i.boardId === graphBoardId));
+  check("the graph layout renders the canvas", (await $(`!!document.querySelector('.graph-region .react-flow')`)) === true);
+  check("switching layout is a draft, not a write", (await $(`!!document.querySelector('.qb-dirty')`)) === true && repos.views.get(allViews[0].id).layout === "board");
+  const ownedNow = () => repos.items.list({ projectId: project.id }).filter((i) => i.kind !== "epic");
   const edgesAmong = (owned) => {
     const ids = new Set(owned.map((i) => i.id));
     return owned.flatMap((i) => i.blocks.filter((t) => ids.has(t))).length;
@@ -366,16 +383,46 @@ const run = async () => {
 
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(400);
-  await $(`document.querySelectorAll('.seg.quiet button')[0].click();true`);
+  await press(`document.querySelector('.qb-discard')`);
+  await sleep(700);
+  check("discarding the layout change returns to the board", (await $(`document.querySelectorAll('.col').length`)) >= 4);
+
+  // ── table layout ────────────────────────────────────────────────────
+  await press(`document.querySelector('.layout-seg button[data-layout="table"]')`);
+  await sleep(1000);
+  check("the table layout lists every visible issue as a row", (await $(`document.querySelectorAll('tr.tbl-row').length`)) === ownedNow().length);
+  check("the table shows the layout's default fields", (await $(`[...document.querySelectorAll('th.tbl-cell[data-field]')].map(h => h.dataset.field).join()`)) === "title,status,priority,epic,labels,board,updated");
+  await press(`document.querySelector('th.tbl-cell[data-field="priority"] .tbl-th-btn')`);
+  await sleep(700);
+  check("a header click sorts the table by that field", (await $(`document.querySelector('th.tbl-cell[data-field="priority"] [data-sort]')?.dataset.sort`)) === "asc");
+  check("and the sort menu says so", (await $(`document.querySelector('.qb-sort .qb-val')?.textContent`)).includes("Priority"));
+  const firstRowKey = await $(`document.querySelector('tr.tbl-row .card-id')?.textContent`);
+  check("the top row is the most urgent", repos.items.getByKey(project.id, firstRowKey)?.priority === Math.max(...ownedNow().map((i) => i.priority)));
+  await press(`document.querySelector('.qb-group-by')`);
+  await sleep(400);
+  await press(menuRow("Status"));
+  await sleep(700);
+  check("group by status sections the table", (await $(`document.querySelectorAll('tr.tbl-group').length`)) >= 3);
+  await shot("08c-table-grouped");
+  const rowStatus = await $(`document.querySelector('tr.tbl-row td.tbl-cell[data-field="status"] select')?.value`);
+  const rowKey = await $(`document.querySelector('tr.tbl-row .card-id')?.textContent`);
+  await pick(`document.querySelector('tr.tbl-row td.tbl-cell[data-field="status"] select')`, rowStatus === "doing" ? "verifying" : "doing");
+  await sleep(900);
+  check("a table cell writes through the same path", repos.items.getByKey(project.id, rowKey)?.status === (rowStatus === "doing" ? "verifying" : "doing"));
+  await $(`document.querySelector('.toast .btn-ghost').click();true`);
+  await sleep(900);
+  await press(`document.querySelector('.qb-discard')`);
   await sleep(700);
 
   // ── detail pane ─────────────────────────────────────────────────────
   await $(`document.querySelector('.card').click();true`);
   await sleep(900);
   check("a card opens the detail pane", (await $(`!!document.querySelector('.detail')`)) === true);
-  check("the detail prints the field strip", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 9);
+  const customCount = repos.fields.custom(project.id).length;
+  check("the detail prints the field strip, custom fields included", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 9 + customCount);
+  check("custom fields follow the built-ins", (await $(`document.querySelectorAll('.detail .field-row[data-field]').length`)) === customCount);
   check("the activity ledger reads the oplog", (await $(`document.querySelectorAll('.detail .ledger-row').length`)) > 0);
-  check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .fsel').length`)) === 4);
+  check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .fsel').length`)) === 5);
   await shot("09-detail-docked");
 
   // ── editing an issue in place ────────────────────────────────────────
@@ -466,7 +513,7 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
   await sleep(700);
   check("⌘K opens the palette", (await $(`!!document.querySelector('.palette-input')`)) === true);
-  check("the palette indexes spaces, issues and actions", (await $(`document.querySelectorAll('.palette-row').length`)) > 10);
+  check("the palette indexes views, issues and actions", (await $(`document.querySelectorAll('.palette-row').length`)) > 10);
   await shot("11-palette");
   await typeInto(".palette-input", "Theme · Matcha");
   await sleep(600);
@@ -486,18 +533,25 @@ const run = async () => {
   await themeViaPalette("light");
   check("a palette action returns to paper", (await $(`document.documentElement.className`)) === "");
 
-  // ── new board is a real, undoable write ─────────────────────────────
-  const boardsBefore = repos.boards.list(project.id).length;
-  await $(`[...document.querySelectorAll('.side-add')][0].click();true`);
+  // ── new view is a real, undoable write ──────────────────────────────
+  const viewsBefore = repos.views.listForProject(project.id).length;
+  await press(`document.querySelector('.side-new-view')`);
   await sleep(400);
-  await $(`(() => { const i=document.querySelector('.side-row input'); i.value='Docs'; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true; })()`);
+  await typeInto('input[aria-label="New view name"]', "Docs");
+  await $(`document.querySelector('input[aria-label="New view name"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
   await sleep(1400);
-  check("creating a board writes it", repos.boards.list(project.id).length === boardsBefore + 1);
-  const docs = repos.boards.list(project.id).find((b) => b.name === "Docs");
-  check("a new board gets the All work view", repos.views.listForBoard(docs.id).map((v) => v.name).join() === "All work");
-  await $(`document.querySelector('.toast .btn-ghost').click();true`);
+  check("creating a view writes it", repos.views.listForProject(project.id).length === viewsBefore + 1);
+  const docs = repos.views.listForProject(project.id).find((v) => v.name === "Docs");
+  check("a new view opens as a board", !!docs && docs.layout === "board" && (await $(`location.hash`)).includes(docs.id));
+  check("the ledger records the view create", ctx.oplog.historyFor("view", docs.id, 1)[0]?.op === "create");
+  await press(`document.querySelector('.view-menu-btn')`);
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.menu [role="menuitem"]')].find(r => /Delete view/.test(r.textContent))`);
+  await sleep(1200);
+  check("deleting the view from its menu removes it", repos.views.listForProject(project.id).length === viewsBefore);
+  check("and lands on a surviving view", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)) && !(await $(`location.hash`)).includes(docs.id));
+  await press(`document.querySelector('.side-row.is-view[data-view="${allViews[0].id}"]')`);
   await sleep(1000);
-  check("undo removes the board again", repos.boards.list(project.id).length === boardsBefore);
 
   // ── inline composer ─────────────────────────────────────────────────
   const itemsBefore = repos.items.list({ projectId: project.id }).length;
@@ -508,7 +562,7 @@ const run = async () => {
   const nowItems = repos.items.list({ projectId: project.id });
   check("the column composer creates an issue", nowItems.length === itemsBefore + 1);
   const created = nowItems.find((i) => i.title === "Typed straight into the column");
-  check("the composer writes the column's own field", created && created.status === "doing");
+  check("the composer writes the column's own field", created && created.status === "todo");
   check("the new issue continues the key sequence", created && /^TOM-\d+$/.test(created.key));
 
   // ── dialogs ─────────────────────────────────────────────────────────
@@ -520,28 +574,34 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
-  await $(`[...document.querySelectorAll('.board-head .btn-ghost')].pop().click();true`);
+  // ── fields: workstreams are the Workstream field's options ──────────
+  await press(`document.querySelector('.side-fields')`);
   await sleep(900);
-  check("board settings opens with the issue distribution", (await $(`!!document.querySelector('.bs-bar')`)) === true);
-  check("board settings lists the saved-view roster", (await $(`document.querySelectorAll('.cfg-row .bs-radio').length`)) > 0);
-  // the roster is a draft: removing a row and cancelling must leave the view alone
-  const viewsBefore = repos.views.listForBoard(repos.boards.list(project.id).find((b) => b.name === "UI").id).length;
-  await press(`[...document.querySelectorAll('.cfg-row .btn-icon')].pop()`);
-  await sleep(400);
-  check("removing a roster row is a draft, not a write", (await $(`document.querySelectorAll('.cfg-row').length`)) === viewsBefore - 1);
-  await press(`[...document.querySelectorAll('.dlg-foot .btn-ghost')].pop()`);
-  await sleep(700);
-  check("Cancel discards the roster edit", repos.views.listForBoard(repos.boards.list(project.id).find((b) => b.name === "UI").id).length === viewsBefore);
-  await press(`[...document.querySelectorAll('.board-head .btn-ghost')].pop()`);
-  await sleep(800);
-  await checkCentred("board settings");
-  await shot("15-board-settings");
+  check("the Fields sheet lists the built-ins and the project's own", (await $(`document.querySelectorAll('.fld-row.is-builtin').length`)) === 9 && (await $(`document.querySelectorAll('.fld-row:not(.is-builtin)').length`)) === repos.fields.custom(project.id).length);
+  await press(`document.querySelector('button.fld-row[data-field="board"]')`);
+  await sleep(600);
+  check("the Workstream row opens the workstream editor", (await $(`document.querySelectorAll('.fld-editor[data-editor="workstream"] .fld-ws').length`)) === repos.boards.list(project.id).length);
+  const ui = repos.boards.list(project.id).find((b) => b.name === "UI");
+  // blur is what commits, and blur only fires on an element that had focus
+  await $(`(() => { const i = document.querySelector('.fld-ws[data-board="${ui.id}"] input'); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Interface'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
+  await sleep(900);
+  check("renaming a workstream writes it", repos.boards.get(ui.id).name === "Interface");
+  repos.boards.update(ui.id, { name: "UI" });
+  await sleep(600);
+  // by row, not by name: the direct repository write above never reached the renderer's cache
+  await press(`document.querySelector('.fld-ws[data-board="${ui.id}"] button[aria-label^="Remove workstream"]')`);
+  await sleep(500);
+  check("removing a workstream that holds issues asks where they go", (await $(`!!document.querySelector('select[aria-label="Destination workstream"]')`)) === true);
+  check("nothing moved yet", repos.items.list({ boardId: ui.id }).length > 0);
+  await checkCentred("the fields sheet");
+  await shot("15-fields-workstreams");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
-  await $(`[...document.querySelectorAll('.qb-right .btn-ghost')].pop().click();true`);
+  await press(`document.querySelector('.view-settings-btn')`);
   await sleep(800);
-  check("view settings lists the column space with WIP inputs", (await $(`document.querySelectorAll('.wip-in').length`)) === 6);
+  check("view settings edits name, layout and the fields shown", (await $(`!!document.querySelector('#vsName') && document.querySelectorAll('.vs-layout button[data-layout]').length === 3 && document.querySelectorAll('.vs-fields .cfg-row[data-field]').length > 6`)) === true);
+  check("a board view lists its column space with WIP inputs", (await $(`document.querySelectorAll('.vs-columns .wip-in').length`)) === 6);
   await checkCentred("view settings");
   await shot("16-view-settings");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
@@ -663,23 +723,32 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'b',metaKey:true,bubbles:true}));true`);
   await sleep(600);
   check("⌘B collapses the sidebar to its rail", (await $(`!!document.querySelector('.side-rail') && !document.querySelector('.sidebar')`)) === true);
-  check("a railed sidebar hands board switching to the board head", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) !== "none");
+  check("a railed sidebar hands view switching to the view head", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) !== "none");
   check("the collapsed sidebar is remembered", (await $(`localStorage.getItem('tomrade.sidebar.open')`)) === "0");
   await shot("18-sidebar-railed");
   await press(`document.querySelector('.side-rail .btn-icon')`);
   await sleep(600);
   check("the rail's button brings the sidebar back", (await $(`!!document.querySelector('.sidebar')`)) === true);
-  check("the board head's switcher retreats with it", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) === "none");
+  check("the view head's switcher retreats with it", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) === "none");
 
-  // ── cross-board scope ───────────────────────────────────────────────
-  await press(`[...document.querySelectorAll('.side-row.is-board')].pop()`);
+  // ── saved views slice one backlog ───────────────────────────────────
+  const bugsView = allViews.find((v) => v.name === "Bugs");
+  await press(`document.querySelector('.side-row.is-view[data-view="${bugsView.id}"]')`);
   await sleep(1200);
-  check("a cross-board scope borrows every issue", (await $(`document.querySelectorAll('.card').length`)) > 0);
+  const bugTickets = repos.items.list({ projectId: project.id }).filter((i) => i.kind !== "epic" && i.labels.includes("bug"));
+  check("a filtered view shows exactly the issues its clauses admit", (await $(`document.querySelectorAll('.card').length`)) === bugTickets.length);
   check("epics are structure, never cards", (await $(`[...document.querySelectorAll('.card-title')].every(n => !/^(Multi-board architecture|Theme token refactor|AI panel|MCP surface)$/.test(n.textContent))`)) === true);
-  check("cards in a scope name their owning board", (await $(`document.querySelectorAll('.card-board').length`)) > 0);
-  check("a scope offers no board settings", (await $(`[...document.querySelectorAll('.board-head .btn-ghost')].some(b=>b.textContent.includes('Board settings'))`)) === false);
-  check("a scope has no inline composer", (await $(`document.querySelectorAll('.col-body > .btn-ghost').length`)) === 0);
-  await shot("19-scope-across-boards");
+  check("the saved filter reads as a chip", (await $(`!!document.querySelector('.qb-chip[data-field="labels"]')`)) === true);
+  const sprint = allViews.find((v) => v.name === "Sprint 12");
+  await press(`document.querySelector('.side-row.is-view[data-view="${sprint.id}"]')`);
+  await sleep(1400);
+  check("a view pinned to a workstream drops the workstream chip from its cards", (await $(`document.querySelectorAll('.card-board').length`)) === 0);
+  check("swimlanes group the board by epic", (await $(`document.querySelectorAll('.lanes[data-group-by="epic"] section.lane').length`)) >= 2);
+  check("an empty lane renders collapsed", (await $(`document.querySelectorAll('section.lane.collapsed').length`)) > 0);
+  check("a WIP cap prints as count / cap", (await $(`[...document.querySelectorAll('.col-count')].some(n => n.textContent.includes('/'))`)) === true);
+  await shot("19-view-swimlanes");
+  await press(`document.querySelector('.side-row.is-view[data-view="${allViews[0].id}"]')`);
+  await sleep(1000);
 
   // ── standalone issue screen ─────────────────────────────────────────
   const locked = repos.items.list({ projectId: project.id }).find((i) => i.humanLocked);
@@ -687,8 +756,8 @@ const run = async () => {
   await sleep(1600);
   check("the issue route renders the standalone sheet", (await $(`!!document.querySelector('.issue-wrap')`)) === true);
   check("the ledger names the write, not just 'updated'", (await $(`[...document.querySelectorAll('.ledger-txt')].some(n => /locked title and body|set status to/.test(n.textContent))`)) === true);
-  check("the field strip lays out horizontally", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10);
-  check("the standalone sheet is editable too", (await $(`document.querySelectorAll('.issue-wrap .fsel').length`)) === 4);
+  check("the field strip lays out horizontally, custom fields included", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10 + repos.fields.custom(project.id).length);
+  check("the standalone sheet is editable too", (await $(`document.querySelectorAll('.issue-wrap .fsel').length`)) === 5);
   check("a locked issue explains the lock", (await $(`!!document.querySelector('.lockbar')`)) === true);
   check("dependencies render as chips that open the issue", (await $(`document.querySelectorAll('.issue-wrap .lab.dep').length`)) >= 3);
   await shot("20-issue-detail");
@@ -712,7 +781,7 @@ const run = async () => {
   await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
   await sleep(2600);
   check("the issue sheet offers a permanent delete", (await $(`!!document.querySelector('.titlebar .purge-btn')`)) === true);
-  check("the delete control is not an eleventh field", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10);
+  check("the delete control is not one more field", (await $(`document.querySelectorAll('.issue-wrap .fs-item').length`)) === 10 + repos.fields.custom(project.id).length);
 
   await $(`document.querySelector('.titlebar .purge-btn').focus();true`);
   await press(`document.querySelector('.titlebar .purge-btn')`);
@@ -748,7 +817,7 @@ const run = async () => {
   await sleep(1400);
   check("confirming destroys the issue for good", repos.items.get(doomed.id) === null);
   check("the purge left one tombstone and no history", ctx.oplog.historyFor("item", doomed.id, 10).map((o) => o.op).join() === "purge");
-  check("deleting the open issue leaves for the board, not a dead sheet", /\/p\/.+\/b\/.+\/v\/.+/.test(await $(`location.hash`)));
+  check("deleting the open issue leaves for the project, not a dead sheet", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)));
 
   // the same control on the docked pane, where the board is what has to react
   await sleep(900);
@@ -851,7 +920,7 @@ const run = async () => {
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1600);
   check("confirming destroys the project for good", repos.projects.get(throwaway.id) === null);
-  check("its boards, views and issues go with it", repos.boards.list(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
+  check("its workstreams, views and issues go with it", repos.boards.list(throwaway.id).length === 0 && repos.views.listForProject(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
   check("the card leaves the grid", (await $(`document.querySelectorAll('.proj').length`)) === 2);
   check("the sheet closes with the project it was configuring", (await $(`!!document.querySelector('#psName')`)) === false);
   check("the fixture project is untouched", repos.items.list({ projectId: project.id }).length > 0);
