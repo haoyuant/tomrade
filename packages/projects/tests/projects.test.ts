@@ -9,14 +9,12 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-projects-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 describe("projects", () => {
-  it("seeds a default project with one board and two cross-board scopes", async () => {
+  it("seeds a default project with one workstream and the default views", async () => {
     const { projects, boards, views, project } = await fresh();
     expect(project.id).toBe("default");
     expect(projects.list().length).toBe(1);
-    const all = boards.list(project.id);
-    expect(all.filter((b) => !b.across).map((b) => b.name)).toEqual(["Main"]);
-    expect(all.filter((b) => b.across).map((b) => b.name)).toEqual(["Recently updated", "Epics"]);
-    expect(views.listForBoard(all[0].id).map((v) => v.kind)).toEqual(["status", "priority", "epic", "dependencies"]);
+    expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main"]);
+    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Board", "Table", "Epics", "Dependencies"]);
   });
 
   it("derives a key prefix from the project name", () => {
@@ -95,7 +93,8 @@ describe("projects", () => {
     await first.ctx.fiber.dispose();
     const second = await fresh({ dbPath: file });
     expect(second.projects.list().map((p) => p.name)).toEqual(["Default Project"]);
-    expect(second.boards.list(second.project.id).length).toBe(3);
+    expect(second.boards.list(second.project.id).length).toBe(1);
+    expect(second.views.listForProject(second.project.id).length).toBe(4);
   });
 
   it("keys are per project, so two projects can both hold #1", async () => {

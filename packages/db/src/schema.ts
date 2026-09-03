@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 5;
+export const CORE_SCHEMA_VERSION = 6;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at    INTEGER NOT NULL
 );
 
+-- A board is an option of the built-in Workstream field. across/sort are
+-- legacy columns (cross-board scopes became saved views); kept for stability.
 CREATE TABLE IF NOT EXISTS boards (
   id            TEXT PRIMARY KEY,
   project_id    TEXT NOT NULL,
@@ -31,18 +33,16 @@ CREATE TABLE IF NOT EXISTS boards (
   updated_at    INTEGER NOT NULL
 );
 
--- name/icon/group_by are legacy columns the app no longer reads; kept for
--- schema stability. kind is the four-value built-in view identity.
+-- A saved view: one layout plus one query, owned by the project. board_id is a
+-- legacy column from when views sliced one board; always '' now.
 CREATE TABLE IF NOT EXISTS views (
   id            TEXT PRIMARY KEY,
-  board_id      TEXT NOT NULL,
+  project_id    TEXT NOT NULL DEFAULT '',
+  board_id      TEXT NOT NULL DEFAULT '',
   name          TEXT NOT NULL,
   icon          TEXT NOT NULL DEFAULT 'i-board',
-  group_by      TEXT NOT NULL DEFAULT 'status',
-  kind          TEXT NOT NULL DEFAULT 'status',
-  columns_json  TEXT NOT NULL DEFAULT '[]',
-  filter_json   TEXT NOT NULL DEFAULT '{}',
-  wip_json      TEXT NOT NULL DEFAULT '{}',
+  layout        TEXT NOT NULL DEFAULT 'board',
+  query_json    TEXT NOT NULL DEFAULT '{}',
   rank          REAL NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS plugin_migrations (
 /** Created after migration: the unique key index cannot exist while backfill is pending. */
 export const CORE_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id, rank);
-CREATE INDEX IF NOT EXISTS idx_views_board ON views(board_id, rank);
+CREATE INDEX IF NOT EXISTS idx_views_project ON views(project_id, rank);
 CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);

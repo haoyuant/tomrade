@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
-import { seedProjectBoards, type Db } from "@tomrade/db";
+import { seedProject, type Db } from "@tomrade/db";
 import { keyPrefixFor, type CreateProjectInput, type Project, type ProjectPatch } from "@tomrade/domain";
 import type {} from "@tomrade/ipc";
 
@@ -81,7 +81,7 @@ export class Projects extends Service {
       this.db
         .prepare("INSERT INTO projects (id, name, description, key_prefix, next_key_num, archived, created_at, updated_at) VALUES ('default', 'Default Project', NULL, 'TOM', 1, 0, ?, ?)")
         .run(now, now);
-      seedProjectBoards(this.db, "default", now);
+      seedProject(this.db, "default", now);
     });
     return { id: "default", name: "Default Project", description: null, keyPrefix: "TOM", archived: false, createdAt: now, updatedAt: now };
   }
@@ -95,7 +95,7 @@ export class Projects extends Service {
     return row ? rowToProject(row) : null;
   }
 
-  /** Creates the project, its first board and the two cross-board scopes. */
+  /** Creates the project, its Main workstream and the default views. */
   create(input: CreateProjectInput): Project {
     const id = randomUUID();
     const now = Date.now();
@@ -104,7 +104,7 @@ export class Projects extends Service {
       this.db
         .prepare("INSERT INTO projects (id, name, description, key_prefix, next_key_num, archived, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 0, ?, ?)")
         .run(id, input.name, input.description ?? null, keyPrefix, now, now);
-      seedProjectBoards(this.db, id, now);
+      seedProject(this.db, id, now);
     });
     return { id, name: input.name, description: input.description ?? null, keyPrefix, archived: false, createdAt: now, updatedAt: now };
   }
@@ -134,9 +134,7 @@ export class Projects extends Service {
       // empties, so the history has to go before the rows it is found through.
       this.db.prepare("DELETE FROM oplog WHERE entity = 'item' AND entity_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
       this.db.prepare("DELETE FROM oplog WHERE entity = 'board' AND entity_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
-      this.db
-        .prepare("DELETE FROM oplog WHERE entity = 'view' AND entity_id IN (SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = ?)")
-        .run(id);
+      this.db.prepare("DELETE FROM oplog WHERE entity = 'view' AND entity_id IN (SELECT id FROM views WHERE project_id = ?)").run(id);
       // A purge tombstone is the one oplog row that outlives its subject; it names the project itself.
       this.db.prepare("DELETE FROM oplog WHERE op = 'purge' AND json_extract(before_json, '$.projectId') = ?").run(id);
 
@@ -151,8 +149,8 @@ export class Projects extends Service {
           "DELETE FROM item_relations WHERE from_item_id IN (SELECT id FROM items WHERE project_id = ?) OR to_item_id IN (SELECT id FROM items WHERE project_id = ?)"
         )
         .run(id, id);
-      this.db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM views WHERE board_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
+      this.db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE project_id = ?)").run(id);
+      this.db.prepare("DELETE FROM views WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM boards WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM labels WHERE project_id = ?").run(id);
       this.db.prepare("DELETE FROM items WHERE project_id = ?").run(id);

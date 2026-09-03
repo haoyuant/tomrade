@@ -196,7 +196,7 @@ export class Items extends Service {
       labels: input.labels ?? [],
       blocks: [],
       blockedBy: [],
-      fields: mergeFields({}, input.fields ?? {}),
+      fields: mergeFields({}, input.fields ?? {}, stored),
       updatedAt: now,
       updatedBy: input.by,
       version: 1,
@@ -230,7 +230,7 @@ export class Items extends Service {
     // Validated before the write path sees it, so a bad value is refused as a bad value, not as a conflict.
     const stored = patch.fields ? this.fields.normalize(existing.projectId, patch.fields) : null;
     const { fields: fieldsPatch, ...rest } = patch;
-    const next: Item = { ...existing, ...rest, fields: mergeFields(existing.fields, fieldsPatch ?? {}), updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
+    const next: Item = { ...existing, ...rest, fields: mergeFields(existing.fields, fieldsPatch ?? {}, stored ?? new Map()), updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
     return write(this.ctx, { entity: "item", op: "update", id, by, baseVersion: opts.baseVersion, before: existing, after: next, patch }, () =>
       this.db.transaction(() => {
         this.db
@@ -415,11 +415,14 @@ export class Items extends Service {
   }
 }
 
-/** The merged `fields` an item carries after a patch: null clears a key, absent keys survive. */
-function mergeFields(current: Record<string, FieldValue>, patch: Record<string, FieldValue | null>): Record<string, FieldValue> {
+/**
+ * The merged `fields` an item carries after a patch: a key the registry
+ * normalized to nothing (null, or an unticked checkbox) is dropped, absent keys survive.
+ */
+function mergeFields(current: Record<string, FieldValue>, patch: Record<string, FieldValue | null>, stored: Map<string, StoredValue | null>): Record<string, FieldValue> {
   const out = { ...current };
   for (const [k, v] of Object.entries(patch)) {
-    if (v === null) delete out[k];
+    if (v === null || stored.get(k) === null) delete out[k];
     else out[k] = v;
   }
   return out;

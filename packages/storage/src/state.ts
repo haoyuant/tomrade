@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { CORE_SCHEMA_VERSION, type Queryable } from "@tomrade/db";
+import { CORE_SCHEMA_VERSION, seedDefaultViews, type Queryable } from "@tomrade/db";
 import { NewerSchemaError } from "./types.js";
 
 /** The slice of a connection the artifact needs. `Db` satisfies it today; a per-project handle will later. */
@@ -29,7 +29,7 @@ interface TableSpec {
 
 const ITEMS_OF = "SELECT id FROM items WHERE project_id = @projectId";
 const FIELDS_OF = "SELECT id FROM fields WHERE project_id = @projectId";
-const VIEWS_OF = "SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = @projectId";
+const VIEWS_OF = "SELECT id FROM views WHERE project_id = @projectId";
 
 /**
  * One list drives export, import, file names and ordering, so the artifact
@@ -44,8 +44,9 @@ export const TABLES: readonly TableSpec[] = [
   },
   {
     name: "views",
-    columns: ["id", "board_id", "name", "icon", "group_by", "columns_json", "filter_json", "wip_json", "rank", "created_at", "updated_at"],
-    scope: "board_id IN (SELECT id FROM boards WHERE project_id = @projectId)",
+    // board_id is legacy and always ''; it stays in the row so an older database, where it is NOT NULL, can take the import.
+    columns: ["id", "project_id", "board_id", "name", "icon", "layout", "query_json", "rank", "created_at", "updated_at"],
+    scope: "project_id = @projectId",
     order: "id"
   },
   {
@@ -202,7 +203,7 @@ export function importState(db: StateDb, state: ProjectState): void {
     db.prepare(`DELETE FROM field_options WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
     db.prepare("DELETE FROM fields WHERE project_id = @projectId").run({ projectId });
     db.prepare(`DELETE FROM item_relations WHERE from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`).run({ projectId });
-    db.prepare("DELETE FROM views WHERE board_id IN (SELECT id FROM boards WHERE project_id = @projectId)").run({ projectId });
+    db.prepare("DELETE FROM views WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM items WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM labels WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM boards WHERE project_id = @projectId").run({ projectId });
@@ -215,10 +216,13 @@ export function importState(db: StateDb, state: ProjectState): void {
     db.prepare(`INSERT INTO projects (${cols}) VALUES (${binds}) ON CONFLICT(id) DO UPDATE SET ${updates}`).run(state.manifest.project);
 
     for (const spec of TABLES) {
-      const rows = state.tables[spec.name] ?? [];
+      let rows = state.tables[spec.name] ?? [];
+      // An artifact from before views belonged to the project has rows nothing can place; the project gets the defaults instead.
+      if (spec.name === "views") rows = rows.filter((r) => typeof r.layout === "string" && r.project_id === projectId);
       if (!rows.length) continue;
       const stmt = db.prepare(`INSERT INTO ${spec.name} (${spec.columns.join(", ")}) VALUES (${spec.columns.map((c) => `@${c}`).join(", ")})`);
       for (const row of rows) stmt.run(pick(row, spec.columns));
     }
+    if (!(db.prepare("SELECT 1 FROM views WHERE project_id = @projectId LIMIT 1").get({ projectId }))) seedDefaultViews(db, projectId, Date.now());
   });
 }

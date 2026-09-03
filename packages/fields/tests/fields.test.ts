@@ -69,6 +69,17 @@ describe("fields", () => {
     expect(next.version).toBe(2);
   });
 
+  it("a checkbox is stored only when ticked; unticking clears the row", async () => {
+    const { fields, items, board, project } = await fresh();
+    const done = fields.create({ projectId: project.id, name: "Reviewed", type: "checkbox" });
+    expect(done.can).toEqual({ filter: true, sort: false, group: true });
+    const item = items.create({ title: "A", boardId: board.id, fields: { [done.id]: 1 }, by: "human" });
+    expect(item.fields).toEqual({ [done.id]: 1 });
+    expect(items.update(item.id, { fields: { [done.id]: 0 } }, "human").fields).toEqual({});
+    expect(() => items.update(item.id, { fields: { [done.id]: 2 } }, "human")).toThrow(FieldValueError);
+    expect(items.query({ projectId: project.id, filter: [{ field: done.id, op: "in", values: [null] }] }).map((i) => i.id)).toEqual([item.id]);
+  });
+
   it("a fields patch merges: null clears one key and leaves the rest", async () => {
     const { fields, items, oplog, board, project } = await fresh();
     const points = fields.create({ projectId: project.id, name: "Story points", type: "number" });

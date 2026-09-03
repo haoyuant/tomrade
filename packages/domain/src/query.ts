@@ -1,4 +1,4 @@
-import { EMPTY_KEY, fieldValueOf, type FieldDef } from "./fields.js";
+import { CHECKED, EMPTY_KEY, fieldValueOf, type FieldDef } from "./fields.js";
 import type { FieldValue, Item } from "./types.js";
 
 /**
@@ -140,6 +140,7 @@ export function compareItems(a: Item, b: Item, sortBy: SortKey[], ctx: QueryCont
 
 /** The keys a groupable field can take, in the field's order, with the empty key last where it applies. */
 export function groupSpaceOf(def: FieldDef, options: { id: string }[]): string[] {
+  if (def.type === "checkbox") return [String(CHECKED), EMPTY_KEY];
   const keys = options.map((o) => o.id);
   // Fixed vocabularies are total: every item has a status and a priority.
   if (def.id === "status" || def.id === "priority" || def.id === "provenance") return keys;

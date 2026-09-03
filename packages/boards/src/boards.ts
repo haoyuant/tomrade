@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
-import { insertBuiltinViews, type Db } from "@tomrade/db";
+import type { Db } from "@tomrade/db";
 import type { Oplog } from "@tomrade/oplog";
 import { write } from "@tomrade/write";
-import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput, type CreatedBoard } from "@tomrade/domain";
+import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput } from "@tomrade/domain";
 
 declare module "cordis" {
   interface Context {
@@ -17,8 +17,6 @@ interface BoardRow {
   name: string;
   icon: string;
   subtitle: string | null;
-  across: number;
-  sort: string | null;
   note: string | null;
   rank: number;
   created_at: number;
@@ -32,8 +30,6 @@ function rowToBoard(r: BoardRow): Board {
     name: r.name,
     icon: r.icon,
     subtitle: r.subtitle,
-    across: r.across === 1,
-    sort: r.sort === "recent" ? "recent" : null,
     note: r.note,
     rank: r.rank,
     createdAt: r.created_at,
@@ -41,6 +37,7 @@ function rowToBoard(r: BoardRow): Board {
   };
 }
 
+/** The Workstream field's options. A board owns issues (items.board_id) and nothing else. */
 export class Boards extends Service {
   static provide = "boards";
   static inject = ["db", "oplog"];
@@ -58,7 +55,7 @@ export class Boards extends Service {
   }
 
   list(projectId: string): Board[] {
-    return (this.db.prepare("SELECT * FROM boards WHERE project_id = ? ORDER BY across ASC, rank ASC, created_at ASC").all(projectId) as BoardRow[]).map(rowToBoard);
+    return (this.db.prepare("SELECT * FROM boards WHERE project_id = ? ORDER BY rank ASC, created_at ASC").all(projectId) as BoardRow[]).map(rowToBoard);
   }
 
   get(id: string): Board | null {
@@ -68,41 +65,35 @@ export class Boards extends Service {
 
   /** The board an item lands on when the caller did not name one. */
   defaultFor(projectId: string): Board {
-    const board = this.list(projectId).find((b) => !b.across);
+    const board = this.list(projectId)[0];
     if (!board) throw new NotFoundError(projectId);
     return board;
   }
 
-  /** A new board always gets its four built-in views, so it can never open empty. */
-  create(input: CreateBoardInput, by: Author = "human"): CreatedBoard {
+  create(input: CreateBoardInput, by: Author = "human"): Board {
     const now = Date.now();
-    const nextRank =
-      input.rank ??
-      ((this.db.prepare("SELECT MAX(rank) AS m FROM boards WHERE project_id = ? AND across = 0").get(input.projectId) as { m: number | null }).m ?? -1) + 1;
+    const nextRank = input.rank ?? ((this.db.prepare("SELECT MAX(rank) AS m FROM boards WHERE project_id = ?").get(input.projectId) as { m: number | null }).m ?? -1) + 1;
     const board: Board = {
       id: randomUUID(),
       projectId: input.projectId,
       name: input.name,
       icon: input.icon ?? "i-board",
       subtitle: input.subtitle ?? null,
-      across: input.across ?? false,
-      sort: input.sort ?? null,
       note: input.note ?? null,
       rank: nextRank,
       createdAt: now,
       updatedAt: now
     };
     return write(this.ctx, { entity: "board", op: "create", id: board.id, by, before: null, after: board }, () =>
-      this.db.transaction((): CreatedBoard => {
+      this.db.transaction(() => {
         this.db
           .prepare(
             `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
-             VALUES (@id, @projectId, @name, @icon, @subtitle, @across, @sort, @note, @rank, @createdAt, @updatedAt)`
+             VALUES (@id, @projectId, @name, @icon, @subtitle, 0, NULL, @note, @rank, @createdAt, @updatedAt)`
           )
-          .run({ ...board, across: board.across ? 1 : 0 });
-        const defaultViewId = insertBuiltinViews(this.db, board.id, now);
+          .run(board);
         this.oplog.append({ entity: "board", op: "create", entityId: board.id, baseVersion: null, before: null, after: board, by, at: now });
-        return { ...board, defaultViewId };
+        return board;
       })
     );
   }
@@ -122,27 +113,29 @@ export class Boards extends Service {
     );
   }
 
-  /** Refused while the board still owns issues: they would be stranded on a board_id nothing resolves. */
+  /**
+   * Refused while the board still owns issues: they would be stranded on a
+   * board_id nothing resolves. Move them first (`moveItems`), or keep the last
+   * board — a project always has one for new issues to land on.
+   */
   remove(id: string, by: Author = "human"): void {
     const existing = this.get(id);
     if (!existing) throw new NotFoundError(id);
     const owned = (this.db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(id) as { n: number }).n;
-    if (owned > 0) throw new InUseError(id, `Board ${existing.name} still owns ${owned} issue${owned === 1 ? "" : "s"} — move them first`);
+    if (owned > 0) throw new InUseError(id, `Workstream ${existing.name} still holds ${owned} issue${owned === 1 ? "" : "s"} — move them first`);
+    if (this.list(existing.projectId).length <= 1) throw new InUseError(id, `Workstream ${existing.name} is the project's last; new issues need somewhere to land`);
     write(this.ctx, { entity: "board", op: "delete", id, by, before: existing, after: null }, () =>
       this.db.transaction(() => {
-        // The snapshot carries the views, so undo restores a board that can be opened.
-        const views = this.db.prepare("SELECT * FROM views WHERE board_id = ?").all(id);
-        this.db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE board_id = ?)").run(id);
-        this.db.prepare("DELETE FROM views WHERE board_id = ?").run(id);
         this.db.prepare("DELETE FROM boards WHERE id = ?").run(id);
-        this.oplog.append({ entity: "board", op: "delete", entityId: id, baseVersion: null, before: { ...existing, views }, after: null, by, at: Date.now() });
+        this.oplog.append({ entity: "board", op: "delete", entityId: id, baseVersion: null, before: existing, after: null, by, at: Date.now() });
       })
     );
   }
 
-  /** Bulk-move issues between boards. Deliberate, which is why a drag never does it. */
+  /** Bulk-move issues between workstreams; the single-issue path is a `boardId` patch on items.update. */
   moveItems(fromBoardId: string, toBoardId: string, itemIds: string[], by: Author = "human"): number {
     if (!itemIds.length) return 0;
+    if (!this.get(toBoardId)) throw new NotFoundError(toBoardId);
     const placeholders = itemIds.map(() => "?").join(",");
     return this.db.transaction(
       () =>

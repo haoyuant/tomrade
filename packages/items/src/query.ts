@@ -61,7 +61,7 @@ export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, d
       default: {
         if (def.builtin) return null;
         const alias = aliasOf(def.id);
-        return def.type === "number" ? { expr: `${alias}.num`, bind: Number } : { expr: `${alias}.text`, bind: String };
+        return def.type === "number" || def.type === "checkbox" ? { expr: `${alias}.num`, bind: Number } : { expr: `${alias}.text`, bind: String };
       }
     }
   };
@@ -158,7 +158,7 @@ function sortExprOf(def: FieldDef, aliasOf: (fieldId: string) => string): string
     default: {
       if (def.builtin) return null;
       const alias = aliasOf(def.id);
-      if (def.type === "number") return `${alias}.num`;
+      if (def.type === "number" || def.type === "checkbox") return `${alias}.num`;
       if (def.type === "select") return `(SELECT o.rank FROM field_options o WHERE o.id = ${alias}.text)`;
       if (def.type === "text") return `lower(${alias}.text)`;
       return `${alias}.text`;

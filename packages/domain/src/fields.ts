@@ -6,10 +6,13 @@ import { ITEM_STATUSES } from "./types.js";
  * fields are columns on `items` and are the same for every project; custom
  * fields are rows in `fields` and their values live in `item_values`.
  */
-export type FieldType = "text" | "number" | "date" | "select" | "labels" | "item";
+export type FieldType = "text" | "number" | "date" | "select" | "checkbox" | "labels" | "item";
 
 /** The types a user may create. The rest are built-in only. */
-export const CUSTOM_FIELD_TYPES: readonly FieldType[] = ["text", "number", "date", "select"];
+export const CUSTOM_FIELD_TYPES: readonly FieldType[] = ["text", "number", "date", "select", "checkbox"];
+
+/** A checkbox is stored only when ticked; unticked is the absence of a value. */
+export const CHECKED = 1;
 
 export interface FieldOption {
   id: string;
@@ -70,7 +73,7 @@ export const BUILTIN_FIELDS: readonly FieldDef[] = [
   builtin("priority", "Priority", "select", 2, { options: staticOptions(["4", "3", "2", "1", "0"], (p) => PRIORITY_NAMES[Number(p)]) }),
   builtin("epic", "Epic", "item", 3, { optionsFrom: "epics" }),
   builtin("labels", "Labels", "labels", 4, { can: { filter: true, sort: false, group: false } }),
-  builtin("board", "Board", "select", 5, { optionsFrom: "boards" }),
+  builtin("board", "Workstream", "select", 5, { optionsFrom: "boards" }),
   builtin("updated", "Updated", "date", 6, { readonly: true, can: { filter: true, sort: true, group: false } }),
   builtin("key", "Key", "number", 7, { readonly: true, can: { filter: false, sort: true, group: false } }),
   builtin("provenance", "Last write", "select", 8, {
@@ -137,7 +140,9 @@ export function patchForGroup(fieldId: string, key: string, def: FieldDef | unde
     case "board":
       return empty ? null : { boardId: key };
     default:
-      if (!def || def.builtin || def.type !== "select") return null;
-      return { fields: { [fieldId]: empty ? null : key } };
+      if (!def || def.builtin) return null;
+      if (def.type === "select") return { fields: { [fieldId]: empty ? null : key } };
+      if (def.type === "checkbox") return { fields: { [fieldId]: empty ? null : CHECKED } };
+      return null;
   }
 }

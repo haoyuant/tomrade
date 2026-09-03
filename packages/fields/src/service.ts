@@ -3,6 +3,7 @@ import { Context, Service } from "cordis";
 import type { Db } from "@tomrade/db";
 import {
   BUILTIN_FIELDS,
+  CHECKED,
   CUSTOM_FIELD_TYPES,
   FieldDefinitionError,
   FieldValueError,
@@ -190,7 +191,9 @@ export class Fields extends Service {
       if (isBuiltinFieldId(fieldId)) throw new FieldValueError(fieldId, "built-in fields are written through their own patch keys");
       const def = defs.get(fieldId);
       if (!def) throw new FieldValueError(fieldId, "no such field in this project");
-      out.set(fieldId, value === null ? null : storedValue(def, value));
+      // An unticked checkbox is the absence of a value, not a stored zero.
+      const cleared = value === null || (def.type === "checkbox" && (value === 0 || value === "" || value === "false"));
+      out.set(fieldId, cleared ? null : storedValue(def, value));
     }
     return out;
   }
@@ -205,7 +208,7 @@ export class Fields extends Service {
       builtin: false,
       options: options.map(rowToOption),
       readonly: false,
-      can: { filter: true, sort: true, group: type === "select" },
+      can: { filter: true, sort: type !== "checkbox", group: type === "select" || type === "checkbox" },
       rank: r.rank
     };
   }
@@ -260,6 +263,9 @@ export function storedValue(def: FieldDef, value: FieldValue): StoredValue {
     case "select":
       if (typeof value !== "string" || !def.options.some((o) => o.id === value)) throw new FieldValueError(def.id, "expects one of the field's option ids");
       return { num: null, text: value };
+    case "checkbox":
+      if (value !== CHECKED && value !== "true") throw new FieldValueError(def.id, "expects 1 (ticked) or null (unticked)");
+      return { num: CHECKED, text: null };
     default:
       throw new FieldValueError(def.id, `${def.type} values are not stored here`);
   }

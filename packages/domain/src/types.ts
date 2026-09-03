@@ -1,3 +1,5 @@
+import type { Layout, ViewQuery } from "./query.js";
+
 export type ItemKind = "ticket" | "epic";
 
 export type ItemStatus = "backlog" | "todo" | "doing" | "verifying" | "done" | "cancelled";
@@ -133,8 +135,9 @@ export interface CreateProjectInput {
 export type ProjectPatch = Partial<Pick<Project, "name" | "description" | "archived">>;
 
 /**
- * A board is a workstream: the container an issue belongs to. A board with
- * `across` set owns nothing — it borrows every issue in the project.
+ * A board is a workstream — an option of the built-in Workstream field. Every
+ * issue belongs to exactly one; a drag on a Workstream column writes it like
+ * any other field.
  */
 export interface Board {
   id: string;
@@ -142,9 +145,6 @@ export interface Board {
   name: string;
   icon: string;
   subtitle: string | null;
-  across: boolean;
-  /** 'recent' orders by last write; null keeps view/manual rank. */
-  sort: "recent" | null;
   note: string | null;
   rank: number;
   createdAt: number;
@@ -156,48 +156,35 @@ export interface CreateBoardInput {
   name: string;
   icon?: string;
   subtitle?: string | null;
-  across?: boolean;
-  sort?: "recent" | null;
   note?: string | null;
   rank?: number;
 }
 
-/** A created board carries the id of the Status view it was given. */
-export type CreatedBoard = Board & { defaultViewId: string };
-
 export type BoardPatch = Partial<Pick<Board, "name" | "icon" | "subtitle" | "note" | "rank">>;
 
-/** What each board column represents. Dragging writes this field. */
-export type GroupBy = "status" | "priority" | "epic";
-
-/** The app's four built-in views. Fixed — never created, renamed or removed by a user. */
-export type ViewKind = "status" | "priority" | "epic" | "dependencies";
-
-export const VIEW_KINDS: readonly ViewKind[] = ["status", "priority", "epic", "dependencies"];
-
-export interface ViewFilter {
-  labels?: string[];
-  /** Epic item ids, plus the literal 'none' for issues without a parent. */
-  epics?: string[];
-  priorities?: Priority[];
-  provenance?: Provenance[];
-}
-
-/** One of a board's four built-in views: visible columns, filter, WIP caps. */
+/** A saved, named way of looking at the project's backlog: one layout and one query. */
 export interface View {
   id: string;
-  boardId: string;
-  kind: ViewKind;
-  columns: string[];
-  filter: ViewFilter;
-  /** WIP cap per column key. Advisory — a drop is never blocked. */
-  wip: Record<string, number>;
+  projectId: string;
+  name: string;
+  icon: string;
+  layout: Layout;
+  query: ViewQuery;
   rank: number;
   createdAt: number;
   updatedAt: number;
 }
 
-export type ViewPatch = Partial<Pick<View, "columns" | "filter" | "wip">>;
+export interface CreateViewInput {
+  projectId: string;
+  name: string;
+  icon?: string;
+  layout?: Layout;
+  query?: Partial<ViewQuery>;
+  rank?: number;
+}
+
+export type ViewPatch = Partial<Pick<View, "name" | "icon" | "layout" | "query" | "rank">>;
 
 export type ThemePreference = "system" | "light" | "dark" | "matcha";
 
