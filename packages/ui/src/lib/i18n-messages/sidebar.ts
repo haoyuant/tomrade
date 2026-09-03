@@ -8,7 +8,15 @@ export const sidebar = {
     collapseSidebar: "Collapse sidebar — ⌘B",
     viewsRailLabel: "Views",
     viewsEyebrow: "Views",
-    fields: "Fields"
+    fields: "Fields",
+    workstreamsEyebrow: "Workstreams",
+    manageWorkstreams: "Manage workstreams",
+    workstreamFilterTitle: "Show only {{name}} in this view",
+    workstreamUnfilterTitle: "Stop filtering this view to {{name}}",
+    newWorkstream: "New workstream",
+    newWorkstreamNameAria: "New workstream name",
+    workstreamNamePlaceholder: "Workstream name…",
+    createdWorkstreamToast: "Created workstream {{name}}"
   },
   zh: {
     newView: "新建视图",
@@ -19,6 +27,14 @@ export const sidebar = {
     collapseSidebar: "收起侧栏 — ⌘B",
     viewsRailLabel: "视图",
     viewsEyebrow: "视图",
-    fields: "字段"
+    fields: "字段",
+    workstreamsEyebrow: "工作流",
+    manageWorkstreams: "管理工作流",
+    workstreamFilterTitle: "在此视图中只看 {{name}}",
+    workstreamUnfilterTitle: "取消此视图对 {{name}} 的筛选",
+    newWorkstream: "新建工作流",
+    newWorkstreamNameAria: "新工作流名称",
+    workstreamNamePlaceholder: "工作流名称…",
+    createdWorkstreamToast: "已创建工作流 {{name}}"
   }
 };

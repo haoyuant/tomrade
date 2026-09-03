@@ -9,7 +9,20 @@ import { ConflictError } from "@tomrade/domain";
 import { fresh } from "@tomrade/testkit";
 import { Tools, ToolInputError, UnknownToolError, defineTool } from "@tomrade/tools";
 
-const BACKLOG_TOOLS = ["change_status", "create_field", "create_item", "delete_item", "get_item", "list_boards", "list_fields", "list_items", "update_item"];
+const BACKLOG_TOOLS = [
+  "change_status",
+  "create_field",
+  "create_item",
+  "create_workstream",
+  "delete_item",
+  "get_item",
+  "list_fields",
+  "list_items",
+  "list_workstreams",
+  "remove_workstream",
+  "update_item",
+  "update_workstream"
+];
 
 describe("tool registry", () => {
   it("the backlog tools register themselves once ctx.tools exists", async () => {

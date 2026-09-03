@@ -364,6 +364,10 @@ strong { font-weight: 500; }
  * whatever its layout. Workstreams are a field, not a place, so they live in
  * the query bar and the Fields sheet rather than here. */
 .side-row.is-view { color: var(--fg); }
+.side-label-row { display: flex; align-items: center; padding: 0 var(--space-2) var(--space-1); }
+.side-label-row .side-label { padding: 0; }
+.side-label-row .btn-icon { width: 24px; height: 24px; color: var(--meta); }
+.side-row.is-workstream[aria-current="true"] .side-name { color: var(--accent); }
 .side-foot { margin-top: auto; padding-top: var(--space-4); }
 .side-foot .side-row { color: var(--meta); }
 

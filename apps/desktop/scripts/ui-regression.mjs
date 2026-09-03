@@ -157,7 +157,26 @@ const run = async () => {
   check("column numbers are zero-padded", (await $(`document.querySelector('.col-num')?.textContent`)) === "01");
   check("provenance ticks appear in the card gutter", (await $(`document.querySelectorAll('.card .prov-tick').length`)) > 0);
   check("cards name their workstream when the view does not pin one", (await $(`document.querySelectorAll('.card-board').length`)) > 0);
+  check("the sidebar lists the workstreams", (await $(`document.querySelectorAll('.side-row.is-workstream').length`)) === repos.boards.list(project.id).length);
   await shot("04-board-paper");
+
+  // ── a workstream row is a quick slice of the current view ───────────
+  await press(`document.querySelector('.side-row.is-workstream')`);
+  await sleep(600);
+  check("a workstream row pins the draft to that workstream", (await $(`!!document.querySelector('.qb-chip[data-field="board"]') && document.querySelector('.side-row.is-workstream').getAttribute('aria-current') === 'true'`)) === true);
+  await press(`document.querySelector('.side-row.is-workstream')`);
+  await sleep(600);
+  check("pressing it again lifts the pin", (await $(`!!document.querySelector('.qb-chip[data-field="board"]')`)) === false);
+  const workstreamsBefore = repos.boards.list(project.id).length;
+  await press(`document.querySelector('.side-new-workstream')`);
+  await sleep(400);
+  await typeInto('input[aria-label="New workstream name"]', "Docs");
+  await $(`document.querySelector('input[aria-label="New workstream name"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  await sleep(1200);
+  check("creating a workstream from the sidebar writes it", repos.boards.list(project.id).length === workstreamsBefore + 1);
+  await $(`document.querySelector('.toast .btn-ghost').click();true`);
+  await sleep(1000);
+  check("its toast undoes the create", repos.boards.list(project.id).length === workstreamsBefore);
 
   // ── keyboard move: ← → is the same write path as a drag ─────────────
   const keysOnBoard = await $(`[...document.querySelectorAll('.card .card-id')].map(n => n.textContent).join(',')`);

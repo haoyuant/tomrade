@@ -314,6 +314,10 @@ always keeps at least one. Agents do not see views — they query fields.
 **Workstreams** are the options of the built-in `board` field: `ctx.boards`
 manages them, every issue carries exactly one (`items.board_id`), and a
 workstream that still holds issues, or is the project's last, refuses to go.
+Agents reach them through `list_workstreams`, `create_workstream`,
+`update_workstream` and `remove_workstream` (which takes a `moveTo` for the
+issues a doomed workstream still holds); the renderer offers the same in the
+sidebar's Workstreams group and the Fields sheet.
 
 ## Fields
 

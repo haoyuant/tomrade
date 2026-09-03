@@ -13,7 +13,7 @@ export const boards = {
   async apply(ctx: Context) {
     await ctx.plugin(Boards);
     await ctx.plugin(Views);
-    ctx.inject(["tools", "boards"], registerTools);
+    ctx.inject(["tools", "boards", "db"], registerTools);
     ctx.inject(["ipc", "boards", "views"], registerChannels);
   }
 };

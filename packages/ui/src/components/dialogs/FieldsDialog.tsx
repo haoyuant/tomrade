@@ -368,7 +368,20 @@ function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item
  * field's options — are editable, and every edit lands live: a field is schema,
  * not a draft.
  */
-export function FieldsDialog({ projectId, projectName, open, onOpenChange }: { projectId: string; projectName: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function FieldsDialog({
+  projectId,
+  projectName,
+  open,
+  onOpenChange,
+  initialFieldId = null
+}: {
+  projectId: string;
+  projectName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The field to land on — "board" opens straight onto the workstream editor. */
+  initialFieldId?: string | null;
+}) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const fields = useFields(projectId);
@@ -380,10 +393,10 @@ export function FieldsDialog({ projectId, projectName, open, onOpenChange }: { p
 
   useEffect(() => {
     if (!open) return;
-    setSelectedId(null);
+    setSelectedId(initialFieldId);
     setNewName("");
     setNewType("text");
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = fields.data ?? [];
   const builtin = all.filter((f) => f.builtin);

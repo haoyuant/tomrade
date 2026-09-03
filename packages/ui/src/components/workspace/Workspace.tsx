@@ -59,6 +59,12 @@ export function Workspace() {
   const [settings, setSettings] = useState<string | null>(null);
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  /** Which field the Fields sheet lands on; null for the list. */
+  const [fieldsFocus, setFieldsFocus] = useState<string | null>(null);
+  const openFields = useCallback((fieldId?: string) => {
+    setFieldsFocus(fieldId ?? null);
+    setFieldsOpen(true);
+  }, []);
   const [projectSettings, setProjectSettings] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
   /** The issue the confirmation is open on, held by id so it can go stale. */
@@ -176,7 +182,7 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={() => setFieldsOpen(true)} />
+        <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} />
         <section className="board-region" data-layout={ws.layout}>
           <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
           <QueryBar />
@@ -214,12 +220,12 @@ export function Workspace() {
           openSettings: () => setSettings(""),
           openPlugins: () => setSettings("plugins"),
           openViewSettings: () => setViewSettings(true),
-          openFields: () => setFieldsOpen(true),
+          openFields: () => openFields(),
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true)
         }}
       />
-      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} />
+      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
       <ViewSettingsDialog open={viewSettings} onOpenChange={setViewSettings} />
