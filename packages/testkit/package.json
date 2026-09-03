@@ -19,6 +19,7 @@
   "dependencies": {
     "@tomrade/boards": "workspace:*",
     "@tomrade/db": "workspace:*",
+    "@tomrade/fields": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/oplog": "workspace:*",
     "@tomrade/projects": "workspace:*",

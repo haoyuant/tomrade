@@ -141,6 +141,9 @@ export class Projects extends Service {
       this.db.prepare("DELETE FROM oplog WHERE op = 'purge' AND json_extract(before_json, '$.projectId') = ?").run(id);
 
       this.db.prepare("DELETE FROM item_labels WHERE item_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
+      this.db.prepare("DELETE FROM item_values WHERE field_id IN (SELECT id FROM fields WHERE project_id = ?)").run(id);
+      this.db.prepare("DELETE FROM field_options WHERE field_id IN (SELECT id FROM fields WHERE project_id = ?)").run(id);
+      this.db.prepare("DELETE FROM fields WHERE project_id = ?").run(id);
       // Both directions: nothing stops an agent relating across projects, and an
       // incoming edge lives on the other project's row.
       this.db

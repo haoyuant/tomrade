@@ -15,6 +15,9 @@ export type Author = "human" | `ai:${string}`;
 /** Derived from updatedBy + humanLocked; never stored. */
 export type Provenance = "human" | "ai" | "locked";
 
+/** A stored custom-field value. Dates are ISO `YYYY-MM-DD`; selects hold the option id. */
+export type FieldValue = string | number;
+
 export interface Item {
   id: string;
   projectId: string;
@@ -36,6 +39,8 @@ export interface Item {
   blocks: string[];
   /** Ids of the items that block this one — the inverse of their `blocks`. */
   blockedBy: string[];
+  /** Custom field values by field id. Built-in fields are the columns above. */
+  fields: Record<string, FieldValue>;
   updatedAt: number;
   updatedBy: Author;
   version: number;
@@ -43,7 +48,10 @@ export interface Item {
   humanLocked: boolean;
 }
 
-export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "priority" | "parentId" | "rank" | "boardId" | "labels" | "blocks" | "humanLocked">>;
+/** `fields` merges: a key set to null clears that value, absent keys are left alone. */
+export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "priority" | "parentId" | "rank" | "boardId" | "labels" | "blocks" | "humanLocked">> & {
+  fields?: Record<string, FieldValue | null>;
+};
 
 export type OplogEntity = "item" | "board" | "view";
 
@@ -91,6 +99,7 @@ export interface CreateItemInput {
   parentId?: string | null;
   rank?: number;
   labels?: string[];
+  fields?: Record<string, FieldValue | null>;
   by: Author;
 }
 

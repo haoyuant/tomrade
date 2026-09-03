@@ -2,6 +2,7 @@ import { Context, type Plugin } from "cordis";
 import { Db } from "@tomrade/db";
 import { Oplog } from "@tomrade/oplog";
 import { policy } from "@tomrade/write";
+import { Fields } from "@tomrade/fields";
 import { Items } from "@tomrade/items";
 import { boards } from "@tomrade/boards";
 import { Projects } from "@tomrade/projects";
@@ -26,6 +27,7 @@ export async function fresh(opts: FreshOptions = {}) {
   await ctx.plugin(Db, { path: opts.dbPath ?? ":memory:" });
   await ctx.plugin(Oplog);
   if (opts.policy !== false) await ctx.plugin(policy);
+  await ctx.plugin(Fields);
   await ctx.plugin(Items);
   await ctx.plugin(boards);
   await ctx.plugin(Projects);
@@ -40,5 +42,5 @@ export async function fresh(opts: FreshOptions = {}) {
   // project was deleted opens on whatever project it does have.
   const project = (ctx.projects.get("default") ?? ctx.projects.list()[0])!;
   const board = ctx.boards.defaultFor(project.id);
-  return { ctx, db: ctx.db, oplog: ctx.oplog, items: ctx.items, boards: ctx.boards, views: ctx.views, projects: ctx.projects, project, board };
+  return { ctx, db: ctx.db, oplog: ctx.oplog, items: ctx.items, fields: ctx.fields, boards: ctx.boards, views: ctx.views, projects: ctx.projects, project, board };
 }

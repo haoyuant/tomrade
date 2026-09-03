@@ -1,10 +1,23 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import { createItemSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, NotFoundError, type Patch } from "@tomrade/domain";
+import { createItemSchema, filterClauseSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, sortKeySchema, NotFoundError, type Item, type Patch } from "@tomrade/domain";
 import { defineTool } from "@tomrade/tools";
 import type {} from "@tomrade/boards";
 
 const withVersion = z.object({ id: z.string(), baseVersion: z.number().optional() });
+
+type Simple = z.output<typeof listItemsFilterSchema>;
+
+/** The legacy scalar filters, applied after a clause query so both styles compose. */
+function matchesSimple(item: Item, f: Simple): boolean {
+  if (f.boardId !== undefined && item.boardId !== f.boardId) return false;
+  if (f.status !== undefined && item.status !== f.status) return false;
+  if (f.kind !== undefined && item.kind !== f.kind) return false;
+  if (f.priority !== undefined && item.priority !== f.priority) return false;
+  if (f.parentId === null ? item.parentId !== null : f.parentId !== undefined && item.parentId !== f.parentId) return false;
+  if (f.label !== undefined && !item.labels.includes(f.label)) return false;
+  return true;
+}
 
 /**
  * The backlog tools every surface sees. `baseVersion` is optional on writes:
@@ -23,10 +36,15 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "list_items",
       title: "List backlog items",
-      description: "List backlog items, optionally filtered by project, board, status, kind, priority, label, parent or a search string over title and body.",
-      input: listItemsFilterSchema.extend({ search: z.string().optional() }),
-      execute({ search, ...filter }, inv) {
-        const items = ctx.items.list({ ...filter, projectId: filter.projectId ?? inv.projectId });
+      description:
+        "List backlog items. Simple filters (board, status, kind, priority, label, parent) and a search string over title and body; or `filter` clauses over any field (see list_fields) with `sort` keys — a null value in a clause means empty.",
+      input: listItemsFilterSchema.extend({ search: z.string().optional(), filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() }),
+      execute({ search, filter: clauses, sort, ...filter }, inv) {
+        const projectId = filter.projectId ?? inv.projectId ?? "default";
+        const items =
+          clauses?.length || sort?.length
+            ? ctx.items.query({ projectId, filter: clauses, sortBy: sort }).filter((i) => matchesSimple(i, filter))
+            : ctx.items.list({ ...filter, projectId });
         const q = search?.trim().toLowerCase();
         return q ? items.filter((i) => i.title.toLowerCase().includes(q) || (i.body ?? "").toLowerCase().includes(q)) : items;
       }

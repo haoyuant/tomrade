@@ -28,6 +28,7 @@ interface TableSpec {
 }
 
 const ITEMS_OF = "SELECT id FROM items WHERE project_id = @projectId";
+const FIELDS_OF = "SELECT id FROM fields WHERE project_id = @projectId";
 const VIEWS_OF = "SELECT v.id FROM views v JOIN boards b ON b.id = v.board_id WHERE b.project_id = @projectId";
 
 /**
@@ -54,6 +55,9 @@ export const TABLES: readonly TableSpec[] = [
     order: "id"
   },
   { name: "labels", columns: ["id", "project_id", "name"], scope: "project_id = @projectId", order: "id" },
+  { name: "fields", columns: ["id", "project_id", "name", "type", "rank", "created_at", "updated_at"], scope: "project_id = @projectId", order: "id" },
+  { name: "field_options", columns: ["id", "field_id", "name", "description", "rank"], scope: `field_id IN (${FIELDS_OF})`, order: "id" },
+  { name: "item_values", columns: ["item_id", "field_id", "num", "text"], scope: `field_id IN (${FIELDS_OF})`, order: "item_id, field_id" },
   { name: "item_labels", columns: ["item_id", "label_id"], scope: `item_id IN (${ITEMS_OF})`, order: "item_id, label_id" },
   {
     name: "item_relations",
@@ -194,6 +198,9 @@ export function importState(db: StateDb, state: ProjectState): void {
     // Each sweep scopes through a table a later one empties, so dependents go first.
     db.prepare(`DELETE FROM view_item_rank WHERE view_id IN (${VIEWS_OF})`).run({ projectId });
     db.prepare(`DELETE FROM item_labels WHERE item_id IN (${ITEMS_OF})`).run({ projectId });
+    db.prepare(`DELETE FROM item_values WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
+    db.prepare(`DELETE FROM field_options WHERE field_id IN (${FIELDS_OF})`).run({ projectId });
+    db.prepare("DELETE FROM fields WHERE project_id = @projectId").run({ projectId });
     db.prepare(`DELETE FROM item_relations WHERE from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`).run({ projectId });
     db.prepare("DELETE FROM views WHERE board_id IN (SELECT id FROM boards WHERE project_id = @projectId)").run({ projectId });
     db.prepare("DELETE FROM items WHERE project_id = @projectId").run({ projectId });

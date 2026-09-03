@@ -58,3 +58,25 @@ export class InUseError extends Error {
     this.name = "InUseError";
   }
 }
+
+/** A custom-field write refused: unknown field, wrong type, or an option the field does not have. */
+export class FieldValueError extends Error {
+  constructor(
+    public readonly fieldId: string,
+    public readonly reason: string
+  ) {
+    super(`Field ${fieldId}: ${reason}`);
+    this.name = "FieldValueError";
+  }
+}
+
+/** A field definition change refused: a built-in, a taken name, an option on a non-select. */
+export class FieldDefinitionError extends Error {
+  constructor(
+    public readonly fieldId: string,
+    public readonly reason: string
+  ) {
+    super(`Field ${fieldId}: ${reason}`);
+    this.name = "FieldDefinitionError";
+  }
+}

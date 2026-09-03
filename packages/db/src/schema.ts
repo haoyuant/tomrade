@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 4;
+export const CORE_SCHEMA_VERSION = 5;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -94,6 +94,35 @@ CREATE TABLE IF NOT EXISTS view_item_rank (
   PRIMARY KEY (view_id, item_id)
 );
 
+-- Custom fields: definitions per project, options for selects, and one sparse
+-- value row per (item, field). A number lands in num, everything else in text,
+-- so a sort or range filter on any field is one indexed column.
+CREATE TABLE IF NOT EXISTS fields (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  type          TEXT NOT NULL,
+  rank          REAL NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS field_options (
+  id            TEXT PRIMARY KEY,
+  field_id      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  rank          REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS item_values (
+  item_id       TEXT NOT NULL,
+  field_id      TEXT NOT NULL,
+  num           REAL,
+  text          TEXT,
+  PRIMARY KEY (item_id, field_id)
+);
+
 CREATE TABLE IF NOT EXISTS oplog (
   seq           INTEGER PRIMARY KEY AUTOINCREMENT,
   entity        TEXT NOT NULL,
@@ -123,6 +152,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_name ON labels(project_id, name);
 CREATE INDEX IF NOT EXISTS idx_item_labels_label ON item_labels(label_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON item_relations(to_item_id);
+CREATE INDEX IF NOT EXISTS idx_fields_project ON fields(project_id, rank);
+CREATE INDEX IF NOT EXISTS idx_field_options_field ON field_options(field_id, rank);
+CREATE INDEX IF NOT EXISTS idx_item_values_num ON item_values(field_id, num);
+CREATE INDEX IF NOT EXISTS idx_item_values_text ON item_values(field_id, text);
 CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge';
 CREATE INDEX IF NOT EXISTS idx_oplog_run ON oplog(run_id) WHERE run_id IS NOT NULL;
 `;

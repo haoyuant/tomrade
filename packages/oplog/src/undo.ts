@@ -62,6 +62,13 @@ function restoreItem(db: Db, item: Item): void {
     humanLocked: item.humanLocked ? 1 : 0
   });
 
+  // Values are replaced to match the snapshot; a field deleted since has no row to land on and is skipped.
+  db.prepare("DELETE FROM item_values WHERE item_id = ?").run(item.id);
+  for (const [fieldId, value] of Object.entries(item.fields ?? {})) {
+    if (!db.prepare("SELECT 1 FROM fields WHERE id = ?").get(fieldId)) continue;
+    db.prepare("INSERT INTO item_values (item_id, field_id, num, text) VALUES (?, ?, ?, ?)").run(item.id, fieldId, typeof value === "number" ? value : null, typeof value === "number" ? null : value);
+  }
+
   db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(item.id);
   for (const name of item.labels ?? []) {
     const label = db.prepare("SELECT id FROM labels WHERE project_id = ? AND name = ?").get(item.projectId, name) as { id: string } | undefined;
@@ -151,6 +158,7 @@ function revertEntry(db: Db, entry: OplogEntry): void {
   if (entry.entity === "item") {
     if (entry.op === "create") {
       db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM item_values WHERE item_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
       db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
