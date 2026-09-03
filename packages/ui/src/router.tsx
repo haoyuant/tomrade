@@ -49,6 +49,20 @@ const viewRoute = createRoute({
   }
 });
 
+/** A workstream's page: an unsaved board pinned to it. Saving makes a view. */
+const workstreamRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/p/$projectId/w/$boardId",
+  component: function WorkstreamRoute() {
+    const { projectId, boardId } = workstreamRoute.useParams();
+    return (
+      <WorkspaceProvider projectId={projectId} boardId={boardId}>
+        {() => <Workspace />}
+      </WorkspaceProvider>
+    );
+  }
+});
+
 const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/p/$projectId/i/$itemId",
@@ -58,7 +72,7 @@ const issueRoute = createRoute({
   }
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectRoute, viewRoute, issueRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, projectRoute, viewRoute, workstreamRoute, issueRoute]);
 
 // Hash history: the production build is loaded from file://, where a path-based
 // history has nothing to resolve a reload against.

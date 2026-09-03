@@ -449,17 +449,30 @@ export function QueryBar() {
           />
         )}
         {ws.layout !== "graph" && <SortPick />}
-        {ws.dirty && (
+        {ws.virtual ? (
+          // nothing saved to write back to: the page can only become a view
           <div className="qb-dirty" role="group" aria-label={t("queryBar.unsavedAria")}>
             <span className="qb-sep" />
-            <button type="button" className="btn btn-secondary qb-save" style={{ padding: "5px 10px" }} onClick={ws.saveView}>
-              {t("queryBar.saveView")}
-            </button>
-            <button type="button" className="btn btn-ghost qb-discard" style={{ padding: "5px 9px" }} onClick={ws.discardChanges}>
-              {t("queryBar.discard")}
-            </button>
+            {ws.dirty && (
+              <button type="button" className="btn btn-ghost qb-discard" style={{ padding: "5px 9px" }} onClick={ws.discardChanges}>
+                {t("queryBar.discard")}
+              </button>
+            )}
             <SaveAsNew />
           </div>
+        ) : (
+          ws.dirty && (
+            <div className="qb-dirty" role="group" aria-label={t("queryBar.unsavedAria")}>
+              <span className="qb-sep" />
+              <button type="button" className="btn btn-secondary qb-save" style={{ padding: "5px 10px" }} onClick={ws.saveView}>
+                {t("queryBar.saveView")}
+              </button>
+              <button type="button" className="btn btn-ghost qb-discard" style={{ padding: "5px 9px" }} onClick={ws.discardChanges}>
+                {t("queryBar.discard")}
+              </button>
+              <SaveAsNew />
+            </div>
+          )
         )}
       </div>
     </div>

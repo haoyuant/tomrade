@@ -17,13 +17,15 @@ const BOARDS = [
   { key: "bd-shell", name: "Desktop shell", icon: "i-monitor", subtitle: "apps/desktop" }
 ];
 
-/** Saved views on top of the project's defaults (Board / Table / Epics / Dependencies). `board` names a workstream the view is pinned to. */
+/** Saved views on top of the project's defaults (Backlog / Recently updated). `board` names a workstream the view is pinned to. */
 const VIEWS = [
   { name: "Sprint 12", icon: "i-clock", layout: "board", board: "bd-ui", columns: ["todo", "doing", "verifying", "done"], wip: { doing: 3 }, groupBy: "epic" },
   { name: "Bugs", icon: "i-bug", layout: "board", filter: [{ field: "labels", op: "in", values: ["bug"] }], columns: ["todo", "doing", "verifying", "done"] },
   { name: "Agent writes", icon: "i-pen", layout: "table", filter: [{ field: "provenance", op: "in", values: ["ai"] }], sortBy: [{ field: "updated", dir: "desc" }] },
   { name: "Triage", icon: "i-filter", layout: "board", filter: [{ field: "priority", op: "in", values: ["0", "1", "2"] }], columns: ["backlog", "todo"] },
-  { name: "By workstream", icon: "i-panel", layout: "board", columnBy: "board", sortBy: [{ field: "priority", dir: "asc" }] }
+  { name: "By workstream", icon: "i-panel", layout: "board", columnBy: "board", sortBy: [{ field: "priority", dir: "asc" }] },
+  { name: "Epics", icon: "i-stack", layout: "board", columnBy: "epic" },
+  { name: "Dependencies", icon: "i-graph", layout: "graph", graph: "deps" }
 ];
 
 /** Custom fields the sample project carries, and which design keys hold a value. */
@@ -116,7 +118,7 @@ export function seedDesignProject({ db, projects, boards, views, items, fields }
       name: v.name,
       icon: v.icon,
       layout: v.layout,
-      query: { filter, columnBy: v.columnBy ?? "status", columns: v.columns ?? [], groupBy: v.groupBy ?? null, sortBy: v.sortBy ?? [], wip: v.wip ?? {} }
+      query: { filter, columnBy: v.columnBy ?? "status", columns: v.columns ?? [], groupBy: v.groupBy ?? null, sortBy: v.sortBy ?? [], wip: v.wip ?? {}, graph: v.graph ?? null }
     });
   }
 

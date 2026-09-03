@@ -34,6 +34,7 @@ export function IconPicker({
       open={open}
       onOpenChange={setOpen}
       label={ariaLabel}
+      modal
       trigger={
         <button type="button" id={id} className={cn("icon-pick", compact && "compact")} aria-label={ariaLabel} title={current?.[1] ?? value}>
           <Icon className="ico" name={value} size={14} />

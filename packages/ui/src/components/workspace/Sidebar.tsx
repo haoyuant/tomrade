@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
-import type { Board, FilterClause, View } from "@tomrade/domain";
+import type { Board, View } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { viewIcon } from "~/lib/domain";
@@ -10,14 +10,6 @@ import { useI18n } from "~/lib/i18n";
 import { useCreateBoard, useCreateView, useUndo, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
-
-/** The one workstream a filter pins, or null when it pins none or several. */
-function pinnedBoard(filter: FilterClause[]): string | null {
-  const clauses = filter.filter((c) => c.field === "board" && c.op === "in");
-  if (clauses.length !== 1 || clauses[0].values.length !== 1) return null;
-  const only = clauses[0].values[0];
-  return typeof only === "string" ? only : null;
-}
 
 /** One inline name field, shared by the two "new …" rows. */
 function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel }: { icon: "i-board"; ariaLabel: string; placeholder: string; onCommit: (name: string) => void; onCancel: () => void }) {
@@ -55,8 +47,8 @@ function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel }: { i
 }
 
 function ViewRow({ view, index }: { view: View; index: number }) {
-  const { items, view: active, openView } = useWorkspace();
-  const current = view.id === active.id;
+  const { items, view: active, openView, virtual } = useWorkspace();
+  const current = !virtual && view.id === active.id;
   const { ref, isDragging } = useSortable({ id: view.id, index, type: "view", accept: "view" });
   return (
     <button
@@ -174,28 +166,22 @@ function NewViewRow() {
 }
 
 /**
- * A workstream row is a quick slice: it pins the live draft to that workstream
- * and reads as current while it does. The count is the whole workstream,
- * whatever the view shows.
+ * A workstream row is a place: its page shows everything in the workstream as
+ * a board by status, unsaved, and reads as current instead of any view.
  */
 function WorkstreamRow({ board }: { board: Board }) {
   const { t } = useI18n();
-  const { owned, query, setQuery } = useWorkspace();
-  const pinned = pinnedBoard(query.filter) === board.id;
+  const { owned, openWorkstream, virtual, workstream } = useWorkspace();
+  const current = virtual && workstream?.id === board.id;
   const count = owned.filter((i) => i.boardId === board.id).length;
-  const toggle = () => {
-    const rest = query.filter.filter((c) => c.field !== "board");
-    setQuery({ ...query, filter: pinned ? rest : [{ field: "board", op: "in", values: [board.id] }, ...rest] });
-  };
   return (
     <button
       type="button"
       className="side-row is-workstream"
       data-board={board.id}
-      aria-pressed={pinned}
-      aria-current={pinned}
-      title={pinned ? t("sidebar.workstreamUnfilterTitle", { name: board.name }) : t("sidebar.workstreamFilterTitle", { name: board.name })}
-      onClick={toggle}
+      aria-current={current}
+      title={t("sidebar.openWorkstreamTitle", { name: board.name })}
+      onClick={() => !current && openWorkstream(board.id)}
     >
       <Icon className="ico" name={viewIcon(board.icon)} size={15} />
       <span className="side-stack">

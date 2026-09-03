@@ -80,6 +80,12 @@ export interface WorkspaceValue {
   selectedId: string | null;
   select: (id: string | null) => void;
   openView: (viewId: string) => void;
+  /** A workstream is a place too: its page is an unsaved board pinned to it. */
+  openWorkstream: (boardId: string) => void;
+  /** True on a workstream page — `view` is then synthesized, not saved, and saving means "save as a view". */
+  virtual: boolean;
+  /** The workstream whose page this is, when `virtual`. */
+  workstream: Board | null;
 
   /** A field's options in its display order: statuses, priorities urgent-first, epics, workstreams, custom options, the checkbox's one tick. Labels list the project's vocabulary. */
   optionsOf: (fieldId: string) => FieldOptionView[];
@@ -126,7 +132,33 @@ const draftOf = (view: View): Draft => ({ layout: view.layout, query: normalizeQ
 /** Tickets a saved view resolves to, ignoring column visibility — the count beside its name. */
 export const viewCount = (items: Item[], view: View): number => items.filter((i) => isTicket(i) && matchesFilter(i, view.query.filter)).length;
 
-export function WorkspaceProvider({ projectId, viewId, children }: { projectId: string; viewId: string; children: (value: WorkspaceValue) => ReactNode }) {
+/** The board view a workstream page shows: everything in that workstream, by status. */
+function workstreamView(board: Board): View {
+  return {
+    id: `ws:${board.id}`,
+    projectId: board.projectId,
+    name: board.name,
+    icon: board.icon,
+    layout: "board",
+    query: normalizeQuery({ filter: [{ field: "board", op: "in", values: [board.id] }], columnBy: "status" }),
+    rank: -1,
+    createdAt: board.createdAt,
+    updatedAt: board.updatedAt
+  };
+}
+
+export function WorkspaceProvider({
+  projectId,
+  viewId,
+  boardId,
+  children
+}: {
+  projectId: string;
+  /** One of the two names the place: a saved view, or a workstream. */
+  viewId?: string;
+  boardId?: string;
+  children: (value: WorkspaceValue) => ReactNode;
+}) {
   const navigate = useNavigate();
   const { t, locale } = useI18n();
   const toast = useToast();
@@ -136,6 +168,7 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
   const items = useItems(projectId);
   const labels = useLabels(projectId);
   const fieldsQuery = useFields(projectId);
+  // A workstream page keeps no manual order of its own.
   const ranks = useViewRanks(viewId);
   const badges = useBadges(projectId);
   const updateView = useUpdateView(projectId);
@@ -144,7 +177,11 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
   const [draft, setDraft] = useState<Draft | null>(null);
 
   const project = projects.data?.find((p) => p.id === projectId);
-  const view = views.data?.find((v) => v.id === viewId);
+  const workstream = boardId ? (boards.data?.find((b) => b.id === boardId) ?? null) : null;
+  const virtual = !!boardId;
+  const savedView = views.data?.find((v) => v.id === viewId);
+  const view = useMemo(() => (virtual ? (workstream ? workstreamView(workstream) : undefined) : savedView), [virtual, workstream, savedView]);
+  const placeKey = viewId ?? `ws:${boardId}`;
 
   const saved = useMemo(() => (view ? draftOf(view) : null), [view]);
   const savedCanon = saved ? canon(saved) : null;
@@ -155,15 +192,15 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
   const lastView = useRef<string | null>(null);
   const lastSaved = useRef<string | null>(null);
   useEffect(() => {
-    const switched = lastView.current !== viewId;
+    const switched = lastView.current !== placeKey;
     const changed = lastSaved.current !== savedCanon;
-    lastView.current = viewId;
+    lastView.current = placeKey;
     lastSaved.current = savedCanon;
     if (switched) {
       setDraft(null);
       select(null);
     } else if (changed) setDraft(null);
-  }, [viewId, savedCanon]);
+  }, [placeKey, savedCanon]);
   const live = draft ?? saved;
   const dirty = !!saved && !!draft && canon(draft) !== canon(saved);
 
@@ -229,10 +266,14 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
     [fieldById, optionsOf]
   );
 
-  const settled = !projects.isLoading && !views.isLoading;
+  const settled = !projects.isLoading && !views.isLoading && !boards.isLoading;
 
   const openView = useCallback(
     (nextViewId: string) => void navigate({ to: "/p/$projectId/v/$viewId", params: { projectId, viewId: nextViewId } }),
+    [navigate, projectId]
+  );
+  const openWorkstream = useCallback(
+    (nextBoardId: string) => void navigate({ to: "/p/$projectId/w/$boardId", params: { projectId, boardId: nextBoardId } }),
     [navigate, projectId]
   );
 
@@ -247,6 +288,17 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
     const chosen = live.query.columns.filter((k) => space.includes(k));
     const setQuery = (next: ViewQuery) => setDraft({ layout: live.layout, query: normalizeQuery(next) });
     const setLayout = (next: Layout) => setDraft({ layout: next, query: live.query });
+    const saveAsNewView = (name: string) =>
+      createView.mutate(
+        { name, icon: view.icon, layout: live.layout, query: live.query },
+        {
+          onSuccess: (created) => {
+            setDraft(null);
+            openView(created.id);
+          },
+          onError: (err) => toast({ body: err.message })
+        }
+      );
     return {
       project,
       projects: projects.data ?? [],
@@ -267,21 +319,15 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
       dirty,
       saveView: () => {
         if (!dirty) return;
+        // A workstream page has nothing saved to write back to; saving it makes a view.
+        if (virtual) return saveAsNewView(view.name);
         updateView.mutate({ id: view.id, patch: { layout: live.layout, query: live.query } }, { onSuccess: () => setDraft(null), onError: (err) => toast({ body: err.message }) });
       },
       discardChanges: () => setDraft(null),
-      saveAsNewView: (name: string) => {
-        createView.mutate(
-          { name, icon: view.icon, layout: live.layout, query: live.query },
-          {
-            onSuccess: (created) => {
-              setDraft(null);
-              openView(created.id);
-            },
-            onError: (err) => toast({ body: err.message })
-          }
-        );
-      },
+      saveAsNewView,
+      openWorkstream,
+      virtual,
+      workstream,
       filterCount: live.query.filter.length,
       visible,
       ranks: rankMap,
@@ -315,6 +361,9 @@ export function WorkspaceProvider({ projectId, viewId, children }: { projectId: 
     badges.data,
     selectedId,
     openView,
+    openWorkstream,
+    virtual,
+    workstream,
     optionsOf,
     groupSpace,
     groupLabel,

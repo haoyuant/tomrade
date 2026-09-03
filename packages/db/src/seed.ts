@@ -11,10 +11,8 @@ export interface ViewSeed {
 
 /** The views every new project opens with. The first is what the project route lands on. */
 export const DEFAULT_VIEWS: readonly ViewSeed[] = [
-  { name: "Board", icon: "i-board", layout: "board", query: { columnBy: "status" } },
-  { name: "Table", icon: "i-bars", layout: "table", query: { sortBy: [{ field: "updated", dir: "desc" }] } },
-  { name: "Epics", icon: "i-stack", layout: "board", query: { columnBy: "epic" } },
-  { name: "Dependencies", icon: "i-graph", layout: "graph", query: { graph: "deps" } }
+  { name: "Backlog", icon: "i-board", layout: "board", query: { columnBy: "status" } },
+  { name: "Recently updated", icon: "i-clock", layout: "table", query: { sortBy: [{ field: "updated", dir: "desc" }] } }
 ];
 
 /** Raw insert, for seeds and migrations; `ctx.views.create` is the logged path. */

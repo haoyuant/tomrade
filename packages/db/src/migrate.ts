@@ -53,9 +53,8 @@ function clausesOf(filter: Record<string, unknown[] | undefined>): Record<string
  * field; views move up to the project. Each workstream's Status view becomes a
  * project view named after the board and filtered to it (its row is reused so
  * manual ordering survives); the two cross-board scopes become a Table sorted
- * by recency and a board grouped by epic; every project gains a Dependencies
- * graph. Only unconverted rows (project_id = '') are touched, so this is safe
- * to run again.
+ * by recency and a board grouped by epic. Only unconverted rows
+ * (project_id = '') are touched, so this is safe to run again.
  */
 function liftViewsToProjects(db: Sqlite, now: number): void {
   const legacy = columns(db, "views").has("kind");
@@ -111,7 +110,6 @@ function liftViewsToProjects(db: Sqlite, now: number): void {
       // A scope owned nothing; its view carries on, the row does not.
       if (b.across === 1) db.prepare("DELETE FROM boards WHERE id = ?").run(b.id);
     }
-    insertViewRow(db, p.id, { name: "Dependencies", icon: "i-graph", layout: "graph", query: { graph: "deps" } }, rank, now);
   }
 }
 

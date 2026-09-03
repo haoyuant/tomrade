@@ -14,7 +14,7 @@ describe("projects", () => {
     expect(project.id).toBe("default");
     expect(projects.list().length).toBe(1);
     expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main"]);
-    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Board", "Table", "Epics", "Dependencies"]);
+    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Backlog", "Recently updated"]);
   });
 
   it("derives a key prefix from the project name", () => {
@@ -94,7 +94,7 @@ describe("projects", () => {
     const second = await fresh({ dbPath: file });
     expect(second.projects.list().map((p) => p.name)).toEqual(["Default Project"]);
     expect(second.boards.list(second.project.id).length).toBe(1);
-    expect(second.views.listForProject(second.project.id).length).toBe(4);
+    expect(second.views.listForProject(second.project.id).length).toBe(2);
   });
 
   it("keys are per project, so two projects can both hold #1", async () => {

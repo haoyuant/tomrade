@@ -222,8 +222,9 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
       toast({ body: t("board.cannotDropToast", { field: field ? fieldLabel(field) : cb }) });
       return;
     }
-    // A sorted board orders by its sort keys, so a manual rank there would be stored and never honoured.
-    const manual = query.sortBy.length ? null : order;
+    // A sorted board orders by its sort keys, so a manual rank there would be stored and never
+    // honoured; a workstream page is not a saved view, so it keeps no order of its own.
+    const manual = query.sortBy.length || ws.virtual ? null : order;
     if (!fieldPatch && !manual) return;
     // The order write waits on the field write: a refused move must not leave a
     // rank behind for a card that never went anywhere.

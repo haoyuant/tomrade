@@ -4,7 +4,7 @@ import { LAYOUTS, type Layout } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
-import { LAYOUT_LABEL, viewIcon } from "~/lib/domain";
+import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useRemoveView, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -213,8 +213,15 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
         </Menu>
       </div>
       <Icon className="view-ico" name={viewIcon(ws.view.icon)} size={16} />
-      <ViewName editRequest={editRequest} />
+      {ws.virtual ? (
+        <h1 className="view-title">
+          <span className="view-name">{ws.view.name}</span>
+        </h1>
+      ) : (
+        <ViewName editRequest={editRequest} />
+      )}
       <div className="board-facts">
+        {ws.virtual && <span className="tag neutral view-kind">{FIELD_LABEL.board}</span>}
         {ws.dirty && <span className="tag faint view-dirty">{t("titleBar.unsaved")}</span>}
         <span className="meta-txt">
           {tx("titleBar.shownOf", { shown: <span className="num">{ws.visible.length}</span>, total: <span className="num">{ws.owned.length}</span> })}
@@ -240,6 +247,7 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
         <Icon name="i-sliders" size={14} />
         <span className="lbl">{t("titleBar.viewSettings")}</span>
       </button>
+      {!ws.virtual && (
       <div className="menu-wrap">
         <Menu
           open={menuOpen}
@@ -264,6 +272,7 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
           </div>
         </Menu>
       </div>
+      )}
     </div>
   );
 }

@@ -160,13 +160,15 @@ const run = async () => {
   check("the sidebar lists the workstreams", (await $(`document.querySelectorAll('.side-row.is-workstream').length`)) === repos.boards.list(project.id).length);
   await shot("04-board-paper");
 
-  // ── a workstream row is a quick slice of the current view ───────────
+  // ── a workstream row is a place of its own ──────────────────────────
   await press(`document.querySelector('.side-row.is-workstream')`);
-  await sleep(600);
-  check("a workstream row pins the draft to that workstream", (await $(`!!document.querySelector('.qb-chip[data-field="board"]') && document.querySelector('.side-row.is-workstream').getAttribute('aria-current') === 'true'`)) === true);
-  await press(`document.querySelector('.side-row.is-workstream')`);
-  await sleep(600);
-  check("pressing it again lifts the pin", (await $(`!!document.querySelector('.qb-chip[data-field="board"]')`)) === false);
+  await sleep(900);
+  check("a workstream row opens the workstream's page", /\/p\/.+\/w\/.+/.test(await $(`location.hash`)) && (await $(`!!document.querySelector('.qb-chip[data-field="board"]')`)) === true);
+  check("the workstream reads as current and no view does", (await $(`document.querySelectorAll('.side-row.is-workstream[aria-current="true"]').length`)) === 1 && (await $(`document.querySelectorAll('.side-row.is-view[aria-current="true"]').length`)) === 0);
+  check("a workstream page offers Save as new, not Save view", (await $(`!!document.querySelector('.qb-save-as') && !document.querySelector('.qb-save') && !document.querySelector('.view-menu-btn')`)) === true);
+  await press(`document.querySelector('.side-row.is-view[data-view="${allViews[0].id}"]')`);
+  await sleep(900);
+  check("opening a view leaves the workstream", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)) && (await $(`document.querySelectorAll('.side-row.is-workstream[aria-current="true"]').length`)) === 0);
   const workstreamsBefore = repos.boards.list(project.id).length;
   await press(`document.querySelector('.side-new-workstream')`);
   await sleep(400);

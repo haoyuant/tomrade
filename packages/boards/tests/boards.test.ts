@@ -10,7 +10,7 @@ describe("boards (workstreams)", () => {
   it("a new project has one workstream and the default views", async () => {
     const { boards, views, project } = await fresh();
     expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main"]);
-    expect(views.listForProject(project.id).map((v) => `${v.name}:${v.layout}`)).toEqual(["Board:board", "Table:table", "Epics:board", "Dependencies:graph"]);
+    expect(views.listForProject(project.id).map((v) => `${v.name}:${v.layout}`)).toEqual(["Backlog:board", "Recently updated:table"]);
   });
 
   it("creating a workstream is undoable and creates no views", async () => {
@@ -87,7 +87,7 @@ describe("views", () => {
     expect([next.name, next.layout, next.query.groupBy, next.query.wip]).toEqual(["Sprint", "table", "board", { doing: 3 }]);
     oplog.undoLast();
     const back = views.get(v.id)!;
-    expect([back.name, back.layout, back.query.groupBy]).toEqual(["Board", "board", null]);
+    expect([back.name, back.layout, back.query.groupBy]).toEqual(["Backlog", "board", null]);
   });
 
   it("removing a view takes its manual order with it, and undo brings both back", async () => {

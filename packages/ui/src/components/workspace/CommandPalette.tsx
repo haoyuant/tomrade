@@ -109,6 +109,16 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 ))}
               </Command.Group>
 
+              <Command.Group heading={t("commandPalette.workstreamsGroup")} className="eyebrow palette-group">
+                {ws.boards.map((b) => (
+                  <Command.Item key={b.id} value={`${b.name} ${b.subtitle ?? ""}`} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
+                    <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
+                    <span className="p-label">{b.name}</span>
+                    <span className="card-id">{ws.owned.filter((i) => i.boardId === b.id).length}</span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+
               <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
                 {ws.items.filter(isTicket).slice(0, 60).map((item) => (
                   <Command.Item

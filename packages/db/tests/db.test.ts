@@ -84,12 +84,12 @@ function v5File(): { file: string; uiStatusViewId: string; uiBoardId: string } {
 }
 
 describe("views lifted to the project (v5 → v6)", () => {
-  it("each workstream becomes a filtered board view, scopes become views, and Dependencies is added", async () => {
+  it("each workstream becomes a filtered board view and scopes become views", async () => {
     const { file, uiStatusViewId, uiBoardId } = v5File();
     const { boards, views, items } = await fresh({ dbPath: file });
     expect(boards.list("default").map((b) => b.name)).toEqual(["Main", "UI"]);
     const all = views.listForProject("default");
-    expect(all.map((v) => `${v.name}:${v.layout}`)).toEqual(["Main:board", "UI:board", "Recently updated:table", "Epics:board", "Dependencies:graph"]);
+    expect(all.map((v) => `${v.name}:${v.layout}`)).toEqual(["Main:board", "UI:board", "Recently updated:table", "Epics:board"]);
     const ui = all.find((v) => v.name === "UI")!;
     expect(ui.id).toBe(uiStatusViewId);
     expect(ui.query.filter).toEqual([
@@ -104,7 +104,6 @@ describe("views lifted to the project (v5 → v6)", () => {
     expect(views.ranks(ui.id)).toEqual({ i1: 2.5 });
     expect(all.find((v) => v.name === "Recently updated")!.query.sortBy).toEqual([{ field: "updated", dir: "desc" }]);
     expect(all.find((v) => v.name === "Epics")!.query.columnBy).toBe("epic");
-    expect(all.find((v) => v.name === "Dependencies")!.query.graph).toBe("deps");
     expect(items.list({ projectId: "default" }).length).toBe(1);
   });
 
