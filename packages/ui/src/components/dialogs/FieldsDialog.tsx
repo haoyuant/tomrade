@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Board, FieldDef, FieldType, Item } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, FIELD_TYPE_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
@@ -255,18 +256,7 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
 
   return (
     <div className="fld-opt fld-ws" data-board={board.id}>
-      <select
-        className="fld-ws-icon"
-        aria-label={t("fieldsDialog.workstreamIconAria")}
-        value={viewIcon(board.icon)}
-        onChange={(e) => update.mutate({ id: board.id, patch: { icon: e.target.value as IconId } }, { onError: fail })}
-      >
-        {BOARD_GLYPHS.map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
+      <IconPicker compact value={viewIcon(board.icon)} ariaLabel={t("fieldsDialog.workstreamIconAria")} onChange={(icon) => update.mutate({ id: board.id, patch: { icon } }, { onError: fail })} />
       <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-opt-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
       <RenameInput
         value={board.subtitle ?? ""}

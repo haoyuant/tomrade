@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { move } from "@dnd-kit/helpers";
 import type { Board, FilterClause, View } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateBoard, useCreateView, useUndo } from "~/lib/queries";
+import { useCreateBoard, useCreateView, useUndo, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 
@@ -51,13 +54,15 @@ function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel }: { i
   );
 }
 
-function ViewRow({ view }: { view: View }) {
+function ViewRow({ view, index }: { view: View; index: number }) {
   const { items, view: active, openView } = useWorkspace();
   const current = view.id === active.id;
+  const { ref, isDragging } = useSortable({ id: view.id, index, type: "view", accept: "view" });
   return (
     <button
+      ref={ref as (node: HTMLElement | null) => void}
       type="button"
-      className="side-row is-view"
+      className={`side-row is-view${isDragging ? " dragging" : ""}`}
       data-view={view.id}
       aria-current={current}
       title={view.name}
@@ -68,6 +73,63 @@ function ViewRow({ view }: { view: View }) {
       <span className="side-name">{view.name}</span>
       <span className="side-count num">{viewCount(items, view)}</span>
     </button>
+  );
+}
+
+/** A midpoint between neighbours, or null when there is none — then the whole roster is renumbered. */
+function rankBetween(prev: number | undefined, next: number | undefined): number | null {
+  if (prev === undefined && next === undefined) return 0;
+  if (prev === undefined) return (next as number) - 1;
+  if (next === undefined) return prev + 1;
+  if (next - prev < 1e-6) return null;
+  return (prev + next) / 2;
+}
+
+/**
+ * The roster is sortable by drag. The order is the views' ranks, so a drop is
+ * one view update (a midpoint rank) — logged and undoable like any other — or
+ * a renumbering when the ranks left no room.
+ */
+function ViewList() {
+  const { project, views } = useWorkspace();
+  const update = useUpdateView(project.id);
+  const [order, setOrder] = useState<View[]>(views);
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    if (!dragging.current) setOrder(views);
+  }, [views]);
+
+  const commit = (id: string) => {
+    const list = orderRef.current;
+    const at = list.findIndex((v) => v.id === id);
+    if (at < 0) return;
+    const rank = rankBetween(list[at - 1]?.rank, list[at + 1]?.rank);
+    if (rank !== null) update.mutate({ id, patch: { rank } });
+    else list.forEach((v, i) => v.rank !== i && update.mutate({ id: v.id, patch: { rank: i } }));
+  };
+
+  return (
+    <DragDropProvider
+      onDragStart={() => {
+        dragging.current = true;
+      }}
+      onDragOver={(event) => setOrder((current) => move(current, event))}
+      onDragEnd={(event) => {
+        dragging.current = false;
+        if (event.canceled) return setOrder(views);
+        const id = event.operation.source?.id;
+        if (id != null) commit(String(id));
+      }}
+    >
+      <div className="side-list" style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        {order.map((v, i) => (
+          <ViewRow key={v.id} view={v} index={i} />
+        ))}
+      </div>
+    </DragDropProvider>
   );
 }
 
@@ -187,9 +249,19 @@ function NewWorkstreamRow() {
  * titlebar. Collapsed, it is the same rail the assistant folds to, and the view
  * head grows its own switcher.
  */
-export function Sidebar({ open, onToggle, onOpenFields }: { open: boolean; onToggle: (open: boolean) => void; onOpenFields: (fieldId?: string) => void }) {
+export function Sidebar({
+  open,
+  onToggle,
+  onOpenFields,
+  onOpenProjectSettings
+}: {
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  onOpenFields: (fieldId?: string) => void;
+  onOpenProjectSettings: () => void;
+}) {
   const { t } = useI18n();
-  const { views, boards } = useWorkspace();
+  const { boards } = useWorkspace();
 
   if (!open) {
     return (
@@ -212,11 +284,7 @@ export function Sidebar({ open, onToggle, onOpenFields }: { open: boolean; onTog
         </button>
       </div>
       <div className="side-group">
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {views.map((v) => (
-            <ViewRow key={v.id} view={v} />
-          ))}
-        </div>
+        <ViewList />
         <NewViewRow />
       </div>
       <div className="side-group side-workstreams">
@@ -236,8 +304,12 @@ export function Sidebar({ open, onToggle, onOpenFields }: { open: boolean; onTog
       </div>
       <div className="side-group side-foot">
         <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
-          <Icon className="ico" name="i-gear" size={14} />
+          <Icon className="ico" name="i-sliders" size={14} />
           <span className="side-name">{t("sidebar.fields")}</span>
+        </button>
+        <button type="button" className="side-row side-add side-project-settings" aria-haspopup="dialog" onClick={onOpenProjectSettings}>
+          <Icon className="ico" name="i-gear" size={14} />
+          <span className="side-name">{t("sidebar.projectSettings")}</span>
         </button>
       </div>
     </nav>

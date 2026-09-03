@@ -176,13 +176,12 @@ export function Workspace() {
         onOpenPalette={() => setPalette(true)}
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
-        onOpenProjectSettings={openProjectSettings}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} />
+        <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenProjectSettings={openProjectSettings} />
         <section className="board-region" data-layout={ws.layout}>
           <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
           <QueryBar />

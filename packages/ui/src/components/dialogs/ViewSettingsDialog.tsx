@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { EMPTY_KEY, LAYOUTS, groupKeyOf, type Layout } from "@tomrade/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, DEFAULT_SHOWN_FIELDS, LAYOUT_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
@@ -90,13 +91,7 @@ export function ViewSettingsDialog({ open, onOpenChange }: { open: boolean; onOp
           </div>
           <div className="field">
             <label htmlFor="vsIcon">{t("viewSettingsDialog.iconLabel")}</label>
-            <select id="vsIcon" className="select" value={icon} onChange={(e) => setIcon(e.target.value as IconId)}>
-              {BOARD_GLYPHS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <IconPicker id="vsIcon" value={icon} onChange={setIcon} ariaLabel={t("viewSettingsDialog.iconLabel")} />
           </div>
         </div>
 

@@ -18,7 +18,8 @@ export const common = {
     chooseFolderFor: "Choose a folder for {{label}}",
     chooseButton: "Choose",
     choosing: "Choosing…",
-    choose: "Choose…"
+    choose: "Choose…",
+    iconMenuTitle: "Icon"
   },
   zh: {
     cancel: "取消",
@@ -39,6 +40,7 @@ export const common = {
     chooseFolderFor: "为{{label}}选择文件夹",
     chooseButton: "选择",
     choosing: "选择中…",
-    choose: "选择…"
+    choose: "选择…",
+    iconMenuTitle: "图标"
   }
 };

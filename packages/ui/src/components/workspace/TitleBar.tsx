@@ -18,14 +18,12 @@ export function TitleBar({
   onOpenPalette,
   onNewIssue,
   onOpenSettings,
-  onOpenProjectSettings,
   projectMenuOpen,
   setProjectMenuOpen
 }: {
   onOpenPalette: () => void;
   onNewIssue: () => void;
   onOpenSettings: () => void;
-  onOpenProjectSettings: () => void;
   projectMenuOpen: boolean;
   setProjectMenuOpen: (open: boolean) => void;
 }) {
@@ -72,7 +70,6 @@ export function TitleBar({
             />
           ))}
           <div className="menu-foot">
-            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("titleBar.projectSettings")} onSelect={onOpenProjectSettings} />
             <MenuLinkItem icon={<Icon name="i-home" size={13} />} name={t("titleBar.allProjects")} onSelect={() => void navigate({ to: "/" })} />
           </div>
         </Menu>

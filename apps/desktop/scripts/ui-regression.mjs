@@ -177,6 +177,32 @@ const run = async () => {
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(1000);
   check("its toast undoes the create", repos.boards.list(project.id).length === workstreamsBefore);
+  check("the sidebar foot offers fields and project settings", (await $(`!!document.querySelector('.side-fields') && !!document.querySelector('.side-project-settings')`)) === true);
+
+  // ── the roster is sortable: a drop writes the view's rank ────────────
+  const rosterBefore = repos.views.listForProject(project.id).map((v) => v.id);
+  {
+    const box = await $(`(() => {
+      const rows = [...document.querySelectorAll('.side-row.is-view')];
+      const a = rows[1].getBoundingClientRect(), b = rows[0].getBoundingClientRect();
+      return { x0: Math.round(a.left + a.width / 2), y0: Math.round(a.top + a.height / 2), x1: Math.round(b.left + b.width / 2), y1: Math.round(b.top + 4) };
+    })()`);
+    const send = (type, x, y) => win.webContents.sendInputEvent({ type, x, y, button: "left", clickCount: 1 });
+    send("mouseDown", box.x0, box.y0);
+    for (let i = 1; i <= 12; i++) {
+      send("mouseMove", box.x0, Math.round(box.y0 + ((box.y1 - box.y0) * i) / 12));
+      await sleep(35);
+    }
+    await sleep(200);
+    send("mouseUp", box.x1, box.y1);
+    await sleep(1400);
+  }
+  const rosterAfter = repos.views.listForProject(project.id).map((v) => v.id);
+  check("dragging a view row above another reorders the roster", rosterAfter[0] === rosterBefore[1] && rosterAfter[1] === rosterBefore[0]);
+  check("the sidebar draws the saved order", (await $(`document.querySelectorAll('.side-row.is-view')[0].dataset.view`)) === rosterBefore[1]);
+  // put the roster back for the sections that follow; a direct write, so the sidebar redraws on its next refetch
+  repos.views.update(rosterBefore[1], { rank: repos.views.get(rosterBefore[0]).rank + 0.5 });
+  await sleep(600);
 
   // ── keyboard move: ← → is the same write path as a drag ─────────────
   const keysOnBoard = await $(`[...document.querySelectorAll('.card .card-id')].map(n => n.textContent).join(',')`);
