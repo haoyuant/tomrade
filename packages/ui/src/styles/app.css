@@ -364,6 +364,10 @@ strong { font-weight: 500; }
  * whatever its layout. Workstreams are a field, not a place, so they live in
  * the query bar and the Fields sheet rather than here. */
 .side-row.is-view { color: var(--fg); }
+/* a workstream row stacks its name over the package it stands for */
+.side-stack { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.side-stack .side-name { flex: none; }
+.side-pkg { font-family: var(--font-mono); font-size: 11px; line-height: 1.3; color: var(--meta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-label-row { display: flex; align-items: center; padding: 0 var(--space-2) var(--space-1); }
 .side-label-row .side-label { padding: 0; }
 .side-label-row .btn-icon { width: 24px; height: 24px; color: var(--meta); }
