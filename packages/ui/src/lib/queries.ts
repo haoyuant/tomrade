@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommandScope } from "@tomrade/contributions";
 import type { StorageBinding, StorageProviderView, StorageStatus } from "@tomrade/storage";
+import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
 import type {
   AppSettings,
   Board,
@@ -24,6 +25,7 @@ export const keys = {
   views: (projectId: string) => ["views", projectId] as const,
   items: (projectId: string) => ["items", projectId] as const,
   labels: (projectId: string) => ["labels", projectId] as const,
+  fields: (projectId: string) => ["fields", projectId] as const,
   ranks: (viewId: string) => ["ranks", viewId] as const,
   history: (itemId: string) => ["history", itemId] as const,
   oplog: ["oplog"] as const,
@@ -61,7 +63,7 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
  */
 export function invalidateProject(qc: QueryClient, projectId: string): void {
   invalidateWorkspace(qc, projectId);
-  for (const key of [keys.boards(projectId), keys.views(projectId), keys.projects, keys.storageStatus(projectId), keys.storageBinding(projectId)]) {
+  for (const key of [keys.boards(projectId), keys.views(projectId), keys.fields(projectId), keys.projects, keys.storageStatus(projectId), keys.storageBinding(projectId)]) {
     void qc.invalidateQueries({ queryKey: key });
   }
   void qc.invalidateQueries({ queryKey: ["ranks"] });
@@ -77,6 +79,7 @@ export const useBoards = (projectId: string) => useQuery({ queryKey: keys.boards
 export const useViews = (projectId: string) => useQuery({ queryKey: keys.views(projectId), queryFn: () => invoke("views.list", projectId) });
 export const useItems = (projectId: string) => useQuery({ queryKey: keys.items(projectId), queryFn: () => invoke("items.list", { projectId }) });
 export const useLabels = (projectId: string) => useQuery({ queryKey: keys.labels(projectId), queryFn: () => invoke("items.labels", projectId) });
+export const useFields = (projectId: string) => useQuery({ queryKey: keys.fields(projectId), queryFn: () => invoke("fields.list", projectId) });
 
 export const useViewRanks = (viewId: string | undefined) =>
   useQuery({ queryKey: keys.ranks(viewId ?? ""), queryFn: () => invoke("views.ranks", viewId!), enabled: !!viewId });
@@ -227,6 +230,32 @@ export function useUpdateView(projectId: string) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.views(projectId) })
   });
 }
+
+/* ── the field registry ─────────────────────────────────────────────────
+   Definitions are schema: every change lands live and refetches the items,
+   because removing a field or an option takes values with it. */
+
+function useFieldMutation<A, R>(projectId: string, fn: (args: A) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.fields(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.items(projectId) });
+    }
+  });
+}
+
+export const useCreateField = (projectId: string) =>
+  useFieldMutation(projectId, (input: Omit<CreateFieldInput, "projectId">) => invoke("fields.create", { ...input, projectId }));
+export const useUpdateField = (projectId: string) => useFieldMutation(projectId, (args: { id: string; patch: FieldPatch }) => invoke("fields.update", args.id, args.patch));
+export const useRemoveField = (projectId: string) => useFieldMutation(projectId, (id: string) => invoke("fields.remove", id));
+export const useAddFieldOption = (projectId: string) =>
+  useFieldMutation(projectId, (args: { fieldId: string; input: FieldOptionInput }) => invoke("fields.addOption", args.fieldId, args.input));
+export const useUpdateFieldOption = (projectId: string) =>
+  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; patch: FieldOptionPatch }) => invoke("fields.updateOption", args.fieldId, args.optionId, args.patch));
+export const useRemoveFieldOption = (projectId: string) =>
+  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; moveTo?: string }) => invoke("fields.removeOption", args.fieldId, args.optionId, args.moveTo));
 
 export function useCreateProject() {
   const qc = useQueryClient();

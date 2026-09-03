@@ -1,4 +1,4 @@
-import type { Board, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter, ViewKind } from "@tomrade/domain";
+import type { Board, BuiltinFieldId, FieldDef, FieldType, GroupBy, Item, ItemStatus, OplogEntry, Priority, Provenance, View, ViewFilter, ViewKind } from "@tomrade/domain";
 import type { IconId } from "~/components/icons";
 import type { Locale } from "./i18n";
 
@@ -83,6 +83,24 @@ const BOARD_GLYPH_LABEL: Record<Locale, readonly string[]> = {
   zh: ["面板", "堆叠", "插头", "显示器", "看板", "筛选", "缺陷", "柱状"]
 };
 
+const FIELD_LABEL_BY_LOCALE: Record<Locale, Record<BuiltinFieldId, string>> = {
+  en: { title: "Title", status: "Status", priority: "Priority", epic: "Epic", labels: "Labels", board: "Board", updated: "Updated", key: "Key", provenance: "Last write" },
+  zh: { title: "标题", status: "状态", priority: "优先级", epic: "需求组", labels: "标签", board: "看板", updated: "更新时间", key: "编号", provenance: "最后写入" }
+};
+
+/** Built-in field names, localized in place like the tables above. */
+export const FIELD_LABEL: Record<BuiltinFieldId, string> = { ...FIELD_LABEL_BY_LOCALE.en };
+
+const FIELD_TYPE_LABEL_BY_LOCALE: Record<Locale, Record<FieldType, string>> = {
+  en: { text: "Text", number: "Number", date: "Date", select: "Single select", labels: "Labels", item: "Item" },
+  zh: { text: "文本", number: "数字", date: "日期", select: "单选", labels: "标签", item: "工作项" }
+};
+
+export const FIELD_TYPE_LABEL: Record<FieldType, string> = { ...FIELD_TYPE_LABEL_BY_LOCALE.en };
+
+/** A custom field is named by its owner; a built-in by the active locale. */
+export const fieldLabel = (def: FieldDef): string => (def.builtin ? (FIELD_LABEL[def.id as BuiltinFieldId] ?? def.name) : def.name);
+
 const NO_EPIC_LABEL: Record<Locale, string> = { en: "No epic", zh: "无需求组" };
 const EPIC_FALLBACK_LABEL: Record<Locale, string> = { en: "Epic", zh: "需求组" };
 const ALL_BOARDS_LABEL: Record<Locale, string> = { en: "all boards", zh: "全部看板" };
@@ -95,6 +113,8 @@ export function setDomainLocale(locale: Locale): void {
   for (const g of Object.keys(GROUPS) as GroupBy[]) GROUPS[g].label = GROUP_LABEL[locale][g];
   VIEW_KINDS.dependencies.label = VIEW_KIND_LABEL[locale];
   for (const p of Object.keys(PROVENANCE) as Provenance[]) PROVENANCE[p] = PROVENANCE_BY_LOCALE[locale][p];
+  for (const f of Object.keys(FIELD_LABEL) as BuiltinFieldId[]) FIELD_LABEL[f] = FIELD_LABEL_BY_LOCALE[locale][f];
+  for (const ty of Object.keys(FIELD_TYPE_LABEL) as FieldType[]) FIELD_TYPE_LABEL[ty] = FIELD_TYPE_LABEL_BY_LOCALE[locale][ty];
   for (let i = 0; i < BOARD_GLYPHS.length; i++) BOARD_GLYPHS[i][1] = BOARD_GLYPH_LABEL[locale][i];
 }
 

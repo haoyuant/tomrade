@@ -112,7 +112,8 @@ consumer follows.
 |---|---|---|---|
 | `ctx.db` | spine | `@tomrade/db` | The SQLite connection, the core schema, `migrate()` |
 | `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast` |
-| `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations |
+| `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
+| `ctx.fields` | spine | `@tomrade/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
 | `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams and their slices |
 | `ctx.projects` | spine | `@tomrade/projects` | The container; outside the oplog and undo |
 | `ctx.tools` | spine | `@tomrade/tools` | The registry and guarded `execute` |
@@ -278,8 +279,9 @@ plugins. Remove the row and the guarantees are gone, which is what
 bug; the helper asserts that a listener either refused or delegated.
 
 Exceptions, deliberately: projects are managed by humans through the UI and sit
-outside the oplog; `views.setRank`, `items.addRelation` and `boards.moveItems`
-are not logged today. Dependency edits have a logged path: `blocks` is a patch
+outside the oplog, and so are field *definitions* — schema, not work — while the
+*values* they hold ride on `items.update` like any other patch key;
+`views.setRank`, `items.addRelation` and `boards.moveItems` are not logged today. Dependency edits have a logged path: `blocks` is a patch
 field on `items.update`, versioned and undoable, and a patch that would close a
 cycle is refused with `DependencyCycleError` — `addRelation` remains the raw,
 unguarded helper for seeding.
@@ -297,6 +299,39 @@ run) for the ledger and run-scoped state. A registered tool appears on every
 surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
 There is no per-surface code to write.
+
+## Fields
+
+Every attribute a view can filter, sort or group by is a **field**. Built-in
+fields (`title`, `status`, `priority`, `epic`, `labels`, `board`, `updated`,
+`key`, `provenance`) are columns on `items` and the same in every project; a
+project may add its own — `text`, `number`, `date` or `select` — and their
+values live in `item_values`, one sparse row per (item, field), numbers in
+`num` and everything else in `text`, so a sort or range filter on any field is
+one indexed column. A select stores the option id and sorts by option order.
+
+```ts
+const points = ctx.fields.create({ projectId, name: "Story points", type: "number" });
+ctx.items.update(id, { fields: { [points.id]: 5 } }, "ai:hello");   // typed, versioned, logged, undoable
+ctx.items.update(id, { fields: { [points.id]: null } }, "ai:hello"); // null clears; absent keys are left alone
+ctx.items.query({ projectId, filter: [{ field: points.id, op: "gte", values: [5] }], sortBy: [{ field: "priority", dir: "asc" }] });
+```
+
+`ctx.fields.list(projectId)` returns built-ins then custom definitions;
+`create`, `update`, `remove`, `addOption`, `updateOption` and `removeOption`
+change them live — removing a field or an option takes the values holding it
+(or moves them, with `moveTo`). A value that does not fit its field is refused
+with `FieldValueError` before the write path sees it; built-in ids are refused
+in `fields` because they have their own patch keys.
+
+`items.query` takes the same `FilterClause[]` / `SortKey[]` a view stores. A
+clause is `{ field, op: "in" | "not-in" | "contains" | "gte" | "lte", values }`,
+and a `null` value means empty; empties sort last whichever direction. The
+renderer evaluates the same shapes over its cached list with the pure functions
+in `@tomrade/domain` (`matchesFilter`, `compareItems`), and a parity test in
+`packages/items` keeps the two implementations agreeing. Agents reach all of it
+through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
+`update_item` (`patch.fields`).
 
 ## Storage
 

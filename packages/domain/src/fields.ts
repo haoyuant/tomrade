@@ -70,7 +70,7 @@ export const BUILTIN_FIELDS: readonly FieldDef[] = [
   builtin("priority", "Priority", "select", 2, { options: staticOptions(["4", "3", "2", "1", "0"], (p) => PRIORITY_NAMES[Number(p)]) }),
   builtin("epic", "Epic", "item", 3, { optionsFrom: "epics" }),
   builtin("labels", "Labels", "labels", 4, { can: { filter: true, sort: false, group: false } }),
-  builtin("board", "Workstream", "select", 5, { optionsFrom: "boards" }),
+  builtin("board", "Board", "select", 5, { optionsFrom: "boards" }),
   builtin("updated", "Updated", "date", 6, { readonly: true, can: { filter: true, sort: true, group: false } }),
   builtin("key", "Key", "number", 7, { readonly: true, can: { filter: false, sort: true, group: false } }),
   builtin("provenance", "Last write", "select", 8, {

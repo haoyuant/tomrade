@@ -8,6 +8,7 @@ import { deleteIssueDialog } from "./deleteIssueDialog";
 import { destination } from "./destination";
 import { detailPane } from "./detailPane";
 import { fields } from "./fields";
+import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
 import { newIssueDialog } from "./newIssueDialog";
@@ -41,6 +42,7 @@ export const en = {
   deleteIssueDialog: deleteIssueDialog.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
+  fieldsDialog: fieldsDialog.en,
   destination: destination.en,
   toast: toast.en,
 
@@ -79,6 +81,7 @@ export const zh: typeof en = {
   deleteIssueDialog: deleteIssueDialog.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,
+  fieldsDialog: fieldsDialog.zh,
   destination: destination.zh,
   toast: toast.zh,
 

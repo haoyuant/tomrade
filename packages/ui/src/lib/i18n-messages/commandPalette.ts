@@ -21,6 +21,7 @@ export const commandPalette = {
     settings: "Settings",
     plugins: "Plugins",
     boardSettings: "Board settings",
+    fields: "Fields…",
     projectSettings: "Project settings",
     themeAction: "Theme · {{label}}"
   },
@@ -46,6 +47,7 @@ export const commandPalette = {
     settings: "设置",
     plugins: "插件",
     boardSettings: "看板设置",
+    fields: "字段…",
     projectSettings: "项目设置",
     themeAction: "主题 · {{label}}"
   }

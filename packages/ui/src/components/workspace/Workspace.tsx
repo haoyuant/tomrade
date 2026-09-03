@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { BoardSettingsDialog } from "~/components/dialogs/BoardSettingsDialog";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
+import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
@@ -57,6 +58,7 @@ export function Workspace() {
   const [settings, setSettings] = useState<string | null>(null);
   const [viewSettings, setViewSettings] = useState(false);
   const [boardSettings, setBoardSettings] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
   const [projectSettings, setProjectSettings] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
   /** The issue the confirmation is open on, held by id so it can go stale. */
@@ -87,7 +89,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || boardSettings || projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || boardSettings || fieldsOpen || projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -204,10 +206,12 @@ export function Workspace() {
           openSettings: () => setSettings(""),
           openPlugins: () => setSettings("plugins"),
           openBoardSettings,
+          openFields: () => setFieldsOpen(true),
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true)
         }}
       />
+      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
       <ViewSettingsDialog

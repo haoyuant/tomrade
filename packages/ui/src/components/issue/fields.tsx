@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { Board, Item, ItemStatus, Patch, Priority } from "@tomrade/domain";
+import type { Board, FieldDef, FieldValue, Item, ItemStatus, Patch, Priority } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket } from "~/lib/domain";
@@ -538,4 +538,107 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
       )}
     </span>
   );
+}
+
+/**
+ * Free text or a number, edited in place. Blur commits, Escape discards, Enter
+ * commits — the same contract as `InlineText`, on one line.
+ */
+function InlineValue({ value, kind, label, onSave }: { value: string; kind: "text" | "number"; label: string; onSave: (next: string) => void }) {
+  const discarded = useRef(false);
+  const commit = (next: string) => {
+    if (discarded.current) {
+      discarded.current = false;
+      return;
+    }
+    if (next.trim() === value) return;
+    onSave(next.trim());
+  };
+  return (
+    <input
+      key={value}
+      className={cn("fval", kind === "number" && "num")}
+      type={kind === "number" ? "number" : "text"}
+      step={kind === "number" ? "any" : undefined}
+      inputMode={kind === "number" ? "decimal" : undefined}
+      aria-label={label}
+      defaultValue={value}
+      placeholder="—"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          discarded.current = true;
+          e.currentTarget.value = value;
+          e.currentTarget.blur();
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      onBlur={(e) => commit(e.currentTarget.value)}
+    />
+  );
+}
+
+/**
+ * One editor for every custom field, chosen by type. Each edit is a `fields`
+ * patch through the same write path as a built-in, so the version, the oplog,
+ * the lock policy and undo all apply unchanged.
+ */
+export function CustomField({ item, write, def }: FieldProps & { def: FieldDef }) {
+  const { t, tx } = useI18n();
+  const current = item.fields[def.id] ?? null;
+  const set = (next: FieldValue | null) => {
+    if (next === current) return;
+    write(
+      item,
+      { fields: { [def.id]: next } },
+      next === null
+        ? tx("fields.clearedFieldToast", { name: <b>{def.name}</b>, key: <span className="num">{item.key}</span> })
+        : tx("fields.setFieldToast", { name: <b>{def.name}</b>, key: <span className="num">{item.key}</span> })
+    );
+  };
+
+  switch (def.type) {
+    case "select":
+      return (
+        <Picker
+          label={def.name}
+          value={typeof current === "string" ? current : ""}
+          options={[
+            { value: "", name: t("common.none") },
+            ...def.options.map((o) => ({ value: o.id, name: o.name })),
+            // an option removed out from under this item; the value still reads
+            ...(typeof current === "string" && !def.options.some((o) => o.id === current) ? [{ value: current, name: t("fields.missingOption") }] : [])
+          ]}
+          onPick={(v) => set(v || null)}
+        />
+      );
+    case "date":
+      return (
+        <input
+          className="fval num"
+          type="date"
+          aria-label={def.name}
+          value={typeof current === "string" ? current : ""}
+          onChange={(e) => set(e.currentTarget.value || null)}
+        />
+      );
+    case "number":
+      return (
+        <InlineValue
+          kind="number"
+          label={def.name}
+          value={current === null ? "" : String(current)}
+          onSave={(next) => {
+            if (!next) return set(null);
+            const n = Number(next);
+            if (Number.isFinite(n)) set(n);
+          }}
+        />
+      );
+    default:
+      return <InlineValue kind="text" label={def.name} value={current === null ? "" : String(current)} onSave={(next) => set(next || null)} />;
+  }
 }

@@ -20,6 +20,7 @@ export interface PaletteActions {
   openSettings: () => void;
   openPlugins: () => void;
   openBoardSettings: () => void;
+  openFields: () => void;
   openProjectSettings: () => void;
   openProjectMenu: () => void;
 }
@@ -133,6 +134,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   { label: t("commandPalette.settings"), kb: "⌘,", run: actions.openSettings },
                   { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
                   { label: t("commandPalette.boardSettings"), kb: undefined, run: actions.openBoardSettings },
+                  { label: t("commandPalette.fields"), kb: undefined, run: actions.openFields },
                   { label: t("commandPalette.projectSettings"), kb: undefined, run: actions.openProjectSettings },
                   ...THEME_OPTIONS.filter((opt) => opt.value !== "system").map((opt) => ({
                     label: t("commandPalette.themeAction", { label: t(opt.labelKey) }),

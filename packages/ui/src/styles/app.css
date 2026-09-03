@@ -811,6 +811,20 @@ strong { font-weight: 500; }
   opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .fset:hover .fchev, .fsel:focus-visible ~ .fchev { opacity: 1; }
+/* a custom text/number/date value reads as text and becomes a field on hover,
+   the same contract as the enum pickers beside it */
+.fval {
+  min-width: 6ch; max-width: 100%; margin-inline-start: -5px; padding: 2px 5px;
+  font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+  color: inherit; background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.fval.num { font-size: 13px; }
+.fval::placeholder { color: var(--meta); }
+.fval:hover { background: var(--surface-warm); border-color: var(--border); color: var(--fg); }
+.fval:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); color: var(--fg); }
+.fval::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
 
 /* labels — chips that can be taken off, and one input that puts them on */
 .labset { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
@@ -977,6 +991,17 @@ strong { font-weight: 500; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
+/* the field registry: one row per field, the selected custom one opens an editor beneath the list */
+.fld-list { display: flex; flex-direction: column; }
+.fld-row { width: 100%; text-align: left; font: inherit; color: inherit; cursor: default; }
+button.fld-row { cursor: pointer; }
+button.fld-row:hover { background: var(--surface-warm); }
+button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.fld-row.is-selected { border-color: var(--accent); }
+.fld-row.is-builtin .cfg-name { color: var(--muted); }
+.fld-editor { margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+.fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
+.stack-1 { display: flex; flex-direction: column; gap: var(--space-1); }
 .wip-in { width: 68px; padding: 4px 7px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: 13px; text-align: right; background: var(--bg); color: var(--fg);
   border: 1px solid var(--border); border-radius: var(--radius-sm); }
