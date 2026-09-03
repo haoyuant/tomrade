@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FieldDef, FieldType, Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -67,8 +67,13 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   const removeOption = useRemoveFieldOption(projectId);
   const [confirming, setConfirming] = useState(false);
   const [newOption, setNewOption] = useState("");
+  const ref = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => setConfirming(false), [def.id]);
+  // The list above can push the editor below the fold; a selection should be seen.
+  useEffect(() => {
+    setConfirming(false);
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, [def.id]);
 
   const fail = (err: Error) => toast({ body: err.message });
 
@@ -79,7 +84,7 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   };
 
   return (
-    <div className="fld-editor stack-3">
+    <div className="fld-editor stack-3" ref={ref}>
       <div className="grid-2">
         <div className="field">
           <label htmlFor="fldName">{t("fieldsDialog.nameLabel")}</label>
