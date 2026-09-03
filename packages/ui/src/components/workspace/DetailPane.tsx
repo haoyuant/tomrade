@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import {
   BoardField,
+  CustomField,
   DepsField,
   EpicField,
   IssueBody,
@@ -15,9 +16,9 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
-import { PROVENANCE, agoLabel, describeWrite, ledgerMarkOf, provenanceOf } from "~/lib/domain";
+import { PROVENANCE, agoLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useHistory, useSections } from "~/lib/queries";
+import { useFields, useHistory, useSections } from "~/lib/queries";
 import { useWorkspace } from "./context";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
@@ -117,7 +118,9 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
 
 export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
   const { t } = useI18n();
-  const { epics, boards, labels, items, select } = useWorkspace();
+  const { project, epics, boards, labels, items, select } = useWorkspace();
+  const fields = useFields(project.id);
+  const custom = (fields.data ?? []).filter((f) => !f.builtin);
   const prov = provenanceOf(item);
   return (
     <dl className="fieldstrip">
@@ -163,6 +166,15 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
           <BoardField item={item} write={write} boards={boards} />
         </dd>
       </div>
+      {/* custom fields follow the built-ins, in the order the project ranks them */}
+      {custom.map((def) => (
+        <div className="field-row" key={def.id} data-field={def.id}>
+          <dt>{fieldLabel(def)}</dt>
+          <dd>
+            <CustomField item={item} write={write} def={def} />
+          </dd>
+        </div>
+      ))}
       <div className="field-row">
         <dt>{t("detailPane.fieldVersion")}</dt>
         <dd>

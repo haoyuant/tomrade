@@ -47,14 +47,17 @@ shadcn's names are aliased onto ours in the same block. Two are traps:
 
 These are the rules that get broken first, because nothing in the code stops you.
 
-**A board owns its issues; a view slices one board.** The sidebar answers
-"which workstream", the board space answers "which slice of it". `items.board_id`
-is the ownership; a view is a stored `(groupBy, columns, filter, wip)`. Dragging
-writes the grouped field and **never** `board_id` — moving a workstream is a
-deliberate act, which is why it lives in board settings as a bulk move.
+**The backlog is one dataset; a view is a saved way of looking at it.** Every
+attribute an issue has is a *field* — built-in (status, priority, epic, labels,
+workstream, updated…) or one the project added — and a view is a *layout*
+(Board, Table, Graph) plus a query over fields: filter, column by, group by
+(swimlanes), sort by, the fields shown. Workstream is a field like the others:
+`items.board_id` stores it, a Workstream column or swimlane writes it on drop,
+and the Fields sheet is where its options are renamed and retired. The sidebar
+answers "which view", never "which container".
 
-**Leaving a project is titlebar chrome.** The sidebar holds boards and
-cross-board scopes and nothing else. Home *leaves* the project, the switcher
+**Leaving a project is titlebar chrome.** The sidebar holds the project's
+views and the door to its fields, and nothing else. Home *leaves* the project, the switcher
 *rebinds* it — two jobs, two controls, separated by a hairline not a slash.
 Configuring one is chrome too: the switcher's foot inside a project, the card's
 own gear on the projects grid, and nowhere in the sidebar.
@@ -86,8 +89,9 @@ and refuses past either end with a toast rather than failing silently.
 version numbers, metric rows. Not prose — that is what `.num` is for.
 
 **The live query is the render source of truth.** A saved view is a stored
-query; the bar edits a clone. "Saved" and "showing" can differ, and the
-difference is always visible — the bar offers both ways out.
+layout and query; the bar and the layout switch edit a draft. "Saved" and
+"showing" can differ, and the difference is always visible — the bar offers
+Save view, Discard and Save as new, and nothing saves behind the user's back.
 
 **A supplied `baseVersion` is enforced for every author.** That is what makes
 the conflict banner real: a human drag that races an agent write is refused
@@ -101,9 +105,10 @@ in `packages/write` show what that costs.
 provenance. Contributed badges render in the card foot beside the labels, in
 the tag tones the design already has; a plugin cannot put anything in the gutter.
 
-**Nothing destructive strands a row.** A board that still owns issues refuses to
-be deleted, and so does undoing the creation of a board work has since been moved
-onto — `InUseError` carries the count. Deleting *or purging* an epic releases its
+**Nothing destructive strands a row.** A workstream that still holds issues, or
+is the project's last, refuses to be deleted, and so does undoing the creation of
+one that work has since been moved onto — `InUseError` carries the count; a
+project's last view refuses to go for the same reason. Deleting *or purging* an epic releases its
 children; deleting a project takes its oplog with it — items, boards, views and
 any purge tombstone naming it, which is why those sweeps run *before* the rows
 they scope through are deleted; a delete snapshot carries the item's labels and
@@ -178,8 +183,8 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 
 | Prototype | Here | Why |
 |---|---|---|
-| `design/board-settings.html` says "a board is a saved view … the same issue can appear on any number of boards" | A board owns its issues | The standalone file is the older model. `workspace-board.html`'s in-page dialog, `DESIGN.md` §3 and the prototype's own TOM-142 all say the board is the container. |
-| `DESIGN.md` §3 says views are tabs over the board | No tab strip | The prototype never built one; its CSS says "There is no view picker in the chrome". Views are reached from the palette, the board-settings roster and the breadcrumb. |
+| `design/board-settings.html` says "a board is a saved view … the same issue can appear on any number of boards" | A workstream is a field value; a view is a saved query | The prototype's board was the container; since Sep 2026 the container is the project and "board" names a layout, the way GitHub Projects uses the word. |
+| `DESIGN.md` §3 says views are tabs over the board | Views are the sidebar's rows | One list, any layout; the tab strip the prototype never built is not needed once the sidebar stopped holding containers. |
 | Settings says "one project is one SQLite file" | One file holds every project | Storage layout was out of scope for a UI rebuild; the copy was changed to match reality. |
 | `--space-10` / `--space-12` declared only in `workspace-board.html` | Declared once, for all screens | The other five prototype files silently lost `.wrap` padding. |
 | Prototype toasts print `now ago` | `now` stays bare | `agoLabel()` in `domain.ts`. |
@@ -191,7 +196,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 `pnpm --filter @tomrade/desktop test:ui` boots the same plugin tree the app
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port — over a
 throwaway database seeded with the prototype's sample project
-(`apps/desktop/scripts/seed.mjs`). It asserts 218 behaviours and writes a
+(`apps/desktop/scripts/seed.mjs`). It asserts 249 behaviours and writes a
 screenshot per screen and per theme into `apps/desktop/scripts/shots/`. It
 needs the dev server up (`pnpm dev:ui`) *and* a built backend — it loads
 `apps/desktop/dist` and every plugin's `dist`, so a new channel is invisible to

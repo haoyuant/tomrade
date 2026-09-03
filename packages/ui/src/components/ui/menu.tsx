@@ -11,6 +11,7 @@ export function Menu({
   onOpenChange,
   align = "start",
   wide,
+  modal = false,
   children
 }: {
   trigger: ReactNode;
@@ -19,10 +20,12 @@ export function Menu({
   onOpenChange?: (open: boolean) => void;
   align?: "start" | "end";
   wide?: boolean;
+  /** Inside a modal sheet the sheet's scroll lock swallows the wheel over a portaled menu; a modal menu brings its own. */
+  modal?: boolean;
   children: ReactNode;
 }) {
   return (
-    <RadixMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
+    <RadixMenu.Root open={open} onOpenChange={onOpenChange} modal={modal}>
       <RadixMenu.Trigger asChild>{trigger}</RadixMenu.Trigger>
       <RadixMenu.Portal>
         <RadixMenu.Content className={cn("menu is-floating", wide && "wide")} align={align} sideOffset={6} aria-label={label}>
@@ -115,9 +118,15 @@ export function MenuRadioItem({
 
 /** A footer row that opens something *over* this screen: no arrow, because
  *  nothing is being left behind. */
-export function MenuActionItem({ icon, name, onSelect }: { icon: ReactNode; name: string; onSelect: () => void }) {
+export function MenuActionItem({ icon, name, onSelect, keepOpen }: { icon: ReactNode; name: string; onSelect: () => void; /** For a row that opens a second stage inside the same menu. */ keepOpen?: boolean }) {
   return (
-    <RadixMenu.Item className="menu-row m-link" onSelect={onSelect}>
+    <RadixMenu.Item
+      className="menu-row m-link"
+      onSelect={(e) => {
+        if (keepOpen) e.preventDefault();
+        onSelect();
+      }}
+    >
       <span className="m-mark">{icon}</span>
       <span className="m-name">{name}</span>
     </RadixMenu.Item>

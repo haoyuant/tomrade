@@ -1,6 +1,5 @@
 import { agentPanel } from "./agentPanel";
 import { board } from "./board";
-import { boardSettingsDialog } from "./boardSettingsDialog";
 import { card } from "./card";
 import { commandPalette } from "./commandPalette";
 import { common } from "./common";
@@ -8,6 +7,7 @@ import { deleteIssueDialog } from "./deleteIssueDialog";
 import { destination } from "./destination";
 import { detailPane } from "./detailPane";
 import { fields } from "./fields";
+import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
 import { newIssueDialog } from "./newIssueDialog";
@@ -21,6 +21,7 @@ import { queryBar } from "./queryBar";
 import { settingsDialog } from "./settingsDialog";
 import { sidebar } from "./sidebar";
 import { statusBar } from "./statusBar";
+import { table } from "./table";
 import { storageBlock } from "./storageBlock";
 import { theme } from "./theme";
 import { titleBar } from "./titleBar";
@@ -37,10 +38,10 @@ export const en = {
   settingsDialog: settingsDialog.en,
   playbooks: playbooks.en,
   pluginsPanel: pluginsPanel.en,
-  boardSettingsDialog: boardSettingsDialog.en,
   deleteIssueDialog: deleteIssueDialog.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
+  fieldsDialog: fieldsDialog.en,
   destination: destination.en,
   toast: toast.en,
 
@@ -58,6 +59,7 @@ export const en = {
   workspace: workspace.en,
   board: board.en,
   card: card.en,
+  table: table.en,
   graphView: graphView.en,
   queryBar: queryBar.en,
   workspaceContext: workspaceContext.en,
@@ -75,10 +77,10 @@ export const zh: typeof en = {
   settingsDialog: settingsDialog.zh,
   playbooks: playbooks.zh,
   pluginsPanel: pluginsPanel.zh,
-  boardSettingsDialog: boardSettingsDialog.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,
+  fieldsDialog: fieldsDialog.zh,
   destination: destination.zh,
   toast: toast.zh,
 
@@ -96,6 +98,7 @@ export const zh: typeof en = {
   workspace: workspace.zh,
   board: board.zh,
   card: card.zh,
+  table: table.zh,
   graphView: graphView.zh,
   queryBar: queryBar.zh,
   workspaceContext: workspaceContext.zh,

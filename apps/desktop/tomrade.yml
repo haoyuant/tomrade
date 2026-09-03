@@ -14,6 +14,9 @@ modules:
   - id: oplog
     title: History
     required: true
+  - id: fields
+    title: Fields
+    required: true
   - id: items
     title: Issues
     required: true
@@ -62,6 +65,10 @@ plugins:
     name: "@tomrade/oplog"
   - id: write-policy
     name: "@tomrade/write"
+  # The field registry: built-in fields plus each project's own. Items inject it
+  # to validate custom values, so it sits beside them in the required set.
+  - id: fields
+    name: "@tomrade/fields"
   - id: items
     name: "@tomrade/items"
   - id: boards

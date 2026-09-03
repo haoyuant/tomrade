@@ -12,6 +12,7 @@ import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
+  CustomField,
   DepsField,
   EpicField,
   IssueBody,
@@ -22,9 +23,9 @@ import {
   StatusField,
   useIssueWriter
 } from "~/components/issue/fields";
-import { PROVENANCE, STATUS, agoLabel, provenanceOf } from "~/lib/domain";
+import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useBoards, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
+import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
 const FLOW: ItemStatus[] = ["backlog", "todo", "doing", "verifying", "done"];
@@ -38,6 +39,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const items = useItems(projectId);
   const boards = useBoards(projectId);
   const labels = useLabels(projectId);
+  const fields = useFields(projectId);
   const history = useHistory(items.data?.find((i) => i.id === itemId || i.key === itemId)?.id);
   const { write } = useIssueWriter(projectId);
   const undo = useUndo(projectId);
@@ -157,6 +159,16 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
                   <BoardField item={item} write={write} boards={boards.data ?? []} />
                 </span>
               </span>
+              {(fields.data ?? [])
+                .filter((f) => !f.builtin)
+                .map((def) => (
+                  <span className="fs-item" key={def.id} data-field={def.id}>
+                    <span className="fs-k">{fieldLabel(def)}</span>
+                    <span className="fs-v">
+                      <CustomField item={item} write={write} def={def} />
+                    </span>
+                  </span>
+                ))}
               {/* Kind is structure: an epic names a column, so it is not a field
                   you flip in passing. */}
               <span className="fs-item">

@@ -37,7 +37,7 @@ describe("the artifact", () => {
     const other = items.create({ title: "Blocked one", boardId: board.id, by: "ai:mcp" });
     items.addRelation(ticket.id, other.id);
     const second = boards.create({ projectId: project.id, name: "Second" });
-    views.setRank(views.listForBoard(second.id)[0].id, ticket.id, 3.5);
+    views.setRank(views.listForProject(project.id)[0].id, ticket.id, 3.5);
 
     const before = exportState(db, project.id);
     const dir = tmp("artifact");

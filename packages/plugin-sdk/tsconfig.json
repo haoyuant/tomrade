@@ -24,6 +24,9 @@
       "path": "../domain"
     },
     {
+      "path": "../fields"
+    },
+    {
       "path": "../ipc"
     },
     {

@@ -50,6 +50,9 @@ importers:
       '@tomrade/engine-scripted':
         specifier: workspace:*
         version: link:../../packages/engine-scripted
+      '@tomrade/fields':
+        specifier: workspace:*
+        version: link:../../packages/fields
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -385,6 +388,31 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/fields:
+    dependencies:
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/ipc:
     dependencies:
       cordis:
@@ -406,6 +434,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/fields':
+        specifier: workspace:*
+        version: link:../fields
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -536,6 +567,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/fields':
+        specifier: workspace:*
+        version: link:../fields
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -714,6 +748,9 @@ importers:
       '@tomrade/db':
         specifier: workspace:*
         version: link:../db
+      '@tomrade/fields':
+        specifier: workspace:*
+        version: link:../fields
       '@tomrade/items':
         specifier: workspace:*
         version: link:../items
@@ -785,6 +822,9 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.32
         version: 1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tomrade/fields':
+        specifier: workspace:*
+        version: link:../fields
       '@xyflow/react':
         specifier: 12.11.5
         version: 12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -14,6 +14,19 @@ export const listItemsFilterSchema = z.object({
   parentId: z.string().nullable().optional()
 });
 
+export const fieldValueSchema = z.union([z.string(), z.number()]);
+
+/** A key set to null clears the value. */
+export const fieldsPatchSchema = z.record(z.string(), fieldValueSchema.nullable());
+
+export const filterClauseSchema = z.object({
+  field: z.string(),
+  op: z.enum(["in", "not-in", "contains", "gte", "lte"]),
+  values: z.array(fieldValueSchema.nullable())
+});
+
+export const sortKeySchema = z.object({ field: z.string(), dir: z.enum(["asc", "desc"]) });
+
 export const createItemSchema = z.object({
   title: z.string().min(1),
   body: z.string().nullable().optional(),
@@ -23,7 +36,8 @@ export const createItemSchema = z.object({
   labels: z.array(z.string()).optional(),
   parentId: z.string().nullable().optional(),
   projectId: z.string().optional(),
-  boardId: z.string().optional()
+  boardId: z.string().optional(),
+  fields: fieldsPatchSchema.optional()
 });
 
 export const patchSchema = z.object({
@@ -35,5 +49,6 @@ export const patchSchema = z.object({
   labels: z.array(z.string()).optional(),
   blocks: z.array(z.string()).optional(),
   parentId: z.string().nullable().optional(),
-  rank: z.number().optional()
+  rank: z.number().optional(),
+  fields: fieldsPatchSchema.optional()
 });

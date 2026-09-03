@@ -17,14 +17,23 @@ const BOARDS = [
   { key: "bd-shell", name: "Desktop shell", icon: "i-monitor", subtitle: "apps/desktop" }
 ];
 
+/** Saved views on top of the project's defaults (Backlog / Recently updated). `board` names a workstream the view is pinned to. */
 const VIEWS = [
-  { board: "bd-ui", name: "Sprint 12", icon: "i-clock", groupBy: "status", columns: ["todo", "doing", "verifying", "done"], wip: { doing: 3 } },
-  { board: "bd-ui", name: "Bugs", icon: "i-bug", groupBy: "status", columns: ["todo", "doing", "verifying", "done"], filter: { labels: ["bug"] } },
-  { board: "bd-ui", name: "Agent writes", icon: "i-pen", groupBy: "status", columns: ["todo", "doing", "verifying", "done"], filter: { provenance: ["ai"] } },
-  { board: "bd-core", name: "Sprint 12", icon: "i-clock", groupBy: "status", columns: ["todo", "doing", "verifying", "done"] },
-  { board: "bd-core", name: "Triage", icon: "i-filter", groupBy: "status", columns: ["backlog", "todo"], filter: { priorities: [0, 1, 2] } },
-  { board: "bd-mcp", name: "Triage", icon: "i-filter", groupBy: "status", columns: ["backlog", "todo"] },
-  { board: "bd-shell", name: "Sprint 12", icon: "i-clock", groupBy: "status", columns: ["todo", "doing", "verifying", "done"] }
+  { name: "Sprint 12", icon: "i-clock", layout: "board", board: "bd-ui", columns: ["todo", "doing", "verifying", "done"], wip: { doing: 3 }, groupBy: "epic" },
+  { name: "Bugs", icon: "i-bug", layout: "board", filter: [{ field: "labels", op: "in", values: ["bug"] }], columns: ["todo", "doing", "verifying", "done"] },
+  { name: "Agent writes", icon: "i-pen", layout: "table", filter: [{ field: "provenance", op: "in", values: ["ai"] }], sortBy: [{ field: "updated", dir: "desc" }] },
+  { name: "Triage", icon: "i-filter", layout: "board", filter: [{ field: "priority", op: "in", values: ["0", "1", "2"] }], columns: ["backlog", "todo"] },
+  { name: "By workstream", icon: "i-panel", layout: "board", columnBy: "board", sortBy: [{ field: "priority", dir: "asc" }] },
+  { name: "Epics", icon: "i-stack", layout: "board", columnBy: "epic" },
+  { name: "Dependencies", icon: "i-graph", layout: "graph", graph: "deps" }
+];
+
+/** Custom fields the sample project carries, and which design keys hold a value. */
+const FIELDS = [
+  { key: "points", name: "Story points", type: "number", values: { "TOM-142": 8, "TOM-8": 5, "TOM-31": 3, "TOM-19": 2, "TOM-23": 3, "TOM-64": 1, "TOM-77": 5, "TOM-51": 1 } },
+  { key: "area", name: "Area", type: "select", options: [{ name: "Web" }, { name: "Desktop", description: "Electron shell" }, { name: "Agent" }], values: { "TOM-142": "Web", "TOM-8": "Web", "TOM-31": "Agent", "TOM-118": "Desktop", "TOM-2": "Desktop" } },
+  { key: "due", name: "Due", type: "date", values: { "TOM-142": "2026-09-12", "TOM-8": "2026-09-05", "TOM-64": "2026-09-04" } },
+  { key: "reviewed", name: "Reviewed", type: "checkbox", values: { "TOM-44": 1, "TOM-33": 1, "TOM-51": 1 } }
 ];
 
 /** The keys the design's data uses, in ITEMS order — `blocks` is written in terms
@@ -78,28 +87,39 @@ const ITEMS = [
     "Dead code carried over from the pre-reboot architecture. Superseded by the Vite SPA setup; closing rather than fixing."]
 ];
 
-export function seedDesignProject({ db, projects, boards, views, items }) {
+export function seedDesignProject({ db, projects, boards, views, items, fields }) {
   const project = projects.create({
     name: "Tomrade Next",
     description: "Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents.",
     keyPrefix: "TOM"
   });
 
-  const firstBoard = boards.list(project.id).find((b) => !b.across);
+  const firstBoard = boards.list(project.id)[0];
   const boardIds = new Map();
   for (const spec of BOARDS) {
     boardIds.set(spec.key, boards.create({ projectId: project.id, name: spec.name, icon: spec.icon, subtitle: spec.subtitle }).id);
   }
-  // the seeded "Main" board is redundant once the four real workstreams exist
+  // the seeded "Main" workstream is redundant once the four real ones exist
   if (firstBoard) boards.remove(firstBoard.id);
 
-  // the named views open first; the auto "All work" view stays in the roster behind them
-  for (const [key, boardId] of boardIds) {
-    const named = VIEWS.filter((v) => v.board === key);
-    named.forEach((v, i) =>
-      views.create({ boardId, name: v.name, icon: v.icon, groupBy: v.groupBy, columns: v.columns, filter: v.filter ?? {}, wip: v.wip ?? {}, rank: i })
-    );
-    for (const v of views.listForBoard(boardId)) if (v.name === "All work") views.update(v.id, { rank: named.length });
+  const fieldIds = new Map();
+  const optionIds = new Map();
+  for (const spec of FIELDS) {
+    const def = fields.create({ projectId: project.id, name: spec.name, type: spec.type, options: spec.options });
+    fieldIds.set(spec.key, def.id);
+    for (const o of def.options) optionIds.set(`${spec.key}:${o.name}`, o.id);
+  }
+
+  // the named views go after the defaults, so the project still opens on its plain Board
+  for (const v of VIEWS) {
+    const filter = [...(v.board ? [{ field: "board", op: "in", values: [boardIds.get(v.board)] }] : []), ...(v.filter ?? [])];
+    views.create({
+      projectId: project.id,
+      name: v.name,
+      icon: v.icon,
+      layout: v.layout,
+      query: { filter, columnBy: v.columnBy ?? "status", columns: v.columns ?? [], groupBy: v.groupBy ?? null, sortBy: v.sortBy ?? [], wip: v.wip ?? {}, graph: v.graph ?? null }
+    });
   }
 
   const epicIds = new Map();
@@ -132,6 +152,14 @@ export function seedDesignProject({ db, projects, boards, views, items }) {
   }
 
   const byDesignKey = new Map(ITEMS.map((row, i) => [DESIGN_KEYS[i], byTitle.get(row[1])]));
+  for (const spec of FIELDS) {
+    for (const [designKey, raw] of Object.entries(spec.values)) {
+      const item = byDesignKey.get(designKey);
+      if (!item) continue;
+      const value = spec.type === "select" ? optionIds.get(`${spec.key}:${raw}`) : raw;
+      items.update(item.id, { fields: { [fieldIds.get(spec.key)]: value } }, "human");
+    }
+  }
   ITEMS.forEach((row, i) => {
     const from = byDesignKey.get(DESIGN_KEYS[i]);
     for (const key of row[8] ?? []) {
@@ -157,5 +185,5 @@ export function seedDesignProject({ db, projects, boards, views, items }) {
   // creating and retiring the placeholder board is fixture setup, not history
   db.prepare("DELETE FROM oplog WHERE entity = 'board'").run();
 
-  return { project, boardIds };
+  return { project, boardIds, fieldIds };
 }

@@ -8,7 +8,7 @@ export const fields = {
     itsEpicFallback: "its epic",
     unlinkedToast: "Unlinked {{key}} from its epic",
     movedToBoardToast: "Moved {{key}} to {{name}}",
-    anotherBoardFallback: "another board",
+    anotherBoardFallback: "another workstream",
     addedLabelToast: "Added {{name}} to {{key}}",
     removedLabelToast: "Removed {{name}} from {{key}}",
 
@@ -47,7 +47,11 @@ export const fields = {
     issueDescriptionAria: "Issue description",
     editedDescriptionToast: "Edited the description of {{key}}",
 
-    conflictToast: "An agent wrote to {{key}} first — it re-read, so try again."
+    conflictToast: "An agent wrote to {{key}} first — it re-read, so try again.",
+
+    setFieldToast: "Set {{name}} on {{key}}",
+    clearedFieldToast: "Cleared {{name}} on {{key}}",
+    missingOption: "(removed option)"
   },
   zh: {
     parentEpicLabel: "所属需求组",
@@ -58,7 +62,7 @@ export const fields = {
     itsEpicFallback: "其需求组",
     unlinkedToast: "已取消 {{key}} 与其需求组的关联",
     movedToBoardToast: "已将 {{key}} 移动到 {{name}}",
-    anotherBoardFallback: "另一个看板",
+    anotherBoardFallback: "另一个工作流",
     addedLabelToast: "已将 {{name}} 添加到 {{key}}",
     removedLabelToast: "已从 {{key}} 移除 {{name}}",
 
@@ -97,6 +101,10 @@ export const fields = {
     issueDescriptionAria: "工作项描述",
     editedDescriptionToast: "已编辑 {{key}} 的描述",
 
-    conflictToast: "有智能体先一步写入了 {{key}}——内容已重新读取，请重试。"
+    conflictToast: "有智能体先一步写入了 {{key}}——内容已重新读取，请重试。",
+
+    setFieldToast: "已设置 {{key}} 的 {{name}}",
+    clearedFieldToast: "已清空 {{key}} 的 {{name}}",
+    missingOption: "（已删除的选项）"
   }
 };

@@ -1,25 +1,6 @@
 import type { Db } from "@tomrade/db";
-import { InUseError, VIEW_KIND_META, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View, type ViewKind } from "@tomrade/domain";
+import { InUseError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomrade/domain";
 import { rowToEntry, type OplogRow } from "./rows.js";
-
-interface ViewRow {
-  id: string;
-  board_id: string;
-  name: string;
-  icon: string;
-  group_by: string;
-  kind: string;
-  columns_json: string;
-  filter_json: string;
-  wip_json: string;
-  rank: number;
-  created_at: number;
-  updated_at: number;
-}
-
-interface BoardSnapshot extends Board {
-  views?: ViewRow[];
-}
 
 interface ViewSnapshot extends View {
   ranks?: { item_id: string; rank: number }[];
@@ -62,6 +43,13 @@ function restoreItem(db: Db, item: Item): void {
     humanLocked: item.humanLocked ? 1 : 0
   });
 
+  // Values are replaced to match the snapshot; a field deleted since has no row to land on and is skipped.
+  db.prepare("DELETE FROM item_values WHERE item_id = ?").run(item.id);
+  for (const [fieldId, value] of Object.entries(item.fields ?? {})) {
+    if (!db.prepare("SELECT 1 FROM fields WHERE id = ?").get(fieldId)) continue;
+    db.prepare("INSERT INTO item_values (item_id, field_id, num, text) VALUES (?, ?, ?, ?)").run(item.id, fieldId, typeof value === "number" ? value : null, typeof value === "number" ? null : value);
+  }
+
   db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(item.id);
   for (const name of item.labels ?? []) {
     const label = db.prepare("SELECT id FROM labels WHERE project_id = ? AND name = ?").get(item.projectId, name) as { id: string } | undefined;
@@ -83,28 +71,24 @@ function restoreItem(db: Db, item: Item): void {
 }
 
 function restoreView(db: Db, view: ViewSnapshot): void {
-  // A snapshot written before `kind` replaced the freeform name/groupBy pair
-  // (view rename/removal predates this build) still carries the old fields.
-  const legacy = view as unknown as { groupBy?: ViewKind };
-  const kind: ViewKind = view.kind ?? legacy.groupBy ?? "status";
-  const meta = VIEW_KIND_META[kind] ?? VIEW_KIND_META.status;
+  // A snapshot from before views moved to the project has no projectId/layout;
+  // it cannot be placed, so it is restored as an empty board view on the board's project.
+  const legacy = view as unknown as { boardId?: string; columns?: string[]; filter?: unknown; wip?: Record<string, number> };
+  const projectId =
+    view.projectId ?? (legacy.boardId ? ((db.prepare("SELECT project_id FROM boards WHERE id = ?").get(legacy.boardId) as { project_id: string } | undefined)?.project_id ?? "") : "");
   db.prepare(
-    `INSERT INTO views (id, board_id, name, icon, group_by, kind, columns_json, filter_json, wip_json, rank, created_at, updated_at)
-     VALUES (@id, @boardId, @name, @icon, @groupBy, @kind, @columns, @filter, @wip, @rank, @createdAt, @updatedAt)
+    `INSERT INTO views (id, project_id, board_id, name, icon, layout, query_json, rank, created_at, updated_at)
+     VALUES (@id, @projectId, '', @name, @icon, @layout, @query, @rank, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
-       name = excluded.name, icon = excluded.icon, group_by = excluded.group_by, kind = excluded.kind,
-       columns_json = excluded.columns_json, filter_json = excluded.filter_json,
-       wip_json = excluded.wip_json, rank = excluded.rank, updated_at = excluded.updated_at`
+       project_id = excluded.project_id, name = excluded.name, icon = excluded.icon, layout = excluded.layout,
+       query_json = excluded.query_json, rank = excluded.rank, updated_at = excluded.updated_at`
   ).run({
     id: view.id,
-    boardId: view.boardId,
-    name: meta.name,
-    icon: meta.icon,
-    groupBy: meta.groupBy,
-    kind,
-    columns: JSON.stringify(view.columns),
-    filter: JSON.stringify(view.filter),
-    wip: JSON.stringify(view.wip),
+    projectId,
+    name: view.name ?? "View",
+    icon: view.icon ?? "i-board",
+    layout: view.layout ?? "board",
+    query: JSON.stringify(view.query ? normalizeQuery(view.query) : normalizeQuery({ columns: legacy.columns, wip: legacy.wip })),
     rank: view.rank,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt
@@ -115,10 +99,10 @@ function restoreView(db: Db, view: ViewSnapshot): void {
   }
 }
 
-function restoreBoard(db: Db, board: BoardSnapshot): void {
+function restoreBoard(db: Db, board: Board): void {
   db.prepare(
     `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
-     VALUES (@id, @projectId, @name, @icon, @subtitle, @across, @sort, @note, @rank, @createdAt, @updatedAt)
+     VALUES (@id, @projectId, @name, @icon, @subtitle, 0, NULL, @note, @rank, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name, icon = excluded.icon, subtitle = excluded.subtitle,
        note = excluded.note, rank = excluded.rank, updated_at = excluded.updated_at`
@@ -128,22 +112,11 @@ function restoreBoard(db: Db, board: BoardSnapshot): void {
     name: board.name,
     icon: board.icon,
     subtitle: board.subtitle,
-    across: board.across ? 1 : 0,
-    sort: board.sort,
     note: board.note,
     rank: board.rank,
     createdAt: board.createdAt,
     updatedAt: board.updatedAt
   });
-  for (const v of board.views ?? []) {
-    // A snapshot taken before `kind` existed carries only group_by; back-fill from it.
-    const row = v as ViewRow & { kind?: string };
-    db.prepare(
-      `INSERT INTO views (id, board_id, name, icon, group_by, kind, columns_json, filter_json, wip_json, rank, created_at, updated_at)
-       VALUES (@id, @board_id, @name, @icon, @group_by, @kind, @columns_json, @filter_json, @wip_json, @rank, @created_at, @updated_at)
-       ON CONFLICT(id) DO NOTHING`
-    ).run({ ...row, kind: row.kind ?? row.group_by });
-  }
 }
 
 /** Apply the inverse of one entry. Throws InUseError when a created board now owns issues. */
@@ -151,6 +124,7 @@ function revertEntry(db: Db, entry: OplogEntry): void {
   if (entry.entity === "item") {
     if (entry.op === "create") {
       db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM item_values WHERE item_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
       db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
@@ -160,12 +134,10 @@ function revertEntry(db: Db, entry: OplogEntry): void {
   } else if (entry.entity === "board") {
     if (entry.op === "create") {
       const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(entry.entityId) as { n: number }).n;
-      if (owned > 0) throw new InUseError(entry.entityId, `That board now owns ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
-      db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE board_id = ?)").run(entry.entityId);
-      db.prepare("DELETE FROM views WHERE board_id = ?").run(entry.entityId);
+      if (owned > 0) throw new InUseError(entry.entityId, `That workstream now holds ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
       db.prepare("DELETE FROM boards WHERE id = ?").run(entry.entityId);
     } else if (entry.before) {
-      restoreBoard(db, entry.before as BoardSnapshot);
+      restoreBoard(db, entry.before as Board);
     }
   } else if (entry.entity === "view") {
     if (entry.op === "create") {

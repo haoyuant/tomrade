@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 4;
+export const CORE_SCHEMA_VERSION = 6;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at    INTEGER NOT NULL
 );
 
+-- A board is an option of the built-in Workstream field. across/sort are
+-- legacy columns (cross-board scopes became saved views); kept for stability.
 CREATE TABLE IF NOT EXISTS boards (
   id            TEXT PRIMARY KEY,
   project_id    TEXT NOT NULL,
@@ -31,18 +33,16 @@ CREATE TABLE IF NOT EXISTS boards (
   updated_at    INTEGER NOT NULL
 );
 
--- name/icon/group_by are legacy columns the app no longer reads; kept for
--- schema stability. kind is the four-value built-in view identity.
+-- A saved view: one layout plus one query, owned by the project. board_id is a
+-- legacy column from when views sliced one board; always '' now.
 CREATE TABLE IF NOT EXISTS views (
   id            TEXT PRIMARY KEY,
-  board_id      TEXT NOT NULL,
+  project_id    TEXT NOT NULL DEFAULT '',
+  board_id      TEXT NOT NULL DEFAULT '',
   name          TEXT NOT NULL,
   icon          TEXT NOT NULL DEFAULT 'i-board',
-  group_by      TEXT NOT NULL DEFAULT 'status',
-  kind          TEXT NOT NULL DEFAULT 'status',
-  columns_json  TEXT NOT NULL DEFAULT '[]',
-  filter_json   TEXT NOT NULL DEFAULT '{}',
-  wip_json      TEXT NOT NULL DEFAULT '{}',
+  layout        TEXT NOT NULL DEFAULT 'board',
+  query_json    TEXT NOT NULL DEFAULT '{}',
   rank          REAL NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
@@ -94,6 +94,35 @@ CREATE TABLE IF NOT EXISTS view_item_rank (
   PRIMARY KEY (view_id, item_id)
 );
 
+-- Custom fields: definitions per project, options for selects, and one sparse
+-- value row per (item, field). A number lands in num, everything else in text,
+-- so a sort or range filter on any field is one indexed column.
+CREATE TABLE IF NOT EXISTS fields (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  type          TEXT NOT NULL,
+  rank          REAL NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS field_options (
+  id            TEXT PRIMARY KEY,
+  field_id      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  rank          REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS item_values (
+  item_id       TEXT NOT NULL,
+  field_id      TEXT NOT NULL,
+  num           REAL,
+  text          TEXT,
+  PRIMARY KEY (item_id, field_id)
+);
+
 CREATE TABLE IF NOT EXISTS oplog (
   seq           INTEGER PRIMARY KEY AUTOINCREMENT,
   entity        TEXT NOT NULL,
@@ -116,13 +145,17 @@ CREATE TABLE IF NOT EXISTS plugin_migrations (
 /** Created after migration: the unique key index cannot exist while backfill is pending. */
 export const CORE_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id, rank);
-CREATE INDEX IF NOT EXISTS idx_views_board ON views(board_id, rank);
+CREATE INDEX IF NOT EXISTS idx_views_project ON views(project_id, rank);
 CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_name ON labels(project_id, name);
 CREATE INDEX IF NOT EXISTS idx_item_labels_label ON item_labels(label_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to ON item_relations(to_item_id);
+CREATE INDEX IF NOT EXISTS idx_fields_project ON fields(project_id, rank);
+CREATE INDEX IF NOT EXISTS idx_field_options_field ON field_options(field_id, rank);
+CREATE INDEX IF NOT EXISTS idx_item_values_num ON item_values(field_id, num);
+CREATE INDEX IF NOT EXISTS idx_item_values_text ON item_values(field_id, text);
 CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge';
 CREATE INDEX IF NOT EXISTS idx_oplog_run ON oplog(run_id) WHERE run_id IS NOT NULL;
 `;

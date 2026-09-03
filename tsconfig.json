@@ -41,6 +41,9 @@
       "path": "./packages/engine-scripted"
     },
     {
+      "path": "./packages/fields"
+    },
+    {
       "path": "./packages/ipc"
     },
     {

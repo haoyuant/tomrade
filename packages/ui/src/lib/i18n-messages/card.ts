@@ -1,10 +1,12 @@
 export const card = {
   en: {
     keyboardHint: "Enter to open · ← → to move column",
-    ownedByBoard: "Owned by the {{board}} board"
+    inWorkstream: "In the {{board}} workstream",
+    checked: "✓"
   },
   zh: {
     keyboardHint: "回车打开 · ← → 移动列",
-    ownedByBoard: "归属于「{{board}}」看板"
+    inWorkstream: "属于「{{board}}」工作流",
+    checked: "✓"
   }
 };

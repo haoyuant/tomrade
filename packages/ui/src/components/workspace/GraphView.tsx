@@ -21,7 +21,6 @@ import type { Item } from "@tomrade/domain";
 import type { GraphEdge } from "@tomrade/contributions";
 import { Icon } from "~/components/icons";
 import { useIssueWriter } from "~/components/issue/fields";
-import { matchesQuery } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useGraphEdges, useGraphs } from "~/lib/queries";
 import { Card } from "./Card";
@@ -75,12 +74,14 @@ function Canvas() {
   const { write } = useIssueWriter(ws.project.id);
   const { fitView } = useReactFlow();
   const graphs = useGraphs();
-  const graph = (graphs.data ?? []).find((g) => g.id === ws.query.graph);
-  const serverEdges = useGraphEdges(ws.project.id, ws.query.graph);
+  // The view names its edge source; a view saved before any plugin contributed one falls back to the first.
+  const graphId = ws.query.graph ?? graphs.data?.[0]?.id ?? null;
+  const graph = (graphs.data ?? []).find((g) => g.id === graphId);
+  const serverEdges = useGraphEdges(ws.project.id, graphId);
   const editable = graph?.edits === "blocks";
 
-  // The facets still slice the board; only the column picker has no say here.
-  const shown = useMemo(() => ws.owned.filter((i) => matchesQuery(i, ws.query)), [ws.owned, ws.query]);
+  // The filter decides which issues are nodes; the sort is irrelevant on a canvas.
+  const shown = ws.visible;
   const shownIds = useMemo(() => new Set(shown.map((i) => i.id)), [shown]);
   const edges = useMemo(() => (serverEdges.data ?? []).filter((e) => shownIds.has(e.from) && shownIds.has(e.to)), [serverEdges.data, shownIds]);
 
@@ -135,11 +136,7 @@ function Canvas() {
     const source = findItem(connection.source);
     const target = findItem(connection.target);
     if (!source || !target || source.blocks.includes(target.id)) return;
-    write(
-      source,
-      { blocks: [...source.blocks, target.id] },
-      t("graphView.linkedToast", { from: source.key, to: target.key })
-    );
+    write(source, { blocks: [...source.blocks, target.id] }, t("graphView.linkedToast", { from: source.key, to: target.key }));
   };
 
   const onEdgesDelete = (deleted: Edge[]) => {
@@ -147,16 +144,12 @@ function Canvas() {
       const source = findItem(edge.source);
       const target = findItem(edge.target);
       if (!source || !target || !source.blocks.includes(target.id)) continue;
-      write(
-        source,
-        { blocks: source.blocks.filter((id) => id !== target.id) },
-        t("graphView.unlinkedToast", { from: source.key, to: target.key })
-      );
+      write(source, { blocks: source.blocks.filter((id) => id !== target.id) }, t("graphView.unlinkedToast", { from: source.key, to: target.key }));
     }
   };
 
   return (
-    <div className="graph-region" data-graph={ws.query.graph ?? undefined}>
+    <div className="graph-region" data-graph={graphId ?? undefined}>
       <ReactFlow
         nodes={nodes}
         edges={flowEdges}
@@ -175,6 +168,7 @@ function Canvas() {
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--rule)" />
       </ReactFlow>
       {shown.length === 0 && <p className="col-empty graph-empty">{t("graphView.empty")}</p>}
+      {!graphId && <p className="col-empty graph-empty">{t("graphView.noGraph")}</p>}
       <div className="graph-foot">
         <span className="meta-txt dense">{editable ? t("graphView.editHint") : t("graphView.readOnlyHint")}</span>
         <button type="button" className="btn btn-ghost" style={{ padding: "4px 8px" }} onClick={() => void fitView({ padding: 0.15, maxZoom: 1, duration: 250 })}>
@@ -185,7 +179,7 @@ function Canvas() {
   );
 }
 
-/** The board region in graph mode: issues as cards, dependencies as arrows. */
+/** The graph layout: issues as cards, a plugin's edges as arrows. */
 export function GraphView() {
   return (
     <ReactFlowProvider>

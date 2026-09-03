@@ -13,8 +13,8 @@ export const newProjectDialog = {
     storedNote:
       "Every project lives in this file to begin with. Give it a destination — a folder, or a git repository — in its own settings, and it publishes a copy of itself there as text.",
     createdWithProject: "Created with the project",
-    mainBoardBullet: "A {{main}} board, with the view every board is guaranteed to have",
-    crossBoardBullet: "Two cross-board scopes: {{recent}} and {{epics}}",
+    mainBoardBullet: "A {{main}} workstream — the built-in field every issue is filed under",
+    defaultViewsBullet: "The default views: {{views}}",
     cancel: "Cancel",
     createProject: "Create project"
   },
@@ -31,8 +31,8 @@ export const newProjectDialog = {
     storedOnMachineLabel: "保存在此设备上",
     storedNote: "每个项目一开始都保存在这个文件里。可以在项目自己的设置中为它指定一个发布目标——一个文件夹，或者一个 git 仓库——它会把自身发布为一份文本副本到那里。",
     createdWithProject: "随项目一起创建",
-    mainBoardBullet: "一个 {{main}} 看板，带有每个看板都必定拥有的那个视图",
-    crossBoardBullet: "两个跨看板范围：{{recent}} 与 {{epics}}",
+    mainBoardBullet: "一个 {{main}} 工作流——每个工作项都归于其下的内置字段",
+    defaultViewsBullet: "默认视图：{{views}}",
     cancel: "取消",
     createProject: "创建项目"
   }

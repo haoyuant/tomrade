@@ -3,8 +3,24 @@ import { Context, Service } from "cordis";
 import type { Db } from "@tomrade/db";
 import type { Oplog } from "@tomrade/oplog";
 import { write } from "@tomrade/write";
-import { DependencyCycleError, NotFoundError, type Author, type CreateItemInput, type Item, type ItemKind, type ItemStatus, type ListItemsFilter, type Patch, type Priority } from "@tomrade/domain";
+import {
+  DependencyCycleError,
+  NotFoundError,
+  type Author,
+  type CreateItemInput,
+  type FieldValue,
+  type FilterClause,
+  type Item,
+  type ItemKind,
+  type ItemStatus,
+  type ListItemsFilter,
+  type Patch,
+  type Priority,
+  type SortKey
+} from "@tomrade/domain";
+import type { Fields, StoredValue } from "@tomrade/fields";
 import { registerChannels } from "./channels.js";
+import { compileQuery } from "./query.js";
 import { registerTools } from "./tools.js";
 
 declare module "cordis" {
@@ -34,7 +50,7 @@ interface ItemRow {
 
 const SELECT_ITEM = "SELECT i.*, COALESCE(p.key_prefix, 'TOM') AS key_prefix FROM items i LEFT JOIN projects p ON p.id = i.project_id";
 
-function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks" | "blockedBy"> {
+function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks" | "blockedBy" | "fields"> {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -68,13 +84,22 @@ function groupBy<T, V>(rows: T[], key: (r: T) => string, value: (r: T) => V): Ma
 
 /** better-sqlite3 cannot bind booleans. */
 function toSqlParams(item: Item): Record<string, unknown> {
-  const { labels: _labels, blocks: _blocks, blockedBy: _blockedBy, key: _key, ...rest } = item;
+  const { labels: _labels, blocks: _blocks, blockedBy: _blockedBy, fields: _fields, key: _key, ...rest } = item;
   return { ...rest, humanLocked: item.humanLocked ? 1 : 0 };
+}
+
+/** The stored shape read back as a value: a number if one is there, the text otherwise. */
+const valueOfRow = (r: { num: number | null; text: string | null }): FieldValue => (r.num !== null ? r.num : (r.text as string));
+
+export interface ItemQuery {
+  projectId: string;
+  filter?: FilterClause[];
+  sortBy?: SortKey[];
 }
 
 export class Items extends Service {
   static provide = "items";
-  static inject = ["db", "oplog"];
+  static inject = ["db", "oplog", "fields"];
 
   constructor(ctx: Context) {
     super(ctx, "items");
@@ -91,6 +116,10 @@ export class Items extends Service {
 
   private get oplog(): Oplog {
     return this.ctx.oplog;
+  }
+
+  private get fields(): Fields {
+    return this.ctx.fields;
   }
 
   list(filter: ListItemsFilter = {}): Item[] {
@@ -115,6 +144,22 @@ export class Items extends Service {
     return this.hydrate(this.db.prepare(sql).all(...params) as ItemRow[]);
   }
 
+  /**
+   * A view's query, run in SQL: filter clauses over any field, sort keys over
+   * any sortable field, empty values last, ties by rank then recency. What the
+   * renderer computes over its cached list for the live board, this computes
+   * for tools and for projects too large to hold in memory.
+   */
+  query(q: ItemQuery): Item[] {
+    const defs = new Map(this.fields.list(q.projectId).map((f) => [f.id, f]));
+    const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs);
+    const sql = `${SELECT_ITEM} ${compiled.joins.join(" ")} WHERE i.project_id = ?${compiled.where.length ? " AND " + compiled.where.join(" AND ") : ""} ORDER BY ${[...compiled.orderBy, "i.rank ASC", "i.updated_at DESC"].join(", ")}`;
+    // The project id binds after the joins and before the clause params.
+    const joinCount = compiled.joins.length;
+    const params = [...compiled.params.slice(0, joinCount), q.projectId, ...compiled.params.slice(joinCount)];
+    return this.hydrate(this.db.prepare(sql).all(...params) as ItemRow[]);
+  }
+
   get(id: string): Item | null {
     const row = this.db.prepare(`${SELECT_ITEM} WHERE i.id = ?`).get(id) as ItemRow | undefined;
     return row ? this.hydrate([row])[0] : null;
@@ -134,6 +179,7 @@ export class Items extends Service {
     const proj = this.db.prepare("SELECT key_prefix, next_key_num FROM projects WHERE id = ?").get(projectId) as { key_prefix: string; next_key_num: number } | undefined;
     if (!proj) throw new NotFoundError(projectId);
     const now = Date.now();
+    const stored = this.fields.normalize(projectId, input.fields ?? {});
     const item: Item = {
       id: randomUUID(),
       projectId,
@@ -150,6 +196,7 @@ export class Items extends Service {
       labels: input.labels ?? [],
       blocks: [],
       blockedBy: [],
+      fields: mergeFields({}, input.fields ?? {}, stored),
       updatedAt: now,
       updatedBy: input.by,
       version: 1,
@@ -165,6 +212,7 @@ export class Items extends Service {
           )
           .run(toSqlParams(item));
         this.writeLabels(item.id, projectId, item.labels);
+        this.writeValues(item.id, stored);
         this.oplog.append({ entity: "item", op: "create", entityId: item.id, baseVersion: null, before: null, after: item, by: input.by, at: now });
         return item;
       })
@@ -179,7 +227,10 @@ export class Items extends Service {
     const existing = this.get(id);
     if (!existing) throw new NotFoundError(id);
     if (patch.blocks) patch = { ...patch, blocks: this.checkBlocks(existing, patch.blocks) };
-    const next: Item = { ...existing, ...patch, updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
+    // Validated before the write path sees it, so a bad value is refused as a bad value, not as a conflict.
+    const stored = patch.fields ? this.fields.normalize(existing.projectId, patch.fields) : null;
+    const { fields: fieldsPatch, ...rest } = patch;
+    const next: Item = { ...existing, ...rest, fields: mergeFields(existing.fields, fieldsPatch ?? {}, stored ?? new Map()), updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
     return write(this.ctx, { entity: "item", op: "update", id, by, baseVersion: opts.baseVersion, before: existing, after: next, patch }, () =>
       this.db.transaction(() => {
         this.db
@@ -192,6 +243,7 @@ export class Items extends Service {
           .run(toSqlParams(next));
         if (patch.labels) this.writeLabels(id, next.projectId, next.labels);
         if (patch.blocks) this.writeBlocks(id, next.blocks);
+        if (stored) this.writeValues(id, stored);
         this.oplog.append({ entity: "item", op: "update", entityId: id, baseVersion: existing.version, before: existing, after: next, by, at: next.updatedAt });
         return next;
       })
@@ -300,9 +352,10 @@ export class Items extends Service {
     return (this.db.prepare("SELECT name FROM labels WHERE project_id = ? ORDER BY name ASC").all(projectId) as { name: string }[]).map((r) => r.name);
   }
 
-  /** Cut labels, edges and ranks, and release children so they never point at a dead epic. */
+  /** Cut labels, values, edges and ranks, and release children so they never point at a dead epic. */
   private detach(id: string): void {
     this.db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(id);
+    this.db.prepare("DELETE FROM item_values WHERE item_id = ?").run(id);
     this.db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(id, id);
     this.db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(id);
     this.db.prepare("UPDATE items SET parent_id = NULL WHERE parent_id = ?").run(id);
@@ -318,10 +371,35 @@ export class Items extends Service {
     const relRows = this.db
       .prepare(`SELECT from_item_id, to_item_id FROM item_relations WHERE kind = 'blocks' AND (from_item_id IN (${placeholders}) OR to_item_id IN (${placeholders}))`)
       .all(...ids, ...ids) as { from_item_id: string; to_item_id: string }[];
+    const valueRows = this.db.prepare(`SELECT item_id, field_id, num, text FROM item_values WHERE item_id IN (${placeholders})`).all(...ids) as {
+      item_id: string;
+      field_id: string;
+      num: number | null;
+      text: string | null;
+    }[];
     const labels = groupBy(labelRows, (r) => r.item_id, (r) => r.name);
     const blocks = groupBy(relRows, (r) => r.from_item_id, (r) => r.to_item_id);
     const blockedBy = groupBy(relRows, (r) => r.to_item_id, (r) => r.from_item_id);
-    return rows.map((row) => ({ ...baseItem(row), labels: labels.get(row.id) ?? [], blocks: blocks.get(row.id) ?? [], blockedBy: blockedBy.get(row.id) ?? [] }));
+    const values = groupBy(valueRows, (r) => r.item_id, (r) => [r.field_id, valueOfRow(r)] as const);
+    return rows.map((row) => ({
+      ...baseItem(row),
+      labels: labels.get(row.id) ?? [],
+      blocks: blocks.get(row.id) ?? [],
+      blockedBy: blockedBy.get(row.id) ?? [],
+      fields: Object.fromEntries(values.get(row.id) ?? [])
+    }));
+  }
+
+  /** Upsert or clear one row per field named in the patch; untouched fields keep their rows. */
+  private writeValues(itemId: string, stored: Map<string, StoredValue | null>): void {
+    for (const [fieldId, value] of stored) {
+      if (value === null) this.db.prepare("DELETE FROM item_values WHERE item_id = ? AND field_id = ?").run(itemId, fieldId);
+      else {
+        this.db
+          .prepare("INSERT INTO item_values (item_id, field_id, num, text) VALUES (?, ?, ?, ?) ON CONFLICT(item_id, field_id) DO UPDATE SET num = excluded.num, text = excluded.text")
+          .run(itemId, fieldId, value.num, value.text);
+      }
+    }
   }
 
   /** Replace an item's labels, creating any that are new to the project. */
@@ -335,4 +413,17 @@ export class Items extends Service {
       this.db.prepare("INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)").run(itemId, label.id);
     }
   }
+}
+
+/**
+ * The merged `fields` an item carries after a patch: a key the registry
+ * normalized to nothing (null, or an unticked checkbox) is dropped, absent keys survive.
+ */
+function mergeFields(current: Record<string, FieldValue>, patch: Record<string, FieldValue | null>, stored: Map<string, StoredValue | null>): Record<string, FieldValue> {
+  const out = { ...current };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || stored.get(k) === null) delete out[k];
+    else out[k] = v;
+  }
+  return out;
 }

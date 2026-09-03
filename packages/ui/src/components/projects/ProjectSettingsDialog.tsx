@@ -15,7 +15,6 @@ type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
  *  claim a number the workspace disagrees with. */
 interface Facts {
   workstreams: number;
-  scopes: number;
   views: number;
   issues: number;
   open: number;
@@ -37,8 +36,7 @@ function useFacts(projectId: string): Facts {
     const all = items.data ?? [];
     const tickets = all.filter(isTicket);
     return {
-      workstreams: (boards.data ?? []).filter((b) => !b.across).length,
-      scopes: (boards.data ?? []).filter((b) => b.across).length,
+      workstreams: (boards.data ?? []).length,
       views: (views.data ?? []).length,
       issues: tickets.length,
       open: tickets.filter((i) => i.status !== "done" && i.status !== "cancelled").length,
@@ -183,7 +181,6 @@ function SettingsFace({ project, onClose, onRequestDelete }: { project: Project;
           <p className="meta-txt dense" style={{ marginTop: 6 }}>
             {tx("projectSettingsDialog.holdsSummary", {
               workstreams: <Num>{facts.workstreams}</Num>,
-              scopes: <Num>{facts.scopes}</Num>,
               views: <Num>{facts.views}</Num>,
               issues: <Num>{facts.issues}</Num>,
               open: <Num>{facts.open}</Num>,
@@ -246,9 +243,8 @@ function SettingsFace({ project, onClose, onRequestDelete }: { project: Project;
 /** The plain-English list of what goes with the project. */
 function consequences(project: Project, facts: Facts, last: boolean, published: boolean, t: T): string[] {
   const out = [
-    t("projectSettingsDialog.consequenceBoardsScopesViews", {
+    t("projectSettingsDialog.consequenceWorkstreamsViews", {
       boards: countPhrase(t, facts.workstreams, "projectSettingsDialog.boardOne", "projectSettingsDialog.boardMany"),
-      scopes: countPhrase(t, facts.scopes, "projectSettingsDialog.scopeOne", "projectSettingsDialog.scopeMany"),
       views: countPhrase(t, facts.views, "projectSettingsDialog.viewOne", "projectSettingsDialog.viewMany")
     }),
     t("projectSettingsDialog.consequenceIssues", {

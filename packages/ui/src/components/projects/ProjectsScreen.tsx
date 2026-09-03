@@ -35,7 +35,7 @@ function useProjectFacts(projects: Project[]): Map<string, Facts> {
     const boards = (results[i * 2]?.data ?? []) as Board[];
     const items = (results[i * 2 + 1]?.data ?? []) as Item[];
     facts.set(p.id, {
-      boards: boards.filter((b) => !b.across).length,
+      boards: boards.length,
       open: items.filter((i2) => i2.status !== "done" && i2.status !== "cancelled").length,
       total: items.length,
       lastWrite: items.length ? Math.max(...items.map((i2) => i2.updatedAt)) : null
@@ -183,7 +183,7 @@ export function ProjectsScreen() {
                 key={p.id}
                 project={p}
                 facts={facts.get(p.id)}
-                boardNames={(boardQueries[i]?.data ?? []).filter((b) => !b.across).map((b) => b.name)}
+                boardNames={(boardQueries[i]?.data ?? []).map((b) => b.name)}
                 onOpenSettings={() => setConfiguring(p.id)}
               />
             ))}
