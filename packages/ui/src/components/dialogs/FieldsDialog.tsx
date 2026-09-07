@@ -81,8 +81,9 @@ function FieldRow({ def, count, selected, onSelect }: { def: FieldDef; count: nu
   );
   if (!onSelect) return <div className="cfg-row fld-row is-builtin" data-field={def.id}>{body}</div>;
   return (
-    <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-pressed={selected} onClick={onSelect}>
+    <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-expanded={selected} onClick={onSelect}>
       {body}
+      <Icon className="fld-chev" name="i-chevdown" size={11} aria-hidden />
     </button>
   );
 }
@@ -448,15 +449,16 @@ export function FieldsDialog({
           <div className="fld-list" style={{ marginTop: "var(--space-2)" }}>
             {builtin.map((f) =>
               f.id === "board" ? (
-                <FieldRow key={f.id} def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
+                <div key={f.id} className="fld-item">
+                  <FieldRow def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
+                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} />}
+                </div>
               ) : (
                 <FieldRow key={f.id} def={f} count={null} />
               )
             )}
           </div>
-          {selectedId === "board" ? (
-            <WorkstreamEditor projectId={projectId} items={rows} />
-          ) : (
+          {selectedId !== "board" && (
             <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
               {t("fieldsDialog.builtinNote")}
             </p>
@@ -473,12 +475,13 @@ export function FieldsDialog({
             <>
               <div className="fld-list" style={{ marginTop: "var(--space-2)" }}>
                 {custom.map((f) => (
-                  <FieldRow key={f.id} def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
+                  <div key={f.id} className="fld-item">
+                    <FieldRow def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
+                    {f.id === selectedId && <FieldEditor projectId={projectId} def={f} count={holders(rows, f.id)} onDeleted={() => setSelectedId(null)} />}
+                  </div>
                 ))}
               </div>
-              {selected ? (
-                <FieldEditor projectId={projectId} def={selected} count={holders(rows, selected.id)} onDeleted={() => setSelectedId(null)} />
-              ) : (
+              {!selected && (
                 <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
                   {t("fieldsDialog.selectHint")}
                 </p>

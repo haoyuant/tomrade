@@ -1045,19 +1045,22 @@ strong { font-weight: 500; }
 
 .cfg-row { display: flex; align-items: center; gap: var(--space-3); padding: 9px var(--space-3);
   border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.cfg-row + .cfg-row { margin-top: 5px; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
-/* the field registry: one row per field, the selected custom one opens an editor beneath the list */
-.fld-list { display: flex; flex-direction: column; }
+/* the field registry: one row per field; an interactive row's editor opens directly beneath that row */
+.fld-list { display: flex; flex-direction: column; gap: 5px; }
+.fld-item { display: flex; flex-direction: column; gap: 5px; }
 .fld-row { width: 100%; text-align: left; font: inherit; color: inherit; cursor: default; }
 button.fld-row { cursor: pointer; }
 button.fld-row:hover { background: var(--surface-warm); }
 button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .fld-row.is-selected { border-color: var(--accent); }
 .fld-row.is-builtin .cfg-name { color: var(--muted); }
-.fld-editor { margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+/* only an interactive row gets a chevron, so it reads as operable before anyone hovers it */
+.fld-row .fld-chev { color: var(--meta); flex-shrink: 0; transition: transform var(--motion-fast) var(--ease-standard); }
+.fld-row[aria-expanded="true"] .fld-chev { transform: rotate(180deg); }
+.fld-editor { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
 .fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
 /* a workstream row adds a glyph and a count in front of the way out */
 .fld-ws { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto auto; }
