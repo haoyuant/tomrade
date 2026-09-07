@@ -79,15 +79,21 @@ export class Oplog extends Service {
     return this.ctx.hub.deviceId;
   }
 
-  /** Lands one row, stamped with this machine's id; `device_seq` is the row's own seq, so the op id is `device:seq`. */
+  /**
+   * Lands one row, stamped with this machine's id and the next number in this
+   * machine's own sequence. `device_seq` is deliberately not the row's seq: a
+   * cache rebuilt from the folder renumbers rows but keeps their device_seq, and
+   * the op id `device:device_seq` must stay unique and monotonic through that.
+   */
   append(projectId: string, entry: OplogAppend): OplogEntry {
     const db = this.db(projectId);
     const patch = patchOf(entry.op, entry.before, entry.after, entry.patch);
     const runId = entry.runId !== undefined ? entry.runId : (writeContext.getStore()?.runId ?? null);
+    const deviceSeq = ((db.prepare("SELECT MAX(device_seq) AS m FROM oplog WHERE device = ?").get(this.device) as { m: number | null }).m ?? 0) + 1;
     const info = db
       .prepare(
-        `INSERT INTO oplog (entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, patch_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO oplog (entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         entry.entity,
@@ -100,10 +106,10 @@ export class Oplog extends Service {
         entry.at,
         runId,
         this.device,
+        deviceSeq,
         patch ? JSON.stringify(patch) : null
       );
     const seq = Number(info.lastInsertRowid);
-    db.prepare("UPDATE oplog SET device_seq = ? WHERE seq = ?").run(seq, seq);
     const row = db.prepare("SELECT * FROM oplog WHERE seq = ?").get(seq) as OplogRow;
     const stored = rowToEntry(row);
     this.ctx.emit("oplog/appended", projectId, stored);

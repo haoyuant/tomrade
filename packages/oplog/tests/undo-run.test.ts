@@ -39,13 +39,13 @@ describe("run-scoped oplog", () => {
     expect(oplog.recent(project.id, 1)[0].runId).toBe("run-2");
   });
 
-  it("every row carries this machine's id, its own seq as device_seq, and the fields it changed", async () => {
+  it("every row carries this machine's id, its place in this machine's own sequence, and the fields it changed", async () => {
     const { items, oplog, hub, project, board } = await fresh();
     const a = items.create({ projectId: project.id, boardId: board.id, title: "A", by: "human" });
     items.update(project.id, a.id, { status: "doing" }, "human");
     const [update, create] = oplog.recent(project.id, 2);
     expect(create.device).toBe(hub.deviceId);
-    expect(create.deviceSeq).toBe(create.seq);
+    expect(update.deviceSeq).toBe(create.deviceSeq! + 1);
     expect((create.patch as { title?: string }).title).toBe("A");
     expect(update.patch).toMatchObject({ status: "doing", version: 2 });
     expect(update.patch).not.toHaveProperty("title");
@@ -120,5 +120,20 @@ describe("run-scoped oplog", () => {
     expect(oplog.historyFor(project.id, "item", a.id).map((e) => e.device)).toContain("k2a9");
     // ⌘Z reaches our own create, stepping over the foreign row
     expect(oplog.undoLast(project.id)?.entry.op).toBe("create");
+  });
+
+  it("keeps this machine's sequence going after a rebuild renumbered the rows", async () => {
+    const { items, oplog, hub, project, board } = await fresh();
+    // A rebuilt cache holds our own history read back from the folder: fresh row ids, the old device_seq values.
+    oplog.importForeign(
+      project.id,
+      [7, 8, 9].map((n) => ({ device: hub.deviceId, deviceSeq: n, entity: "item" as const, entityId: "x", op: "update" as const, baseVersion: 1, by: "human" as const, at: n, patch: { status: "doing" } })),
+      { includeOwn: true }
+    );
+    const a = items.create({ projectId: project.id, boardId: board.id, title: "After rebuild", by: "human" });
+    const create = oplog.historyFor(project.id, "item", a.id)[0];
+    expect(create.deviceSeq).toBe(10);
+    expect(create.seq).not.toBe(create.deviceSeq);
+    expect(() => items.update(project.id, a.id, { status: "doing" }, "human")).not.toThrow();
   });
 });
