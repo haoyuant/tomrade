@@ -40,8 +40,8 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "create_workstream",
       title: "Create a workstream",
-      description: "Add a workstream to a project. `subtitle` is the package or area it stands for (e.g. packages/ui). Logged and undoable.",
-      input: z.object({ projectId: z.string().optional(), name: z.string().min(1), icon: glyph, subtitle: z.string().nullable().optional(), note: z.string().nullable().optional(), repoId: z.string().nullable().optional(), repoPath: z.string().optional() }),
+      description: "Add a workstream to a project. `repoId` (from list_repos) and `repoPath` name the code repository it stands for, if any. Logged and undoable.",
+      input: z.object({ projectId: z.string().optional(), name: z.string().min(1), icon: glyph, note: z.string().nullable().optional(), repoId: z.string().nullable().optional(), repoPath: z.string().optional() }),
       execute: ({ projectId, ...rest }, inv) => ctx.boards.create({ ...rest, projectId: requireProjectId("create_workstream", projectId, inv) }, inv.by)
     })
   );
@@ -50,11 +50,11 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "update_workstream",
       title: "Rename or describe a workstream",
-      description: "Change a workstream's name, icon, subtitle, note, or the repository it stands for (repoId from list_repos, repoPath inside it). Logged and undoable.",
+      description: "Change a workstream's name, icon, note, or the repository it stands for (repoId from list_repos, repoPath inside it). Logged and undoable.",
       input: z.object({
         projectId: z.string().optional(),
         id: z.string(),
-        patch: z.object({ name: z.string().min(1).optional(), icon: glyph, subtitle: z.string().nullable().optional(), note: z.string().nullable().optional(), repoId: z.string().nullable().optional(), repoPath: z.string().optional() })
+        patch: z.object({ name: z.string().min(1).optional(), icon: glyph, note: z.string().nullable().optional(), repoId: z.string().nullable().optional(), repoPath: z.string().optional() })
       }),
       execute: ({ projectId, id, patch }, inv) => ctx.boards.update(requireProjectId("update_workstream", projectId, inv), id, patch, inv.by)
     })

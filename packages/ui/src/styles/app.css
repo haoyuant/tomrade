@@ -354,9 +354,8 @@ strong { font-weight: 500; }
 .side-row .side-count { font-size: var(--text-xs); color: var(--meta); }
 /* on the warm surface --meta drops to 4.34:1 — one step up keeps small
    labels above the 4.5 floor in the hovered and current rows */
-.side-row:hover .side-count, .side-row:hover .side-pkg,
-.side-row[aria-current="true"] .side-count,
-.side-row[aria-current="true"] .side-pkg { color: var(--muted); }
+.side-row:hover .side-count,
+.side-row[aria-current="true"] .side-count { color: var(--muted); }
 .side-add { color: var(--muted); font-size: var(--text-sm); }
 .side-add:hover { color: var(--fg); }
 
@@ -364,10 +363,6 @@ strong { font-weight: 500; }
  * whatever its layout. Workstreams are a field, not a place, so they live in
  * the query bar and the Fields sheet rather than here. */
 .side-row.is-view { color: var(--fg); }
-/* a workstream row stacks its name over the package it stands for */
-.side-stack { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
-.side-stack .side-name { flex: none; }
-.side-pkg { font-family: var(--font-mono); font-size: 11px; line-height: 1.3; color: var(--meta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the glyph chooser: a select-shaped trigger that wears the current glyph */
 .icon-pick {
   display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 9px;
@@ -1063,7 +1058,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .fld-editor { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
 .fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
 /* a workstream row adds a glyph and a count in front of the way out */
-.fld-ws { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto auto; }
+.fld-ws { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .vs-fields, .vs-columns { display: flex; flex-direction: column; }
 .stack-1 { display: flex; flex-direction: column; gap: var(--space-1); }
 .wip-in { width: 68px; padding: 4px 7px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;

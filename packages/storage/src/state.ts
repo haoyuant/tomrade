@@ -43,7 +43,7 @@ const VIEWS_OF = "SELECT id FROM views WHERE project_id = @projectId";
 export const TABLES: readonly TableSpec[] = [
   {
     name: "boards",
-    columns: ["id", "project_id", "name", "icon", "subtitle", "across", "sort", "note", "rank", "repo_id", "repo_path", "created_at", "updated_at"],
+    columns: ["id", "project_id", "name", "icon", "across", "sort", "note", "rank", "repo_id", "repo_path", "created_at", "updated_at"],
     scope: "project_id = @projectId",
     order: "id"
   },

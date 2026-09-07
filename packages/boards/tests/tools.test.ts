@@ -15,7 +15,7 @@ async function withTools() {
 describe("workstream tools", () => {
   it("create, update and list are attributed to the agent and undoable", async () => {
     const { run, boards, oplog, project } = await withTools();
-    const created = (await run("create_workstream", { name: "Docs", subtitle: "docs/" })) as { id: string; name: string };
+    const created = (await run("create_workstream", { name: "Docs" })) as { id: string; name: string };
     expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main", "Docs"]);
     expect(oplog.historyFor(project.id, "board", created.id, 1)[0]?.by).toBe("ai:test");
     const renamed = (await run("update_workstream", { id: created.id, patch: { name: "Documentation" } })) as { name: string };

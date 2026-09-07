@@ -155,7 +155,6 @@ export interface Board {
   projectId: string;
   name: string;
   icon: string;
-  subtitle: string | null;
   note: string | null;
   rank: number;
   /** The code repository this workstream stands for, if any; several workstreams may share one. */
@@ -170,14 +169,13 @@ export interface CreateBoardInput {
   projectId: string;
   name: string;
   icon?: string;
-  subtitle?: string | null;
   note?: string | null;
   rank?: number;
   repoId?: string | null;
   repoPath?: string;
 }
 
-export type BoardPatch = Partial<Pick<Board, "name" | "icon" | "subtitle" | "note" | "rank" | "repoId" | "repoPath">>;
+export type BoardPatch = Partial<Pick<Board, "name" | "icon" | "note" | "rank" | "repoId" | "repoPath">>;
 
 /**
  * A code repository a project's workstreams stand for. Shared: the remote URL

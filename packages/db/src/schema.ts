@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 8;
+export const CORE_SCHEMA_VERSION = 9;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS boards (
   project_id    TEXT NOT NULL,
   name          TEXT NOT NULL,
   icon          TEXT NOT NULL DEFAULT 'i-board',
-  subtitle      TEXT,
   across        INTEGER NOT NULL DEFAULT 0,
   sort          TEXT,
   note          TEXT,

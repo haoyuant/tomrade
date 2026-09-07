@@ -11,10 +11,10 @@ const EPICS = [
 ];
 
 const BOARDS = [
-  { key: "bd-ui", name: "UI", icon: "i-panel", subtitle: "packages/ui" },
-  { key: "bd-core", name: "Core & data", icon: "i-stack", subtitle: "packages/core" },
-  { key: "bd-mcp", name: "MCP server", icon: "i-plug", subtitle: "packages/mcp" },
-  { key: "bd-shell", name: "Desktop shell", icon: "i-monitor", subtitle: "apps/desktop" }
+  { key: "bd-ui", name: "UI", icon: "i-panel" },
+  { key: "bd-core", name: "Core & data", icon: "i-stack" },
+  { key: "bd-mcp", name: "MCP server", icon: "i-plug" },
+  { key: "bd-shell", name: "Desktop shell", icon: "i-monitor" }
 ];
 
 /** Saved views on top of the project's defaults (Backlog / Recently updated). `board` names a workstream the view is pinned to. */
@@ -99,7 +99,7 @@ export function seedDesignProject({ dbFor, projects, boards, views, items, field
   const firstBoard = boards.list(project.id)[0];
   const boardIds = new Map();
   for (const spec of BOARDS) {
-    boardIds.set(spec.key, boards.create({ projectId: project.id, name: spec.name, icon: spec.icon, subtitle: spec.subtitle }).id);
+    boardIds.set(spec.key, boards.create({ projectId: project.id, name: spec.name, icon: spec.icon }).id);
   }
   // the seeded "Main" workstream is redundant once the four real ones exist
   if (firstBoard) boards.remove(project.id, firstBoard.id);

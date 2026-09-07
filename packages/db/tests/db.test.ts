@@ -125,6 +125,13 @@ describe("views lifted to the project (v5 → v6), through the split", () => {
     migrateCore(db.handle);
     expect(views.listForProject(project.id).map((v) => v.id)).toEqual(before);
   });
+
+  it("drops a column a later build stopped reading, without losing the row it sat on", async () => {
+    const { cacheDir, legacyPath, uiBoardId } = v5File();
+    const { db, boards, project } = await fresh({ cacheDir, legacyPath });
+    expect((db.prepare("PRAGMA table_info(boards)").all() as { name: string }[]).map((c) => c.name)).not.toContain("subtitle");
+    expect(boards.get(project.id, uiBoardId)?.name).toBe("UI");
+  });
 });
 
 describe("the legacy split", () => {

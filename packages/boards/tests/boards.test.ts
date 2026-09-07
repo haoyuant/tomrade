@@ -17,7 +17,7 @@ describe("boards (workstreams)", () => {
   it("creating a workstream is undoable and creates no views", async () => {
     const { oplog, boards, views, project } = await fresh();
     const before = views.listForProject(project.id).length;
-    const b = boards.create({ projectId: project.id, name: "UI", icon: "i-panel", subtitle: "packages/ui" });
+    const b = boards.create({ projectId: project.id, name: "UI", icon: "i-panel" });
     expect(views.listForProject(project.id).length).toBe(before);
     expect(oplog.undoLast(project.id)?.summary).toBe("Removed UI");
     expect(boards.get(project.id, b.id)).toBeNull();
@@ -48,11 +48,11 @@ describe("boards (workstreams)", () => {
     expect([items.get(project.id, a.id)!.boardId, items.get(project.id, b.id)!.boardId].sort()).toEqual([board.id, dest.id].sort());
   });
 
-  it("updating a workstream keeps its glyph and package", async () => {
+  it("updating a workstream keeps its glyph", async () => {
     const { boards, project } = await fresh();
     const b = boards.create({ projectId: project.id, name: "UI" });
-    const next = boards.update(project.id, b.id, { name: "Interface", icon: "i-panel", subtitle: "packages/ui" });
-    expect([next.name, next.icon, next.subtitle]).toEqual(["Interface", "i-panel", "packages/ui"]);
+    const next = boards.update(project.id, b.id, { name: "Interface", icon: "i-panel" });
+    expect([next.name, next.icon]).toEqual(["Interface", "i-panel"]);
   });
 
   it("a workstream that still holds issues, or is the last one, refuses to be deleted", async () => {

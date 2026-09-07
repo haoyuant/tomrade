@@ -17,7 +17,6 @@ interface BoardRow {
   project_id: string;
   name: string;
   icon: string;
-  subtitle: string | null;
   note: string | null;
   rank: number;
   repo_id: string | null;
@@ -32,7 +31,6 @@ function rowToBoard(r: BoardRow): Board {
     projectId: r.project_id,
     name: r.name,
     icon: r.icon,
-    subtitle: r.subtitle,
     note: r.note,
     rank: r.rank,
     repoId: r.repo_id ?? null,
@@ -86,7 +84,6 @@ export class Boards extends Service {
       projectId: input.projectId,
       name: input.name,
       icon: input.icon ?? "i-board",
-      subtitle: input.subtitle ?? null,
       note: input.note ?? null,
       rank: nextRank,
       repoId: input.repoId ?? null,
@@ -97,8 +94,8 @@ export class Boards extends Service {
     return write(this.ctx, { projectId: input.projectId, entity: "board", op: "create", id: board.id, by, before: null, after: board }, () =>
       db.transaction(() => {
         db.prepare(
-          `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, repo_id, repo_path, created_at, updated_at)
-             VALUES (@id, @projectId, @name, @icon, @subtitle, 0, NULL, @note, @rank, @repoId, @repoPath, @createdAt, @updatedAt)`
+          `INSERT INTO boards (id, project_id, name, icon, across, sort, note, rank, repo_id, repo_path, created_at, updated_at)
+             VALUES (@id, @projectId, @name, @icon, 0, NULL, @note, @rank, @repoId, @repoPath, @createdAt, @updatedAt)`
         ).run(board);
         this.oplog.append(input.projectId, { entity: "board", op: "create", entityId: board.id, baseVersion: null, before: null, after: board, by, at: now });
         return board;
@@ -113,7 +110,7 @@ export class Boards extends Service {
     const next: Board = { ...existing, ...patch, updatedAt: Date.now() };
     return write(this.ctx, { projectId, entity: "board", op: "update", id, by, before: existing, after: next, patch }, () =>
       db.transaction(() => {
-        db.prepare("UPDATE boards SET name = ?, icon = ?, subtitle = ?, note = ?, rank = ?, repo_id = ?, repo_path = ?, updated_at = ? WHERE id = ?").run(next.name, next.icon, next.subtitle, next.note, next.rank, next.repoId, next.repoPath, next.updatedAt, id);
+        db.prepare("UPDATE boards SET name = ?, icon = ?, note = ?, rank = ?, repo_id = ?, repo_path = ?, updated_at = ? WHERE id = ?").run(next.name, next.icon, next.note, next.rank, next.repoId, next.repoPath, next.updatedAt, id);
         this.oplog.append(projectId, { entity: "board", op: "update", entityId: id, baseVersion: null, before: existing, after: next, by, at: next.updatedAt });
         return next;
       })

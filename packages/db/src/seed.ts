@@ -37,8 +37,8 @@ export function seedDefaultViews(db: Queryable, projectId: string, now: number):
 export function seedProject(db: Queryable, projectId: string, now: number): string {
   const boardId = randomUUID();
   db.prepare(
-    `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
-     VALUES (?, ?, 'Main', 'i-board', NULL, 0, NULL, NULL, 0, ?, ?)`
+    `INSERT INTO boards (id, project_id, name, icon, across, sort, note, rank, created_at, updated_at)
+     VALUES (?, ?, 'Main', 'i-board', 0, NULL, NULL, 0, ?, ?)`
   ).run(boardId, projectId, now, now);
   seedDefaultViews(db, projectId, now);
   return boardId;

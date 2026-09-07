@@ -225,7 +225,7 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   );
 }
 
-/** One workstream: glyph, name, package, how many issues it holds, and the way out. */
+/** One workstream: glyph, name, how many issues it holds, and the way out. */
 function WorkstreamRow({ board, count, others, projectId }: { board: Board; count: number; others: Board[]; projectId: string }) {
   const { t, tx } = useI18n();
   const toast = useToast();
@@ -261,13 +261,6 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
     <div className="fld-opt fld-ws" data-board={board.id}>
       <IconPicker compact value={viewIcon(board.icon)} ariaLabel={t("fieldsDialog.workstreamIconAria")} onChange={(icon) => update.mutate({ id: board.id, patch: { icon } }, { onError: fail })} />
       <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-opt-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
-      <RenameInput
-        value={board.subtitle ?? ""}
-        ariaLabel={t("fieldsDialog.workstreamPkgAria")}
-        className="input fld-opt-desc num"
-        placeholder={t("fieldsDialog.workstreamPkgPlaceholder")}
-        onSave={(subtitle) => update.mutate({ id: board.id, patch: { subtitle: subtitle || null } }, { onError: fail })}
-      />
       <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
       {/* The repository the workstream stands for: where its agents run. */}
       <span className="row fld-ws-repo" style={{ gap: 6, gridColumn: "1 / -1" }}>
@@ -344,9 +337,8 @@ function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item
   const add = () => {
     const name = newName.trim();
     if (!name) return;
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     create.mutate(
-      { name, icon: "i-board", subtitle: slug ? `packages/${slug}` : null },
+      { name, icon: "i-board" },
       { onSuccess: (b) => (setNewName(""), toast({ body: tx("fieldsDialog.addedWorkstreamToast", { name: <b>{b.name}</b> }) })), onError: (err) => toast({ body: err.message }) }
     );
   };

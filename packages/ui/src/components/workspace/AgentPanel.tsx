@@ -527,7 +527,7 @@ export function AgentPanel({
             <MenuHead title={t("agentPanel.workstreamLabel")} />
             <MenuRadioItem checked={!pickedBoardId} name={t("agentPanel.wholeProject")} onSelect={() => chooseBoard(null)} />
             {(boardsQ.data ?? []).map((b) => (
-              <MenuRadioItem key={b.id} checked={b.id === pickedBoardId} name={b.name} sub={b.subtitle ?? undefined} onSelect={() => chooseBoard(b.id)} />
+              <MenuRadioItem key={b.id} checked={b.id === pickedBoardId} name={b.name} onSelect={() => chooseBoard(b.id)} />
             ))}
           </Menu>
           <Menu

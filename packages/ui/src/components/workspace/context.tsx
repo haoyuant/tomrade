@@ -228,7 +228,7 @@ export function WorkspaceProvider({
         case "epic":
           return epics.map((e) => ({ key: e.id, name: e.title }));
         case "board":
-          return boardList.map((b) => ({ key: b.id, name: b.name, description: b.subtitle, icon: b.icon }));
+          return boardList.map((b) => ({ key: b.id, name: b.name, icon: b.icon }));
         case "labels":
           return labelList.map((l) => ({ key: l, name: l }));
         default:

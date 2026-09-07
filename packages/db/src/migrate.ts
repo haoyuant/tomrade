@@ -10,6 +10,10 @@ function addColumn(db: Sqlite, table: string, name: string, ddl: string): void {
   if (!columns(db, table).has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`);
 }
 
+function dropColumnIfPresent(db: Sqlite, table: string, name: string): void {
+  if (columns(db, table).has(name)) db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
+}
+
 interface LegacyViewRow {
   id: string;
   board_id: string;
@@ -115,9 +119,10 @@ function liftViewsToProjects(db: Sqlite, now: number): void {
 
 /**
  * Bring a database written by an older build up to CORE_SCHEMA_VERSION.
- * Additive only: rows are preserved and backfilled, never dropped — the one
- * exception is the views table, whose rows are reconciled into the current
- * model rather than kept in a shape nothing reads.
+ * Additive only: rows are preserved and backfilled, never dropped — the
+ * exceptions are the views table, whose rows are reconciled into the current
+ * model rather than kept in a shape nothing reads, and a handful of columns
+ * a later build stopped reading (the row survives; only the column goes).
  */
 export function migrateCore(db: Sqlite): void {
   const from = (db.pragma("user_version", { simple: true }) as number) ?? 0;
@@ -137,6 +142,8 @@ export function migrateCore(db: Sqlite): void {
     addColumn(db, "oplog", "patch_json", "TEXT");
     addColumn(db, "boards", "repo_id", "TEXT");
     addColumn(db, "boards", "repo_path", "TEXT NOT NULL DEFAULT ''");
+    // Superseded by repo_id/repo_path: a real repository reference beats a free-text hint.
+    dropColumnIfPresent(db, "boards", "subtitle");
     addColumn(db, "views", "project_id", "TEXT NOT NULL DEFAULT ''");
     addColumn(db, "views", "layout", "TEXT NOT NULL DEFAULT 'board'");
     addColumn(db, "views", "query_json", "TEXT NOT NULL DEFAULT '{}'");
