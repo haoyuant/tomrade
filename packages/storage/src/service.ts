@@ -693,7 +693,13 @@ export class Storage extends Service {
     const baseCommit = await g.mergeBase(branch);
     const base = baseCommit ? parseArtifact(await g.filesAt(baseCommit, ARTIFACT_DIR), `${baseCommit}`) : this.loadPublished(projectId);
     const theirs = parseArtifact(await g.filesAt(`origin/${branch}`, ARTIFACT_DIR), `origin/${branch}`);
-    if (!theirs) return;
+    if (!theirs) {
+      // The remote has commits but no project — a README from "initialize this
+      // repository", say. Join the histories, keep their files, carry ours over.
+      await g.beginMerge(branch);
+      await this.publish(projectId, "merge");
+      return;
+    }
     if (projectIdOf(theirs) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(theirs));
     const theirLogs: DeviceLog[] = [];
     for (const rel of await g.listAt(`origin/${branch}`, path.join(ARTIFACT_DIR, LOG_DIR))) {
@@ -712,7 +718,7 @@ export class Storage extends Service {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, body, "utf8");
     }
-    await g.beginMergeKeepingOurs(branch);
+    await g.beginMerge(branch);
     await this.publish(projectId, "merge");
   }
 

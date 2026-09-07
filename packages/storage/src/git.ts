@@ -207,13 +207,26 @@ export class GitFolder {
   }
 
   /**
-   * Start a merge commit that keeps our tree: the caller then writes the merged
-   * content over it and commits, so history records both parents and the push
-   * fast-forwards the remote.
+   * Start a merge commit with the remote: their files outside `.tomrade/` come
+   * along (a README GitHub wrote when the repository was made, say), and the
+   * caller then writes the merged artifact over `.tomrade/` and commits, so
+   * history records both parents and the push fast-forwards the remote. Two
+   * machines that each started a repository share no commit yet, hence
+   * unrelated histories are allowed.
    */
-  async beginMergeKeepingOurs(branch: string, name = "origin"): Promise<void> {
-    // Two machines that each started a repository for the same project have no common commit yet.
-    await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", "-s", "ours", `${name}/${branch}`], { cwd: this.dir });
+  async beginMerge(branch: string, name = "origin"): Promise<void> {
+    const r = await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", `${name}/${branch}`], { cwd: this.dir, ok: true });
+    if (r.code === 0) return;
+    const conflicted = (await this.git(["diff", "--name-only", "--diff-filter=U"], { cwd: this.dir, ok: true })).stdout.split("\n").filter(Boolean);
+    if (!conflicted.length) {
+      // Not a content clash: fall back to a merge that keeps our tree outright.
+      await this.git(["merge", "--abort"], { cwd: this.dir, ok: true });
+      await this.git(["merge", "-q", "--no-ff", "--no-commit", "--allow-unrelated-histories", "-s", "ours", `${name}/${branch}`], { cwd: this.dir });
+      return;
+    }
+    // A clash outside the artifact keeps ours; inside it, the caller's merged files overwrite whatever git left.
+    for (const file of conflicted) await this.git(["checkout", "--ours", "--", file], { cwd: this.dir, ok: true });
+    await this.git(["add", "-A", "--", ...conflicted], { cwd: this.dir, ok: true });
   }
 
   /** The artifact's files at a commit, shaped like a folder's. */

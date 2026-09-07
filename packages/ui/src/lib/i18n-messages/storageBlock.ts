@@ -45,7 +45,7 @@ export const storageBlock = {
     rebuiltToast: "Cache rebuilt from the folder",
     cancel: "Cancel",
     divergedWarning:
-      "Both this machine and the folder changed. Neither is overwritten: nothing is published until the two agree. Take the folder's copy by hand, or move this project to a folder of its own.",
+      "Both this machine and the folder changed. Sync now merges them: fields changed on one side are kept, a field changed on both takes the later write and leaves a note in the history. Nothing is dropped silently.",
     hintWithDetail: "{{hint}} {{detail}}.",
     syncedToast: "{{label}} · {{location}}",
 
@@ -58,7 +58,7 @@ export const storageBlock = {
     stateBehindLabel: "Changes waiting",
     stateBehindHint: "The folder has changes this machine has not taken yet.",
     stateDivergedLabel: "Both sides changed",
-    stateDivergedHint: "This machine and the folder both moved on. Nothing is overwritten until you choose.",
+    stateDivergedHint: "This machine and the folder both moved on. Sync now merges the two; only a field changed on both sides leaves a note in the history.",
     stateSyncingLabel: "Syncing…",
     stateSyncingHint: "The folder is still being written or synced; Tomrade will read it once its files agree.",
     stateOfflineLabel: "Cannot reach it",
@@ -113,7 +113,7 @@ export const storageBlock = {
     rebuildYes: "重建",
     rebuiltToast: "已从文件夹重建缓存",
     cancel: "取消",
-    divergedWarning: "此设备与文件夹都发生了变化。两边都不会被覆盖：在二者一致之前不会发布。请手动取用文件夹里的副本，或者把这个项目移动到一个独立的文件夹。",
+    divergedWarning: "此设备与文件夹都发生了变化。点「立即同步」把两边合并：不同字段各自保留，同一字段两边都改过的按时间取后者并在历史里留下说明，不会静默丢弃任何一方。",
     hintWithDetail: "{{hint}}{{detail}}。",
     syncedToast: "{{label}} · {{location}}",
 
@@ -126,7 +126,7 @@ export const storageBlock = {
     stateBehindLabel: "有待获取的更改",
     stateBehindHint: "文件夹里有此设备尚未取回的更改。",
     stateDivergedLabel: "两侧都发生了变化",
-    stateDivergedHint: "此设备与文件夹都各自发生了变化。在你做出选择之前，不会覆盖任何一方。",
+    stateDivergedHint: "此设备与文件夹都各自发生了变化。「立即同步」会把两边合并；只有同一字段两边都改过才会在历史里留下说明。",
     stateSyncingLabel: "同步中…",
     stateSyncingHint: "文件夹还在写入或同步中；文件一致后 Tomrade 会读取它。",
     stateOfflineLabel: "无法连接",

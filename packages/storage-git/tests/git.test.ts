@@ -211,3 +211,28 @@ describe("the Hub as a repository", () => {
     expect((await b.storage.hubInfo()).attachable).toEqual([]);
   });
 });
+
+describe("a repository GitHub initialised", () => {
+  it("joins the histories: the README stays, the project lands, nothing is forced", async () => {
+    const a = await machine("readme");
+    const remote = bareRemote();
+    // "Initialize this repository with a README": one commit nobody made through Tomrade.
+    const seed = path.join(root, `seed-${n++}`);
+    git(["clone", "-q", remote, seed], root);
+    git(["config", "user.email", "gh@localhost"], seed);
+    git(["config", "user.name", "GitHub"], seed);
+    fs.writeFileSync(path.join(seed, "README.md"), "# tomrade-test-project\n");
+    git(["add", "README.md"], seed);
+    git(["commit", "-q", "-m", "Initial commit"], seed);
+    git(["push", "-q", "origin", "HEAD:refs/heads/main"], seed);
+
+    a.items.create({ title: "Bound over a README", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    const status = await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    expect(status.state).toBe("synced");
+    const tree = git(["ls-tree", "-r", "--name-only", "main"], remote).split("\n");
+    expect(tree).toContain("README.md");
+    expect(tree).toContain(".tomrade/project.json");
+    expect(git(["rev-list", "--count", "main"], remote)).toBe("3");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+  });
+});
