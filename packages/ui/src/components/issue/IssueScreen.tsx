@@ -40,7 +40,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const boards = useBoards(projectId);
   const labels = useLabels(projectId);
   const fields = useFields(projectId);
-  const history = useHistory(items.data?.find((i) => i.id === itemId || i.key === itemId)?.id);
+  const history = useHistory(projectId, items.data?.find((i) => i.id === itemId || i.key === itemId)?.id);
   const { write } = useIssueWriter(projectId);
   const undo = useUndo(projectId);
   const navigate = useNavigate();
@@ -202,7 +202,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               <IssueBody item={item} write={write} className="bp-body" />
             </div>
 
-            <PluginSections itemId={item.id} variant="sheet" />
+            <PluginSections projectId={projectId} itemId={item.id} variant="sheet" />
 
             <hr className="rule" />
             <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("detailPane.activityHeading")}</Eyebrow>

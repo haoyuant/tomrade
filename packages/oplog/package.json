@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.oplog — the append-only mutation log: append, read, undo",
+  "description": "ctx.oplog \u2014 the append-only mutation log: append, read, undo",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -19,6 +19,7 @@
   "dependencies": {
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
+    "@tomrade/hub": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/write": "workspace:*",
     "cordis": "4.0.0-rc.8"

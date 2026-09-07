@@ -29,6 +29,9 @@ import { toast } from "./toast";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
 import { graphView } from "./graphView";
+import { hubSetup } from "./hubSetup";
+import { hubPane } from "./hubPane";
+import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
 
 export const en = {
@@ -45,6 +48,9 @@ export const en = {
   destination: destination.en,
   toast: toast.en,
 
+  hubSetup: hubSetup.en,
+  hubPane: hubPane.en,
+  repositories: repositories.en,
   projectsScreen: projectsScreen.en,
   newProjectDialog: newProjectDialog.en,
   openProjectDialog: openProjectDialog.en,
@@ -84,6 +90,9 @@ export const zh: typeof en = {
   destination: destination.zh,
   toast: toast.zh,
 
+  hubSetup: hubSetup.zh,
+  hubPane: hubPane.zh,
+  repositories: repositories.zh,
   projectsScreen: projectsScreen.zh,
   newProjectDialog: newProjectDialog.zh,
   openProjectDialog: openProjectDialog.zh,

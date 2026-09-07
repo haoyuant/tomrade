@@ -44,7 +44,14 @@ export const agentPanel = {
     messagePlaceholder: "Message the assistant…",
     messageAria: "Message the assistant",
     stop: "Stop",
-    send: "Send"
+    send: "Send",
+
+    workstreamLabel: "Workstream",
+    workstreamAria: "The workstream this thread works on",
+    wholeProject: "Whole project",
+    runsIn: "Runs in {{path}}",
+    noCheckout: "No local checkout",
+    repositoriesLink: "Repositories…"
   },
   zh: {
     writing: "正在写入",
@@ -91,6 +98,13 @@ export const agentPanel = {
     messagePlaceholder: "给助手发消息…",
     messageAria: "给助手发消息",
     stop: "停止",
-    send: "发送"
+    send: "发送",
+
+    workstreamLabel: "工作流",
+    workstreamAria: "这个线程所在的工作流",
+    wholeProject: "整个项目",
+    runsIn: "运行于 {{path}}",
+    noCheckout: "未指定本机仓库",
+    repositoriesLink: "仓库…"
   }
 };

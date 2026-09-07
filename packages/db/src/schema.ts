@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 6;
+export const CORE_SCHEMA_VERSION = 9;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -24,13 +24,26 @@ CREATE TABLE IF NOT EXISTS boards (
   project_id    TEXT NOT NULL,
   name          TEXT NOT NULL,
   icon          TEXT NOT NULL DEFAULT 'i-board',
-  subtitle      TEXT,
   across        INTEGER NOT NULL DEFAULT 0,
   sort          TEXT,
   note          TEXT,
   rank          REAL NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
-  updated_at    INTEGER NOT NULL
+  updated_at    INTEGER NOT NULL,
+  repo_id       TEXT,
+  repo_path     TEXT NOT NULL DEFAULT ''
+);
+
+-- A code repository a workstream stands for. Its identity is the remote URL,
+-- shared with the project; where it is checked out is each machine's own.
+CREATE TABLE IF NOT EXISTS repos (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL,
+  remote         TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  default_branch TEXT NOT NULL DEFAULT 'main',
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
 );
 
 -- A saved view: one layout plus one query, owned by the project. board_id is a
@@ -123,6 +136,10 @@ CREATE TABLE IF NOT EXISTS item_values (
   PRIMARY KEY (item_id, field_id)
 );
 
+-- device/device_seq name the machine that made the write and its position in
+-- that machine's own sequence, so "device:device_seq" is one op's identity
+-- everywhere; patch_json is the fields it changed, which is what the folder's
+-- log carries and what a merge arbitrates with.
 CREATE TABLE IF NOT EXISTS oplog (
   seq           INTEGER PRIMARY KEY AUTOINCREMENT,
   entity        TEXT NOT NULL,
@@ -133,7 +150,10 @@ CREATE TABLE IF NOT EXISTS oplog (
   after_json    TEXT,
   by            TEXT NOT NULL,
   at            INTEGER NOT NULL,
-  run_id        TEXT
+  run_id        TEXT,
+  device        TEXT NOT NULL DEFAULT '',
+  device_seq    INTEGER,
+  patch_json    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS plugin_migrations (
@@ -146,6 +166,7 @@ CREATE TABLE IF NOT EXISTS plugin_migrations (
 export const CORE_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id, rank);
 CREATE INDEX IF NOT EXISTS idx_views_project ON views(project_id, rank);
+CREATE INDEX IF NOT EXISTS idx_repos_project ON repos(project_id, name);
 CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);
@@ -158,4 +179,5 @@ CREATE INDEX IF NOT EXISTS idx_item_values_num ON item_values(field_id, num);
 CREATE INDEX IF NOT EXISTS idx_item_values_text ON item_values(field_id, text);
 CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge';
 CREATE INDEX IF NOT EXISTS idx_oplog_run ON oplog(run_id) WHERE run_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_oplog_device ON oplog(device, device_seq) WHERE device_seq IS NOT NULL;
 `;

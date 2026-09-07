@@ -88,11 +88,17 @@ export const settingsDialog = {
     oplogBullet: "Every write is recorded in the oplog with its author",
     undoBullet: "{{cmdz}} reverts any write, agent or human",
 
+    hubLabel: "Hub",
+    scopeMachine: "This machine",
+    scopeUser: "Follows the Hub",
     dataLabel: "Data",
     dataLede:
-      "One SQLite file holds every project on this machine, and the oplog inside it is the whole history. A project can also publish a copy of itself as text to a destination you choose — that copy is what a teammate clones, and the database itself never leaves.",
-    dbFileLabel: "Database file",
-    dbFileNote: "Local-first. Back it up by copying the file — or give a project a destination in its own settings."
+      "Every project is a folder of text under the Hub, or wherever you put it — that folder is the truth, and what a teammate clones. The SQLite cache on this machine follows it and can always be rebuilt from it.",
+    hubDirLabel: "Hub folder",
+    hubDirNote: "Where new projects get their folder, under projects/. Move a project elsewhere from its own settings.",
+    reveal: "Reveal",
+    cacheDirLabel: "Cache folder",
+    cacheDirNote: "One database per project lives here. Delete it and Tomrade reads the folders again."
   },
   zh: {
     dialogLabel: "设置",
@@ -182,9 +188,15 @@ export const settingsDialog = {
     oplogBullet: "每一次写入都会连同作者记录进操作日志",
     undoBullet: "{{cmdz}} 可撤销任意一次写入，无论来自智能体还是人工",
 
+    hubLabel: "主目录",
+    scopeMachine: "仅本机",
+    scopeUser: "随主目录",
     dataLabel: "数据",
-    dataLede: "一个 SQLite 文件保存着本机上的所有项目，其中的操作日志即为完整历史。一个项目还可以将自身发布为一份文本副本到你选择的目标位置——那份副本才是队友克隆的对象，数据库本身从不外流。",
-    dbFileLabel: "数据库文件",
-    dbFileNote: "本地优先。复制该文件即可备份——也可以在项目自己的设置中为它指定一个发布目标。"
+    dataLede: "每个项目都是主目录下（或你指定的任何位置）的一个文本文件夹——文件夹才是事实，也是队友克隆的对象。本机上的 SQLite 缓存跟随它，随时可以从它重建。",
+    hubDirLabel: "主目录",
+    hubDirNote: "新项目的文件夹默认放在这里的 projects/ 下。要把某个项目放到别处，在它自己的设置里更换。",
+    reveal: "在访达中显示",
+    cacheDirLabel: "缓存目录",
+    cacheDirNote: "每个项目一个数据库，都放在这里。删掉它，Tomrade 会重新读取文件夹。"
   }
 };

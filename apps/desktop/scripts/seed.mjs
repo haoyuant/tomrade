@@ -11,10 +11,10 @@ const EPICS = [
 ];
 
 const BOARDS = [
-  { key: "bd-ui", name: "UI", icon: "i-panel", subtitle: "packages/ui" },
-  { key: "bd-core", name: "Core & data", icon: "i-stack", subtitle: "packages/core" },
-  { key: "bd-mcp", name: "MCP server", icon: "i-plug", subtitle: "packages/mcp" },
-  { key: "bd-shell", name: "Desktop shell", icon: "i-monitor", subtitle: "apps/desktop" }
+  { key: "bd-ui", name: "UI", icon: "i-panel" },
+  { key: "bd-core", name: "Core & data", icon: "i-stack" },
+  { key: "bd-mcp", name: "MCP server", icon: "i-plug" },
+  { key: "bd-shell", name: "Desktop shell", icon: "i-monitor" }
 ];
 
 /** Saved views on top of the project's defaults (Backlog / Recently updated). `board` names a workstream the view is pinned to. */
@@ -87,20 +87,30 @@ const ITEMS = [
     "Dead code carried over from the pre-reboot architecture. Superseded by the Vite SPA setup; closing rather than fixing."]
 ];
 
-export function seedDesignProject({ db, projects, boards, views, items, fields }) {
+export function seedDesignProject({ dbFor, projects, boards, views, items, fields, gitRepos }) {
   const project = projects.create({
     name: "Tomrade Next",
     description: "Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents.",
     keyPrefix: "TOM"
   });
+  // one cache per project: raw SQL below goes to this project's own file
+  const db = dbFor(project.id);
 
   const firstBoard = boards.list(project.id)[0];
   const boardIds = new Map();
   for (const spec of BOARDS) {
-    boardIds.set(spec.key, boards.create({ projectId: project.id, name: spec.name, icon: spec.icon, subtitle: spec.subtitle }).id);
+    boardIds.set(spec.key, boards.create({ projectId: project.id, name: spec.name, icon: spec.icon }).id);
   }
   // the seeded "Main" workstream is redundant once the four real ones exist
-  if (firstBoard) boards.remove(firstBoard.id);
+  if (firstBoard) boards.remove(project.id, firstBoard.id);
+
+  // The UI workstream stands for one repository. Its URL travels with the
+  // project; where it is checked out is this machine's, and starts unset.
+  let repo = null;
+  if (gitRepos) {
+    repo = gitRepos.create({ projectId: project.id, remote: "git@github.com:acme/tomrade-next.git", defaultBranch: "main" });
+    boards.update(project.id, boardIds.get("bd-ui"), { repoId: repo.id, repoPath: "packages/ui" });
+  }
 
   const fieldIds = new Map();
   const optionIds = new Map();
@@ -146,7 +156,7 @@ export function seedDesignProject({ db, projects, boards, views, items, fields }
       rank: created.length,
       by
     });
-    if (locked) items.update(item.id, { humanLocked: true }, "human");
+    if (locked) items.update(project.id, item.id, { humanLocked: true }, "human");
     byTitle.set(title, item);
     created.push({ item, ageMinutes });
   }
@@ -157,14 +167,14 @@ export function seedDesignProject({ db, projects, boards, views, items, fields }
       const item = byDesignKey.get(designKey);
       if (!item) continue;
       const value = spec.type === "select" ? optionIds.get(`${spec.key}:${raw}`) : raw;
-      items.update(item.id, { fields: { [fieldIds.get(spec.key)]: value } }, "human");
+      items.update(project.id, item.id, { fields: { [fieldIds.get(spec.key)]: value } }, "human");
     }
   }
   ITEMS.forEach((row, i) => {
     const from = byDesignKey.get(DESIGN_KEYS[i]);
     for (const key of row[8] ?? []) {
       const to = byDesignKey.get(key);
-      if (from && to) items.addRelation(from.id, to.id);
+      if (from && to) items.addRelation(project.id, from.id, to.id);
     }
   });
 
@@ -185,5 +195,5 @@ export function seedDesignProject({ db, projects, boards, views, items, fields }
   // creating and retiring the placeholder board is fixture setup, not history
   db.prepare("DELETE FROM oplog WHERE entity = 'board'").run();
 
-  return { project, boardIds, fieldIds };
+  return { project, boardIds, fieldIds, repo };
 }

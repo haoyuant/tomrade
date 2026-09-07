@@ -1,23 +1,51 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { Context, Service } from "cordis";
-import { seedProject, type Db } from "@tomrade/db";
+import { z } from "zod";
+import { seedProject, type Db, type ProjectDb } from "@tomrade/db";
+import type { Hub } from "@tomrade/hub";
 import { keyPrefixFor, type CreateProjectInput, type Project, type ProjectPatch } from "@tomrade/domain";
 import type {} from "@tomrade/ipc";
+import { defineTool } from "@tomrade/tools";
+import { splitLegacy } from "./legacy.js";
 
 declare module "cordis" {
   interface Context {
     projects: Projects;
+  }
+  interface Events {
+    "projects/created"(project: Project): void;
+    "projects/removed"(projectId: string): void;
+    /** A project's rows changed underneath the app (import, rebuild); caches for it are stale. */
+    "projects/changed"(projectId: string): void;
   }
 }
 
 declare module "@tomrade/ipc" {
   interface Channels {
     "projects.list": () => Project[];
-    "projects.create": (input: CreateProjectInput) => Project;
+    "projects.get": (id: string) => Project | null;
+    /** `dir`: the folder the project's `.tomrade/` goes in; default `<Hub>/projects/<slug>`. */
+    "projects.create": (input: CreateProjectInput, opts?: { dir?: string }) => Project;
     "projects.update": (id: string, patch: ProjectPatch) => Project | null;
-    "projects.remove": (id: string) => void;
+    /** Forgets the project on this machine and drops its cache; `deleteFolder` also removes the folder. */
+    "projects.remove": (id: string, opts?: { deleteFolder?: boolean }) => void;
+  }
+  interface Broadcasts {
+    "projects.changed": () => void;
   }
 }
+
+export const ProjectsConfig = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    /** The pre-P0 single database. Split into per-project caches on first boot, then moved to `backupsDir`. */
+    legacyPath: z.string().optional(),
+    backupsDir: z.string().optional()
+  })
+);
+export type ProjectsConfig = z.infer<typeof ProjectsConfig>;
 
 interface ProjectRow {
   id: string;
@@ -29,37 +57,48 @@ interface ProjectRow {
   updated_at: number;
 }
 
-function rowToProject(row: ProjectRow): Project {
-  return {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    keyPrefix: row.key_prefix,
-    archived: row.archived === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
 /**
- * Projects are the container, not the work: they are managed by humans through
- * the UI, sit outside the oplog, and are the one entity undo does not reach.
+ * Projects are the container, not the work: managed by humans through the UI,
+ * outside the oplog, the one entity undo does not reach. The catalog says which
+ * exist on this machine; each project's own file holds its row.
  */
 export class Projects extends Service {
   static provide = "projects";
-  static inject = ["db"];
+  static inject = ["db", "hub"];
+  static Config = ProjectsConfig;
 
-  constructor(ctx: Context) {
+  private readonly home: Context;
+
+  constructor(
+    ctx: Context,
+    public readonly config: ProjectsConfig
+  ) {
     super(ctx, "projects");
+    this.home = ctx;
   }
 
   [Service.init]() {
-    this.ensureDefault();
-    this.ctx.inject(["ipc"], (ctx) => {
+    this.adoptLegacy();
+    for (const entry of this.hub.catalog.projects()) this.db.open(entry.id);
+    if (!this.hub.catalog.projects().length) this.ensureDefault();
+
+    this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("projects.list", () => ctx.projects.list());
-      ctx.ipc.handle("projects.create", (input) => ctx.projects.create(input));
+      ctx.ipc.handle("projects.get", (id) => ctx.projects.get(id));
+      ctx.ipc.handle("projects.create", (input, opts) => ctx.projects.create(input, opts));
       ctx.ipc.handle("projects.update", (id, patch) => ctx.projects.update(id, patch));
-      ctx.ipc.handle("projects.remove", (id) => ctx.projects.remove(id));
+      ctx.ipc.handle("projects.remove", (id, opts) => ctx.projects.remove(id, opts));
+    });
+    this.home.inject(["tools"], (ctx) => {
+      ctx.tools.register(
+        defineTool({
+          name: "list_projects",
+          title: "List projects",
+          description: "The projects on this machine, with the id every other tool takes as projectId.",
+          input: z.object({}),
+          execute: () => ctx.projects.list().map((p) => ({ id: p.id, name: p.name, keyPrefix: p.keyPrefix, archived: p.archived }))
+        })
+      );
     });
   }
 
@@ -67,46 +106,93 @@ export class Projects extends Service {
     return this.ctx.db;
   }
 
-  /**
-   * A first-run seed, not a repair. The id stays 'default' so a database written
-   * before projects existed still resolves, but this only ever writes into an
-   * empty table: a project a human deleted must not reappear on the next boot.
-   */
-  ensureDefault(): Project | null {
-    const existing = this.db.prepare("SELECT * FROM projects WHERE id = 'default'").get() as ProjectRow | undefined;
-    if (existing) return rowToProject(existing);
-    if ((this.db.prepare("SELECT COUNT(*) AS n FROM projects").get() as { n: number }).n > 0) return null;
-    const now = Date.now();
-    this.db.transaction(() => {
-      this.db
-        .prepare("INSERT INTO projects (id, name, description, key_prefix, next_key_num, archived, created_at, updated_at) VALUES ('default', 'Default Project', NULL, 'TOM', 1, 0, ?, ?)")
-        .run(now, now);
-      seedProject(this.db, "default", now);
+  private get hub(): Hub {
+    return this.ctx.hub;
+  }
+
+  /** The pre-P0 file, if this machine still has one and nothing else has been catalogued: split it, once. */
+  private adoptLegacy(): void {
+    const legacyPath = this.config.legacyPath;
+    if (!legacyPath || !fs.existsSync(legacyPath) || this.hub.catalog.projects().length) return;
+    const result = splitLegacy({
+      legacyPath,
+      db: this.db,
+      deviceId: this.hub.deviceId,
+      backupsDir: this.config.backupsDir ?? path.join(path.dirname(legacyPath), "backups"),
+      registrations: this.db.registrations("project")
     });
-    return { id: "default", name: "Default Project", description: null, keyPrefix: "TOM", archived: false, createdAt: now, updatedAt: now };
+    for (const p of result.projects) {
+      const row = this.rowOf(p.id);
+      this.hub.catalog.upsertProject({ id: p.id, name: p.name, keyPrefix: row?.key_prefix ?? "TOM", archived: p.archived, createdAt: p.createdAt });
+    }
+    this.home.logger.info(`split ${result.projects.length} project(s) out of ${legacyPath}; the old file is at ${result.movedTo}`);
+  }
+
+  /** A first-run seed, not a repair: only ever runs against an empty catalog. */
+  ensureDefault(): Project | null {
+    if (this.hub.catalog.projects().length) return null;
+    return this.create({ name: "Default Project", keyPrefix: "TOM" });
+  }
+
+  private rowOf(id: string): ProjectRow | undefined {
+    if (!this.db.has(id)) return undefined;
+    return this.db.for(id).prepare("SELECT * FROM projects WHERE id = ?").get(id) as ProjectRow | undefined;
+  }
+
+  private toProject(id: string): Project | null {
+    const entry = this.hub.catalog.project(id);
+    if (!entry) return null;
+    const row = this.rowOf(id);
+    return {
+      id,
+      name: row?.name ?? entry.name,
+      description: row?.description ?? null,
+      keyPrefix: row?.key_prefix ?? entry.keyPrefix,
+      archived: entry.archived,
+      createdAt: row?.created_at ?? entry.createdAt,
+      updatedAt: row?.updated_at ?? entry.createdAt
+    };
   }
 
   list(): Project[] {
-    return (this.db.prepare("SELECT * FROM projects ORDER BY created_at ASC").all() as ProjectRow[]).map(rowToProject);
+    return this.hub.catalog.projects().flatMap((entry) => {
+      const project = this.toProject(entry.id);
+      return project ? [project] : [];
+    });
   }
 
   get(id: string): Project | null {
-    const row = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as ProjectRow | undefined;
-    return row ? rowToProject(row) : null;
+    return this.toProject(id);
   }
 
-  /** Creates the project, its Main workstream and the default views. */
-  create(input: CreateProjectInput): Project {
+  /**
+   * Creates the project's cache, its row, its Main workstream and the default
+   * views. The folder is the storage layer's to write, on `projects/created`;
+   * a chosen `dir` is recorded here so it writes there.
+   */
+  create(input: CreateProjectInput, opts: { dir?: string } = {}): Project {
     const id = randomUUID();
     const now = Date.now();
     const keyPrefix = input.keyPrefix?.toUpperCase() || keyPrefixFor(input.name);
-    this.db.transaction(() => {
-      this.db
-        .prepare("INSERT INTO projects (id, name, description, key_prefix, next_key_num, archived, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 0, ?, ?)")
-        .run(id, input.name, input.description ?? null, keyPrefix, now, now);
-      seedProject(this.db, id, now);
+    const db = this.db.open(id);
+    db.transaction(() => {
+      db.prepare("INSERT INTO projects (id, name, description, key_prefix, next_key_num, archived, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 0, ?, ?)").run(
+        id,
+        input.name,
+        input.description ?? null,
+        keyPrefix,
+        now,
+        now
+      );
+      seedProject(db, id, now);
     });
-    return { id, name: input.name, description: input.description ?? null, keyPrefix, archived: false, createdAt: now, updatedAt: now };
+    const dir = opts.dir ? path.resolve(opts.dir) : null;
+    if (dir) fs.mkdirSync(dir, { recursive: true });
+    this.hub.catalog.upsertProject({ id, name: input.name, keyPrefix, createdAt: now, dir });
+    const project: Project = { id, name: input.name, description: input.description ?? null, keyPrefix, archived: false, createdAt: now, updatedAt: now };
+    this.home.emit("projects/created", project);
+    this.notify();
+    return project;
   }
 
   update(id: string, patch: ProjectPatch): Project | null {
@@ -121,40 +207,30 @@ export class Projects extends Service {
       archived: patch.archived ?? existing.archived,
       updatedAt: Date.now()
     };
-    this.db
-      .prepare("UPDATE projects SET name = ?, description = ?, archived = ?, updated_at = ? WHERE id = ?")
-      .run(next.name, next.description, next.archived ? 1 : 0, next.updatedAt, id);
+    if (this.db.has(id)) {
+      this.db.for(id).prepare("UPDATE projects SET name = ?, description = ?, archived = ?, updated_at = ? WHERE id = ?").run(next.name, next.description, next.archived ? 1 : 0, next.updatedAt, id);
+    }
+    this.hub.catalog.patchProject(id, { name: next.name, archived: next.archived });
+    this.notify();
     return next;
   }
 
-  /** Delete a project and everything scoped to it, history first. */
-  remove(id: string): void {
-    this.db.transaction(() => {
-      // Each of these sweeps scopes itself through a table a later statement
-      // empties, so the history has to go before the rows it is found through.
-      this.db.prepare("DELETE FROM oplog WHERE entity = 'item' AND entity_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM oplog WHERE entity = 'board' AND entity_id IN (SELECT id FROM boards WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM oplog WHERE entity = 'view' AND entity_id IN (SELECT id FROM views WHERE project_id = ?)").run(id);
-      // A purge tombstone is the one oplog row that outlives its subject; it names the project itself.
-      this.db.prepare("DELETE FROM oplog WHERE op = 'purge' AND json_extract(before_json, '$.projectId') = ?").run(id);
+  /** Forget the project on this machine and delete its cache. Its folder, where the truth is, stays unless asked. */
+  remove(id: string, opts: { deleteFolder?: boolean } = {}): void {
+    const dir = this.hub.catalog.project(id)?.dir;
+    this.home.emit("projects/removed", id);
+    this.db.remove(id);
+    if (opts.deleteFolder && dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    this.hub.catalog.removeProject(id);
+    this.notify();
+  }
 
-      this.db.prepare("DELETE FROM item_labels WHERE item_id IN (SELECT id FROM items WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM item_values WHERE field_id IN (SELECT id FROM fields WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM field_options WHERE field_id IN (SELECT id FROM fields WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM fields WHERE project_id = ?").run(id);
-      // Both directions: nothing stops an agent relating across projects, and an
-      // incoming edge lives on the other project's row.
-      this.db
-        .prepare(
-          "DELETE FROM item_relations WHERE from_item_id IN (SELECT id FROM items WHERE project_id = ?) OR to_item_id IN (SELECT id FROM items WHERE project_id = ?)"
-        )
-        .run(id, id);
-      this.db.prepare("DELETE FROM view_item_rank WHERE view_id IN (SELECT id FROM views WHERE project_id = ?)").run(id);
-      this.db.prepare("DELETE FROM views WHERE project_id = ?").run(id);
-      this.db.prepare("DELETE FROM boards WHERE project_id = ?").run(id);
-      this.db.prepare("DELETE FROM labels WHERE project_id = ?").run(id);
-      this.db.prepare("DELETE FROM items WHERE project_id = ?").run(id);
-      this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
-    });
+  /** The open handle for a project, for callers that already hold an id. */
+  dbFor(id: string): ProjectDb {
+    return this.db.for(id);
+  }
+
+  private notify(): void {
+    this.home.get("ipc")?.send("projects.changed");
   }
 }

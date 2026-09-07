@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { definePlugin, defineTool, type Item } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId, type Item } from "@tomrade/plugin-sdk";
 
 const DAY = 86_400_000;
 const OPEN = new Set(["backlog", "todo", "doing", "verifying"]);
@@ -17,17 +17,20 @@ export default definePlugin({
   name: "stale",
   inject: ["db", "settings", "items", "tools", "contributions"],
   apply(ctx) {
-    ctx.db.migrate("stale", [{ version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_stale_acks (item_id TEXT PRIMARY KEY, acked_at INTEGER NOT NULL)" }]);
+    // The declaration is what lets the acks be deleted with their project and left out of its folder.
+    ctx.db.migrate("stale", [{ version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_stale_acks (item_id TEXT PRIMARY KEY, project_id TEXT NOT NULL DEFAULT '', acked_at INTEGER NOT NULL)" }], {
+      tables: { plugin_stale_acks: { project: "project_id", export: false } }
+    });
     ctx.settings.register({ id: "stale", title: "Stale issues", description: "Open issues nobody has written to for a while get a badge and a status-bar count.", schema: settingsSchema, defaults: { days: 14 } });
 
     const days = () => (ctx.settings.get().stale as z.infer<typeof settingsSchema>).days;
-    const acked = (id: string) => !!ctx.db.prepare("SELECT 1 FROM plugin_stale_acks WHERE item_id = ?").get(id);
+    const acked = (item: Item) => !!ctx.db.for(item.projectId).prepare("SELECT 1 FROM plugin_stale_acks WHERE item_id = ?").get(item.id);
     const idleDays = (item: Item, now = Date.now()) => Math.floor((now - item.updatedAt) / DAY);
-    const isStale = (item: Item) => OPEN.has(item.status) && idleDays(item) >= days() && !acked(item.id);
+    const isStale = (item: Item) => OPEN.has(item.status) && idleDays(item) >= days() && !acked(item);
     const staleIn = (projectId?: string) => ctx.items.list(projectId ? { projectId } : {}).filter(isStale);
 
     ctx.on("write/committed", (intent) => {
-      if (intent.entity === "item") ctx.db.prepare("DELETE FROM plugin_stale_acks WHERE item_id = ?").run(intent.id);
+      if (intent.entity === "item") ctx.db.for(intent.projectId).prepare("DELETE FROM plugin_stale_acks WHERE item_id = ?").run(intent.id);
     });
 
     ctx.tools.register(
@@ -36,7 +39,7 @@ export default definePlugin({
         title: "List stale items",
         description: "Open issues with no write for the configured number of days, oldest first.",
         input: z.object({ projectId: z.string().optional() }),
-        execute: ({ projectId }, inv) => staleIn(projectId ?? inv.projectId).sort((a, b) => a.updatedAt - b.updatedAt)
+        execute: ({ projectId }, inv) => staleIn(requireProjectId("list_stale_items", projectId, inv)).sort((a, b) => a.updatedAt - b.updatedAt)
       })
     );
 
@@ -60,9 +63,9 @@ export default definePlugin({
       id: "stale.ack",
       title: "Acknowledge stale issue",
       group: "Stale issues",
-      run: ({ itemId }) => {
-        if (!itemId) return { toast: "Select an issue first" };
-        ctx.db.prepare("INSERT OR REPLACE INTO plugin_stale_acks (item_id, acked_at) VALUES (?, ?)").run(itemId, Date.now());
+      run: ({ projectId, itemId }) => {
+        if (!projectId || !itemId) return { toast: "Select an issue first" };
+        ctx.db.for(projectId).prepare("INSERT OR REPLACE INTO plugin_stale_acks (item_id, project_id, acked_at) VALUES (?, ?, ?)").run(itemId, projectId, Date.now());
         return { toast: "Acknowledged — the badge is gone until the next write" };
       }
     });

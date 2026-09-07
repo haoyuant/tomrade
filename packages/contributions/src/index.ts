@@ -101,7 +101,7 @@ declare module "@tomrade/ipc" {
     "contributions.run": (id: string, scope: CommandScope) => CommandResult;
     "contributions.badges": (projectId: string) => Record<string, Badge[]>;
     "contributions.statusItems": (scope: { projectId?: string }) => { id: string; text: string }[];
-    "contributions.sections": (itemId: string) => SectionView[];
+    "contributions.sections": (projectId: string, itemId: string) => SectionView[];
     "contributions.graphs": () => GraphInfo[];
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
   }
@@ -131,7 +131,7 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.run", (id, scope) => ctx.contributions.run(id, scope));
       ctx.ipc.handle("contributions.badges", (projectId) => ctx.contributions.badgesFor(projectId));
       ctx.ipc.handle("contributions.statusItems", (scope) => ctx.contributions.statusItems(scope));
-      ctx.ipc.handle("contributions.sections", (itemId) => ctx.contributions.sectionsFor(itemId));
+      ctx.ipc.handle("contributions.sections", (projectId, itemId) => ctx.contributions.sectionsFor(projectId, itemId));
       ctx.ipc.handle("contributions.graphs", () => ctx.contributions.graphs());
       ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
       this.notify = () => ctx.ipc.send("contributions.changed");
@@ -200,8 +200,8 @@ export class Contributions extends Service {
     return graph.compute(this.ctx.items.list({ projectId: scope.projectId }), scope);
   }
 
-  sectionsFor(itemId: string): SectionView[] {
-    const item = this.ctx.items.get(itemId);
+  sectionsFor(projectId: string, itemId: string): SectionView[] {
+    const item = this.ctx.items.get(projectId, itemId);
     if (!item) return [];
     return [...this.sectionMap.values()].flatMap((s) => {
       const rendered = s.render(item);

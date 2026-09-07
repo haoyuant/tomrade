@@ -9,6 +9,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
 import { seedDesignProject } from "./seed.mjs";
@@ -38,16 +39,24 @@ const run = async () => {
     vars: { userData: WORK },
     patches: [[{ id: "mcp", config: { port: 0 } }]]
   });
+  // A fresh userData has no Hub folder; the app would open on the setup screen.
+  // Choosing one here is what a first run does, so every project gets a folder.
+  ctx.hub.configure(path.join(WORK, "hub"));
   // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
-  ctx.projects.remove("default");
-  const repos = { db: ctx.db, items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields };
-  const { project } = seedDesignProject(repos);
+  for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
+  const repos = { dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields, gitRepos: ctx.repos };
+  const { project, repo: sampleRepo } = seedDesignProject(repos);
 
   const win = new BrowserWindow({
     width: 1560,
     height: 940,
     show: !!process.env.TOMRADE_SHOW,
     webPreferences: { preload: path.join(__dirname, "../preload.cjs"), contextIsolation: true }
+  });
+  // The renderer's console is the only place a blank page explains itself.
+  win.webContents.on("console-message", (event) => {
+    const { level, message, lineNumber, sourceId } = event;
+    if (level === "error" || level === "warning" || String(level) === "2" || String(level) === "3") console.log(`[renderer ${level}] ${message} (${sourceId}:${lineNumber})`);
   });
   await win.loadURL(DEV_URL);
   await sleep(3500);
@@ -203,7 +212,7 @@ const run = async () => {
   check("dragging a view row above another reorders the roster", rosterAfter[0] === rosterBefore[1] && rosterAfter[1] === rosterBefore[0]);
   check("the sidebar draws the saved order", (await $(`document.querySelectorAll('.side-row.is-view')[0].dataset.view`)) === rosterBefore[1]);
   // put the roster back for the sections that follow; a direct write, so the sidebar redraws on its next refetch
-  repos.views.update(rosterBefore[1], { rank: repos.views.get(rosterBefore[0]).rank + 0.5 });
+  repos.views.update(project.id, rosterBefore[1], { rank: repos.views.get(project.id, rosterBefore[0]).rank + 0.5 });
   await sleep(600);
 
   // ── keyboard move: ← → is the same write path as a drag ─────────────
@@ -214,7 +223,7 @@ const run = async () => {
   if (!before) throw new Error(`no draggable card on screen; keys=${keysOnBoard}`);
   await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
   await sleep(900);
-  const after = repos.items.get(before.id);
+  const after = repos.items.get(project.id, before.id);
   check("ArrowRight moves the focused card one column", after.status !== before.status);
   check("the move bumped the version", after.version === before.version + 1);
   check("a toast offers the undo", (await $(`document.querySelectorAll('.toast').length`)) > 0);
@@ -223,7 +232,7 @@ const run = async () => {
 
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(900);
-  check("the toast's Undo reverts the move", repos.items.get(before.id).status === before.status);
+  check("the toast's Undo reverts the move", repos.items.get(project.id, before.id).status === before.status);
 
   // ── pointer drag: dnd-kit's own path, not the keyboard twin ─────────
   // dnd-kit ignores synthetic events, so this uses trusted OS-level input.
@@ -247,11 +256,11 @@ const run = async () => {
       send("mouseUp", box.x1, box.y1);
       await sleep(1600);
     }
-    const landed = repos.items.get(dragged.id);
+    const landed = repos.items.get(project.id, dragged.id);
     check("a pointer drag writes the column's field", landed.status === "doing");
     check("a status drop leaves the workstream alone", landed.boardId === dragged.boardId);
     if (landed.status === "doing") await shot("21-after-drag");
-    repos.items.update(dragged.id, { status: "verifying" }, "human");
+    repos.items.update(project.id, dragged.id, { status: "verifying" }, "human");
     await $(`location.reload();true`);
     await sleep(3200);
   }
@@ -300,7 +309,7 @@ const run = async () => {
     await shot("22-drag-order");
     for (const key of [first.key, second?.key].filter(Boolean)) {
       const item = repos.items.getByKey(project.id, key);
-      if (item) repos.items.update(item.id, { status: "verifying" }, "human");
+      if (item) repos.items.update(project.id, item.id, { status: "verifying" }, "human");
     }
     await $(`location.reload();true`);
     await sleep(3200);
@@ -308,11 +317,11 @@ const run = async () => {
 
   // ── conflict: an agent write the board has not seen ─────────────────
   const raced = repos.items.list({ projectId: project.id }).find((i) => i.status === "todo" && i.kind === "ticket" && keysOnBoard.split(",").includes(i.key));
-  repos.items.update(raced.id, { priority: 4 }, "ai:mcp");
+  repos.items.update(project.id, raced.id, { priority: 4 }, "ai:mcp");
   await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${raced.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
   await sleep(1200);
   check("a stale move raises the conflict banner", (await $(`!!document.querySelector('.banner[role="alert"]')`)) === true);
-  check("the conflict left the issue alone", repos.items.get(raced.id).status === "todo");
+  check("the conflict left the issue alone", repos.items.get(project.id, raced.id).status === "todo");
   await shot("22-conflict-banner");
   await press(`document.querySelector('.banner .btn-ghost')`);
   await sleep(500);
@@ -382,7 +391,7 @@ const run = async () => {
   await press(`document.querySelector('.layout-seg button[data-layout="graph"]')`);
   await sleep(1400);
   check("the graph layout renders the canvas", (await $(`!!document.querySelector('.graph-region .react-flow')`)) === true);
-  check("switching layout is a draft, not a write", (await $(`!!document.querySelector('.qb-dirty')`)) === true && repos.views.get(allViews[0].id).layout === "board");
+  check("switching layout is a draft, not a write", (await $(`!!document.querySelector('.qb-dirty')`)) === true && repos.views.get(project.id, allViews[0].id).layout === "board");
   const ownedNow = () => repos.items.list({ projectId: project.id }).filter((i) => i.kind !== "epic");
   const edgesAmong = (owned) => {
     const ids = new Set(owned.map((i) => i.id));
@@ -484,7 +493,7 @@ const run = async () => {
   await sleep(900);
   check("the status field writes to the issue", open().status === wantStatus);
   check("the edit bumped the version", open().version === opened.version + 1);
-  check("the edit is one reversible oplog row", ctx.oplog.historyFor("item", opened.id, 1)[0]?.op === "update");
+  check("the edit is one reversible oplog row", ctx.oplog.historyFor(project.id, "item", opened.id, 1)[0]?.op === "update");
 
   const wantPriority = opened.priority === 4 ? "1" : "4";
   await pick(`document.querySelectorAll('.detail .fsel')[1]`, wantPriority);
@@ -590,7 +599,7 @@ const run = async () => {
   check("creating a view writes it", repos.views.listForProject(project.id).length === viewsBefore + 1);
   const docs = repos.views.listForProject(project.id).find((v) => v.name === "Docs");
   check("a new view opens as a board", !!docs && docs.layout === "board" && (await $(`location.hash`)).includes(docs.id));
-  check("the ledger records the view create", ctx.oplog.historyFor("view", docs.id, 1)[0]?.op === "create");
+  check("the ledger records the view create", ctx.oplog.historyFor(project.id, "view", docs.id, 1)[0]?.op === "create");
   await press(`document.querySelector('.view-menu-btn')`);
   await sleep(400);
   await press(`[...document.querySelectorAll('.menu [role="menuitem"]')].find(r => /Delete view/.test(r.textContent))`);
@@ -629,19 +638,53 @@ const run = async () => {
   await sleep(600);
   check("the Workstream row opens the workstream editor", (await $(`document.querySelectorAll('.fld-editor[data-editor="workstream"] .fld-ws').length`)) === repos.boards.list(project.id).length);
   const ui = repos.boards.list(project.id).find((b) => b.name === "UI");
+  check(
+    "a workstream row offers the project's repositories",
+    (await $(`[...document.querySelectorAll('.fld-ws[data-board="${ui.id}"] select[aria-label^="Repository of"] option')].map(o => o.textContent).join('|')`)) === `No repository|${sampleRepo.name}`
+  );
+  check("and the path inside the one it stands for", (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-path')?.value`)) === "packages/ui");
+  check("a workstream without a repository has no path to give", (await $(`document.querySelectorAll('.fld-ws:not([data-board="${ui.id}"]) .fld-ws-path').length`)) === 0);
   // blur is what commits, and blur only fires on an element that had focus
   await $(`(() => { const i = document.querySelector('.fld-ws[data-board="${ui.id}"] input'); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Interface'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
   await sleep(900);
-  check("renaming a workstream writes it", repos.boards.get(ui.id).name === "Interface");
-  repos.boards.update(ui.id, { name: "UI" });
+  check("renaming a workstream writes it", repos.boards.get(project.id, ui.id).name === "Interface");
+  repos.boards.update(project.id, ui.id, { name: "UI" });
+  // A direct repository write never reaches the renderer's cache; the broadcast a sync would send does.
+  ctx.get("ipc").send("storage.changed", project.id);
   await sleep(600);
-  // by row, not by name: the direct repository write above never reached the renderer's cache
+  // by row, not by name: the cache may still be catching up
   await press(`document.querySelector('.fld-ws[data-board="${ui.id}"] button[aria-label^="Remove workstream"]')`);
   await sleep(500);
   check("removing a workstream that holds issues asks where they go", (await $(`!!document.querySelector('select[aria-label="Destination workstream"]')`)) === true);
   check("nothing moved yet", repos.items.list({ boardId: ui.id }).length > 0);
   await checkCentred("the fields sheet");
   await shot("15-fields-workstreams");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
+
+  // ── project settings: the repositories its workstreams stand for ───
+  await press(`document.querySelector('.side-project-settings')`);
+  await sleep(900);
+  check("project settings list the project's repositories", (await $(`document.querySelectorAll('#psRepos .repo-row').length`)) === 1);
+  check("a repository is named by its remote", (await $(`document.querySelector('#psRepos .repo-remote')?.textContent`)) === sampleRepo.remote);
+  check("and by the workstreams that stand for it", (await $(`document.querySelector('#psRepos .repo-used')?.textContent ?? ''`)).includes("UI"));
+  check("with no checkout on this machine, it says so", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
+  check("and offers to clone one", (await $(`!!document.querySelector('#psRepos .repo-clone')`)) === true);
+  await shot("15-project-repositories");
+  // A checkout is believed only when the folder's own origin is that repository.
+  const checkoutDir = path.join(WORK, "checkouts", "tomrade-next");
+  fs.mkdirSync(checkoutDir, { recursive: true });
+  execSync(`git init -q && git remote add origin ${sampleRepo.remote}`, { cwd: checkoutDir, stdio: "ignore" });
+  let refused = null;
+  await ctx.repos.setCheckout(sampleRepo.remote, WORK).catch((err) => (refused = err));
+  check("a folder that is not that repository is refused", refused !== null);
+  await ctx.repos.setCheckout(sampleRepo.remote, checkoutDir);
+  await sleep(900);
+  check("the checkout set on this machine shows its path", (await $(`document.querySelector('#psRepos .repo-checkout .cfg-name')?.textContent`)) === checkoutDir);
+  check("with the run-in-checkout switch off beside it", (await $(`document.querySelector('#psRepos .repo-run-in')?.getAttribute('aria-checked')`)) === "false");
+  ctx.repos.clearCheckout(sampleRepo.remote);
+  await sleep(700);
+  check("clearing it returns the row to unset", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
@@ -665,11 +708,14 @@ const run = async () => {
   check("settings opens on a side menu", (await $(`document.querySelectorAll('.dlg-nav .side-row').length`)) >= 4);
   check("exactly one menu row is current", (await $(`document.querySelectorAll('.dlg-nav .side-row[aria-current="true"]').length`)) === 1);
   check("it lands on Appearance", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Appearance");
+  check("the card says the theme follows the Hub", (await $(`document.querySelector('.dlg-body .scope-tag')?.textContent`)) === "Follows the Hub");
   await checkCentred("settings");
   await shot("17-settings");
   const sheetBox = `(() => { const r = document.querySelector('.palette.modal').getBoundingClientRect(); return r.width + 'x' + r.height; })()`;
   const boxOnAppearance = await $(sheetBox);
   await press(settingsNav("Agent access"));
+  await sleep(400);
+  check("and the MCP endpoint stays on this machine", (await $(`document.querySelector('.dlg-body .scope-tag')?.textContent`)) === "This machine");
   await sleep(600);
   check("choosing a menu row swaps the pane", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Agent access");
   check("and takes the pane it replaced out of the body", (await $(`!!document.querySelector('.tok-table')`)) === false);
@@ -759,6 +805,33 @@ const run = async () => {
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
   check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-head .chip-btn')?.textContent ?? '').trim().length > 0`)) === true);
   check("an empty thread introduces the agent", (await $(`!!document.querySelector('.ai-scroll .turn-ai, .ai-scroll .agent-empty')`)) === true);
+  // The workstream is a chip beside the engine's, opening a menu — not a form field.
+  await press(`document.querySelector('.ai-knobs .ai-ws')`);
+  await sleep(500);
+  check(
+    "the assistant offers the whole project or one workstream",
+    (await $(`[...document.querySelectorAll('.menu-row.is-radio .m-name')].map(n => n.textContent).join('|')`)) === ["Whole project", ...repos.boards.list(project.id).map((b) => b.name)].join("|")
+  );
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'UI')`);
+  await sleep(1400);
+  check("picking a workstream starts a thread on it", ctx.agent.store.threads(project.id).some((th) => th.boardId === ui.id));
+  check("with no checkout here, the panel says the agent cannot run", (await $(`document.querySelector('.ai-workdir.is-problem')?.textContent ?? ''`)).includes("No local checkout"));
+  await typeInto(".ai-input", "hello");
+  await sleep(200);
+  check("and holds the message until one is set", (await $(`document.querySelector('.ai-send')?.disabled`)) === true);
+  check("saying why on the control itself", (await $(`document.querySelector('.ai-send')?.title ?? ''`)).startsWith("No local checkout for"));
+  await shot("18-assistant-workstream");
+  await press(`document.querySelector('.ai-repos-link')`);
+  await sleep(900);
+  check("the way out opens project settings on Repositories", (await $(`!!document.querySelector('#psRepos')`)) === true);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(600);
+  await press(`document.querySelector('.ai-knobs .ai-ws')`);
+  await sleep(500);
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'Whole project')`);
+  await sleep(900);
+  check("back on the whole project the message may go", (await $(`!document.querySelector('.ai-workdir') && document.querySelector('.ai-send')?.disabled === false`)) === true);
+  await typeInto(".ai-input", "");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'j',metaKey:true,bubbles:true}));true`);
   await sleep(600);
   check("⌘J collapses the assistant to its rail", (await $(`!!document.querySelector('.ai-rail')`)) === true);
@@ -849,7 +922,7 @@ const run = async () => {
 
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(700);
-  check("Escape cancels the confirmation rather than confirming it", repos.items.get(doomed.id) !== null);
+  check("Escape cancels the confirmation rather than confirming it", repos.items.get(project.id, doomed.id) !== null);
   check("cancelling closes the sheet", (await $(`!!document.querySelector('.dangerbar')`)) === false);
   // a sheet that closes by unmounting never gives the shared Dialog its
   // open -> false transition, and the restore silently never runs
@@ -862,8 +935,8 @@ const run = async () => {
   await sleep(700);
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1400);
-  check("confirming destroys the issue for good", repos.items.get(doomed.id) === null);
-  check("the purge left one tombstone and no history", ctx.oplog.historyFor("item", doomed.id, 10).map((o) => o.op).join() === "purge");
+  check("confirming destroys the issue for good", repos.items.get(project.id, doomed.id) === null);
+  check("the purge left one tombstone and no history", ctx.oplog.historyFor(project.id, "item", doomed.id, 10).map((o) => o.op).join() === "purge");
   check("deleting the open issue leaves for the project, not a dead sheet", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)));
 
   // the same control on the docked pane, where the board is what has to react
@@ -875,7 +948,7 @@ const run = async () => {
   await sleep(800);
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1400);
-  check("the pane's delete destroys the issue too", repos.items.get(doomed2.id) === null);
+  check("the pane's delete destroys the issue too", repos.items.get(project.id, doomed2.id) === null);
   check("the card leaves the board", (await $(`[...document.querySelectorAll('.card-id')].some(n => n.textContent === '${doomed2.key}')`)) === false);
   check("the detail pane closes with the issue it was showing", (await $(`!!document.querySelector('.detail')`)) === false);
   // the toast must not offer an undo the write path cannot honour
@@ -890,8 +963,8 @@ const run = async () => {
 
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,bubbles:true}));true`);
   await sleep(1200);
-  check("⌘Z cannot resurrect a permanently deleted issue", repos.items.get(doomed2.id) === null);
-  check("the tombstone survives the undo as the audit trail", ctx.oplog.recent(30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
+  check("⌘Z cannot resurrect a permanently deleted issue", repos.items.get(project.id, doomed2.id) === null);
+  check("the tombstone survives the undo as the audit trail", ctx.oplog.recent(project.id, 30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
   await shot("24-after-delete");
 
   // ── project settings, and the delete that takes a whole project ──────
@@ -967,84 +1040,70 @@ const run = async () => {
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1600);
   check("confirming destroys the project for good", repos.projects.get(throwaway.id) === null);
-  check("its workstreams, views and issues go with it", repos.boards.list(throwaway.id).length === 0 && repos.views.listForProject(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
+  check("its cache, workstreams, views and issues go with it", !ctx.db.has(throwaway.id) && repos.boards.list(throwaway.id).length === 0 && repos.views.listForProject(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
   check("the card leaves the grid", (await $(`document.querySelectorAll('.proj').length`)) === 2);
   check("the sheet closes with the project it was configuring", (await $(`!!document.querySelector('#psName')`)) === false);
   check("the fixture project is untouched", repos.items.list({ projectId: project.id }).length > 0);
   await shot("27-after-project-delete");
 
   // ── where a project is stored ────────────────────────────────────────
-  // The whole feature through the real UI: choose a destination, publish, and
-  // find the project on disk as text — then stop using it and find it still there.
-  const dest = path.join(WORK, "destination");
-  fs.mkdirSync(dest, { recursive: true });
+  // The folder is the truth: the sheet names it, says who drives git in it,
+  // lets plugin data travel or not, and syncs on demand.
+  await ctx.storage.ready;
+  const projectDir = ctx.hub.catalog.project(project.id)?.dir;
+  check("a configured Hub means no setup screen", (await $(`!!document.querySelector('.hub-setup')`)) === false && (await $(`!!document.querySelector('.proj-grid')`)) === true);
+  check("every project gets a folder under the Hub", !!projectDir && projectDir.startsWith(path.join(WORK, "hub", "projects")));
+  check("the folder holds the project as text", fs.existsSync(path.join(projectDir, ".tomrade", "project.json")));
+  check(
+    "every issue travels as one line",
+    fs.readFileSync(path.join(projectDir, ".tomrade", "state", "items.jsonl"), "utf8").trim().split("\n").length === repos.items.list({ projectId: project.id }).length
+  );
+  check("the live database is never in the folder", !fs.existsSync(path.join(projectDir, ".tomrade", "project.db")));
+  check("the folder keeps a database out on purpose", fs.readFileSync(path.join(projectDir, ".tomrade", ".gitignore"), "utf8").includes("*.db"));
+  check("every write reaches the folder's log", fs.readdirSync(path.join(projectDir, ".tomrade", "log")).some((f) => f.endsWith(".jsonl")));
 
   await press(gearFor("Tomrade Next"));
   await sleep(900);
-  check("the sheet says where the project is stored", (await $(`!!document.querySelector('#stgProvider')`)) === true);
-  check("an unbound project reads as living on this machine", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
+  check("the sheet names the project's folder", (await $(`document.querySelector('.stg-dir')?.textContent`)) === projectDir);
+  check("a folder of its own says so", (await $(`document.querySelector('.stg-origin')?.textContent`) ?? "").includes("A folder of its own"));
+  check("the folder can be changed, not only read", (await $(`!!document.querySelector('.stg-change')`)) === true);
+  check("a remote is offered for a folder of its own", (await $(`!!document.querySelector('#stgProvider')`)) === true);
   check(
-    "every registered destination is offered",
-    (await $(`[...document.querySelectorAll('#stgProvider option')].map(o => o.value).join()`)) === ",folder,git,github"
+    "every remote transport is offered, and no folder pretends to be one",
+    (await $(`[...document.querySelectorAll('#stgProvider option')].map(o => o.value).join()`)) === ",git,github"
   );
   check(
-    "nothing is publishable until a destination is chosen",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].some(b => /Publish here/.test(b.textContent) && !b.disabled)`)) === false
+    "nothing is publishable until a remote is chosen",
+    (await $(`document.querySelector('.stg-publish')?.disabled`)) === true
   );
-
-  await pick(`document.querySelector('#stgProvider')`, "folder");
-  await sleep(500);
-  check("choosing a folder asks which folder", (await $(`!!document.querySelector('#sf-stg-dir')`)) === true);
-  check(
-    "a path is chosen, not only typed",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].some(b => /Choose/.test(b.textContent))`)) === true
-  );
-
-  const publishBtn = `[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => /Publish here/.test(b.textContent))`;
-  await typeInto("#sf-stg-dir", dest);
-  await sleep(400);
-  check("a chosen destination arms the publish", (await $(`${publishBtn}?.disabled`)) === false);
+  const exportsBefore = ctx.hub.catalog.project(project.id)?.exports ?? [];
+  check("plugin data that can travel is listed", (await $(`document.querySelectorAll('.stg-export').length`)) > 0);
+  check("conversation history is one of them", (await $(`[...document.querySelectorAll('.stg-export .cfg-name')].some(n => n.textContent === 'Conversation history')`)) === true);
+  check("in a folder of its own it travels by default", exportsBefore.includes("agent") && (await $(`document.querySelector('.stg-export[data-namespace="agent"] input')?.checked`)) === true);
   await shot("28-project-storage");
 
-  await press(publishBtn);
-  await sleep(2600);
-  check("publishing writes the project to the destination as text", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
-  check(
-    "every issue travels as one line",
-    fs.readFileSync(path.join(dest, ".tomrade", "state", "items.jsonl"), "utf8").trim().split("\n").length === repos.items.list({ projectId: project.id }).length
-  );
-  check("the live database is never in the destination", !fs.existsSync(path.join(dest, ".tomrade", "project.db")));
-  check("the destination keeps a database out on purpose", fs.readFileSync(path.join(dest, ".tomrade", ".gitignore"), "utf8").includes("*.db"));
-  check("the sheet reports it as published", (await $(`[...document.querySelectorAll('.cfg-row .tag')].some(t => t.textContent === 'Published')`)) === true);
-  check(
-    "a published project offers a sync",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-ghost')].some(b => /Sync now/.test(b.textContent))`)) === true
-  );
+  await press(`document.querySelector('.stg-export[data-namespace="agent"] input')`);
+  await sleep(1500);
+  check("unticking stops it travelling", !(ctx.hub.catalog.project(project.id)?.exports ?? []).includes("agent"));
+  check("and the folder's manifest says so", !JSON.parse(fs.readFileSync(path.join(projectDir, ".tomrade", "project.json"), "utf8")).exports.includes("agent"));
+  check("nothing of it is left in the folder", !fs.existsSync(path.join(projectDir, ".tomrade", "plugins", "agent")));
+
+  check("the sheet reports the folder in step", (await $(`[...document.querySelectorAll('.stg-status .tag')].some(t => t.textContent === 'In step')`)) === true);
+  const writtenAt = fs.statSync(path.join(projectDir, ".tomrade", "state", "items.jsonl")).mtimeMs;
+  await press(`document.querySelector('.stg-sync')`);
+  await sleep(1800);
+  check("syncing an unchanged project rewrites nothing", fs.statSync(path.join(projectDir, ".tomrade", "state", "items.jsonl")).mtimeMs === writtenAt);
+  check("and still reads as in step", (await $(`[...document.querySelectorAll('.stg-status .tag')].some(t => t.textContent === 'In step')`)) === true);
+  check("the cache can be rebuilt from the folder", (await $(`!!document.querySelector('.stg-rebuild')`)) === true);
   await shot("29-project-published");
 
-  // An unchanged project publishes nothing: the artifact is byte-identical.
-  const publishedAt = fs.statSync(path.join(dest, ".tomrade", "state", "items.jsonl")).mtimeMs;
-  await press(`[...document.querySelectorAll('.dlg-body .btn-ghost')].find(b => /Sync now/.test(b.textContent))`);
-  await sleep(1800);
-  check("syncing an unchanged project rewrites nothing", fs.statSync(path.join(dest, ".tomrade", "state", "items.jsonl")).mtimeMs === publishedAt);
-
-  await pick(`document.querySelector('#stgProvider')`, "");
-  await sleep(400);
-  await press(`[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => /Stop using a destination/.test(b.textContent))`);
-  await sleep(1600);
-  check("a project can stop using a destination", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
-  check("nothing at the destination is deleted with the binding", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
-
-  // A destination that needs an account asks for it here, where it is used —
+  // A remote that needs an account asks for it here, where it is used —
   // and stays closed until it has one, so nothing is typed into a dead form.
   await pick(`document.querySelector('#stgProvider')`, "github");
   await sleep(700);
-  check("a destination that needs an account asks for it inline", (await $(`!!document.querySelector('#stgSecret')`)) === true);
+  check("a remote that needs an account asks for it inline", (await $(`!!document.querySelector('#stgSecret')`)) === true);
   check("its own fields stay shut until the account is connected", (await $(`!!document.querySelector('#sf-stg-owner')`)) === false);
-  check(
-    "publishing is impossible without the account",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].every(b => !/Publish here/.test(b.textContent) || b.disabled)`)) === true
-  );
+  check("publishing is impossible without the account", (await $(`document.querySelector('.stg-publish')?.disabled`)) === true);
   check(
     "it says where to get one",
     (await $(`[...document.querySelectorAll('.dlg-body .btn-ghost')].some(b => /github\.com/.test(b.textContent))`)) === true
@@ -1055,12 +1114,26 @@ const run = async () => {
   await sleep(700);
 
   // The account is stored per machine, but it is not a screen of its own: the
-  // provider claims that section, and Settings does not draw it twice.
+  // provider claims that section, and Settings does not draw it twice. The
+  // data pane names the Hub folder and the cache under it.
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
   check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Stale issues"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
+  await press(settingsNav("Hub"));
+  await sleep(700);
+  const hubInfo = await ctx.storage.hubInfo();
+  check("the Hub pane names the folder", (await $(`document.querySelector('#hubDir')?.value`)) === path.join(WORK, "hub"));
+  check("with no remote yet it offers the destination kinds", (await $(`!!document.querySelector('#hubProvider') && document.querySelector('.hub-publish')?.disabled === true`)) === true);
+  check("and lists what other machines put in the Hub", (await $(`document.querySelectorAll('.hub-other').length`)) === hubInfo.attachable.length);
+  check("saying so when there is nothing", (await $(`!!document.querySelector('.hub-others-none')`)) === (hubInfo.attachable.length === 0));
+  check("attaching them all waits for one with a remote", (await $(`document.querySelector('.hub-attach-all')?.disabled ?? true`)) === (hubInfo.attachable.length === 0));
+  await shot("30-hub-pane");
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => /^Data/.test(r.textContent.trim()))`);
+  await sleep(500);
+  check("the data pane names the Hub folder", (await $(`document.querySelector('#stHub')?.value`)) === path.join(WORK, "hub"));
+  check("and the cache folder beneath it", (await $(`document.querySelector('#stDb')?.value`)) === path.join(WORK, "cache"));
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
@@ -1068,11 +1141,13 @@ const run = async () => {
   // The round trip that matters for a team: publish, leave, and come back to it
   // from the destination alone — no clone by hand, no id typed in.
   const handoffDir = path.join(WORK, "handoff");
-  const handoff = repos.projects.create({ name: "Handoff", keyPrefix: "HND" });
+  const handoff = repos.projects.create({ name: "Handoff", keyPrefix: "HND" }, { dir: handoffDir });
+  await sleep(300);
   repos.items.create({ title: "written on the other machine", projectId: handoff.id, boardId: repos.boards.defaultFor(handoff.id).id, by: "human" });
-  await ctx.storage.bind(handoff.id, "folder", { dir: handoffDir });
+  await ctx.storage.publish(handoff.id);
   repos.projects.remove(handoff.id);
-  check("the destination keeps the project after it leaves this machine", fs.existsSync(path.join(handoffDir, ".tomrade", "project.json")));
+  check("a project can be given a folder of the user's choosing", fs.existsSync(path.join(handoffDir, ".tomrade", "project.json")));
+  check("the folder keeps the project after it leaves this machine", fs.existsSync(path.join(handoffDir, ".tomrade", "state", "items.jsonl")));
 
   await $(`location.hash = '#/';true`);
   await sleep(400);
@@ -1081,20 +1156,25 @@ const run = async () => {
   await sleep(2600);
   check("the project it left is gone from the grid", (await $(`[...document.querySelectorAll('.proj-name')].some(n => n.textContent === 'Handoff')`)) === false);
 
-  await press(`[...document.querySelectorAll('.titlebar .btn')].find(b => /Open a project/.test(b.textContent))`);
+  check("the home offers to open a folder", (await $(`!!document.querySelector('.titlebar .open-folder')`)) === true);
+  await press(`document.querySelector('.titlebar .open-remote')`);
   await sleep(800);
-  check("opening a project asks where it is, not only for a folder", (await $(`!!document.querySelector('#opProvider')`)) === true);
+  check("opening a published project asks where it is published", (await $(`!!document.querySelector('#opProvider')`)) === true);
   check(
-    "every destination can be opened from, not just a folder",
-    (await $(`[...document.querySelectorAll('#opProvider option')].map(o => o.value).join()`)) === "folder,git,github"
+    "every remote transport can be opened from",
+    (await $(`[...document.querySelectorAll('#opProvider option')].map(o => o.value).join()`)) === "git,github"
   );
   await shot("31-open-a-project");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
 
-  await typeInto("#sf-op-dir", handoffDir);
+  // "Open folder…" ends in a native picker the harness cannot drive; what the
+  // button does once a folder is picked is exactly this call.
+  await ctx.storage.attach(handoffDir);
   await sleep(400);
-  await press(`document.querySelector('.dlg-foot .btn-primary')`);
+  await $(`location.hash = '#/p/${handoff.id}';true`);
   await sleep(2600);
-  check("the project comes back from its destination", repos.projects.get(handoff.id) !== null);
+  check("the project comes back from its folder", repos.projects.get(handoff.id) !== null);
   check("it keeps the id agents already know", (await $(`location.hash`)).includes(handoff.id));
   check("its issues and its key prefix came with it", repos.items.list({ projectId: handoff.id })[0]?.key === "HND-1");
 

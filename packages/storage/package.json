@@ -20,7 +20,11 @@
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
+    "@tomrade/hub": "workspace:*",
     "@tomrade/ipc": "workspace:*",
+    "@tomrade/oplog": "workspace:*",
+    "@tomrade/projects": "workspace:*",
+    "@tomrade/settings": "workspace:*",
     "@tomrade/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"

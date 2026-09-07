@@ -18,8 +18,8 @@ afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 describe("example plugin: stale", () => {
   it("badges idle issues, counts them, lists them for agents, and clears an acknowledgement on the next write", async () => {
     const { ctx, db, items, board, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Contributions, stale] });
-    const old = items.create({ title: "Forgotten", boardId: board.id, by: "human" });
-    const fresh_ = items.create({ title: "Fresh", boardId: board.id, by: "human" });
+    const old = items.create({ projectId: project.id, title: "Forgotten", boardId: board.id, by: "human" });
+    const fresh_ = items.create({ projectId: project.id, title: "Fresh", boardId: board.id, by: "human" });
     db.prepare("UPDATE items SET updated_at = ? WHERE id = ?").run(Date.now() - 20 * 86_400_000, old.id);
 
     expect(ctx.settings.sections().map((s) => s.id)).toContain("stale");
@@ -27,14 +27,14 @@ describe("example plugin: stale", () => {
 
     expect(Object.keys(ctx.contributions.badgesFor(project.id))).toEqual([old.id]);
     expect(ctx.contributions.statusItems({ projectId: project.id })).toEqual([{ id: "stale", text: "1 stale" }]);
-    expect(ctx.contributions.sectionsFor(old.id)[0]?.rows[0]).toEqual({ label: "Idle", value: "20 days" });
-    expect(ctx.contributions.sectionsFor(fresh_.id)).toEqual([]);
+    expect(ctx.contributions.sectionsFor(project.id, old.id)[0]?.rows[0]).toEqual({ label: "Idle", value: "20 days" });
+    expect(ctx.contributions.sectionsFor(project.id, fresh_.id)).toEqual([]);
     expect(((await ctx.tools.execute("list_stale_items", {}, { by: "ai:mcp", projectId: project.id })) as { id: string }[]).map((i) => i.id)).toEqual([old.id]);
 
     expect(await ctx.contributions.run("stale.ack", { projectId: project.id, itemId: old.id })).toMatchObject({ toast: expect.stringMatching(/Acknowledged/) });
     expect(ctx.contributions.badgesFor(project.id)).toEqual({});
 
-    items.update(old.id, { status: "todo" }, "ai:mcp", { baseVersion: 1 });
+    items.update(project.id, old.id, { status: "todo" }, "ai:mcp", { baseVersion: 1 });
     db.prepare("UPDATE items SET updated_at = ? WHERE id = ?").run(Date.now() - 20 * 86_400_000, old.id);
     expect(Object.keys(ctx.contributions.badgesFor(project.id))).toEqual([old.id]);
 
