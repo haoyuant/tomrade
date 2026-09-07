@@ -4,7 +4,7 @@ import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
-import { timeAgo } from "~/lib/domain";
+import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
@@ -259,6 +259,13 @@ export function AgentPanel({
   const setWorkstream = useSetWorkstream(projectId);
   // The thread's workstream names its repository; the workdir says whether this machine can run there.
   const threadBoardId = detail.data?.thread.boardId ?? null;
+  const pickedBoardId = threadBoardId ?? (threadId ? null : (boardId ?? null));
+  const pickedBoard = pickedBoardId ? (boardsQ.data ?? []).find((b) => b.id === pickedBoardId) : undefined;
+  const chooseBoard = (next: string | null) => {
+    if (busy || next === pickedBoardId) return;
+    if (threadId) setWorkstream.mutate({ threadId, boardId: next });
+    else void newThread.mutateAsync({ boardId: next }).then((th) => pickThread(th.id));
+  };
   const workdir = useWorkdir(projectId, threadId, !!threadBoardId);
   const workdirProblem = threadBoardId ? (workdir.data?.problem ?? null) : null;
 
@@ -498,25 +505,31 @@ export function AgentPanel({
           </p>
         )}
         <div className="ai-knobs">
-          <select
-            className="select ai-ws"
-            aria-label={t("agentPanel.workstreamAria")}
-            title={t("agentPanel.workstreamLabel")}
-            disabled={busy}
-            value={threadBoardId ?? (threadId ? "" : (boardId ?? ""))}
-            onChange={(e) => {
-              const next = e.target.value || null;
-              if (threadId) setWorkstream.mutate({ threadId, boardId: next });
-              else void newThread.mutateAsync({ boardId: next }).then((th) => pickThread(th.id));
-            }}
+          {/* The workstream is one more knob beside the engine's, not a form field: a chip that opens a menu. */}
+          <Menu
+            label={t("agentPanel.workstreamLabel")}
+            align="start"
+            trigger={
+              <button
+                type="button"
+                className={`tag chip-btn ai-ws${pickedBoardId ? "" : " is-quiet"}`}
+                title={t("agentPanel.workstreamLabel")}
+                aria-label={t("agentPanel.workstreamAria")}
+                data-board={pickedBoardId ?? ""}
+                disabled={busy}
+              >
+                <Icon name={pickedBoard ? viewIcon(pickedBoard.icon) : "i-stack"} size={11} />
+                {pickedBoard?.name ?? t("agentPanel.wholeProject")}
+                <Icon name="i-chevdown" size={9} />
+              </button>
+            }
           >
-            <option value="">{t("agentPanel.wholeProject")}</option>
+            <MenuHead title={t("agentPanel.workstreamLabel")} />
+            <MenuRadioItem checked={!pickedBoardId} name={t("agentPanel.wholeProject")} onSelect={() => chooseBoard(null)} />
             {(boardsQ.data ?? []).map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
+              <MenuRadioItem key={b.id} checked={b.id === pickedBoardId} name={b.name} sub={b.subtitle ?? undefined} onSelect={() => chooseBoard(b.id)} />
             ))}
-          </select>
+          </Menu>
           <Menu
             label={t("agentPanel.engineLabel")}
             align="end"

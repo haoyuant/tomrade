@@ -805,11 +805,14 @@ const run = async () => {
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
   check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-head .chip-btn')?.textContent ?? '').trim().length > 0`)) === true);
   check("an empty thread introduces the agent", (await $(`!!document.querySelector('.ai-scroll .turn-ai, .ai-scroll .agent-empty')`)) === true);
+  // The workstream is a chip beside the engine's, opening a menu — not a form field.
+  await press(`document.querySelector('.ai-knobs .ai-ws')`);
+  await sleep(500);
   check(
     "the assistant offers the whole project or one workstream",
-    (await $(`[...document.querySelectorAll('.ai-ws option')].map(o => o.textContent).join('|')`)) === ["Whole project", ...repos.boards.list(project.id).map((b) => b.name)].join("|")
+    (await $(`[...document.querySelectorAll('.menu-row.is-radio .m-name')].map(n => n.textContent).join('|')`)) === ["Whole project", ...repos.boards.list(project.id).map((b) => b.name)].join("|")
   );
-  await pick(`document.querySelector('.ai-ws')`, ui.id);
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'UI')`);
   await sleep(1400);
   check("picking a workstream starts a thread on it", ctx.agent.store.threads(project.id).some((th) => th.boardId === ui.id));
   check("with no checkout here, the panel says the agent cannot run", (await $(`document.querySelector('.ai-workdir.is-problem')?.textContent ?? ''`)).includes("No local checkout"));
@@ -823,7 +826,9 @@ const run = async () => {
   check("the way out opens project settings on Repositories", (await $(`!!document.querySelector('#psRepos')`)) === true);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(600);
-  await pick(`document.querySelector('.ai-ws')`, "");
+  await press(`document.querySelector('.ai-knobs .ai-ws')`);
+  await sleep(500);
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'Whole project')`);
   await sleep(900);
   check("back on the whole project the message may go", (await $(`!document.querySelector('.ai-workdir') && document.querySelector('.ai-send')?.disabled === false`)) === true);
   await typeInto(".ai-input", "");
