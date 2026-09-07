@@ -63,8 +63,11 @@ export type OplogEntity = "item" | "board" | "view";
  * it and the tombstone carries no snapshot, so undo walks straight past it.
  * 'rank' is one item's manual position in one view — logged so it travels and
  * can be undone, kept apart so history reads as decisions, not drags.
+ * 'merge' is a note a sync left behind: the same field changed on two machines,
+ * `before` holds the value that lost and `after` the one that stands. Undo
+ * steps over it; taking the loser back is an ordinary edit.
  */
-export type OplogOp = "create" | "update" | "delete" | "purge" | "rank";
+export type OplogOp = "create" | "update" | "delete" | "purge" | "rank" | "merge";
 
 export interface OplogEntry {
   seq: number;

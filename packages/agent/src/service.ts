@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomrade/db";
+import type {} from "@tomrade/hub";
 import type {} from "@tomrade/oplog";
 import type {} from "@tomrade/ipc";
 import type { UndoRunResult } from "@tomrade/domain";
@@ -165,6 +167,14 @@ export class Agent extends Service {
     this.migrateConversationRole();
     this.registerPlatformTools();
     this.loadUserPlaybooks();
+    this.ctx.inject(["hub"], (ctx) => {
+      if (ctx.hub.dir) this.migratePlaybooksIntoHub(ctx.hub.dir);
+      this.loadUserPlaybooks();
+      return ctx.on("hub/configured", (dir) => {
+        this.migratePlaybooksIntoHub(dir);
+        this.loadUserPlaybooks();
+      });
+    });
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
@@ -727,12 +737,39 @@ export class Agent extends Service {
   }
 
   /** `<playbooksDir>/<name>/SKILL.md` — the user slot; a plugin's id may coexist. */
-  private loadUserPlaybooks(): void {
-    if (!this.config.playbooksDir) return;
-    const loaded = loadPlaybookDir(this.config.playbooksDir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
+  /**
+   * The user's playbooks live in the Hub folder (`<Hub>/playbooks/`) and travel
+   * with it; the configured `playbooksDir` is where they lived before the Hub
+   * existed, and is moved into the Hub the first time one is chosen.
+   */
+  private userPlaybooksDir(): string | null {
+    const hub = this.ctx.get("hub") as { dir: string | null } | undefined;
+    if (hub?.dir) return path.join(hub.dir, "playbooks");
+    return this.config.playbooksDir ?? null;
+  }
+
+  private migratePlaybooksIntoHub(hubDir: string): void {
+    const legacy = this.config.playbooksDir;
+    const target = path.join(hubDir, "playbooks");
+    if (!legacy || legacy === target || !fs.existsSync(legacy) || fs.existsSync(target)) return;
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.renameSync(legacy, target);
+    } catch (err) {
+      this.ctx.logger.warn(`playbooks were not moved into the Hub: ${message(err)}`);
+    }
+  }
+
+  loadUserPlaybooks(): void {
+    for (const [id, variants] of this.playbooks) {
+      delete variants.user;
+      if (!variants.plugin) this.playbooks.delete(id);
+    }
+    const dir = this.userPlaybooksDir();
+    if (!dir || !fs.existsSync(dir)) return;
+    const loaded = loadPlaybookDir(dir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
     for (const playbook of loaded) {
       const variants = this.playbooks.get(playbook.id) ?? {};
-      if (variants.user) continue;
       variants.user = playbook;
       this.playbooks.set(playbook.id, variants);
     }

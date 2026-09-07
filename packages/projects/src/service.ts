@@ -26,9 +26,11 @@ declare module "@tomrade/ipc" {
   interface Channels {
     "projects.list": () => Project[];
     "projects.get": (id: string) => Project | null;
-    "projects.create": (input: CreateProjectInput) => Project;
+    /** `dir`: the folder the project's `.tomrade/` goes in; default `<Hub>/projects/<slug>`. */
+    "projects.create": (input: CreateProjectInput, opts?: { dir?: string }) => Project;
     "projects.update": (id: string, patch: ProjectPatch) => Project | null;
-    "projects.remove": (id: string) => void;
+    /** Forgets the project on this machine and drops its cache; `deleteFolder` also removes the folder. */
+    "projects.remove": (id: string, opts?: { deleteFolder?: boolean }) => void;
   }
   interface Broadcasts {
     "projects.changed": () => void;
@@ -83,9 +85,9 @@ export class Projects extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("projects.list", () => ctx.projects.list());
       ctx.ipc.handle("projects.get", (id) => ctx.projects.get(id));
-      ctx.ipc.handle("projects.create", (input) => ctx.projects.create(input));
+      ctx.ipc.handle("projects.create", (input, opts) => ctx.projects.create(input, opts));
       ctx.ipc.handle("projects.update", (id, patch) => ctx.projects.update(id, patch));
-      ctx.ipc.handle("projects.remove", (id) => ctx.projects.remove(id));
+      ctx.ipc.handle("projects.remove", (id, opts) => ctx.projects.remove(id, opts));
     });
     this.home.inject(["tools"], (ctx) => {
       ctx.tools.register(
@@ -163,8 +165,12 @@ export class Projects extends Service {
     return this.toProject(id);
   }
 
-  /** Creates the project's cache, its row, its Main workstream and the default views. */
-  create(input: CreateProjectInput): Project {
+  /**
+   * Creates the project's cache, its row, its Main workstream and the default
+   * views. The folder is the storage layer's to write, on `projects/created`;
+   * a chosen `dir` is recorded here so it writes there.
+   */
+  create(input: CreateProjectInput, opts: { dir?: string } = {}): Project {
     const id = randomUUID();
     const now = Date.now();
     const keyPrefix = input.keyPrefix?.toUpperCase() || keyPrefixFor(input.name);
@@ -180,7 +186,9 @@ export class Projects extends Service {
       );
       seedProject(db, id, now);
     });
-    this.hub.catalog.upsertProject({ id, name: input.name, keyPrefix, createdAt: now });
+    const dir = opts.dir ? path.resolve(opts.dir) : null;
+    if (dir) fs.mkdirSync(dir, { recursive: true });
+    this.hub.catalog.upsertProject({ id, name: input.name, keyPrefix, createdAt: now, dir });
     const project: Project = { id, name: input.name, description: input.description ?? null, keyPrefix, archived: false, createdAt: now, updatedAt: now };
     this.home.emit("projects/created", project);
     this.notify();
@@ -207,11 +215,13 @@ export class Projects extends Service {
     return next;
   }
 
-  /** Forget the project on this machine and delete its cache. Its folder, where the truth is, stays. */
-  remove(id: string): void {
-    this.db.remove(id);
-    this.hub.catalog.removeProject(id);
+  /** Forget the project on this machine and delete its cache. Its folder, where the truth is, stays unless asked. */
+  remove(id: string, opts: { deleteFolder?: boolean } = {}): void {
+    const dir = this.hub.catalog.project(id)?.dir;
     this.home.emit("projects/removed", id);
+    this.db.remove(id);
+    if (opts.deleteFolder && dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    this.hub.catalog.removeProject(id);
     this.notify();
   }
 

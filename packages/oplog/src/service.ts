@@ -114,7 +114,7 @@ export class Oplog extends Service {
    * Rows from another machine's log. No snapshots, so undo cannot revert them;
    * they are history and the merge's evidence. Duplicates by (device, seq) are skipped.
    */
-  importForeign(projectId: string, ops: ForeignOp[]): number {
+  importForeign(projectId: string, ops: ForeignOp[], opts: { includeOwn?: boolean } = {}): number {
     const db = this.db(projectId);
     let imported = 0;
     db.transaction(() => {
@@ -123,7 +123,8 @@ export class Oplog extends Service {
          VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)`
       );
       for (const op of ops) {
-        if (op.device === this.device) continue;
+        // Our own rows come back only when the cache is rebuilt from the folder.
+        if (op.device === this.device && !opts.includeOwn) continue;
         imported += insert.run(op.entity, op.entityId, op.op, op.baseVersion, op.by, op.at, op.runId ?? null, op.device, op.deviceSeq, op.patch ? JSON.stringify(op.patch) : null).changes;
       }
     });

@@ -1,37 +1,38 @@
 import type { z } from "zod";
 
 /**
- * Where a project's shareable copy stands relative to its destination.
- * `local` means no destination is bound; there is nothing to sync.
+ * Where a project's folder stands relative to what this machine has published.
+ * `local` means there is nothing beyond this machine to be in step with.
  */
-export type SyncState = "local" | "synced" | "ahead" | "behind" | "diverged" | "offline" | "error" | "unavailable";
+export type SyncState = "local" | "synced" | "ahead" | "behind" | "diverged" | "syncing" | "offline" | "error" | "unavailable";
 
 export interface StorageStatus {
   state: SyncState;
-  /** Human-readable, non-secret: "github.com/acme/app · main · .tomrade". */
+  /** Human-readable, non-secret: the folder, or "github.com/acme/app · main". */
   location: string | null;
-  /** Provider text for the state — "origin/main is 3 commits ahead", "git not found". */
+  /** One line for the state — "3 commits behind origin", "git not found", "folder not found". */
   detail?: string;
   lastSyncAt: number | null;
 }
 
-/**
- * A provider's whole job: get one directory to and from somewhere. It never sees
- * SQLite — the live database stays in userData and only ever exchanges the text
- * artifact this directory holds.
- */
-export interface StorageHandle {
-  readonly location: string;
-  /** The directory `.tomrade/` is written into. */
-  readonly dir: string;
-  /** Bring `dir` up to date. Never merges content itself. */
-  pull(): Promise<{ changed: boolean }>;
-  /** Publish `dir`. A no-op provider (a plain folder) may ignore the message. */
-  push(message: string): Promise<void>;
-  status(): Promise<Omit<StorageStatus, "lastSyncAt">>;
-  /** Notify when the destination changed underneath us. */
-  watch?(onChange: () => void): () => void;
-  dispose(): Promise<void>;
+export type GitOrigin = "dedicated" | "shared" | "none";
+
+/** Everything the project's storage block draws. */
+export interface StorageInfo {
+  projectId: string;
+  /** The folder holding `.tomrade/`, or null until the Hub is configured. */
+  dir: string | null;
+  git: GitOrigin;
+  /** For a dedicated repository: the provider and non-secret config Tomrade pushes with. */
+  remote: { provider: string; config: Record<string, unknown> } | null;
+  /** What the folder's own git says about its origin, for a shared checkout: where teammates will find it. */
+  origin: { url: string | null; branch: string | null } | null;
+  /** In a shared checkout: commit the `.tomrade` subtree after publishing. */
+  autoCommit: boolean;
+  /** Plugin namespaces whose tables travel in the folder, and every namespace that could. */
+  exports: string[];
+  exportable: { namespace: string; tables: string[] }[];
+  logWindowDays: number;
 }
 
 /**
@@ -44,7 +45,6 @@ export interface StorageHandle {
  * project's config, which is committed alongside the code.
  */
 export interface ProviderConnection {
-  /** What to ask for, and where the user gets it. */
   prompt: { label: string; help?: string; url?: string };
   status(): Promise<ConnectionState>;
   connect(secret: string): Promise<ConnectionState>;
@@ -53,36 +53,38 @@ export interface ProviderConnection {
 
 export interface ConnectionState {
   connected: boolean;
-  /** Who we are connected as, for the renderer to show — never the secret. */
   label?: string;
   detail?: string;
 }
 
+/** A git remote, as a provider resolves it from its config. The URL may carry a credential; it is scrubbed before display. */
+export interface RemoteTarget {
+  url: string;
+  branch: string;
+}
+
+/**
+ * A provider is a remote transport for a dedicated repository: it turns its
+ * non-secret config into a git remote, and may know how to find or create one.
+ * It never sees SQLite and never touches a folder itself.
+ */
 export interface StorageProvider<C = unknown> {
-  /** Stable across releases: the binding stores this id, not a package name. */
+  /** Stable across releases: the catalog stores this id, not a package name. */
   id: string;
   title: string;
   description?: string;
-  /**
-   * Per-project, non-secret configuration. Rendered from `z.toJSONSchema()`;
-   * `.meta({ format: "password" })` is refused here — credentials belong in a
-   * `ctx.settings` section the provider registers instead.
-   */
+  /** Per-project, non-secret. `.meta({ format: "password" })` is refused at registration. */
   configSchema: z.ZodType<C>;
   defaults: C;
   /** The settings section holding this provider's credentials, if it needs any. */
   settingsSection?: string;
-  /**
-   * Resolve the destination from the config ALONE — never from a project id.
-   * An attach has to read the manifest before it knows which project it fetched,
-   * so a location that depended on the id could not be opened to find it.
-   */
-  open(config: C, opts: { create: boolean }): Promise<StorageHandle>;
+  toRemote(config: C): Promise<RemoteTarget> | RemoteTarget;
+  /** Bring the destination into existence — create the repository, say. */
+  ensureRemote?(config: C): Promise<void>;
   /** Candidates the user picks from, so nothing has to be typed by hand. */
   browse?(): Promise<{ label: string; config: C }[]>;
   /** A config for a destination that does not exist yet, from a name alone. */
   draft?(name: string): Promise<C> | C;
-  /** Set when the destination needs an account; the renderer collects it inline. */
   connection?: ProviderConnection;
 }
 
@@ -94,11 +96,8 @@ export interface StorageProviderView {
   schema: Record<string, unknown>;
   defaults: unknown;
   settingsSection?: string;
-  /** Whether this provider can list candidates to pick from. */
   browsable: boolean;
-  /** Whether a destination can be created from a name alone. */
   creatable: boolean;
-  /** Present when an account is needed; what to ask for and where to get it. */
   connection?: ProviderConnection["prompt"];
 }
 
@@ -109,21 +108,21 @@ export class UnknownProviderError extends Error {
   }
 }
 
-/** The destination holds a project, but not this one. */
+/** The folder holds a project, but not this one. */
 export class ForeignProjectError extends Error {
   constructor(
     public readonly expected: string,
     public readonly found: string
   ) {
-    super(`That location holds project ${found}, not ${expected}`);
+    super(`That folder holds project ${found}, not ${expected}`);
     this.name = "ForeignProjectError";
   }
 }
 
-/** Local and the destination both moved; nothing is overwritten without a human choosing. */
+/** Local and the folder both moved and the merge could not settle it. */
 export class DivergedError extends Error {
   constructor(public readonly projectId: string) {
-    super(`Project ${projectId} has local changes and the destination has moved on — resolve before syncing`);
+    super(`Project ${projectId} has local changes and its folder has moved on — resolve before syncing`);
     this.name = "DivergedError";
   }
 }
@@ -136,5 +135,20 @@ export class NewerSchemaError extends Error {
   ) {
     super(`That project was written with core schema ${found}; this build understands ${supported}. Update Tomrade first.`);
     this.name = "NewerSchemaError";
+  }
+}
+
+/** Tomrade drives git only in a folder it made for the project alone. */
+export class SharedCheckoutError extends Error {
+  constructor(public readonly dir: string) {
+    super(`${dir} is inside your own repository; Tomrade writes .tomrade there but never pushes it. Use a folder of its own to publish to a remote.`);
+    this.name = "SharedCheckoutError";
+  }
+}
+
+export class HubUnconfiguredError extends Error {
+  constructor() {
+    super("Choose where Tomrade keeps its files first (the Hub folder)");
+    this.name = "HubUnconfiguredError";
   }
 }

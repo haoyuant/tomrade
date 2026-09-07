@@ -38,6 +38,9 @@ const run = async () => {
     vars: { userData: WORK },
     patches: [[{ id: "mcp", config: { port: 0 } }]]
   });
+  // A fresh userData has no Hub folder; the app would open on the setup screen.
+  // Choosing one here is what a first run does, so every project gets a folder.
+  ctx.hub.configure(path.join(WORK, "hub"));
   // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
   const repos = { dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields };
@@ -974,77 +977,63 @@ const run = async () => {
   await shot("27-after-project-delete");
 
   // ── where a project is stored ────────────────────────────────────────
-  // The whole feature through the real UI: choose a destination, publish, and
-  // find the project on disk as text — then stop using it and find it still there.
-  const dest = path.join(WORK, "destination");
-  fs.mkdirSync(dest, { recursive: true });
+  // The folder is the truth: the sheet names it, says who drives git in it,
+  // lets plugin data travel or not, and syncs on demand.
+  await ctx.storage.ready;
+  const projectDir = ctx.hub.catalog.project(project.id)?.dir;
+  check("a configured Hub means no setup screen", (await $(`!!document.querySelector('.hub-setup')`)) === false && (await $(`!!document.querySelector('.proj-grid')`)) === true);
+  check("every project gets a folder under the Hub", !!projectDir && projectDir.startsWith(path.join(WORK, "hub", "projects")));
+  check("the folder holds the project as text", fs.existsSync(path.join(projectDir, ".tomrade", "project.json")));
+  check(
+    "every issue travels as one line",
+    fs.readFileSync(path.join(projectDir, ".tomrade", "state", "items.jsonl"), "utf8").trim().split("\n").length === repos.items.list({ projectId: project.id }).length
+  );
+  check("the live database is never in the folder", !fs.existsSync(path.join(projectDir, ".tomrade", "project.db")));
+  check("the folder keeps a database out on purpose", fs.readFileSync(path.join(projectDir, ".tomrade", ".gitignore"), "utf8").includes("*.db"));
+  check("every write reaches the folder's log", fs.readdirSync(path.join(projectDir, ".tomrade", "log")).some((f) => f.endsWith(".jsonl")));
 
   await press(gearFor("Tomrade Next"));
   await sleep(900);
-  check("the sheet says where the project is stored", (await $(`!!document.querySelector('#stgProvider')`)) === true);
-  check("an unbound project reads as living on this machine", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
+  check("the sheet names the project's folder", (await $(`document.querySelector('.stg-dir')?.textContent`)) === projectDir);
+  check("a folder of its own says so", (await $(`document.querySelector('.stg-origin')?.textContent`) ?? "").includes("A folder of its own"));
+  check("the folder can be changed, not only read", (await $(`!!document.querySelector('.stg-change')`)) === true);
+  check("a remote is offered for a folder of its own", (await $(`!!document.querySelector('#stgProvider')`)) === true);
   check(
-    "every registered destination is offered",
-    (await $(`[...document.querySelectorAll('#stgProvider option')].map(o => o.value).join()`)) === ",folder,git,github"
+    "every remote transport is offered, and no folder pretends to be one",
+    (await $(`[...document.querySelectorAll('#stgProvider option')].map(o => o.value).join()`)) === ",git,github"
   );
   check(
-    "nothing is publishable until a destination is chosen",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].some(b => /Publish here/.test(b.textContent) && !b.disabled)`)) === false
+    "nothing is publishable until a remote is chosen",
+    (await $(`document.querySelector('.stg-publish')?.disabled`)) === true
   );
-
-  await pick(`document.querySelector('#stgProvider')`, "folder");
-  await sleep(500);
-  check("choosing a folder asks which folder", (await $(`!!document.querySelector('#sf-stg-dir')`)) === true);
-  check(
-    "a path is chosen, not only typed",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].some(b => /Choose/.test(b.textContent))`)) === true
-  );
-
-  const publishBtn = `[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => /Publish here/.test(b.textContent))`;
-  await typeInto("#sf-stg-dir", dest);
-  await sleep(400);
-  check("a chosen destination arms the publish", (await $(`${publishBtn}?.disabled`)) === false);
+  const exportsBefore = ctx.hub.catalog.project(project.id)?.exports ?? [];
+  check("plugin data that can travel is listed", (await $(`document.querySelectorAll('.stg-export').length`)) > 0);
+  check("conversation history is one of them", (await $(`[...document.querySelectorAll('.stg-export .cfg-name')].some(n => n.textContent === 'Conversation history')`)) === true);
+  check("in a folder of its own it travels by default", exportsBefore.includes("agent") && (await $(`document.querySelector('.stg-export[data-namespace="agent"] input')?.checked`)) === true);
   await shot("28-project-storage");
 
-  await press(publishBtn);
-  await sleep(2600);
-  check("publishing writes the project to the destination as text", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
-  check(
-    "every issue travels as one line",
-    fs.readFileSync(path.join(dest, ".tomrade", "state", "items.jsonl"), "utf8").trim().split("\n").length === repos.items.list({ projectId: project.id }).length
-  );
-  check("the live database is never in the destination", !fs.existsSync(path.join(dest, ".tomrade", "project.db")));
-  check("the destination keeps a database out on purpose", fs.readFileSync(path.join(dest, ".tomrade", ".gitignore"), "utf8").includes("*.db"));
-  check("the sheet reports it as published", (await $(`[...document.querySelectorAll('.cfg-row .tag')].some(t => t.textContent === 'Published')`)) === true);
-  check(
-    "a published project offers a sync",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-ghost')].some(b => /Sync now/.test(b.textContent))`)) === true
-  );
+  await press(`document.querySelector('.stg-export[data-namespace="agent"] input')`);
+  await sleep(1500);
+  check("unticking stops it travelling", !(ctx.hub.catalog.project(project.id)?.exports ?? []).includes("agent"));
+  check("and the folder's manifest says so", !JSON.parse(fs.readFileSync(path.join(projectDir, ".tomrade", "project.json"), "utf8")).exports.includes("agent"));
+  check("nothing of it is left in the folder", !fs.existsSync(path.join(projectDir, ".tomrade", "plugins", "agent")));
+
+  check("the sheet reports the folder in step", (await $(`[...document.querySelectorAll('.stg-status .tag')].some(t => t.textContent === 'In step')`)) === true);
+  const writtenAt = fs.statSync(path.join(projectDir, ".tomrade", "state", "items.jsonl")).mtimeMs;
+  await press(`document.querySelector('.stg-sync')`);
+  await sleep(1800);
+  check("syncing an unchanged project rewrites nothing", fs.statSync(path.join(projectDir, ".tomrade", "state", "items.jsonl")).mtimeMs === writtenAt);
+  check("and still reads as in step", (await $(`[...document.querySelectorAll('.stg-status .tag')].some(t => t.textContent === 'In step')`)) === true);
+  check("the cache can be rebuilt from the folder", (await $(`!!document.querySelector('.stg-rebuild')`)) === true);
   await shot("29-project-published");
 
-  // An unchanged project publishes nothing: the artifact is byte-identical.
-  const publishedAt = fs.statSync(path.join(dest, ".tomrade", "state", "items.jsonl")).mtimeMs;
-  await press(`[...document.querySelectorAll('.dlg-body .btn-ghost')].find(b => /Sync now/.test(b.textContent))`);
-  await sleep(1800);
-  check("syncing an unchanged project rewrites nothing", fs.statSync(path.join(dest, ".tomrade", "state", "items.jsonl")).mtimeMs === publishedAt);
-
-  await pick(`document.querySelector('#stgProvider')`, "");
-  await sleep(400);
-  await press(`[...document.querySelectorAll('.dlg-body .btn-secondary')].find(b => /Stop using a destination/.test(b.textContent))`);
-  await sleep(1600);
-  check("a project can stop using a destination", (await $(`document.querySelector('#stgProvider')?.value`)) === "");
-  check("nothing at the destination is deleted with the binding", fs.existsSync(path.join(dest, ".tomrade", "project.json")));
-
-  // A destination that needs an account asks for it here, where it is used —
+  // A remote that needs an account asks for it here, where it is used —
   // and stays closed until it has one, so nothing is typed into a dead form.
   await pick(`document.querySelector('#stgProvider')`, "github");
   await sleep(700);
-  check("a destination that needs an account asks for it inline", (await $(`!!document.querySelector('#stgSecret')`)) === true);
+  check("a remote that needs an account asks for it inline", (await $(`!!document.querySelector('#stgSecret')`)) === true);
   check("its own fields stay shut until the account is connected", (await $(`!!document.querySelector('#sf-stg-owner')`)) === false);
-  check(
-    "publishing is impossible without the account",
-    (await $(`[...document.querySelectorAll('.dlg-body .btn-secondary')].every(b => !/Publish here/.test(b.textContent) || b.disabled)`)) === true
-  );
+  check("publishing is impossible without the account", (await $(`document.querySelector('.stg-publish')?.disabled`)) === true);
   check(
     "it says where to get one",
     (await $(`[...document.querySelectorAll('.dlg-body .btn-ghost')].some(b => /github\.com/.test(b.textContent))`)) === true
@@ -1055,12 +1044,17 @@ const run = async () => {
   await sleep(700);
 
   // The account is stored per machine, but it is not a screen of its own: the
-  // provider claims that section, and Settings does not draw it twice.
+  // provider claims that section, and Settings does not draw it twice. The
+  // data pane names the Hub folder and the cache under it.
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
   check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Stale issues"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => /^Data/.test(r.textContent.trim()))`);
+  await sleep(500);
+  check("the data pane names the Hub folder", (await $(`document.querySelector('#stHub')?.value`)) === path.join(WORK, "hub"));
+  check("and the cache folder beneath it", (await $(`document.querySelector('#stDb')?.value`)) === path.join(WORK, "cache"));
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
@@ -1068,11 +1062,13 @@ const run = async () => {
   // The round trip that matters for a team: publish, leave, and come back to it
   // from the destination alone — no clone by hand, no id typed in.
   const handoffDir = path.join(WORK, "handoff");
-  const handoff = repos.projects.create({ name: "Handoff", keyPrefix: "HND" });
+  const handoff = repos.projects.create({ name: "Handoff", keyPrefix: "HND" }, { dir: handoffDir });
+  await sleep(300);
   repos.items.create({ title: "written on the other machine", projectId: handoff.id, boardId: repos.boards.defaultFor(handoff.id).id, by: "human" });
-  await ctx.storage.bind(handoff.id, "folder", { dir: handoffDir });
+  await ctx.storage.publish(handoff.id);
   repos.projects.remove(handoff.id);
-  check("the destination keeps the project after it leaves this machine", fs.existsSync(path.join(handoffDir, ".tomrade", "project.json")));
+  check("a project can be given a folder of the user's choosing", fs.existsSync(path.join(handoffDir, ".tomrade", "project.json")));
+  check("the folder keeps the project after it leaves this machine", fs.existsSync(path.join(handoffDir, ".tomrade", "state", "items.jsonl")));
 
   await $(`location.hash = '#/';true`);
   await sleep(400);
@@ -1081,20 +1077,25 @@ const run = async () => {
   await sleep(2600);
   check("the project it left is gone from the grid", (await $(`[...document.querySelectorAll('.proj-name')].some(n => n.textContent === 'Handoff')`)) === false);
 
-  await press(`[...document.querySelectorAll('.titlebar .btn')].find(b => /Open a project/.test(b.textContent))`);
+  check("the home offers to open a folder", (await $(`!!document.querySelector('.titlebar .open-folder')`)) === true);
+  await press(`document.querySelector('.titlebar .open-remote')`);
   await sleep(800);
-  check("opening a project asks where it is, not only for a folder", (await $(`!!document.querySelector('#opProvider')`)) === true);
+  check("opening a published project asks where it is published", (await $(`!!document.querySelector('#opProvider')`)) === true);
   check(
-    "every destination can be opened from, not just a folder",
-    (await $(`[...document.querySelectorAll('#opProvider option')].map(o => o.value).join()`)) === "folder,git,github"
+    "every remote transport can be opened from",
+    (await $(`[...document.querySelectorAll('#opProvider option')].map(o => o.value).join()`)) === "git,github"
   );
   await shot("31-open-a-project");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
 
-  await typeInto("#sf-op-dir", handoffDir);
+  // "Open folder…" ends in a native picker the harness cannot drive; what the
+  // button does once a folder is picked is exactly this call.
+  await ctx.storage.attach(handoffDir);
   await sleep(400);
-  await press(`document.querySelector('.dlg-foot .btn-primary')`);
+  await $(`location.hash = '#/p/${handoff.id}';true`);
   await sleep(2600);
-  check("the project comes back from its destination", repos.projects.get(handoff.id) !== null);
+  check("the project comes back from its folder", repos.projects.get(handoff.id) !== null);
   check("it keeps the id agents already know", (await $(`location.hash`)).includes(handoff.id));
   check("its issues and its key prefix came with it", repos.items.list({ projectId: handoff.id })[0]?.key === "HND-1");
 

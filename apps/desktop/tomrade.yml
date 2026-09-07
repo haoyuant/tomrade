@@ -93,21 +93,17 @@ plugins:
     name: "@tomrade/settings"
     config:
       path: "${userData}/settings.json"
-  # Where each project's shareable copy lives. An unbound project is a local
-  # project: the live SQLite file in userData is the only copy it has.
+  # Each project's folder is the truth and the cache follows it: the log is
+  # written through, the snapshot shortly after, and a folder changed by anyone
+  # else is read back in. Git is driven only in folders Tomrade made itself.
   - id: storage
     name: "@tomrade/storage"
-    config:
-      path: "${userData}/storage.json"
+  # Remote transports for a project's own repository: any git URL…
   - id: storage-git
     name: "@tomrade/storage-git"
-    config:
-      root: "${userData}/remotes"
-  # GitHub is a hosting choice on top of storage-git, not a peer of the others.
+  # …and GitHub as a hosting choice on top: find a repository, make one.
   - id: storage-github
     name: "@tomrade/storage-github"
-    config:
-      root: "${userData}/remotes"
   - id: llm
     name: "@tomrade/llm"
   - id: tools

@@ -145,6 +145,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -694,6 +697,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -728,6 +734,15 @@ importers:
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
+      '@tomrade/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+      '@tomrade/projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomrade/write':
         specifier: workspace:*
         version: link:../write

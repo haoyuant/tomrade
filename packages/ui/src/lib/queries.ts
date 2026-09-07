@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommandScope } from "@tomrade/contributions";
-import type { StorageBinding, StorageProviderView, StorageStatus } from "@tomrade/storage";
+import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomrade/storage";
 import type {} from "@tomrade/hub";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
 import type {
@@ -39,7 +39,7 @@ export const keys = {
   plugins: ["plugins"] as const,
   storageProviders: ["storage", "providers"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
-  storageBinding: (projectId: string) => ["storage", "binding", projectId] as const,
+  storageInfo: (projectId: string) => ["storage", "info", projectId] as const,
   storageConnection: (providerId: string) => ["storage", "connection", providerId] as const,
   contributions: ["contributions"] as const,
   commands: ["contributions", "commands"] as const,
@@ -66,7 +66,7 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
  */
 export function invalidateProject(qc: QueryClient, projectId: string): void {
   invalidateWorkspace(qc, projectId);
-  for (const key of [keys.boards(projectId), keys.views(projectId), keys.fields(projectId), keys.projects, keys.storageStatus(projectId), keys.storageBinding(projectId)]) {
+  for (const key of [keys.boards(projectId), keys.views(projectId), keys.fields(projectId), keys.projects, keys.storageStatus(projectId), keys.storageInfo(projectId)]) {
     void qc.invalidateQueries({ queryKey: key });
   }
   void qc.invalidateQueries({ queryKey: ["ranks"] });
@@ -297,10 +297,11 @@ export const useUpdateFieldOption = (projectId: string) =>
 export const useRemoveFieldOption = (projectId: string) =>
   useFieldMutation(projectId, (args: { fieldId: string; optionId: string; moveTo?: string }) => invoke("fields.removeOption", projectId, args.fieldId, args.optionId, args.moveTo));
 
+/** `dir` is where the project's folder goes; blank lets the Hub place it under `projects/<slug>`. */
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateProjectInput): Promise<Project> => invoke("projects.create", input),
+    mutationFn: (args: { input: CreateProjectInput; dir?: string }): Promise<Project> => invoke("projects.create", args.input, args.dir ? { dir: args.dir } : undefined),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.projects })
   });
 }
@@ -322,8 +323,8 @@ export function useUpdateProject() {
 export function useRemoveProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("projects.remove", id),
-    onSuccess: (_r, id) => {
+    mutationFn: (args: { id: string; deleteFolder?: boolean }) => invoke("projects.remove", args.id, args.deleteFolder ? { deleteFolder: true } : undefined),
+    onSuccess: (_r, { id }) => {
       for (const key of [keys.boards(id), keys.views(id), keys.items(id), keys.labels(id), keys.badges(id), keys.statusItems(id), keys.oplog(id)]) {
         qc.removeQueries({ queryKey: key });
       }
@@ -345,14 +346,40 @@ export function useSaveSettings() {
 
 export const useStorageProviders = () => useQuery({ queryKey: keys.storageProviders, queryFn: (): Promise<StorageProviderView[]> => invoke("storage.providers") });
 
-export const useStorageBinding = (projectId: string) =>
-  useQuery({ queryKey: keys.storageBinding(projectId), queryFn: (): Promise<StorageBinding | null> => invoke("storage.binding", projectId) });
+/** The folder, who drives git in it, the remote, and what travels — everything the block draws. */
+export const useStorageInfo = (projectId: string) =>
+  useQuery({ queryKey: keys.storageInfo(projectId), queryFn: (): Promise<StorageInfo> => invoke("storage.info", projectId) });
 
 /** Contacts the remote, so it is asked for on open and after an action — never polled. */
 export const useStorageStatus = (projectId: string) =>
   useQuery({ queryKey: keys.storageStatus(projectId), queryFn: (): Promise<StorageStatus> => invoke("storage.status", projectId), retry: false, staleTime: 10_000 });
 
-/** Point a project at a destination and publish it there. */
+/** Re-point the project at a folder. Empty: written; holding this project: adopted; another's: refused. */
+export function useSetFolder(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dir: string) => invoke("storage.setFolder", projectId, dir),
+    onSettled: () => invalidateProject(qc, projectId)
+  });
+}
+
+export function useSetAutoCommit(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) => invoke("storage.setAutoCommit", projectId, on),
+    onSettled: () => void qc.invalidateQueries({ queryKey: keys.storageInfo(projectId) })
+  });
+}
+
+export function useSetExports(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (namespaces: string[]) => invoke("storage.setExports", projectId, namespaces),
+    onSettled: () => invalidateProject(qc, projectId)
+  });
+}
+
+/** Give the project's own repository a remote and push. Refused inside the user's own checkout. */
 export function useBindStorage(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -361,7 +388,7 @@ export function useBindStorage(projectId: string) {
   });
 }
 
-/** Forget the destination. Nothing there is deleted. */
+/** Forget the remote. The repository and nothing remote is deleted. */
 export function useUnbindStorage(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -375,6 +402,15 @@ export function useSyncStorage(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => invoke("storage.sync", projectId),
+    onSettled: () => invalidateProject(qc, projectId)
+  });
+}
+
+/** Drop the cache and read the folder again. The folder is the truth, so nothing but the undo window is lost. */
+export function useRebuildStorage(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("storage.rebuild", projectId),
     onSettled: () => invalidateProject(qc, projectId)
   });
 }
@@ -414,12 +450,36 @@ export function useDraftStorage() {
   return useMutation({ mutationFn: (args: { providerId: string; name: string }) => invoke("storage.draft", args.providerId, args.name) });
 }
 
-/** Bring in a project this machine does not know; resolves to its id. */
-export function useAttachProject() {
+/** Open a folder that already holds a project; resolves to its id. */
+export function useAttachFolder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.attach", args.providerId, args.config),
+    mutationFn: (dir: string) => invoke("storage.attach", dir),
     onSuccess: (projectId) => invalidateProject(qc, projectId)
+  });
+}
+
+/** Clone a published project into the Hub and open it; resolves to its id. */
+export function useAttachRemote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.attachRemote", args.providerId, args.config),
+    onSuccess: (projectId) => invalidateProject(qc, projectId)
+  });
+}
+
+/* ── this machine ──────────────────────────────────────────────────────── */
+
+/** First run, or a move: name the Hub folder. Every project without a folder gets one under it. */
+export function useConfigureHub() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dir: string) => invoke("hub.configure", dir),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.hub });
+      void qc.invalidateQueries({ queryKey: keys.projects });
+      void qc.invalidateQueries({ queryKey: ["storage"] });
+    }
   });
 }
 

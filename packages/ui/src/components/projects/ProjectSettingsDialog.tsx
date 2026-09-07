@@ -5,7 +5,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
 import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useBoards, useItems, useLabels, useRemoveProject, useStorageBinding, useUpdateProject, useViews } from "~/lib/queries";
+import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
 import { StorageBlock } from "./StorageBlock";
 import { useToast } from "~/lib/toast";
 
@@ -241,7 +241,7 @@ function SettingsFace({ project, onClose, onRequestDelete }: { project: Project;
 }
 
 /** The plain-English list of what goes with the project. */
-function consequences(project: Project, facts: Facts, last: boolean, published: boolean, t: T): string[] {
+function consequences(project: Project, facts: Facts, last: boolean, published: boolean, deleteFolder: boolean, t: T): string[] {
   const out = [
     t("projectSettingsDialog.consequenceWorkstreamsViews", {
       boards: countPhrase(t, facts.workstreams, "projectSettingsDialog.boardOne", "projectSettingsDialog.boardMany"),
@@ -263,6 +263,7 @@ function consequences(project: Project, facts: Facts, last: boolean, published: 
   ].filter(Boolean);
   if (provenance.length) out.push(t("projectSettingsDialog.consequenceProvenanceJoin", { list: provenance.join(", ") }));
   out.push(t("projectSettingsDialog.consequenceKeyPrefix", { prefix: project.keyPrefix }));
+  out.push(t(deleteFolder ? "projectSettingsDialog.consequenceFolderDeleted" : "projectSettingsDialog.consequenceFolderKept"));
   if (published) out.push(t("projectSettingsDialog.consequencePublished"));
   if (last) out.push(t("projectSettingsDialog.consequenceLastProject", { brand: "Tomrade" }));
   return out;
@@ -292,13 +293,16 @@ function DeleteFace({
   const toast = useToast();
   const facts = useFacts(project.id);
   const [typed, setTyped] = useState("");
+  /** Off by default: forgetting a project on this machine is reversible; deleting its folder is not. */
+  const [deleteFolder, setDeleteFolder] = useState(false);
   const matches = typed.trim() === project.name.trim();
-  const published = !!useStorageBinding(project.id).data;
-  const lost = consequences(project, facts, last, published, t);
+  const info = useStorageInfo(project.id);
+  const published = !!info.data?.remote;
+  const lost = consequences(project, facts, last, published, deleteFolder, t);
 
   const destroy = () => {
     if (!matches || remove.isPending) return;
-    remove.mutate(project.id, {
+    remove.mutate({ id: project.id, deleteFolder }, {
       // No `onUndo` here, ever. A toast that offers an undo the write path
       // cannot honour is worse than no toast at all.
       onSuccess: () => {
@@ -334,6 +338,16 @@ function DeleteFace({
           </ul>
         </div>
 
+        {info.data?.dir && (
+          <label className="cfg-row del-folder" style={{ cursor: "pointer" }}>
+            <input type="checkbox" checked={deleteFolder} onChange={(e) => setDeleteFolder(e.target.checked)} />
+            <span className="cfg-name">{t("projectSettingsDialog.alsoDeleteFolder")}</span>
+            <span className="meta-txt num" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }} title={info.data.dir}>
+              {info.data.dir}
+            </span>
+          </label>
+        )}
+
         <div className="field">
           <label htmlFor="dpName">{tx("projectSettingsDialog.typeToConfirmLabel", { name: <span className="num">{project.name}</span> })}</label>
           <input
@@ -348,7 +362,9 @@ function DeleteFace({
               if (e.key === "Enter") destroy();
             }}
           />
-          <span className="meta-txt">{published ? t("projectSettingsDialog.publishedNote") : t("projectSettingsDialog.notPublishedNote")}</span>
+          <span className="meta-txt">
+            {deleteFolder ? t("projectSettingsDialog.folderDeletedNote") : published ? t("projectSettingsDialog.publishedNote") : t("projectSettingsDialog.notPublishedNote")}
+          </span>
         </div>
       </DialogBody>
       <DialogFoot>

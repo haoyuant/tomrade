@@ -418,95 +418,79 @@ unchanged.
 
 ## Destinations
 
-A project's live SQLite file always sits in `<userData>`. What the user chooses
-is where its *shareable copy* goes, and that copy is **text**: a `.tomrade/`
-folder holding `project.json`, one `state/<table>.jsonl` per core table sorted
-by id, and a `.gitignore` that keeps a database out. The serialisation is
-deterministic, so an unchanged project produces no diff and no commit.
+Every project is a **folder the user can see** — by default
+`<Hub>/projects/<slug>/` under the Hub folder (`~/Tomrade`) chosen on first
+run — holding `.tomrade/`: `project.json` (identity, schema version, a digest of
+the state files and a `checkpoint` of each machine's furthest op), `state/` (one
+`<table>.jsonl` per core table, sorted by id), `log/<device>.jsonl` (each
+machine's own change log, append-only, written through on every commit, compacted
+to a window), `plugins/<ns>/<table>.jsonl` (plugin tables the project exports),
+`docs/` (the user's), a `.gitattributes` that lets git keep both sides of a
+line clash (`merge=union`), and a `README.md` for whoever finds the folder.
 
-A **provider** moves that folder and nothing else. It never sees SQLite.
+**The folder is the truth and the cache follows it.** A write lands in the cache
+and in the log at once; the snapshot is rewritten after a quiet period, each
+file through a temporary name and the manifest last, so a reader never sees a
+manifest describing files that are not there yet. A folder changed by anyone
+else (a pull, a sync tool, a hand edit) is read back in: taken whole when the
+cache is clean, **merged** when both moved. The merge is a pure function
+(`mergeStates` in `@tomrade/storage`): a row changed on one side only is taken,
+a row changed on both merges field by field, the same field changed on both is
+settled by the logs — later `at` wins, tie by device id, silence falls to the
+folder — and every contested field leaves a `merge` row in the oplog by
+`ai:sync`, with the losing value in `before`, which undo steps over. A row
+deleted on one side and edited on the other keeps the edit. Issue keys minted
+on both sides are renumbered on the side that never published them.
 
-```ts
-ctx.storage.register({
-  id: "acme-drive",
-  title: "Acme Drive",
-  configSchema: z.object({ folder: z.string().meta({ format: "directory" }) }),
-  defaults: { folder: "" },
-  // Resolve the destination from the config ALONE — an attach must open it
-  // before it can read which project is inside.
-  async open(config, { create }) {
-    return {
-      location: config.folder,
-      dir: config.folder,
-      pull: async () => ({ changed: false }),
-      push: async (message) => {},
-      status: async () => ({ state: "synced", location: config.folder }),
-      dispose: async () => {}
-    };
-  }
-});
-```
+Who drives git in the folder depends on where it is (`ctx.storage.info(id).git`):
 
-`register` is an effect: the provider, and its option in every project's
-settings, goes when the plugin unloads. `configSchema` is rendered by the
-renderer from `z.toJSONSchema()`, so a provider ships no UI code — and a
-`format: "password"` field in it is **refused at registration**, because a
-per-project config is committed alongside the code. Credentials belong in a
-`ctx.settings` section the provider registers, named in `settingsSection`.
+| Origin | Means | Tomrade does |
+|---|---|---|
+| `none` | A plain folder — of its own, or in Dropbox | Writes files; a sync tool moves them |
+| `dedicated` | A repository Tomrade made for the project alone (`project.json.repo`) | Commits, fetches, merges with a merge commit, pushes — never forces |
+| `shared` | Inside the user's own code checkout | Writes `.tomrade/` only; optionally commits that subtree; `fetch` for status; **never push, pull, checkout or reset** |
 
-A destination that needs an account declares a `connection`, and the renderer
-collects it **where it is used** — in the project's own destination block —
-rather than in a settings card the user has to go and find first:
+A **provider** is a remote transport for a dedicated repository: it turns a
+non-secret config into a git remote, and may find or create one. It never sees
+SQLite and never touches a folder.
 
 ```ts
-connection: {
-  prompt: { label: "Personal access token", help: "…", url: "https://…/tokens/new" },
-  status: () => Promise<{ connected: boolean; label?: string; detail?: string }>,
-  connect: (secret: string) => Promise<{ connected: boolean; label?: string }>,
-  disconnect: () => Promise<void>
-}
+ctx.storage.register(createRemoteProvider({
+  id: "acme-git",
+  title: "Acme Git",
+  configSchema: z.object({ project: z.string() }),
+  defaults: { project: "" },
+  toRemote: (c) => ({ url: `https://git.acme.dev/${c.project}.git`, branch: "main" }),
+  async ensureRemote(c) { /* create it */ },
+  async browse() { return [{ label: "acme/app", config: { project: "acme/app" } }]; }
+}));
 ```
 
-The secret is still the provider's to keep, in its own `ctx.settings` section,
-because one account serves every project and none of it may reach a config that
-gets committed. But a section a storage provider claims through
-`settingsSection` is **not drawn again** by the settings dialog — the connection
-block is where it lives. Verify before storing: a credential that does not work
-should never be saved.
-
-Two more optional capabilities remove typing. `browse()` lists what the account
-already has as ready-made configs, and `draft(name)` builds a whole config from
-a name alone, for a destination that does not exist yet. A provider offering
-both means the user picks from a list or types one name — never four fields.
-
-The states a project can be in are decided by content, not by trust: the
-artifact's own digest is compared with the one last published, so `ahead`,
-`behind` and `diverged` read the same whether a change arrived by git, by
-rsync or by hand. `flush` refuses to overwrite a destination that has moved,
-`refresh` refuses to discard local work that has not been published, and
-neither ever deletes a copy holding writes the other side lacks.
+`register` is an effect. `configSchema` is rendered from `z.toJSONSchema()` so a
+provider ships no UI code; a `format: "password"` field is **refused at
+registration** — credentials belong in a `ctx.settings` section named in
+`settingsSection`, collected inline through `connection` where the remote is
+chosen. `browse()` and `draft(name)` remove typing. `@tomrade/storage-git`
+registers `git` (any URL); `@tomrade/storage-github` adds discovery and
+creation on top.
 
 | Call | Does |
 |---|---|
-| `ctx.storage.bind(projectId, providerId, config)` | Point a project at a destination and publish it there |
-| `ctx.storage.unbind(projectId)` | Forget the destination. Nothing there is deleted |
-| `ctx.storage.flush(projectId)` | Publish. Skips entirely when the bytes would be identical |
-| `ctx.storage.refresh(projectId)` | Take the destination's copy, when local is clean |
-| `ctx.storage.sync(projectId)` | `refresh`, then `flush` |
-| `ctx.storage.attach(providerId, config)` | Bring in a project this machine does not know; returns its id |
-| `ctx.storage.statusFor(projectId)` | `local` / `synced` / `ahead` / `behind` / `diverged` / `offline` / `error` / `unavailable`. Contacts the remote, so poll it sparingly |
+| `ctx.storage.info(projectId)` | Folder, origin, remote, what travels |
+| `ctx.storage.statusFor(projectId)` | `local` / `synced` / `ahead` / `behind` / `diverged` / `syncing` / `offline` / `error` / `unavailable` |
+| `ctx.storage.publish(projectId)` | Snapshot now; commit and push a dedicated repository |
+| `ctx.storage.refresh(projectId)` | Take the folder's (or remote's) changes: import or merge |
+| `ctx.storage.sync(projectId)` | `refresh`, then `publish` |
+| `ctx.storage.setFolder(projectId, dir)` | Move the project to another folder; the old one is left alone |
+| `ctx.storage.setExports(projectId, ns[])` | Which plugin namespaces travel (shared through the manifest) |
+| `ctx.storage.bind(projectId, providerId, config)` | Give a dedicated repository a remote; refused for a shared checkout |
+| `ctx.storage.attach(dir)` / `attachRemote(providerId, config)` | Open a folder, or clone a published project into the Hub |
+| `ctx.storage.rebuild(projectId)` | Drop the cache and read the folder again, history included |
 
-An **unbound project is a local project**: there is no `local` provider to keep
-in step, and `statusFor` answers `local`. Events are `storage/registered`,
-`storage/unregistered`, `storage/synced` and `storage/imported`; the renderer
-hears `storage.changed(projectId)` and refetches everything keyed by it.
-
-`@tomrade/storage-git` adds git as a mechanism — a clone under `<userData>`,
-fast-forward-only pulls, commits of *only* its own subtree so it is safe inside
-the user's own checkout, and a push that is reported rather than forced when it
-would not fast-forward. `@tomrade/storage-github` adds only what git cannot do
-alone: find a repository and make one. A hosting provider for GitLab or Gitea is
-`createGitProvider` plus a REST client, in a row of its own.
+Events: `storage/registered`, `storage/unregistered`, `storage/synced`,
+`storage/imported`; the renderer hears `storage.changed(projectId)`.
+`ctx.storage.artifactDirFor(projectId)` names `<dir>/.tomrade` for whatever
+reads what travels beside the state (playbooks, docs).
 
 ## Settings
 

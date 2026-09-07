@@ -14,7 +14,8 @@ import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCacheDir, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { useCacheDir, useHubInfo, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { reveal } from "~/lib/shell";
 
 /** Each preview re-declares the token block locally, so all three themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -128,6 +129,7 @@ export function SettingsDialog({
   const save = useSaveSettings();
   const mcp = useMcpUrl();
   const cacheDir = useCacheDir();
+  const hub = useHubInfo();
   const providers = useStorageProviders();
   const [active, setActive] = useState("appearance");
 
@@ -269,7 +271,19 @@ export function SettingsDialog({
       render: () => (
         <>
           <SectionHead title={t("settingsDialog.dataLabel")}>{t("settingsDialog.dataLede")}</SectionHead>
-          <div className="panel">
+          <div className="panel stack-3">
+            <div className="field">
+              <label htmlFor="stHub">{t("settingsDialog.hubDirLabel")}</label>
+              <div className="row" style={{ gap: "var(--space-2)" }}>
+                <input id="stHub" className="input num" style={{ flex: 1 }} readOnly value={hub.data?.dir ?? ""} />
+                {hub.data?.dir && (
+                  <button type="button" className="btn btn-ghost" onClick={() => reveal(hub.data!.dir!)}>
+                    {t("settingsDialog.reveal")}
+                  </button>
+                )}
+              </div>
+              <span className="meta-txt">{t("settingsDialog.hubDirNote")}</span>
+            </div>
             <div className="field">
               <label htmlFor="stDb">{t("settingsDialog.cacheDirLabel")}</label>
               <input id="stDb" className="input num" readOnly value={cacheDir.data ?? ""} />

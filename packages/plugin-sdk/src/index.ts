@@ -16,7 +16,7 @@ export type { Fields, CreateFieldInput, FieldPatch, FieldOptionInput, FieldOptio
 export type { Boards, Views } from "@tomrade/boards";
 export type { Projects } from "@tomrade/projects";
 export type { Settings, SettingsSection, SettingsSectionView } from "@tomrade/settings";
-export type { ProjectState, Storage, StorageHandle, StorageProvider, StorageProviderView, StorageStatus, SyncState } from "@tomrade/storage";
+export type { GitOrigin, ProjectState, RemoteTarget, Storage, StorageInfo, StorageProvider, StorageProviderView, StorageStatus, SyncState } from "@tomrade/storage";
 export type { ChatEvent, ChatModel, ChatRequest, CompletionRequest, LlmService, LLMProvider, LlmRole, Message, ModelProfile, ToolSpec } from "@tomrade/llm";
 export { isSuspended } from "@tomrade/agent";
 export type {

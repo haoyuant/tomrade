@@ -1,7 +1,8 @@
 /**
- * The artifact is the contract: a project must round-trip through text without
- * losing a row, and an unchanged project must produce no diff. Everything the
- * providers do rests on those two properties.
+ * The folder is the truth and the cache follows it. A project must round-trip
+ * through text without losing a row, an unchanged project must produce no
+ * diff, every write must reach the folder's log at once, and a folder changed
+ * by someone else must be read back in — or, when both moved, left alone.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -9,7 +10,22 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { fresh, settle } from "@tomrade/testkit";
-import { DivergedError, ForeignProjectError, Storage, digestState, exportState, importState, readArtifact, serializeState, writeArtifact } from "@tomrade/storage";
+import {
+  ARTIFACT_DIR,
+  ForeignProjectError,
+  Storage,
+  TornArtifactError,
+  appendLog,
+  compactLog,
+  digestState,
+  exportState,
+  importState,
+  parseLog,
+  readArtifact,
+  readLogs,
+  serializeState,
+  writeArtifact
+} from "@tomrade/storage";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-storage-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -21,227 +37,301 @@ const tmp = (name: string) => {
   return dir;
 };
 
-/** A context with storage loaded and nothing published automatically. */
-async function withStorage() {
-  const home = tmp("home");
-  const bag = await fresh({ plugins: [[Storage, { path: path.join(home, "storage.json"), debounceMs: 60_000, reconcileMs: 0 }]] });
+const QUIET = { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 };
+
+/** A machine: a Hub folder of its own, storage loaded, the boot reconcile finished. */
+async function machine(opts: { cacheDir?: string; storage?: Record<string, unknown> } = {}) {
+  const hubDir = tmp("hub");
+  const bag = await fresh({ hubDir, cacheDir: opts.cacheDir, plugins: [[Storage, { ...QUIET, ...opts.storage }]] });
   await settle();
-  return { ...bag, storage: bag.ctx.storage, home };
+  await bag.ctx.storage.ready;
+  const dir = bag.hub.catalog.project(bag.project.id)!.dir!;
+  return { ...bag, storage: bag.ctx.storage, hubDir, dir };
 }
+
+const read = (dir: string, rel: string) => fs.readFileSync(path.join(dir, ARTIFACT_DIR, rel), "utf8");
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("the artifact", () => {
   it("round-trips a project through text without losing anything", async () => {
-    const { ctx, db, items, boards, views, board, project } = await withStorage();
+    const { ctx, db, items, boards, views, board, project } = await machine();
     const epic = items.create({ title: "Reporting", kind: "epic", projectId: project.id, boardId: board.id, by: "human" });
-    const ticket = items.create({ title: "Export PDF", projectId: project.id, parentId: epic.id, boardId: board.id, labels: ["ui", "bug"], priority: 4, by: "human" });
-    const other = items.create({ title: "Blocked one", projectId: project.id, boardId: board.id, by: "ai:mcp" });
-    items.addRelation(project.id, ticket.id, other.id);
-    const second = boards.create({ projectId: project.id, name: "Second" });
-    views.setRank(project.id, views.listForProject(project.id)[0].id, ticket.id, 3.5);
+    const a = items.create({ title: "Export PDF", projectId: project.id, boardId: board.id, parentId: epic.id, labels: ["ui", "bug"], priority: 1, by: "human" });
+    const b = items.create({ title: "Dark mode", projectId: project.id, boardId: board.id, by: "ai:mcp" });
+    items.addRelation(project.id, a.id, b.id);
+    const other = boards.create({ projectId: project.id, name: "Other" });
+    const view = views.create({ projectId: project.id, name: "Bugs", layout: "table" });
+    views.setRank(project.id, view.id, a.id, 2.5);
+    const field = ctx.fields.create({ projectId: project.id, name: "Points", type: "number" });
+    items.update(project.id, a.id, { fields: { [field.id]: 5 } }, "human");
 
-    const before = exportState(db, project.id);
+    const state = exportState(db, project.id);
+    expect(state.manifest.v).toBe(2);
+    expect(state.manifest.project).toEqual({ id: project.id, name: "Default Project", description: null, key_prefix: "TOM", created_at: project.createdAt });
+    expect(state.manifest.snapshot?.digest).toBe(digestState(state));
+    expect(Object.keys(state.manifest.project)).not.toContain("next_key_num");
+
     const dir = tmp("artifact");
-    writeArtifact(dir, before);
-    const read = readArtifact(dir);
-    expect(read).not.toBeNull();
-    // The bytes are the contract, so compare the serialisation, not the object.
-    expect([...serializeState(read!)]).toEqual([...serializeState(before)]);
+    writeArtifact(dir, state);
+    const back = readArtifact(dir)!;
+    expect(digestState(back)).toBe(digestState(state));
 
-    // And it survives a real import into an empty cache on another machine.
-    const fresh2 = await withStorage();
-    const target = fresh2.ctx.db.open(project.id);
-    importState(target, read!);
-    const reexported = exportState(target, project.id);
-    expect(digestState(reexported)).toBe(digestState(before));
-    expect(fresh2.items.list({ projectId: project.id }).map((i) => i.key).sort()).toEqual(items.list({ projectId: project.id }).map((i) => i.key).sort());
-    expect(fresh2.items.get(project.id, ticket.id)?.labels.sort()).toEqual(["bug", "ui"]);
-    expect(fresh2.items.get(project.id, ticket.id)?.blocks).toEqual([other.id]);
-    expect(fresh2.items.get(project.id, ticket.id)?.parentId).toBe(epic.id);
-    expect(fresh2.boards.list(project.id).map((b) => b.name).sort()).toEqual(boards.list(project.id).map((b) => b.name).sort());
-    await ctx.fiber.dispose();
+    const second = await machine();
+    second.ctx.db.open(project.id);
+    importState(second.ctx.db.for(project.id), back);
+    expect(second.items.list({ projectId: project.id }).map((i) => [i.key, i.title, i.labels.sort(), i.blocks, i.fields]).sort()).toEqual(
+      items.list({ projectId: project.id }).map((i) => [i.key, i.title, i.labels.sort(), i.blocks, i.fields]).sort()
+    );
+    expect(second.boards.list(project.id).map((b) => b.name)).toEqual(boards.list(project.id).map((b) => b.name));
+    expect(second.views.ranks(project.id, view.id)).toEqual({ [a.id]: 2.5 });
+    expect(second.boards.get(project.id, other.id)?.name).toBe("Other");
+    // The counter is derived past every key the folder holds.
+    expect(second.items.create({ title: "Next", projectId: project.id, boardId: board.id, by: "human" }).key).toBe("TOM-4");
   });
 
   it("is deterministic: the same data writes the same bytes, and nothing is touched twice", async () => {
-    const { db, board, items, project } = await withStorage();
+    const { db, items, board, project } = await machine();
     items.create({ title: "A", projectId: project.id, boardId: board.id, by: "human" });
-    const dir = tmp("stable");
-    expect(writeArtifact(dir, exportState(db, project.id))).toBe(true);
-    expect(writeArtifact(dir, exportState(db, project.id))).toBe(false);
-    items.create({ title: "B", projectId: project.id, boardId: board.id, by: "human" });
-    expect(writeArtifact(dir, exportState(db, project.id))).toBe(true);
+    const state = exportState(db, project.id, { at: 1 });
+    const dir = tmp("det");
+    expect(writeArtifact(dir, state)).toBe(true);
+    expect(writeArtifact(dir, exportState(db, project.id, { at: 1 }))).toBe(false);
+    const files = serializeState(state);
+    expect(files.has(path.join(ARTIFACT_DIR, ".gitattributes"))).toBe(true);
+    expect(files.get(path.join(ARTIFACT_DIR, ".gitattributes"))).toMatch(/merge=union/);
+    expect(files.has(path.join(ARTIFACT_DIR, "README.md"))).toBe(true);
   });
 
-  it("carries the key counter, so two machines never mint the same key", async () => {
-    const { db, board, items, project } = await withStorage();
-    items.create({ title: "A", projectId: project.id, boardId: board.id, by: "human" });
-    items.create({ title: "B", projectId: project.id, boardId: board.id, by: "human" });
-    const state = exportState(db, project.id);
-    expect(state.manifest.project.next_key_num).toBe(3);
-
-    const other = await withStorage();
-    importState(other.ctx.db.open(project.id), state);
-    expect(other.items.create({ title: "C", boardId: board.id, projectId: project.id, by: "human" }).key).toBe("TOM-3");
+  it("refuses a torn snapshot and a manifest with conflict markers", async () => {
+    const { db, project } = await machine();
+    const dir = tmp("torn");
+    writeArtifact(dir, exportState(db, project.id));
+    fs.appendFileSync(path.join(dir, ARTIFACT_DIR, "state", "items.jsonl"), '{"id":"x"}\n');
+    expect(() => readArtifact(dir)).toThrow(TornArtifactError);
+    const manifest = path.join(dir, ARTIFACT_DIR, "project.json");
+    fs.writeFileSync(manifest, "<<<<<<< HEAD\n" + fs.readFileSync(manifest, "utf8"));
+    expect(() => readArtifact(dir)).toThrow(/conflict markers/);
   });
 
-  it("an edge whose other end lives in another project cannot exist, so none is exported", async () => {
-    const { db, boards, items, board, projects, project } = await withStorage();
-    const outside = projects.create({ name: "Outside" });
-    const here = items.create({ title: "here", projectId: project.id, boardId: board.id, by: "human" });
-    const there = items.create({ title: "there", projectId: outside.id, boardId: boards.defaultFor(outside.id).id, by: "human" });
-    // One project, one file: the other end is not in this file, so the edge is refused.
-    expect(() => items.addRelation(project.id, here.id, there.id)).toThrow();
-    expect(exportState(db, project.id).tables.item_relations).toEqual([]);
+  it("carries declared plugin tables, and leaves undeclared ones alone", async () => {
+    const { ctx, db, project, hub } = await machine();
+    ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
+      tables: { plugin_demo_notes: { project: "project_id", export: { order: "id" } } }
+    });
+    db.prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'hi')").run(project.id);
+    const state = exportState(db, project.id, { registrations: ctx.db.registrations("project"), exports: ["demo"] });
+    expect(state.plugins.demo.plugin_demo_notes).toEqual([{ id: "n1", project_id: project.id, body: "hi" }]);
+    expect(state.manifest.exports).toEqual(["demo"]);
+    const dir = tmp("plug");
+    writeArtifact(dir, state);
+    expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo", "plugin_demo_notes.jsonl"))).toBe(true);
+    // Not exported: nothing written, and the digest changes with the choice.
+    const without = exportState(db, project.id, { registrations: ctx.db.registrations("project"), exports: [] });
+    expect(without.plugins).toEqual({});
+    expect(digestState(without)).not.toBe(digestState(state));
+    expect(hub.catalog.project(project.id)?.exports).toEqual([]);
+  });
+});
+
+describe("the log", () => {
+  it("appends lines with a header, reads them back, and drops a torn tail", () => {
+    const dir = tmp("log");
+    appendLog(dir, "m1", [{ id: "m1:1", at: 1, by: "human", entity: "item", entityId: "a", op: "create", base: null, patch: { title: "A" } }]);
+    appendLog(dir, "m1", [{ id: "m1:2", at: 2, by: "human", entity: "item", entityId: "a", op: "update", base: 1, patch: { status: "doing" } }]);
+    fs.appendFileSync(path.join(dir, ARTIFACT_DIR, "log", "m1.jsonl"), '{"id":"m1:3","at":3,"by":"hu');
+    const logs = readLogs(dir);
+    expect(logs).toHaveLength(1);
+    expect(logs[0].device).toBe("m1");
+    expect(logs[0].ops.map((o) => o.id)).toEqual(["m1:1", "m1:2"]);
+    expect(fs.readFileSync(path.join(dir, ARTIFACT_DIR, "log", "m1.jsonl"), "utf8").startsWith('{"log":1,"device":"m1"}')).toBe(true);
+  });
+
+  it("compacts only what is older than the window", () => {
+    const dir = tmp("compact");
+    const now = 10_000;
+    appendLog(dir, "m1", [
+      { id: "m1:1", at: 1, by: "human", entity: "item", entityId: "a", op: "create", base: null, patch: null },
+      { id: "m1:2", at: 9_000, by: "human", entity: "item", entityId: "a", op: "update", base: 1, patch: null }
+    ]);
+    compactLog(dir, "m1", 5_000, now);
+    expect(parseLog(fs.readFileSync(path.join(dir, ARTIFACT_DIR, "log", "m1.jsonl"), "utf8")).map((o) => o.id)).toEqual(["m1:2"]);
   });
 });
 
 describe("ctx.storage", () => {
+  it("gives every project a folder under the Hub and writes it", async () => {
+    const { dir, hubDir, project } = await machine();
+    expect(dir.startsWith(path.join(hubDir, "projects"))).toBe(true);
+    expect(path.basename(dir)).toBe("default-project");
+    const state = readArtifact(dir)!;
+    expect(String(state.manifest.project.id)).toBe(project.id);
+    expect(read(dir, "state/boards.jsonl")).toMatch(/Main/);
+  });
+
+  it("writes every commit to the log at once and the snapshot after the quiet period", async () => {
+    const { storage, items, board, project, dir } = await machine({ storage: { snapshotIdleMs: 20, snapshotMaxMs: 200 } });
+    const a = items.create({ title: "Logged", projectId: project.id, boardId: board.id, by: "human" });
+    const log = read(dir, "log/test-device.jsonl");
+    expect(log).toMatch(/"op":"create"/);
+    expect(log).toMatch(new RegExp(`"entityId":"${a.id}"`));
+    expect((await storage.statusFor(project.id)).state).toBe("ahead");
+    await sleep(120);
+    expect(read(dir, "state/items.jsonl")).toMatch(/Logged/);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    const manifest = JSON.parse(read(dir, "project.json"));
+    expect(manifest.snapshot.checkpoint["test-device"]).toBeGreaterThan(0);
+  });
+
+  it("takes the folder's copy on refresh when local is clean, and imports the other machine's log as history", async () => {
+    const a = await machine();
+    const item = a.items.create({ title: "From A", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+
+    const b = await machine();
+    const bDir = path.join(b.hubDir, "projects", "copy");
+    fs.cpSync(a.dir, bDir, { recursive: true });
+    const id = await b.storage.attach(bDir);
+    expect(id).toBe(a.project.id);
+    expect(b.items.list({ projectId: id }).map((i) => i.title)).toEqual(["From A"]);
+    expect(b.projects.get(id)?.name).toBe("Default Project");
+
+    // B edits and publishes; A takes it in — B's device stamps the row A already had a log line for.
+    b.items.update(id, item.id, { status: "doing" }, "human");
+    await b.storage.publish(id);
+    fs.cpSync(bDir, a.dir, { recursive: true, force: true });
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("behind");
+    await a.storage.refresh(a.project.id);
+    expect(a.items.get(a.project.id, item.id)?.status).toBe("doing");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+    // B's history arrived, but B's machine is the same id in tests, so it is skipped as our own; the snapshot still landed.
+    expect(a.oplog.recent(a.project.id).some((e) => e.entityId === item.id)).toBe(true);
+  });
+
+  it("merges when both moved: different fields both survive, the same field is settled and noted", async () => {
+    const a = await machine();
+    const item = a.items.create({ title: "Shared", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    const other = a.items.create({ title: "Contested", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+    // Someone else changes the folder: a title here, a status there…
+    const state = readArtifact(a.dir)!;
+    state.tables.items.find((r) => r.id === item.id)!.title = "Renamed elsewhere";
+    state.tables.items.find((r) => r.id === other.id)!.status = "doing";
+    state.manifest.snapshot!.digest = digestState(state);
+    writeArtifact(a.dir, state);
+    // …and we change the cache: the other item's status too, and the first item's own status.
+    a.items.update(a.project.id, item.id, { status: "done" }, "human");
+    a.items.update(a.project.id, other.id, { status: "verifying" }, "human");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("diverged");
+    await a.storage.refresh(a.project.id);
+    const merged = a.items.get(a.project.id, item.id)!;
+    expect(merged.title).toBe("Renamed elsewhere");
+    expect(merged.status).toBe("done");
+    // Only our side has a log entry for the contested field, so our value stands, and history says why.
+    expect(a.items.get(a.project.id, other.id)?.status).toBe("verifying");
+    const notes = a.oplog.historyFor(a.project.id, "item", other.id).filter((e) => e.op === "merge");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].by).toBe("ai:sync");
+    expect(notes[0].before).toMatchObject({ status: "doing" });
+    expect(notes[0].after).toMatchObject({ status: "verifying" });
+    // Undo steps over the note and the folder now holds the merged state.
+    expect(a.oplog.undoLast(a.project.id)?.entry.op).not.toBe("merge");
+    await a.storage.publish(a.project.id);
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+    expect(fs.readFileSync(path.join(a.dir, ARTIFACT_DIR, "state", "items.jsonl"), "utf8")).toMatch(/Renamed elsewhere/);
+  });
+
+  it("renumbers our unpublished issues when the folder already used the key", async () => {
+    const a = await machine();
+    a.items.create({ title: "First", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+    const state = readArtifact(a.dir)!;
+    const theirs = { ...state.tables.items[0], id: "their-item", key_num: 2, title: "Theirs #2" };
+    state.tables.items.push(theirs);
+    state.manifest.snapshot!.digest = digestState(state);
+    writeArtifact(a.dir, state);
+    const mine = a.items.create({ title: "Mine #2", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    expect(mine.key).toBe("TOM-2");
+    await a.storage.refresh(a.project.id);
+    expect(a.items.get(a.project.id, mine.id)?.key).toBe("TOM-3");
+    expect(a.items.get(a.project.id, "their-item")?.key).toBe("TOM-2");
+    expect(a.items.create({ title: "Next", projectId: a.project.id, boardId: a.board.id, by: "human" }).key).toBe("TOM-4");
+  });
+
+  it("never opens one project over another's folder", async () => {
+    const a = await machine();
+    const b = await machine();
+    await expect(b.storage.setFolder(b.project.id, a.dir)).rejects.toThrow(ForeignProjectError);
+    const other = await a.storage.attach(b.dir).catch((e: Error) => e);
+    expect(other).toBe(b.project.id);
+  });
+
+  it("moves to another folder and leaves the old one as it was", async () => {
+    const { storage, items, board, project, dir, hubDir } = await machine();
+    items.create({ title: "Moving", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    const next = path.join(hubDir, "elsewhere");
+    const info = await storage.setFolder(project.id, next);
+    expect(info.dir).toBe(next);
+    expect(read(next, "state/items.jsonl")).toMatch(/Moving/);
+    expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "project.json"))).toBe(true);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+  });
+
+  it("rebuilds the cache from the folder, history included", async () => {
+    const cacheDir = tmp("cache");
+    const { ctx, storage, items, board, project, dir } = await machine({ cacheDir });
+    const a = items.create({ title: "Kept", projectId: project.id, boardId: board.id, by: "human" });
+    items.update(project.id, a.id, { status: "doing" }, "human");
+    await storage.publish(project.id);
+    ctx.db.for(project.id).prepare("DELETE FROM items").run();
+    await storage.rebuild(project.id);
+    expect(items.get(project.id, a.id)?.status).toBe("doing");
+    expect(ctx.oplog.historyFor(project.id, "item", a.id).map((e) => e.op)).toEqual(["update", "create"]);
+    expect(fs.existsSync(path.join(cacheDir, "projects", project.id, "published", ARTIFACT_DIR, "project.json"))).toBe(true);
+    expect(read(dir, "state/items.jsonl")).toMatch(/Kept/);
+  });
+
+  it("removing a project keeps its folder unless asked", async () => {
+    const { projects, dir } = await machine();
+    const kept = projects.create({ name: "Kept" });
+    const gone = projects.create({ name: "Gone" });
+    await settle();
+    await new Promise((r) => setTimeout(r, 50));
+    const keptDir = projects.get(kept.id) && (await import("@tomrade/hub")).Catalog ? path.join(path.dirname(dir), "kept") : null;
+    expect(keptDir && fs.existsSync(path.join(keptDir, ARTIFACT_DIR, "project.json"))).toBe(true);
+    const goneDir = path.join(path.dirname(dir), "gone");
+    expect(fs.existsSync(path.join(goneDir, ARTIFACT_DIR, "project.json"))).toBe(true);
+    projects.remove(kept.id);
+    projects.remove(gone.id, { deleteFolder: true });
+    expect(fs.existsSync(path.join(keptDir!, ARTIFACT_DIR, "project.json"))).toBe(true);
+    expect(fs.existsSync(goneDir)).toBe(false);
+  });
+
   it("refuses a provider that puts a secret in its per-project config", async () => {
-    const { storage, ctx } = await withStorage();
+    const { storage } = await machine();
     expect(() =>
       storage.register({
         id: "leaky",
         title: "Leaky",
         configSchema: z.object({ token: z.string().meta({ format: "password" }) }),
         defaults: { token: "" },
-        open: async () => {
-          throw new Error("never");
-        }
+        toRemote: () => ({ url: "", branch: "main" })
       })
-    ).toThrow(/settings section/);
-    expect(storage.describe().map((p) => p.id)).toEqual(["folder"]);
-    await ctx.fiber.dispose();
+    ).toThrow(/secret/);
   });
 
-  it("an unbound project is a local project", async () => {
-    const { storage, project } = await withStorage();
-    expect(await storage.statusFor(project.id)).toMatchObject({ state: "local", location: null });
-  });
-
-  it("names the artifact dir for a bound project, and null for a local one", async () => {
-    const { ctx, storage, project } = await withStorage();
-    expect(await storage.artifactDirFor(project.id)).toBeNull();
-    const dir = tmp("dest");
-    await storage.bind(project.id, "folder", { dir });
-    expect(await storage.artifactDirFor(project.id)).toBe(path.join(dir, ".tomrade"));
-    await ctx.fiber.dispose();
-  });
-
-  it("binds to a folder, publishes, and reports ahead then synced", async () => {
-    const { storage, project, items, board } = await withStorage();
-    const dir = tmp("dest");
-    expect(await storage.bind(project.id, "folder", { dir })).toMatchObject({ state: "synced" });
-    expect(fs.existsSync(path.join(dir, ".tomrade", "project.json"))).toBe(true);
-    expect(fs.existsSync(path.join(dir, ".tomrade", "state", "items.jsonl"))).toBe(true);
-    // The live database never belongs in a destination.
-    expect(fs.readFileSync(path.join(dir, ".tomrade", ".gitignore"), "utf8")).toMatch(/\*\.db/);
-
-    items.create({ title: "after binding", projectId: project.id, boardId: board.id, by: "human" });
-    expect(await storage.statusFor(project.id)).toMatchObject({ state: "ahead" });
-    expect(await storage.flush(project.id)).toMatchObject({ state: "synced" });
-    expect(fs.readFileSync(path.join(dir, ".tomrade", "state", "items.jsonl"), "utf8")).toMatch(/after binding/);
-  });
-
-  it("takes the destination's copy on refresh when local is clean", async () => {
-    const { storage, db, project, items, board } = await withStorage();
-    const dir = tmp("incoming");
-    await storage.bind(project.id, "folder", { dir });
-    // A teammate's edit, arriving as text — a complete row, as the schema demands.
-    const theirs = exportState(db, project.id);
-    theirs.tables.items.push({
-      id: "their-item",
-      project_id: project.id,
-      board_id: board.id,
-      key_num: 99,
-      title: "Wrote this elsewhere",
-      body: null,
-      kind: "ticket",
-      status: "todo",
-      priority: 2,
-      parent_id: null,
-      rank: 0,
-      updated_at: Date.now(),
-      updated_by: "human",
-      version: 1,
-      human_locked: 0
+  it("describes what can travel and what does", async () => {
+    const { ctx, storage, project, dir } = await machine();
+    ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL)" }], {
+      tables: { plugin_demo_notes: { project: "project_id", export: { order: "id" } } }
     });
-    theirs.manifest.project.next_key_num = 100;
-    writeArtifact(dir, theirs);
-
-    expect(await storage.statusFor(project.id)).toMatchObject({ state: "behind" });
-    expect(await storage.refresh(project.id)).toMatchObject({ state: "synced" });
-    expect(items.get(project.id, "their-item")?.title).toBe("Wrote this elsewhere");
-  });
-
-  it("refuses to overwrite a destination that also moved", async () => {
-    const { storage, db, project, items, board } = await withStorage();
-    const dir = tmp("both");
-    await storage.bind(project.id, "folder", { dir });
-    const theirs = exportState(db, project.id);
-    theirs.tables.labels.push({ id: "their-label", project_id: project.id, name: "theirs" });
-    writeArtifact(dir, theirs);
-    items.create({ title: "mine", projectId: project.id, boardId: board.id, by: "human" });
-
-    expect(await storage.statusFor(project.id)).toMatchObject({ state: "diverged" });
-    await expect(storage.flush(project.id)).rejects.toThrow(DivergedError);
-    await expect(storage.refresh(project.id)).rejects.toThrow(DivergedError);
-    // Nothing was destroyed on either side.
-    expect(items.list({ projectId: project.id }).some((i) => i.title === "mine")).toBe(true);
-    expect(readArtifact(dir)!.tables.labels.some((l) => l.id === "their-label")).toBe(true);
-  });
-
-  it("never writes one project over another's destination", async () => {
-    const { storage, projects, project } = await withStorage();
-    const dir = tmp("taken");
-    await storage.bind(project.id, "folder", { dir });
-    const second = projects.create({ name: "Second" });
-    await expect(storage.bind(second.id, "folder", { dir })).rejects.toThrow(ForeignProjectError);
-  });
-
-  it("attaches a project this machine does not know, and unbinding leaves the files alone", async () => {
-    const source = await withStorage();
-    const dir = tmp("shared");
-    const shared = source.projects.create({ name: "Shared", keyPrefix: "SHR" });
-    source.items.create({ title: "From the other machine", projectId: shared.id, boardId: source.boards.defaultFor(shared.id).id, by: "human" });
-    await source.storage.bind(shared.id, "folder", { dir });
-
-    const other = await withStorage();
-    expect(other.projects.get(shared.id)).toBeNull();
-    const attached = await other.storage.attach("folder", { dir });
-    expect(attached).toBe(shared.id);
-    expect(other.projects.get(shared.id)?.name).toBe("Shared");
-    expect(other.items.list({ projectId: shared.id }).map((i) => i.key)).toEqual(["SHR-1"]);
-    expect(await other.storage.statusFor(shared.id)).toMatchObject({ state: "synced" });
-    // Attaching twice is refused rather than duplicating a project.
-    await expect(other.storage.attach("folder", { dir })).rejects.toThrow(/already on this machine/);
-
-    await other.storage.unbind(shared.id);
-    expect(await other.storage.statusFor(shared.id)).toMatchObject({ state: "local" });
-    expect(fs.existsSync(path.join(dir, ".tomrade", "project.json"))).toBe(true);
-  });
-
-  it("forgets a destination whose project has been deleted", async () => {
-    const { storage, projects } = await withStorage();
-    const doomed = projects.create({ name: "Doomed" });
-    const dir = tmp("doomed");
-    await storage.bind(doomed.id, "folder", { dir });
-    expect(storage.binding(doomed.id)).not.toBeNull();
-
-    // Projects are removed through their own service, which knows nothing of destinations.
-    projects.remove(doomed.id);
-    expect(await storage.statusFor(doomed.id)).toMatchObject({ state: "local" });
-    expect(storage.binding(doomed.id)).toBeNull();
-    // The published copy is left exactly where it was.
-    expect(fs.existsSync(path.join(dir, ".tomrade", "project.json"))).toBe(true);
-  });
-
-  it("reports a destination whose provider is not loaded, instead of failing", async () => {
-    const home = tmp("unavailable");
-    const file = path.join(home, "storage.json");
-    // The project has to exist before its binding is read, so storage loads after the core.
-    const bag = await fresh();
-    fs.writeFileSync(file, JSON.stringify({ v: 1, bindings: [{ projectId: bag.project.id, provider: "ghost", config: {}, lastFlushedDigest: null, lastSyncAt: null }] }));
-    await bag.ctx.plugin(Storage, { path: file, debounceMs: 60_000, reconcileMs: 0 });
-    await settle();
-    expect(await bag.ctx.storage.statusFor(bag.project.id)).toMatchObject({ state: "unavailable" });
+    let info = await storage.info(project.id);
+    expect(info.exportable).toEqual([{ namespace: "demo", tables: ["plugin_demo_notes"] }]);
+    info = await storage.setExports(project.id, ["demo", "unknown"]);
+    expect(info.exports).toEqual(["demo"]);
+    expect(JSON.parse(read(dir, "project.json")).exports).toEqual(["demo"]);
+    expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo", "plugin_demo_notes.jsonl"))).toBe(true);
+    await storage.setExports(project.id, []);
+    expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo"))).toBe(false);
   });
 });

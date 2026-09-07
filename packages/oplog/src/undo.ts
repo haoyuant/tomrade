@@ -173,8 +173,8 @@ const labelOf = (entry: OplogEntry): string => {
  */
 export function undoLast(db: ProjectDb, device: string, entityId?: string): UndoResult | null {
   const row = entityId
-    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op != 'purge' AND device = ? ORDER BY seq DESC LIMIT 1").get(entityId, device) as OplogRow | undefined)
-    : (db.prepare("SELECT * FROM oplog WHERE op != 'purge' AND device = ? ORDER BY seq DESC LIMIT 1").get(device) as OplogRow | undefined);
+    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op NOT IN ('purge', 'merge') AND device = ? ORDER BY seq DESC LIMIT 1").get(entityId, device) as OplogRow | undefined)
+    : (db.prepare("SELECT * FROM oplog WHERE op NOT IN ('purge', 'merge') AND device = ? ORDER BY seq DESC LIMIT 1").get(device) as OplogRow | undefined);
   if (!row) return null;
 
   const entry: OplogEntry = rowToEntry(row);
@@ -222,6 +222,7 @@ export function undoRun(db: ProjectDb, runId: string): UndoRunResult {
         keep("a permanent delete cannot be restored");
         continue;
       }
+      if (entry.op === "merge") continue;
       if (entry.op === "rank") {
         revertEntry(db, entry);
         db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
