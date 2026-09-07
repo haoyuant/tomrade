@@ -44,6 +44,9 @@
       "path": "./packages/fields"
     },
     {
+      "path": "./packages/hub"
+    },
+    {
       "path": "./packages/ipc"
     },
     {

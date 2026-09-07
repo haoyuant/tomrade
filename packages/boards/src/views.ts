@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
-import type { Db } from "@tomrade/db";
+import type { Db, ProjectDb } from "@tomrade/db";
 import type { Oplog } from "@tomrade/oplog";
 import { write } from "@tomrade/write";
 import { InUseError, LAYOUTS, NotFoundError, normalizeQuery, type Author, type CreateViewInput, type Layout, type View, type ViewPatch } from "@tomrade/domain";
@@ -54,8 +54,8 @@ export class Views extends Service {
     super(ctx, "views");
   }
 
-  private get db(): Db {
-    return this.ctx.db;
+  private db(projectId: string): ProjectDb {
+    return (this.ctx.db as Db).for(projectId);
   }
 
   private get oplog(): Oplog {
@@ -63,17 +63,18 @@ export class Views extends Service {
   }
 
   listForProject(projectId: string): View[] {
-    return (this.db.prepare("SELECT * FROM views WHERE project_id = ? ORDER BY rank ASC, created_at ASC").all(projectId) as ViewRow[]).map(rowToView);
+    return (this.db(projectId).prepare("SELECT * FROM views WHERE project_id = ? ORDER BY rank ASC, created_at ASC").all(projectId) as ViewRow[]).map(rowToView);
   }
 
-  get(id: string): View | null {
-    const row = this.db.prepare("SELECT * FROM views WHERE id = ?").get(id) as ViewRow | undefined;
+  get(projectId: string, id: string): View | null {
+    const row = this.db(projectId).prepare("SELECT * FROM views WHERE id = ?").get(id) as ViewRow | undefined;
     return row ? rowToView(row) : null;
   }
 
   create(input: CreateViewInput, by: Author = "human"): View {
+    const db = this.db(input.projectId);
     const now = Date.now();
-    const rank = input.rank ?? ((this.db.prepare("SELECT MAX(rank) AS m FROM views WHERE project_id = ?").get(input.projectId) as { m: number | null }).m ?? -1) + 1;
+    const rank = input.rank ?? ((db.prepare("SELECT MAX(rank) AS m FROM views WHERE project_id = ?").get(input.projectId) as { m: number | null }).m ?? -1) + 1;
     const view: View = {
       id: randomUUID(),
       projectId: input.projectId,
@@ -85,63 +86,72 @@ export class Views extends Service {
       createdAt: now,
       updatedAt: now
     };
-    return write(this.ctx, { entity: "view", op: "create", id: view.id, by, before: null, after: view }, () =>
-      this.db.transaction(() => {
-        this.insert(view);
-        this.oplog.append({ entity: "view", op: "create", entityId: view.id, baseVersion: null, before: null, after: view, by, at: now });
+    return write(this.ctx, { projectId: input.projectId, entity: "view", op: "create", id: view.id, by, before: null, after: view }, () =>
+      db.transaction(() => {
+        this.insert(db, view);
+        this.oplog.append(input.projectId, { entity: "view", op: "create", entityId: view.id, baseVersion: null, before: null, after: view, by, at: now });
         return view;
       })
     );
   }
 
-  update(id: string, patch: ViewPatch, by: Author = "human"): View {
-    const existing = this.get(id);
+  update(projectId: string, id: string, patch: ViewPatch, by: Author = "human"): View {
+    const existing = this.get(projectId, id);
     if (!existing) throw new NotFoundError(id);
+    const db = this.db(projectId);
     const next: View = { ...existing, ...patch, query: patch.query ? normalizeQuery(patch.query) : existing.query, updatedAt: Date.now() };
-    return write(this.ctx, { entity: "view", op: "update", id, by, before: existing, after: next, patch }, () =>
-      this.db.transaction(() => {
-        this.db
-          .prepare("UPDATE views SET name = ?, icon = ?, layout = ?, query_json = ?, rank = ?, updated_at = ? WHERE id = ?")
-          .run(next.name, next.icon, next.layout, JSON.stringify(next.query), next.rank, next.updatedAt, id);
-        this.oplog.append({ entity: "view", op: "update", entityId: id, baseVersion: null, before: existing, after: next, by, at: next.updatedAt });
+    return write(this.ctx, { projectId, entity: "view", op: "update", id, by, before: existing, after: next, patch }, () =>
+      db.transaction(() => {
+        db.prepare("UPDATE views SET name = ?, icon = ?, layout = ?, query_json = ?, rank = ?, updated_at = ? WHERE id = ?").run(next.name, next.icon, next.layout, JSON.stringify(next.query), next.rank, next.updatedAt, id);
+        this.oplog.append(projectId, { entity: "view", op: "update", entityId: id, baseVersion: null, before: existing, after: next, by, at: next.updatedAt });
         return next;
       })
     );
   }
 
   /** Refused for a project's last view: the route has to land somewhere. The snapshot carries the manual order, so undo restores it whole. */
-  remove(id: string, by: Author = "human"): void {
-    const existing = this.get(id);
+  remove(projectId: string, id: string, by: Author = "human"): void {
+    const existing = this.get(projectId, id);
     if (!existing) throw new NotFoundError(id);
-    if (this.listForProject(existing.projectId).length <= 1) throw new InUseError(id, `${existing.name} is the project's last view`);
-    write(this.ctx, { entity: "view", op: "delete", id, by, before: existing, after: null }, () =>
-      this.db.transaction(() => {
-        const ranks = this.db.prepare("SELECT item_id, rank FROM view_item_rank WHERE view_id = ?").all(id);
-        this.db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(id);
-        this.db.prepare("DELETE FROM views WHERE id = ?").run(id);
-        this.oplog.append({ entity: "view", op: "delete", entityId: id, baseVersion: null, before: { ...existing, ranks }, after: null, by, at: Date.now() });
+    if (this.listForProject(projectId).length <= 1) throw new InUseError(id, `${existing.name} is the project's last view`);
+    const db = this.db(projectId);
+    write(this.ctx, { projectId, entity: "view", op: "delete", id, by, before: existing, after: null }, () =>
+      db.transaction(() => {
+        const ranks = db.prepare("SELECT item_id, rank FROM view_item_rank WHERE view_id = ?").all(id);
+        db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(id);
+        db.prepare("DELETE FROM views WHERE id = ?").run(id);
+        this.oplog.append(projectId, { entity: "view", op: "delete", entityId: id, baseVersion: null, before: { ...existing, ranks }, after: null, by, at: Date.now() });
       })
     );
   }
 
   /** Sparse per-view ordering; absent rows fall back to items.rank. */
-  ranks(viewId: string): Record<string, number> {
-    const rows = this.db.prepare("SELECT item_id, rank FROM view_item_rank WHERE view_id = ?").all(viewId) as { item_id: string; rank: number }[];
+  ranks(projectId: string, viewId: string): Record<string, number> {
+    const rows = this.db(projectId).prepare("SELECT item_id, rank FROM view_item_rank WHERE view_id = ?").all(viewId) as { item_id: string; rank: number }[];
     return Object.fromEntries(rows.map((r) => [r.item_id, r.rank]));
   }
 
-  setRank(viewId: string, itemId: string, rank: number): void {
-    this.db
-      .prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank")
-      .run(viewId, itemId, rank);
+  /**
+   * One item's manual position in one view. Logged as its own op so the move
+   * travels in the folder's log and can be undone, without a view snapshot per drag.
+   */
+  setRank(projectId: string, viewId: string, itemId: string, rank: number, by: Author = "human"): void {
+    if (!this.get(projectId, viewId)) throw new NotFoundError(viewId);
+    const db = this.db(projectId);
+    const prior = (db.prepare("SELECT rank FROM view_item_rank WHERE view_id = ? AND item_id = ?").get(viewId, itemId) as { rank: number } | undefined)?.rank ?? null;
+    const patch = { itemId, rank };
+    write(this.ctx, { projectId, entity: "view", op: "rank", id: viewId, by, before: { rank: prior }, after: { rank }, patch }, () =>
+      db.transaction(() => {
+        db.prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank").run(viewId, itemId, rank);
+        this.oplog.append(projectId, { entity: "view", op: "rank", entityId: viewId, baseVersion: null, before: { rank: prior }, after: { rank }, by, at: Date.now(), patch });
+      })
+    );
   }
 
-  private insert(view: View): void {
-    this.db
-      .prepare(
-        `INSERT INTO views (id, project_id, board_id, name, icon, layout, query_json, rank, created_at, updated_at)
+  private insert(db: ProjectDb, view: View): void {
+    db.prepare(
+      `INSERT INTO views (id, project_id, board_id, name, icon, layout, query_json, rank, created_at, updated_at)
          VALUES (@id, @projectId, '', @name, @icon, @layout, @query, @rank, @createdAt, @updatedAt)`
-      )
-      .run({ ...view, query: JSON.stringify(view.query) });
+    ).run({ ...view, query: JSON.stringify(view.query) });
   }
 }

@@ -5,7 +5,7 @@ import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useMcpUrl, useOplog, useStatusItems } from "~/lib/queries";
 
-const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp$/, "") : null);
+const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp(\/[^/]+)?$/, "") : null);
 
 /** The most recent write, with its author — the agent collaboration at rest. */
 function Ribbon({ entry }: { entry: OplogEntry }) {
@@ -29,8 +29,9 @@ function Ribbon({ entry }: { entry: OplogEntry }) {
 
 export function StatusBar({ projectId, onUndo, children }: { projectId?: string; onUndo?: () => void; children?: React.ReactNode }) {
   const { t } = useI18n();
-  const mcp = useMcpUrl();
-  const oplog = useOplog(1);
+  const mcp = useMcpUrl(projectId);
+  // Per project: on the home screen nothing is "recent" across projects.
+  const oplog = useOplog(projectId, 1);
   const plugins = useStatusItems(projectId);
   const latest = oplog.data?.[0];
 

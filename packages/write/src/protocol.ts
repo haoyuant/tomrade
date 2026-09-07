@@ -4,6 +4,8 @@ import { writeContext } from "./context.js";
 
 /** What a repository is about to commit. Policy listeners read it and either throw or call next(). */
 export interface WriteIntent<T = unknown> {
+  /** The project whose file this lands in; listeners reach it with ctx.db.for(projectId). */
+  projectId: string;
   entity: OplogEntity;
   op: OplogOp;
   id: string;

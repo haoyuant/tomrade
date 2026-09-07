@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommandScope } from "@tomrade/contributions";
 import type { StorageBinding, StorageProviderView, StorageStatus } from "@tomrade/storage";
+import type {} from "@tomrade/hub";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
 import type {
   AppSettings,
@@ -27,12 +28,14 @@ export const keys = {
   labels: (projectId: string) => ["labels", projectId] as const,
   fields: (projectId: string) => ["fields", projectId] as const,
   ranks: (viewId: string) => ["ranks", viewId] as const,
-  history: (itemId: string) => ["history", itemId] as const,
-  oplog: ["oplog"] as const,
+  history: (projectId: string, itemId: string) => ["history", projectId, itemId] as const,
+  /** Per project: with one file per project there is no cross-project "recent". */
+  oplog: (projectId: string) => ["oplog", projectId] as const,
   settings: ["settings"] as const,
   settingsSections: ["settings", "sections"] as const,
-  mcp: ["mcp"] as const,
-  dbPath: ["dbPath"] as const,
+  mcp: (projectId?: string) => ["mcp", projectId ?? ""] as const,
+  cacheDir: ["cacheDir"] as const,
+  hub: ["hub"] as const,
   plugins: ["plugins"] as const,
   storageProviders: ["storage", "providers"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
@@ -42,7 +45,7 @@ export const keys = {
   commands: ["contributions", "commands"] as const,
   badges: (projectId: string) => ["contributions", "badges", projectId] as const,
   statusItems: (projectId?: string) => ["contributions", "status", projectId ?? ""] as const,
-  sections: (itemId: string) => ["contributions", "sections", itemId] as const,
+  sections: (projectId: string, itemId: string) => ["contributions", "sections", projectId, itemId] as const,
   graphs: ["contributions", "graphs"] as const,
   graphEdges: (projectId: string, graphId: string) => ["contributions", "graph", projectId, graphId] as const
 };
@@ -51,8 +54,8 @@ export const keys = {
 export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
   void qc.invalidateQueries({ queryKey: keys.items(projectId) });
   void qc.invalidateQueries({ queryKey: keys.labels(projectId) });
-  void qc.invalidateQueries({ queryKey: keys.oplog });
-  void qc.invalidateQueries({ queryKey: ["history"] });
+  void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+  void qc.invalidateQueries({ queryKey: ["history", projectId] });
   void qc.invalidateQueries({ queryKey: keys.contributions });
 }
 
@@ -72,8 +75,12 @@ export function invalidateProject(qc: QueryClient, projectId: string): void {
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => invoke("projects.list") });
 export const useSettings = () => useQuery({ queryKey: keys.settings, queryFn: () => invoke("settings.get") });
 export const useSettingsSections = () => useQuery({ queryKey: keys.settingsSections, queryFn: () => invoke("settings.sections") });
-export const useMcpUrl = () => useQuery({ queryKey: keys.mcp, queryFn: () => invoke("mcp.url"), retry: false });
-export const useDbPath = () => useQuery({ queryKey: keys.dbPath, queryFn: () => invoke("db.path") });
+/** The project's own MCP address when one is given; the unscoped server otherwise. */
+export const useMcpUrl = (projectId?: string) => useQuery({ queryKey: keys.mcp(projectId), queryFn: () => invoke("mcp.url", projectId), retry: false });
+/** Where this machine keeps its caches. Never the truth — every file there can be rebuilt. */
+export const useCacheDir = () => useQuery({ queryKey: keys.cacheDir, queryFn: () => invoke("db.dir") });
+/** This machine: its id and its Hub folder. */
+export const useHubInfo = () => useQuery({ queryKey: keys.hub, queryFn: () => invoke("hub.info") });
 
 export const useBoards = (projectId: string) => useQuery({ queryKey: keys.boards(projectId), queryFn: () => invoke("boards.list", projectId) });
 export const useViews = (projectId: string) => useQuery({ queryKey: keys.views(projectId), queryFn: () => invoke("views.list", projectId) });
@@ -81,20 +88,22 @@ export const useItems = (projectId: string) => useQuery({ queryKey: keys.items(p
 export const useLabels = (projectId: string) => useQuery({ queryKey: keys.labels(projectId), queryFn: () => invoke("items.labels", projectId) });
 export const useFields = (projectId: string) => useQuery({ queryKey: keys.fields(projectId), queryFn: () => invoke("fields.list", projectId) });
 
-export const useViewRanks = (viewId: string | undefined) =>
-  useQuery({ queryKey: keys.ranks(viewId ?? ""), queryFn: () => invoke("views.ranks", viewId!), enabled: !!viewId });
+export const useViewRanks = (projectId: string, viewId: string | undefined) =>
+  useQuery({ queryKey: keys.ranks(viewId ?? ""), queryFn: () => invoke("views.ranks", projectId, viewId!), enabled: !!viewId });
 
-export const useHistory = (itemId: string | undefined) =>
-  useQuery({ queryKey: keys.history(itemId ?? ""), queryFn: () => invoke("oplog.history", "item", itemId!), enabled: !!itemId });
+export const useHistory = (projectId: string, itemId: string | undefined) =>
+  useQuery({ queryKey: keys.history(projectId, itemId ?? ""), queryFn: () => invoke("oplog.history", projectId, "item", itemId!), enabled: !!itemId });
 
-export const useOplog = (limit = 5) => useQuery({ queryKey: keys.oplog, queryFn: () => invoke("oplog.recent", limit) });
+/** A project's latest writes. Undefined on the home screen: nothing is recent across projects. */
+export const useOplog = (projectId: string | undefined, limit = 5) =>
+  useQuery({ queryKey: keys.oplog(projectId ?? ""), queryFn: () => invoke("oplog.recent", projectId!, limit), enabled: !!projectId });
 
 export const useCommands = () => useQuery({ queryKey: keys.commands, queryFn: () => invoke("contributions.commands") });
 export const useBadges = (projectId: string) => useQuery({ queryKey: keys.badges(projectId), queryFn: () => invoke("contributions.badges", projectId) });
 export const useStatusItems = (projectId?: string) =>
   useQuery({ queryKey: keys.statusItems(projectId), queryFn: () => invoke("contributions.statusItems", { projectId }) });
-export const useSections = (itemId: string | undefined) =>
-  useQuery({ queryKey: keys.sections(itemId ?? ""), queryFn: () => invoke("contributions.sections", itemId!), enabled: !!itemId });
+export const useSections = (projectId: string, itemId: string | undefined) =>
+  useQuery({ queryKey: keys.sections(projectId, itemId ?? ""), queryFn: () => invoke("contributions.sections", projectId, itemId!), enabled: !!itemId });
 export const useGraphs = () => useQuery({ queryKey: keys.graphs, queryFn: () => invoke("contributions.graphs") });
 export const useGraphEdges = (projectId: string, graphId: string | null) =>
   useQuery({ queryKey: keys.graphEdges(projectId, graphId ?? ""), queryFn: () => invoke("contributions.graph", graphId!, { projectId }), enabled: !!graphId });
@@ -140,7 +149,7 @@ export function useCreateItem(projectId: string) {
 export function usePatchItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: Patch; baseVersion: number }) => invoke("items.update", args.id, args.patch, args.baseVersion),
+    mutationFn: (args: { id: string; patch: Patch; baseVersion: number }) => invoke("items.update", projectId, args.id, args.patch, args.baseVersion),
     onSettled: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -148,7 +157,7 @@ export function usePatchItem(projectId: string) {
 export function useDeleteItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("items.delete", id),
+    mutationFn: (id: string) => invoke("items.delete", projectId, id),
     onSuccess: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -157,7 +166,7 @@ export function useDeleteItem(projectId: string) {
 export function usePurgeItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; baseVersion: number }) => invoke("items.purge", args.id, args.baseVersion),
+    mutationFn: (args: { id: string; baseVersion: number }) => invoke("items.purge", projectId, args.id, args.baseVersion),
     onSettled: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -165,7 +174,7 @@ export function usePurgeItem(projectId: string) {
 export function useUndo(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (entityId?: string) => invoke("oplog.undo", entityId),
+    mutationFn: (entityId?: string) => invoke("oplog.undo", projectId, entityId),
     onSuccess: () => {
       invalidateWorkspace(qc, projectId);
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
@@ -177,8 +186,12 @@ export function useUndo(projectId: string) {
 export function useSetViewRank(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { viewId: string; itemId: string; rank: number }) => invoke("views.setRank", args.viewId, args.itemId, args.rank),
-    onSuccess: (_r, args) => void qc.invalidateQueries({ queryKey: keys.ranks(args.viewId) })
+    mutationFn: (args: { viewId: string; itemId: string; rank: number }) => invoke("views.setRank", projectId, args.viewId, args.itemId, args.rank),
+    onSuccess: (_r, args) => {
+      void qc.invalidateQueries({ queryKey: keys.ranks(args.viewId) });
+      // a rank move is logged now, so the ribbon and ⌘Z see it
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+    }
   });
 }
 
@@ -188,7 +201,7 @@ export function useCreateBoard(projectId: string) {
     mutationFn: (input: Omit<CreateBoardInput, "projectId">): Promise<Board> => invoke("boards.create", { ...input, projectId }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog });
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
     }
   });
 }
@@ -196,7 +209,7 @@ export function useCreateBoard(projectId: string) {
 export function useUpdateBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: BoardPatch }) => invoke("boards.update", args.id, args.patch),
+    mutationFn: (args: { id: string; patch: BoardPatch }) => invoke("boards.update", projectId, args.id, args.patch),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.boards(projectId) })
   });
 }
@@ -204,10 +217,10 @@ export function useUpdateBoard(projectId: string) {
 export function useRemoveBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("boards.remove", id),
+    mutationFn: (id: string) => invoke("boards.remove", projectId, id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog });
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
     }
   });
 }
@@ -215,7 +228,7 @@ export function useRemoveBoard(projectId: string) {
 export function useMoveItemsToBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { from: string; to: string; itemIds: string[] }) => invoke("boards.moveItems", args.from, args.to, args.itemIds),
+    mutationFn: (args: { from: string; to: string; itemIds: string[] }) => invoke("boards.moveItems", projectId, args.from, args.to, args.itemIds),
     onSuccess: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -231,7 +244,7 @@ export function useCreateView(projectId: string) {
       // the caller navigates straight to the new view, so the cache sees it before the refetch lands
       qc.setQueryData<View[]>(keys.views(projectId), (prev) => (prev ? [...prev, view] : prev));
       void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog });
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
     }
   });
 }
@@ -239,10 +252,10 @@ export function useCreateView(projectId: string) {
 export function useUpdateView(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: ViewPatch }) => invoke("views.update", args.id, args.patch),
+    mutationFn: (args: { id: string; patch: ViewPatch }) => invoke("views.update", projectId, args.id, args.patch),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog });
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
     }
   });
 }
@@ -250,10 +263,10 @@ export function useUpdateView(projectId: string) {
 export function useRemoveView(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("views.remove", id),
+    mutationFn: (id: string) => invoke("views.remove", projectId, id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog });
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
     }
   });
 }
@@ -275,14 +288,14 @@ function useFieldMutation<A, R>(projectId: string, fn: (args: A) => Promise<R>) 
 
 export const useCreateField = (projectId: string) =>
   useFieldMutation(projectId, (input: Omit<CreateFieldInput, "projectId">) => invoke("fields.create", { ...input, projectId }));
-export const useUpdateField = (projectId: string) => useFieldMutation(projectId, (args: { id: string; patch: FieldPatch }) => invoke("fields.update", args.id, args.patch));
-export const useRemoveField = (projectId: string) => useFieldMutation(projectId, (id: string) => invoke("fields.remove", id));
+export const useUpdateField = (projectId: string) => useFieldMutation(projectId, (args: { id: string; patch: FieldPatch }) => invoke("fields.update", projectId, args.id, args.patch));
+export const useRemoveField = (projectId: string) => useFieldMutation(projectId, (id: string) => invoke("fields.remove", projectId, id));
 export const useAddFieldOption = (projectId: string) =>
-  useFieldMutation(projectId, (args: { fieldId: string; input: FieldOptionInput }) => invoke("fields.addOption", args.fieldId, args.input));
+  useFieldMutation(projectId, (args: { fieldId: string; input: FieldOptionInput }) => invoke("fields.addOption", projectId, args.fieldId, args.input));
 export const useUpdateFieldOption = (projectId: string) =>
-  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; patch: FieldOptionPatch }) => invoke("fields.updateOption", args.fieldId, args.optionId, args.patch));
+  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; patch: FieldOptionPatch }) => invoke("fields.updateOption", projectId, args.fieldId, args.optionId, args.patch));
 export const useRemoveFieldOption = (projectId: string) =>
-  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; moveTo?: string }) => invoke("fields.removeOption", args.fieldId, args.optionId, args.moveTo));
+  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; moveTo?: string }) => invoke("fields.removeOption", projectId, args.fieldId, args.optionId, args.moveTo));
 
 export function useCreateProject() {
   const qc = useQueryClient();
@@ -311,11 +324,10 @@ export function useRemoveProject() {
   return useMutation({
     mutationFn: (id: string) => invoke("projects.remove", id),
     onSuccess: (_r, id) => {
-      for (const key of [keys.boards(id), keys.views(id), keys.items(id), keys.labels(id), keys.badges(id), keys.statusItems(id)]) {
+      for (const key of [keys.boards(id), keys.views(id), keys.items(id), keys.labels(id), keys.badges(id), keys.statusItems(id), keys.oplog(id)]) {
         qc.removeQueries({ queryKey: key });
       }
       void qc.invalidateQueries({ queryKey: keys.projects });
-      void qc.invalidateQueries({ queryKey: keys.oplog });
       void qc.invalidateQueries({ queryKey: keys.contributions });
     }
   });

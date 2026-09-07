@@ -110,7 +110,8 @@ consumer follows.
 
 | Key | Kind | Package | Owns |
 |---|---|---|---|
-| `ctx.db` | spine | `@tomrade/db` | The SQLite connection, the core schema, `migrate()` |
+| `ctx.db` | spine | `@tomrade/db` | The pool of SQLite caches — one per project plus the Hub's — the core schema, `migrate()` |
+| `ctx.hub` | spine | `@tomrade/hub` | This machine: its device id, the Hub folder, the catalog of projects and repository checkouts it knows |
 | `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast` |
 | `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
 | `ctx.fields` | spine | `@tomrade/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
@@ -280,11 +281,19 @@ bug; the helper asserts that a listener either refused or delegated.
 
 Exceptions, deliberately: projects are managed by humans through the UI and sit
 outside the oplog, and so are field *definitions* — schema, not work — while the
-*values* they hold ride on `items.update` like any other patch key;
-`views.setRank`, `items.addRelation` and `boards.moveItems` are not logged today. Dependency edits have a logged path: `blocks` is a patch
-field on `items.update`, versioned and undoable, and a patch that would close a
-cycle is refused with `DependencyCycleError` — `addRelation` remains the raw,
-unguarded helper for seeding.
+*values* they hold ride on `items.update` like any other patch key. Everything
+else is logged: `views.setRank` lands a `rank` row (one item's manual position
+in one view, undoable, kept apart so history reads as decisions rather than
+drags), `boards.moveItems` is one `items.update` per issue, and
+`items.addRelation` / `removeRelation` are `blocks` patches. A patch that would
+close a dependency cycle is refused with `DependencyCycleError`.
+
+Every oplog row carries the machine that wrote it (`device`) and its position in
+that machine's own sequence (`deviceSeq`), so `device:deviceSeq` names one op
+everywhere, and `patch` — the fields the op changed — which is what the
+project folder's log carries. Undo reaches only this machine's own rows; a row
+that arrived from another machine's log is history and evidence, and taking it
+back is a new write of ours.
 
 ## Tools
 
@@ -354,18 +363,58 @@ through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
 
 ## Storage
 
+`ctx.db` is a pool, not a connection. Every project has its own SQLite file
+under `<userData>/cache/projects/<id>/project.db`, and the Hub has one for
+hub-level plugin tables. Both are **caches**: the truth is the text in the
+project's folder (see Destinations), and any file here can be deleted and
+rebuilt. A repository resolves a handle per call and never keeps it:
+
 ```ts
-ctx.db.migrate("hello", [
-  { version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_hello_notes (id TEXT PRIMARY KEY, body TEXT)" },
-  { version: 2, up: (db) => db.exec("ALTER TABLE plugin_hello_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0") }
-]);
+ctx.db.for(projectId).prepare("SELECT …").all();   // a project's file; throws ProjectNotOpenError
+ctx.db.hub.prepare("SELECT …").all();              // hub.db
+ctx.db.openIds();                                   // the projects open on this machine
 ```
 
-Each namespace keeps its own version counter in `plugin_migrations`. SQL
-migrations may only create, alter or drop tables named `plugin_<namespace>_*`;
-the registry refuses anything else. Read and write your tables through
-`ctx.db.prepare()`; write core tables only through their services, so the
-policy and the oplog see it.
+Every method that takes an entity id takes the **project id first** —
+`items.get(projectId, id)`, `views.setRank(projectId, viewId, itemId, rank)`,
+`oplog.undoLast(projectId)` — and so does every renderer channel. A tool
+resolves its project with `requireProjectId(name, args.projectId, inv)`, which
+refuses a call that names none and points at `list_projects`; there is no
+default project to fall back to.
+
+```ts
+ctx.db.migrate("hello", [
+  { version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_hello_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" },
+  { version: 2, up: (db) => db.exec("ALTER TABLE plugin_hello_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0") }
+], {
+  tables: {
+    plugin_hello_notes: { project: "project_id", export: { order: "id" } }
+  }
+});
+```
+
+`migrate` is a **registration**, applied to every open project file now and to
+each one opened later (create, attach, rebuild); it returns a disposer, and the
+registration goes with the plugin, though nothing drops a table. Each file keeps
+its own `plugin_migrations` counter. SQL migrations may only create, alter or
+drop tables named `plugin_<namespace>_*`, **and every table they create must be
+declared** in `tables` — the registry refuses a namespace that does not say:
+
+- `project` — how a table's rows belong to a project: a column, or a chain
+  through another table (`{ via: "thread_id", table: "plugin_hello_threads" }`).
+  Project deletion, the legacy split and the export all use it.
+- `export` — where the durable copy goes. `{ order, appendOnly? }` puts the
+  table in the project's folder as `.tomrade/plugins/<ns>/<table>.jsonl`, so it
+  travels with the project and merges (append-only tables by union, others by
+  row); `false` means machine-local working state, gone when the cache is rebuilt.
+- `scope: "hub"` (on the call) for tables that belong to no project: they live in
+  `hub.db`, need no `project`, and export to the Hub folder's `plugins/`.
+
+Pure configuration is never a table — register a settings section. A file that
+arrives with a higher version of your namespace than this build knows is opened
+with your tables marked unhealthy (`ctx.db.healthy(ns, projectId)`) rather than
+refused; a file carrying tables of a plugin this machine lacks carries them on
+unchanged.
 
 ## Destinations
 

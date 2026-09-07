@@ -1,4 +1,4 @@
-import type { Db } from "@tomrade/db";
+import type { ProjectDb } from "@tomrade/db";
 import { InUseError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomrade/domain";
 import { rowToEntry, type OplogRow } from "./rows.js";
 
@@ -11,9 +11,9 @@ interface ViewSnapshot extends View {
  * row exists now: a soft-deleted counterpart comes back the moment someone
  * undoes that delete, so a snapshot naming it must still round-trip.
  */
-export const wasPurged = (db: Db, id: string): boolean => !!db.prepare("SELECT 1 FROM oplog WHERE op = 'purge' AND entity_id = ?").get(id);
+export const wasPurged = (db: ProjectDb, id: string): boolean => !!db.prepare("SELECT 1 FROM oplog WHERE op = 'purge' AND entity_id = ?").get(id);
 
-function restoreItem(db: Db, item: Item): void {
+function restoreItem(db: ProjectDb, item: Item): void {
   // A snapshot written before a purge can still name what the purge destroyed;
   // restoring the issue must not restore a dangling parent or edge with it.
   const parentId = item.parentId && wasPurged(db, item.parentId) ? null : item.parentId;
@@ -70,7 +70,7 @@ function restoreItem(db: Db, item: Item): void {
   }
 }
 
-function restoreView(db: Db, view: ViewSnapshot): void {
+function restoreView(db: ProjectDb, view: ViewSnapshot): void {
   // A snapshot from before views moved to the project has no projectId/layout;
   // it cannot be placed, so it is restored as an empty board view on the board's project.
   const legacy = view as unknown as { boardId?: string; columns?: string[]; filter?: unknown; wip?: Record<string, number> };
@@ -99,7 +99,7 @@ function restoreView(db: Db, view: ViewSnapshot): void {
   }
 }
 
-function restoreBoard(db: Db, board: Board): void {
+function restoreBoard(db: ProjectDb, board: Board): void {
   db.prepare(
     `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
      VALUES (@id, @projectId, @name, @icon, @subtitle, 0, NULL, @note, @rank, @createdAt, @updatedAt)
@@ -120,7 +120,7 @@ function restoreBoard(db: Db, board: Board): void {
 }
 
 /** Apply the inverse of one entry. Throws InUseError when a created board now owns issues. */
-function revertEntry(db: Db, entry: OplogEntry): void {
+function revertEntry(db: ProjectDb, entry: OplogEntry): void {
   if (entry.entity === "item") {
     if (entry.op === "create") {
       db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
@@ -140,7 +140,14 @@ function revertEntry(db: Db, entry: OplogEntry): void {
       restoreBoard(db, entry.before as Board);
     }
   } else if (entry.entity === "view") {
-    if (entry.op === "create") {
+    if (entry.op === "rank") {
+      const p = entry.patch as { itemId?: string } | null;
+      const prior = (entry.before as { rank?: number | null } | null)?.rank;
+      if (p?.itemId) {
+        if (prior == null) db.prepare("DELETE FROM view_item_rank WHERE view_id = ? AND item_id = ?").run(entry.entityId, p.itemId);
+        else db.prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank").run(entry.entityId, p.itemId, prior);
+      }
+    } else if (entry.op === "create") {
       db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
     } else if (entry.before) {
@@ -159,10 +166,15 @@ const labelOf = (entry: OplogEntry): string => {
  * entry is consumed, so a second call reverts the write before it. A purge
  * tombstone carries no snapshot and is stepped over; it stays as the audit trail.
  */
-export function undoLast(db: Db, entityId?: string): UndoResult | null {
+/**
+ * Only this machine's own writes are undoable this way: a row that arrived from
+ * another machine's log carries a patch but no snapshot, and taking it back is
+ * a new write of ours, not a revert of theirs.
+ */
+export function undoLast(db: ProjectDb, device: string, entityId?: string): UndoResult | null {
   const row = entityId
-    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op != 'purge' ORDER BY seq DESC LIMIT 1").get(entityId) as OplogRow | undefined)
-    : (db.prepare("SELECT * FROM oplog WHERE op != 'purge' ORDER BY seq DESC LIMIT 1").get() as OplogRow | undefined);
+    ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op != 'purge' AND device = ? ORDER BY seq DESC LIMIT 1").get(entityId, device) as OplogRow | undefined)
+    : (db.prepare("SELECT * FROM oplog WHERE op != 'purge' AND device = ? ORDER BY seq DESC LIMIT 1").get(device) as OplogRow | undefined);
   if (!row) return null;
 
   const entry: OplogEntry = rowToEntry(row);
@@ -171,12 +183,12 @@ export function undoLast(db: Db, entityId?: string): UndoResult | null {
     db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
   });
 
-  const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : "Reverted";
+  const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : entry.op === "rank" ? "Moved back" : "Reverted";
   return { entry, summary: `${verb} ${labelOf(entry)}` };
 }
 
 /** What stands at `id` right now, for deciding whether a snapshot is still current. */
-function currentStamp(db: Db, entity: string, id: string): { exists: boolean; stamp: number | null } {
+function currentStamp(db: ProjectDb, entity: string, id: string): { exists: boolean; stamp: number | null } {
   const sql =
     entity === "item"
       ? "SELECT version AS stamp FROM items WHERE id = ?"
@@ -197,7 +209,7 @@ const stampOf = (entity: string, snapshot: unknown): number | null => {
  * someone else edited afterwards is left in place and reported, never silently
  * overwritten; the run's remaining oplog rows stay behind as the audit trail.
  */
-export function undoRun(db: Db, runId: string): UndoRunResult {
+export function undoRun(db: ProjectDb, runId: string): UndoRunResult {
   const rows = db.prepare("SELECT * FROM oplog WHERE run_id = ? ORDER BY seq DESC").all(runId) as OplogRow[];
   const kept: UndoRunResult["kept"] = [];
   let reverted = 0;
@@ -208,6 +220,12 @@ export function undoRun(db: Db, runId: string): UndoRunResult {
       const keep = (reason: string) => kept.push({ entity: entry.entity, entityId: entry.entityId, label: labelOf(entry), reason });
       if (entry.op === "purge") {
         keep("a permanent delete cannot be restored");
+        continue;
+      }
+      if (entry.op === "rank") {
+        revertEntry(db, entry);
+        db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
+        reverted += 1;
         continue;
       }
       const current = currentStamp(db, entry.entity, entry.entityId);

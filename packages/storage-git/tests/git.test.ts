@@ -133,7 +133,7 @@ describe("a git repository as a destination", () => {
       state.tables.labels.push({ id: "their-label", project_id: a.project.id, name: "theirs" });
       writeArtifact(dir, state);
     });
-    a.items.create({ title: "mine", boardId: a.board.id, by: "human" });
+    a.items.create({ title: "mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
 
     await expect(a.storage.flush(a.project.id)).rejects.toThrow(/moved on|not seen|resolve/i);
     // Neither side lost anything.
@@ -160,6 +160,6 @@ describe("a git repository as a destination", () => {
 
     const b = await machine("bytes-b");
     await b.storage.attach("git", { remote, branch: "main", path: "" });
-    expect(exportState(b.db, shared.id)).toEqual(exportState(a.db, shared.id));
+    expect(exportState(b.dbFor(shared.id), shared.id)).toEqual(exportState(a.dbFor(shared.id), shared.id));
   });
 });

@@ -39,8 +39,8 @@ const run = async () => {
     patches: [[{ id: "mcp", config: { port: 0 } }]]
   });
   // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
-  ctx.projects.remove("default");
-  const repos = { db: ctx.db, items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields };
+  for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
+  const repos = { dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields };
   const { project } = seedDesignProject(repos);
 
   const win = new BrowserWindow({
@@ -214,7 +214,7 @@ const run = async () => {
   if (!before) throw new Error(`no draggable card on screen; keys=${keysOnBoard}`);
   await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
   await sleep(900);
-  const after = repos.items.get(before.id);
+  const after = repos.items.get(project.id, before.id);
   check("ArrowRight moves the focused card one column", after.status !== before.status);
   check("the move bumped the version", after.version === before.version + 1);
   check("a toast offers the undo", (await $(`document.querySelectorAll('.toast').length`)) > 0);
@@ -223,7 +223,7 @@ const run = async () => {
 
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(900);
-  check("the toast's Undo reverts the move", repos.items.get(before.id).status === before.status);
+  check("the toast's Undo reverts the move", repos.items.get(project.id, before.id).status === before.status);
 
   // ── pointer drag: dnd-kit's own path, not the keyboard twin ─────────
   // dnd-kit ignores synthetic events, so this uses trusted OS-level input.
@@ -247,11 +247,11 @@ const run = async () => {
       send("mouseUp", box.x1, box.y1);
       await sleep(1600);
     }
-    const landed = repos.items.get(dragged.id);
+    const landed = repos.items.get(project.id, dragged.id);
     check("a pointer drag writes the column's field", landed.status === "doing");
     check("a status drop leaves the workstream alone", landed.boardId === dragged.boardId);
     if (landed.status === "doing") await shot("21-after-drag");
-    repos.items.update(dragged.id, { status: "verifying" }, "human");
+    repos.items.update(project.id, dragged.id, { status: "verifying" }, "human");
     await $(`location.reload();true`);
     await sleep(3200);
   }
@@ -300,7 +300,7 @@ const run = async () => {
     await shot("22-drag-order");
     for (const key of [first.key, second?.key].filter(Boolean)) {
       const item = repos.items.getByKey(project.id, key);
-      if (item) repos.items.update(item.id, { status: "verifying" }, "human");
+      if (item) repos.items.update(project.id, item.id, { status: "verifying" }, "human");
     }
     await $(`location.reload();true`);
     await sleep(3200);
@@ -308,11 +308,11 @@ const run = async () => {
 
   // ── conflict: an agent write the board has not seen ─────────────────
   const raced = repos.items.list({ projectId: project.id }).find((i) => i.status === "todo" && i.kind === "ticket" && keysOnBoard.split(",").includes(i.key));
-  repos.items.update(raced.id, { priority: 4 }, "ai:mcp");
+  repos.items.update(project.id, raced.id, { priority: 4 }, "ai:mcp");
   await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${raced.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
   await sleep(1200);
   check("a stale move raises the conflict banner", (await $(`!!document.querySelector('.banner[role="alert"]')`)) === true);
-  check("the conflict left the issue alone", repos.items.get(raced.id).status === "todo");
+  check("the conflict left the issue alone", repos.items.get(project.id, raced.id).status === "todo");
   await shot("22-conflict-banner");
   await press(`document.querySelector('.banner .btn-ghost')`);
   await sleep(500);
@@ -484,7 +484,7 @@ const run = async () => {
   await sleep(900);
   check("the status field writes to the issue", open().status === wantStatus);
   check("the edit bumped the version", open().version === opened.version + 1);
-  check("the edit is one reversible oplog row", ctx.oplog.historyFor("item", opened.id, 1)[0]?.op === "update");
+  check("the edit is one reversible oplog row", ctx.oplog.historyFor(project.id, "item", opened.id, 1)[0]?.op === "update");
 
   const wantPriority = opened.priority === 4 ? "1" : "4";
   await pick(`document.querySelectorAll('.detail .fsel')[1]`, wantPriority);
@@ -590,7 +590,7 @@ const run = async () => {
   check("creating a view writes it", repos.views.listForProject(project.id).length === viewsBefore + 1);
   const docs = repos.views.listForProject(project.id).find((v) => v.name === "Docs");
   check("a new view opens as a board", !!docs && docs.layout === "board" && (await $(`location.hash`)).includes(docs.id));
-  check("the ledger records the view create", ctx.oplog.historyFor("view", docs.id, 1)[0]?.op === "create");
+  check("the ledger records the view create", ctx.oplog.historyFor(project.id, "view", docs.id, 1)[0]?.op === "create");
   await press(`document.querySelector('.view-menu-btn')`);
   await sleep(400);
   await press(`[...document.querySelectorAll('.menu [role="menuitem"]')].find(r => /Delete view/.test(r.textContent))`);
@@ -849,7 +849,7 @@ const run = async () => {
 
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(700);
-  check("Escape cancels the confirmation rather than confirming it", repos.items.get(doomed.id) !== null);
+  check("Escape cancels the confirmation rather than confirming it", repos.items.get(project.id, doomed.id) !== null);
   check("cancelling closes the sheet", (await $(`!!document.querySelector('.dangerbar')`)) === false);
   // a sheet that closes by unmounting never gives the shared Dialog its
   // open -> false transition, and the restore silently never runs
@@ -862,8 +862,8 @@ const run = async () => {
   await sleep(700);
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1400);
-  check("confirming destroys the issue for good", repos.items.get(doomed.id) === null);
-  check("the purge left one tombstone and no history", ctx.oplog.historyFor("item", doomed.id, 10).map((o) => o.op).join() === "purge");
+  check("confirming destroys the issue for good", repos.items.get(project.id, doomed.id) === null);
+  check("the purge left one tombstone and no history", ctx.oplog.historyFor(project.id, "item", doomed.id, 10).map((o) => o.op).join() === "purge");
   check("deleting the open issue leaves for the project, not a dead sheet", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)));
 
   // the same control on the docked pane, where the board is what has to react
@@ -875,7 +875,7 @@ const run = async () => {
   await sleep(800);
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1400);
-  check("the pane's delete destroys the issue too", repos.items.get(doomed2.id) === null);
+  check("the pane's delete destroys the issue too", repos.items.get(project.id, doomed2.id) === null);
   check("the card leaves the board", (await $(`[...document.querySelectorAll('.card-id')].some(n => n.textContent === '${doomed2.key}')`)) === false);
   check("the detail pane closes with the issue it was showing", (await $(`!!document.querySelector('.detail')`)) === false);
   // the toast must not offer an undo the write path cannot honour
@@ -890,8 +890,8 @@ const run = async () => {
 
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,bubbles:true}));true`);
   await sleep(1200);
-  check("⌘Z cannot resurrect a permanently deleted issue", repos.items.get(doomed2.id) === null);
-  check("the tombstone survives the undo as the audit trail", ctx.oplog.recent(30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
+  check("⌘Z cannot resurrect a permanently deleted issue", repos.items.get(project.id, doomed2.id) === null);
+  check("the tombstone survives the undo as the audit trail", ctx.oplog.recent(project.id, 30).some((o) => o.op === "purge" && o.entityId === doomed2.id));
   await shot("24-after-delete");
 
   // ── project settings, and the delete that takes a whole project ──────

@@ -14,7 +14,7 @@ import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useDbPath, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { useCacheDir, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 
 /** Each preview re-declares the token block locally, so all three themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -127,7 +127,7 @@ export function SettingsDialog({
   const sections = useSettingsSections();
   const save = useSaveSettings();
   const mcp = useMcpUrl();
-  const dbPath = useDbPath();
+  const cacheDir = useCacheDir();
   const providers = useStorageProviders();
   const [active, setActive] = useState("appearance");
 
@@ -271,9 +271,9 @@ export function SettingsDialog({
           <SectionHead title={t("settingsDialog.dataLabel")}>{t("settingsDialog.dataLede")}</SectionHead>
           <div className="panel">
             <div className="field">
-              <label htmlFor="stDb">{t("settingsDialog.dbFileLabel")}</label>
-              <input id="stDb" className="input num" readOnly value={dbPath.data ?? ""} />
-              <span className="meta-txt">{t("settingsDialog.dbFileNote")}</span>
+              <label htmlFor="stDb">{t("settingsDialog.cacheDirLabel")}</label>
+              <input id="stDb" className="input num" readOnly value={cacheDir.data ?? ""} />
+              <span className="meta-txt">{t("settingsDialog.cacheDirNote")}</span>
             </div>
           </div>
         </>

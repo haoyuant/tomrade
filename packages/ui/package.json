@@ -20,6 +20,7 @@
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.32",
     "@tomrade/fields": "workspace:*",
+    "@tomrade/hub": "workspace:*",
     "@xyflow/react": "12.11.5",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

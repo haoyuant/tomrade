@@ -11,6 +11,9 @@ modules:
   - id: db
     title: Database
     required: true
+  - id: hub
+    title: This machine
+    required: true
   - id: oplog
     title: History
     required: true
@@ -57,10 +60,18 @@ modules:
     title: MCP server
 
 plugins:
+  # Caches only: every file under here can be rebuilt from a project's folder.
   - id: db
     name: "@tomrade/db"
     config:
-      path: "${userData}/tomrade.db"
+      dir: "${userData}/cache"
+  # This machine: its id, the Hub folder, and the catalog of projects it knows.
+  - id: hub
+    name: "@tomrade/hub"
+    config:
+      stateFile: "${userData}/hub.json"
+      catalogFile: "${userData}/catalog.json"
+      deviceFile: "${userData}/device.json"
   - id: oplog
     name: "@tomrade/oplog"
   - id: write-policy
@@ -75,6 +86,9 @@ plugins:
     name: "@tomrade/boards"
   - id: projects
     name: "@tomrade/projects"
+    config:
+      legacyPath: "${userData}/tomrade.db"
+      backupsDir: "${userData}/backups"
   - id: settings
     name: "@tomrade/settings"
     config:

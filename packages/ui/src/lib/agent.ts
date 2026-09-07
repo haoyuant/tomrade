@@ -8,15 +8,15 @@ import { useToast } from "./toast";
 
 export const agentKeys = {
   threads: (projectId: string) => ["agent", "threads", projectId] as const,
-  thread: (threadId: string) => ["agent", "thread", threadId] as const,
+  thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
   engines: ["agent", "engines"] as const,
   playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const
 };
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agentKeys.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
-export const useAgentThread = (threadId: string | null) =>
-  useQuery({ queryKey: agentKeys.thread(threadId ?? ""), queryFn: () => invoke("agent.thread", threadId!), enabled: !!threadId });
+export const useAgentThread = (projectId: string, threadId: string | null) =>
+  useQuery({ queryKey: agentKeys.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId });
 
 export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
 
@@ -79,25 +79,25 @@ export function useNewThread(projectId: string) {
 export function useSetEngine(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { threadId: string; engineId: string }) => invoke("agent.setEngine", args.threadId, args.engineId),
+    mutationFn: (args: { threadId: string; engineId: string }) => invoke("agent.setEngine", projectId, args.threadId, args.engineId),
     onSuccess: (_thread, args) => {
-      void qc.invalidateQueries({ queryKey: agentKeys.thread(args.threadId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
       void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
     }
   });
 }
 
-export const useSend = () => useMutation({ mutationFn: (args: { threadId: string; text: string }) => invoke("agent.send", args.threadId, args.text) });
-export const useAnswer = () =>
-  useMutation({ mutationFn: (args: { threadId: string; questionId: string; value: string | string[] }) => invoke("agent.answer", args.threadId, args.questionId, args.value) });
+export const useSend = (projectId: string) => useMutation({ mutationFn: (args: { threadId: string; text: string }) => invoke("agent.send", projectId, args.threadId, args.text) });
+export const useAnswer = (projectId: string) =>
+  useMutation({ mutationFn: (args: { threadId: string; questionId: string; value: string | string[] }) => invoke("agent.answer", projectId, args.threadId, args.questionId, args.value) });
 export const useCancelRun = () => useMutation({ mutationFn: (runId: string) => invoke("agent.cancel", runId) });
 
 export function useRevertRun(projectId: string, threadId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (runId: string) => invoke("agent.revert", runId),
+    mutationFn: (runId: string) => invoke("agent.revert", projectId, runId),
     onSuccess: () => {
-      if (threadId) void qc.invalidateQueries({ queryKey: agentKeys.thread(threadId) });
+      if (threadId) void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, threadId) });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -126,7 +126,7 @@ export function useAgentEvents(
         void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
         return;
       }
-      const key = agentKeys.thread(threadId);
+      const key = agentKeys.thread(projectId, threadId);
       const patch = (fn: (detail: ThreadDetail) => ThreadDetail) => qc.setQueryData<ThreadDetail>(key, (d) => (d ? fn(d) : d));
       switch (event.type) {
         case "delta":

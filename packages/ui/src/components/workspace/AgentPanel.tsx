@@ -229,12 +229,12 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
   const itemsQ = useItems(projectId);
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
   const threadId = (chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
-  const detail = useAgentThread(threadId);
+  const detail = useAgentThread(projectId, threadId);
   const engines = useEngines();
   const newThread = useNewThread(projectId);
   const setEngine = useSetEngine(projectId);
-  const send = useSend();
-  const answer = useAnswer();
+  const send = useSend(projectId);
+  const answer = useAnswer(projectId);
   const cancel = useCancelRun();
   const revert = useRevertRun(projectId, threadId);
 

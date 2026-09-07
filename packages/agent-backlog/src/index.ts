@@ -50,7 +50,7 @@ export default {
     const llm = (): LlmService | null => (ctx.get("llm") as LlmService | undefined) ?? null;
     const existingOf = (projectId?: string): Item[] => ctx.items.list(projectId ? { projectId } : {});
     const dossierOf = (run: RunHandle): Dossier => {
-      const card = ctx.agent.store.cards(run.threadId).find((c) => c.id === "dossier");
+      const card = ctx.agent.store.cards(run.projectId, run.threadId).find((c) => c.id === "dossier");
       return card ? dossierSchema.parse(card.data) : emptyDossier();
     };
     const saveDossier = (run: RunHandle, dossier: Dossier) =>

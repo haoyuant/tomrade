@@ -4,11 +4,12 @@ export { Context, Service } from "cordis";
 export type { Fiber, Plugin } from "cordis";
 
 export * from "@tomrade/domain";
-export { defineTool, ToolInputError, UnknownToolError } from "@tomrade/tools";
+export { defineTool, requireProjectId, ToolInputError, UnknownToolError } from "@tomrade/tools";
 export type { LedgerEntry, RunHandle, Tools, ToolCall, ToolDefinition, ToolDescriptor, ToolInvocation, ToolOutcome } from "@tomrade/tools";
 export { write } from "@tomrade/write";
 export type { WriteIntent } from "@tomrade/write";
-export type { Db, Migration, Sqlite } from "@tomrade/db";
+export type { Db, Migration, MigrateOptions, PluginTableSpec, ProjectDb, Sqlite } from "@tomrade/db";
+export type { Hub, CatalogProject } from "@tomrade/hub";
 export type { Oplog, OplogAppend } from "@tomrade/oplog";
 export type { Items, ItemQuery } from "@tomrade/items";
 export type { Fields, CreateFieldInput, FieldPatch, FieldOptionInput, FieldOptionPatch } from "@tomrade/fields";

@@ -17,23 +17,23 @@ describe.skipIf(!process.env.TOMRADE_LIVE_CC)("live Claude Code", () => {
     items.create({ projectId: project.id, boardId: board.id, title: "Ship the water reminder", by: "human" });
 
     const thread = ctx.agent.newThread(project.id, "claude-code");
-    const { runId } = ctx.agent.send(thread.id, {
+    const { runId } = ctx.agent.send(project.id, thread.id, {
       kind: "text",
       text: "Use the tomrade list_items tool once, then reply with only the number of items you saw. Create nothing."
     });
     const t0 = Date.now();
     for (;;) {
-      const run = ctx.agent.store.run(runId);
+      const run = ctx.agent.store.run(project.id, runId);
       if (run && run.status !== "running") break;
       if (Date.now() - t0 > 150_000) throw new Error("live run did not settle");
       await new Promise((r) => setTimeout(r, 250));
     }
-    const run = ctx.agent.store.run(runId)!;
-    const blocks = ctx.agent.store.messages(thread.id).map((m) => m.block);
+    const run = ctx.agent.store.run(project.id, runId)!;
+    const blocks = ctx.agent.store.messages(project.id, thread.id).map((m) => m.block);
     const traces = blocks.filter((b) => b.type === "trace");
     expect(run.status).toBe("done");
     expect(traces.some((t) => t.type === "trace" && t.tool === "list_items" && t.ok)).toBe(true);
     expect(run.changes).toBe(0);
-    expect(ctx.agent.store.external(thread.id)["claude-code"]).toBeTruthy();
+    expect(ctx.agent.store.external(project.id, thread.id)["claude-code"]).toBeTruthy();
   }, 180_000);
 });

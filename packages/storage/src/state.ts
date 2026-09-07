@@ -4,7 +4,7 @@ import path from "node:path";
 import { CORE_SCHEMA_VERSION, seedDefaultViews, type Queryable } from "@tomrade/db";
 import { NewerSchemaError } from "./types.js";
 
-/** The slice of a connection the artifact needs. `Db` satisfies it today; a per-project handle will later. */
+/** The slice of a connection the artifact needs; a project's own `ProjectDb` satisfies it. */
 export interface StateDb extends Queryable {
   transaction<T>(fn: () => T): T;
 }

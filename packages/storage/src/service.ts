@@ -1,7 +1,8 @@
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { Db } from "@tomrade/db";
+import type { Db, ProjectDb } from "@tomrade/db";
+import type {} from "@tomrade/hub";
 import type {} from "@tomrade/contributions";
 import type {} from "@tomrade/ipc";
 import type {} from "@tomrade/write";
@@ -38,7 +39,7 @@ const LOCAL: StorageStatus = { state: "local", location: null, lastSyncAt: null 
 
 export class Storage extends Service {
   static provide = "storage";
-  static inject = ["db"];
+  static inject = ["db", "hub"];
   static Config = StorageConfig;
 
   private registry = new Map<string, StorageProvider>();
@@ -62,9 +63,8 @@ export class Storage extends Service {
     this.bindings = new Bindings(this.config.path);
     this.register(folderProvider);
 
-    // WriteIntent carries no projectId yet, and setRank/addRelation/moveItems
-    // bypass write() entirely — so any commit schedules a sweep and the digest
-    // decides what actually needs publishing. A false alarm costs one export.
+    // Any commit schedules a sweep and the digest decides what actually needs
+    // publishing. A false alarm costs one export.
     this.ctx.on("write/committed", () => this.schedule());
     if (this.config.reconcileMs > 0) {
       this.reconcileTimer = setInterval(() => void this.flushAll("reconcile"), this.config.reconcileMs);
@@ -110,8 +110,9 @@ export class Storage extends Service {
     };
   }
 
-  private get db(): Db {
-    return this.ctx.db;
+  /** The project's own cache file; resolved per call, never kept. */
+  private db(projectId: string): ProjectDb {
+    return (this.ctx.db as Db).for(projectId);
   }
 
   /** Reversible: the provider, and its option in every project sheet, goes with the plugin that registered it. */
@@ -249,7 +250,7 @@ export class Storage extends Service {
   }
 
   private local(projectId: string): { state: ProjectState; digest: string } {
-    const state = exportState(this.db, projectId);
+    const state = exportState(this.db(projectId), projectId);
     return { state, digest: digestState(state) };
   }
 
@@ -369,7 +370,7 @@ export class Storage extends Service {
     if (incoming === binding.lastFlushedDigest) return this.statusFor(projectId);
     if (this.local(projectId).digest !== binding.lastFlushedDigest) throw new DivergedError(projectId);
 
-    importState(this.db, onDisk);
+    importState(this.db(projectId), onDisk);
     this.bindings.patch(projectId, { lastFlushedDigest: incoming, lastSyncAt: Date.now() });
     this.ctx.emit("storage/imported", projectId);
     this.ctx.get("ipc")?.send("storage.changed", projectId);
@@ -396,7 +397,16 @@ export class Storage extends Service {
       if (!state) throw new Error(`${handle.location} holds no Tomrade project`);
       const projectId = projectIdOf(state);
       if (this.projectExists(projectId)) throw new Error(`Project ${projectId} is already on this machine`);
-      importState(this.db, state);
+      // A project this machine has never seen gets its cache file and its catalog entry here.
+      const db = (this.ctx.db as Db).open(projectId);
+      importState(db, state);
+      const project = state.manifest.project as { name?: unknown; key_prefix?: unknown; created_at?: unknown };
+      this.ctx.hub.catalog.upsertProject({
+        id: projectId,
+        name: typeof project.name === "string" ? project.name : "",
+        keyPrefix: typeof project.key_prefix === "string" ? project.key_prefix : "TOM",
+        createdAt: typeof project.created_at === "number" ? project.created_at : Date.now()
+      });
       this.bindings.set({ projectId, provider: providerId, config, lastFlushedDigest: digestState(state), lastSyncAt: Date.now() });
       this.ctx.emit("storage/imported", projectId);
       this.ctx.get("ipc")?.send("storage.changed", projectId);
@@ -433,7 +443,8 @@ export class Storage extends Service {
   }
 
   private projectExists(projectId: string): boolean {
-    return !!this.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId);
+    const db = this.ctx.db as Db;
+    return db.has(projectId) && !!db.for(projectId).prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId);
   }
 }
 

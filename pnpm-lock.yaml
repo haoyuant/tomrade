@@ -53,6 +53,9 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../../packages/fields
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../../packages/hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -413,6 +416,25 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/hub:
+    dependencies:
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/ipc:
     dependencies:
       cordis:
@@ -527,6 +549,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -570,6 +595,9 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -632,13 +660,31 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -676,6 +722,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -751,6 +800,9 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@tomrade/items':
         specifier: workspace:*
         version: link:../items
@@ -825,6 +877,9 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
       '@xyflow/react':
         specifier: 12.11.5
         version: 12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

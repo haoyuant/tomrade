@@ -5,7 +5,7 @@ import { fresh } from "@tomrade/testkit";
 describe("contributions", () => {
   it("a plugin contributes commands, badges, status items and sections as data, and they leave with it", async () => {
     const { ctx, items, board, project } = await fresh({ plugins: [Contributions] });
-    const item = items.create({ title: "Needs attention", boardId: board.id, labels: ["bug"], by: "human" });
+    const item = items.create({ projectId: project.id, title: "Needs attention", boardId: board.id, labels: ["bug"], by: "human" });
     const acked: string[] = [];
     const fiber = await ctx.plugin({
       name: "demo",
@@ -23,7 +23,7 @@ describe("contributions", () => {
     expect(ctx.contributions.statusItems({ projectId: project.id })).toEqual([]);
     expect(await ctx.contributions.run("demo.ack", { projectId: project.id, itemId: item.id })).toEqual({ toast: "Acknowledged" });
     expect(ctx.contributions.statusItems({ projectId: project.id })).toEqual([{ id: "demo", text: "1 acked" }]);
-    expect(ctx.contributions.sectionsFor(item.id)).toEqual([{ id: "demo", title: "Demo", rows: [{ label: "Severity", value: "high" }], text: undefined }]);
+    expect(ctx.contributions.sectionsFor(project.id, item.id)).toEqual([{ id: "demo", title: "Demo", rows: [{ label: "Severity", value: "high" }], text: undefined }]);
 
     await fiber.dispose();
     expect(ctx.contributions.commands()).toEqual([]);

@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
-import { useCreateProject, useDbPath } from "~/lib/queries";
+import { useCacheDir, useCreateProject } from "~/lib/queries";
 
 /** Prefix preview mirrors keyPrefixFor() in the domain: first three letters, uppercased. */
 const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ISS";
@@ -11,7 +11,7 @@ const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, ""
 export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
   const create = useCreateProject();
-  const dbPath = useDbPath();
+  const cacheDir = useCacheDir();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -97,7 +97,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
         </div>
         <div className="field">
           <label htmlFor="npFile">{t("newProjectDialog.storedOnMachineLabel")}</label>
-          <input id="npFile" className="input num" readOnly value={dbPath.data ?? ""} />
+          <input id="npFile" className="input num" readOnly value={cacheDir.data ?? ""} />
           <span className="meta-txt">{t("newProjectDialog.storedNote")}</span>
         </div>
         <div>

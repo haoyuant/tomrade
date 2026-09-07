@@ -1,17 +1,53 @@
+/**
+ * Projects are the container. Each is its own cache file; the catalog says
+ * which exist on this machine and survives a boot; removing one deletes the
+ * file and everything in it, so nothing can be resurrected into it.
+ */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Context } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
-import { keyPrefixFor } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
+import { boards } from "@tomrade/boards";
+import { Db } from "@tomrade/db";
+import { keyPrefixFor, NotFoundError } from "@tomrade/domain";
+import { Fields } from "@tomrade/fields";
+import { Hub } from "@tomrade/hub";
+import { Items } from "@tomrade/items";
+import { Oplog } from "@tomrade/oplog";
+import { Projects } from "@tomrade/projects";
+import { fresh, settle } from "@tomrade/testkit";
+import { policy } from "@tomrade/write";
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-projects-"));
-afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-projects-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+/** The real thing: a file-backed pool and a file-backed Hub, so a second boot finds the catalog. */
+async function bootFrom(userData: string) {
+  const ctx = new Context();
+  await ctx.plugin(Db, { dir: path.join(userData, "cache") });
+  await ctx.plugin(Hub, {
+    stateFile: path.join(userData, "hub.json"),
+    catalogFile: path.join(userData, "catalog.json"),
+    deviceFile: path.join(userData, "device.json"),
+    defaultDir: path.join(userData, "Tomrade")
+  });
+  await ctx.plugin(Oplog);
+  await ctx.plugin(policy);
+  await ctx.plugin(Fields);
+  await ctx.plugin(Items);
+  await ctx.plugin(boards);
+  await ctx.plugin(Projects, { legacyPath: path.join(userData, "tomrade.db"), backupsDir: path.join(userData, "backups") });
+  await settle();
+  return ctx;
+}
 
 describe("projects", () => {
   it("seeds a default project with one workstream and the default views", async () => {
     const { projects, boards, views, project } = await fresh();
-    expect(project.id).toBe("default");
+    expect(project.id).not.toBe("default");
+    expect(project.name).toBe("Default Project");
+    expect(project.keyPrefix).toBe("TOM");
     expect(projects.list().length).toBe(1);
     expect(boards.list(project.id).map((b) => b.name)).toEqual(["Main"]);
     expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Backlog", "Recently updated"]);
@@ -23,27 +59,33 @@ describe("projects", () => {
   });
 
   it("create/list/update/remove projects", async () => {
-    const { projects } = await fresh();
+    const { ctx, projects, hub } = await fresh();
     const p = projects.create({ name: "Acme App", description: "v2" });
     expect(projects.list().length).toBe(2);
     expect(projects.get(p.id)?.description).toBe("v2");
     expect(p.keyPrefix).toBe("ACM");
+    expect(ctx.db.has(p.id)).toBe(true);
+    expect(hub.catalog.project(p.id)?.keyPrefix).toBe("ACM");
     expect(projects.update(p.id, { name: "Acme App 2" })?.name).toBe("Acme App 2");
+    expect(hub.catalog.project(p.id)?.name).toBe("Acme App 2");
     projects.remove(p.id);
     expect(projects.get(p.id)).toBeNull();
+    expect(ctx.db.has(p.id)).toBe(false);
+    expect(hub.catalog.project(p.id)).toBeNull();
   });
 
-  it("items are scoped per project; removing a project cascades its items and boards", async () => {
-    const { projects, boards, items, board } = await fresh();
+  it("items are scoped per project; removing a project takes its file, items and boards with it", async () => {
+    const { ctx, projects, boards, items, board, project } = await fresh();
     const p = projects.create({ name: "P" });
     items.create({ title: "in P", projectId: p.id, boardId: boards.defaultFor(p.id).id, by: "human" });
-    items.create({ title: "in default", boardId: board.id, by: "human" });
+    items.create({ title: "in default", projectId: project.id, boardId: board.id, by: "human" });
     expect(items.list({ projectId: p.id }).length).toBe(1);
-    expect(items.list({ projectId: "default" }).length).toBe(1);
+    expect(items.list({ projectId: project.id }).length).toBe(1);
+    expect(items.list().length).toBe(2);
     projects.remove(p.id);
-    expect(items.list({ projectId: p.id }).length).toBe(0);
-    expect(boards.list(p.id).length).toBe(0);
-    expect(items.list({ projectId: "default" }).length).toBe(1);
+    expect(ctx.db.has(p.id)).toBe(false);
+    expect(items.list().length).toBe(1);
+    expect(items.list({ projectId: project.id }).length).toBe(1);
   });
 
   it("deleting a project takes its history, so undo cannot resurrect into it", async () => {
@@ -51,8 +93,8 @@ describe("projects", () => {
     const p = projects.create({ name: "Doomed" });
     const doomed = items.create({ title: "in P", projectId: p.id, boardId: boards.defaultFor(p.id).id, by: "human" });
     projects.remove(p.id);
-    expect(oplog.undoLast(doomed.id)).toBeNull();
-    expect(items.get(doomed.id)).toBeNull();
+    expect(() => oplog.undoLast(p.id, doomed.id)).toThrow(/not open/);
+    expect(projects.get(p.id)).toBeNull();
   });
 
   it("a patch only writes the fields it carries", async () => {
@@ -62,45 +104,65 @@ describe("projects", () => {
     expect(projects.update(p.id, { description: null })).toMatchObject({ name: "Acme", description: null, archived: true });
   });
 
-  it("removing a project cuts relations pointing into it from another project", async () => {
-    const { db, projects, boards, items, board } = await fresh();
-    const p = projects.create({ name: "Doomed" });
-    const outside = items.create({ title: "stays", boardId: board.id, by: "human" });
-    const inside = items.create({ title: "goes", projectId: p.id, boardId: boards.defaultFor(p.id).id, by: "human" });
-    // Nothing stops an agent relating across projects, and each edge is one row.
-    items.addRelation(outside.id, inside.id);
-    items.addRelation(inside.id, outside.id);
-    projects.remove(p.id);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM item_relations").get() as { n: number }).n).toBe(0);
-    expect(items.get(outside.id)?.blocks).toEqual([]);
+  it("archived lives in the catalog, per machine", async () => {
+    const { projects, hub } = await fresh();
+    const p = projects.create({ name: "Old" });
+    projects.update(p.id, { archived: true });
+    expect(hub.catalog.project(p.id)?.archived).toBe(true);
+    expect(projects.get(p.id)?.archived).toBe(true);
   });
 
-  it("a project the human deleted stays deleted across a boot", async () => {
-    const file = path.join(dir, "deleted-default.db");
-    const first = await fresh({ dbPath: file });
+  it("an edge across projects cannot exist: each project is one file", async () => {
+    const { projects, boards, items, board, project } = await fresh();
+    const p = projects.create({ name: "Other" });
+    const here = items.create({ title: "here", projectId: project.id, boardId: board.id, by: "human" });
+    const there = items.create({ title: "there", projectId: p.id, boardId: boards.defaultFor(p.id).id, by: "human" });
+    expect(() => items.addRelation(project.id, here.id, there.id)).toThrow(NotFoundError);
+    expect(items.get(project.id, here.id)?.blocks).toEqual([]);
+  });
+
+  it("the catalog survives a boot: a deleted project stays deleted, a created one is still there", async () => {
+    const userData = path.join(root, "boot-1");
+    const first = await bootFrom(userData);
+    const seeded = first.projects.list()[0]!;
     first.projects.create({ name: "Keeper" });
-    first.projects.remove("default");
-    await first.ctx.fiber.dispose();
-    const second = await fresh({ dbPath: file });
+    first.projects.remove(seeded.id);
+    await first.fiber.dispose();
+    const second = await bootFrom(userData);
     expect(second.projects.list().map((p) => p.name)).toEqual(["Keeper"]);
+    expect(second.db.openIds().length).toBe(1);
+    await second.fiber.dispose();
   });
 
-  it("an emptied database is seeded again, so Tomrade always opens on a project", async () => {
-    const file = path.join(dir, "emptied.db");
-    const first = await fresh({ dbPath: file });
-    first.projects.remove("default");
+  it("an emptied catalog is seeded again, so Tomrade always opens on a project", async () => {
+    const userData = path.join(root, "boot-2");
+    const first = await bootFrom(userData);
+    first.projects.remove(first.projects.list()[0]!.id);
     expect(first.projects.list()).toEqual([]);
-    await first.ctx.fiber.dispose();
-    const second = await fresh({ dbPath: file });
-    expect(second.projects.list().map((p) => p.name)).toEqual(["Default Project"]);
-    expect(second.boards.list(second.project.id).length).toBe(1);
-    expect(second.views.listForProject(second.project.id).length).toBe(2);
+    await first.fiber.dispose();
+    const second = await bootFrom(userData);
+    const project = second.projects.list()[0]!;
+    expect(project.name).toBe("Default Project");
+    expect(second.boards.list(project.id).length).toBe(1);
+    expect(second.views.listForProject(project.id).length).toBe(2);
+    await second.fiber.dispose();
+  });
+
+  it("the device id is stable across boots", async () => {
+    const userData = path.join(root, "boot-3");
+    const first = await bootFrom(userData);
+    const id = first.hub.deviceId;
+    await first.fiber.dispose();
+    const second = await bootFrom(userData);
+    expect(second.hub.deviceId).toBe(id);
+    expect(id).toMatch(/^[0-9a-f]{12}$/);
+    await second.fiber.dispose();
   });
 
   it("keys are per project, so two projects can both hold #1", async () => {
-    const { projects, boards, items, board } = await fresh();
+    const { projects, boards, items, board, project } = await fresh();
     const p = projects.create({ name: "Acme" });
-    const a = items.create({ title: "A", boardId: board.id, by: "human" });
+    const a = items.create({ title: "A", projectId: project.id, boardId: board.id, by: "human" });
     const b = items.create({ title: "B", projectId: p.id, boardId: boards.defaultFor(p.id).id, by: "human" });
     expect(a.key).toBe("TOM-1");
     expect(b.key).toBe("ACM-1");

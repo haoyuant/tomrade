@@ -32,12 +32,12 @@ async function withStorage() {
 describe("the artifact", () => {
   it("round-trips a project through text without losing anything", async () => {
     const { ctx, db, items, boards, views, board, project } = await withStorage();
-    const epic = items.create({ title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
-    const ticket = items.create({ title: "Export PDF", parentId: epic.id, boardId: board.id, labels: ["ui", "bug"], priority: 4, by: "human" });
-    const other = items.create({ title: "Blocked one", boardId: board.id, by: "ai:mcp" });
-    items.addRelation(ticket.id, other.id);
+    const epic = items.create({ title: "Reporting", kind: "epic", projectId: project.id, boardId: board.id, by: "human" });
+    const ticket = items.create({ title: "Export PDF", projectId: project.id, parentId: epic.id, boardId: board.id, labels: ["ui", "bug"], priority: 4, by: "human" });
+    const other = items.create({ title: "Blocked one", projectId: project.id, boardId: board.id, by: "ai:mcp" });
+    items.addRelation(project.id, ticket.id, other.id);
     const second = boards.create({ projectId: project.id, name: "Second" });
-    views.setRank(views.listForProject(project.id)[0].id, ticket.id, 3.5);
+    views.setRank(project.id, views.listForProject(project.id)[0].id, ticket.id, 3.5);
 
     const before = exportState(db, project.id);
     const dir = tmp("artifact");
@@ -47,47 +47,49 @@ describe("the artifact", () => {
     // The bytes are the contract, so compare the serialisation, not the object.
     expect([...serializeState(read!)]).toEqual([...serializeState(before)]);
 
-    // And it survives a real import into an empty database.
+    // And it survives a real import into an empty cache on another machine.
     const fresh2 = await withStorage();
-    importState(fresh2.db, read!);
-    const reexported = exportState(fresh2.db, project.id);
+    const target = fresh2.ctx.db.open(project.id);
+    importState(target, read!);
+    const reexported = exportState(target, project.id);
     expect(digestState(reexported)).toBe(digestState(before));
     expect(fresh2.items.list({ projectId: project.id }).map((i) => i.key).sort()).toEqual(items.list({ projectId: project.id }).map((i) => i.key).sort());
-    expect(fresh2.items.get(ticket.id)?.labels.sort()).toEqual(["bug", "ui"]);
-    expect(fresh2.items.get(ticket.id)?.blocks).toEqual([other.id]);
-    expect(fresh2.items.get(ticket.id)?.parentId).toBe(epic.id);
+    expect(fresh2.items.get(project.id, ticket.id)?.labels.sort()).toEqual(["bug", "ui"]);
+    expect(fresh2.items.get(project.id, ticket.id)?.blocks).toEqual([other.id]);
+    expect(fresh2.items.get(project.id, ticket.id)?.parentId).toBe(epic.id);
     expect(fresh2.boards.list(project.id).map((b) => b.name).sort()).toEqual(boards.list(project.id).map((b) => b.name).sort());
     await ctx.fiber.dispose();
   });
 
   it("is deterministic: the same data writes the same bytes, and nothing is touched twice", async () => {
     const { db, board, items, project } = await withStorage();
-    items.create({ title: "A", boardId: board.id, by: "human" });
+    items.create({ title: "A", projectId: project.id, boardId: board.id, by: "human" });
     const dir = tmp("stable");
     expect(writeArtifact(dir, exportState(db, project.id))).toBe(true);
     expect(writeArtifact(dir, exportState(db, project.id))).toBe(false);
-    items.create({ title: "B", boardId: board.id, by: "human" });
+    items.create({ title: "B", projectId: project.id, boardId: board.id, by: "human" });
     expect(writeArtifact(dir, exportState(db, project.id))).toBe(true);
   });
 
   it("carries the key counter, so two machines never mint the same key", async () => {
     const { db, board, items, project } = await withStorage();
-    items.create({ title: "A", boardId: board.id, by: "human" });
-    items.create({ title: "B", boardId: board.id, by: "human" });
+    items.create({ title: "A", projectId: project.id, boardId: board.id, by: "human" });
+    items.create({ title: "B", projectId: project.id, boardId: board.id, by: "human" });
     const state = exportState(db, project.id);
     expect(state.manifest.project.next_key_num).toBe(3);
 
     const other = await withStorage();
-    importState(other.db, state);
+    importState(other.ctx.db.open(project.id), state);
     expect(other.items.create({ title: "C", boardId: board.id, projectId: project.id, by: "human" }).key).toBe("TOM-3");
   });
 
-  it("drops an edge whose other end lives in another project", async () => {
+  it("an edge whose other end lives in another project cannot exist, so none is exported", async () => {
     const { db, boards, items, board, projects, project } = await withStorage();
     const outside = projects.create({ name: "Outside" });
-    const here = items.create({ title: "here", boardId: board.id, by: "human" });
+    const here = items.create({ title: "here", projectId: project.id, boardId: board.id, by: "human" });
     const there = items.create({ title: "there", projectId: outside.id, boardId: boards.defaultFor(outside.id).id, by: "human" });
-    items.addRelation(here.id, there.id);
+    // One project, one file: the other end is not in this file, so the edge is refused.
+    expect(() => items.addRelation(project.id, here.id, there.id)).toThrow();
     expect(exportState(db, project.id).tables.item_relations).toEqual([]);
   });
 });
@@ -133,7 +135,7 @@ describe("ctx.storage", () => {
     // The live database never belongs in a destination.
     expect(fs.readFileSync(path.join(dir, ".tomrade", ".gitignore"), "utf8")).toMatch(/\*\.db/);
 
-    items.create({ title: "after binding", boardId: board.id, by: "human" });
+    items.create({ title: "after binding", projectId: project.id, boardId: board.id, by: "human" });
     expect(await storage.statusFor(project.id)).toMatchObject({ state: "ahead" });
     expect(await storage.flush(project.id)).toMatchObject({ state: "synced" });
     expect(fs.readFileSync(path.join(dir, ".tomrade", "state", "items.jsonl"), "utf8")).toMatch(/after binding/);
@@ -167,7 +169,7 @@ describe("ctx.storage", () => {
 
     expect(await storage.statusFor(project.id)).toMatchObject({ state: "behind" });
     expect(await storage.refresh(project.id)).toMatchObject({ state: "synced" });
-    expect(items.get("their-item")?.title).toBe("Wrote this elsewhere");
+    expect(items.get(project.id, "their-item")?.title).toBe("Wrote this elsewhere");
   });
 
   it("refuses to overwrite a destination that also moved", async () => {
@@ -177,7 +179,7 @@ describe("ctx.storage", () => {
     const theirs = exportState(db, project.id);
     theirs.tables.labels.push({ id: "their-label", project_id: project.id, name: "theirs" });
     writeArtifact(dir, theirs);
-    items.create({ title: "mine", boardId: board.id, by: "human" });
+    items.create({ title: "mine", projectId: project.id, boardId: board.id, by: "human" });
 
     expect(await storage.statusFor(project.id)).toMatchObject({ state: "diverged" });
     await expect(storage.flush(project.id)).rejects.toThrow(DivergedError);
@@ -235,12 +237,11 @@ describe("ctx.storage", () => {
   it("reports a destination whose provider is not loaded, instead of failing", async () => {
     const home = tmp("unavailable");
     const file = path.join(home, "storage.json");
-    fs.writeFileSync(file, JSON.stringify({ v: 1, bindings: [{ projectId: "default", provider: "ghost", config: {}, lastFlushedDigest: null, lastSyncAt: null }] }));
-    const { storage } = await (async () => {
-      const bag = await fresh({ plugins: [[Storage, { path: file, debounceMs: 60_000, reconcileMs: 0 }]] });
-      await settle();
-      return { storage: bag.ctx.storage };
-    })();
-    expect(await storage.statusFor("default")).toMatchObject({ state: "unavailable" });
+    // The project has to exist before its binding is read, so storage loads after the core.
+    const bag = await fresh();
+    fs.writeFileSync(file, JSON.stringify({ v: 1, bindings: [{ projectId: bag.project.id, provider: "ghost", config: {}, lastFlushedDigest: null, lastSyncAt: null }] }));
+    await bag.ctx.plugin(Storage, { path: file, debounceMs: 60_000, reconcileMs: 0 });
+    await settle();
+    expect(await bag.ctx.storage.statusFor(bag.project.id)).toMatchObject({ state: "unavailable" });
   });
 });

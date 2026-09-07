@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Db } from "@tomrade/db";
+import type { Db, ProjectDb } from "@tomrade/db";
 import type { Author } from "@tomrade/domain";
 import type { Block, CardView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary } from "./types.js";
 
@@ -150,55 +150,77 @@ const toRun = (r: RunRow): RunView => ({
   endedAt: r.ended_at
 });
 
-export class AgentStore {
-  constructor(private readonly db: Db) {}
+/**
+ * Table declarations for `ctx.db.migrate`: how each table's rows belong to a
+ * project (deletion, the legacy split and export all read this), and whether
+ * they travel in the project's folder. Cards and pending questions are one
+ * machine's working state and never leave it.
+ */
+export const TABLES = {
+  plugin_agent_threads: { project: "project_id", export: { order: "id" } },
+  plugin_agent_messages: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: { order: "thread_id, seq", appendOnly: true } },
+  plugin_agent_runs: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: { order: "thread_id, started_at" } },
+  plugin_agent_ledger: { project: { via: "run_id", table: "plugin_agent_runs" }, export: { order: "run_id, seq", appendOnly: true } },
+  plugin_agent_cards: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
+  plugin_agent_pending: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
+  plugin_agent_briefs: { project: "project_id", export: { order: "project_id" } }
+} as const;
 
-  threads(projectId: string): ThreadSummary[] {
-    return (this.db.prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? ORDER BY updated_at DESC").all(projectId) as ThreadRow[]).map(toThread);
+/** Threads live in their project's file, so every read and write names the project first. */
+export class AgentStore {
+  constructor(private readonly pool: Db) {}
+
+  private db(projectId: string): ProjectDb {
+    return this.pool.for(projectId);
   }
 
-  thread(id: string): ThreadSummary | null {
-    const row = this.db.prepare("SELECT * FROM plugin_agent_threads WHERE id = ?").get(id) as ThreadRow | undefined;
+  threads(projectId: string): ThreadSummary[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? ORDER BY updated_at DESC").all(projectId) as ThreadRow[]).map(toThread);
+  }
+
+  thread(projectId: string, id: string): ThreadSummary | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE id = ?").get(id) as ThreadRow | undefined;
     return row ? toThread(row) : null;
   }
 
   createThread(projectId: string, engine: string, title = ""): ThreadSummary {
     const now = Date.now();
     const id = randomUUID();
-    this.db.prepare("INSERT INTO plugin_agent_threads (id, project_id, title, engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, projectId, title, engine, now, now);
-    return this.thread(id)!;
+    this.db(projectId).prepare("INSERT INTO plugin_agent_threads (id, project_id, title, engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, projectId, title, engine, now, now);
+    return this.thread(projectId, id)!;
   }
 
-  touchThread(id: string, fields: { title?: string; engine?: string } = {}): void {
-    if (fields.title !== undefined) this.db.prepare("UPDATE plugin_agent_threads SET title = ? WHERE id = ?").run(fields.title, id);
-    if (fields.engine !== undefined) this.db.prepare("UPDATE plugin_agent_threads SET engine = ? WHERE id = ?").run(fields.engine, id);
-    this.db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
+  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string } = {}): void {
+    const db = this.db(projectId);
+    if (fields.title !== undefined) db.prepare("UPDATE plugin_agent_threads SET title = ? WHERE id = ?").run(fields.title, id);
+    if (fields.engine !== undefined) db.prepare("UPDATE plugin_agent_threads SET engine = ? WHERE id = ?").run(fields.engine, id);
+    db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
   }
 
-  external(threadId: string): Record<string, string> {
-    const row = this.db.prepare("SELECT external_json FROM plugin_agent_threads WHERE id = ?").get(threadId) as { external_json: string } | undefined;
+  external(projectId: string, threadId: string): Record<string, string> {
+    const row = this.db(projectId).prepare("SELECT external_json FROM plugin_agent_threads WHERE id = ?").get(threadId) as { external_json: string } | undefined;
     return row ? (JSON.parse(row.external_json) as Record<string, string>) : {};
   }
 
-  setExternal(threadId: string, engine: string, sessionId: string): void {
-    const map = this.external(threadId);
+  setExternal(projectId: string, threadId: string, engine: string, sessionId: string): void {
+    const map = this.external(projectId, threadId);
     map[engine] = sessionId;
-    this.db.prepare("UPDATE plugin_agent_threads SET external_json = ? WHERE id = ?").run(JSON.stringify(map), threadId);
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET external_json = ? WHERE id = ?").run(JSON.stringify(map), threadId);
   }
 
-  waivers(threadId: string): Set<string> {
-    const row = this.db.prepare("SELECT waivers_json FROM plugin_agent_threads WHERE id = ?").get(threadId) as { waivers_json: string } | undefined;
+  waivers(projectId: string, threadId: string): Set<string> {
+    const row = this.db(projectId).prepare("SELECT waivers_json FROM plugin_agent_threads WHERE id = ?").get(threadId) as { waivers_json: string } | undefined;
     return new Set(row ? (JSON.parse(row.waivers_json) as string[]) : []);
   }
 
-  addWaiver(threadId: string, rule: string): void {
-    const set = this.waivers(threadId);
+  addWaiver(projectId: string, threadId: string, rule: string): void {
+    const set = this.waivers(projectId, threadId);
     set.add(rule);
-    this.db.prepare("UPDATE plugin_agent_threads SET waivers_json = ? WHERE id = ?").run(JSON.stringify([...set]), threadId);
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET waivers_json = ? WHERE id = ?").run(JSON.stringify([...set]), threadId);
   }
 
-  messages(threadId: string): ThreadMessage[] {
-    const rows = this.db.prepare("SELECT * FROM plugin_agent_messages WHERE thread_id = ? ORDER BY seq ASC").all(threadId) as {
+  messages(projectId: string, threadId: string): ThreadMessage[] {
+    const rows = this.db(projectId).prepare("SELECT * FROM plugin_agent_messages WHERE thread_id = ? ORDER BY seq ASC").all(threadId) as {
       id: string;
       thread_id: string;
       seq: number;
@@ -210,46 +232,66 @@ export class AgentStore {
     return rows.map((r) => ({ id: r.id, threadId: r.thread_id, seq: r.seq, role: r.role, block: JSON.parse(r.block_json) as Block, runId: r.run_id, at: r.at }));
   }
 
-  appendMessage(threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
-    const seq = ((this.db.prepare("SELECT MAX(seq) AS m FROM plugin_agent_messages WHERE thread_id = ?").get(threadId) as { m: number | null }).m ?? 0) + 1;
+  appendMessage(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
+    const db = this.db(projectId);
+    const seq = ((db.prepare("SELECT MAX(seq) AS m FROM plugin_agent_messages WHERE thread_id = ?").get(threadId) as { m: number | null }).m ?? 0) + 1;
     const message: ThreadMessage = { id: randomUUID(), threadId, seq, role, block, runId, at: Date.now() };
-    this.db
-      .prepare("INSERT INTO plugin_agent_messages (id, thread_id, seq, role, block_json, run_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(message.id, threadId, seq, role, JSON.stringify(block), runId, message.at);
-    this.db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(message.at, threadId);
+    db.prepare("INSERT INTO plugin_agent_messages (id, thread_id, seq, role, block_json, run_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+      message.id,
+      threadId,
+      seq,
+      role,
+      JSON.stringify(block),
+      runId,
+      message.at
+    );
+    db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(message.at, threadId);
     return message;
   }
 
-  runs(threadId: string): RunView[] {
-    return (this.db.prepare("SELECT * FROM plugin_agent_runs WHERE thread_id = ? ORDER BY started_at ASC").all(threadId) as RunRow[]).map(toRun);
+  runs(projectId: string, threadId: string): RunView[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_runs WHERE thread_id = ? ORDER BY started_at ASC").all(threadId) as RunRow[]).map(toRun);
   }
 
-  run(id: string): RunView | null {
-    const row = this.db.prepare("SELECT * FROM plugin_agent_runs WHERE id = ?").get(id) as RunRow | undefined;
+  run(projectId: string, id: string): RunView | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_runs WHERE id = ?").get(id) as RunRow | undefined;
     return row ? toRun(row) : null;
   }
 
+  /** The project a run belongs to, searched across open files — for a caller that only holds the run id. */
+  projectOfRun(runId: string): string | null {
+    for (const projectId of this.pool.openIds()) {
+      if (this.db(projectId).prepare("SELECT 1 FROM plugin_agent_runs WHERE id = ?").get(runId)) return projectId;
+    }
+    return null;
+  }
+
   /** Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. */
-  reconcileInterrupted(): void {
-    const stale = this.db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
+  reconcileInterrupted(projectId: string): void {
+    const db = this.db(projectId);
+    const stale = db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
     if (!stale.length) return;
     const now = Date.now();
     const note = "Interrupted — the app closed while this run was in progress.";
-    const update = this.db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = 'cancelled', error = ?, ended_at = ? WHERE id = ?");
+    const update = db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = 'cancelled', error = ?, ended_at = ? WHERE id = ?");
     for (const { id, thread_id } of stale) {
       update.run(note, now, id);
-      this.appendMessage(thread_id, "system", { type: "note", text: note }, id);
+      this.appendMessage(projectId, thread_id, "system", { type: "note", text: note }, id);
     }
   }
 
-  beginRun(threadId: string, engine: string): RunView {
+  beginRun(projectId: string, threadId: string, engine: string): RunView {
     const id = randomUUID();
-    this.db.prepare("INSERT INTO plugin_agent_runs (id, thread_id, status, engine, started_at) VALUES (?, ?, 'running', ?, ?)").run(id, threadId, engine, Date.now());
-    return this.run(id)!;
+    this.db(projectId).prepare("INSERT INTO plugin_agent_runs (id, thread_id, status, engine, started_at) VALUES (?, ?, 'running', ?, ?)").run(id, threadId, engine, Date.now());
+    return this.run(projectId, id)!;
   }
 
-  endRun(id: string, fields: { status: RunStatus; stop?: string; error?: string; usage?: { inputTokens?: number; outputTokens?: number }; costUsd?: number; changes: number }): RunView {
-    this.db
+  endRun(
+    projectId: string,
+    id: string,
+    fields: { status: RunStatus; stop?: string; error?: string; usage?: { inputTokens?: number; outputTokens?: number }; costUsd?: number; changes: number }
+  ): RunView {
+    this.db(projectId)
       .prepare("UPDATE plugin_agent_runs SET status = ?, stop = ?, error = ?, usage_json = ?, cost_usd = ?, changes = ?, ended_at = ? WHERE id = ?")
       .run(
         fields.status,
@@ -261,22 +303,22 @@ export class AgentStore {
         Date.now(),
         id
       );
-    return this.run(id)!;
+    return this.run(projectId, id)!;
   }
 
-  markReverted(id: string, kept: number): RunView {
-    this.db.prepare("UPDATE plugin_agent_runs SET reverted = 1, kept = ? WHERE id = ?").run(kept, id);
-    return this.run(id)!;
+  markReverted(projectId: string, id: string, kept: number): RunView {
+    this.db(projectId).prepare("UPDATE plugin_agent_runs SET reverted = 1, kept = ? WHERE id = ?").run(kept, id);
+    return this.run(projectId, id)!;
   }
 
-  appendLedger(runId: string, seq: number, tool: string, args: unknown, ok: boolean, summary: string, ms: number): void {
-    this.db
+  appendLedger(projectId: string, runId: string, seq: number, tool: string, args: unknown, ok: boolean, summary: string, ms: number): void {
+    this.db(projectId)
       .prepare("INSERT INTO plugin_agent_ledger (run_id, seq, tool, args_json, ok, summary, ms) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(runId, seq, tool, JSON.stringify(args ?? {}).slice(0, 4000), ok ? 1 : 0, summary.slice(0, 500), ms);
   }
 
-  cards(threadId: string): CardView[] {
-    const rows = this.db.prepare("SELECT * FROM plugin_agent_cards WHERE thread_id = ? ORDER BY updated_at ASC").all(threadId) as {
+  cards(projectId: string, threadId: string): CardView[] {
+    const rows = this.db(projectId).prepare("SELECT * FROM plugin_agent_cards WHERE thread_id = ? ORDER BY updated_at ASC").all(threadId) as {
       thread_id: string;
       card_id: string;
       schema_id: string;
@@ -298,8 +340,8 @@ export class AgentStore {
     }));
   }
 
-  setCard(threadId: string, card: { id: string; schema: string; title: string; data: unknown }, by: Author | "human"): CardView {
-    this.db
+  setCard(projectId: string, threadId: string, card: { id: string; schema: string; title: string; data: unknown }, by: Author | "human"): CardView {
+    this.db(projectId)
       .prepare(
         `INSERT INTO plugin_agent_cards (thread_id, card_id, schema_id, title, data_json, version, updated_by, updated_at)
          VALUES (?, ?, ?, ?, ?, 1, ?, ?)
@@ -308,11 +350,11 @@ export class AgentStore {
            version = plugin_agent_cards.version + 1, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
       )
       .run(threadId, card.id, card.schema, card.title, JSON.stringify(card.data ?? null), by, Date.now());
-    return this.cards(threadId).find((c) => c.id === card.id)!;
+    return this.cards(projectId, threadId).find((c) => c.id === card.id)!;
   }
 
-  pending(threadId: string): PendingRecord | null {
-    const row = this.db.prepare("SELECT * FROM plugin_agent_pending WHERE thread_id = ?").get(threadId) as PendingRow | undefined;
+  pending(projectId: string, threadId: string): PendingRecord | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_pending WHERE thread_id = ?").get(threadId) as PendingRow | undefined;
     if (!row) return null;
     return {
       threadId: row.thread_id,
@@ -327,8 +369,8 @@ export class AgentStore {
     };
   }
 
-  setPending(threadId: string, record: Omit<PendingRecord, "threadId">): void {
-    this.db
+  setPending(projectId: string, threadId: string, record: Omit<PendingRecord, "threadId">): void {
+    this.db(projectId)
       .prepare(
         `INSERT INTO plugin_agent_pending (thread_id, kind, workflow, step, state_json, question_json, accepts, waive_rule, waive_on_json, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -351,27 +393,27 @@ export class AgentStore {
       );
   }
 
-  clearPending(threadId: string): void {
-    this.db.prepare("DELETE FROM plugin_agent_pending WHERE thread_id = ?").run(threadId);
+  clearPending(projectId: string, threadId: string): void {
+    this.db(projectId).prepare("DELETE FROM plugin_agent_pending WHERE thread_id = ?").run(threadId);
   }
 
   brief(projectId: string): string | null {
-    return (this.db.prepare("SELECT body FROM plugin_agent_briefs WHERE project_id = ?").get(projectId) as { body: string } | undefined)?.body ?? null;
+    return (this.db(projectId).prepare("SELECT body FROM plugin_agent_briefs WHERE project_id = ?").get(projectId) as { body: string } | undefined)?.body ?? null;
   }
 
   setBrief(projectId: string, body: string): void {
-    this.db
+    this.db(projectId)
       .prepare("INSERT INTO plugin_agent_briefs (project_id, body, updated_at) VALUES (?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at")
       .run(projectId, body, Date.now());
   }
 
-  changesOf(runId: string): number {
-    return (this.db.prepare("SELECT COUNT(*) AS n FROM oplog WHERE run_id = ?").get(runId) as { n: number }).n;
+  changesOf(projectId: string, runId: string): number {
+    return (this.db(projectId).prepare("SELECT COUNT(*) AS n FROM oplog WHERE run_id = ?").get(runId) as { n: number }).n;
   }
 
   /** What the run netted out to, per entity — the facts behind "Changed N". */
-  changedEntities(runId: string): { key: string; label: string; op: "created" | "updated" | "deleted" }[] {
-    const rows = this.db.prepare("SELECT entity, entity_id, op, before_json, after_json FROM oplog WHERE run_id = ? ORDER BY seq ASC").all(runId) as {
+  changedEntities(projectId: string, runId: string): { key: string; label: string; op: "created" | "updated" | "deleted" }[] {
+    const rows = this.db(projectId).prepare("SELECT entity, entity_id, op, before_json, after_json FROM oplog WHERE run_id = ? ORDER BY seq ASC").all(runId) as {
       entity: string;
       entity_id: string;
       op: string;

@@ -92,6 +92,19 @@ export class ToolInputError extends Error {
   }
 }
 
+/**
+ * Tools scope to the caller's project. Without one there is nothing to default
+ * to — guessing would write into the wrong project the moment a second exists —
+ * so the call is refused with the tool that answers the question.
+ */
+export function requireProjectId(tool: string, given: string | undefined, invocation: { projectId?: string }): string {
+  const id = given ?? invocation.projectId;
+  if (!id) {
+    throw new ToolInputError(tool, [{ code: "custom", path: ["projectId"], message: "required here — call list_projects and pass one", input: undefined } as unknown as z.core.$ZodIssue]);
+  }
+  return id;
+}
+
 export class UnknownToolError extends Error {
   constructor(public readonly tool: string) {
     super(`Unknown tool: ${tool}`);

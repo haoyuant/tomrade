@@ -169,7 +169,7 @@ export function WorkspaceProvider({
   const labels = useLabels(projectId);
   const fieldsQuery = useFields(projectId);
   // A workstream page keeps no manual order of its own.
-  const ranks = useViewRanks(viewId);
+  const ranks = useViewRanks(projectId, viewId);
   const badges = useBadges(projectId);
   const updateView = useUpdateView(projectId);
   const createView = useCreateView(projectId);

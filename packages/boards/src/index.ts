@@ -9,11 +9,11 @@ export type {} from "./contributions.js";
 /** One row in tomrade.yml provides both keys: workstreams are a field, views are how the project looks at its fields. */
 export const boards = {
   name: "boards",
-  inject: ["db", "oplog"],
+  inject: ["db", "oplog", "items"],
   async apply(ctx: Context) {
     await ctx.plugin(Boards);
     await ctx.plugin(Views);
-    ctx.inject(["tools", "boards", "db"], registerTools);
+    ctx.inject(["tools", "boards", "items"], registerTools);
     ctx.inject(["ipc", "boards", "views"], registerChannels);
   }
 };

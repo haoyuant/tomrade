@@ -132,6 +132,9 @@ export function migrateCore(db: Sqlite): void {
     addColumn(db, "items", "key_num", "INTEGER NOT NULL DEFAULT 0");
     addColumn(db, "items", "priority", "INTEGER NOT NULL DEFAULT 2");
     addColumn(db, "oplog", "run_id", "TEXT");
+    addColumn(db, "oplog", "device", "TEXT NOT NULL DEFAULT ''");
+    addColumn(db, "oplog", "device_seq", "INTEGER");
+    addColumn(db, "oplog", "patch_json", "TEXT");
     addColumn(db, "views", "project_id", "TEXT NOT NULL DEFAULT ''");
     addColumn(db, "views", "layout", "TEXT NOT NULL DEFAULT 'board'");
     addColumn(db, "views", "query_json", "TEXT NOT NULL DEFAULT '{}'");
