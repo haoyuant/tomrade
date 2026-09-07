@@ -101,11 +101,11 @@ function restoreView(db: ProjectDb, view: ViewSnapshot): void {
 
 function restoreBoard(db: ProjectDb, board: Board): void {
   db.prepare(
-    `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, created_at, updated_at)
-     VALUES (@id, @projectId, @name, @icon, @subtitle, 0, NULL, @note, @rank, @createdAt, @updatedAt)
+    `INSERT INTO boards (id, project_id, name, icon, subtitle, across, sort, note, rank, repo_id, repo_path, created_at, updated_at)
+     VALUES (@id, @projectId, @name, @icon, @subtitle, 0, NULL, @note, @rank, @repoId, @repoPath, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name, icon = excluded.icon, subtitle = excluded.subtitle,
-       note = excluded.note, rank = excluded.rank, updated_at = excluded.updated_at`
+       note = excluded.note, rank = excluded.rank, repo_id = excluded.repo_id, repo_path = excluded.repo_path, updated_at = excluded.updated_at`
   ).run({
     id: board.id,
     projectId: board.projectId,
@@ -114,6 +114,8 @@ function restoreBoard(db: ProjectDb, board: Board): void {
     subtitle: board.subtitle,
     note: board.note,
     rank: board.rank,
+    repoId: board.repoId ?? null,
+    repoPath: board.repoPath ?? "",
     createdAt: board.createdAt,
     updatedAt: board.updatedAt
   });

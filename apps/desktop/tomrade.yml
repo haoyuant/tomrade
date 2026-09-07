@@ -50,6 +50,9 @@ modules:
   - id: storage
     title: Destinations
     required: true
+  - id: repos
+    title: Repositories
+    required: true
   # Optional, and listed so the manager can say who fills them and what is
   # lost by switching the last one off.
   - id: llm
@@ -104,6 +107,10 @@ plugins:
   # …and GitHub as a hosting choice on top: find a repository, make one.
   - id: storage-github
     name: "@tomrade/storage-github"
+  # The code repositories workstreams stand for: shared identity in the project,
+  # this machine's checkout in the catalog, a worktree per agent thread.
+  - id: repos
+    name: "@tomrade/repos"
   - id: llm
     name: "@tomrade/llm"
   - id: tools

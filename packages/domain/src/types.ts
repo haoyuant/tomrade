@@ -158,6 +158,10 @@ export interface Board {
   subtitle: string | null;
   note: string | null;
   rank: number;
+  /** The code repository this workstream stands for, if any; several workstreams may share one. */
+  repoId: string | null;
+  /** Where in that repository the workstream's code lives; '' for the root. */
+  repoPath: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -169,9 +173,35 @@ export interface CreateBoardInput {
   subtitle?: string | null;
   note?: string | null;
   rank?: number;
+  repoId?: string | null;
+  repoPath?: string;
 }
 
-export type BoardPatch = Partial<Pick<Board, "name" | "icon" | "subtitle" | "note" | "rank">>;
+export type BoardPatch = Partial<Pick<Board, "name" | "icon" | "subtitle" | "note" | "rank" | "repoId" | "repoPath">>;
+
+/**
+ * A code repository a project's workstreams stand for. Shared: the remote URL
+ * is its identity everywhere. Where it is checked out on this machine is the
+ * catalog's business, never a row here.
+ */
+export interface Repo {
+  id: string;
+  projectId: string;
+  remote: string;
+  name: string;
+  defaultBranch: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateRepoInput {
+  projectId: string;
+  remote: string;
+  name?: string;
+  defaultBranch?: string;
+}
+
+export type RepoPatch = Partial<Pick<Repo, "name" | "defaultBranch" | "remote">>;
 
 /** A saved, named way of looking at the project's backlog: one layout and one query. */
 export interface View {

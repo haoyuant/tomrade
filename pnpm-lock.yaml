@@ -77,6 +77,9 @@ importers:
       '@tomrade/projects':
         specifier: workspace:*
         version: link:../../packages/projects
+      '@tomrade/repos':
+        specifier: workspace:*
+        version: link:../../packages/repos
       '@tomrade/settings':
         specifier: workspace:*
         version: link:../../packages/settings
@@ -685,6 +688,43 @@ importers:
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/repos:
+    dependencies:
+      '@tomrade/boards':
+        specifier: workspace:*
+        version: link:../boards
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0

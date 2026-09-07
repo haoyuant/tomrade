@@ -52,6 +52,11 @@ const run = async () => {
     show: !!process.env.TOMRADE_SHOW,
     webPreferences: { preload: path.join(__dirname, "../preload.cjs"), contextIsolation: true }
   });
+  // The renderer's console is the only place a blank page explains itself.
+  win.webContents.on("console-message", (event) => {
+    const { level, message, lineNumber, sourceId } = event;
+    if (level === "error" || level === "warning" || String(level) === "2" || String(level) === "3") console.log(`[renderer ${level}] ${message} (${sourceId}:${lineNumber})`);
+  });
   await win.loadURL(DEV_URL);
   await sleep(3500);
 

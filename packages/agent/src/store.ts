@@ -83,12 +83,18 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   updated_at INTEGER NOT NULL
 );
 `
+  },
+  {
+    // A thread may stand on a workstream, and so on that workstream's repository.
+    version: 2,
+    up: "ALTER TABLE plugin_agent_threads ADD COLUMN board_id TEXT"
   }
 ];
 
 interface ThreadRow {
   id: string;
   project_id: string;
+  board_id: string | null;
   title: string;
   engine: string;
   external_json: string;
@@ -132,7 +138,7 @@ export interface PendingRecord extends PendingView {
   waiveOn: string[];
 }
 
-const toThread = (r: ThreadRow): ThreadSummary => ({ id: r.id, projectId: r.project_id, title: r.title, engine: r.engine, createdAt: r.created_at, updatedAt: r.updated_at });
+const toThread = (r: ThreadRow): ThreadSummary => ({ id: r.id, projectId: r.project_id, boardId: r.board_id ?? null, title: r.title, engine: r.engine, createdAt: r.created_at, updatedAt: r.updated_at });
 
 const toRun = (r: RunRow): RunView => ({
   id: r.id,
@@ -183,17 +189,18 @@ export class AgentStore {
     return row ? toThread(row) : null;
   }
 
-  createThread(projectId: string, engine: string, title = ""): ThreadSummary {
+  createThread(projectId: string, engine: string, title = "", boardId: string | null = null): ThreadSummary {
     const now = Date.now();
     const id = randomUUID();
-    this.db(projectId).prepare("INSERT INTO plugin_agent_threads (id, project_id, title, engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, projectId, title, engine, now, now);
+    this.db(projectId).prepare("INSERT INTO plugin_agent_threads (id, project_id, board_id, title, engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, projectId, boardId, title, engine, now, now);
     return this.thread(projectId, id)!;
   }
 
-  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string } = {}): void {
+  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null } = {}): void {
     const db = this.db(projectId);
     if (fields.title !== undefined) db.prepare("UPDATE plugin_agent_threads SET title = ? WHERE id = ?").run(fields.title, id);
     if (fields.engine !== undefined) db.prepare("UPDATE plugin_agent_threads SET engine = ? WHERE id = ?").run(fields.engine, id);
+    if (fields.boardId !== undefined) db.prepare("UPDATE plugin_agent_threads SET board_id = ? WHERE id = ?").run(fields.boardId, id);
     db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
   }
 

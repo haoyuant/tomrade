@@ -36,6 +36,7 @@
     "@tomrade/oplog": "workspace:*",
     "@tomrade/plugins": "workspace:*",
     "@tomrade/projects": "workspace:*",
+    "@tomrade/repos": "workspace:*",
     "@tomrade/settings": "workspace:*",
     "@tomrade/storage": "workspace:*",
     "@tomrade/storage-git": "workspace:*",

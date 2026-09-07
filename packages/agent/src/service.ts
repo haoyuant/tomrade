@@ -55,7 +55,11 @@ declare module "@tomrade/ipc" {
   interface Channels {
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
-    "agent.newThread": (projectId: string, engine?: string) => ThreadSummary;
+    "agent.newThread": (projectId: string, engine?: string, boardId?: string | null) => ThreadSummary;
+    /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
+    "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
+    /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
+    "agent.workdir": (projectId: string, threadId: string) => { cwd: string | null; remote: string | null; branch: string | null; worktree: string | null; problem: string | null };
     "agent.send": (projectId: string, threadId: string, text: string) => { runId: string };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
@@ -178,7 +182,9 @@ export class Agent extends Service {
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
-      ctx.ipc.handle("agent.newThread", (projectId, engine) => ctx.agent.newThread(projectId, engine));
+      ctx.ipc.handle("agent.newThread", (projectId, engine, boardId) => ctx.agent.newThread(projectId, engine, boardId ?? null));
+      ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
+      ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text) => ctx.agent.send(projectId, threadId, { kind: "text", text }));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
@@ -340,10 +346,30 @@ export class Agent extends Service {
     this.ctx.settings.set({ ...all, agent: { ...agent, engines: { ...agent.engines, loop: { ...loop, profile: legacy } } } });
   }
 
-  newThread(projectId: string, engine?: string): ThreadSummary {
+  newThread(projectId: string, engine?: string, boardId: string | null = null): ThreadSummary {
     const chosen = engine ?? this.settingsOf().defaultEngine;
-    const thread = this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen));
-    return thread;
+    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), "", boardId);
+  }
+
+  setWorkstream(projectId: string, threadId: string, boardId: string | null): ThreadSummary {
+    if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
+    this.store.touchThread(projectId, threadId, { boardId });
+    return this.store.thread(projectId, threadId)!;
+  }
+
+  /** Where the thread's engine works, resolved through the workstream's repository and this machine's checkout of it. */
+  async workdir(projectId: string, threadId: string): Promise<{ cwd: string | null; remote: string | null; branch: string | null; worktree: string | null; problem: string | null }> {
+    const thread = this.store.thread(projectId, threadId);
+    if (!thread?.boardId) return { cwd: null, remote: null, branch: null, worktree: null, problem: null };
+    const repos = this.ctx.get("repos") as { workdirFor(projectId: string, boardId: string, threadId: string): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> } | undefined;
+    if (!repos) return { cwd: null, remote: null, branch: null, worktree: null, problem: "the repos plugin is not loaded" };
+    try {
+      const view = await repos.workdirFor(projectId, thread.boardId, threadId);
+      if (!view) return { cwd: null, remote: null, branch: null, worktree: null, problem: null };
+      return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null };
+    } catch (err) {
+      return { cwd: null, remote: null, branch: null, worktree: null, problem: message(err) };
+    }
   }
 
   setEngine(projectId: string, threadId: string, engineId: string): ThreadSummary {
@@ -508,6 +534,9 @@ export class Agent extends Service {
       const settings = this.settingsOf();
       const engineOptions = settings.engines[rc.engine.id];
       const pending = this.store.pending(rc.projectId, rc.threadId);
+      // A thread on a workstream runs where that workstream's code is; a missing checkout stops the run before the engine starts.
+      const where = await this.workdir(rc.projectId, rc.threadId);
+      if (where.problem) throw new Error(where.problem);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
@@ -516,7 +545,8 @@ export class Agent extends Service {
         cards: this.store.cards(rc.projectId, rc.threadId),
         brief: this.store.brief(rc.projectId),
         pending: pending ? this.pendingView(pending) : null,
-        options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions
+        options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions,
+        ...(where.cwd ? { cwd: where.cwd, workdir: { remote: where.remote!, branch: where.branch!, worktree: where.worktree } } : {})
       };
       result = await rc.engine.turn(turnInput, rc.io);
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);

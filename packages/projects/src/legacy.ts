@@ -6,6 +6,7 @@ import { CORE_TABLES_SQL, migrateCore, projectPredicate, type Db, type PluginReg
 /** Core tables and the clause that selects one project's rows in a database holding several. */
 const CORE_SCOPES: [table: string, where: string][] = [
   ["boards", "project_id = @projectId"],
+  ["repos", "project_id = @projectId"],
   ["views", "project_id = @projectId"],
   ["items", "project_id = @projectId"],
   ["labels", "project_id = @projectId"],

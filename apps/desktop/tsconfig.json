@@ -66,6 +66,9 @@
       "path": "../../packages/projects"
     },
     {
+      "path": "../../packages/repos"
+    },
+    {
       "path": "../../packages/settings"
     },
     {

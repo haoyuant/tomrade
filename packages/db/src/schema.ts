@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 7;
+export const CORE_SCHEMA_VERSION = 8;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -30,7 +30,21 @@ CREATE TABLE IF NOT EXISTS boards (
   note          TEXT,
   rank          REAL NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
-  updated_at    INTEGER NOT NULL
+  updated_at    INTEGER NOT NULL,
+  repo_id       TEXT,
+  repo_path     TEXT NOT NULL DEFAULT ''
+);
+
+-- A code repository a workstream stands for. Its identity is the remote URL,
+-- shared with the project; where it is checked out is each machine's own.
+CREATE TABLE IF NOT EXISTS repos (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL,
+  remote         TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  default_branch TEXT NOT NULL DEFAULT 'main',
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
 );
 
 -- A saved view: one layout plus one query, owned by the project. board_id is a
@@ -153,6 +167,7 @@ CREATE TABLE IF NOT EXISTS plugin_migrations (
 export const CORE_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id, rank);
 CREATE INDEX IF NOT EXISTS idx_views_project ON views(project_id, rank);
+CREATE INDEX IF NOT EXISTS idx_repos_project ON repos(project_id, name);
 CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_board ON items(board_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_items_key ON items(project_id, key_num);
