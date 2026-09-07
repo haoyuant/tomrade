@@ -9,6 +9,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
 import { seedDesignProject } from "./seed.mjs";
@@ -43,8 +44,8 @@ const run = async () => {
   ctx.hub.configure(path.join(WORK, "hub"));
   // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
-  const repos = { dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields };
-  const { project } = seedDesignProject(repos);
+  const repos = { dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields, gitRepos: ctx.repos };
+  const { project, repo: sampleRepo } = seedDesignProject(repos);
 
   const win = new BrowserWindow({
     width: 1560,
@@ -211,7 +212,7 @@ const run = async () => {
   check("dragging a view row above another reorders the roster", rosterAfter[0] === rosterBefore[1] && rosterAfter[1] === rosterBefore[0]);
   check("the sidebar draws the saved order", (await $(`document.querySelectorAll('.side-row.is-view')[0].dataset.view`)) === rosterBefore[1]);
   // put the roster back for the sections that follow; a direct write, so the sidebar redraws on its next refetch
-  repos.views.update(rosterBefore[1], { rank: repos.views.get(rosterBefore[0]).rank + 0.5 });
+  repos.views.update(project.id, rosterBefore[1], { rank: repos.views.get(project.id, rosterBefore[0]).rank + 0.5 });
   await sleep(600);
 
   // ── keyboard move: ← → is the same write path as a drag ─────────────
@@ -390,7 +391,7 @@ const run = async () => {
   await press(`document.querySelector('.layout-seg button[data-layout="graph"]')`);
   await sleep(1400);
   check("the graph layout renders the canvas", (await $(`!!document.querySelector('.graph-region .react-flow')`)) === true);
-  check("switching layout is a draft, not a write", (await $(`!!document.querySelector('.qb-dirty')`)) === true && repos.views.get(allViews[0].id).layout === "board");
+  check("switching layout is a draft, not a write", (await $(`!!document.querySelector('.qb-dirty')`)) === true && repos.views.get(project.id, allViews[0].id).layout === "board");
   const ownedNow = () => repos.items.list({ projectId: project.id }).filter((i) => i.kind !== "epic");
   const edgesAmong = (owned) => {
     const ids = new Set(owned.map((i) => i.id));
@@ -637,19 +638,53 @@ const run = async () => {
   await sleep(600);
   check("the Workstream row opens the workstream editor", (await $(`document.querySelectorAll('.fld-editor[data-editor="workstream"] .fld-ws').length`)) === repos.boards.list(project.id).length);
   const ui = repos.boards.list(project.id).find((b) => b.name === "UI");
+  check(
+    "a workstream row offers the project's repositories",
+    (await $(`[...document.querySelectorAll('.fld-ws[data-board="${ui.id}"] select[aria-label^="Repository of"] option')].map(o => o.textContent).join('|')`)) === `No repository|${sampleRepo.name}`
+  );
+  check("and the path inside the one it stands for", (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-path')?.value`)) === "packages/ui");
+  check("a workstream without a repository has no path to give", (await $(`document.querySelectorAll('.fld-ws:not([data-board="${ui.id}"]) .fld-ws-path').length`)) === 0);
   // blur is what commits, and blur only fires on an element that had focus
   await $(`(() => { const i = document.querySelector('.fld-ws[data-board="${ui.id}"] input'); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Interface'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
   await sleep(900);
-  check("renaming a workstream writes it", repos.boards.get(ui.id).name === "Interface");
-  repos.boards.update(ui.id, { name: "UI" });
+  check("renaming a workstream writes it", repos.boards.get(project.id, ui.id).name === "Interface");
+  repos.boards.update(project.id, ui.id, { name: "UI" });
+  // A direct repository write never reaches the renderer's cache; the broadcast a sync would send does.
+  ctx.get("ipc").send("storage.changed", project.id);
   await sleep(600);
-  // by row, not by name: the direct repository write above never reached the renderer's cache
+  // by row, not by name: the cache may still be catching up
   await press(`document.querySelector('.fld-ws[data-board="${ui.id}"] button[aria-label^="Remove workstream"]')`);
   await sleep(500);
   check("removing a workstream that holds issues asks where they go", (await $(`!!document.querySelector('select[aria-label="Destination workstream"]')`)) === true);
   check("nothing moved yet", repos.items.list({ boardId: ui.id }).length > 0);
   await checkCentred("the fields sheet");
   await shot("15-fields-workstreams");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
+
+  // ── project settings: the repositories its workstreams stand for ───
+  await press(`document.querySelector('.side-project-settings')`);
+  await sleep(900);
+  check("project settings list the project's repositories", (await $(`document.querySelectorAll('#psRepos .repo-row').length`)) === 1);
+  check("a repository is named by its remote", (await $(`document.querySelector('#psRepos .repo-remote')?.textContent`)) === sampleRepo.remote);
+  check("and by the workstreams that stand for it", (await $(`document.querySelector('#psRepos .repo-used')?.textContent ?? ''`)).includes("UI"));
+  check("with no checkout on this machine, it says so", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
+  check("and offers to clone one", (await $(`!!document.querySelector('#psRepos .repo-clone')`)) === true);
+  await shot("15-project-repositories");
+  // A checkout is believed only when the folder's own origin is that repository.
+  const checkoutDir = path.join(WORK, "checkouts", "tomrade-next");
+  fs.mkdirSync(checkoutDir, { recursive: true });
+  execSync(`git init -q && git remote add origin ${sampleRepo.remote}`, { cwd: checkoutDir, stdio: "ignore" });
+  let refused = null;
+  await ctx.repos.setCheckout(sampleRepo.remote, WORK).catch((err) => (refused = err));
+  check("a folder that is not that repository is refused", refused !== null);
+  await ctx.repos.setCheckout(sampleRepo.remote, checkoutDir);
+  await sleep(900);
+  check("the checkout set on this machine shows its path", (await $(`document.querySelector('#psRepos .repo-checkout .cfg-name')?.textContent`)) === checkoutDir);
+  check("with the run-in-checkout switch off beside it", (await $(`document.querySelector('#psRepos .repo-run-in')?.getAttribute('aria-checked')`)) === "false");
+  ctx.repos.clearCheckout(sampleRepo.remote);
+  await sleep(700);
+  check("clearing it returns the row to unset", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 
@@ -673,11 +708,14 @@ const run = async () => {
   check("settings opens on a side menu", (await $(`document.querySelectorAll('.dlg-nav .side-row').length`)) >= 4);
   check("exactly one menu row is current", (await $(`document.querySelectorAll('.dlg-nav .side-row[aria-current="true"]').length`)) === 1);
   check("it lands on Appearance", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Appearance");
+  check("the card says the theme follows the Hub", (await $(`document.querySelector('.dlg-body .scope-tag')?.textContent`)) === "Follows the Hub");
   await checkCentred("settings");
   await shot("17-settings");
   const sheetBox = `(() => { const r = document.querySelector('.palette.modal').getBoundingClientRect(); return r.width + 'x' + r.height; })()`;
   const boxOnAppearance = await $(sheetBox);
   await press(settingsNav("Agent access"));
+  await sleep(400);
+  check("and the MCP endpoint stays on this machine", (await $(`document.querySelector('.dlg-body .scope-tag')?.textContent`)) === "This machine");
   await sleep(600);
   check("choosing a menu row swaps the pane", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Agent access");
   check("and takes the pane it replaced out of the body", (await $(`!!document.querySelector('.tok-table')`)) === false);
@@ -767,6 +805,28 @@ const run = async () => {
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
   check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-head .chip-btn')?.textContent ?? '').trim().length > 0`)) === true);
   check("an empty thread introduces the agent", (await $(`!!document.querySelector('.ai-scroll .turn-ai, .ai-scroll .agent-empty')`)) === true);
+  check(
+    "the assistant offers the whole project or one workstream",
+    (await $(`[...document.querySelectorAll('.ai-ws option')].map(o => o.textContent).join('|')`)) === ["Whole project", ...repos.boards.list(project.id).map((b) => b.name)].join("|")
+  );
+  await pick(`document.querySelector('.ai-ws')`, ui.id);
+  await sleep(1400);
+  check("picking a workstream starts a thread on it", ctx.agent.store.threads(project.id).some((th) => th.boardId === ui.id));
+  check("with no checkout here, the panel says the agent cannot run", (await $(`document.querySelector('.ai-workdir.is-problem')?.textContent ?? ''`)).includes("No local checkout"));
+  await typeInto(".ai-input", "hello");
+  await sleep(200);
+  check("and holds the message until one is set", (await $(`document.querySelector('.ai-send')?.disabled`)) === true);
+  check("saying why on the control itself", (await $(`document.querySelector('.ai-send')?.title ?? ''`)).startsWith("No local checkout for"));
+  await shot("18-assistant-workstream");
+  await press(`document.querySelector('.ai-repos-link')`);
+  await sleep(900);
+  check("the way out opens project settings on Repositories", (await $(`!!document.querySelector('#psRepos')`)) === true);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(600);
+  await pick(`document.querySelector('.ai-ws')`, "");
+  await sleep(900);
+  check("back on the whole project the message may go", (await $(`!document.querySelector('.ai-workdir') && document.querySelector('.ai-send')?.disabled === false`)) === true);
+  await typeInto(".ai-input", "");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'j',metaKey:true,bubbles:true}));true`);
   await sleep(600);
   check("⌘J collapses the assistant to its rail", (await $(`!!document.querySelector('.ai-rail')`)) === true);
@@ -975,7 +1035,7 @@ const run = async () => {
   await press(`document.querySelector('.dlg-foot .btn-danger')`);
   await sleep(1600);
   check("confirming destroys the project for good", repos.projects.get(throwaway.id) === null);
-  check("its workstreams, views and issues go with it", repos.boards.list(throwaway.id).length === 0 && repos.views.listForProject(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
+  check("its cache, workstreams, views and issues go with it", !ctx.db.has(throwaway.id) && repos.boards.list(throwaway.id).length === 0 && repos.views.listForProject(throwaway.id).length === 0 && repos.items.list({ projectId: throwaway.id }).length === 0);
   check("the card leaves the grid", (await $(`document.querySelectorAll('.proj').length`)) === 2);
   check("the sheet closes with the project it was configuring", (await $(`!!document.querySelector('#psName')`)) === false);
   check("the fixture project is untouched", repos.items.list({ projectId: project.id }).length > 0);
@@ -1056,6 +1116,15 @@ const run = async () => {
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
   check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Stale issues"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
+  await press(settingsNav("Hub"));
+  await sleep(700);
+  const hubInfo = await ctx.storage.hubInfo();
+  check("the Hub pane names the folder", (await $(`document.querySelector('#hubDir')?.value`)) === path.join(WORK, "hub"));
+  check("with no remote yet it offers the destination kinds", (await $(`!!document.querySelector('#hubProvider') && document.querySelector('.hub-publish')?.disabled === true`)) === true);
+  check("and lists what other machines put in the Hub", (await $(`document.querySelectorAll('.hub-other').length`)) === hubInfo.attachable.length);
+  check("saying so when there is nothing", (await $(`!!document.querySelector('.hub-others-none')`)) === (hubInfo.attachable.length === 0));
+  check("attaching them all waits for one with a remote", (await $(`document.querySelector('.hub-attach-all')?.disabled ?? true`)) === (hubInfo.attachable.length === 0));
+  await shot("30-hub-pane");
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => /^Data/.test(r.textContent.trim()))`);
   await sleep(500);
   check("the data pane names the Hub folder", (await $(`document.querySelector('#stHub')?.value`)) === path.join(WORK, "hub"));

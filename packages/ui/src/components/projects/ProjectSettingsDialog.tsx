@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Project } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -6,6 +6,7 @@ import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
 import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
+import { RepositoriesBlock } from "./RepositoriesBlock";
 import { StorageBlock } from "./StorageBlock";
 import { useToast } from "~/lib/toast";
 
@@ -64,7 +65,8 @@ export function ProjectSettingsDialog({
   project,
   projects,
   onOpenChange,
-  onDeleted
+  onDeleted,
+  section
 }: {
   /** The project to configure; `null` closes the sheet. Look it up live — the
    *  delete unmounts the sheet by taking its subject away. */
@@ -74,6 +76,8 @@ export function ProjectSettingsDialog({
   onOpenChange: (open: boolean) => void;
   /** Ran after the delete lands: leave the project, or render a dead route. */
   onDeleted?: (project: Project) => void;
+  /** Opens scrolled to one block — the assistant sends you to Repositories when a workstream has no checkout here. */
+  section?: "repositories";
 }) {
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
@@ -118,6 +122,7 @@ export function ProjectSettingsDialog({
           <SettingsFace
             key={project.id}
             project={project}
+            section={section}
             onClose={() => onOpenChange(false)}
             onRequestDelete={() => setConfirming(true)}
           />
@@ -126,8 +131,11 @@ export function ProjectSettingsDialog({
   );
 }
 
-function SettingsFace({ project, onClose, onRequestDelete }: { project: Project; onClose: () => void; onRequestDelete: () => void }) {
+function SettingsFace({ project, onClose, onRequestDelete, section }: { project: Project; onClose: () => void; onRequestDelete: () => void; section?: "repositories" }) {
   const { t, tx } = useI18n();
+  useEffect(() => {
+    if (section === "repositories") requestAnimationFrame(() => document.getElementById("psRepos")?.scrollIntoView({ block: "start" }));
+  }, [section]);
   const update = useUpdateProject();
   const toast = useToast();
   const facts = useFacts(project.id);
@@ -195,6 +203,8 @@ function SettingsFace({ project, onClose, onRequestDelete }: { project: Project;
         </div>
 
         <StorageBlock projectId={project.id} />
+
+        <RepositoriesBlock projectId={project.id} />
 
         <div>
           <Eyebrow>{t("projectSettingsDialog.archiveLabel")}</Eyebrow>

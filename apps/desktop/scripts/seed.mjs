@@ -87,7 +87,7 @@ const ITEMS = [
     "Dead code carried over from the pre-reboot architecture. Superseded by the Vite SPA setup; closing rather than fixing."]
 ];
 
-export function seedDesignProject({ dbFor, projects, boards, views, items, fields }) {
+export function seedDesignProject({ dbFor, projects, boards, views, items, fields, gitRepos }) {
   const project = projects.create({
     name: "Tomrade Next",
     description: "Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents.",
@@ -103,6 +103,14 @@ export function seedDesignProject({ dbFor, projects, boards, views, items, field
   }
   // the seeded "Main" workstream is redundant once the four real ones exist
   if (firstBoard) boards.remove(project.id, firstBoard.id);
+
+  // The UI workstream stands for one repository. Its URL travels with the
+  // project; where it is checked out is this machine's, and starts unset.
+  let repo = null;
+  if (gitRepos) {
+    repo = gitRepos.create({ projectId: project.id, remote: "git@github.com:acme/tomrade-next.git", defaultBranch: "main" });
+    boards.update(project.id, boardIds.get("bd-ui"), { repoId: repo.id, repoPath: "packages/ui" });
+  }
 
   const fieldIds = new Map();
   const optionIds = new Map();
@@ -187,5 +195,5 @@ export function seedDesignProject({ dbFor, projects, boards, views, items, field
   // creating and retiring the placeholder board is fixture setup, not history
   db.prepare("DELETE FROM oplog WHERE entity = 'board'").run();
 
-  return { project, boardIds, fieldIds };
+  return { project, boardIds, fieldIds, repo };
 }

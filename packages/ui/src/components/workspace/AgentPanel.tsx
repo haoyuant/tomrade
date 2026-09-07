@@ -6,8 +6,8 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, type RunProgress } from "~/lib/agent";
-import { useItems, useSaveSettings, useSettings } from "~/lib/queries";
+import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -222,11 +222,30 @@ function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }:
   );
 }
 
-export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIssue }: { open: boolean; onToggle: (open: boolean) => void; projectId: string; onOpenSettings: () => void; onOpenIssue: (id: string) => void }) {
+export function AgentPanel({
+  open,
+  onToggle,
+  projectId,
+  boardId = null,
+  onOpenSettings,
+  onOpenRepositories,
+  onOpenIssue
+}: {
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  projectId: string;
+  /** The workstream page the panel is open on, if any: a new thread starts there. */
+  boardId?: string | null;
+  onOpenSettings: () => void;
+  /** Where a workstream's repository is placed on this machine — the way out of "no local checkout". */
+  onOpenRepositories?: () => void;
+  onOpenIssue: (id: string) => void;
+}) {
   const { t } = useI18n();
   const threads = useAgentThreads(projectId);
   const settings = useSettings();
   const itemsQ = useItems(projectId);
+  const boardsQ = useBoards(projectId);
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
   const threadId = (chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
   const detail = useAgentThread(projectId, threadId);
@@ -237,6 +256,11 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
   const answer = useAnswer(projectId);
   const cancel = useCancelRun();
   const revert = useRevertRun(projectId, threadId);
+  const setWorkstream = useSetWorkstream(projectId);
+  // The thread's workstream names its repository; the workdir says whether this machine can run there.
+  const threadBoardId = detail.data?.thread.boardId ?? null;
+  const workdir = useWorkdir(projectId, threadId, !!threadBoardId);
+  const workdirProblem = threadBoardId ? (workdir.data?.problem ?? null) : null;
 
   const [draft, setDraft] = useState("");
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
@@ -255,6 +279,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
 
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
   const busy = !!runningRun || send.isPending || answer.isPending;
+  const blocked = !!workdirProblem;
   const pending = detail.data?.pending ?? null;
   const runs = new Map((detail.data?.runs ?? []).map((r) => [r.id, r]));
   const byKey = new Map((itemsQ.data ?? []).map((i) => [i.key, i]));
@@ -325,10 +350,10 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
 
   const doSend = async () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text || busy || blocked) return;
     setDraft("");
     let target = threadId;
-    if (!target) target = (await newThread.mutateAsync(undefined)).id;
+    if (!target) target = (await newThread.mutateAsync({ boardId })).id;
     pickThread(target);
     send.mutate({ threadId: target, text });
   };
@@ -371,7 +396,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
           <MenuActionItem
             icon={<Icon name="i-plus" size={13} />}
             name={t("agentPanel.newThread")}
-            onSelect={() => void newThread.mutateAsync(undefined).then((th) => pickThread(th.id))}
+            onSelect={() => void newThread.mutateAsync({ boardId }).then((th) => pickThread(th.id))}
           />
         </Menu>
         <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
@@ -441,16 +466,57 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
             <button
               type="button"
               className="btn btn-icon ai-send"
-              title={t("agentPanel.send")}
+              title={workdirProblem ?? t("agentPanel.send")}
               aria-label={t("agentPanel.send")}
-              disabled={busy || !draft.trim()}
+              disabled={busy || blocked || !draft.trim()}
               onClick={() => void doSend()}
             >
               <Icon name="i-send" size={14} />
             </button>
           )}
         </div>
+        {threadBoardId && (
+          <p className={workdirProblem ? "ai-workdir is-problem meta-txt dense" : "ai-workdir meta-txt dense num"} style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            {workdirProblem ? (
+              <>
+                <Icon name="i-warn" size={12} style={{ color: "var(--danger)", flexShrink: 0 }} />
+                <span style={{ color: "var(--danger)" }}>{t("agentPanel.noCheckout")}</span>
+                <span title={workdirProblem} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
+                  {workdirProblem}
+                </span>
+                {onOpenRepositories && (
+                  <button type="button" className="btn btn-ghost ai-repos-link" style={{ padding: "0 6px" }} onClick={onOpenRepositories}>
+                    {t("agentPanel.repositoriesLink")}
+                  </button>
+                )}
+              </>
+            ) : workdir.data?.cwd ? (
+              <span title={workdir.data.cwd} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t("agentPanel.runsIn", { path: workdir.data.cwd })}
+              </span>
+            ) : null}
+          </p>
+        )}
         <div className="ai-knobs">
+          <select
+            className="select ai-ws"
+            aria-label={t("agentPanel.workstreamAria")}
+            title={t("agentPanel.workstreamLabel")}
+            disabled={busy}
+            value={threadBoardId ?? (threadId ? "" : (boardId ?? ""))}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              if (threadId) setWorkstream.mutate({ threadId, boardId: next });
+              else void newThread.mutateAsync({ boardId: next }).then((th) => pickThread(th.id));
+            }}
+          >
+            <option value="">{t("agentPanel.wholeProject")}</option>
+            {(boardsQ.data ?? []).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
           <Menu
             label={t("agentPanel.engineLabel")}
             align="end"
@@ -472,7 +538,7 @@ export function AgentPanel({ open, onToggle, projectId, onOpenSettings, onOpenIs
                 onSelect={() => {
                   if (busy || e.id === currentEngineId) return;
                   if (threadId) setEngine.mutate({ threadId, engineId: e.id });
-                  else void newThread.mutateAsync(e.id).then((th) => pickThread(th.id));
+                  else void newThread.mutateAsync({ engine: e.id, boardId }).then((th) => pickThread(th.id));
                 }}
               />
             ))}

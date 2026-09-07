@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
+import type {} from "@tomrade/repos";
 import { invalidateProject } from "./lib/queries.js";
 import { watchWindowChrome } from "./lib/window-chrome.js";
 import "./styles/app.css";
@@ -27,8 +28,16 @@ if (window.tomrade) {
   subscribe("storage.changed", (projectId) => invalidateProject(queryClient, projectId));
   // A project was created, renamed, archived or removed — in this window or another.
   subscribe("projects.changed", () => void queryClient.invalidateQueries({ queryKey: ["projects"] }));
-  // The Hub folder was chosen or moved.
-  subscribe("hub.changed", () => void queryClient.invalidateQueries({ queryKey: ["hub"] }));
+  // The Hub folder was chosen or moved, or its remote changed.
+  subscribe("hub.changed", () => {
+    void queryClient.invalidateQueries({ queryKey: ["hub"] });
+    void queryClient.invalidateQueries({ queryKey: ["storage", "hub"] });
+  });
+  // A repository was added or a checkout named: where a workstream's agent runs may have changed.
+  subscribe("repos.changed", () => {
+    void queryClient.invalidateQueries({ queryKey: ["repos"] });
+    void queryClient.invalidateQueries({ queryKey: ["agent", "workdir"] });
+  });
 }
 
 createRoot(document.getElementById("root")!).render(

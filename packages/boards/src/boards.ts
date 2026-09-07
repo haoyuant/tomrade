@@ -59,7 +59,9 @@ export class Boards extends Service {
     return this.ctx.oplog;
   }
 
+  /** A project that is not open on this machine simply has no workstreams to list; id-addressed reads still throw. */
   list(projectId: string): Board[] {
+    if (!this.ctx.db.has(projectId)) return [];
     return (this.db(projectId).prepare("SELECT * FROM boards WHERE project_id = ? ORDER BY rank ASC, created_at ASC").all(projectId) as BoardRow[]).map(rowToBoard);
   }
 

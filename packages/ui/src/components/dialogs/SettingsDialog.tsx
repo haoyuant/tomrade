@@ -9,6 +9,7 @@ import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
+import { HubPane } from "./HubPane";
 import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
@@ -70,6 +71,19 @@ function ThemePreview() {
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 const HAND_DRAWN = new Set(["theme", "language", "models", "agent"]);
 
+/** Whether a section stays on this machine or follows the Hub folder — said on every card, so nobody has to guess. */
+function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
+  const { t } = useI18n();
+  if (!scope) return null;
+  return (
+    <Tag tone="faint" title={scope === "user" ? t("settingsDialog.scopeUser") : t("settingsDialog.scopeMachine")}>
+      <span className="scope-tag" data-scope={scope}>
+        {scope === "user" ? t("settingsDialog.scopeUser") : t("settingsDialog.scopeMachine")}
+      </span>
+    </Tag>
+  );
+}
+
 /** A plugin's settings pane. Edits commit as they are made and fall back to the stored value if refused. */
 function PluginPane({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
   const [value, setValue] = useState<unknown>(stored);
@@ -82,7 +96,9 @@ function PluginPane({ section, stored, onCommit }: { section: SettingsSectionVie
   const fields = fieldsOf(schema);
   return (
     <>
-      <SectionHead title={section.title}>{section.description}</SectionHead>
+      <SectionHead title={section.title} aside={<ScopeTag scope={section.scope} />}>
+        {section.description}
+      </SectionHead>
       <div className="panel stack-3">
         {fields ? (
           fields.map(([name, field]) => (
@@ -142,6 +158,7 @@ export function SettingsDialog({
   // one draws it; this dialog does not draw it twice.
   const claimed = new Set((providers.data ?? []).map((p) => p.settingsSection).filter(Boolean) as string[]);
   const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id) && !claimed.has(s.id));
+  const scopeOf = (id: string) => sections.data?.find((s) => s.id === id)?.scope;
 
   const TOKENS: [MessageKey, string, MessageKey][] = [
     ["settingsDialog.tokenCanvas", "--bg", "settingsDialog.tokenCanvasWhere"],
@@ -162,7 +179,9 @@ export function SettingsDialog({
       group: "app",
       render: () => (
         <>
-          <SectionHead title={t("settingsDialog.appearanceLabel")}>{t("settingsDialog.appearanceLede")}</SectionHead>
+          <SectionHead title={t("settingsDialog.appearanceLabel")} aside={<ScopeTag scope={scopeOf("theme")} />}>
+            {t("settingsDialog.appearanceLede")}
+          </SectionHead>
           <div className="row" style={{ gap: "var(--space-3)", flexWrap: "wrap" }}>
             <ThemeSwitch />
             <p className="meta-txt">{t("settingsDialog.appearanceApplies")}</p>
@@ -204,7 +223,9 @@ export function SettingsDialog({
       group: "app",
       render: () => (
         <>
-          <SectionHead title={t("settingsDialog.languageLabel")}>{t("settingsDialog.languageLede")}</SectionHead>
+          <SectionHead title={t("settingsDialog.languageLabel")} aside={<ScopeTag scope={scopeOf("language")} />}>
+            {t("settingsDialog.languageLede")}
+          </SectionHead>
           <div className="row" style={{ gap: "var(--space-3)", flexWrap: "wrap" }}>
             <LanguageSwitch />
             <p className="meta-txt">{t("settingsDialog.languageApplies")}</p>
@@ -220,6 +241,7 @@ export function SettingsDialog({
       render: () =>
         settings.data ? (
           <AssistantPane
+            scope={scopeOf("agent")}
             settings={settings.data}
             // A profile or an engine override can change what an engine's row shows (readiness, its Model
             // choices) — stale beyond useEngines' own staleTime otherwise, so a save here refreshes it right away.
@@ -234,7 +256,9 @@ export function SettingsDialog({
       group: "app",
       render: () => (
         <>
-          <SectionHead title={t("settingsDialog.agentsLabel")}>{t("settingsDialog.agentsLede")}</SectionHead>
+          <SectionHead title={t("settingsDialog.agentsLabel")} aside={<ScopeTag scope="machine" />}>
+            {t("settingsDialog.agentsLede")}
+          </SectionHead>
           <div className="grid-2">
             <div className="panel">
               <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
@@ -264,13 +288,20 @@ export function SettingsDialog({
       )
     },
     {
+      id: "hub",
+      label: t("settingsDialog.hubLabel"),
+      icon: "i-home",
+      group: "app",
+      render: () => <HubPane />
+    },
+    {
       id: "data",
       label: t("settingsDialog.dataLabel"),
       icon: "i-archive",
       group: "app",
       render: () => (
         <>
-          <SectionHead title={t("settingsDialog.dataLabel")}>{t("settingsDialog.dataLede")}</SectionHead>
+          <SectionHead title={t("settingsDialog.dataLabel")} aside={<ScopeTag scope="machine" />}>{t("settingsDialog.dataLede")}</SectionHead>
           <div className="panel stack-3">
             <div className="field">
               <label htmlFor="stHub">{t("settingsDialog.hubDirLabel")}</label>
@@ -362,7 +393,7 @@ const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
 const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
-function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (next: AppSettings) => void }) {
+function AssistantPane({ settings, onSave, scope }: { settings: AppSettings; onSave: (next: AppSettings) => void; scope?: "machine" | "user" }) {
   const { t } = useI18n();
   const engines = useEngines();
   const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
@@ -386,7 +417,9 @@ function AssistantPane({ settings, onSave }: { settings: AppSettings; onSave: (n
 
   return (
     <>
-      <SectionHead title={t("settingsDialog.modelsTitle")}>{t("settingsDialog.modelsLede")}</SectionHead>
+      <SectionHead title={t("settingsDialog.modelsTitle")} aside={<ScopeTag scope={scope} />}>
+        {t("settingsDialog.modelsLede")}
+      </SectionHead>
       <div className="panel stack-3">
         {models.profiles.length === 0 && <p className="meta-txt">{t("settingsDialog.noProfileYet")}</p>}
         {models.profiles.map((p) => (

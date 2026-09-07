@@ -63,6 +63,7 @@ export class Views extends Service {
   }
 
   listForProject(projectId: string): View[] {
+    if (!this.ctx.db.has(projectId)) return [];
     return (this.db(projectId).prepare("SELECT * FROM views WHERE project_id = ? ORDER BY rank ASC, created_at ASC").all(projectId) as ViewRow[]).map(rowToView);
   }
 

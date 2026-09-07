@@ -10,7 +10,8 @@ export const agentKeys = {
   threads: (projectId: string) => ["agent", "threads", projectId] as const,
   thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
   engines: ["agent", "engines"] as const,
-  playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const
+  playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const,
+  workdir: (projectId: string, threadId: string) => ["agent", "workdir", projectId, threadId] as const
 };
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agentKeys.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
@@ -71,10 +72,27 @@ export function usePlaybookConflictNotice(projectId: string): void {
 export function useNewThread(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (engine?: string) => invoke("agent.newThread", projectId, engine),
+    mutationFn: (args: { engine?: string; boardId?: string | null } = {}) => invoke("agent.newThread", projectId, args.engine, args.boardId ?? null),
     onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) })
   });
 }
+
+/** Put the thread on a workstream — and so in that workstream's repository — or back on the whole project. */
+export function useSetWorkstream(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; boardId: string | null }) => invoke("agent.setWorkstream", projectId, args.threadId, args.boardId),
+    onSuccess: (_thread, args) => {
+      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.workdir(projectId, args.threadId) });
+    }
+  });
+}
+
+/** Where the thread's engine would run, or why it cannot yet (no checkout of the workstream's repository here). */
+export const useWorkdir = (projectId: string, threadId: string | null, enabled = true) =>
+  useQuery({ queryKey: agentKeys.workdir(projectId, threadId ?? ""), queryFn: () => invoke("agent.workdir", projectId, threadId!), enabled: !!threadId && enabled, retry: false, staleTime: 5_000 });
 
 export function useSetEngine(projectId: string) {
   const qc = useQueryClient();

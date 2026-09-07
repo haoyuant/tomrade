@@ -121,7 +121,8 @@ consumer follows.
 | `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs |
 | `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
-| `ctx.storage` | spine registry | `@tomrade/storage` | Where a project's shareable copy lives: providers, the text artifact, flush/refresh |
+| `ctx.storage` | spine registry | `@tomrade/storage` | The project folder as the truth: the text artifact, the write-through log, publish/refresh/merge, remote providers, the Hub's catalog |
+| `ctx.repos` | spine | `@tomrade/repos` | The code repositories workstreams stand for; this machine's checkouts; the worktrees agents run in |
 | `ctx.llm` | seam | `@tomrade/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
 | `ctx.agent` | spine registry | `@tomrade/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
 | `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
@@ -328,6 +329,17 @@ Agents reach them through `list_workstreams`, `create_workstream`,
 issues a doomed workstream still holds); the renderer offers the same in the
 sidebar's Workstreams group and the Fields sheet.
 
+A workstream may **stand for a code repository**: `Board.repoId` names a row of
+`ctx.repos` (shared with the project — the remote URL is its identity) and
+`Board.repoPath` a folder inside it. Where that repository is checked out is
+this machine's alone (`ctx.repos.setCheckout(remote, dir)`, verified against the
+folder's origin, or `ctx.repos.clone(remote, branch)` into `<Hub>/repos/`). A
+thread on such a workstream runs its engine in a detached worktree of the
+checkout under `<Hub>/worktrees/`, or in the checkout itself when the user
+chose that, and refuses to start while no checkout is named. Tomrade never
+pushes a code repository. Agents see `list_repos`; `TurnInput.cwd` is where a
+code-running engine works.
+
 ## Fields
 
 Every attribute a view can filter, sort or group by is a **field**. Built-in
@@ -510,6 +522,13 @@ validates each registered section against its schema and persists the file.
 The settings dialog draws a card for every section it does not lay out by hand,
 from the schema's JSON Schema: strings, numbers, booleans and enums; a string
 with `format: "password"` is masked.
+
+A section has a **scope**. `machine` (the default) stays in
+`<userData>/settings.json`: credentials, paths, binaries. `user` follows the
+person: it is also written to `<Hub>/settings.json` with a timestamp per
+section, travels with the Hub, and a clash between two machines is settled by
+the later stamp. A section whose schema holds a password is `machine` whatever
+it declares.
 
 ## Contributions
 

@@ -37,6 +37,16 @@ import {
   type WorkflowSpec
 } from "./types.js";
 
+/** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
+export interface WorkdirStatus {
+  cwd: string | null;
+  remote: string | null;
+  branch: string | null;
+  worktree: string | null;
+  problem: string | null;
+  code: "no-checkout" | "no-repos" | "error" | null;
+}
+
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: ThreadMessage[];
@@ -59,7 +69,7 @@ declare module "@tomrade/ipc" {
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
-    "agent.workdir": (projectId: string, threadId: string) => { cwd: string | null; remote: string | null; branch: string | null; worktree: string | null; problem: string | null };
+    "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
     "agent.send": (projectId: string, threadId: string, text: string) => { runId: string };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
@@ -358,17 +368,19 @@ export class Agent extends Service {
   }
 
   /** Where the thread's engine works, resolved through the workstream's repository and this machine's checkout of it. */
-  async workdir(projectId: string, threadId: string): Promise<{ cwd: string | null; remote: string | null; branch: string | null; worktree: string | null; problem: string | null }> {
+  async workdir(projectId: string, threadId: string): Promise<WorkdirStatus> {
+    const none: WorkdirStatus = { cwd: null, remote: null, branch: null, worktree: null, problem: null, code: null };
     const thread = this.store.thread(projectId, threadId);
-    if (!thread?.boardId) return { cwd: null, remote: null, branch: null, worktree: null, problem: null };
+    if (!thread?.boardId) return none;
     const repos = this.ctx.get("repos") as { workdirFor(projectId: string, boardId: string, threadId: string): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> } | undefined;
-    if (!repos) return { cwd: null, remote: null, branch: null, worktree: null, problem: "the repos plugin is not loaded" };
+    if (!repos) return { ...none, problem: "the repos plugin is not loaded", code: "no-repos" };
     try {
       const view = await repos.workdirFor(projectId, thread.boardId, threadId);
-      if (!view) return { cwd: null, remote: null, branch: null, worktree: null, problem: null };
-      return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null };
+      if (!view) return none;
+      return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
     } catch (err) {
-      return { cwd: null, remote: null, branch: null, worktree: null, problem: message(err) };
+      const remote = (err as { remote?: string }).remote ?? null;
+      return { ...none, remote, problem: message(err), code: (err as { name?: string }).name === "CheckoutUnsetError" ? "no-checkout" : "error" };
     }
   }
 

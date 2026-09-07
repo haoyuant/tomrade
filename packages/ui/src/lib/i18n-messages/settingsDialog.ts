@@ -88,6 +88,9 @@ export const settingsDialog = {
     oplogBullet: "Every write is recorded in the oplog with its author",
     undoBullet: "{{cmdz}} reverts any write, agent or human",
 
+    hubLabel: "Hub",
+    scopeMachine: "This machine",
+    scopeUser: "Follows the Hub",
     dataLabel: "Data",
     dataLede:
       "Every project is a folder of text under the Hub, or wherever you put it — that folder is the truth, and what a teammate clones. The SQLite cache on this machine follows it and can always be rebuilt from it.",
@@ -185,6 +188,9 @@ export const settingsDialog = {
     oplogBullet: "每一次写入都会连同作者记录进操作日志",
     undoBullet: "{{cmdz}} 可撤销任意一次写入，无论来自智能体还是人工",
 
+    hubLabel: "主目录",
+    scopeMachine: "仅本机",
+    scopeUser: "随主目录",
     dataLabel: "数据",
     dataLede: "每个项目都是主目录下（或你指定的任何位置）的一个文本文件夹——文件夹才是事实，也是队友克隆的对象。本机上的 SQLite 缓存跟随它，随时可以从它重建。",
     hubDirLabel: "主目录",

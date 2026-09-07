@@ -18,11 +18,16 @@ function Ribbon({ entry }: { entry: OplogEntry }) {
         ? "statusBar.verbDeleted"
         : entry.op === "purge"
           ? "statusBar.verbPurged"
-          : "statusBar.verbUpdated";
+          : entry.op === "rank"
+            ? "statusBar.verbReordered"
+            : entry.op === "merge"
+              ? "statusBar.verbSynced"
+              : "statusBar.verbUpdated";
+  const sync = entry.by === "ai:sync";
   return (
     <span className="status-item">
-      {entry.by.startsWith("ai:") && <span className="ribbon-tick" />}
-      {tx("statusBar.ribbon", { author: <Num>{entry.by}</Num>, verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
+      {entry.by.startsWith("ai:") && !sync && <span className="ribbon-tick" />}
+      {tx("statusBar.ribbon", { author: <Num>{sync ? t("statusBar.authorSync") : entry.by}</Num>, verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
     </span>
   );
 }

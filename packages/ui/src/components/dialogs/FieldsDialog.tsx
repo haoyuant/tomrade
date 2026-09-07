@@ -17,6 +17,7 @@ import {
   useRemoveBoard,
   useRemoveField,
   useRemoveFieldOption,
+  useRepos,
   useUpdateBoard,
   useUpdateField,
   useUpdateFieldOption
@@ -228,6 +229,7 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
   const { t, tx } = useI18n();
   const toast = useToast();
   const update = useUpdateBoard(projectId);
+  const repos = useRepos(projectId);
   const remove = useRemoveBoard(projectId);
   const move = useMoveItemsToBoard(projectId);
   const items = useItems(projectId);
@@ -266,6 +268,32 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
         onSave={(subtitle) => update.mutate({ id: board.id, patch: { subtitle: subtitle || null } }, { onError: fail })}
       />
       <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
+      {/* The repository the workstream stands for: where its agents run. */}
+      <span className="row fld-ws-repo" style={{ gap: 6, gridColumn: "1 / -1" }}>
+        <select
+          className="select"
+          style={{ flex: 1 }}
+          aria-label={t("fieldsDialog.workstreamRepoAria", { name: board.name })}
+          value={board.repoId ?? ""}
+          onChange={(e) => update.mutate({ id: board.id, patch: { repoId: e.target.value || null, repoPath: e.target.value ? board.repoPath : "" } }, { onError: fail })}
+        >
+          <option value="">{t("fieldsDialog.workstreamRepoNone")}</option>
+          {(repos.data ?? []).map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+        {board.repoId && (
+          <RenameInput
+            value={board.repoPath}
+            ariaLabel={t("fieldsDialog.workstreamRepoPathAria")}
+            className="input num fld-ws-path"
+            placeholder={t("fieldsDialog.workstreamRepoPathPlaceholder")}
+            onSave={(repoPath) => update.mutate({ id: board.id, patch: { repoPath } }, { onError: fail })}
+          />
+        )}
+      </span>
       {removing && count > 0 ? (
         <span className="row" style={{ gap: 6, gridColumn: "1 / -1" }}>
           <span className="meta-txt">{t("fieldsDialog.moveIssuesTo", { n: count })}</span>
@@ -325,6 +353,7 @@ function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item
   return (
     <div className="fld-editor stack-3" data-editor="workstream">
       <p className="meta-txt dense">{t("fieldsDialog.workstreamNote")}</p>
+      <p className="meta-txt dense">{t("fieldsDialog.workstreamRepoNote")}</p>
       <div>
         <Eyebrow>{t("fieldsDialog.workstreamsEyebrow")}</Eyebrow>
         <div className="stack-1" style={{ marginTop: "var(--space-2)" }}>

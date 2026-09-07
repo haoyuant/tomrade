@@ -2,7 +2,10 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import type { CommandScope } from "@tomrade/contributions";
 import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomrade/storage";
 import type {} from "@tomrade/hub";
+import type {} from "@tomrade/repos";
+import type { CheckoutView } from "@tomrade/repos";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
+import type { Repo, RepoPatch } from "@tomrade/domain";
 import type {
   AppSettings,
   Board,
@@ -36,6 +39,9 @@ export const keys = {
   mcp: (projectId?: string) => ["mcp", projectId ?? ""] as const,
   cacheDir: ["cacheDir"] as const,
   hub: ["hub"] as const,
+  hubRemote: ["storage", "hub"] as const,
+  repos: (projectId: string) => ["repos", projectId] as const,
+  repoCheckouts: ["repos", "checkouts"] as const,
   plugins: ["plugins"] as const,
   storageProviders: ["storage", "providers"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
@@ -484,3 +490,79 @@ export function useConfigureHub() {
 }
 
 export type { Board, Item, Project, View };
+
+/* ── the Hub's own remote ─────────────────────────────────────────────── */
+
+/** The Hub folder's remote, its state, and the projects its catalog names that are not here. Contacts the remote. */
+export const useHubRemote = () => useQuery({ queryKey: keys.hubRemote, queryFn: () => invoke("storage.hubInfo"), retry: false, staleTime: 10_000 });
+
+const invalidateHub = (qc: QueryClient) => {
+  void qc.invalidateQueries({ queryKey: keys.hubRemote });
+  void qc.invalidateQueries({ queryKey: keys.hub });
+  void qc.invalidateQueries({ queryKey: keys.projects });
+};
+
+/** Make the Hub folder a repository of Tomrade's own and give it a remote. */
+export function useBindHub() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.hubBind", args.providerId, args.config),
+    onSettled: () => invalidateHub(qc)
+  });
+}
+
+export function useUnbindHub() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => invoke("storage.hubUnbind"), onSettled: () => invalidateHub(qc) });
+}
+
+export function useSyncHub() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("storage.hubSync"),
+    onSettled: () => {
+      invalidateHub(qc);
+      void qc.invalidateQueries({ queryKey: keys.settings });
+    }
+  });
+}
+
+/** Clone every project the Hub knows and this machine does not; resolves to their ids. */
+export function useAttachAll() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("storage.hubAttachAll"),
+    onSettled: () => {
+      invalidateHub(qc);
+      void qc.invalidateQueries({ queryKey: ["storage"] });
+    }
+  });
+}
+
+/* ── repositories ────────────────────────────────────────────────────────
+   The URL is the project's; the checkout is this machine's. */
+
+export const useRepos = (projectId: string) => useQuery({ queryKey: keys.repos(projectId), queryFn: (): Promise<Repo[]> => invoke("repos.list", projectId) });
+export const useRepoCheckouts = () => useQuery({ queryKey: keys.repoCheckouts, queryFn: (): Promise<CheckoutView[]> => invoke("repos.checkouts") });
+
+function useRepoMutation<A, R>(projectId: string | null, fn: (args: A) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSettled: () => {
+      if (projectId) void qc.invalidateQueries({ queryKey: keys.repos(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.repoCheckouts });
+      // where an agent would run may have changed
+      void qc.invalidateQueries({ queryKey: ["agent", "workdir"] });
+    }
+  });
+}
+
+export const useCreateRepo = (projectId: string) =>
+  useRepoMutation(projectId, (input: { remote: string; name?: string; defaultBranch?: string }): Promise<Repo> => invoke("repos.create", { ...input, projectId }));
+export const useUpdateRepo = (projectId: string) => useRepoMutation(projectId, (args: { id: string; patch: RepoPatch }) => invoke("repos.update", projectId, args.id, args.patch));
+export const useRemoveRepo = (projectId: string) => useRepoMutation(projectId, (id: string) => invoke("repos.remove", projectId, id));
+export const useSetCheckout = () => useRepoMutation(null, (args: { remote: string; dir: string }) => invoke("repos.setCheckout", args.remote, args.dir));
+export const useClearCheckout = () => useRepoMutation(null, (remote: string) => invoke("repos.clearCheckout", remote));
+export const useSetRunInCheckout = () => useRepoMutation(null, (args: { remote: string; on: boolean }) => invoke("repos.setRunInCheckout", args.remote, args.on));
+export const useCloneRepo = () => useRepoMutation(null, (args: { remote: string; branch: string }) => invoke("repos.clone", args.remote, args.branch));
