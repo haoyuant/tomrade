@@ -61,7 +61,7 @@ export function applyPlan(
   const skipped: ApplyOutcome["skipped"] = [];
   const dupOf = (title: string): Item | undefined => opts.existing.find((i) => overlap(title, i.title) > 0.66);
 
-  const rootKey = ctx.db.for(opts.projectId).transaction(() => {
+  const rootKey = ctx.db.transaction(() => {
     const root = ctx.items.create({ projectId: opts.projectId, boardId, kind: "epic", title: opts.rootTitle, body: opts.rootBody, by: opts.author });
     created.push({ key: root.key, kind: "epic", title: root.title, parentKey: null });
     for (const epic of opts.plan.epics) {

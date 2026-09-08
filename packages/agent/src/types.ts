@@ -28,8 +28,6 @@ export interface ThreadMessage {
 export interface ThreadSummary {
   id: string;
   projectId: string;
-  /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */
-  boardId: string | null;
   title: string;
   engine: string;
   createdAt: number;
@@ -130,9 +128,6 @@ export interface TurnInput {
   pending: PendingView | null;
   /** Parsed engine options from settings (validated against Engine.options). */
   options: unknown;
-  /** Where a code-running engine works: a worktree of the workstream's repository. Absent for a thread without one. */
-  cwd?: string;
-  workdir?: { remote: string; branch: string; worktree: string | null };
 }
 
 export interface TurnIO {

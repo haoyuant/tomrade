@@ -22,19 +22,19 @@ describe("fields", () => {
     const area = fields.create({ projectId: project.id, name: "Area", type: "select", options: [{ name: "Web" }, { name: "Mobile", description: "iOS + Android" }] });
     expect(area.options.map((o) => o.name)).toEqual(["Web", "Mobile"]);
     expect(area.can.group).toBe(true);
-    const desk = fields.addOption(project.id, area.id, { name: "Desktop" });
-    fields.updateOption(project.id, area.id, desk.id, { name: "Desktop app", rank: -1 });
-    expect(fields.get(project.id, area.id)!.options.map((o) => o.name)).toEqual(["Desktop app", "Web", "Mobile"]);
+    const desk = fields.addOption(area.id, { name: "Desktop" });
+    fields.updateOption(area.id, desk.id, { name: "Desktop app", rank: -1 });
+    expect(fields.get(area.id)!.options.map((o) => o.name)).toEqual(["Desktop app", "Web", "Mobile"]);
 
     const [web, mobile] = area.options;
-    const a = items.create({ projectId: project.id, title: "A", boardId: board.id, fields: { [area.id]: web.id }, by: "human" });
-    const b = items.create({ projectId: project.id, title: "B", boardId: board.id, fields: { [area.id]: mobile.id }, by: "human" });
+    const a = items.create({ title: "A", boardId: board.id, fields: { [area.id]: web.id }, by: "human" });
+    const b = items.create({ title: "B", boardId: board.id, fields: { [area.id]: mobile.id }, by: "human" });
     // removing an option clears or moves the items holding it
-    expect(fields.removeOption(project.id, area.id, web.id, { moveTo: mobile.id })).toBe(1);
-    expect(items.get(project.id, a.id)!.fields[area.id]).toBe(mobile.id);
-    expect(fields.removeOption(project.id, area.id, mobile.id)).toBe(2);
-    expect(items.get(project.id, a.id)!.fields).toEqual({});
-    expect(items.get(project.id, b.id)!.fields).toEqual({});
+    expect(fields.removeOption(area.id, web.id, { moveTo: mobile.id })).toBe(1);
+    expect(items.get(a.id)!.fields[area.id]).toBe(mobile.id);
+    expect(fields.removeOption(area.id, mobile.id)).toBe(2);
+    expect(items.get(a.id)!.fields).toEqual({});
+    expect(items.get(b.id)!.fields).toEqual({});
   });
 
   it("names are unique per project and never shadow a built-in", async () => {
@@ -47,24 +47,24 @@ describe("fields", () => {
   });
 
   it("built-ins cannot be changed or removed", async () => {
-    const { fields, project } = await fresh();
-    expect(() => fields.update(project.id, "status", { name: "State" })).toThrow(FieldDefinitionError);
-    expect(() => fields.remove(project.id, "priority")).toThrow(FieldDefinitionError);
-    expect(() => fields.addOption(project.id, "status", { name: "Blocked" })).toThrow(FieldDefinitionError);
+    const { fields } = await fresh();
+    expect(() => fields.update("status", { name: "State" })).toThrow(FieldDefinitionError);
+    expect(() => fields.remove("priority")).toThrow(FieldDefinitionError);
+    expect(() => fields.addOption("status", { name: "Blocked" })).toThrow(FieldDefinitionError);
   });
 
   it("values are typed: the wrong shape is refused before the write path", async () => {
     const { fields, items, board, project } = await fresh();
     const points = fields.create({ projectId: project.id, name: "Story points", type: "number" });
     const due = fields.create({ projectId: project.id, name: "Due", type: "date" });
-    const item = items.create({ projectId: project.id, title: "A", boardId: board.id, by: "human" });
-    expect(() => items.update(project.id, item.id, { fields: { [points.id]: "five" } }, "human")).toThrow(FieldValueError);
-    expect(() => items.update(project.id, item.id, { fields: { [due.id]: "next week" } }, "human")).toThrow(FieldValueError);
-    expect(() => items.update(project.id, item.id, { fields: { status: "done" } }, "human")).toThrow(FieldValueError);
-    expect(() => items.update(project.id, item.id, { fields: { ghost: 1 } }, "human")).toThrow(FieldValueError);
+    const item = items.create({ title: "A", boardId: board.id, by: "human" });
+    expect(() => items.update(item.id, { fields: { [points.id]: "five" } }, "human")).toThrow(FieldValueError);
+    expect(() => items.update(item.id, { fields: { [due.id]: "next week" } }, "human")).toThrow(FieldValueError);
+    expect(() => items.update(item.id, { fields: { status: "done" } }, "human")).toThrow(FieldValueError);
+    expect(() => items.update(item.id, { fields: { ghost: 1 } }, "human")).toThrow(FieldValueError);
     // a refused value is not a write: the version did not move
-    expect(items.get(project.id, item.id)!.version).toBe(1);
-    const next = items.update(project.id, item.id, { fields: { [points.id]: 5, [due.id]: "2026-09-12" } }, "human");
+    expect(items.get(item.id)!.version).toBe(1);
+    const next = items.update(item.id, { fields: { [points.id]: 5, [due.id]: "2026-09-12" } }, "human");
     expect(next.fields).toEqual({ [points.id]: 5, [due.id]: "2026-09-12" });
     expect(next.version).toBe(2);
   });
@@ -73,10 +73,10 @@ describe("fields", () => {
     const { fields, items, board, project } = await fresh();
     const done = fields.create({ projectId: project.id, name: "Reviewed", type: "checkbox" });
     expect(done.can).toEqual({ filter: true, sort: false, group: true });
-    const item = items.create({ projectId: project.id, title: "A", boardId: board.id, fields: { [done.id]: 1 }, by: "human" });
+    const item = items.create({ title: "A", boardId: board.id, fields: { [done.id]: 1 }, by: "human" });
     expect(item.fields).toEqual({ [done.id]: 1 });
-    expect(items.update(project.id, item.id, { fields: { [done.id]: 0 } }, "human").fields).toEqual({});
-    expect(() => items.update(project.id, item.id, { fields: { [done.id]: 2 } }, "human")).toThrow(FieldValueError);
+    expect(items.update(item.id, { fields: { [done.id]: 0 } }, "human").fields).toEqual({});
+    expect(() => items.update(item.id, { fields: { [done.id]: 2 } }, "human")).toThrow(FieldValueError);
     expect(items.query({ projectId: project.id, filter: [{ field: done.id, op: "in", values: [null] }] }).map((i) => i.id)).toEqual([item.id]);
   });
 
@@ -84,20 +84,20 @@ describe("fields", () => {
     const { fields, items, oplog, board, project } = await fresh();
     const points = fields.create({ projectId: project.id, name: "Story points", type: "number" });
     const note = fields.create({ projectId: project.id, name: "Note", type: "text" });
-    const item = items.create({ projectId: project.id, title: "A", boardId: board.id, fields: { [points.id]: 3, [note.id]: "spike first" }, by: "human" });
-    const cleared = items.update(project.id, item.id, { fields: { [points.id]: null } }, "human");
+    const item = items.create({ title: "A", boardId: board.id, fields: { [points.id]: 3, [note.id]: "spike first" }, by: "human" });
+    const cleared = items.update(item.id, { fields: { [points.id]: null } }, "human");
     expect(cleared.fields).toEqual({ [note.id]: "spike first" });
     // and the write is undoable like any other
-    oplog.undoLast(project.id, item.id);
-    expect(items.get(project.id, item.id)!.fields).toEqual({ [points.id]: 3, [note.id]: "spike first" });
+    oplog.undoLast(item.id);
+    expect(items.get(item.id)!.fields).toEqual({ [points.id]: 3, [note.id]: "spike first" });
   });
 
   it("removing a field takes its values with it; deleting a project takes its fields", async () => {
     const { fields, items, board, project, projects, db } = await fresh();
     const points = fields.create({ projectId: project.id, name: "Story points", type: "number" });
-    const item = items.create({ projectId: project.id, title: "A", boardId: board.id, fields: { [points.id]: 8 }, by: "human" });
-    fields.remove(project.id, points.id);
-    expect(items.get(project.id, item.id)!.fields).toEqual({});
+    const item = items.create({ title: "A", boardId: board.id, fields: { [points.id]: 8 }, by: "human" });
+    fields.remove(points.id);
+    expect(items.get(item.id)!.fields).toEqual({});
     expect(fields.custom(project.id)).toEqual([]);
     const other = projects.create({ name: "Other" });
     fields.create({ projectId: other.id, name: "Area", type: "select", options: [{ name: "Web" }] });

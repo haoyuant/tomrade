@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.agent \u2014 the platform every engine runs on: threads, runs, the ledger, blocks, suspended workflows, run-scoped undo, and the engine/workflow/playbook/policy registries",
+  "description": "ctx.agent — the platform every engine runs on: threads, runs, the ledger, blocks, suspended workflows, run-scoped undo, and the engine/workflow/playbook/policy registries",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -19,7 +19,6 @@
   "dependencies": {
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/llm": "workspace:*",
     "@tomrade/oplog": "workspace:*",

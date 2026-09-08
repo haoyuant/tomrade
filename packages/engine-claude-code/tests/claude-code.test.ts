@@ -19,10 +19,10 @@ echo '{"type":"assistant","message":{"content":[{"type":"text","text":"hello fro
 echo '{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"sess-1","total_cost_usd":0.0123,"usage":{"input_tokens":10,"output_tokens":5}}'
 `;
 
-async function settled(ctx: Context, projectId: string, runId: string, timeout = 8000): Promise<RunView> {
+async function settled(ctx: Context, runId: string, timeout = 8000): Promise<RunView> {
   const t0 = Date.now();
   for (;;) {
-    const run = ctx.agent.store.run(projectId, runId);
+    const run = ctx.agent.store.run(runId);
     if (run && run.status !== "running") return run;
     if (Date.now() - t0 > timeout) throw new Error("run did not settle");
     await new Promise((r) => setTimeout(r, 10));
@@ -44,12 +44,12 @@ describe("the Claude Code engine", () => {
     await settle();
 
     const thread = ctx.agent.newThread(project.id, "claude-code");
-    const first = ctx.agent.send(project.id, thread.id, { kind: "text", text: "hello" });
-    const run1 = await settled(ctx, project.id, first.runId);
+    const first = ctx.agent.send(thread.id, { kind: "text", text: "hello" });
+    const run1 = await settled(ctx, first.runId);
     expect(run1.status).toBe("done");
     expect(run1.costUsd).toBeCloseTo(0.0123);
     expect(run1.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
-    const blocks = ctx.agent.store.messages(project.id, thread.id).map((m) => m.block);
+    const blocks = ctx.agent.store.messages(thread.id).map((m) => m.block);
     expect(blocks.some((b) => b.type === "text" && b.text === "hello from claude code")).toBe(true);
 
     const args1 = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
@@ -60,8 +60,8 @@ describe("the Claude Code engine", () => {
     expect(args1).toContain("--effort\nhigh");
     expect(args1).not.toContain("--resume");
 
-    const second = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
-    await settled(ctx, project.id, second.runId);
+    const second = ctx.agent.send(thread.id, { kind: "text", text: "again" });
+    await settled(ctx, second.runId);
     const args2 = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
     expect(args2).toContain("--resume");
     expect(args2).toContain("sess-1");
