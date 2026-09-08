@@ -174,5 +174,34 @@ and exits 0 for `store`/`erase`. Then re-probe. Do not build SSH key management.
 
 ## Outcome
 
-(Append here when done: what landed with commit shas, test counts before/after, what was skipped and why, anything
-you would have asked the user.)
+Completed 2026-09-08 in this worktree. Nothing was pushed.
+
+### Landed
+
+1. `302fac3` — `feat(code-link): show checkout reachability and git identity`
+   - Stores `remote`, scrubbed `remoteDetail`, and the last successful `remoteAt`; checkout placement and clone trigger a scan.
+   - Shows reachability in Repositories and the workstream title, counts unreachable repositories, and resolves the checkout's HTTPS/SSH login on demand without returning a password.
+2. `1cde272` — `feat(code-link): preflight remote access before starting`
+   - Probes every checkout before Start, blocks credential/unknown read failures, warns but permits local work during network failures, and dry-runs push authentication when agent push is enabled.
+3. `2e61f5c` — `feat(code-link): stop credential retry loops in sessions`
+   - Returns hook JSON through the MCP event route, recognizes both Bash failure event shapes, persists the credential block, denies subsequent remote commands, writes the failed moment, clears the block on Continue or a successful scan, and reads the current StopFailure fields.
+   - The agent platform exposes no per-tool shell event for headless engines. Headless sessions therefore use the available `agent/run-ended` error as a fallback and apply the same credential classification there.
+4. `db4e3e7` — `docs(code-link): teach agents to stop on credential failures`
+   - Adds the human-owned credential boundary to the implementation playbook and generated prompt conventions.
+
+### Checks
+
+- Before changes, `pnpm test`: 306 passed, 7 failed, 1 skipped (314 total). All seven failures were MCP-backed tests unable to bind `127.0.0.1:0`.
+- After tasks 1–4, `pnpm test`: 326 passed, 7 failed, 1 skipped (334 total). The same seven tests fail for the same sandbox restriction; a direct Node probe confirms `listen EPERM: operation not permitted 127.0.0.1` in this environment.
+- `pnpm build:backend` and `pnpm --filter @tomrade/ui typecheck` passed before every task commit.
+- Runnable focused coverage passed: 22/22 task-1 reachability tests; 3/3 task-2 preflight cases; 9/9 non-TCP session/start checks (with the one TCP terminal case excluded); and 3/3 task-4 prompt/session checks.
+
+### Skipped
+
+- Task 5 was not attempted. Its condition says tasks 1–4 and their checks must all be green; the required full suite cannot be green in this sandbox because local TCP listen is prohibited. No checkout credential helper or GitHub-token integration was written.
+- The MCP HTTP response assertion was added but could not execute here for the same TCP restriction. The response contract compiles, and the handler response plus generated curl command are covered without a socket.
+
+### What I would have asked
+
+- Whether to treat the sandbox's seven unchanged TCP-listener failures as an environmental exception and continue committing tasks 1–4. The brief says never ask and to decide, so I continued after proving the restriction independently and kept exact counts above.
+- Whether to attempt task 5 despite that exception. The brief's condition is explicit, so I skipped it.
