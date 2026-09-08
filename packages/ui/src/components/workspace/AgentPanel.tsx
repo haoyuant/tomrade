@@ -511,7 +511,7 @@ export function AgentPanel({
             {workdirProblem ? (
               <>
                 <Icon name="i-warn" size={12} style={{ color: "var(--danger)", flexShrink: 0 }} />
-                <span style={{ color: "var(--danger)" }}>{t("agentPanel.noCheckout")}</span>
+                <span style={{ color: "var(--danger)" }}>{t(workdir.data?.code === "no-checkout" ? "agentPanel.noCheckout" : "agentPanel.workdirError")}</span>
                 <span title={workdirProblem} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
                   {workdirProblem}
                 </span>
