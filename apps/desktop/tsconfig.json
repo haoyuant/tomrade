@@ -42,9 +42,6 @@
       "path": "../../packages/fields"
     },
     {
-      "path": "../../packages/hub"
-    },
-    {
       "path": "../../packages/ipc"
     },
     {
@@ -64,9 +61,6 @@
     },
     {
       "path": "../../packages/projects"
-    },
-    {
-      "path": "../../packages/repos"
     },
     {
       "path": "../../packages/settings"

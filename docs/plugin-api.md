@@ -110,8 +110,7 @@ consumer follows.
 
 | Key | Kind | Package | Owns |
 |---|---|---|---|
-| `ctx.db` | spine | `@tomrade/db` | The pool of SQLite caches — one per project plus the Hub's — the core schema, `migrate()` |
-| `ctx.hub` | spine | `@tomrade/hub` | This machine: its device id, the Hub folder, the catalog of projects and repository checkouts it knows |
+| `ctx.db` | spine | `@tomrade/db` | The SQLite connection, the core schema, `migrate()` |
 | `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast` |
 | `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
 | `ctx.fields` | spine | `@tomrade/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
@@ -121,8 +120,7 @@ consumer follows.
 | `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs |
 | `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
-| `ctx.storage` | spine registry | `@tomrade/storage` | The project folder as the truth: the text artifact, the write-through log, publish/refresh/merge, remote providers, the Hub's catalog |
-| `ctx.repos` | spine | `@tomrade/repos` | The code repositories workstreams stand for; this machine's checkouts; the worktrees agents run in |
+| `ctx.storage` | spine registry | `@tomrade/storage` | Where a project's shareable copy lives: providers, the text artifact, flush/refresh |
 | `ctx.llm` | seam | `@tomrade/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
 | `ctx.agent` | spine registry | `@tomrade/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
 | `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
@@ -282,19 +280,11 @@ bug; the helper asserts that a listener either refused or delegated.
 
 Exceptions, deliberately: projects are managed by humans through the UI and sit
 outside the oplog, and so are field *definitions* — schema, not work — while the
-*values* they hold ride on `items.update` like any other patch key. Everything
-else is logged: `views.setRank` lands a `rank` row (one item's manual position
-in one view, undoable, kept apart so history reads as decisions rather than
-drags), `boards.moveItems` is one `items.update` per issue, and
-`items.addRelation` / `removeRelation` are `blocks` patches. A patch that would
-close a dependency cycle is refused with `DependencyCycleError`.
-
-Every oplog row carries the machine that wrote it (`device`) and its position in
-that machine's own sequence (`deviceSeq`), so `device:deviceSeq` names one op
-everywhere, and `patch` — the fields the op changed — which is what the
-project folder's log carries. Undo reaches only this machine's own rows; a row
-that arrived from another machine's log is history and evidence, and taking it
-back is a new write of ours.
+*values* they hold ride on `items.update` like any other patch key;
+`views.setRank`, `items.addRelation` and `boards.moveItems` are not logged today. Dependency edits have a logged path: `blocks` is a patch
+field on `items.update`, versioned and undoable, and a patch that would close a
+cycle is refused with `DependencyCycleError` — `addRelation` remains the raw,
+unguarded helper for seeding.
 
 ## Tools
 
@@ -328,17 +318,6 @@ Agents reach them through `list_workstreams`, `create_workstream`,
 `update_workstream` and `remove_workstream` (which takes a `moveTo` for the
 issues a doomed workstream still holds); the renderer offers the same in the
 sidebar's Workstreams group and the Fields sheet.
-
-A workstream may **stand for a code repository**: `Board.repoId` names a row of
-`ctx.repos` (shared with the project — the remote URL is its identity) and
-`Board.repoPath` a folder inside it. Where that repository is checked out is
-this machine's alone (`ctx.repos.setCheckout(remote, dir)`, verified against the
-folder's origin, or `ctx.repos.clone(remote, branch)` into `<Hub>/repos/`). A
-thread on such a workstream runs its engine in a detached worktree of the
-checkout under `<Hub>/worktrees/`, or in the checkout itself when the user
-chose that, and refuses to start while no checkout is named. Tomrade never
-pushes a code repository. Agents see `list_repos`; `TurnInput.cwd` is where a
-code-running engine works.
 
 ## Fields
 
@@ -375,134 +354,110 @@ through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
 
 ## Storage
 
-`ctx.db` is a pool, not a connection. Every project has its own SQLite file
-under `<userData>/cache/projects/<id>/project.db`, and the Hub has one for
-hub-level plugin tables. Both are **caches**: the truth is the text in the
-project's folder (see Destinations), and any file here can be deleted and
-rebuilt. A repository resolves a handle per call and never keeps it:
-
-```ts
-ctx.db.for(projectId).prepare("SELECT …").all();   // a project's file; throws ProjectNotOpenError
-ctx.db.hub.prepare("SELECT …").all();              // hub.db
-ctx.db.openIds();                                   // the projects open on this machine
-```
-
-Every method that takes an entity id takes the **project id first** —
-`items.get(projectId, id)`, `views.setRank(projectId, viewId, itemId, rank)`,
-`oplog.undoLast(projectId)` — and so does every renderer channel. A tool
-resolves its project with `requireProjectId(name, args.projectId, inv)`, which
-refuses a call that names none and points at `list_projects`; there is no
-default project to fall back to.
-
 ```ts
 ctx.db.migrate("hello", [
-  { version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_hello_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" },
+  { version: 1, up: "CREATE TABLE IF NOT EXISTS plugin_hello_notes (id TEXT PRIMARY KEY, body TEXT)" },
   { version: 2, up: (db) => db.exec("ALTER TABLE plugin_hello_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0") }
-], {
-  tables: {
-    plugin_hello_notes: { project: "project_id", export: { order: "id" } }
+]);
+```
+
+Each namespace keeps its own version counter in `plugin_migrations`. SQL
+migrations may only create, alter or drop tables named `plugin_<namespace>_*`;
+the registry refuses anything else. Read and write your tables through
+`ctx.db.prepare()`; write core tables only through their services, so the
+policy and the oplog see it.
+
+## Destinations
+
+A project's live SQLite file always sits in `<userData>`. What the user chooses
+is where its *shareable copy* goes, and that copy is **text**: a `.tomrade/`
+folder holding `project.json`, one `state/<table>.jsonl` per core table sorted
+by id, and a `.gitignore` that keeps a database out. The serialisation is
+deterministic, so an unchanged project produces no diff and no commit.
+
+A **provider** moves that folder and nothing else. It never sees SQLite.
+
+```ts
+ctx.storage.register({
+  id: "acme-drive",
+  title: "Acme Drive",
+  configSchema: z.object({ folder: z.string().meta({ format: "directory" }) }),
+  defaults: { folder: "" },
+  // Resolve the destination from the config ALONE — an attach must open it
+  // before it can read which project is inside.
+  async open(config, { create }) {
+    return {
+      location: config.folder,
+      dir: config.folder,
+      pull: async () => ({ changed: false }),
+      push: async (message) => {},
+      status: async () => ({ state: "synced", location: config.folder }),
+      dispose: async () => {}
+    };
   }
 });
 ```
 
-`migrate` is a **registration**, applied to every open project file now and to
-each one opened later (create, attach, rebuild); it returns a disposer, and the
-registration goes with the plugin, though nothing drops a table. Each file keeps
-its own `plugin_migrations` counter. SQL migrations may only create, alter or
-drop tables named `plugin_<namespace>_*`, **and every table they create must be
-declared** in `tables` — the registry refuses a namespace that does not say:
+`register` is an effect: the provider, and its option in every project's
+settings, goes when the plugin unloads. `configSchema` is rendered by the
+renderer from `z.toJSONSchema()`, so a provider ships no UI code — and a
+`format: "password"` field in it is **refused at registration**, because a
+per-project config is committed alongside the code. Credentials belong in a
+`ctx.settings` section the provider registers, named in `settingsSection`.
 
-- `project` — how a table's rows belong to a project: a column, or a chain
-  through another table (`{ via: "thread_id", table: "plugin_hello_threads" }`).
-  Project deletion, the legacy split and the export all use it.
-- `export` — where the durable copy goes. `{ order, appendOnly? }` puts the
-  table in the project's folder as `.tomrade/plugins/<ns>/<table>.jsonl`, so it
-  travels with the project and merges (append-only tables by union, others by
-  row); `false` means machine-local working state, gone when the cache is rebuilt.
-- `scope: "hub"` (on the call) for tables that belong to no project: they live in
-  `hub.db`, need no `project`, and export to the Hub folder's `plugins/`.
-
-Pure configuration is never a table — register a settings section. A file that
-arrives with a higher version of your namespace than this build knows is opened
-with your tables marked unhealthy (`ctx.db.healthy(ns, projectId)`) rather than
-refused; a file carrying tables of a plugin this machine lacks carries them on
-unchanged.
-
-## Destinations
-
-Every project is a **folder the user can see** — by default
-`<Hub>/projects/<slug>/` under the Hub folder (`~/Tomrade`) chosen on first
-run — holding `.tomrade/`: `project.json` (identity, schema version, a digest of
-the state files and a `checkpoint` of each machine's furthest op), `state/` (one
-`<table>.jsonl` per core table, sorted by id), `log/<device>.jsonl` (each
-machine's own change log, append-only, written through on every commit, compacted
-to a window), `plugins/<ns>/<table>.jsonl` (plugin tables the project exports),
-`docs/` (the user's), a `.gitattributes` that lets git keep both sides of a
-line clash (`merge=union`), and a `README.md` for whoever finds the folder.
-
-**The folder is the truth and the cache follows it.** A write lands in the cache
-and in the log at once; the snapshot is rewritten after a quiet period, each
-file through a temporary name and the manifest last, so a reader never sees a
-manifest describing files that are not there yet. A folder changed by anyone
-else (a pull, a sync tool, a hand edit) is read back in: taken whole when the
-cache is clean, **merged** when both moved. The merge is a pure function
-(`mergeStates` in `@tomrade/storage`): a row changed on one side only is taken,
-a row changed on both merges field by field, the same field changed on both is
-settled by the logs — later `at` wins, tie by device id, silence falls to the
-folder — and every contested field leaves a `merge` row in the oplog by
-`ai:sync`, with the losing value in `before`, which undo steps over. A row
-deleted on one side and edited on the other keeps the edit. Issue keys minted
-on both sides are renumbered on the side that never published them.
-
-Who drives git in the folder depends on where it is (`ctx.storage.info(id).git`):
-
-| Origin | Means | Tomrade does |
-|---|---|---|
-| `none` | A plain folder — of its own, or in Dropbox | Writes files; a sync tool moves them |
-| `dedicated` | A repository Tomrade made for the project alone (`project.json.repo`) | Commits, fetches, merges with a merge commit, pushes — never forces |
-| `shared` | Inside the user's own code checkout | Writes `.tomrade/` only; optionally commits that subtree; `fetch` for status; **never push, pull, checkout or reset** |
-
-A **provider** is a remote transport for a dedicated repository: it turns a
-non-secret config into a git remote, and may find or create one. It never sees
-SQLite and never touches a folder.
+A destination that needs an account declares a `connection`, and the renderer
+collects it **where it is used** — in the project's own destination block —
+rather than in a settings card the user has to go and find first:
 
 ```ts
-ctx.storage.register(createRemoteProvider({
-  id: "acme-git",
-  title: "Acme Git",
-  configSchema: z.object({ project: z.string() }),
-  defaults: { project: "" },
-  toRemote: (c) => ({ url: `https://git.acme.dev/${c.project}.git`, branch: "main" }),
-  async ensureRemote(c) { /* create it */ },
-  async browse() { return [{ label: "acme/app", config: { project: "acme/app" } }]; }
-}));
+connection: {
+  prompt: { label: "Personal access token", help: "…", url: "https://…/tokens/new" },
+  status: () => Promise<{ connected: boolean; label?: string; detail?: string }>,
+  connect: (secret: string) => Promise<{ connected: boolean; label?: string }>,
+  disconnect: () => Promise<void>
+}
 ```
 
-`register` is an effect. `configSchema` is rendered from `z.toJSONSchema()` so a
-provider ships no UI code; a `format: "password"` field is **refused at
-registration** — credentials belong in a `ctx.settings` section named in
-`settingsSection`, collected inline through `connection` where the remote is
-chosen. `browse()` and `draft(name)` remove typing. `@tomrade/storage-git`
-registers `git` (any URL); `@tomrade/storage-github` adds discovery and
-creation on top.
+The secret is still the provider's to keep, in its own `ctx.settings` section,
+because one account serves every project and none of it may reach a config that
+gets committed. But a section a storage provider claims through
+`settingsSection` is **not drawn again** by the settings dialog — the connection
+block is where it lives. Verify before storing: a credential that does not work
+should never be saved.
+
+Two more optional capabilities remove typing. `browse()` lists what the account
+already has as ready-made configs, and `draft(name)` builds a whole config from
+a name alone, for a destination that does not exist yet. A provider offering
+both means the user picks from a list or types one name — never four fields.
+
+The states a project can be in are decided by content, not by trust: the
+artifact's own digest is compared with the one last published, so `ahead`,
+`behind` and `diverged` read the same whether a change arrived by git, by
+rsync or by hand. `flush` refuses to overwrite a destination that has moved,
+`refresh` refuses to discard local work that has not been published, and
+neither ever deletes a copy holding writes the other side lacks.
 
 | Call | Does |
 |---|---|
-| `ctx.storage.info(projectId)` | Folder, origin, remote, what travels |
-| `ctx.storage.statusFor(projectId)` | `local` / `synced` / `ahead` / `behind` / `diverged` / `syncing` / `offline` / `error` / `unavailable` |
-| `ctx.storage.publish(projectId)` | Snapshot now; commit and push a dedicated repository |
-| `ctx.storage.refresh(projectId)` | Take the folder's (or remote's) changes: import or merge |
-| `ctx.storage.sync(projectId)` | `refresh`, then `publish` |
-| `ctx.storage.setFolder(projectId, dir)` | Move the project to another folder; the old one is left alone |
-| `ctx.storage.setExports(projectId, ns[])` | Which plugin namespaces travel (shared through the manifest) |
-| `ctx.storage.bind(projectId, providerId, config)` | Give a dedicated repository a remote; refused for a shared checkout |
-| `ctx.storage.attach(dir)` / `attachRemote(providerId, config)` | Open a folder, or clone a published project into the Hub |
-| `ctx.storage.rebuild(projectId)` | Drop the cache and read the folder again, history included |
+| `ctx.storage.bind(projectId, providerId, config)` | Point a project at a destination and publish it there |
+| `ctx.storage.unbind(projectId)` | Forget the destination. Nothing there is deleted |
+| `ctx.storage.flush(projectId)` | Publish. Skips entirely when the bytes would be identical |
+| `ctx.storage.refresh(projectId)` | Take the destination's copy, when local is clean |
+| `ctx.storage.sync(projectId)` | `refresh`, then `flush` |
+| `ctx.storage.attach(providerId, config)` | Bring in a project this machine does not know; returns its id |
+| `ctx.storage.statusFor(projectId)` | `local` / `synced` / `ahead` / `behind` / `diverged` / `offline` / `error` / `unavailable`. Contacts the remote, so poll it sparingly |
 
-Events: `storage/registered`, `storage/unregistered`, `storage/synced`,
-`storage/imported`; the renderer hears `storage.changed(projectId)`.
-`ctx.storage.artifactDirFor(projectId)` names `<dir>/.tomrade` for whatever
-reads what travels beside the state (playbooks, docs).
+An **unbound project is a local project**: there is no `local` provider to keep
+in step, and `statusFor` answers `local`. Events are `storage/registered`,
+`storage/unregistered`, `storage/synced` and `storage/imported`; the renderer
+hears `storage.changed(projectId)` and refetches everything keyed by it.
+
+`@tomrade/storage-git` adds git as a mechanism — a clone under `<userData>`,
+fast-forward-only pulls, commits of *only* its own subtree so it is safe inside
+the user's own checkout, and a push that is reported rather than forced when it
+would not fast-forward. `@tomrade/storage-github` adds only what git cannot do
+alone: find a repository and make one. A hosting provider for GitLab or Gitea is
+`createGitProvider` plus a REST client, in a row of its own.
 
 ## Settings
 
@@ -522,13 +477,6 @@ validates each registered section against its schema and persists the file.
 The settings dialog draws a card for every section it does not lay out by hand,
 from the schema's JSON Schema: strings, numbers, booleans and enums; a string
 with `format: "password"` is masked.
-
-A section has a **scope**. `machine` (the default) stays in
-`<userData>/settings.json`: credentials, paths, binaries. `user` follows the
-person: it is also written to `<Hub>/settings.json` with a timestamp per
-section, travels with the Hub, and a clash between two machines is settled by
-the later stamp. A section whose schema holds a password is `machine` whatever
-it declares.
 
 ## Contributions
 
