@@ -32,6 +32,7 @@ export function createCodexEngine(ctx: Context): Engine {
     id: "codex",
     title: "Codex",
     author: "ai:codex",
+    capabilities: ["backlog", "code"],
     options: CodexOptions,
     picks: () => [
       { key: "model", title: "Model", choices: [{ value: "gpt-5-codex" }, { value: "gpt-5" }], freeText: true },

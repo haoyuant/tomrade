@@ -40,6 +40,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     id: "claude-code",
     title: "Claude Code",
     author: "ai:claude-code",
+    capabilities: ["backlog", "code"],
     options: ClaudeCodeOptions,
     picks: () => [
       // aliases the CLI resolves itself, so they don't go stale with releases

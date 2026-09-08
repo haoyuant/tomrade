@@ -179,11 +179,21 @@ export interface TurnResult {
   resume?: string;
 }
 
+/**
+ * What an engine can be trusted with. `backlog` talks to the app through its
+ * tools; `code` also edits files and runs commands in a repository — only a
+ * local coding agent (Claude Code, Codex…) declares it, and only such an engine
+ * is offered when a ticket is started.
+ */
+export type EngineCapability = "backlog" | "code";
+
 /** Anything that can take one turn on a thread. The conductor seam. */
 export interface Engine {
   id: string;
   title: string;
   author: Author;
+  /** Absent means `["backlog"]`. */
+  capabilities?: EngineCapability[];
   available(): Promise<{ ok: boolean; reason?: string }>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
@@ -204,6 +214,7 @@ export interface EnginePick {
 export interface EngineView {
   id: string;
   title: string;
+  capabilities: EngineCapability[];
   ok: boolean;
   reason?: string;
   picks?: EnginePick[];

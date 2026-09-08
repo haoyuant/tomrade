@@ -1,0 +1,214 @@
+/**
+ * Against a real repository, because the point is that git is the truth: a
+ * branch named after a ticket moves it to doing, a merge to done, and a ticket
+ * that claims more than the code shows is flagged for a person — never moved
+ * back by the scanner itself.
+ */
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { CodeLink } from "@tomrade/code-link";
+import { Contributions } from "@tomrade/contributions";
+import { Repos } from "@tomrade/repos";
+import { Storage } from "@tomrade/storage";
+import { fresh, settle } from "@tomrade/testkit";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-link-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
+
+let n = 0;
+/** A bare remote with one commit on main, and a developer's checkout of it. */
+function codeRepo(opts: { manifest?: boolean; empty?: boolean } = {}): { remote: string; checkout: string } {
+  const remote = path.join(root, `remote-${n++}.git`);
+  fs.mkdirSync(remote, { recursive: true });
+  git(["init", "--bare", "-b", "main", "."], remote);
+  const checkout = path.join(root, `checkout-${n++}`);
+  fs.mkdirSync(checkout, { recursive: true });
+  git(["init", "-q", "-b", "main"], checkout);
+  git(["remote", "add", "origin", remote], checkout);
+  git(["config", "user.email", "dev@localhost"], checkout);
+  git(["config", "user.name", "Dev"], checkout);
+  if (opts.empty) return { remote, checkout };
+  fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
+  if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
+  git(["add", "-A"], checkout);
+  git(["commit", "-q", "-m", "initial"], checkout);
+  git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+  return { remote, checkout };
+}
+
+function commitOn(checkout: string, branch: string, file: string, message: string): string {
+  const current = git(["rev-parse", "--abbrev-ref", "HEAD"], checkout);
+  if (current !== branch) {
+    const exists = execFileSync("git", ["branch", "--list", branch], { cwd: checkout, encoding: "utf8" }).trim();
+    // A new branch always starts from main, whatever the last test step left checked out.
+    git(exists ? ["checkout", "-q", branch] : ["checkout", "-q", "-b", branch, "main"], checkout);
+  }
+  fs.writeFileSync(path.join(checkout, file), `${message}\n`);
+  git(["add", "-A"], checkout);
+  git(["commit", "-q", "-m", message], checkout);
+  return git(["rev-parse", "HEAD"], checkout);
+}
+
+async function machine(repo: { remote: string; checkout: string }) {
+  const hubDir = path.join(root, `hub-${n++}`);
+  fs.mkdirSync(hubDir, { recursive: true });
+  const bag = await fresh({
+    hubDir,
+    plugins: [[Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }], Repos, Contributions, [CodeLink, { scanMs: 0 }]]
+  });
+  await settle();
+  await bag.ctx.storage.ready;
+  const row = bag.ctx.repos.create({ projectId: bag.project.id, remote: repo.remote });
+  bag.boards.update(bag.project.id, bag.board.id, { repoId: row.id });
+  await bag.ctx.repos.setCheckout(repo.remote, repo.checkout);
+  const ticket = (title: string, status?: "backlog" | "todo" | "doing" | "verifying" | "done" | "cancelled") =>
+    bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, status, by: "human" });
+  return { ...bag, codeLink: bag.ctx.codeLink, repo: row, checkout: repo.checkout, ticket };
+}
+
+describe("code link", () => {
+  it("links a branch named after a ticket and moves the ticket to doing, then done on merge", async () => {
+    const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Push notifications", "todo");
+    const branch = `tom-${item.keyNum}/push`;
+    const sha = commitOn(checkout, branch, "push.ts", `TOM-${item.keyNum}: push`);
+    git(["push", "-q", "origin", branch], checkout);
+
+    const first = await codeLink.scan(project.id);
+    expect(first).toMatchObject({ repos: 1, scanned: 1, offline: 0, links: 1, changed: 1, proposals: 0 });
+    const [link] = codeLink.links(project.id, item.id);
+    expect(link).toMatchObject({ repoId: repo.id, branch, headSha: sha, ahead: 1, behind: 0, mergedSha: null, source: "scan" });
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(items.get(project.id, item.id)!.updatedBy).toBe("ai:code-link");
+    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "branch", label: "branch", tone: "neutral", title: branch }]);
+    const section = ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!;
+    expect(section.rows.map((r) => r.label)).toEqual(["Branch", "Last commit"]);
+    expect(section.rows[0].value).toContain(branch);
+
+    // The repository is a project with a manifest and no CLAUDE.md yet.
+    expect(codeLink.repoState(project.id, repo.id)).toMatchObject({ readiness: "scaffolded", hasBrief: false, manifests: ["package.json"] });
+
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    const second = await codeLink.scan(project.id);
+    expect(second.changed).toBe(1);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    expect(codeLink.links(project.id, item.id)[0].mergedSha).toBeTruthy();
+    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "merged", label: "merged", tone: "faint" }]);
+
+    // Nothing left to say: a third scan is quiet.
+    expect((await codeLink.scan(project.id)).changed).toBe(0);
+  });
+
+  it("reads a squash merge from the default branch's message when the branch is already gone", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Squashed", "doing");
+    const branch = `tom-${item.keyNum}/squash`;
+    commitOn(checkout, branch, "a.ts", "work in progress");
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--squash", branch], checkout);
+    git(["commit", "-q", "-m", `TOM-${item.keyNum}: squash merge`], checkout);
+    git(["branch", "-q", "-D", branch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    const [link] = codeLink.links(project.id, item.id);
+    expect(link.branch).toBe("");
+    expect(link.mergedSha).toBe(git(["rev-parse", "HEAD"], checkout));
+  });
+
+  it("flags a ticket that says done while its branch is unmerged, and lets a person settle it", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Claimed done", "done");
+    const branch = `tom-${item.keyNum}/early`;
+    commitOn(checkout, branch, "b.ts", `TOM-${item.keyNum}`);
+
+    const summary = await codeLink.scan(project.id);
+    expect(summary.changed).toBe(0);
+    expect(summary.proposals).toBe(2);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    const open = codeLink.proposals(project.id, item.id);
+    expect(open.map((p) => [p.kind, p.toStatus])).toEqual([
+      ["flag", null],
+      ["propose", "verifying"]
+    ]);
+    expect(ctx.contributions.badgesFor(project.id)[item.id][0]).toMatchObject({ id: "mismatch", tone: "strong" });
+    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!.text).toContain("done, but the branch is not merged");
+
+    // Asked again, nothing new is raised.
+    expect((await codeLink.scan(project.id)).proposals).toBe(0);
+
+    const proposal = open.find((p) => p.kind === "propose")!;
+    codeLink.resolve(project.id, proposal.id, true);
+    const after = items.get(project.id, item.id)!;
+    expect(after.status).toBe("verifying");
+    expect(after.updatedBy).toBe("human");
+    // The flag no longer applies once the status matches the code.
+    await codeLink.scan(project.id);
+    expect(codeLink.proposals(project.id, item.id)).toEqual([]);
+  });
+
+  it("rejected once, the same proposal is not raised again for the same evidence", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Locked", "todo");
+    items.update(project.id, item.id, { humanLocked: true }, "human");
+    const branch = `tom-${item.keyNum}/locked`;
+    commitOn(checkout, branch, "c.ts", "c");
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("todo");
+    const [proposal] = codeLink.proposals(project.id, item.id);
+    expect(proposal).toMatchObject({ kind: "propose", toStatus: "doing" });
+    codeLink.resolve(project.id, proposal.id, false);
+    await codeLink.scan(project.id);
+    expect(codeLink.proposals(project.id, item.id)).toEqual([]);
+
+    // New evidence — another commit — asks again.
+    commitOn(checkout, branch, "d.ts", "d");
+    await codeLink.scan(project.id);
+    expect(codeLink.proposals(project.id, item.id)).toHaveLength(1);
+  });
+
+  it("lists branches that name a ticket the project does not have, and accepts a branch linked by hand", async () => {
+    const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
+    commitOn(checkout, "tom-999/orphan", "o.ts", "o");
+    const item = ticket("Odd name", "todo");
+    commitOn(checkout, "hotfix/odd", "h.ts", "h");
+
+    await codeLink.scan(project.id);
+    expect(codeLink.unlinked(project.id)).toMatchObject([{ repoId: repo.id, branch: "tom-999/orphan", keyNum: 999 }]);
+    expect(ctx.contributions.statusItems({ projectId: project.id }).find((s) => s.id === "code-link")!.text).toMatch(/1 unlinked/);
+    expect(codeLink.links(project.id, item.id)).toEqual([]);
+
+    codeLink.linkBranch(project.id, item.id, repo.id, "hotfix/odd");
+    await codeLink.scan(project.id);
+    const [link] = codeLink.links(project.id, item.id);
+    expect(link).toMatchObject({ branch: "hotfix/odd", source: "manual", ahead: 1 });
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("doing");
+  });
+
+  it("calls a repository with no commits empty, and one without a manifest too", async () => {
+    const empty = await machine(codeRepo({ empty: true }));
+    await empty.codeLink.scan(empty.project.id);
+    expect(empty.codeLink.repoState(empty.project.id, empty.repo.id)).toMatchObject({ readiness: "empty", manifests: [] });
+
+    const bare = await machine(codeRepo({ manifest: false }));
+    await bare.codeLink.scan(bare.project.id);
+    expect(bare.codeLink.repoState(bare.project.id, bare.repo.id)).toMatchObject({ readiness: "empty", hasBrief: false });
+  });
+
+  it("skips a repository this machine has no checkout of, and says so", async () => {
+    const { codeLink, ctx, project } = await machine(codeRepo());
+    const other = ctx.repos.create({ projectId: project.id, remote: "git@github.com:acme/elsewhere.git" });
+    const summary = await codeLink.scan(project.id);
+    expect(summary.skipped).toEqual([{ repoId: other.id, reason: "no checkout on this machine" }]);
+    expect(codeLink.repoState(project.id, other.id)!.readiness).toBe("unknown");
+  });
+});

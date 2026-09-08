@@ -17,6 +17,9 @@
       "path": "./packages/boards"
     },
     {
+      "path": "./packages/code-link"
+    },
+    {
       "path": "./packages/contributions"
     },
     {

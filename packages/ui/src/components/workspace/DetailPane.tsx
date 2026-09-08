@@ -18,7 +18,9 @@ import {
 } from "~/components/issue/fields";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useFields, useHistory, useSections } from "~/lib/queries";
+import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
+import { openExternal } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
@@ -53,9 +55,13 @@ export function Ledger({ projectId, itemId }: { projectId: string; itemId: strin
   );
 }
 
-/** Plugin sections come as rows and text; the pane draws them with its own primitives. */
+/** Plugin sections come as rows and text; the pane draws them with its own primitives. A row may open a link or run a command. */
 export function PluginSections({ projectId, itemId, variant = "pane" }: { projectId: string; itemId: string; variant?: "pane" | "sheet" }) {
   const sections = useSections(projectId, itemId);
+  const runCommand = useRunCommand(projectId);
+  const toast = useToast();
+  const run = (id: string) =>
+    runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast({ body: e.message }) });
   return (
     <>
       {(sections.data ?? []).map((s) => {
@@ -63,10 +69,28 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
           <>
             {s.rows.length > 0 && (
               <dl className="fieldstrip" style={{ marginTop: 0 }}>
-                {s.rows.map((r) => (
-                  <div className="field-row" key={r.label}>
+                {s.rows.map((r, i) => (
+                  <div className="field-row" key={`${r.label}-${i}`}>
                     <dt>{r.label}</dt>
-                    <dd>{r.value}</dd>
+                    <dd>
+                      {r.href ? (
+                        <a
+                          href={r.href}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            openExternal(r.href!);
+                          }}
+                        >
+                          {r.value}
+                        </a>
+                      ) : r.command ? (
+                        <button type="button" className="btn btn-secondary" disabled={runCommand.isPending} onClick={() => run(r.command!)}>
+                          {r.value}
+                        </button>
+                      ) : (
+                        r.value
+                      )}
+                    </dd>
                   </div>
                 ))}
               </dl>

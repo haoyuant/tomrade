@@ -12,6 +12,7 @@ export {
   type Block,
   type CardView,
   type Engine,
+  type EngineCapability,
   type EnginePick,
   type EngineView,
   type FocusRef,

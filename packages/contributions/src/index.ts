@@ -73,6 +73,10 @@ export type GraphInfo = Omit<GraphSpec, "compute">;
 export interface SectionRow {
   label: string;
   value: string;
+  /** The value opens this link in the browser. */
+  href?: string;
+  /** The value runs this palette command with the item in scope. */
+  command?: string;
 }
 
 export interface Section {

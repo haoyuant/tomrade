@@ -61,6 +61,8 @@ modules:
     title: Assistant
   - id: mcp
     title: MCP server
+  - id: codeLink
+    title: Code link
 
 plugins:
   # Caches only: every file under here can be rebuilt from a project's folder.
@@ -137,6 +139,13 @@ plugins:
   # "blocked" badge. Optional — the platform stores the edges either way.
   - id: deps-graph
     name: "@tomrade/deps-graph"
+  # Ticket ↔ code: the branches, pull requests and coding sessions of a ticket,
+  # its status read from git, and the Start button that hands a ticket to a
+  # local coding agent. Optional — nothing else reads its tables.
+  - id: code-link
+    name: "@tomrade/code-link"
+    config:
+      scanMs: 120000
   - id: mcp
     name: "@tomrade/mcp"
     config:
