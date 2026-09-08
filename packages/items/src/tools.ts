@@ -41,6 +41,9 @@ export function registerTools(ctx: Context): void {
       input: listItemsFilterSchema.extend({ search: z.string().optional(), filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() }),
       execute({ search, filter: clauses, sort, ...filter }, inv) {
         const projectId = requireProjectId("list_items", filter.projectId, inv);
+        // A boardId that names no real workstream would otherwise match zero rows
+        // silently — indistinguishable from a project that genuinely has none.
+        if (filter.boardId !== undefined && !ctx.boards.list(projectId).some((b) => b.id === filter.boardId)) throw new NotFoundError(filter.boardId);
         const items =
           clauses?.length || sort?.length
             ? ctx.items.query({ projectId, filter: clauses, sortBy: sort }).filter((i) => matchesSimple(i, filter))
