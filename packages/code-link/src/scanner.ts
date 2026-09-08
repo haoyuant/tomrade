@@ -138,7 +138,11 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
         b.ahead = ahead || 0;
         b.behind = behind || 0;
       }
-      b.merged = (await run(["merge-base", "--is-ancestor", b.sha, defaultRef])).code === 0;
+      // A fresh ticket branch points at the current default commit, so it is
+      // technically an ancestor without having delivered any work. Treat that
+      // as unmerged; a later scan sees a real merge commit or the default-log
+      // key evidence instead.
+      b.merged = (b.ahead > 0 || b.behind > 0) && (await run(["merge-base", "--is-ancestor", b.sha, defaultRef])).code === 0;
     }
   }
 

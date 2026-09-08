@@ -11,6 +11,8 @@ export interface Evidence {
   /** The work reached the default branch: the branch was merged, or a default-branch commit names the key. */
   merged: boolean;
   pr: PrState | null;
+  /** A coding agent is still actively working on this ticket. */
+  working?: boolean;
   /** The branch head moved after the ticket was marked done. */
   movedAfterDone: boolean;
 }
@@ -42,6 +44,7 @@ export function decide(status: ItemStatus, e: Evidence, policy: RulePolicy): Dec
     return out;
   }
   if (e.merged) {
+    if (e.working) return out;
     if (BEFORE_DONE.has(status)) {
       if (policy.autoDone) forward("done", "merged into the default branch");
       else propose("done", "merged into the default branch");

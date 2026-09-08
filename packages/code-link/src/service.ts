@@ -786,6 +786,7 @@ export class CodeLink extends Service {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
       merged: links.some((l) => !!l.mergedSha),
+      working: this.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running"),
       pr: primary?.prState ?? null,
       movedAfterDone:
         item.status === "done" &&

@@ -110,6 +110,26 @@ describe("code link", () => {
     expect((await codeLink.scan(project.id)).changed).toBe(0);
   });
 
+  it("does not mark a ticket done while its active session is on an uncommitted branch", async () => {
+    const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Still working", "doing");
+    const branch = `tom-${item.keyNum}/still-working`;
+    git(["branch", branch, "main"], checkout);
+    codeLink.store.createSession(project.id, {
+      repoId: repo.id,
+      branch,
+      itemIds: [item.id],
+      mode: "terminal",
+      agent: "claude-code",
+      threadId: null,
+      device: "test"
+    });
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 0, behind: 0, mergedSha: null });
+  });
+
   it("reads a squash merge from the default branch's message when the branch is already gone", async () => {
     const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Squashed", "doing");
