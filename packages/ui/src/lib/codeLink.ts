@@ -27,6 +27,21 @@ export const useRepoStates = (projectId: string) => useQuery({ queryKey: codeLin
 export const useRemoteIdentity = (remote: string, enabled: boolean) =>
   useQuery({ queryKey: codeLinkKeys.remoteIdentity(remote), queryFn: () => invoke("codeLink.remoteIdentity", remote), enabled });
 
+export const useGithubCredentialAccount = (projectId: string, repoId: string, enabled: boolean) =>
+  useQuery({ queryKey: ["codeLink", projectId, "githubCredentialAccount", repoId], queryFn: () => invoke("codeLink.githubCredentialAccount", projectId, repoId), enabled });
+
+export function useGithubCredential(projectId: string, remote: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (repoId: string) => invoke("codeLink.useGithubCredential", projectId, repoId),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
+      void qc.invalidateQueries({ queryKey: codeLinkKeys.remoteIdentity(remote) });
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
 export const useProposals = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: codeLinkKeys.proposals(projectId, itemId), queryFn: () => invoke("codeLink.proposals", projectId, itemId) });
 

@@ -8,6 +8,7 @@ describe("remote reachability", () => {
     "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
     "git@github.com: Permission denied (publickey).",
     "remote: Repository not found.",
+    "fatal: repository 'https://github.com/owner/private.git/' not found",
     "The requested URL returned error: 403",
     "Invalid username or token."
   ])("classifies a credential failure: %s", (stderr) => {

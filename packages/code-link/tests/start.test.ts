@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomrade/agent";
 import { CodeLink, BOOTSTRAP_LABEL } from "@tomrade/code-link";
@@ -82,7 +82,7 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
       Tools,
       [Settings, { path: path.join(hubDir, "settings.json") }],
       [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
-      Repos,
+      [Repos, { gitBinary: opts.gitBinary ?? "git" }],
       Contributions,
       Agent,
       enginePlugin,
@@ -107,6 +107,56 @@ async function untilRunsSettle(agent: Agent, timeout = 8000) {
     await new Promise((r) => setTimeout(r, 15));
   }
 }
+
+it("offers the connected account for credential failures, reprobes after switching, and supplies headless gh credentials", async () => {
+  const local = codeRepo();
+  const remote = "https://github.com/example/private-app";
+  git(["remote", "set-url", "origin", remote], local.checkout);
+  const binary = path.join(root, `git-credential-probe-${n++}`);
+  fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = "fetch" ]; then echo 'Repository not found' >&2; exit 128; fi\nif [ "$1" = "ls-remote" ]; then\n  git config --local --get-all credential.https://github.com.helper | grep -q tomrade-credential && exit 0\n  echo 'Repository not found' >&2; exit 128\nfi\nexec git "$@"\n`, { mode: 0o755 });
+  const world = await machine({ ...local, remote }, { gitBinary: binary });
+  const { ctx, codeLink, project, repo, hubDir } = world;
+  const connection = vi.spyOn(ctx.storage, "connection").mockResolvedValue({ connected: true, label: "@right-account" });
+  fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ github: { token: "fake-project-token" } }));
+  await ctx.repos.setCheckout(remote, local.checkout);
+  await codeLink.scan(project.id);
+  expect(await codeLink.githubCredentialAccount(project.id, repo!.id)).toBe("@right-account");
+  connection.mockResolvedValueOnce({ connected: false });
+  await expect(codeLink.useGithubCredential(project.id, repo!.id)).rejects.toThrow("Connect your GitHub account");
+  const state = await codeLink.useGithubCredential(project.id, repo!.id);
+  expect(state).toMatchObject({ remote: "ok", remoteDetail: null });
+  expect(state.remoteAt).toBeGreaterThan(0);
+  expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account" });
+  expect(await codeLink.githubCredentialAccount(project.id, repo!.id)).toBeNull();
+  const item = world.ticket("Use the connected account");
+  codeLink.setRepoPolicy(project.id, repo!.id, { agentPush: false });
+  expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: true });
+  await untilRunsSettle(world.agent);
+  expect(world.turns.at(-1)?.env).toEqual({ GH_TOKEN: "fake-project-token", GITHUB_TOKEN: "fake-project-token" });
+  expect(JSON.stringify(world.agent.store.messages(project.id, world.turns.at(-1)!.threadId))).not.toContain("fake-project-token");
+  git(["remote", "set-url", "origin", "https://github.com/example/different"], local.checkout);
+  await expect(codeLink.useGithubCredential(project.id, repo!.id)).rejects.toThrow("origin has changed");
+  connection.mockRestore();
+});
+
+it("keeps an unsuccessful credential reprobe unreachable and does not offer account switching for network failures", async () => {
+  const local = codeRepo();
+  const remote = "https://github.com/example/still-private";
+  git(["remote", "set-url", "origin", remote], local.checkout);
+  const binary = path.join(root, `git-denied-${n++}`);
+  fs.writeFileSync(binary, '#!/bin/sh\nif [ "$1" = "fetch" ] || [ "$1" = "ls-remote" ]; then echo "Repository not found" >&2; exit 128; fi\nexec git "$@"\n', { mode: 0o755 });
+  const { ctx, codeLink, project, repo, hubDir } = await machine({ ...local, remote }, { gitBinary: binary });
+  const connection = vi.spyOn(ctx.storage, "connection").mockResolvedValue({ connected: true, label: "@account" });
+  fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ github: { token: "fake-token" } }));
+  await ctx.repos.setCheckout(remote, local.checkout);
+  await codeLink.scan(project.id);
+  expect(await codeLink.useGithubCredential(project.id, repo!.id)).toMatchObject({ remote: "unreachable", remoteDetail: "Repository not found" });
+  codeLink.store.upsertRepoState(project.id, repo!.id, { remote: "unreachable", remoteDetail: "Could not resolve host" });
+  expect(await codeLink.githubCredentialAccount(project.id, repo!.id)).toBeNull();
+  const ssh = ctx.repos.create({ projectId: project.id, remote: "git@github.com:example/ssh.git" });
+  await expect(codeLink.useGithubCredential(project.id, ssh.id)).rejects.toThrow("HTTPS GitHub");
+  connection.mockRestore();
+});
 
 describe("starting a ticket", () => {
   it("answers each gate with the thing that clears it", async () => {

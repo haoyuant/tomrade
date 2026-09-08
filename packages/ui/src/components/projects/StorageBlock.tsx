@@ -100,7 +100,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="storage-block stack-4">
+    <div className="storage-block project-settings-body">
       {/* ── the folder ────────────────────────────────────────────────── */}
       <div>
         <Eyebrow>{t("storageBlock.folderLabel")}</Eyebrow>

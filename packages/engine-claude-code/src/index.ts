@@ -88,10 +88,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
       fs.writeFileSync(mcpFile, JSON.stringify({ mcpServers: { tomrade: { type: "http", url, headers: { "X-Tomrade-Run": token } } } }));
       fs.writeFileSync(sysFile, buildSystem(input, io, "Claude Code"));
 
-      // A backlog turn is a guest in the app: only our MCP server, and dontAsk
-      // denies anything not allowlisted instead of hanging a headless process on
-      // a confirmation prompt. A code turn is the user's own coding agent at
-      // work in a worktree: their MCP servers stay, edits are accepted.
+      // A headless turn is a guest in the app: only our MCP server. Loading the
+      // user's other MCP servers here can hold every prompt on their startup
+      // timeout; terminal sessions remain the place for the user's full setup.
+      // dontAsk denies anything not allowlisted on backlog turns, while code
+      // turns work in their own worktree and accept edits.
       const code = input.purpose === "code";
       const args = [
         "-p",
@@ -102,7 +103,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
         "--include-partial-messages",
         "--mcp-config",
         mcpFile,
-        ...(code ? [] : ["--strict-mcp-config"]),
+        "--strict-mcp-config",
         "--permission-mode",
         code ? options.codePermissionMode : "dontAsk",
         "--allowedTools",
@@ -126,6 +127,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
       try {
         const run = runJsonl(options.command, args, {
           cwd: input.cwd ?? tmp,
+          env: { ...process.env, ...input.env },
           signal: io.signal,
           onLine: (raw) => {
             const line = raw as StreamLine;

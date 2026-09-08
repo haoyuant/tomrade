@@ -16,6 +16,7 @@ import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureM
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal } from "./terminal.js";
+import { githubHttps, usesTomradeCredential, withGithubCredential } from "./credentials.js";
 
 export type StartMode = "run" | "terminal";
 export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
@@ -192,7 +193,9 @@ export class Starter {
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const template = engineId === "codex" ? terminalSettings.codexCommand : engineId === "other" ? terminalSettings.otherCommand : terminalSettings.claudeCommand;
     const resume = session.externalId ? (engineId === "codex" ? `resume ${session.externalId}` : engineId === "other" ? session.externalId : `--resume ${session.externalId}`) : "";
-    const command = fillTemplate(template, { cwd: where.cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, resume });
+    const baseCommand = fillTemplate(template, { cwd: where.cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, resume });
+    const hub = ctx.hub.dir;
+    const command = hub && githubHttps(repo.remote) && await usesTomradeCredential(this.host.git, where.cwd, hub) ? withGithubCredential(hub, baseCommand) : baseCommand;
     const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);

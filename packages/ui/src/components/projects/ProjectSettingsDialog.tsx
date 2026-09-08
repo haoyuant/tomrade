@@ -154,39 +154,41 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
   return (
     <>
       <DialogHead title={t("projectSettingsDialog.headTitle")} aside={<Tag tone="neutral">{name.trim() || project.name}</Tag>} />
-      <DialogBody className="stack-4">
-        <div className="field">
-          <label htmlFor="psName">{t("projectSettingsDialog.projectNameLabel")}</label>
-          <input id="psName" autoFocus className="input" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="psDesc">{t("projectSettingsDialog.descriptionLabel")}</label>
-          <input
-            id="psDesc"
-            className="input"
-            placeholder={t("projectSettingsDialog.descriptionPlaceholder")}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-        <div className="grid-2">
+      <DialogBody className="project-settings-body">
+        <div className="project-settings-fields">
           <div className="field">
-            <label htmlFor="psPrefix">{t("projectSettingsDialog.issueKeyPrefixLabel")}</label>
-            <input id="psPrefix" className="input num" readOnly value={project.keyPrefix} />
-            <span className="meta-txt">
-              {t(facts.issues === 1 ? "projectSettingsDialog.keyPrefixNoteOne" : "projectSettingsDialog.keyPrefixNoteMany", { n: facts.issues })}
-            </span>
+            <label htmlFor="psName">{t("projectSettingsDialog.projectNameLabel")}</label>
+            <input id="psName" autoFocus className="input" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="field">
-            <label htmlFor="psId">{t("projectSettingsDialog.projectIdLabel")}</label>
-            <input id="psId" className="input num" readOnly value={project.id} />
-            <span className="meta-txt">{tx("projectSettingsDialog.projectIdNote", { cmd: <Num>list_items projectId</Num> })}</span>
+            <label htmlFor="psDesc">{t("projectSettingsDialog.descriptionLabel")}</label>
+            <input
+              id="psDesc"
+              className="input"
+              placeholder={t("projectSettingsDialog.descriptionPlaceholder")}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+          <div className="grid-2">
+            <div className="field">
+              <label htmlFor="psPrefix">{t("projectSettingsDialog.issueKeyPrefixLabel")}</label>
+              <input id="psPrefix" className="input num" readOnly value={project.keyPrefix} />
+              <span className="meta-txt">
+                {t(facts.issues === 1 ? "projectSettingsDialog.keyPrefixNoteOne" : "projectSettingsDialog.keyPrefixNoteMany", { n: facts.issues })}
+              </span>
+            </div>
+            <div className="field">
+              <label htmlFor="psId">{t("projectSettingsDialog.projectIdLabel")}</label>
+              <input id="psId" className="input num" readOnly value={project.id} />
+              <span className="meta-txt">{tx("projectSettingsDialog.projectIdNote", { cmd: <Num>list_items projectId</Num> })}</span>
+            </div>
           </div>
         </div>
 
-        <div>
+        <div className="project-settings-section project-settings-facts">
           <Eyebrow>{t("projectSettingsDialog.whatProjectHolds")}</Eyebrow>
-          <p className="meta-txt dense" style={{ marginTop: 6 }}>
+          <p className="meta-txt dense">
             {tx("projectSettingsDialog.holdsSummary", {
               workstreams: <Num>{facts.workstreams}</Num>,
               views: <Num>{facts.views}</Num>,
@@ -197,18 +199,20 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
               lastWriteClause: facts.lastWrite ? tx("projectSettingsDialog.lastWriteClause", { when: <Num>{agoLabel(facts.lastWrite)}</Num> }) : ""
             })}
           </p>
-          <p className="meta-txt dense" style={{ marginTop: 6 }}>
-            {t("projectSettingsDialog.boardNote")}
-          </p>
+          <p className="meta-txt dense">{t("projectSettingsDialog.boardNote")}</p>
         </div>
 
-        <StorageBlock projectId={project.id} />
+        <div className="project-settings-section">
+          <StorageBlock projectId={project.id} />
+        </div>
 
-        <RepositoriesBlock projectId={project.id} />
+        <div className="project-settings-section">
+          <RepositoriesBlock projectId={project.id} />
+        </div>
 
-        <div>
+        <div className="project-settings-section project-settings-copy">
           <Eyebrow>{t("projectSettingsDialog.archiveLabel")}</Eyebrow>
-          <div className="cfg-row" style={{ marginTop: "var(--space-2)" }}>
+          <div className="cfg-row">
             <Icon name={archived ? "i-archive" : "i-stack"} size={15} style={{ color: archived ? "var(--meta)" : "var(--accent)" }} />
             <span className="cfg-name">{archived ? t("projectSettingsDialog.archived") : t("projectSettingsDialog.active")}</span>
             <button
@@ -220,14 +224,12 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
               onClick={() => setArchived((v) => !v)}
             />
           </div>
-          <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-            {t("projectSettingsDialog.archiveNote")}
-          </p>
+          <p className="meta-txt dense">{t("projectSettingsDialog.archiveNote")}</p>
         </div>
 
-        <div>
+        <div className="project-settings-section project-settings-copy">
           <Eyebrow style={{ color: "var(--danger)" }}>{t("projectSettingsDialog.deleteThisProject")}</Eyebrow>
-          <p className="meta-txt dense" style={{ margin: "6px 0 var(--space-3)" }}>
+          <p className="meta-txt dense">
             {tx("projectSettingsDialog.deleteWarning", { cmdz: <Num>⌘Z</Num> })}
           </p>
           {/* The name is not in the label: a project name has no length limit,

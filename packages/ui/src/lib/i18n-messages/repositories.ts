@@ -30,7 +30,11 @@ export const repositories = {
     remoteOk: "Origin reachable from this checkout",
     remoteUnreachable: "Cannot reach origin from this checkout",
     remoteUnknown: "Origin not checked yet",
-    remoteIdentity: "origin reached as @{{login}}",
+    remoteIdentity: "Git credential account: @{{login}}",
+    useGithubCredential: "Use Tomrade's GitHub account ({{account}}) for this checkout",
+    credentialChecking: "Switching account and checking origin…",
+    credentialConnected: "This checkout and its worktrees now use Tomrade's GitHub account. Origin is reachable.",
+    credentialStillUnreachable: "Git credentials updated, but origin is still unreachable. Check the account's repository access and your network.",
     noCredential: "no credential for {{host}}"
   },
   zh: {
@@ -64,7 +68,11 @@ export const repositories = {
     remoteOk: "此 checkout 可访问 origin",
     remoteUnreachable: "此 checkout 无法访问 origin",
     remoteUnknown: "尚未检查 origin",
-    remoteIdentity: "以 @{{login}} 身份访问 origin",
+    remoteIdentity: "Git 凭据账户：@{{login}}",
+    useGithubCredential: "此 checkout 使用 Tomrade 的 GitHub 账户（{{account}}）",
+    credentialChecking: "正在切换账户并检查 origin…",
+    credentialConnected: "此 checkout 及其 worktree 已使用 Tomrade 的 GitHub 账户，origin 可访问。",
+    credentialStillUnreachable: "Git 凭据已更新，但 origin 仍不可访问。请检查账户的仓库权限和网络。",
     noCredential: "没有 {{host}} 的凭据"
   }
 };

@@ -37,6 +37,7 @@ if (window.tomrade) {
   // A repository was added or a checkout named: where a workstream's agent runs may have changed.
   subscribe("repos.changed", () => {
     void queryClient.invalidateQueries({ queryKey: ["repos"] });
+    void queryClient.invalidateQueries({ queryKey: ["codeLink"] });
     void queryClient.invalidateQueries({ queryKey: ["agent", "workdir"] });
   });
   // A scan found new branches, pull requests or merges: the Code section, the badges and any moved status.

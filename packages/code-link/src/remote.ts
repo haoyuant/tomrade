@@ -28,14 +28,14 @@ export function remoteFailureDetail(stderr: string): string | null {
 
 /** The remedy differs: credentials belong to a person; a network outage can be worked around locally. */
 export function classifyRemoteFailure(stderr: string): RemoteFailure {
-  if (/Authentication failed|could not read Username|Permission denied \(publickey\)|Repository not found|\b403\b|The requested URL returned error: 40[13]|Invalid username or token/i.test(stderr)) return "credentials";
+  if (/Authentication failed|could not read Username|Permission denied \(publickey\)|repository(?:\s+'[^']*'|\s+"[^"]*")?\s+not found|\b403\b|The requested URL returned error: 40[13]|Invalid username or token/i.test(stderr)) return "credentials";
   if (/Could not resolve host|Connection timed out|Failed to connect|Connection refused|Network is unreachable/i.test(stderr)) return "network";
   if (/unable to access/i.test(stderr)) return "network";
   return "unknown";
 }
 
 export function remoteFailureMessage(stderr: string): string {
-  if (/Repository not found/i.test(stderr)) return "origin says the repository does not exist; for a private repository that usually means the account git uses here cannot see it";
+  if (/repository(?:\s+'[^']*'|\s+"[^"]*")?\s+not found/i.test(stderr)) return "origin says the repository does not exist; for a private repository that usually means the account git uses here cannot see it";
   const detail = remoteFailureDetail(stderr) ?? "unknown error";
   const kind = classifyRemoteFailure(stderr);
   if (kind === "credentials") return `origin rejected the credentials git uses in this checkout (${detail})`;

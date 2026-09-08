@@ -157,6 +157,8 @@ export interface TurnInput {
   options: unknown;
   /** Where a code-running engine works: a worktree of the workstream's repository. Absent for a thread without one. */
   cwd?: string;
+  /** Ephemeral subprocess credentials supplied by plugins; never persist or include in prompts. */
+  env?: Record<string, string>;
   workdir?: { remote: string; branch: string; worktree: string | null };
 }
 
@@ -281,6 +283,7 @@ export const isSuspended = (value: unknown): value is Suspended =>
 
 declare module "cordis" {
   interface Events {
+    "agent/prepare-turn"(input: TurnInput): Promise<void> | void;
     /** A run began driving a thread. */
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */

@@ -1093,6 +1093,17 @@ strong { font-weight: 500; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
+.repo-remote-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.repo-remote-copy .cfg-name { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-remote-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-settings-body { display: flex; flex-direction: column; gap: var(--space-5); }
+.project-settings-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.project-settings-section { min-width: 0; }
+.project-settings-copy { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-settings-facts { display: flex; flex-direction: column; gap: var(--space-2); }
+.repo-row .repo-branch { width: 120px; flex: 0 1 120px; min-width: 60px; }
+.repo-row .repo-name { min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-row .repo-use-credential { align-self: flex-start; white-space: normal; text-align: left; height: auto; }
 /* the field registry: one row per field; an interactive row's editor opens directly beneath that row */
 .fld-list { display: flex; flex-direction: column; gap: 5px; }
 .fld-item { display: flex; flex-direction: column; gap: 5px; }

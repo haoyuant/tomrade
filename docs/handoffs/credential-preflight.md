@@ -196,7 +196,7 @@ Completed 2026-09-08 in this worktree. Nothing was pushed.
 - `pnpm build:backend` and `pnpm --filter @tomrade/ui typecheck` passed before every task commit.
 - Runnable focused coverage passed: 22/22 task-1 reachability tests; 3/3 task-2 preflight cases; 9/9 non-TCP session/start checks (with the one TCP terminal case excluded); and 3/3 task-4 prompt/session checks.
 
-### Skipped
+### Skipped at the initial handoff
 
 - Task 5 was not attempted. Its condition says tasks 1–4 and their checks must all be green; the required full suite cannot be green in this sandbox because local TCP listen is prohibited. No checkout credential helper or GitHub-token integration was written.
 - The MCP HTTP response assertion was added but could not execute here for the same TCP restriction. The response contract compiles, and the handler response plus generated curl command are covered without a socket.
@@ -205,3 +205,16 @@ Completed 2026-09-08 in this worktree. Nothing was pushed.
 
 - Whether to treat the sandbox's seven unchanged TCP-listener failures as an environmental exception and continue committing tasks 1–4. The brief says never ask and to decide, so I continued after proving the restriction independently and kept exact counts above.
 - Whether to attempt task 5 despite that exception. The brief's condition is explicit, so I skipped it.
+
+### Task 5 follow-up — completed after the user's explicit request
+
+- Repositories offers the connected Tomrade GitHub account for HTTPS GitHub credential failures, including Git's `fatal: repository '<url>' not found` form. The switch validates the current origin, updates only the checkout's shared local config using a lock and atomic replacement, and probes origin again. A failed probe remains visibly unreachable; a successful probe clears blocked sessions.
+- `<hub>/bin/tomrade-credential` reads the token from machine settings on each request. Neither the helper nor git config contains a token. Existing worktrees inherit the helper; global helpers, other hosts, HTTP and SSH are unaffected.
+- App-initiated `gh` PR calls and newly launched terminal/headless coding processes in opted-in checkouts receive ephemeral `GH_TOKEN` / `GITHUB_TOKEN`. The agent prepare-turn event supplies subprocess environment without persisting it or adding it to prompts. Terminal launch scripts contain only a runtime helper invocation. Already-running processes need a new turn or restart to receive the environment; independently opened terminals retain their own `gh` login.
+- Corrected the scoped `storage` dependency on CodeLink: direct service calls could see it before, but IPC calls could not. The Electron regression verifies the real IPC path.
+- Project settings use design tokens for 8px content gaps, 12px field/card gaps and 20px section gaps. Remote error title/detail stack without overlap, and the branch input no longer consumes the repository header.
+- The earlier Claude Code startup fix is preserved: headless code turns use `--strict-mcp-config`, avoiding inherited MCP startup delays.
+
+Validation: 341 tests passed, 1 skipped under Electron's Node runtime (the installed SQLite addon targets Electron); backend build and UI build/typecheck passed. The isolated Electron credential UI check passed, covering IPC account lookup, the button, spacing/overflow, remote reprobe and updated identity. All credential fixtures use fake accounts/tokens; no real repository was pushed or had its credentials changed by the checks.
+
+Run the focused UI check with the feature branch's dev server: `TOMRADE_DEV_URL=http://127.0.0.1:5174 pnpm --filter @tomrade/desktop exec electron scripts/credential-check.mjs`. Before/after captures are written to `/tmp/tomrade-project-settings-{before,after}.png`. Port 5173 belongs to the main checkout in this session; the feature checkout runs on 5174.

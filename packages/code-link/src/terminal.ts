@@ -66,13 +66,13 @@ export async function launchTerminal(input: LaunchInput, terminal: string): Prom
 
 const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
-const run = (cmd: string, args: string[], cwd?: string) =>
+const run = (cmd: string, args: string[], cwd?: string, env?: Record<string, string>) =>
   new Promise<string>((resolve, reject) => {
-    execFile(cmd, args, { timeout: 60_000, cwd }, (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
+    execFile(cmd, args, { timeout: 60_000, cwd, env: { ...process.env, ...env } }, (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
   });
 
 /** Whether a command answers `--version` on this machine. */
 export const commandOk = (cmd: string): Promise<boolean> => run(cmd, ["--version"]).then(() => true, () => false);
 
 /** Run a command in a folder and return its stdout; the caller decides what a failure means. */
-export const exec = (cmd: string, args: string[], cwd: string): Promise<string> => run(cmd, args, cwd);
+export const exec = (cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<string> => run(cmd, args, cwd, env);

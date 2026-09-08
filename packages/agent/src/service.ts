@@ -596,6 +596,7 @@ export class Agent extends Service {
         options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions,
         ...(where.cwd ? { cwd: where.cwd, workdir: { remote: where.remote!, branch: where.branch!, worktree: where.worktree } } : {})
       };
+      await this.ctx.parallel("agent/prepare-turn", turnInput);
       result = await rc.engine.turn(turnInput, rc.io);
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);
     } catch (err) {

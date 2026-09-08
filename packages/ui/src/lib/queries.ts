@@ -435,7 +435,10 @@ export function useConnectStorage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { providerId: string; secret: string }) => invoke("storage.connect", args.providerId, args.secret),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["storage"] })
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["storage"] });
+      void qc.invalidateQueries({ queryKey: ["codeLink"] });
+    }
   });
 }
 
@@ -443,7 +446,10 @@ export function useDisconnectStorage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (providerId: string) => invoke("storage.disconnect", providerId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["storage"] })
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["storage"] });
+      void qc.invalidateQueries({ queryKey: ["codeLink"] });
+    }
   });
 }
 

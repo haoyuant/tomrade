@@ -4,7 +4,7 @@ import type { Board, Repo } from "@tomrade/domain";
 import type { CheckoutView } from "@tomrade/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
-import { useRemoteIdentity, useRepoStates } from "~/lib/codeLink";
+import { useGithubCredential, useGithubCredentialAccount, useRemoteIdentity, useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import {
   useBoards,
@@ -92,12 +92,12 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
   const byRemote = new Map((checkouts.data ?? []).map((c) => [c.remote, c]));
 
   return (
-    <div className="repos-block" id="psRepos">
+    <div className="repos-block project-settings-copy" id="psRepos">
       <Eyebrow>{t("repositories.label")}</Eyebrow>
-      <p className="meta-txt dense" style={{ marginTop: 6 }}>
+      <p className="meta-txt dense">
         {t("repositories.note")}
       </p>
-      <div className="stack-2" style={{ marginTop: "var(--space-2)" }}>
+      <div className="project-settings-fields">
         {(repos.data ?? []).length === 0 && <p className="meta-txt dense repos-none">{t("repositories.none")}</p>}
         {(repos.data ?? []).map((repo) => (
           <RepoRow
@@ -110,7 +110,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
           />
         ))}
       </div>
-      <div className="row repos-add" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+      <div className="row repos-add" style={{ gap: "var(--space-2)" }}>
         <input
           className="input num"
           style={{ flex: 1 }}
@@ -140,8 +140,10 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
   const setRun = useSetRunInCheckout();
   const clone = useCloneRepo();
   const identity = useRemoteIdentity(repo.remote, !!checkout?.checkout);
+  const account = useGithubCredentialAccount(projectId, repo.id, !!checkout?.checkout && remoteState?.remote === "unreachable");
+  const useCredential = useGithubCredential(projectId, repo.remote);
   const [picking, setPicking] = useState(false);
-  const busy = update.isPending || remove.isPending || setCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending;
+  const busy = update.isPending || remove.isPending || setCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending || useCredential.isPending;
   const fail = (error: unknown) => toast({ body: message(error) });
 
   const choose = async () => {
@@ -156,7 +158,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
     clone.mutate({ remote: repo.remote, branch: repo.defaultBranch }, { onSuccess: (view) => toast({ body: t("repositories.clonedToast", { name: repo.name, dir: view.checkout ?? "" }) }), onError: fail });
 
   return (
-    <div className="panel repo-row stack-2" data-repo={repo.id} style={{ padding: "var(--space-3)" }}>
+    <div className="panel repo-row project-settings-copy" data-repo={repo.id} style={{ padding: "var(--space-3)" }}>
       <div className="row" style={{ gap: "var(--space-2)", alignItems: "center" }}>
         <Icon name="i-plug" size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />
         <span className="repo-name" style={{ fontFamily: "var(--font-display)", fontSize: 14, flexShrink: 0 }}>
@@ -186,16 +188,31 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       {checkout?.checkout && remoteState && (
         <div className="cfg-row repo-remote-state" style={{ marginTop: 0 }} title={remoteState.remoteDetail ?? undefined}>
           <Icon name={remoteState.remote === "ok" ? "i-check" : remoteState.remote === "unreachable" ? "i-warn" : "i-clock"} size={14} style={{ color: remoteState.remote === "unreachable" ? "var(--danger)" : remoteState.remote === "ok" ? "var(--accent)" : "var(--meta)" }} />
-          <span className="cfg-name">
-            {remoteState.remote === "ok" ? t("repositories.remoteOk") : remoteState.remote === "unreachable" ? t("repositories.remoteUnreachable") : t("repositories.remoteUnknown")}
+          <span className="repo-remote-copy">
+            <span className="cfg-name">
+              {remoteState.remote === "ok" ? t("repositories.remoteOk") : remoteState.remote === "unreachable" ? t("repositories.remoteUnreachable") : t("repositories.remoteUnknown")}
+            </span>
+            {remoteState.remoteDetail && <span className="meta-txt num repo-remote-detail">{remoteState.remoteDetail}</span>}
           </span>
-          {remoteState.remoteDetail && <span className="meta-txt num" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{remoteState.remoteDetail}</span>}
         </div>
       )}
       {checkout?.checkout && identity.data?.host && (
         <p className="meta-txt dense repo-identity" title={identity.data.host}>
           {identity.data.login ? t("repositories.remoteIdentity", { login: identity.data.login }) : t("repositories.noCredential", { host: identity.data.host })}
         </p>
+      )}
+      {checkout?.checkout && remoteState?.remote === "unreachable" && account.data && (
+        <button
+          type="button"
+          className="btn btn-secondary repo-use-credential"
+          disabled={busy}
+          onClick={() => useCredential.mutate(repo.id, {
+            onSuccess: (state) => toast({ body: t(state.remote === "ok" ? "repositories.credentialConnected" : "repositories.credentialStillUnreachable") }),
+            onError: fail
+          })}
+        >
+          {useCredential.isPending ? t("repositories.credentialChecking") : t("repositories.useGithubCredential", { account: account.data })}
+        </button>
       )}
       <div className="cfg-row repo-checkout" style={{ marginTop: 0 }}>
         <Icon name={checkout?.checkout ? "i-check" : "i-warn"} size={14} style={{ color: checkout?.checkout ? "var(--accent)" : "var(--danger)" }} />

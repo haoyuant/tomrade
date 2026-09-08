@@ -14,15 +14,17 @@ import type {} from "@tomrade/ipc";
 import type {} from "@tomrade/items";
 import type {} from "@tomrade/mcp";
 import type {} from "@tomrade/repos";
+import { normalizeRemote } from "@tomrade/repos";
 import type {} from "@tomrade/settings";
 import type {} from "@tomrade/write";
 import type { Author, Item, Repo } from "@tomrade/domain";
 import { GitFolder, gitRunner, type Git } from "@tomrade/storage";
 import { writeConnectFiles } from "./connect.js";
+import { githubEnvironment, githubHttps, installGithubCredential, usesTomradeCredential } from "./credentials.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
-import { classifyRemoteFailure, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
+import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { Starter, type StartMode, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
@@ -92,6 +94,8 @@ declare module "@tomrade/ipc" {
     "codeLink.repos": (projectId: string) => RepoStateView[];
     /** The account git will use for this checkout; no secret crosses IPC. */
     "codeLink.remoteIdentity": (remote: string) => RemoteIdentity;
+    "codeLink.githubCredentialAccount": (projectId: string, repoId: string) => string | null;
+    "codeLink.useGithubCredential": (projectId: string, repoId: string) => RepoStateView;
     "codeLink.setRepoPolicy": (projectId: string, repoId: string, patch: RepoPolicyPatch) => RepoStateView;
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
     "codeLink.start": (projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }) => StartResult;
@@ -180,7 +184,7 @@ const SETTINGS_SECTION = {
  */
 export class CodeLink extends Service {
   static provide = "codeLink";
-  static inject = ["db", "items", "boards", "repos", "hub", "settings"];
+  static inject = ["db", "items", "boards", "repos", "hub", "settings", "storage"];
   static Config = CodeLinkConfig;
 
   store!: CodeLinkStore;
@@ -223,6 +227,11 @@ export class CodeLink extends Service {
       worktrees: this.worktrees
     });
     this.ctx.settings.register(SETTINGS_SECTION);
+    this.ctx.on("agent/prepare-turn", async (input) => {
+      if (input.cwd && input.workdir && githubHttps(input.workdir.remote)) {
+        input.env = { ...input.env, ...await githubEnvironment(this.git, input.cwd, this.ctx.hub.dir, this.ctx.settings.config.path) };
+      }
+    });
     // A headless session cannot have survived a restart; say so, and let the ticket offer Continue.
     for (const projectId of this.ctx.db.openIds()) this.sessions.reconcile(projectId);
     this.ctx.on("db/opened", (projectId) => this.sessions.reconcile(projectId));
@@ -287,6 +296,8 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.linkBranch", (projectId, itemId, repoId, branch) => ctx.codeLink.linkBranch(projectId, itemId, repoId, branch));
       ctx.ipc.handle("codeLink.repos", (projectId) => ctx.codeLink.repoStates(projectId));
       ctx.ipc.handle("codeLink.remoteIdentity", (remote) => ctx.codeLink.remoteIdentity(remote));
+      ctx.ipc.handle("codeLink.githubCredentialAccount", (projectId, repoId) => ctx.codeLink.githubCredentialAccount(projectId, repoId));
+      ctx.ipc.handle("codeLink.useGithubCredential", (projectId, repoId) => ctx.codeLink.useGithubCredential(projectId, repoId));
       ctx.ipc.handle("codeLink.setRepoPolicy", (projectId, repoId, patch) => ctx.codeLink.setRepoPolicy(projectId, repoId, patch));
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
@@ -337,7 +348,56 @@ export class CodeLink extends Service {
 
   async remoteIdentity(remote: string): Promise<RemoteIdentity> {
     const checkout = this.ctx.repos.checkout(remote).checkout;
-    return checkout && fs.existsSync(checkout) ? readRemoteIdentity(this.git, checkout, remote) : { host: null, login: null };
+    if (!checkout || !fs.existsSync(checkout)) return { host: null, login: null };
+    if (githubHttps(remote) && this.ctx.hub.dir && await usesTomradeCredential(this.git, checkout, this.ctx.hub.dir)) {
+      const account = await this.githubAccount();
+      return { host: "github.com", login: account?.replace(/^@/, "") ?? null };
+    }
+    return readRemoteIdentity(this.git, checkout, remote);
+  }
+
+  private async githubAccount(): Promise<string | null> {
+    try {
+      const state = await this.ctx.storage.connection("github");
+      return state.connected ? state.label ?? null : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async githubCredentialAccount(projectId: string, repoId: string): Promise<string | null> {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    const state = this.store.repoState(projectId, repoId);
+    if (!repo || !githubHttps(repo.remote) || !this.ctx.repos.checkout(repo.remote).checkout || state?.remote !== "unreachable" || classifyRemoteFailure(state.remoteDetail ?? "") !== "credentials") return null;
+    return this.githubAccount();
+  }
+
+  async useGithubCredential(projectId: string, repoId: string): Promise<RepoStateView> {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    if (!repo || !githubHttps(repo.remote)) throw new Error("Choose an HTTPS GitHub repository to use Tomrade's account.");
+    const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+    if (!checkout || !fs.existsSync(checkout)) throw new Error("Choose this repository's checkout first.");
+    if (!await this.githubAccount()) throw new Error("Connect your GitHub account in Tomrade first.");
+    const origin = await new GitFolder(this.git, checkout).remoteUrl();
+    if (!origin || !githubHttps(origin) || normalizeRemote(origin) !== normalizeRemote(repo.remote)) throw new Error("The checkout's origin has changed. Choose the checkout again.");
+    const hub = this.ctx.hub.dir;
+    if (!hub) throw new Error("Choose a Tomrade Hub folder first.");
+    await installGithubCredential(this.git, checkout, hub, this.ctx.settings.config.path);
+    await this.inFlight.get(projectId);
+    const probe = await probeRemote(this.git, checkout, repo.defaultBranch);
+    const reachable = probe.state !== "offline";
+    const state = this.store.upsertRepoState(projectId, repoId, {
+      remote: reachable ? "ok" : "unreachable",
+      remoteDetail: probe.detail,
+      ...(reachable ? { remoteAt: Date.now() } : {})
+    });
+    if (reachable) {
+      for (const session of this.store.sessions(projectId, { live: true })) {
+        if (session.repoId === repoId && session.blocked) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+      }
+    }
+    this.notify(projectId);
+    return state;
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
@@ -489,12 +549,13 @@ export class CodeLink extends Service {
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
+        const env = await githubEnvironment(this.git, view.worktree, this.ctx.hub.dir, this.ctx.settings.config.path);
         try {
-          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], view.worktree)).trim().split("\n").pop() ?? null;
+          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], view.worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
         } catch {
           try {
-            url = (await exec("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], view.worktree)).trim() || null;
+            url = (await exec("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], view.worktree, env)).trim() || null;
           } catch {
             url = null;
           }
@@ -542,14 +603,15 @@ export class CodeLink extends Service {
     let url: string | null = null;
     let created = false;
     if (await commandOk("gh")) {
+      const env = await githubEnvironment(this.git, cwd, this.ctx.hub.dir, this.ctx.settings.config.path);
       try {
-        const out = await exec("gh", ["pr", "create", "--head", link.branch, "--base", repo.defaultBranch, "--title", `${item.key}: ${item.title}`, "--body", `${item.body ?? ""}\n\nRefs ${item.key}`.trim()], cwd);
+        const out = await exec("gh", ["pr", "create", "--head", link.branch, "--base", repo.defaultBranch, "--title", `${item.key}: ${item.title}`, "--body", `${item.body ?? ""}\n\nRefs ${item.key}`.trim()], cwd, env);
         url = out.trim().split("\n").pop() ?? null;
         created = !!url;
       } catch {
         // Already open, most likely: find it rather than fail.
         try {
-          url = (await exec("gh", ["pr", "view", link.branch, "--json", "url", "-q", ".url"], cwd)).trim() || null;
+          url = (await exec("gh", ["pr", "view", link.branch, "--json", "url", "-q", ".url"], cwd, env)).trim() || null;
         } catch {
           url = null;
         }
