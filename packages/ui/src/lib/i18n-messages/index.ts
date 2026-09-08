@@ -1,6 +1,7 @@
 import { agentPanel } from "./agentPanel";
 import { board } from "./board";
 import { card } from "./card";
+import { codeLink } from "./codeLink";
 import { commandPalette } from "./commandPalette";
 import { common } from "./common";
 import { deleteIssueDialog } from "./deleteIssueDialog";
@@ -73,7 +74,8 @@ export const en = {
   issueScreen: issueScreen.en,
   detailPane: detailPane.en,
   fields: fields.en,
-  agentPanel: agentPanel.en
+  agentPanel: agentPanel.en,
+  codeLink: codeLink.en
 };
 
 export const zh: typeof en = {
@@ -115,5 +117,6 @@ export const zh: typeof en = {
   issueScreen: issueScreen.zh,
   detailPane: detailPane.zh,
   fields: fields.zh,
-  agentPanel: agentPanel.zh
+  agentPanel: agentPanel.zh,
+  codeLink: codeLink.zh
 };

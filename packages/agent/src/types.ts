@@ -43,6 +43,10 @@ export interface ThreadSummary {
   projectId: string;
   /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */
   boardId: string | null;
+  /** The ticket the thread implements, when it was started from one. Such a thread runs a code engine in its own branch. */
+  itemId: string | null;
+  /** The branch the thread's worktree is on; null for a free-form thread, which sits detached at the default branch. */
+  branch: string | null;
   title: string;
   engine: string;
   createdAt: number;
@@ -131,9 +135,15 @@ export interface PlaybookIndexEntry {
   shadows: PlaybookSource[];
 }
 
+/** What a turn is for. A `code` turn edits a repository and gets the engine's fuller powers; a `backlog` turn talks to the app through tools. */
+export type TurnPurpose = "backlog" | "code";
+
 export interface TurnInput {
   threadId: string;
   projectId: string;
+  purpose: TurnPurpose;
+  /** The ticket a code thread implements — the branch it must stay on, the key its commits must name. */
+  ticket?: { id: string; key: string; title: string; branch: string | null };
   input: UserInput;
   /** Full persisted history, the triggering user message included. */
   messages: ThreadMessage[];
@@ -268,6 +278,15 @@ export interface Suspended {
 
 export const isSuspended = (value: unknown): value is Suspended =>
   typeof value === "object" && value !== null && (value as { __suspended?: unknown }).__suspended === true;
+
+declare module "cordis" {
+  interface Events {
+    /** A run began driving a thread. */
+    "agent/run-started"(run: RunView, thread: ThreadSummary): void;
+    /** A run settled, however it stopped; `run.stop` says how. */
+    "agent/run-ended"(run: RunView, thread: ThreadSummary): void;
+  }
+}
 
 export interface AgentPolicy {
   id: string;

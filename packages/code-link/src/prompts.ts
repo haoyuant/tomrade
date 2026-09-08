@@ -1,0 +1,72 @@
+import type { Item, Repo } from "@tomrade/domain";
+import type { CodeLinkView, RepoStateView, SessionView } from "./store.js";
+
+export const BOOTSTRAP_LABEL = "bootstrap";
+
+export interface FirstPromptInput {
+  item: Item;
+  repo: Repo;
+  state: RepoStateView | null;
+  branch: string;
+  blockers: Item[];
+  bootstrap: boolean;
+  mcpUrl: string | null;
+}
+
+const conventions = (key: string, defaultBranch: string) =>
+  [
+    "Conventions:",
+    `- every commit message names ${key}; never commit to ${defaultBranch}, stay on your branch`,
+    "- call link_code with the pull request URL once you push and open one — that moves the ticket to Verifying",
+    "- call note_progress with one line at each milestone; it is what the ticket shows while you work",
+    "- do not mark the ticket done; merging does that"
+  ].join("\n");
+
+/** The first message of a thread started from a ticket: the ticket, the place, the protocol. How to code is the repository's CLAUDE.md's business. */
+export function firstPrompt(input: FirstPromptInput): string {
+  const { item, repo, state, branch, blockers, bootstrap, mcpUrl } = input;
+  const playbook = bootstrap ? "code.bootstrap" : "code.implement";
+  const parts = [
+    `${bootstrap ? "Bootstrap" : "Implement"} ${item.key} — "${item.title}".`,
+    `Follow the playbook first: open_playbook("${playbook}").`,
+    "",
+    "Ticket:",
+    item.body?.trim() || "(no description yet — read the backlog around it, and ask before assuming)",
+    "",
+    `Repository: ${repo.name} (${repo.remote}) · default branch ${repo.defaultBranch} · your branch ${branch}.`,
+    state?.hasBrief
+      ? "Read CLAUDE.md or AGENTS.md before writing anything."
+      : state?.readiness === "scaffolded"
+        ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the manifests"}, and add a short CLAUDE.md as part of this work.`
+        : "The repository has no project in it yet.",
+    blockers.length ? `Blocked by (unfinished): ${blockers.map((b) => `${b.key} ${b.title}`).join("; ")}.` : "",
+    mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json: ${mcpUrl}` : "",
+    "",
+    conventions(item.key, repo.defaultBranch)
+  ];
+  return parts.filter((p) => p !== "").join("\n");
+}
+
+/** Picking a thread back up: where it stopped, what the branch looks like now. */
+export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null): string {
+  const parts = [
+    `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
+    session?.summary ? `Last note: ${session.summary}` : "",
+    link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : " · no pull request yet"}.` : "",
+    "Re-read the ticket with get_item, check the working tree and the tests, then carry on where you stopped.",
+    "",
+    conventions(item.key, repo.defaultBranch)
+  ];
+  return parts.filter((p) => p !== "").join("\n");
+}
+
+export const bootstrapBody = (repo: Repo): string =>
+  [
+    `${repo.name} has no project in it yet. Before any feature ticket can start here, this one settles the stack with the user, scaffolds the project, and writes CLAUDE.md.`,
+    "",
+    "Done when:",
+    "- the cross-cutting choices (language, framework, state, routing, package manager, tests, CI, deployment shape) are recorded as short decision notes under docs/decisions/",
+    "- build, test and lint commands run, and CI runs them",
+    "- CLAUDE.md at the root explains the stack, the commands, the layout, and the Tomrade conventions (branch `<key>/<slug>`, commits naming the key)",
+    "- the pull request is merged"
+  ].join("\n");

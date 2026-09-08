@@ -1,0 +1,42 @@
+export const codeLink = {
+  en: {
+    start: "Start",
+    continue: "Continue",
+    startHere: "Run here",
+    startHereHint: "Tomrade drives your coding agent headless; the run shows in the panel",
+    startTerminal: "Open in terminal",
+    startTerminalHint: "A worktree on the ticket's branch, your own claude or codex session in it",
+    starting: "Starting…",
+    startedToast: "Started {{key}} on {{branch}}",
+    continuedToast: "Continuing {{key}} on {{branch}}",
+    terminalToast: "{{key}} is in your terminal on {{branch}}",
+    copyCommand: "Copy command",
+    commandCopied: "Command copied — run it in a terminal",
+    gateRepositories: "Repositories…",
+    gateOpenBootstrap: "Open {{key}}",
+    readiness_empty: "empty repository",
+    readiness_scaffolded: "scaffolded",
+    readiness_unknown: "not scanned here",
+    noBrief: "no CLAUDE.md"
+  },
+  zh: {
+    start: "开始",
+    continue: "继续",
+    startHere: "在这里跑",
+    startHereHint: "Tomrade 无头驱动你的 coding agent,过程显示在面板里",
+    startTerminal: "在终端打开",
+    startTerminalHint: "在 ticket 分支的 worktree 里,起你自己的 claude 或 codex 会话",
+    starting: "启动中…",
+    startedToast: "已在 {{branch}} 上开始 {{key}}",
+    continuedToast: "在 {{branch}} 上继续 {{key}}",
+    terminalToast: "{{key}} 已在你的终端里,分支 {{branch}}",
+    copyCommand: "复制命令",
+    commandCopied: "命令已复制,到终端里运行",
+    gateRepositories: "仓库设置…",
+    gateOpenBootstrap: "打开 {{key}}",
+    readiness_empty: "空仓库",
+    readiness_scaffolded: "已有脚手架",
+    readiness_unknown: "本机未扫描",
+    noBrief: "没有 CLAUDE.md"
+  }
+};

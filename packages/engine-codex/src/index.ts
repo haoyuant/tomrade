@@ -72,11 +72,12 @@ export function createCodexEngine(ctx: Context): Engine {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-"));
       // codex has no appended-system-prompt flag; the context rides ahead of the message.
       const prompt = buildSystem(input, io, "Codex") + "\n\n---\n\nUSER MESSAGE:\n" + promptOf(input);
+      // A code turn may write in its worktree; a backlog turn reads only.
       const shared = [
         "--json",
         "--skip-git-repo-check",
         "-s",
-        "read-only",
+        input.purpose === "code" ? "workspace-write" : "read-only",
         "-C",
         tmp,
         "-c",

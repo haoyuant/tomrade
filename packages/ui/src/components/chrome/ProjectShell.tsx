@@ -24,6 +24,10 @@ interface DockValue {
   aiOpen: boolean;
   setAiOpen: (next: boolean | ((current: boolean) => boolean)) => void;
   bind: (binding: ScreenBinding) => () => void;
+  /** Open the panel on a thread — how a ticket's Start shows the run it just began. */
+  showThread: (threadId: string) => void;
+  /** The thread a screen asked for, consumed by the panel. */
+  requestedThread: { id: string; at: number } | null;
 }
 
 const Ctx = createContext<DockValue | null>(null);
@@ -51,6 +55,14 @@ export function ProjectShell() {
   const navigate = useNavigate();
   const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey);
   const [binding, setBinding] = useState<ScreenBinding | null>(null);
+  const [requestedThread, setRequestedThread] = useState<{ id: string; at: number } | null>(null);
+  const showThread = useCallback(
+    (threadId: string) => {
+      setRequestedThread({ id: threadId, at: Date.now() });
+      setAiOpen(true);
+    },
+    [setAiOpen]
+  );
 
   const bind = useCallback((next: ScreenBinding) => {
     setBinding(next);
@@ -79,7 +91,7 @@ export function ProjectShell() {
   const openSettings = useCallback(() => binding?.openSettings?.(), [binding]);
   const openRepositories = useCallback(() => binding?.onOpenRepositories?.(), [binding]);
 
-  const value = useMemo<DockValue>(() => ({ aiOpen, setAiOpen, bind }), [aiOpen, setAiOpen, bind]);
+  const value = useMemo<DockValue>(() => ({ aiOpen, setAiOpen, bind, showThread, requestedThread }), [aiOpen, setAiOpen, bind, showThread, requestedThread]);
 
   return (
     <Ctx.Provider value={value}>
@@ -93,6 +105,7 @@ export function ProjectShell() {
           onToggle={setAiOpen}
           projectId={projectId}
           boardId={binding?.boardId ?? null}
+          requestedThread={requestedThread}
           focus={binding?.focus ?? []}
           onOpenSettings={openSettings}
           onOpenRepositories={openRepositories}

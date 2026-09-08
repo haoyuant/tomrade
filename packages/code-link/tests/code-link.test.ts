@@ -12,6 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { CodeLink } from "@tomrade/code-link";
 import { Contributions } from "@tomrade/contributions";
 import { Repos } from "@tomrade/repos";
+import { Settings } from "@tomrade/settings";
 import { Storage } from "@tomrade/storage";
 import { fresh, settle } from "@tomrade/testkit";
 
@@ -59,7 +60,7 @@ async function machine(repo: { remote: string; checkout: string }) {
   fs.mkdirSync(hubDir, { recursive: true });
   const bag = await fresh({
     hubDir,
-    plugins: [[Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }], Repos, Contributions, [CodeLink, { scanMs: 0 }]]
+    plugins: [[Settings, { path: path.join(hubDir, "settings.json") }], [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }], Repos, Contributions, [CodeLink, { scanMs: 0 }]]
   });
   await settle();
   await bag.ctx.storage.ready;

@@ -18,7 +18,11 @@ export const ClaudeCodeOptions = z.object({
   maxTurns: z.number().int().min(1).max(200).default(24),
   maxBudgetUsd: z.number().positive().optional(),
   /** Claude Code's own tools to allow besides the tomrade MCP tools (e.g. "WebSearch", "Read", "Bash"). */
-  allowTools: z.array(z.string()).default([])
+  allowTools: z.array(z.string()).default([]),
+  /** A turn that implements a ticket runs long: its own turn ceiling… */
+  codeMaxTurns: z.number().int().min(1).max(1000).default(200),
+  /** …and its own permission mode, in a worktree of its own. The user's settings.json allow-rules still apply. */
+  codePermissionMode: z.enum(["acceptEdits", "bypassPermissions", "dontAsk", "default"]).default("acceptEdits")
 });
 export type ClaudeCodeOptions = z.infer<typeof ClaudeCodeOptions>;
 
@@ -84,8 +88,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
       fs.writeFileSync(mcpFile, JSON.stringify({ mcpServers: { tomrade: { type: "http", url, headers: { "X-Tomrade-Run": token } } } }));
       fs.writeFileSync(sysFile, buildSystem(input, io, "Claude Code"));
 
-      // dontAsk denies anything not allowlisted instead of hanging a headless
-      // process on a confirmation prompt.
+      // A backlog turn is a guest in the app: only our MCP server, and dontAsk
+      // denies anything not allowlisted instead of hanging a headless process on
+      // a confirmation prompt. A code turn is the user's own coding agent at
+      // work in a worktree: their MCP servers stay, edits are accepted.
+      const code = input.purpose === "code";
       const args = [
         "-p",
         promptOf(input),
@@ -95,16 +102,16 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
         "--include-partial-messages",
         "--mcp-config",
         mcpFile,
-        "--strict-mcp-config",
+        ...(code ? [] : ["--strict-mcp-config"]),
         "--permission-mode",
-        "dontAsk",
+        code ? options.codePermissionMode : "dontAsk",
         "--allowedTools",
         "mcp__tomrade__*",
         ...options.allowTools,
         "--append-system-prompt-file",
         sysFile,
         "--max-turns",
-        String(options.maxTurns)
+        String(code ? options.codeMaxTurns : options.maxTurns)
       ];
       if (options.maxBudgetUsd) args.push("--max-budget-usd", String(options.maxBudgetUsd));
       if (options.model) args.push("--model", options.model);

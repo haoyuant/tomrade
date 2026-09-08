@@ -47,6 +47,8 @@ export interface RunBinding {
   author: Author;
   projectId?: string;
   execute(name: string, args: unknown): Promise<unknown>;
+  /** A lifecycle event posted to `/sessions/<token>/event` — a coding agent's hook reporting it started, stopped, or is waiting. */
+  event?(payload: unknown): void;
 }
 
 const sessionIdOf = (req: express.Request): string | undefined => {
@@ -120,6 +122,18 @@ export class Mcp extends Service {
     app.post("/mcp/:projectId", (req, res) => open(req.params.projectId)(req, res));
     app.get("/mcp/:projectId", attached);
     app.delete("/mcp/:projectId", attached);
+    // A coding agent's hooks (SessionStart, Stop, Notification…) post here with
+    // the session's token; the binding that owns the token hears them.
+    app.post("/sessions/:token/event", (req, res) => {
+      const binding = this.bindings.get(req.params.token);
+      if (!binding?.event) return res.status(404).json({ error: "unknown session" });
+      try {
+        binding.event(req.body);
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+      }
+    });
 
     const server = await new Promise<HttpServer>((resolve, reject) => {
       const srv = app.listen(this.config.port, this.config.host, () => resolve(srv));
@@ -144,6 +158,11 @@ export class Mcp extends Service {
   /** The endpoint whose sessions are scoped to one project. The same on every machine, because the id lives in the project's own folder. */
   urlFor(projectId: string): string | null {
     return this.url ? `${this.url}/${encodeURIComponent(projectId)}` : null;
+  }
+
+  /** Where a session's hooks post their lifecycle events. */
+  eventUrlFor(token: string): string | null {
+    return this.url ? `${this.url.replace(/\/mcp$/, "")}/sessions/${encodeURIComponent(token)}/event` : null;
   }
 
   /** Reversible: the token dies with the run (or the plugin) that registered it. */

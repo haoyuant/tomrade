@@ -45,6 +45,15 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
       );
     }
   }
+  if (input.ticket) {
+    const t = input.ticket;
+    parts.push(
+      `You are implementing ticket ${t.key} — "${t.title}"${t.branch ? ` on branch ${t.branch}` : ""}${input.cwd ? ` in ${input.cwd}` : ""}.\n` +
+        `Code conventions: stay on this branch and never commit to the default branch; every commit message names ${t.key}; ` +
+        `read the repository's CLAUDE.md or AGENTS.md before writing; when you push and open a pull request, call link_code with its URL; ` +
+        `do not mark the ticket done yourself — merging does that. Report progress in one line with note_progress when you reach a milestone.`
+    );
+  }
   if (input.brief) parts.push("Project brief:\n" + input.brief);
   for (const card of input.cards) parts.push(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));
   if (input.pending) {

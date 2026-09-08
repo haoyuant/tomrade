@@ -259,7 +259,7 @@ export class Repos extends Service {
    * detached at the remote's default branch, under the Hub where the user can
    * open it; or the checkout itself when the user chose that for the workstream.
    */
-  async workdirFor(projectId: string, boardId: string, threadId: string): Promise<WorkdirView | null> {
+  async workdirFor(projectId: string, boardId: string, threadId: string, opts: { branch?: string | null } = {}): Promise<WorkdirView | null> {
     const board = this.db(projectId).prepare("SELECT repo_id, repo_path FROM boards WHERE id = ?").get(boardId) as { repo_id: string | null; repo_path: string } | undefined;
     if (!board?.repo_id) return null;
     const repo = this.get(projectId, board.repo_id);
@@ -278,9 +278,21 @@ export class Repos extends Service {
       await g.fetch(repo.defaultBranch);
       fs.mkdirSync(path.dirname(worktree), { recursive: true });
       const start = (await this.runGit(["rev-parse", "--verify", `origin/${repo.defaultBranch}`], { cwd: placement.checkout, ok: true })).code === 0 ? `origin/${repo.defaultBranch}` : "HEAD";
-      await this.runGit(["worktree", "add", "--detach", worktree, start], { cwd: placement.checkout });
+      const branch = opts.branch ?? null;
+      if (branch) {
+        // A ticket's branch: continued where it already exists (an earlier
+        // session here, or a push from elsewhere), started from the default
+        // branch otherwise. Detached is for a thread with no ticket.
+        const checkout = placement.checkout;
+        const verify = async (ref: string) => (await this.runGit(["rev-parse", "--verify", "--quiet", ref], { cwd: checkout, ok: true })).code === 0;
+        if (await verify(`refs/heads/${branch}`)) await this.runGit(["worktree", "add", worktree, branch], { cwd: placement.checkout });
+        else if (await verify(`refs/remotes/origin/${branch}`)) await this.runGit(["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`], { cwd: placement.checkout });
+        else await this.runGit(["worktree", "add", "-b", branch, worktree, start], { cwd: placement.checkout });
+      } else {
+        await this.runGit(["worktree", "add", "--detach", worktree, start], { cwd: placement.checkout });
+      }
     }
-    return { repo, cwd: path.join(worktree, sub), worktree, checkout: placement.checkout, branch: repo.defaultBranch };
+    return { repo, cwd: path.join(worktree, sub), worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
   }
 
   /** Remove a thread's worktree. The branch, if the agent made one, stays in the checkout. */

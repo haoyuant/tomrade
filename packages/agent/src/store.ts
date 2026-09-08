@@ -88,6 +88,11 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
     // A thread may stand on a workstream, and so on that workstream's repository.
     version: 2,
     up: "ALTER TABLE plugin_agent_threads ADD COLUMN board_id TEXT"
+  },
+  {
+    // A thread may implement one ticket, on a branch of its own.
+    version: 3,
+    up: "ALTER TABLE plugin_agent_threads ADD COLUMN item_id TEXT; ALTER TABLE plugin_agent_threads ADD COLUMN branch TEXT;"
   }
 ];
 
@@ -95,6 +100,8 @@ interface ThreadRow {
   id: string;
   project_id: string;
   board_id: string | null;
+  item_id: string | null;
+  branch: string | null;
   title: string;
   engine: string;
   external_json: string;
@@ -138,7 +145,17 @@ export interface PendingRecord extends PendingView {
   waiveOn: string[];
 }
 
-const toThread = (r: ThreadRow): ThreadSummary => ({ id: r.id, projectId: r.project_id, boardId: r.board_id ?? null, title: r.title, engine: r.engine, createdAt: r.created_at, updatedAt: r.updated_at });
+const toThread = (r: ThreadRow): ThreadSummary => ({
+  id: r.id,
+  projectId: r.project_id,
+  boardId: r.board_id ?? null,
+  itemId: r.item_id ?? null,
+  branch: r.branch ?? null,
+  title: r.title,
+  engine: r.engine,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at
+});
 
 const toRun = (r: RunRow): RunView => ({
   id: r.id,
@@ -189,19 +206,28 @@ export class AgentStore {
     return row ? toThread(row) : null;
   }
 
-  createThread(projectId: string, engine: string, title = "", boardId: string | null = null): ThreadSummary {
+  createThread(projectId: string, engine: string, title = "", boardId: string | null = null, itemId: string | null = null, branch: string | null = null): ThreadSummary {
     const now = Date.now();
     const id = randomUUID();
-    this.db(projectId).prepare("INSERT INTO plugin_agent_threads (id, project_id, board_id, title, engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, projectId, boardId, title, engine, now, now);
+    this.db(projectId)
+      .prepare("INSERT INTO plugin_agent_threads (id, project_id, board_id, item_id, branch, title, engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, projectId, boardId, itemId, branch, title, engine, now, now);
     return this.thread(projectId, id)!;
   }
 
-  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null } = {}): void {
+  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null; itemId?: string | null; branch?: string | null } = {}): void {
     const db = this.db(projectId);
     if (fields.title !== undefined) db.prepare("UPDATE plugin_agent_threads SET title = ? WHERE id = ?").run(fields.title, id);
     if (fields.engine !== undefined) db.prepare("UPDATE plugin_agent_threads SET engine = ? WHERE id = ?").run(fields.engine, id);
     if (fields.boardId !== undefined) db.prepare("UPDATE plugin_agent_threads SET board_id = ? WHERE id = ?").run(fields.boardId, id);
+    if (fields.itemId !== undefined) db.prepare("UPDATE plugin_agent_threads SET item_id = ? WHERE id = ?").run(fields.itemId, id);
+    if (fields.branch !== undefined) db.prepare("UPDATE plugin_agent_threads SET branch = ? WHERE id = ?").run(fields.branch, id);
     db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
+  }
+
+  /** Threads started from a ticket, newest first. */
+  threadsForItem(projectId: string, itemId: string): ThreadSummary[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND item_id = ? ORDER BY updated_at DESC").all(projectId, itemId) as ThreadRow[]).map(toThread);
   }
 
   external(projectId: string, threadId: string): Record<string, string> {
