@@ -24,6 +24,7 @@ const conventions = (key: string, defaultBranch: string) =>
     `- every commit message names ${key}; never commit to ${defaultBranch}, stay on your branch`,
     "- call link_code with the pull request URL once you push and open one — that moves the ticket to Verifying",
     "- call note_progress with one line at each milestone; it is what the ticket shows while you work",
+    "- if git push, fetch, pull or gh fails with an authentication or repository-not-found error, do not switch accounts, edit credential helpers or change the remote; commit locally, call note_progress with 'blocked: push …', and stop — the human owns credentials",
     "- do not mark the ticket done; merging does that"
   ].join("\n");
 

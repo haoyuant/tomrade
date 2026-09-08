@@ -21,3 +21,4 @@ This playbook is about how Tomrade and you stay in step. How to write the code i
 5. Push the branch and open a pull request whose title starts with the key. Then call link_code with the pull request URL. That moves the ticket to Verifying.
 6. Do not mark the ticket done. Merging does that.
 7. If the ticket turns out to need a decision nobody has made (a library, an architecture choice with lasting cost), stop and ask_user rather than choosing silently. If it needs work that belongs to another ticket, say so in one line and leave that work alone.
+8. If `git push`, `git fetch`, `git pull` or `gh` fails with an authentication or "repository not found" error, do not switch accounts, edit credential helpers or change the remote. Commit locally, call note_progress with `blocked: push …`, and stop — the human owns credentials.

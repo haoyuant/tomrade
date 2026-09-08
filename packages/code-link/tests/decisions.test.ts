@@ -73,6 +73,8 @@ describe("decision notes", () => {
     const item = items.create({ projectId: project.id, boardId: board.id, title: "Cart badge", status: "todo", by: "human" });
     const repo = ctx.repos.create({ projectId: project.id, remote: "git@github.com:acme/app.git" });
     const prompt = firstPrompt({ item, repo, state: null, branch: "tom-1/cart-badge", blockers: [], bootstrap: false, mcpUrl: null, decisions: listDecisions(ctx.storage.artifactDirFor(project.id)!) });
+    expect(prompt).toContain("blocked: push");
+    expect(prompt).toContain("the human owns credentials");
     expect(prompt).toContain("Decisions on record");
     expect(prompt).toContain("0001 State: Riverpod [state management]");
   });
