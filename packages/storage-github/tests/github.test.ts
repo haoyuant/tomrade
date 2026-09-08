@@ -25,7 +25,7 @@ let n = 0;
  */
 function fakeGit(home: string): string {
   const file = path.join(home, "fake-git");
-  fs.writeFileSync(file, ['#!/bin/sh', 'echo "fake git: $@" >&2', 'case "$1" in', '  init|config) exit 0 ;;', '  *) exit 1 ;;', 'esac', ''].join("\n"), "utf8");
+  fs.writeFileSync(file, ['#!/bin/sh', 'echo "fake git: $@" >&2', 'case "$1" in', '  init) exit 0 ;;', '  *) exit 1 ;;', 'esac', ''].join("\n"), "utf8");
   fs.chmodSync(file, 0o755);
   return file;
 }
@@ -36,13 +36,11 @@ async function machine(token = "") {
   const bag = await fresh({
     plugins: [
       [Settings, { path: path.join(home, "settings.json") }],
-      [Storage, { gitBinary: fakeGit(home), snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
-      storageGithub
-    ],
-    hubDir: path.join(home, "hub")
+      [Storage, { path: path.join(home, "storage.json"), debounceMs: 60_000, reconcileMs: 0 }],
+      [storageGithub, { root: path.join(home, "remotes"), binary: fakeGit(home) }]
+    ]
   });
   await settle();
-  await bag.ctx.storage.ready;
   if (token) bag.ctx.settings.set({ ...bag.ctx.settings.get(), github: { token } });
   return { ...bag, storage: bag.ctx.storage, settings: bag.ctx.settings };
 }
@@ -74,7 +72,7 @@ describe("the GitHub provider", () => {
     const provider = storage.describe().find((p) => p.id === "github");
     expect(provider).toBeDefined();
     expect(provider!.settingsSection).toBe("github");
-    expect(Object.keys((provider!.schema as { properties: Record<string, unknown> }).properties)).toEqual(["owner", "repo", "branch"]);
+    expect(Object.keys((provider!.schema as { properties: Record<string, unknown> }).properties)).toEqual(["owner", "repo", "branch", "path"]);
     expect(provider!.browsable).toBe(true);
 
     // The secret is a settings card, and the dialog masks it from the schema.
@@ -123,9 +121,9 @@ describe("the GitHub provider", () => {
   it("makes a whole destination out of a name", async () => {
     const { storage } = await machine("ghp_test");
     stubGitHub({ "GET /user": { body: { login: "haoyuant" } } });
-    expect(await storage.draft("github", "backlog")).toEqual({ owner: "haoyuant", repo: "backlog", branch: "main" });
+    expect(await storage.draft("github", "backlog")).toEqual({ owner: "haoyuant", repo: "backlog", branch: "main", path: "" });
     // An owner can be named outright, and a name is made safe for a URL.
-    expect(await storage.draft("github", "acme/the backlog")).toEqual({ owner: "acme", repo: "the-backlog", branch: "main" });
+    expect(await storage.draft("github", "acme/the backlog")).toEqual({ owner: "acme", repo: "the-backlog", branch: "main", path: "" });
   });
 
   it("lists repositories a token can see, as ready-made configs", async () => {
@@ -139,8 +137,8 @@ describe("the GitHub provider", () => {
       }
     });
     expect(await storage.browse("github")).toEqual([
-      { label: "acme/app (private)", config: { owner: "acme", repo: "app", branch: "trunk" } },
-      { label: "me/notes", config: { owner: "me", repo: "notes", branch: "main" } }
+      { label: "acme/app (private)", config: { owner: "acme", repo: "app", branch: "trunk", path: "" } },
+      { label: "me/notes", config: { owner: "me", repo: "notes", branch: "main", path: "" } }
     ]);
   });
 
@@ -191,10 +189,9 @@ describe("the GitHub provider", () => {
     // And end to end: a bind that cannot reach GitHub must not name the token.
     const { storage, project } = await machine("ghp_SECRET_TOKEN");
     stubGitHub({ "GET /repos/nobody/nothing": { body: { full_name: "nobody/nothing" } } });
-    const failure = await storage.bind(project.id, "github", { owner: "nobody", repo: "nothing", branch: "main" }).catch((e: Error) => e);
+    const failure = await storage.bind(project.id, "github", { owner: "nobody", repo: "nothing", branch: "main", path: "" }).catch((e: Error) => e);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).not.toContain("ghp_SECRET_TOKEN");
-    // The fake git accepts init and refuses the rest, so no remote was recorded either.
-    expect(storage.entry(project.id)?.remote?.config).not.toMatchObject({ owner: "nobody" });
+    expect(storage.binding(project.id)).toBeNull();
   });
 });

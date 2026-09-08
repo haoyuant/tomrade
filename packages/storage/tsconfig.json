@@ -18,19 +18,7 @@
       "path": "../domain"
     },
     {
-      "path": "../hub"
-    },
-    {
       "path": "../ipc"
-    },
-    {
-      "path": "../oplog"
-    },
-    {
-      "path": "../projects"
-    },
-    {
-      "path": "../settings"
     },
     {
       "path": "../write"
