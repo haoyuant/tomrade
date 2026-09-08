@@ -16,6 +16,7 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
+import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
@@ -223,7 +224,8 @@ export function DetailPane({
   expanded,
   onToggleExpand,
   onClose,
-  onDelete
+  onDelete,
+  onOpenRepositories
 }: {
   item: Item;
   expanded: boolean;
@@ -231,8 +233,10 @@ export function DetailPane({
   onClose: () => void;
   /** Opens the confirmation. The pane never destroys anything itself. */
   onDelete: () => void;
+  /** Where Start sends the user when the workstream has no repository, or this machine no checkout of it. */
+  onOpenRepositories?: () => void;
 }) {
-  const body = <DetailBody item={item} expanded={expanded} onToggleExpand={onToggleExpand} onClose={onClose} onDelete={onDelete} />;
+  const body = <DetailBody item={item} expanded={expanded} onToggleExpand={onToggleExpand} onClose={onClose} onDelete={onDelete} onOpenRepositories={onOpenRepositories} />;
 
   // Expanded, the pane reads as a modal overlay, so it is one: Radix supplies
   // the focus trap, the focus restore and the Escape that collapses it.
@@ -257,18 +261,25 @@ function DetailBody({
   expanded,
   onToggleExpand,
   onClose,
-  onDelete
+  onDelete,
+  onOpenRepositories
 }: {
   item: Item;
   expanded: boolean;
   onToggleExpand: () => void;
   onClose: () => void;
   onDelete: () => void;
+  onOpenRepositories?: () => void;
 }) {
   const { t } = useI18n();
-  const { project, boards } = useWorkspace();
+  const { project, boards, items, select } = useWorkspace();
   const { write } = useIssueWriter(project.id);
   const owner = boards.find((b) => b.id === item.boardId);
+  // A gate may name another ticket (the bootstrap one) by key; the pane shows it in place.
+  const openIssue = (idOrKey: string) => {
+    const target = items.find((i) => i.id === idOrKey || i.key === idOrKey);
+    if (target) select(target.id);
+  };
 
   return (
     <>
@@ -276,6 +287,7 @@ function DetailBody({
         <span className="card-id">{item.key}</span>
         {owner && <span className="tag neutral">{owner.name}</span>}
         <Spacer />
+        <StartTicketMenu projectId={project.id} item={item} onOpenIssue={openIssue} onOpenRepositories={onOpenRepositories} />
         <LockButton item={item} write={write} />
         {/* Sits away from Close, and carries its own class rather than another
             bare `.btn-icon` — the head is addressed by position in places. */}

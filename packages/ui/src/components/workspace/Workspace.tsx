@@ -217,6 +217,7 @@ export function Workspace() {
               ws.select(null);
             }}
             onDelete={() => setDeleting(selected.id)}
+            onOpenRepositories={openProjectSettings}
           />
         )}
       </div>

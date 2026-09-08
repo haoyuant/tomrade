@@ -5,12 +5,10 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
-import { useAgentDock, useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
+import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
-import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
-import { useCodeSessions, useStartTicket } from "~/lib/codeLink";
-import { useToast } from "~/lib/toast";
+import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
@@ -46,14 +44,10 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const { write } = useIssueWriter(projectId);
   const undo = useUndo(projectId);
   const navigate = useNavigate();
-  const toast = useToast();
-  const { showThread } = useAgentDock();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
-  const sessions = useCodeSessions(projectId, item?.id);
-  const start = useStartTicket(projectId);
 
   const openIssue = useCallback((id: string) => void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: id } }), [navigate, projectId]);
   const binding = useMemo<ScreenBinding>(
@@ -94,38 +88,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
     if (next) write(item, { status: next }, tx("fields.movedToStatusToast", { key: <span className="num">{item.key}</span>, status: STATUS[next].label }));
   };
 
-  // Start hands the ticket to a local coding agent; Continue picks its thread back up. Each gate answers with the one thing that clears it.
   const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
-  const hasSession = (sessions.data?.length ?? 0) > 0;
-  const startTicket = (mode: "run" | "terminal") =>
-    start.mutate(
-      { itemId: item.id, mode },
-      {
-        onSuccess: (result) => {
-          if (!result.ok) {
-            const actions =
-              result.gate === "readiness" && result.bootstrapKey
-                ? [{ label: t("codeLink.gateOpenBootstrap", { key: result.bootstrapKey }), run: () => openIssue(result.bootstrapKey!) }]
-                : result.gate === "checkout" || result.gate === "workstream"
-                  ? [{ label: t("codeLink.gateRepositories"), run: () => setSettingsOpen(true) }]
-                  : undefined;
-            toast({ body: result.message, actions });
-            return;
-          }
-          const vars = { key: item.key, branch: result.branch };
-          if (result.mode === "run") {
-            toast({ body: t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars) });
-            showThread(result.threadId);
-          } else if (result.launched) {
-            toast({ body: t("codeLink.terminalToast", vars) });
-          } else {
-            const command = result.command ?? "";
-            toast({ body: command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
-          }
-        },
-        onError: (e) => toast({ body: e.message })
-      }
-    );
 
   return (
     <div className="app">
@@ -146,21 +109,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         >
           <Icon name="i-trash" size={15} />
         </button>
-        {startable && (
-          <Menu
-            label={t(hasSession ? "codeLink.continue" : "codeLink.start")}
-            align="end"
-            trigger={
-              <button type="button" className="btn btn-primary no-drag" data-testid="start-ticket" disabled={start.isPending}>
-                {start.isPending ? t("codeLink.starting") : t(hasSession ? "codeLink.continue" : "codeLink.start")} <Icon name="i-chevdown" size={12} />
-              </button>
-            }
-          >
-            <MenuHead title={item.key} />
-            <MenuActionItem icon={<Icon name="i-plug" size={14} />} name={t("codeLink.startHere")} onSelect={() => startTicket("run")} />
-            <MenuActionItem icon={<Icon name="i-monitor" size={14} />} name={t("codeLink.startTerminal")} onSelect={() => startTicket("terminal")} />
-          </Menu>
-        )}
+        <StartTicketMenu projectId={projectId} item={item} onOpenIssue={openIssue} onOpenRepositories={() => setSettingsOpen(true)} className="no-drag" />
         {next && !startable && (
           <button type="button" className="btn btn-primary no-drag" onClick={advance}>
             {t("issueScreen.moveToButton", { status: STATUS[next].label })}
