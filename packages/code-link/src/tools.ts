@@ -4,8 +4,10 @@ import type {} from "@tomrade/agent";
 import type {} from "@tomrade/boards";
 import type {} from "@tomrade/items";
 import type {} from "@tomrade/repos";
+import type {} from "@tomrade/storage";
 import type { Item } from "@tomrade/domain";
 import { defineTool, requireProjectId, type ToolInvocation } from "@tomrade/tools";
+import { covered, listDecisions, recordDecision } from "./decisions.js";
 import { DEFAULT_BRANCH_TEMPLATE, branchFor } from "./keys.js";
 import { sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
@@ -154,6 +156,56 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             "call note_progress with one line at milestones"
           ]
         };
+      }
+    })
+  );
+
+  // ── decisions: the cross-cutting choices no ticket should make twice, or silently ──
+  const decisionsRoot = (tool: string, projectId: string): string => {
+    const dir = ctx.get("storage")?.artifactDirFor(projectId);
+    if (!dir) throw new Error(`${tool}: this project has no folder yet — choose one under the project's settings first`);
+    return dir;
+  };
+
+  ctx.tools.register(
+    defineTool({
+      name: "list_decisions",
+      title: "List the project's decisions",
+      description:
+        "The cross-cutting decisions on record for this project (stack, state management, routing, persistence, deployment…), from .tomrade/docs/decisions/. Pass `area` to ask whether one area is settled — the pre-flight before touching it.",
+      input: z.object({ area: z.string().optional(), projectId: z.string().optional() }),
+      execute: ({ area, projectId: given }, inv) => {
+        const projectId = requireProjectId("list_decisions", given, inv);
+        const decisions = listDecisions(decisionsRoot("list_decisions", projectId));
+        return {
+          decisions: decisions.map(({ file: _file, ...d }) => d),
+          ...(area ? { area, covered: covered(decisions, area) } : {})
+        };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "record_decision",
+      title: "Record a decision",
+      description:
+        "Write a short decision note (context, decision, alternatives, consequences) into the project's .tomrade/docs/decisions/. Use it once the user has confirmed a cross-cutting choice; name the areas it settles so later tickets find it.",
+      input: z.object({
+        title: z.string().min(3),
+        context: z.string().min(1),
+        decision: z.string().min(1),
+        alternatives: z.string().optional(),
+        consequences: z.string().optional(),
+        areas: z.array(z.string()).optional().describe('What it settles, e.g. ["state management", "routing"]'),
+        status: z.enum(["proposed", "accepted", "superseded"]).optional(),
+        supersedes: z.string().optional().describe("The id of the decision this one replaces"),
+        projectId: z.string().optional()
+      }),
+      execute: ({ projectId: given, ...input }, inv) => {
+        const projectId = requireProjectId("record_decision", given, inv);
+        const { file, ...written } = recordDecision(decisionsRoot("record_decision", projectId), input);
+        return { ...written, path: file };
       }
     })
   );

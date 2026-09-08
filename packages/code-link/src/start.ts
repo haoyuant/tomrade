@@ -6,7 +6,9 @@ import type {} from "@tomrade/hub";
 import type {} from "@tomrade/items";
 import type {} from "@tomrade/repos";
 import type {} from "@tomrade/settings";
+import type {} from "@tomrade/storage";
 import type { Author, Board, Item, Repo } from "@tomrade/domain";
+import { listDecisions } from "./decisions.js";
 import { branchFor } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
 import type { Sessions } from "./sessions.js";
@@ -88,9 +90,15 @@ export class Starter {
 
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
-    const picked = await this.pickEngine(agent, opts.engine);
-    if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason };
-    const engine = picked.engine;
+    const terminalSettings = TerminalSettings.parse(ctx.settings.get().codeLink ?? {});
+    // In a terminal any CLI agent with an MCP client will do: "other" is whatever the machine's command template names.
+    const other = opts.mode === "terminal" && (opts.engine === "other" || (!opts.engine && agent.codeEngines().length === 0)) && !!terminalSettings.otherCommand.trim();
+    let engineId = "other";
+    if (!other) {
+      const picked = await this.pickEngine(agent, opts.engine);
+      if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason };
+      engineId = picked.engine.id;
+    }
     // A terminal session connects back over MCP; without the server there is nothing to start, so nothing is created.
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
 
@@ -102,10 +110,10 @@ export class Starter {
     let branch = previous?.branch ?? links[0]?.branch ?? "";
     if (thread) {
       continued = true;
-      if (thread.engine !== engine.id && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engine.id);
+      if (engineId !== "other" && thread.engine !== engineId && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engineId);
     } else {
       branch = branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
-      thread = agent.newThread(projectId, engine.id, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}` });
+      thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}` });
     }
 
     const where = await agent.workdir(projectId, thread.id);
@@ -120,7 +128,7 @@ export class Starter {
     const onThread = store.sessions(projectId, { itemId: item.id }).filter((s) => s.threadId === thread!.id);
     const live = onThread.find((s) => s.state !== "ended" && s.mode === mode) ?? null;
     // The CLI's own session id is what Continue resumes: the platform learned it from a headless run, a hook from a terminal one.
-    const externalId = agent.store.external(projectId, thread.id)[engine.id] ?? onThread.find((s) => s.agent === engine.id && s.externalId)?.externalId ?? null;
+    const externalId = agent.store.external(projectId, thread.id)[engineId] ?? onThread.find((s) => s.agent === engineId && s.externalId)?.externalId ?? null;
     const session =
       live ??
       store.createSession(projectId, {
@@ -128,12 +136,16 @@ export class Starter {
         branch,
         itemIds: [item.id],
         mode,
-        agent: engine.id,
+        agent: engineId,
         threadId: thread.id,
         device: ctx.hub.deviceId,
         externalId
       });
-    const prompt = continued ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link) : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null });
+    const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
+    const decisions = artifactDir ? listDecisions(artifactDir) : [];
+    const prompt = continued
+      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link)
+      : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions });
 
     if (opts.mode === "run") {
       if (!agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.send(projectId, thread.id, { kind: "text", text: prompt });
@@ -142,13 +154,12 @@ export class Starter {
       return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true };
     }
 
-    const files = this.host.sessions.bind(session, `ai:${engine.id}` as Author, this.host.sessionDir(session.id), prompt);
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), prompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const settings = TerminalSettings.parse(ctx.settings.get().codeLink ?? {});
-    const template = engine.id === "codex" ? settings.codexCommand : settings.claudeCommand;
-    const resume = session.externalId ? (engine.id === "codex" ? `resume ${session.externalId}` : `--resume ${session.externalId}`) : "";
+    const template = engineId === "codex" ? terminalSettings.codexCommand : engineId === "other" ? terminalSettings.otherCommand : terminalSettings.claudeCommand;
+    const resume = session.externalId ? (engineId === "codex" ? `resume ${session.externalId}` : engineId === "other" ? session.externalId : `--resume ${session.externalId}`) : "";
     const command = fillTemplate(template, { cwd: where.cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, resume });
-    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, settings.terminal);
+    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);
     return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched };

@@ -1,4 +1,5 @@
 import type { Item, Repo } from "@tomrade/domain";
+import type { Decision } from "./decisions.js";
 import type { CodeLinkView, RepoStateView, SessionView } from "./store.js";
 
 export const BOOTSTRAP_LABEL = "bootstrap";
@@ -11,6 +12,8 @@ export interface FirstPromptInput {
   blockers: Item[];
   bootstrap: boolean;
   mcpUrl: string | null;
+  /** What the project has already settled, so the agent neither re-decides it nor decides around it. */
+  decisions?: Decision[];
 }
 
 const conventions = (key: string, defaultBranch: string) =>
@@ -26,6 +29,7 @@ const conventions = (key: string, defaultBranch: string) =>
 export function firstPrompt(input: FirstPromptInput): string {
   const { item, repo, state, branch, blockers, bootstrap, mcpUrl } = input;
   const playbook = bootstrap ? "code.bootstrap" : "code.implement";
+  const accepted = (input.decisions ?? []).filter((d) => d.status === "accepted");
   const parts = [
     `${bootstrap ? "Bootstrap" : "Implement"} ${item.key} — "${item.title}".`,
     `Follow the playbook first: open_playbook("${playbook}").`,
@@ -40,6 +44,9 @@ export function firstPrompt(input: FirstPromptInput): string {
         ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the manifests"}, and add a short CLAUDE.md as part of this work.`
         : "The repository has no project in it yet.",
     blockers.length ? `Blocked by (unfinished): ${blockers.map((b) => `${b.key} ${b.title}`).join("; ")}.` : "",
+    accepted.length
+      ? `Decisions on record (list_decisions has the details): ${accepted.map((d) => `${d.id} ${d.title}${d.areas.length ? ` [${d.areas.join(", ")}]` : ""}`).join("; ")}. Anything cross-cutting outside these: ask, then record_decision.`
+      : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",
     mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json: ${mcpUrl}` : "",
     "",
     conventions(item.key, repo.defaultBranch)
