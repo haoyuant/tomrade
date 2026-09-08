@@ -67,6 +67,8 @@ async function machine(repo: { remote: string; checkout: string }) {
   const row = bag.ctx.repos.create({ projectId: bag.project.id, remote: repo.remote });
   bag.boards.update(bag.project.id, bag.board.id, { repoId: row.id });
   await bag.ctx.repos.setCheckout(repo.remote, repo.checkout);
+  await settle();
+  await bag.ctx.codeLink.scan(bag.project.id);
   const ticket = (title: string, status?: "backlog" | "todo" | "doing" | "verifying" | "done" | "cancelled") =>
     bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, status, by: "human" });
   return { ...bag, codeLink: bag.ctx.codeLink, repo: row, checkout: repo.checkout, ticket };
@@ -93,7 +95,7 @@ describe("code link", () => {
     expect(section.rows[0].value).toContain(branch);
 
     // The repository is a project with a manifest and no CLAUDE.md yet.
-    expect(codeLink.repoState(project.id, repo.id)).toMatchObject({ readiness: "scaffolded", hasBrief: false, manifests: ["package.json"] });
+    expect(codeLink.repoState(project.id, repo.id)).toMatchObject({ readiness: "scaffolded", remote: "ok", remoteDetail: null, remoteAt: expect.any(Number), hasBrief: false, manifests: ["package.json"] });
 
     git(["checkout", "-q", "main"], checkout);
     git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);

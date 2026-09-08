@@ -26,7 +26,12 @@ export const repositories = {
     addAria: "Repository URL",
     add: "Add",
     addedToast: "Added {{name}}",
-    checkoutSetToast: "{{name}} is at {{dir}} on this machine"
+    checkoutSetToast: "{{name}} is at {{dir}} on this machine",
+    remoteOk: "Origin reachable from this checkout",
+    remoteUnreachable: "Cannot reach origin from this checkout",
+    remoteUnknown: "Origin not checked yet",
+    remoteIdentity: "origin reached as @{{login}}",
+    noCredential: "no credential for {{host}}"
   },
   zh: {
     label: "仓库",
@@ -55,6 +60,11 @@ export const repositories = {
     addAria: "仓库 URL",
     add: "添加",
     addedToast: "已添加 {{name}}",
-    checkoutSetToast: "{{name}} 在这台机器上位于 {{dir}}"
+    checkoutSetToast: "{{name}} 在这台机器上位于 {{dir}}",
+    remoteOk: "此 checkout 可访问 origin",
+    remoteUnreachable: "此 checkout 无法访问 origin",
+    remoteUnknown: "尚未检查 origin",
+    remoteIdentity: "以 @{{login}} 身份访问 origin",
+    noCredential: "没有 {{host}} 的凭据"
   }
 };

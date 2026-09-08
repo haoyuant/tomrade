@@ -8,6 +8,7 @@ export const codeLinkKeys = {
   links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
   sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
   repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,
+  remoteIdentity: (remote: string) => ["codeLink", "remoteIdentity", remote] as const,
   proposals: (projectId: string, itemId?: string) => ["codeLink", projectId, "proposals", itemId ?? ""] as const,
   unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
   worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const
@@ -21,6 +22,10 @@ export const useCodeSessions = (projectId: string, itemId?: string) =>
 
 /** Readiness and policy per repository, as the last scan on any machine left them. */
 export const useRepoStates = (projectId: string) => useQuery({ queryKey: codeLinkKeys.repos(projectId), queryFn: () => invoke("codeLink.repos", projectId) });
+
+/** Live credential identity for a checkout. The server returns only the parsed login. */
+export const useRemoteIdentity = (remote: string, enabled: boolean) =>
+  useQuery({ queryKey: codeLinkKeys.remoteIdentity(remote), queryFn: () => invoke("codeLink.remoteIdentity", remote), enabled });
 
 export const useProposals = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: codeLinkKeys.proposals(projectId, itemId), queryFn: () => invoke("codeLink.proposals", projectId, itemId) });

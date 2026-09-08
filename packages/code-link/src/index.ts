@@ -14,6 +14,7 @@ export {
   type ProposalState,
   type ProposalView,
   type Readiness,
+  type RemoteState,
   type RepoStatePatch,
   type RepoStateView,
   type SessionMode,
@@ -22,6 +23,7 @@ export {
   type SessionView
 } from "./store.js";
 export { BRIEF_FILES, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, type ScanResult, type ScannedBranch } from "./scanner.js";
+export { classifyRemoteFailure, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput, type RemoteFailure, type RemoteIdentity } from "./remote.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
 export { DEFAULT_BRANCH_TEMPLATE, branchFor, keysInText, parseBranch, slugify } from "./keys.js";
 export { Starter, type StartGate, type StartMode, type StartResult } from "./start.js";

@@ -15,6 +15,10 @@ declare module "cordis" {
   interface Context {
     repos: Repos;
   }
+  interface Events {
+    /** A checkout was placed successfully; consumers may inspect it immediately. */
+    "repos/checkout-set"(remote: string): void;
+  }
 }
 
 /** Where a workstream's code is on this machine, and whether it is ready for an agent. */
@@ -223,6 +227,7 @@ export class Repos extends Service {
     if (origin && normalizeRemote(origin) !== key) throw new Error(`${dir} is a checkout of ${normalizeRemote(origin)}, not of ${key}`);
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();
+    this.home.emit("repos/checkout-set", key);
     return this.checkout(key);
   }
 
@@ -249,6 +254,7 @@ export class Repos extends Service {
     await cloneInto(this.runGit, remote.trim(), branch, dir);
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();
+    this.home.emit("repos/checkout-set", key);
     return this.checkout(key);
   }
 

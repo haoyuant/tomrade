@@ -22,6 +22,7 @@ import { writeConnectFiles } from "./connect.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
+import { readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { Starter, type StartMode, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
@@ -89,6 +90,8 @@ declare module "@tomrade/ipc" {
     "codeLink.unlinked": (projectId: string) => UnlinkedBranch[];
     "codeLink.linkBranch": (projectId: string, itemId: string, repoId: string, branch: string) => CodeLinkView;
     "codeLink.repos": (projectId: string) => RepoStateView[];
+    /** The account git will use for this checkout; no secret crosses IPC. */
+    "codeLink.remoteIdentity": (remote: string) => RemoteIdentity;
     "codeLink.setRepoPolicy": (projectId: string, repoId: string, patch: RepoPolicyPatch) => RepoStateView;
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
     "codeLink.start": (projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }) => StartResult;
@@ -223,6 +226,12 @@ export class CodeLink extends Service {
     // A headless session cannot have survived a restart; say so, and let the ticket offer Continue.
     for (const projectId of this.ctx.db.openIds()) this.sessions.reconcile(projectId);
     this.ctx.on("db/opened", (projectId) => this.sessions.reconcile(projectId));
+    this.ctx.on("repos/checkout-set", (remote) => {
+      for (const projectId of this.ctx.db.openIds()) {
+        if (!this.ctx.repos.list(projectId).some((repo) => repo.remote === remote)) continue;
+        void this.scan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${message(err)}`));
+      }
+    });
 
     this.home.inject(["tools"], (ctx) =>
       registerTools(ctx, {
@@ -273,6 +282,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.unlinked", (projectId) => ctx.codeLink.unlinked(projectId));
       ctx.ipc.handle("codeLink.linkBranch", (projectId, itemId, repoId, branch) => ctx.codeLink.linkBranch(projectId, itemId, repoId, branch));
       ctx.ipc.handle("codeLink.repos", (projectId) => ctx.codeLink.repoStates(projectId));
+      ctx.ipc.handle("codeLink.remoteIdentity", (remote) => ctx.codeLink.remoteIdentity(remote));
       ctx.ipc.handle("codeLink.setRepoPolicy", (projectId, repoId, patch) => ctx.codeLink.setRepoPolicy(projectId, repoId, patch));
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
@@ -319,6 +329,11 @@ export class CodeLink extends Service {
 
   repoState(projectId: string, repoId: string): RepoStateView | null {
     return this.store.repoState(projectId, repoId);
+  }
+
+  async remoteIdentity(remote: string): Promise<RemoteIdentity> {
+    const checkout = this.ctx.repos.checkout(remote).checkout;
+    return checkout && fs.existsSync(checkout) ? readRemoteIdentity(this.git, checkout, remote) : { host: null, login: null };
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
@@ -598,6 +613,9 @@ export class CodeLink extends Service {
       if (result.offline) summary.offline += 1;
       this.store.upsertRepoState(projectId, repo.id, {
         readiness: result.readiness,
+        remote: result.remote,
+        remoteDetail: result.remote === "unreachable" ? result.remoteDetail : null,
+        remoteAt: result.remote === "ok" ? now : (before?.remoteAt ?? null),
         hasBrief: result.hasBrief,
         manifests: result.manifests,
         summary: result.summary,
@@ -834,8 +852,10 @@ export class CodeLink extends Service {
         if (live.length) parts.push(`${live.length} session${live.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} waiting for you` : ""}${stuck ? ` · ${stuck} stuck` : ""}`);
         const unlinked = this.unlinked(projectId).length;
         const open = this.store.proposals(projectId).length;
+        const unreachable = this.store.repoStates(projectId).filter((repo) => repo.remote === "unreachable").length;
         if (unlinked) parts.push(`${unlinked} unlinked`);
         if (open) parts.push(`${open} to confirm`);
+        if (unreachable) parts.push(`${unreachable} unreachable`);
         if (!parts.length && !at) return null;
         return `code: ${parts.join(" · ") || "in sync"}${at ? ` · scanned ${ago(at)}` : ""}`;
       }

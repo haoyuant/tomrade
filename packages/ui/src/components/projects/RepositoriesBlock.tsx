@@ -1,8 +1,10 @@
 import { useRef, useState } from "react";
+import type { RepoStateView } from "@tomrade/code-link";
 import type { Board, Repo } from "@tomrade/domain";
 import type { CheckoutView } from "@tomrade/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
+import { useRemoteIdentity, useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import {
   useBoards,
@@ -67,6 +69,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
   const repos = useRepos(projectId);
   const boards = useBoards(projectId);
   const checkouts = useRepoCheckouts();
+  const states = useRepoStates(projectId);
   const create = useCreateRepo(projectId);
   const toast = useToast();
   const [url, setUrl] = useState("");
@@ -97,7 +100,14 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
       <div className="stack-2" style={{ marginTop: "var(--space-2)" }}>
         {(repos.data ?? []).length === 0 && <p className="meta-txt dense repos-none">{t("repositories.none")}</p>}
         {(repos.data ?? []).map((repo) => (
-          <RepoRow key={repo.id} repo={repo} projectId={projectId} boards={(boards.data ?? []).filter((b) => b.repoId === repo.id)} checkout={byRemote.get(normalizeRemote(repo.remote)) ?? null} />
+          <RepoRow
+            key={repo.id}
+            repo={repo}
+            projectId={projectId}
+            boards={(boards.data ?? []).filter((b) => b.repoId === repo.id)}
+            checkout={byRemote.get(normalizeRemote(repo.remote)) ?? null}
+            remoteState={(states.data ?? []).find((state) => state.repoId === repo.id) ?? null}
+          />
         ))}
       </div>
       <div className="row repos-add" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
@@ -120,7 +130,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
   );
 }
 
-function RepoRow({ repo, projectId, boards, checkout }: { repo: Repo; projectId: string; boards: Board[]; checkout: CheckoutView | null }) {
+function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Repo; projectId: string; boards: Board[]; checkout: CheckoutView | null; remoteState: RepoStateView | null }) {
   const { t } = useI18n();
   const toast = useToast();
   const update = useUpdateRepo(projectId);
@@ -129,6 +139,7 @@ function RepoRow({ repo, projectId, boards, checkout }: { repo: Repo; projectId:
   const clearCheckout = useClearCheckout();
   const setRun = useSetRunInCheckout();
   const clone = useCloneRepo();
+  const identity = useRemoteIdentity(repo.remote, !!checkout?.checkout);
   const [picking, setPicking] = useState(false);
   const busy = update.isPending || remove.isPending || setCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending;
   const fail = (error: unknown) => toast({ body: message(error) });
@@ -172,6 +183,20 @@ function RepoRow({ repo, projectId, boards, checkout }: { repo: Repo; projectId:
         </button>
       </div>
       <p className="meta-txt dense repo-used">{boards.length ? t("repositories.usedBy", { names: boards.map((b) => b.name).join(", ") }) : t("repositories.usedByNone")}</p>
+      {checkout?.checkout && remoteState && (
+        <div className="cfg-row repo-remote-state" style={{ marginTop: 0 }} title={remoteState.remoteDetail ?? undefined}>
+          <Icon name={remoteState.remote === "ok" ? "i-check" : remoteState.remote === "unreachable" ? "i-warn" : "i-clock"} size={14} style={{ color: remoteState.remote === "unreachable" ? "var(--danger)" : remoteState.remote === "ok" ? "var(--accent)" : "var(--meta)" }} />
+          <span className="cfg-name">
+            {remoteState.remote === "ok" ? t("repositories.remoteOk") : remoteState.remote === "unreachable" ? t("repositories.remoteUnreachable") : t("repositories.remoteUnknown")}
+          </span>
+          {remoteState.remoteDetail && <span className="meta-txt num" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{remoteState.remoteDetail}</span>}
+        </div>
+      )}
+      {checkout?.checkout && identity.data?.host && (
+        <p className="meta-txt dense repo-identity" title={identity.data.host}>
+          {identity.data.login ? t("repositories.remoteIdentity", { login: identity.data.login }) : t("repositories.noCredential", { host: identity.data.host })}
+        </p>
+      )}
       <div className="cfg-row repo-checkout" style={{ marginTop: 0 }}>
         <Icon name={checkout?.checkout ? "i-check" : "i-warn"} size={14} style={{ color: checkout?.checkout ? "var(--accent)" : "var(--danger)" }} />
         <span className="cfg-name num" style={{ fontFamily: "var(--font-mono)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={checkout?.checkout ?? ""}>

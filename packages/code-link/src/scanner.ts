@@ -1,5 +1,6 @@
 import type { Git } from "@tomrade/storage";
 import { keysInText, parseBranch } from "./keys.js";
+import { remoteFailureDetail, remoteFailureMessage } from "./remote.js";
 
 /** Files at a repository's root that say "there is a project here" — one is enough for `scaffolded`. */
 export const MANIFESTS = [
@@ -58,6 +59,9 @@ export interface MergedCommit {
 export interface ScanResult {
   /** The fetch failed — what follows is this machine's last view of the remote. */
   offline: boolean;
+  remote: "ok" | "unreachable" | "unknown";
+  /** Last stderr line from a failed fetch, with credentials removed. */
+  remoteDetail: string | null;
   /** `origin/<default>` when the remote has it, the local branch otherwise, null in an empty repository. */
   defaultRef: string | null;
   defaultSha: string | null;
@@ -84,11 +88,17 @@ const RS = "\u001e";
  */
 export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): Promise<ScanResult> {
   const run = (args: string[]) => git(args, { cwd: checkout, ok: true });
-  let offline = false;
+  let remote: ScanResult["remote"] = "unknown";
+  let remoteDetail: string | null = null;
   if (opts.fetch !== false) {
     const hasOrigin = (await run(["remote", "get-url", "origin"])).code === 0;
-    if (hasOrigin) offline = (await run(["fetch", "-q", "--prune", "origin"])).code !== 0;
+    if (hasOrigin) {
+      const fetched = await run(["fetch", "-q", "--prune", "origin"]);
+      remote = fetched.code === 0 ? "ok" : "unreachable";
+      if (fetched.code !== 0) remoteDetail = remoteFailureDetail(fetched.stderr ?? "");
+    }
   }
+  const offline = remote === "unreachable";
 
   const remoteDefault = `refs/remotes/origin/${opts.defaultBranch}`;
   const localDefault = `refs/heads/${opts.defaultBranch}`;
@@ -159,7 +169,7 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
   // No default branch anywhere and the fetch failed: that is not an empty
   // repository, it is a repository this machine cannot see — credentials, most often.
   const readiness = manifests.length ? "scaffolded" : offline && !defaultRef ? "unknown" : "empty";
-  const summary = manifests.length ? `${manifests.join(", ")}${hasBrief ? " · documented" : " · no CLAUDE.md"}` : readiness === "unknown" ? "remote unreachable from this checkout — check the credentials git uses for origin" : null;
+  const summary = manifests.length ? `${manifests.join(", ")}${hasBrief ? " · documented" : " · no CLAUDE.md"}` : readiness === "unknown" ? remoteFailureMessage(remoteDetail ?? "") : null;
 
-  return { offline, defaultRef, defaultSha, branches, mergedKeys, readiness, hasBrief, manifests, summary };
+  return { offline, remote, remoteDetail, defaultRef, defaultSha, branches, mergedKeys, readiness, hasBrief, manifests, summary };
 }

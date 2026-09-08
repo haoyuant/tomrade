@@ -151,7 +151,8 @@ describe("starting a ticket", () => {
     const item = ticket("Unreachable");
 
     await codeLink.scan(project.id);
-    expect(codeLink.repoState(project.id, repo!.id)).toMatchObject({ readiness: "unknown", summary: expect.stringContaining("remote unreachable") });
+    expect(codeLink.repoState(project.id, repo!.id)).toMatchObject({ readiness: "unknown", remote: "unreachable", remoteDetail: expect.any(String), remoteAt: null, summary: expect.stringContaining("origin") });
+    expect(ctx.contributions.statusItems({ projectId: project.id }).find((s) => s.id === "code-link")!.text).toContain("1 unreachable");
     const gated = await codeLink.start(project.id, item.id, { mode: "run" });
     expect(gated).toMatchObject({ ok: false, gate: "remote" });
     expect(ctx.items.list({ projectId: project.id }).some((i) => i.labels.includes(BOOTSTRAP_LABEL))).toBe(false);

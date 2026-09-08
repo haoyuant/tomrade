@@ -86,6 +86,14 @@ CREATE INDEX IF NOT EXISTS idx_plugin_code_link_sessions_project ON plugin_code_
     // What the agent is doing right now, as its last hook said: "Bash · flutter create…", "needs your approval".
     version: 2,
     up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN activity TEXT"
+  },
+  {
+    version: 3,
+    up: `
+ALTER TABLE plugin_code_link_repos ADD COLUMN remote TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE plugin_code_link_repos ADD COLUMN remote_detail TEXT;
+ALTER TABLE plugin_code_link_repos ADD COLUMN remote_at INTEGER;
+`
   }
 ];
 
@@ -123,11 +131,16 @@ export interface CodeLinkView {
 }
 
 export type Readiness = "unknown" | "empty" | "scaffolded";
+export type RemoteState = "ok" | "unreachable" | "unknown";
 
 export interface RepoStateView {
   repoId: string;
   projectId: string;
   readiness: Readiness;
+  remote: RemoteState;
+  remoteDetail: string | null;
+  /** Last time this machine reached origin successfully. */
+  remoteAt: number | null;
   hasBrief: boolean;
   manifests: string[];
   summary: string | null;
@@ -210,6 +223,9 @@ interface RepoRow {
   repo_id: string;
   project_id: string;
   readiness: string;
+  remote: string;
+  remote_detail: string | null;
+  remote_at: number | null;
   has_brief: number;
   manifests_json: string;
   summary: string | null;
@@ -283,6 +299,9 @@ const toRepo = (r: RepoRow): RepoStateView => ({
   repoId: r.repo_id,
   projectId: r.project_id,
   readiness: r.readiness as Readiness,
+  remote: r.remote as RemoteState,
+  remoteDetail: r.remote_detail,
+  remoteAt: r.remote_at,
   hasBrief: r.has_brief === 1,
   manifests: JSON.parse(r.manifests_json) as string[],
   summary: r.summary,
@@ -347,6 +366,9 @@ export interface LinkPatch {
 
 export interface RepoStatePatch {
   readiness?: Readiness;
+  remote?: RemoteState;
+  remoteDetail?: string | null;
+  remoteAt?: number | null;
   hasBrief?: boolean;
   manifests?: string[];
   summary?: string | null;
@@ -490,6 +512,9 @@ export class CodeLinkStore {
       repoId,
       projectId,
       readiness: patch.readiness ?? existing?.readiness ?? "unknown",
+      remote: patch.remote ?? existing?.remote ?? "unknown",
+      remoteDetail: patch.remoteDetail === undefined ? (existing?.remoteDetail ?? null) : patch.remoteDetail,
+      remoteAt: patch.remoteAt === undefined ? (existing?.remoteAt ?? null) : patch.remoteAt,
       hasBrief: patch.hasBrief ?? existing?.hasBrief ?? false,
       manifests: patch.manifests ?? existing?.manifests ?? [],
       summary: patch.summary === undefined ? (existing?.summary ?? null) : patch.summary,
@@ -503,10 +528,11 @@ export class CodeLinkStore {
     };
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, scanned_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, scanned_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_id) DO UPDATE SET
-           readiness = excluded.readiness, has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
+           readiness = excluded.readiness, remote = excluded.remote, remote_detail = excluded.remote_detail, remote_at = excluded.remote_at,
+           has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
            scanned_sha = excluded.scanned_sha, default_sha = excluded.default_sha, branch_template = excluded.branch_template,
            auto_done = excluded.auto_done, agent_push = excluded.agent_push, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
       )
@@ -514,6 +540,9 @@ export class CodeLinkStore {
         repoId,
         projectId,
         next.readiness,
+        next.remote,
+        next.remoteDetail,
+        next.remoteAt,
         next.hasBrief ? 1 : 0,
         JSON.stringify(next.manifests),
         next.summary,

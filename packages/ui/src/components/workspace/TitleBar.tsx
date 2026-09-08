@@ -229,9 +229,9 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
       <div className="board-facts">
         {ws.virtual && <span className="tag neutral view-kind">{FIELD_LABEL.board}</span>}
         {readiness && (
-          <span className="tag faint readiness" title={readiness.summary ?? undefined}>
-            {t(READINESS_KEY[readiness.readiness])}
-            {readiness.readiness === "scaffolded" && !readiness.hasBrief ? ` · ${t("codeLink.noBrief")}` : ""}
+          <span className="tag faint readiness" title={readiness.remoteDetail ?? readiness.summary ?? undefined}>
+            {readiness.remote === "unreachable" ? t("codeLink.remoteUnreachable") : t(READINESS_KEY[readiness.readiness])}
+            {readiness.remote !== "unreachable" && readiness.readiness === "scaffolded" && !readiness.hasBrief ? ` · ${t("codeLink.noBrief")}` : ""}
           </span>
         )}
         {ws.dirty && <span className="tag faint view-dirty">{t("titleBar.unsaved")}</span>}
