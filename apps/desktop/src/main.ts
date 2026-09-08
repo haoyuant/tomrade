@@ -53,9 +53,18 @@ app.whenReady().then(async () => {
       icon: iconPath,
       devServerUrl: process.env.VITE_DEV_SERVER_URL
     });
-  open();
+  const mainWindows = new Set<BrowserWindow>();
+  const openMain = () => {
+    const win = open();
+    mainWindows.add(win);
+    win.on("closed", () => mainWindows.delete(win));
+    return win;
+  };
+  openMain();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) open();
+    // Auxiliary plugin surfaces are top-level BrowserWindows too; only a real
+    // Tomrade window satisfies application activation.
+    if (![...mainWindows].some((win) => !win.isDestroyed())) openMain();
   });
 });
 

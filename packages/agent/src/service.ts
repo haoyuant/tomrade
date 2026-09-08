@@ -56,9 +56,20 @@ export interface ThreadDetail {
   pending: PendingView | null;
 }
 
+/** Current in-memory work plus durable questions, for main-process observers that load mid-run. */
+export interface AgentActivity {
+  threadId: string;
+  run: RunView | null;
+  pending: PendingView | null;
+}
+
 declare module "cordis" {
   interface Context {
     agent: Agent;
+  }
+  interface Events {
+    /** Main-process lifecycle stream for feature plugins; renderer IPC is only one consumer. */
+    "agent/event"(threadId: string, event: AgentEvent): void;
   }
 }
 
@@ -287,6 +298,26 @@ export class Agent extends Service {
       cards: this.store.cards(projectId, threadId),
       pending: pending ? this.pendingView(pending) : null
     };
+  }
+
+  activities(): AgentActivity[] {
+    const out = new Map<string, AgentActivity>();
+    for (const rc of this.activeByThread.values()) {
+      const pending = this.store.pending(rc.projectId, rc.threadId);
+      out.set(rc.threadId, {
+        threadId: rc.threadId,
+        run: this.store.run(rc.projectId, rc.run.id) ?? rc.run,
+        pending: pending ? this.pendingView(pending) : null
+      });
+    }
+    for (const projectId of this.ctx.db.openIds()) {
+      for (const thread of this.store.threads(projectId)) {
+        if (out.has(thread.id)) continue;
+        const pending = this.store.pending(projectId, thread.id);
+        if (pending) out.set(thread.id, { threadId: thread.id, run: null, pending: this.pendingView(pending) });
+      }
+    }
+    return [...out.values()].sort((a, b) => a.threadId.localeCompare(b.threadId));
   }
 
   private pendingView(record: PendingRecord): PendingView {
@@ -671,6 +702,7 @@ export class Agent extends Service {
   }
 
   private broadcast(threadId: string, event: AgentEvent): void {
+    this.ctx.emit("agent/event", threadId, event);
     this.ctx.get("ipc")?.send("agent.event", threadId, event);
   }
 

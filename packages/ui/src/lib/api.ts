@@ -4,3 +4,11 @@ import type { Invoke, Subscribe } from "@tomrade/ipc";
 export const invoke: Invoke = (channel, ...args) => window.tomrade.invoke(channel, ...args);
 
 export const subscribe: Subscribe = (channel, listener) => window.tomrade.on(channel, listener);
+
+/** Contribution descriptors name optional plugin channels at runtime. */
+export const invokeDynamic = (channel: string, ...args: unknown[]): Promise<unknown> =>
+  (window.tomrade.invoke as unknown as (channel: string, ...args: unknown[]) => Promise<unknown>)(channel, ...args);
+
+/** Runtime companion to invokeDynamic for a descriptor's change broadcast. */
+export const subscribeDynamic = (channel: string, listener: (...args: unknown[]) => void): (() => void) =>
+  (window.tomrade.on as unknown as (channel: string, listener: (...args: unknown[]) => void) => () => void)(channel, listener);

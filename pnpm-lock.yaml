@@ -38,6 +38,9 @@ importers:
       '@tomrade/deps-graph':
         specifier: workspace:*
         version: link:../../packages/deps-graph
+      '@tomrade/desktop-surface':
+        specifier: workspace:*
+        version: link:../../packages/desktop-surface
       '@tomrade/engine-claude-code':
         specifier: workspace:*
         version: link:../../packages/engine-claude-code
@@ -71,6 +74,9 @@ importers:
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../../packages/oplog
+      '@tomrade/pet':
+        specifier: workspace:*
+        version: link:../../packages/pet
       '@tomrade/plugins':
         specifier: workspace:*
         version: link:../../packages/plugins
@@ -300,6 +306,16 @@ importers:
       '@tomrade/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
+    devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/desktop-surface:
+    dependencies:
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -581,6 +597,37 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/pet:
+    dependencies:
+      '@tomrade/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomrade/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomrade/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/plugin-sdk:
     dependencies:
       '@tomrade/agent':
@@ -595,6 +642,9 @@ importers:
       '@tomrade/db':
         specifier: workspace:*
         version: link:../db
+      '@tomrade/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain

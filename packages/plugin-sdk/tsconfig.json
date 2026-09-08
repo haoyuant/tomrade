@@ -21,6 +21,9 @@
       "path": "../db"
     },
     {
+      "path": "../desktop-surface"
+    },
+    {
       "path": "../domain"
     },
     {
