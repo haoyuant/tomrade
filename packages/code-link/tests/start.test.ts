@@ -139,6 +139,47 @@ describe("starting a ticket", () => {
     expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "locked" });
   });
 
+  it("starts the bootstrap ticket in an empty repository on an unborn branch, and its first push creates the default branch", async () => {
+    const remote = path.join(root, `remote-${n++}.git`);
+    fs.mkdirSync(remote, { recursive: true });
+    git(["init", "--bare", "-b", "main", "."], remote);
+    const checkout = path.join(root, `checkout-${n++}`);
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", remote], checkout);
+    git(["config", "user.email", "dev@localhost"], checkout);
+    git(["config", "user.name", "Dev"], checkout);
+
+    const world = await machine({ remote, checkout });
+    const { codeLink, ctx, agent, project, repo, turns, ticket } = world;
+    await ctx.repos.setCheckout(remote, checkout);
+    const feature = ticket("First feature");
+    const gated = await codeLink.start(project.id, feature.id, { mode: "run" });
+    expect(gated).toMatchObject({ ok: false, gate: "readiness" });
+    const bootstrap = ctx.items.list({ projectId: project.id }).find((i) => i.labels.includes(BOOTSTRAP_LABEL))!;
+
+    const result = await codeLink.start(project.id, bootstrap.id, { mode: "run" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // No commit anywhere yet: the worktree sits on the ticket's branch, unborn.
+    expect(git(["symbolic-ref", "HEAD"], result.cwd)).toBe(`refs/heads/${result.branch}`);
+    await untilRunsSettle(agent);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].messages[0]?.block).toMatchObject({ type: "text", text: expect.stringContaining("Bootstrap") });
+    // The fake agent made the repository's first commit on that branch.
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], result.cwd)).toBe(result.branch);
+
+    const pr = await codeLink.openPr(project.id, bootstrap.id);
+    expect(pr.pushed).toBe(true);
+    expect(pr.message).toContain("became it");
+    expect(git(["ls-remote", "--heads", remote, "main"], checkout)).toMatch(/refs\/heads\/main/);
+    await codeLink.scan(project.id);
+    expect(ctx.items.get(project.id, bootstrap.id)!.status).toBe("done");
+    expect(codeLink.repoState(project.id, repo!.id)!.readiness).toBe("empty"); // no manifest yet — the fake agent wrote no package.json
+    expect(ctx.items.get(project.id, feature.id)!.blockedBy).toEqual([bootstrap.id]);
+    expect(await codeLink.start(project.id, feature.id, { mode: "run" })).toMatchObject({ ok: false, gate: "readiness" });
+  });
+
   it("runs the ticket in a worktree on its own branch, follows the session, and takes the agent's report", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, hubDir, turns, ticket } = world;

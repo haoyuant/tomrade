@@ -482,6 +482,19 @@ export class CodeLink extends Service {
     const pushed = await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${link.branch}`], { cwd, ok: true });
     if (pushed.code !== 0) return { pushed: false, url: null, created: false, message: `git push failed — check your credentials for ${repo.remote}` };
 
+    // An empty repository has no default branch to open a pull request against:
+    // the bootstrap's branch becomes it. Creating a branch from nothing is not
+    // rewriting one, and it is what the bootstrap ticket exists to do.
+    const remoteDefault = await this.git(["ls-remote", "--exit-code", "--heads", "origin", repo.defaultBranch], { cwd, ok: true });
+    if (remoteDefault.code === 2) {
+      const created = await this.git(["push", "-q", "origin", `HEAD:refs/heads/${repo.defaultBranch}`], { cwd, ok: true });
+      if (created.code === 0) {
+        this.store.patchLink(projectId, link.id, { lastSeenAt: Date.now() });
+        void this.scan(projectId).catch(() => {});
+        return { pushed: true, url: null, created: false, message: `${repo.name} had no ${repo.defaultBranch} yet — ${link.branch} became it, so this ticket counts as merged` };
+      }
+    }
+
     let url: string | null = null;
     let created = false;
     if (await commandOk("gh")) {

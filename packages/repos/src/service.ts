@@ -277,19 +277,26 @@ export class Repos extends Service {
       const g = new GitFolder(this.runGit, placement.checkout);
       await g.fetch(repo.defaultBranch);
       fs.mkdirSync(path.dirname(worktree), { recursive: true });
-      const start = (await this.runGit(["rev-parse", "--verify", `origin/${repo.defaultBranch}`], { cwd: placement.checkout, ok: true })).code === 0 ? `origin/${repo.defaultBranch}` : "HEAD";
+      const checkout = placement.checkout;
+      const verify = async (ref: string) => (await this.runGit(["rev-parse", "--verify", "--quiet", ref], { cwd: checkout, ok: true })).code === 0;
+      // Where a new branch starts: the remote's default branch, else whatever the
+      // checkout has, else nothing — an empty repository has no commit to start
+      // from, so the branch is born unborn (`--orphan`) and its first commit is
+      // the repository's first.
+      const start = (await verify(`refs/remotes/origin/${repo.defaultBranch}`)) ? `origin/${repo.defaultBranch}` : (await verify("HEAD")) ? "HEAD" : null;
       const branch = opts.branch ?? null;
       if (branch) {
         // A ticket's branch: continued where it already exists (an earlier
         // session here, or a push from elsewhere), started from the default
         // branch otherwise. Detached is for a thread with no ticket.
-        const checkout = placement.checkout;
-        const verify = async (ref: string) => (await this.runGit(["rev-parse", "--verify", "--quiet", ref], { cwd: checkout, ok: true })).code === 0;
-        if (await verify(`refs/heads/${branch}`)) await this.runGit(["worktree", "add", worktree, branch], { cwd: placement.checkout });
-        else if (await verify(`refs/remotes/origin/${branch}`)) await this.runGit(["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`], { cwd: placement.checkout });
-        else await this.runGit(["worktree", "add", "-b", branch, worktree, start], { cwd: placement.checkout });
+        if (await verify(`refs/heads/${branch}`)) await this.runGit(["worktree", "add", worktree, branch], { cwd: checkout });
+        else if (await verify(`refs/remotes/origin/${branch}`)) await this.runGit(["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`], { cwd: checkout });
+        else if (start) await this.runGit(["worktree", "add", "-b", branch, worktree, start], { cwd: checkout });
+        else await this.runGit(["worktree", "add", "--orphan", "-b", branch, worktree], { cwd: checkout });
+      } else if (start) {
+        await this.runGit(["worktree", "add", "--detach", worktree, start], { cwd: checkout });
       } else {
-        await this.runGit(["worktree", "add", "--detach", worktree, start], { cwd: placement.checkout });
+        await this.runGit(["worktree", "add", "--orphan", "-b", `tomrade/${threadId.slice(0, 8)}`, worktree], { cwd: checkout });
       }
     }
     return { repo, cwd: path.join(worktree, sub), worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
