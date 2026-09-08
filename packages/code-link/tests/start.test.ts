@@ -139,6 +139,24 @@ describe("starting a ticket", () => {
     expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "locked" });
   });
 
+  it("does not mistake a repository it cannot reach for an empty one", async () => {
+    // A checkout whose origin cannot be fetched: an empty clone of a full repository looks exactly like this.
+    const checkout = path.join(root, `checkout-${n++}`);
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", path.join(root, "no-such-remote.git")], checkout);
+    const world = await machine({ remote: path.join(root, "no-such-remote.git"), checkout });
+    const { codeLink, ctx, project, repo, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout);
+    const item = ticket("Unreachable");
+
+    await codeLink.scan(project.id);
+    expect(codeLink.repoState(project.id, repo!.id)).toMatchObject({ readiness: "unknown", summary: expect.stringContaining("remote unreachable") });
+    const gated = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(gated).toMatchObject({ ok: false, gate: "remote" });
+    expect(ctx.items.list({ projectId: project.id }).some((i) => i.labels.includes(BOOTSTRAP_LABEL))).toBe(false);
+  });
+
   it("starts the bootstrap ticket in an empty repository on an unborn branch, and its first push creates the default branch", async () => {
     const remote = path.join(root, `remote-${n++}.git`);
     fs.mkdirSync(remote, { recursive: true });
@@ -273,6 +291,13 @@ describe("starting a ticket", () => {
     await post({ hook_event_name: "Stop", session_id: "cli-abc" });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual(expect.arrayContaining([{ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" }]));
+    // Tomrade restarts: the binding is gone from memory, the token is still in the session's folder, and comes back.
+    codeLink.sessions.release(result.sessionId);
+    expect(await post({ hook_event_name: "PostToolUse" })).toBe(404);
+    expect(codeLink.rebindSessions(project.id)).toBe(1);
+    expect(await post({ hook_event_name: "PostToolUse" })).toBe(200);
+    expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("running");
+
     expect(await post({ hook_event_name: "SessionEnd" })).toBe(200);
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("ended");
     expect(await post({ hook_event_name: "SessionStart" })).toBe(404);

@@ -8,6 +8,7 @@ import type {} from "@tomrade/repos";
 import type {} from "@tomrade/settings";
 import type {} from "@tomrade/storage";
 import type { Author, Board, Item, Repo } from "@tomrade/domain";
+import { GitFolder, type Git } from "@tomrade/storage";
 import { listDecisions } from "./decisions.js";
 import { branchFor } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
@@ -16,7 +17,7 @@ import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal } from "./terminal.js";
 
 export type StartMode = "run" | "terminal";
-export type StartGate = "locked" | "workstream" | "checkout" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
+export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
 
 export type StartResult =
   | { ok: false; gate: StartGate; message: string; bootstrapKey?: string; remote?: string; blockers?: string[] }
@@ -41,6 +42,7 @@ export interface StartHost {
   ctx: Context;
   store: CodeLinkStore;
   sessions: Sessions;
+  git: Git;
   scan(projectId: string): Promise<unknown>;
   notify(projectId: string): void;
   sessionDir(sessionId: string): string;
@@ -78,6 +80,19 @@ export class Starter {
     if (!state?.scannedAt) {
       await this.host.scan(projectId);
       state = store.repoState(projectId, repo.id);
+    }
+    // "Empty" is only believed when the remote confirms it. A checkout whose
+    // fetch fails — wrong account, no network — looks the same from here, and
+    // bootstrapping a repository that is full elsewhere would be the wrong move.
+    if (state?.readiness === "empty" || state?.readiness === "unknown") {
+      const probe = await new GitFolder(this.host.git, placement.checkout).probe(repo.defaultBranch);
+      if (probe === "offline") return { ok: false, gate: "remote", message: `Tomrade cannot reach ${repo.remote} from ${placement.checkout} — git fetch fails there; check the credentials that checkout uses`, remote: repo.remote };
+      if (probe === "exists") {
+        // The remote has the branch but this machine never fetched it: fetch now and read again.
+        await this.host.scan(projectId);
+        state = store.repoState(projectId, repo.id);
+        if (state?.readiness === "unknown") return { ok: false, gate: "remote", message: `${repo.remote} has ${repo.defaultBranch}, but this checkout cannot fetch it — check the credentials that checkout uses`, remote: repo.remote };
+      }
     }
     const bootstrapping = item.labels.includes(BOOTSTRAP_LABEL);
     if (state?.readiness === "empty" && !bootstrapping) {

@@ -61,9 +61,13 @@ export function firstPrompt(input: FirstPromptInput): string {
 export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null): string {
   const parts = [
     `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
+    "",
+    "Ticket:",
+    item.body?.trim() || "(no description)",
+    "",
     session?.summary ? `Last note: ${session.summary}` : "",
     link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : " · no pull request yet"}.` : "",
-    "Re-read the ticket with get_item, check the working tree and the tests, then carry on where you stopped.",
+    "Check the working tree and the tests, then carry on where you stopped. get_item has the ticket's latest state if you need it.",
     "",
     conventions(item.key, repo.defaultBranch)
   ];

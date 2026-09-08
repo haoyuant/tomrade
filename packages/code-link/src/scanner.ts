@@ -64,7 +64,8 @@ export interface ScanResult {
   branches: ScannedBranch[];
   /** Ticket numbers named by default-branch commits since `sinceSha`, with the commit that named them. */
   mergedKeys: Map<number, MergedCommit>;
-  readiness: "empty" | "scaffolded";
+  /** `unknown` when the remote could not be reached and nothing local stands in: an empty checkout of a full repository looks exactly like an empty repository. */
+  readiness: "empty" | "scaffolded" | "unknown";
   hasBrief: boolean;
   manifests: string[];
   summary: string | null;
@@ -155,8 +156,10 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     manifests = MANIFESTS.filter((m) => names.has(m));
     hasBrief = BRIEF_FILES.some((f) => names.has(f));
   }
-  const readiness = manifests.length ? "scaffolded" : "empty";
-  const summary = manifests.length ? `${manifests.join(", ")}${hasBrief ? " · documented" : " · no CLAUDE.md"}` : null;
+  // No default branch anywhere and the fetch failed: that is not an empty
+  // repository, it is a repository this machine cannot see — credentials, most often.
+  const readiness = manifests.length ? "scaffolded" : offline && !defaultRef ? "unknown" : "empty";
+  const summary = manifests.length ? `${manifests.join(", ")}${hasBrief ? " · documented" : " · no CLAUDE.md"}` : readiness === "unknown" ? "remote unreachable from this checkout — check the credentials git uses for origin" : null;
 
   return { offline, defaultRef, defaultSha, branches, mergedKeys, readiness, hasBrief, manifests, summary };
 }

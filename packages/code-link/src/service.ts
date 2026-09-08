@@ -207,6 +207,7 @@ export class CodeLink extends Service {
       ctx: this.ctx,
       store: this.store,
       sessions: this.sessions,
+      git: this.git,
       scan: (projectId) => this.scan(projectId),
       notify: (projectId) => this.notify(projectId),
       sessionDir: (id) => this.sessionDir(id),
@@ -227,8 +228,13 @@ export class CodeLink extends Service {
         notify: (projectId) => this.notify(projectId)
       })
     );
-    // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
-    this.home.inject(["mcp"], (ctx) => ctx.mcp.onEvent((payload) => this.externalEvent(payload)));
+    this.home.inject(["mcp"], (ctx) => {
+      // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
+      ctx.mcp.onEvent((payload) => this.externalEvent(payload));
+      // Terminals the user still has open from before a restart keep calling with their tokens; bind those again.
+      for (const projectId of this.ctx.db.openIds()) this.rebindSessions(projectId);
+      ctx.on("db/opened", (projectId) => this.rebindSessions(projectId));
+    });
     // A ticket an agent creates mid-session belongs to that session too.
     this.ctx.on("write/committed", (intent) => {
       const bound = sessionContext.getStore();
@@ -360,6 +366,16 @@ export class CodeLink extends Service {
   /** Start or continue a ticket with a local coding agent. See `Starter` for the gates. */
   start(projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }): Promise<StartResult> {
     return this.starter.start(projectId, itemId, opts);
+  }
+
+  /** Bind again the tokens of this machine's live terminal sessions — the ones a restart would otherwise have orphaned. Returns how many. */
+  rebindSessions(projectId: string): number {
+    let n = 0;
+    for (const s of this.store.sessions(projectId, { live: true })) {
+      if (s.mode !== "terminal" || s.device !== this.ctx.hub.deviceId || !s.threadId) continue;
+      if (this.sessions.rebind(s, `ai:${s.agent}` as Author, this.sessionDir(s.id))) n += 1;
+    }
+    return n;
   }
 
   /** A session took a ticket on — its first, or another beside it. */

@@ -91,8 +91,12 @@ export class Mcp extends Service {
     // coding agent in that project's repository needs no projectId argument;
     // bare `/mcp` is for clients that span projects and must name one per call.
     const open = (projectId: string | undefined) => async (req: express.Request, res: express.Response) => {
-      const existing = transports.get(sessionIdOf(req) ?? "");
+      const sid = sessionIdOf(req);
+      const existing = transports.get(sid ?? "");
       if (existing) return existing.handleRequest(req, res, req.body);
+      // A session id this server never issued — the client outlived a restart.
+      // 404 is what tells a Streamable HTTP client to open a new session rather than give up.
+      if (sid) return res.status(404).json({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found — start a new one" }, id: null });
       const header = req.headers["x-tomrade-run"];
       const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
       const token = typeof header === "string" ? header : bearer;

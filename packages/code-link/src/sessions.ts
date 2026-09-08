@@ -58,6 +58,19 @@ export class Sessions {
     private readonly onChange: (projectId: string) => void
   ) {}
 
+  /** What a session's token does when it is used: attribute the call, note the sign of life, hear the hooks. */
+  private binding(session: SessionView, author: Author) {
+    return {
+      author,
+      projectId: session.projectId,
+      execute: (name: string, args: unknown) => {
+        this.touch(session.projectId, session.id, { state: "running", tool: true });
+        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => this.ctx.tools.execute(name, args, { by: author, projectId: session.projectId }));
+      },
+      event: (payload: unknown) => this.event(session.projectId, session.id, payload)
+    };
+  }
+
   /** Bind a token for the session and lay down the files its agent starts from. Null when the MCP server is not running. */
   bind(session: SessionView, author: Author, dir: string, prompt: string): SessionFiles | null {
     const mcp = this.ctx.get("mcp");
@@ -65,15 +78,7 @@ export class Sessions {
     const existing = this.live.get(session.id);
     if (existing) existing.unbind();
     const token = randomUUID();
-    const unbind = mcp.bindRun(token, {
-      author,
-      projectId: session.projectId,
-      execute: (name, args) => {
-        this.touch(session.projectId, session.id, { state: "running", tool: true });
-        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => this.ctx.tools.execute(name, args, { by: author, projectId: session.projectId }));
-      },
-      event: (payload) => this.event(session.projectId, session.id, payload)
-    });
+    const unbind = mcp.bindRun(token, this.binding(session, author));
     this.live.set(session.id, { token, unbind });
 
     const mcpUrl = mcp.urlFor(session.projectId)!;
@@ -90,6 +95,27 @@ export class Sessions {
 
   token(sessionId: string): string | null {
     return this.live.get(sessionId)?.token ?? null;
+  }
+
+  /**
+   * After Tomrade restarts, a terminal the user still has open goes on calling
+   * with the token it was given. The token is in the session's own mcp.json;
+   * read it back and bind it again, so the calls and the hooks land where they did.
+   */
+  rebind(session: SessionView, author: Author, dir: string): boolean {
+    if (this.live.has(session.id)) return true;
+    const mcp = this.ctx.get("mcp");
+    if (!mcp?.url) return false;
+    let token: string | null = null;
+    try {
+      const config = JSON.parse(fs.readFileSync(path.join(dir, "mcp.json"), "utf8")) as { mcpServers?: { tomrade?: { headers?: Record<string, string> } } };
+      token = config.mcpServers?.tomrade?.headers?.["X-Tomrade-Run"] ?? null;
+    } catch {
+      return false;
+    }
+    if (!token) return false;
+    this.live.set(session.id, { token, unbind: mcp.bindRun(token, this.binding(session, author)) });
+    return true;
   }
 
   release(sessionId: string): void {
