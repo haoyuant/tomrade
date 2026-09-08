@@ -1,6 +1,6 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { Item, OplogEntry } from "@tomrade/domain";
-import { Icon } from "~/components/icons";
+import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import {
   BoardField,
@@ -70,30 +70,39 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
           <>
             {s.rows.length > 0 && (
               <dl className="fieldstrip" style={{ marginTop: 0 }}>
-                {s.rows.map((r, i) => (
-                  <div className="field-row" key={`${r.label}-${i}`}>
-                    <dt>{r.label}</dt>
-                    <dd>
-                      {r.href ? (
-                        <a
-                          href={r.href}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            openExternal(r.href!);
-                          }}
-                        >
-                          {r.value}
-                        </a>
-                      ) : r.command ? (
-                        <button type="button" className="btn btn-secondary" disabled={runCommand.isPending} onClick={() => run(r.command!)}>
-                          {r.value}
-                        </button>
-                      ) : (
-                        r.value
-                      )}
-                    </dd>
-                  </div>
-                ))}
+                {s.rows.map((r, i) => {
+                  const icon = r.icon && (ICON_IDS as readonly string[]).includes(r.icon) ? (r.icon as IconId) : null;
+                  const value = r.href ? (
+                    <a
+                      href={r.href}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openExternal(r.href!);
+                      }}
+                    >
+                      {r.value}
+                    </a>
+                  ) : r.command ? (
+                    <button type="button" className="btn btn-secondary" disabled={runCommand.isPending} onClick={() => run(r.command!)}>
+                      {r.value}
+                    </button>
+                  ) : (
+                    <span className={r.mono ? "num sect-value" : "sect-value"}>{r.value}</span>
+                  );
+                  return (
+                    <div className={r.state === "live" ? "field-row sect-row is-live" : "field-row sect-row"} key={`${r.label}-${i}`}>
+                      <dt className={icon ? "sect-dt" : undefined}>
+                        {icon && <Icon name={icon} size={12} aria-hidden="true" />}
+                        {r.label}
+                      </dt>
+                      <dd>
+                        {r.state && <span className={`state-mark is-${r.state}`} aria-hidden="true" />}
+                        {value}
+                        {r.state === "live" && <span className="sect-runner" aria-hidden="true" />}
+                      </dd>
+                    </div>
+                  );
+                })}
               </dl>
             )}
             {s.text && <p className="meta-txt detail-note">{s.text}</p>}

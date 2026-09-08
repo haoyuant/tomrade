@@ -567,7 +567,10 @@ status bar; sections in the detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
 refetches. A section row may carry `href` — its value opens that link in the
 browser — or `command`, the id of a palette command the value runs with the
-item in scope; still declarative, still drawn by the renderer.
+item in scope; `icon` (a sprite id) leads the label, `mono` sets the value in
+the mono face, and `state` puts a mark before the value — `live` breathes,
+`waiting` blinks, `ended`/`lost` are hollow — still declarative, still drawn by
+the renderer.
 
 A **graph** is what a view with the Graph layout draws: the renderer puts the
 same issue cards on an interactive canvas with the plugin's edges as arrows,

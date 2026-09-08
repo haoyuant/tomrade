@@ -723,25 +723,40 @@ export class CodeLink extends Service {
         for (const l of ordered) {
           const repo = this.ctx.repos.get(item.projectId, l.repoId);
           const name = repo?.name ?? "repository";
-          if (l.branch) rows.push({ label: "Branch", value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
-          if (l.prNumber !== null || l.prUrl) rows.push({ label: "Pull request", value: `${l.prNumber !== null ? `#${l.prNumber}` : "open it"}${l.prState ? ` · ${l.prState}` : ""}`, href: l.prUrl ?? undefined });
-          else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) rows.push({ label: "Pull request", value: "Open pull request", command: "code-link.open-pr" });
-          if (l.mergedSha) rows.push({ label: "Merged", value: `${l.mergedSha.slice(0, 7)} on ${repo?.defaultBranch ?? "main"}` });
-          if (l.headAt) rows.push({ label: "Last commit", value: ago(l.headAt) });
+          if (l.branch) rows.push({ label: "Branch", icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
+          if (l.prNumber !== null || l.prUrl) {
+            rows.push({
+              label: "Pull request",
+              icon: "i-merge",
+              state: l.prState === "merged" ? "ok" : l.prState === "closed" ? "ended" : l.prState === "open" ? "live" : undefined,
+              value: `${l.prNumber !== null ? `#${l.prNumber}` : "open it"}${l.prState ? ` · ${l.prState}` : ""}`,
+              href: l.prUrl ?? undefined
+            });
+          } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
+            rows.push({ label: "Pull request", icon: "i-merge", value: "Open pull request", command: "code-link.open-pr" });
+          }
+          if (l.mergedSha) rows.push({ label: "Merged", icon: "i-check", state: "ok", mono: true, value: `${l.mergedSha.slice(0, 7)} on ${repo?.defaultBranch ?? "main"}` });
+          if (l.headAt) rows.push({ label: "Last commit", icon: "i-clock", value: ago(l.headAt) });
         }
         const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];
         if (live) {
           const where = live.mode === "terminal" ? "in a terminal" : "run by Tomrade";
           const when = live.lastEventAt ? ago(live.lastEventAt) : ago(live.startedAt);
-          rows.push({ label: "Session", value: `${live.state}${live.state === "waiting" ? " for you" : ""} · ${where} · ${when}${live.summary ? ` · ${live.summary}` : ""}` });
-          if (live.state !== "running") rows.push({ label: "Continue", value: live.mode === "terminal" ? "Continue in terminal" : "Continue here", command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
+          const state = ({ running: "live", waiting: "waiting", idle: "idle", ended: "ended", lost: "lost" } as const)[live.state];
+          rows.push({
+            label: "Session",
+            icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
+            state,
+            value: `${live.state}${live.state === "waiting" ? " for you" : ""} · ${where} · ${when}${live.summary ? ` · ${live.summary}` : ""}`
+          });
+          if (live.state !== "running") rows.push({ label: "Continue", icon: "i-send", value: live.mode === "terminal" ? "Continue in terminal" : "Continue here", command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
-        if (worktree) rows.push({ label: "Worktree", value: worktree, command: "code-link.open-terminal" });
+        if (worktree) rows.push({ label: "Worktree", icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
         const proposal = open.find((p) => p.kind === "propose");
         if (proposal) {
-          rows.push({ label: "Proposal", value: `Accept → ${proposal.toStatus}`, command: "code-link.accept-proposal" });
-          rows.push({ label: "Dismiss", value: "Not this time", command: "code-link.reject-proposal" });
+          rows.push({ label: "Proposal", icon: "i-warn", state: "warn", value: `Accept → ${proposal.toStatus}`, command: "code-link.accept-proposal" });
+          rows.push({ label: "Dismiss", icon: "i-close", value: "Not this time", command: "code-link.reject-proposal" });
         }
         const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${p.toStatus}: ${p.reason}`)).join("\n");
         return { rows, text: text || undefined };
