@@ -29,13 +29,16 @@ describe("the MCP surface", () => {
       execute: async (name, args) => {
         seen.push({ name, args });
         return { routed: true };
-      }
+      },
+      event: (payload) => ({ additionalContext: `heard ${(payload as { event: string }).event}` })
     });
     const bound = new Client({ name: "t2", version: "0" });
     await bound.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { "X-Tomrade-Run": "tok-1" } } }));
     const result = await bound.callTool({ name: "echo_tool", arguments: { v: "hi" } });
     expect(JSON.stringify(result.content)).toContain("routed");
     expect(seen).toEqual([{ name: "echo_tool", args: { v: "hi" } }]);
+    const event = await fetch(ctx.mcp.eventUrlFor("tok-1")!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: "stop" }) });
+    expect(await event.json()).toEqual({ additionalContext: "heard stop" });
     await bound.close();
   });
 

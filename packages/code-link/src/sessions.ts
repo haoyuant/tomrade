@@ -6,6 +6,7 @@ import type { Context } from "cordis";
 import type {} from "@tomrade/mcp";
 import type {} from "@tomrade/tools";
 import type { Author } from "@tomrade/domain";
+import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import type { CodeLinkStore, SessionState, SessionView } from "./store.js";
 
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
@@ -21,11 +22,13 @@ interface HookPayload {
   session_id?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
+  tool_error?: string;
+  tool_output?: unknown;
   notification_type?: string;
   message?: string;
   last_assistant_message?: string;
-  error?: string;
-  error_details?: string;
+  error_type?: string;
+  error_message?: string;
   reason?: string;
 }
 
@@ -80,6 +83,33 @@ const firstLine = (text: string | undefined, max: number): string => {
   const line = t.split("\n").find((l) => l.trim()) ?? t;
   return line.length > max ? line.slice(0, max - 1) + "…" : line;
 };
+
+const REMOTE_COMMAND = /\bgit\s+(?:push|fetch|pull|ls-remote|clone)\b|^\s*gh\s/;
+const BLOCKED_COMMAND = /\bgit\s+(?:push|fetch|pull)\b|^\s*gh\s/;
+
+const bashCommand = (p: HookPayload): string => (p.tool_name === "Bash" && typeof p.tool_input?.command === "string" ? p.tool_input.command : "");
+
+const outputText = (output: unknown): string => {
+  if (typeof output === "string") return output;
+  if (!output || typeof output !== "object") return String(output ?? "");
+  const value = output as Record<string, unknown>;
+  const text = [value.stderr, value.stdout, value.output, value.content].filter((part): part is string => typeof part === "string").join("\n");
+  return text || JSON.stringify(output);
+};
+
+const showsNonzeroExit = (output: unknown): boolean => {
+  if (output && typeof output === "object") {
+    const value = output as Record<string, unknown>;
+    for (const key of ["exit_code", "exitCode", "code", "status"]) {
+      const code = value[key];
+      if ((typeof code === "number" && code !== 0) || (typeof code === "string" && /^[1-9]\d*$/.test(code))) return true;
+    }
+  }
+  return /\b(?:exit(?:ed)?(?: with)?(?: code| status)?|code)\s*[:=]?\s*[1-9]\d*\b/i.test(outputText(output));
+};
+
+export const credentialStopText = (detail: string): string =>
+  `Tomrade: origin is not reachable from this worktree with the credentials git has here (${detail}). Credentials are the human's to fix — do not switch accounts, edit credential helpers, or change the remote. Commit your work locally, call note_progress with one line starting 'blocked: push', and stop.`;
 
 /**
  * A coding agent's session as Tomrade follows it: a token that binds its MCP
@@ -164,13 +194,34 @@ export class Sessions {
     this.live.delete(sessionId);
   }
 
+  /** A remote authentication failure is a human-owned stop, whether a hook or a headless run reported it. */
+  blockCredentials(projectId: string, sessionId: string, errorText: string, patch: { externalId?: string; tool?: boolean } = {}): Record<string, unknown> {
+    const session = this.store.session(projectId, sessionId);
+    if (!session) return {};
+    const detail = remoteFailureDetail(errorText) ?? "credential failure";
+    const summary = `cannot reach origin from this worktree: ${detail}`;
+    this.touch(projectId, sessionId, { ...patch, state: "error", summary, activity: null, blocked: "credentials" });
+    this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, { kind: "failed", text: summary });
+    return { additionalContext: credentialStopText(detail) };
+  }
+
   /** A hook fired in the agent's process: what it says about the session, and what the thread should hear. */
-  event(projectId: string, sessionId: string, payload: unknown): void {
+  event(projectId: string, sessionId: string, payload: unknown): Record<string, unknown> {
     const p = (payload ?? {}) as HookPayload;
     const session = this.store.session(projectId, sessionId);
-    if (!session) return;
+    if (!session) return {};
     const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
+    const command = bashCommand(p);
+    if (p.hook_event_name === "PreToolUse" && session.blocked === "credentials" && BLOCKED_COMMAND.test(command)) {
+      this.touch(projectId, sessionId, { ...patch, state: "error", activity: null });
+      const detail = session.summary?.replace(/^cannot reach origin from this worktree:\s*/, "") || "credential failure";
+      return { hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: credentialStopText(detail) } };
+    }
+    const failedOutput = p.hook_event_name === "PostToolUseFailure" ? p.tool_error ?? "" : p.hook_event_name === "PostToolUse" && showsNonzeroExit(p.tool_output) ? outputText(p.tool_output) : "";
+    if (command && REMOTE_COMMAND.test(command) && classifyRemoteFailure(failedOutput) === "credentials") {
+      return this.blockCredentials(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true });
+    }
     let moment: SessionMoment | null = null;
     switch (p.hook_event_name) {
       case "SessionStart":
@@ -201,7 +252,7 @@ export class Sessions {
         break;
       }
       case "StopFailure": {
-        const why = [p.error, firstLine(p.error_details, 160)].filter(Boolean).join(" — ");
+        const why = [p.error_type, firstLine(p.error_message, 160)].filter(Boolean).join(" — ");
         Object.assign(patch, { state: "error", activity: null, summary: `stopped: ${why || "unknown error"}` });
         moment = { kind: "failed", text: why || "unknown error" };
         break;
@@ -213,18 +264,25 @@ export class Sessions {
       default:
         break;
     }
+    if (session.blocked && patch.state !== "ended") {
+      patch.state = "error";
+      delete patch.summary;
+    }
     this.touch(projectId, sessionId, patch);
     if (moment) this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, moment);
     if (patch.state === "ended") this.release(sessionId);
+    return {};
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: "credentials" | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();
     // An ended session stays ended; a late hook does not resurrect it.
-    const state = session.state === "ended" && patch.state !== "ended" ? undefined : patch.state;
+    const blocked = patch.blocked === undefined ? session.blocked : patch.blocked;
+    const requestedState = blocked && patch.state !== "ended" ? "error" : patch.state;
+    const state = session.state === "ended" && requestedState !== "ended" ? undefined : requestedState;
     this.store.patchSession(projectId, sessionId, {
       lastEventAt: now,
       ...(patch.tool ? { lastToolAt: now } : {}),
@@ -232,7 +290,8 @@ export class Sessions {
       ...(patch.externalId ? { externalId: patch.externalId } : {}),
       ...(patch.endedAt ? { endedAt: patch.endedAt } : {}),
       ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
-      ...(patch.activity !== undefined ? { activity: patch.activity } : {})
+      ...(patch.activity !== undefined ? { activity: patch.activity } : {}),
+      ...(patch.blocked !== undefined ? { blocked: patch.blocked } : {})
     });
     this.options.onChange(projectId);
   }
@@ -306,7 +365,7 @@ export class Sessions {
 
 /** Claude Code settings that make every lifecycle event a POST to Tomrade. Loaded with `--settings`, so the repository is left alone. */
 export function hooksSettings(eventUrl: string): Record<string, unknown> {
-  const post = { type: "command", command: `curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- '${eventUrl}' >/dev/null 2>&1 || true` };
+  const post = { type: "command", command: `curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- '${eventUrl}' 2>/dev/null || true` };
   const hooks: Record<string, unknown> = {};
   for (const event of HOOK_EVENTS) hooks[event] = [{ hooks: [post] }];
   return { hooks };

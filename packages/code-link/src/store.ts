@@ -94,6 +94,10 @@ ALTER TABLE plugin_code_link_repos ADD COLUMN remote TEXT NOT NULL DEFAULT 'unkn
 ALTER TABLE plugin_code_link_repos ADD COLUMN remote_detail TEXT;
 ALTER TABLE plugin_code_link_repos ADD COLUMN remote_at INTEGER;
 `
+  },
+  {
+    version: 4,
+    up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN blocked TEXT"
   }
 ];
 
@@ -193,6 +197,7 @@ export interface SessionView {
   summary: string | null;
   /** What it is doing this moment, from its last hook; null between tools. */
   activity: string | null;
+  blocked: "credentials" | null;
   device: string;
   startedAt: number;
   endedAt: number | null;
@@ -269,6 +274,7 @@ interface SessionRow {
   last_commit_at: number | null;
   summary: string | null;
   activity: string | null;
+  blocked: string | null;
   device: string;
   started_at: number;
   ended_at: number | null;
@@ -345,6 +351,7 @@ const toSession = (r: SessionRow): SessionView => ({
   lastCommitAt: r.last_commit_at,
   summary: r.summary,
   activity: r.activity ?? null,
+  blocked: (r.blocked as "credentials" | null) ?? null,
   device: r.device,
   startedAt: r.started_at,
   endedAt: r.ended_at
@@ -391,6 +398,7 @@ export interface SessionPatch {
   lastCommitAt?: number | null;
   summary?: string | null;
   activity?: string | null;
+  blocked?: "credentials" | null;
   endedAt?: number | null;
 }
 
@@ -647,6 +655,7 @@ export class CodeLinkStore {
       lastCommitAt: "last_commit_at",
       summary: "summary",
       activity: "activity",
+      blocked: "blocked",
       endedAt: "ended_at"
     };
     const sets: string[] = [];

@@ -173,6 +173,7 @@ export class Starter {
         device: ctx.hub.deviceId,
         externalId
       });
+    if (continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const basePrompt = continued

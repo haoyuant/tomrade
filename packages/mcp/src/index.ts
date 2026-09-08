@@ -48,7 +48,7 @@ export interface RunBinding {
   projectId?: string;
   execute(name: string, args: unknown): Promise<unknown>;
   /** A lifecycle event posted to `/sessions/<token>/event` — a coding agent's hook reporting it started, stopped, or is waiting. */
-  event?(payload: unknown): void;
+  event?(payload: unknown): unknown | Promise<unknown>;
 }
 
 const sessionIdOf = (req: express.Request): string | undefined => {
@@ -141,12 +141,11 @@ export class Mcp extends Service {
     });
     // A coding agent's hooks (SessionStart, Stop, Notification…) post here with
     // the session's token; the binding that owns the token hears them.
-    app.post("/sessions/:token/event", (req, res) => {
+    app.post("/sessions/:token/event", async (req, res) => {
       const binding = this.bindings.get(req.params.token);
       if (!binding?.event) return res.status(404).json({ error: "unknown session" });
       try {
-        binding.event(req.body);
-        res.json({ ok: true });
+        res.json((await binding.event(req.body)) ?? {});
       } catch (e) {
         res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
       }

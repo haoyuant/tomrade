@@ -299,6 +299,53 @@ describe("starting a ticket", () => {
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
   });
 
+  it("stops a session retry loop after git reports that its credentials cannot see origin", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Private push");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+
+    const response = codeLink.sessions.event(project.id, started.sessionId, {
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "git push origin HEAD" },
+      tool_error: "remote: Repository not found.\nfatal: repository 'https://token@github.com/acme/private.git/' not found"
+    });
+    expect(response).toMatchObject({ additionalContext: expect.stringContaining("Credentials are the human's to fix") });
+    expect(JSON.stringify(response)).not.toContain("token@");
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", blocked: "credentials", activity: null, summary: expect.stringContaining("cannot reach origin") });
+    const notes = () => agent.store.messages(project.id, started.threadId).filter((message) => message.block.type === "note").map((message) => (message.block as { text: string }).text);
+    expect(notes().at(-1)).toContain("cannot reach origin from this worktree");
+
+    const denied = codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git push origin HEAD" } });
+    expect(denied).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("blocked: push") } });
+    expect(codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } })).toEqual({});
+    codeLink.sessions.touch(project.id, started.sessionId, { state: "running", summary: "blocked: push waiting for the human" });
+    expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("error");
+
+    const continued = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(continued).toMatchObject({ ok: true, continued: true });
+    expect(codeLink.sessionsOf(project.id, item.id)[0].blocked).toBeNull();
+    await untilRunsSettle(agent);
+
+    codeLink.sessions.event(project.id, started.sessionId, {
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "gh pr create" },
+      tool_output: { exit_code: 1, stderr: "Invalid username or token." }
+    });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", blocked: "credentials" });
+    await codeLink.scan(project.id);
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "idle", blocked: null });
+
+    codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "StopFailure", error_type: "rate_limit", error_message: "retry after 20:00" });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", blocked: null, summary: "stopped: rate_limit — retry after 20:00" });
+  });
+
   it("opens a terminal session: files for the agent, a token that binds its calls and hooks to the ticket", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, project, repo, checkout, ticket } = world;
@@ -323,6 +370,7 @@ describe("starting a ticket", () => {
     const token = mcpConfig.mcpServers.tomrade.headers["X-Tomrade-Run"];
     const settings = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8")) as { hooks: Record<string, unknown> };
     expect(Object.keys(settings.hooks)).toEqual(expect.arrayContaining(["SessionStart", "Stop", "Notification", "SessionEnd"]));
+    expect(JSON.stringify(settings)).not.toMatch(/(?:^|\s)>\/dev\/null/);
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`Implement ${item.key}`);
     expect(fs.existsSync(path.join(dir, "run.command"))).toBe(true);
 
@@ -348,7 +396,7 @@ describe("starting a ticket", () => {
     const notes = () => ctx.agent.store.messages(project.id, result.threadId).filter((m) => m.block.type === "note").map((m) => (m.block as { text: string }).text);
     // The note names the engine the session runs — the fake one here, Claude Code in life.
     expect(notes()).toContain("fake-code: Scaffold in place.\n\nNext: CI.");
-    await post({ hook_event_name: "StopFailure", session_id: "cli-abc", error: "rate_limit", error_details: "retry after 20:00" });
+    await post({ hook_event_name: "StopFailure", session_id: "cli-abc", error_type: "rate_limit", error_message: "retry after 20:00" });
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", summary: "stopped: rate_limit — retry after 20:00" });
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual(expect.arrayContaining([{ id: "stuck", label: "stuck", tone: "strong", title: "stopped: rate_limit — retry after 20:00" }]));
     expect(notes()).toContain("fake-code stopped: rate_limit — retry after 20:00");

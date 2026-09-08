@@ -22,7 +22,7 @@ import { writeConnectFiles } from "./connect.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
-import { readRemoteIdentity, type RemoteIdentity } from "./remote.js";
+import { classifyRemoteFailure, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { Starter, type StartMode, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
@@ -267,6 +267,10 @@ export class CodeLink extends Service {
         const session = this.sessionOf(thread);
         if (!session) return;
         const externalId = ctx.agent.store.external(thread.projectId, thread.id)[run.engine];
+        if (run.error && classifyRemoteFailure(run.error) === "credentials" && /\bgit\b|\bgh\b|origin|repository|github/i.test(run.error)) {
+          this.sessions.blockCredentials(thread.projectId, session.id, run.error, { ...(externalId ? { externalId } : {}) });
+          return;
+        }
         this.sessions.touch(thread.projectId, session.id, {
           state: run.stop === "asked" ? "waiting" : "idle",
           ...(externalId ? { externalId } : {}),
@@ -623,6 +627,11 @@ export class CodeLink extends Service {
         defaultSha: result.defaultSha,
         scannedAt: now
       });
+      if (result.remote === "ok") {
+        for (const session of this.store.sessions(projectId, { live: true })) {
+          if (session.repoId === repo.id && session.blocked) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+        }
+      }
       const outcome = this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
       summary.links += outcome.links;
       summary.changed += outcome.changed;
