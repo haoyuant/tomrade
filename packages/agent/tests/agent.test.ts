@@ -22,10 +22,10 @@ async function boot(turns: FakeTurn[] | ((req: ChatRequest, step: number) => Fak
   return { ...base, model, agent: base.ctx.agent };
 }
 
-async function settled(ctx: Context, projectId: string, runId: string, timeout = 8000): Promise<RunView> {
+async function settled(ctx: Context, runId: string, timeout = 8000): Promise<RunView> {
   const t0 = Date.now();
   for (;;) {
-    const run = ctx.agent.store.run(projectId, runId);
+    const run = ctx.agent.store.run(runId);
     if (run && run.status !== "running") return run;
     if (Date.now() - t0 > timeout) throw new Error("run did not settle");
     await new Promise((r) => setTimeout(r, 10));
@@ -37,11 +37,11 @@ describe("the loop engine on the platform", () => {
     const { ctx, agent, project } = await boot([{ text: "It never rains in the backlog." }]);
     const thread = agent.newThread(project.id);
     expect(thread.engine).toBe("loop");
-    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "今天天气怎么样" });
-    const run = await settled(ctx, project.id, runId);
+    const { runId } = agent.send(thread.id, { kind: "text", text: "今天天气怎么样" });
+    const run = await settled(ctx, runId);
     expect(run.status).toBe("done");
     expect(run.changes).toBe(0);
-    const blocks = agent.store.messages(project.id, thread.id).map((m) => m.block);
+    const blocks = agent.store.messages(thread.id).map((m) => m.block);
     expect(blocks.some((b) => b.type === "text" && b.text.includes("never rains"))).toBe(true);
   });
 
@@ -59,16 +59,16 @@ describe("the loop engine on the platform", () => {
     };
     const { ctx, agent, items, project } = await boot(script, () => ({ duplicates: [], related: [] }));
     const thread = agent.newThread(project.id);
-    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "加一个连续7天达标给徽章的功能" });
-    const run = await settled(ctx, project.id, runId);
+    const { runId } = agent.send(thread.id, { kind: "text", text: "加一个连续7天达标给徽章的功能" });
+    const run = await settled(ctx, runId);
     expect(run.status).toBe("done");
     const created = items.list({ projectId: project.id }).filter((i) => i.title === title);
     expect(created).toHaveLength(1);
     expect(run.changes).toBe(1);
-    const ledger = agent.store.messages(project.id, thread.id).filter((m) => m.block.type === "trace").map((m) => (m.block.type === "trace" ? `${m.block.tool}:${m.block.ok}` : ""));
+    const ledger = agent.store.messages(thread.id).filter((m) => m.block.type === "trace").map((m) => (m.block.type === "trace" ? `${m.block.tool}:${m.block.ok}` : ""));
     expect(ledger).toEqual(["create_item:false", "find_similar:true", "create_item:true"]);
     // the run-scoped undo reaches it
-    const undone = agent.revert(project.id, runId);
+    const undone = agent.revert(runId);
     expect(undone.reverted).toBe(1);
     expect(items.list({ projectId: project.id }).filter((i) => i.title === title)).toHaveLength(0);
   });
@@ -78,16 +78,16 @@ describe("the loop engine on the platform", () => {
       step === 0 ? { toolCalls: [{ name: "ask_user", args: { question: "Merge the two duplicates?", options: ["Do it", "Leave them"] } }] } : { text: "Leaving them alone." };
     const { ctx, agent, project } = await boot(script);
     const thread = agent.newThread(project.id);
-    const first = agent.send(project.id, thread.id, { kind: "text", text: "整理一下 backlog" });
-    const run1 = await settled(ctx, project.id, first.runId);
+    const first = agent.send(thread.id, { kind: "text", text: "整理一下 backlog" });
+    const run1 = await settled(ctx, first.runId);
     expect(run1.status).toBe("asked");
-    const detail = agent.thread(project.id, thread.id);
+    const detail = agent.thread(thread.id);
     expect(detail.pending?.question.options).toEqual(["Do it", "Leave them"]);
 
-    const second = agent.send(project.id, thread.id, { kind: "answer", questionId: detail.pending!.question.id, value: "Leave them" });
-    const run2 = await settled(ctx, project.id, second.runId);
+    const second = agent.send(thread.id, { kind: "answer", questionId: detail.pending!.question.id, value: "Leave them" });
+    const run2 = await settled(ctx, second.runId);
     expect(run2.status).toBe("done");
-    expect(agent.thread(project.id, thread.id).pending).toBeNull();
+    expect(agent.thread(thread.id).pending).toBeNull();
   });
 
   it("runs plan_and_apply as one transaction and reverts it as one run", async () => {
@@ -105,8 +105,8 @@ describe("the loop engine on the platform", () => {
       step === 0 ? { toolCalls: [{ name: "plan_and_apply", args: { requirement: "A Flutter app that reminds me to drink water", rootTitle: "Water reminder" } }] } : { text: "Planned and applied." };
     const { ctx, agent, items, project } = await boot(script, respond);
     const thread = agent.newThread(project.id);
-    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "拆一下这个需求" });
-    const run = await settled(ctx, project.id, runId);
+    const { runId } = agent.send(thread.id, { kind: "text", text: "拆一下这个需求" });
+    const run = await settled(ctx, runId);
     expect(run.status).toBe("done");
     // 1 root epic + 2 epics + 3 features
     expect(run.changes).toBe(6);
@@ -115,7 +115,7 @@ describe("the loop engine on the platform", () => {
     expect(root?.kind).toBe("epic");
     expect(all.filter((i) => i.parentId === root?.id)).toHaveLength(2);
 
-    const undone = agent.revert(project.id, runId);
+    const undone = agent.revert(runId);
     expect(undone.reverted).toBe(6);
     expect(items.list({ projectId: project.id }).find((i) => i.title === "Water reminder")).toBeUndefined();
   });
@@ -123,34 +123,31 @@ describe("the loop engine on the platform", () => {
 
 describe("crash recovery", () => {
   it("reconciles a run left running by a killed process when the app restarts", async () => {
-    const cacheDir = path.join(os.tmpdir(), `tomrade-agent-restart-${Date.now()}-${Math.random()}`);
+    const dbPath = path.join(os.tmpdir(), `tomrade-agent-restart-${Date.now()}-${Math.random()}.db`);
     const plugins = [Tools, [...tmpSettings()], Agent] as const;
 
-    const first = await fresh({ cacheDir, plugins: [...plugins] });
+    const first = await fresh({ dbPath, plugins: [...plugins] });
     const thread = first.ctx.agent.newThread(first.project.id);
-    const stale = first.ctx.agent.store.beginRun(first.project.id, thread.id, "loop"); // the process dies mid-turn — no dispose, no cleanup
+    const stale = first.ctx.agent.store.beginRun(thread.id, "loop"); // the process dies mid-turn — no dispose, no cleanup
     expect(stale.status).toBe("running");
     await first.ctx.fiber.dispose();
 
-    // The next launch is a new process against the same cache — this is what "app restart" means here.
-    // The test harness keeps its catalog in memory, so the old project is opened by hand, the way
-    // the catalog would open it; reconciliation runs on `db/opened`.
-    const second = await fresh({ cacheDir, plugins: [Tools, [...tmpSettings()], Agent] });
-    second.ctx.db.open(first.project.id);
-    const after = second.ctx.agent.store.run(first.project.id, stale.id)!;
+    // The next launch is a new process against the same file — this is what "app restart" means here.
+    const second = await fresh({ dbPath, plugins: [Tools, [...tmpSettings()], Agent] });
+    const after = second.ctx.agent.store.run(stale.id)!;
     expect(after.status).toBe("cancelled");
     expect(after.error).toContain("Interrupted");
-    const note = second.ctx.agent.store.messages(first.project.id, thread.id).find((m) => m.runId === stale.id && m.block.type === "note");
+    const note = second.ctx.agent.store.messages(thread.id).find((m) => m.runId === stale.id && m.block.type === "note");
     expect(note && note.block.type === "note" && note.block.text).toContain("Interrupted");
   });
 
   it("cancel() reconciles a run with no in-memory process instead of silently doing nothing", async () => {
     const { agent, project } = await boot([{ text: "hi" }]);
     const thread = agent.newThread(project.id);
-    const stale = agent.store.beginRun(project.id, thread.id, "loop"); // never went through send(), so it's not in activeById
+    const stale = agent.store.beginRun(thread.id, "loop"); // never went through send(), so it's not in activeById
 
     expect(agent.cancel(stale.id)).toBe(true);
-    expect(agent.store.run(project.id, stale.id)!.status).toBe("cancelled");
+    expect(agent.store.run(stale.id)!.status).toBe("cancelled");
     // already terminal — cancelling again is a genuine no-op
     expect(agent.cancel(stale.id)).toBe(false);
   });
@@ -160,10 +157,10 @@ describe("the scripted engine", () => {
   it("walks the intake wizard deterministically and stores the dossier card", async () => {
     const { ctx, agent, project } = await boot([]);
     const thread = agent.newThread(project.id, "scripted");
-    let { runId } = agent.send(project.id, thread.id, { kind: "text", text: "hi" });
-    let run = await settled(ctx, project.id, runId);
+    let { runId } = agent.send(thread.id, { kind: "text", text: "hi" });
+    let run = await settled(ctx, runId);
     expect(run.status).toBe("asked");
-    let pending = agent.thread(project.id, thread.id).pending!;
+    let pending = agent.thread(thread.id).pending!;
     expect(pending.question.options).toContain("Requirement intake (fixed questions)");
 
     const answers = [
@@ -176,17 +173,17 @@ describe("the scripted engine", () => {
       "7-day streak of hitting the goal"
     ];
     for (const answer of answers) {
-      pending = agent.thread(project.id, thread.id).pending!;
-      ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: answer }));
-      run = await settled(ctx, project.id, runId);
+      pending = agent.thread(thread.id).pending!;
+      ({ runId } = agent.send(thread.id, { kind: "answer", questionId: pending.question.id, value: answer }));
+      run = await settled(ctx, runId);
     }
     // All six fields answered → the confirm question is now waiting.
-    pending = agent.thread(project.id, thread.id).pending!;
+    pending = agent.thread(thread.id).pending!;
     expect(pending.question.text).toContain("Plan the backlog");
-    ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "Stop" }));
-    run = await settled(ctx, project.id, runId);
+    ({ runId } = agent.send(thread.id, { kind: "answer", questionId: pending.question.id, value: "Stop" }));
+    run = await settled(ctx, runId);
     expect(run.status).toBe("done");
-    const card = agent.thread(project.id, thread.id).cards.find((c) => c.id === "dossier");
+    const card = agent.thread(thread.id).cards.find((c) => c.id === "dossier");
     expect(card).toBeTruthy();
     expect((card!.data as { platform: string }).platform).toBe("Flutter mobile app");
     expect(run.changes).toBe(0);

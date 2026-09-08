@@ -23,7 +23,6 @@
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
     "@tomrade/fields": "workspace:*",
-    "@tomrade/hub": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/llm": "workspace:*",

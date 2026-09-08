@@ -16,7 +16,7 @@ async function seed() {
   const area = fields.create({ projectId: project.id, name: "Area", type: "select", options: [{ name: "Web" }, { name: "Mobile" }, { name: "Desktop" }] });
   const note = fields.create({ projectId: project.id, name: "Note", type: "text" });
   const [web, mobile, desktop] = area.options;
-  const epic = items.create({ projectId: project.id, title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
+  const epic = items.create({ title: "Reporting", kind: "epic", boardId: board.id, by: "human" });
   const rows = [
     { title: "Alpha export", status: "todo", priority: 3, labels: ["ui", "bug"], fields: { [points.id]: 5, [due.id]: "2026-09-10", [area.id]: mobile.id, [note.id]: "Needs design" }, parentId: epic.id, by: "human" },
     { title: "beta import", status: "doing", priority: 4, labels: ["core"], fields: { [points.id]: 1, [area.id]: web.id }, by: "ai:mcp", boardId: other.id },
@@ -24,8 +24,8 @@ async function seed() {
     { title: "delta cleanup", status: "backlog", priority: 2, labels: ["ui"], fields: {}, by: "ai:mcp" },
     { title: "Epsilon audit", status: "todo", priority: 0, labels: ["core", "ui"], fields: { [points.id]: 5, [due.id]: "2026-09-30", [area.id]: web.id }, parentId: epic.id, by: "human" }
   ] as const;
-  const created = rows.map((r, i) => items.create({ projectId: project.id, boardId: board.id, rank: i, ...r }));
-  const locked = items.update(project.id, created[2].id, { humanLocked: true }, "human");
+  const created = rows.map((r, i) => items.create({ boardId: board.id, rank: i, ...r }));
+  const locked = items.update(created[2].id, { humanLocked: true }, "human");
   const defs = new Map(fields.list(project.id).map((d) => [d.id, d]));
   const ctx: QueryContext = {
     defs,
@@ -33,7 +33,7 @@ async function seed() {
       if (fieldId === "board") return boards.list(project.id).find((b) => b.id === key)?.rank ?? 0;
       return (defs.get(fieldId) as FieldDef).options.findIndex((o) => o.id === key);
     },
-    optionName: (_fieldId, key) => items.get(project.id, key)?.title ?? ""
+    optionName: (_fieldId, key) => items.get(key)?.title ?? ""
   };
   return { ...f, ids: { points, due, area, note, web, mobile, desktop, epic, other, locked }, created, ctx };
 }

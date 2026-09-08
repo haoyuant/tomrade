@@ -1,7 +1,7 @@
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { FieldDef, FieldOption } from "@tomrade/domain";
-import { defineTool, requireProjectId } from "@tomrade/tools";
+import { defineTool } from "@tomrade/tools";
 import type {} from "@tomrade/ipc";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "./service.js";
 
@@ -9,11 +9,11 @@ declare module "@tomrade/ipc" {
   interface Channels {
     "fields.list": (projectId: string) => FieldDef[];
     "fields.create": (input: CreateFieldInput) => FieldDef;
-    "fields.update": (projectId: string, id: string, patch: FieldPatch) => FieldDef;
-    "fields.remove": (projectId: string, id: string) => void;
-    "fields.addOption": (projectId: string, fieldId: string, input: FieldOptionInput) => FieldOption;
-    "fields.updateOption": (projectId: string, fieldId: string, optionId: string, patch: FieldOptionPatch) => FieldOption;
-    "fields.removeOption": (projectId: string, fieldId: string, optionId: string, moveTo?: string) => number;
+    "fields.update": (id: string, patch: FieldPatch) => FieldDef;
+    "fields.remove": (id: string) => void;
+    "fields.addOption": (fieldId: string, input: FieldOptionInput) => FieldOption;
+    "fields.updateOption": (fieldId: string, optionId: string, patch: FieldOptionPatch) => FieldOption;
+    "fields.removeOption": (fieldId: string, optionId: string, moveTo?: string) => number;
   }
 }
 
@@ -28,7 +28,7 @@ export function registerTools(ctx: Context): void {
       description:
         "List the fields items in a project can carry: built-in (status, priority, epic, labels, workstream…) and custom. Custom values are written through update_item's `fields` map, keyed by field id; a select takes an option id.",
       input: z.object({ projectId: z.string().optional() }),
-      execute: ({ projectId }, inv) => ctx.fields.list(requireProjectId("list_fields", projectId, inv))
+      execute: ({ projectId }, inv) => ctx.fields.list(projectId ?? inv.projectId ?? "default")
     })
   );
 
@@ -43,7 +43,7 @@ export function registerTools(ctx: Context): void {
         type: z.enum(["text", "number", "date", "select"]),
         options: z.array(optionInput).optional()
       }),
-      execute: ({ projectId, ...rest }, inv) => ctx.fields.create({ ...rest, projectId: requireProjectId("create_field", projectId, inv) })
+      execute: ({ projectId, ...rest }, inv) => ctx.fields.create({ ...rest, projectId: projectId ?? inv.projectId ?? "default" })
     })
   );
 }
@@ -51,9 +51,9 @@ export function registerTools(ctx: Context): void {
 export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("fields.list", (projectId) => ctx.fields.list(projectId));
   ctx.ipc.handle("fields.create", (input) => ctx.fields.create(input));
-  ctx.ipc.handle("fields.update", (projectId, id, patch) => ctx.fields.update(projectId, id, patch));
-  ctx.ipc.handle("fields.remove", (projectId, id) => ctx.fields.remove(projectId, id));
-  ctx.ipc.handle("fields.addOption", (projectId, fieldId, input) => ctx.fields.addOption(projectId, fieldId, input));
-  ctx.ipc.handle("fields.updateOption", (projectId, fieldId, optionId, patch) => ctx.fields.updateOption(projectId, fieldId, optionId, patch));
-  ctx.ipc.handle("fields.removeOption", (projectId, fieldId, optionId, moveTo) => ctx.fields.removeOption(projectId, fieldId, optionId, { moveTo }));
+  ctx.ipc.handle("fields.update", (id, patch) => ctx.fields.update(id, patch));
+  ctx.ipc.handle("fields.remove", (id) => ctx.fields.remove(id));
+  ctx.ipc.handle("fields.addOption", (fieldId, input) => ctx.fields.addOption(fieldId, input));
+  ctx.ipc.handle("fields.updateOption", (fieldId, optionId, patch) => ctx.fields.updateOption(fieldId, optionId, patch));
+  ctx.ipc.handle("fields.removeOption", (fieldId, optionId, moveTo) => ctx.fields.removeOption(fieldId, optionId, { moveTo }));
 }

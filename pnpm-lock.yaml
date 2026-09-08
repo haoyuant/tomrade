@@ -53,9 +53,6 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../../packages/fields
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../../packages/hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -77,9 +74,6 @@ importers:
       '@tomrade/projects':
         specifier: workspace:*
         version: link:../../packages/projects
-      '@tomrade/repos':
-        specifier: workspace:*
-        version: link:../../packages/repos
       '@tomrade/settings':
         specifier: workspace:*
         version: link:../../packages/settings
@@ -148,9 +142,6 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -422,25 +413,6 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
-  packages/hub:
-    dependencies:
-      '@tomrade/ipc':
-        specifier: workspace:*
-        version: link:../ipc
-      cordis:
-        specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^26.2.0
-        version: 26.2.0
-      typescript:
-        specifier: ^6.0.0
-        version: 6.0.3
-
   packages/ipc:
     dependencies:
       cordis:
@@ -555,9 +527,6 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -601,9 +570,6 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -666,68 +632,13 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/tools':
-        specifier: workspace:*
-        version: link:../tools
-      better-sqlite3:
-        specifier: ^13.0.3
-        version: 13.0.3
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
     devDependencies:
-      '@types/better-sqlite3':
-        specifier: ^9.6.0
-        version: 9.6.0
-      '@types/node':
-        specifier: ^26.2.0
-        version: 26.2.0
-      typescript:
-        specifier: ^6.0.0
-        version: 6.0.3
-
-  packages/repos:
-    dependencies:
-      '@tomrade/boards':
-        specifier: workspace:*
-        version: link:../boards
-      '@tomrade/db':
-        specifier: workspace:*
-        version: link:../db
-      '@tomrade/domain':
-        specifier: workspace:*
-        version: link:../domain
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@tomrade/ipc':
-        specifier: workspace:*
-        version: link:../ipc
-      '@tomrade/storage':
-        specifier: workspace:*
-        version: link:../storage
-      '@tomrade/tools':
-        specifier: workspace:*
-        version: link:../tools
-      cordis:
-        specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^26.2.0
-        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -737,9 +648,6 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -768,21 +676,9 @@ importers:
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/oplog':
-        specifier: workspace:*
-        version: link:../oplog
-      '@tomrade/projects':
-        specifier: workspace:*
-        version: link:../projects
-      '@tomrade/settings':
-        specifier: workspace:*
-        version: link:../settings
       '@tomrade/write':
         specifier: workspace:*
         version: link:../write
@@ -855,9 +751,6 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tomrade/items':
         specifier: workspace:*
         version: link:../items
@@ -929,27 +822,9 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.32
         version: 1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@tomrade/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@tomrade/domain':
-        specifier: workspace:*
-        version: link:../domain
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@tomrade/repos':
-        specifier: workspace:*
-        version: link:../repos
-      '@tomrade/settings':
-        specifier: workspace:*
-        version: link:../settings
-      '@tomrade/storage':
-        specifier: workspace:*
-        version: link:../storage
       '@xyflow/react':
         specifier: 12.11.5
         version: 12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -972,6 +847,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.3(vite@6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
+      '@tomrade/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@tomrade/boards':
         specifier: workspace:*
         version: link:../boards
@@ -981,6 +859,9 @@ importers:
       '@tomrade/db':
         specifier: workspace:*
         version: link:../db
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -1002,6 +883,12 @@ importers:
       '@tomrade/projects':
         specifier: workspace:*
         version: link:../projects
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@types/react':
         specifier: ^19.2.0
         version: 19.2.18

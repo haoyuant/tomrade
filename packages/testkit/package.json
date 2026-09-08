@@ -20,7 +20,6 @@
     "@tomrade/boards": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/fields": "workspace:*",
-    "@tomrade/hub": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/oplog": "workspace:*",
     "@tomrade/projects": "workspace:*",

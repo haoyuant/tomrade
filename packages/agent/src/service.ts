@@ -1,18 +1,16 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomrade/db";
-import type {} from "@tomrade/hub";
 import type {} from "@tomrade/oplog";
 import type {} from "@tomrade/ipc";
 import type { UndoRunResult } from "@tomrade/domain";
 import type { LlmService } from "@tomrade/llm";
 import type { SettingsSection } from "@tomrade/settings";
-import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomrade/tools";
+import { defineTool, type RunHandle, type LedgerEntry } from "@tomrade/tools";
 import { loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
-import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
+import { AgentStore, MIGRATIONS, type PendingRecord } from "./store.js";
 import {
   isSuspended,
   type AgentEvent,
@@ -37,16 +35,6 @@ import {
   type WorkflowSpec
 } from "./types.js";
 
-/** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
-export interface WorkdirStatus {
-  cwd: string | null;
-  remote: string | null;
-  branch: string | null;
-  worktree: string | null;
-  problem: string | null;
-  code: "no-checkout" | "no-repos" | "error" | null;
-}
-
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: ThreadMessage[];
@@ -64,18 +52,14 @@ declare module "cordis" {
 declare module "@tomrade/ipc" {
   interface Channels {
     "agent.threads": (projectId: string) => ThreadSummary[];
-    "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
-    "agent.newThread": (projectId: string, engine?: string, boardId?: string | null) => ThreadSummary;
-    /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
-    "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
-    /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
-    "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
-    "agent.send": (projectId: string, threadId: string, text: string) => { runId: string };
-    "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
+    "agent.thread": (threadId: string) => ThreadDetail;
+    "agent.newThread": (projectId: string, engine?: string) => ThreadSummary;
+    "agent.send": (threadId: string, text: string) => { runId: string };
+    "agent.answer": (threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
-    "agent.revert": (projectId: string, runId: string) => UndoRunResult;
+    "agent.revert": (runId: string) => UndoRunResult;
     "agent.engines": () => EngineView[];
-    "agent.setEngine": (projectId: string, threadId: string, engineId: string) => ThreadSummary;
+    "agent.setEngine": (threadId: string, engineId: string) => ThreadSummary;
     "agent.playbooks": (projectId?: string) => PlaybookIndexEntry[];
   }
   interface Broadcasts {
@@ -171,36 +155,23 @@ export class Agent extends Service {
   }
 
   [Service.init]() {
-    this.ctx.db.migrate("agent", MIGRATIONS, { tables: TABLES });
+    this.ctx.db.migrate("agent", MIGRATIONS);
     this.store = new AgentStore(this.ctx.db);
-    // A run left "running" by a killed process has no controller; settle it in
-    // every project file that is open now and in each one opened later.
-    for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId);
-    this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId));
+    this.store.reconcileInterrupted();
     this.ctx.settings.register(AGENT_SECTION);
     this.migrateConversationRole();
     this.registerPlatformTools();
     this.loadUserPlaybooks();
-    this.ctx.inject(["hub"], (ctx) => {
-      if (ctx.hub.dir) this.migratePlaybooksIntoHub(ctx.hub.dir);
-      this.loadUserPlaybooks();
-      return ctx.on("hub/configured", (dir) => {
-        this.migratePlaybooksIntoHub(dir);
-        this.loadUserPlaybooks();
-      });
-    });
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
-      ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
-      ctx.ipc.handle("agent.newThread", (projectId, engine, boardId) => ctx.agent.newThread(projectId, engine, boardId ?? null));
-      ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
-      ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
-      ctx.ipc.handle("agent.send", (projectId, threadId, text) => ctx.agent.send(projectId, threadId, { kind: "text", text }));
-      ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
+      ctx.ipc.handle("agent.thread", (threadId) => ctx.agent.thread(threadId));
+      ctx.ipc.handle("agent.newThread", (projectId, engine) => ctx.agent.newThread(projectId, engine));
+      ctx.ipc.handle("agent.send", (threadId, text) => ctx.agent.send(threadId, { kind: "text", text }));
+      ctx.ipc.handle("agent.answer", (threadId, questionId, value) => ctx.agent.send(threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
-      ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
+      ctx.ipc.handle("agent.revert", (runId) => ctx.agent.revert(runId));
       ctx.ipc.handle("agent.engines", () => ctx.agent.engineViews());
-      ctx.ipc.handle("agent.setEngine", (projectId, threadId, engineId) => ctx.agent.setEngine(projectId, threadId, engineId));
+      ctx.ipc.handle("agent.setEngine", (threadId, engineId) => ctx.agent.setEngine(threadId, engineId));
       ctx.ipc.handle("agent.playbooks", async (projectId) => {
         if (projectId) await ctx.agent.refreshProjectPlaybooks(projectId);
         return ctx.agent.playbookIndex(projectId);
@@ -265,7 +236,7 @@ export class Agent extends Service {
           if (!inv.run) throw new Error(`${spec.id} runs inside an assistant thread; call it from one`);
           const rc = this.activeById.get(inv.run.id);
           if (!rc) throw new Error(`${spec.id}: no active run`);
-          if (this.store.pending(rc.projectId, rc.threadId)) throw new Error("another question is already waiting for the user");
+          if (this.store.pending(rc.threadId)) throw new Error("another question is already waiting for the user");
           return this.startWorkflow(spec as WorkflowSpec, args, rc);
         }
       })
@@ -275,15 +246,15 @@ export class Agent extends Service {
 
   // ── views ──────────────────────────────────────────────────────────────────
 
-  thread(projectId: string, threadId: string): ThreadDetail {
-    const thread = this.store.thread(projectId, threadId);
+  thread(threadId: string): ThreadDetail {
+    const thread = this.store.thread(threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
-    const pending = this.store.pending(projectId, threadId);
+    const pending = this.store.pending(threadId);
     return {
       thread,
-      messages: this.store.messages(projectId, threadId),
-      runs: this.store.runs(projectId, threadId),
-      cards: this.store.cards(projectId, threadId),
+      messages: this.store.messages(threadId),
+      runs: this.store.runs(threadId),
+      cards: this.store.cards(threadId),
       pending: pending ? this.pendingView(pending) : null
     };
   }
@@ -356,64 +327,42 @@ export class Agent extends Service {
     this.ctx.settings.set({ ...all, agent: { ...agent, engines: { ...agent.engines, loop: { ...loop, profile: legacy } } } });
   }
 
-  newThread(projectId: string, engine?: string, boardId: string | null = null): ThreadSummary {
+  newThread(projectId: string, engine?: string): ThreadSummary {
     const chosen = engine ?? this.settingsOf().defaultEngine;
-    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), "", boardId);
+    const thread = this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen));
+    return thread;
   }
 
-  setWorkstream(projectId: string, threadId: string, boardId: string | null): ThreadSummary {
-    if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
-    this.store.touchThread(projectId, threadId, { boardId });
-    return this.store.thread(projectId, threadId)!;
-  }
-
-  /** Where the thread's engine works, resolved through the workstream's repository and this machine's checkout of it. */
-  async workdir(projectId: string, threadId: string): Promise<WorkdirStatus> {
-    const none: WorkdirStatus = { cwd: null, remote: null, branch: null, worktree: null, problem: null, code: null };
-    const thread = this.store.thread(projectId, threadId);
-    if (!thread?.boardId) return none;
-    const repos = this.ctx.get("repos") as { workdirFor(projectId: string, boardId: string, threadId: string): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> } | undefined;
-    if (!repos) return { ...none, problem: "the repos plugin is not loaded", code: "no-repos" };
-    try {
-      const view = await repos.workdirFor(projectId, thread.boardId, threadId);
-      if (!view) return none;
-      return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
-    } catch (err) {
-      const remote = (err as { remote?: string }).remote ?? null;
-      return { ...none, remote, problem: message(err), code: (err as { name?: string }).name === "CheckoutUnsetError" ? "no-checkout" : "error" };
-    }
-  }
-
-  setEngine(projectId: string, threadId: string, engineId: string): ThreadSummary {
+  setEngine(threadId: string, engineId: string): ThreadSummary {
     if (!this.engines.has(engineId)) throw new Error(`unknown engine ${engineId}`);
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
-    const pending = this.store.pending(projectId, threadId);
+    const pending = this.store.pending(threadId);
     if (pending) {
       // Switching conductors abandons the waiting question; say so in the thread.
-      this.store.clearPending(projectId, threadId);
+      this.store.clearPending(threadId);
       this.broadcast(threadId, { type: "pending", pending: null });
-      this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: "Cancelled the waiting question — the engine changed." }, null);
+      this.appendAndBroadcast(threadId, "system", { type: "note", text: "Cancelled the waiting question — the engine changed." }, null);
     }
-    this.store.touchThread(projectId, threadId, { engine: engineId });
-    const thread = this.store.thread(projectId, threadId)!;
-    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: `Engine switched to ${this.engines.get(engineId)?.title ?? engineId}.` }, null);
+    this.store.touchThread(threadId, { engine: engineId });
+    const thread = this.store.thread(threadId)!;
+    this.appendAndBroadcast(threadId, "system", { type: "note", text: `Engine switched to ${this.engines.get(engineId)?.title ?? engineId}.` }, null);
     return thread;
   }
 
   // ── the turn ───────────────────────────────────────────────────────────────
 
-  send(projectId: string, threadId: string, input: UserInput): { runId: string } {
-    const thread = this.store.thread(projectId, threadId);
+  send(threadId: string, input: UserInput): { runId: string } {
+    const thread = this.store.thread(threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     if (this.activeByThread.has(threadId)) throw new Error("a run is already in progress on this thread");
     const engine = this.engines.get(thread.engine) ?? [...this.engines.values()][0];
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
-    this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text }, null);
-    if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
+    this.appendAndBroadcast(threadId, "user", { type: "text", text }, null);
+    if (!thread.title) this.store.touchThread(threadId, { title: text.slice(0, 60) });
 
-    const run = this.store.beginRun(projectId, threadId, engine.id);
+    const run = this.store.beginRun(threadId, engine.id);
     const rc = this.makeRunCtx(run, thread, engine);
     this.activeByThread.set(threadId, rc);
     this.activeById.set(run.id, rc);
@@ -430,24 +379,23 @@ export class Agent extends Service {
     }
     // No in-memory RunCtx — e.g. the process restarted since this run began.
     // Reconcile directly against the DB row so the button isn't a silent no-op.
-    const projectId = this.store.projectOfRun(runId);
-    const run = projectId ? this.store.run(projectId, runId) : null;
-    if (!projectId || !run || run.status !== "running") return false;
-    const changes = this.store.changesOf(projectId, runId);
-    const view = this.store.endRun(projectId, runId, { status: "cancelled", stop: "cancelled", error: "Interrupted — no active process to cancel.", changes });
+    const run = this.store.run(runId);
+    if (!run || run.status !== "running") return false;
+    const changes = this.store.changesOf(runId);
+    const view = this.store.endRun(runId, { status: "cancelled", stop: "cancelled", error: "Interrupted — no active process to cancel.", changes });
     this.broadcast(run.threadId, { type: "done", run: view });
     return true;
   }
 
-  revert(projectId: string, runId: string): UndoRunResult {
-    const run = this.store.run(projectId, runId);
+  revert(runId: string): UndoRunResult {
+    const run = this.store.run(runId);
     if (!run) throw new Error(`unknown run ${runId}`);
     if (this.activeById.has(runId)) throw new Error("that run is still going — stop it first");
     if (run.reverted) return { reverted: 0, kept: [] };
-    const result = this.ctx.oplog.undoRun(projectId, runId);
-    const view = this.store.markReverted(projectId, runId, result.kept.length);
+    const result = this.ctx.oplog.undoRun(runId);
+    const view = this.store.markReverted(runId, result.kept.length);
     const kept = result.kept.length ? `; kept ${result.kept.map((k) => k.label).join(", ")} (${result.kept[0].reason})` : "";
-    this.appendAndBroadcast(projectId, run.threadId, "system", { type: "note", text: `Reverted ${result.reverted} change${result.reverted === 1 ? "" : "s"} from this run${kept}.` }, runId);
+    this.appendAndBroadcast(run.threadId, "system", { type: "note", text: `Reverted ${result.reverted} change${result.reverted === 1 ? "" : "s"} from this run${kept}.` }, runId);
     this.broadcast(run.threadId, { type: "run", run: view });
     return result;
   }
@@ -456,9 +404,9 @@ export class Agent extends Service {
   setCard(runId: string, card: { id: string; schema: string; title: string; data: unknown }): CardView {
     const rc = this.activeById.get(runId);
     if (!rc) throw new Error("no active run");
-    const before = this.store.cards(rc.projectId, rc.threadId).find((c) => c.id === card.id);
-    const view = this.store.setCard(rc.projectId, rc.threadId, card, rc.engine.author);
-    if (!before) this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "card", id: card.id, schema: card.schema, title: card.title, data: card.data }, runId);
+    const before = this.store.cards(rc.threadId).find((c) => c.id === card.id);
+    const view = this.store.setCard(rc.threadId, card, rc.engine.author);
+    if (!before) this.appendAndBroadcast(rc.threadId, "agent", { type: "card", id: card.id, schema: card.schema, title: card.title, data: card.data }, runId);
     this.broadcast(rc.threadId, { type: "card", card: view });
     return view;
   }
@@ -478,10 +426,10 @@ export class Agent extends Service {
       projectId: thread.projectId,
       author: engine.author,
       ledger: { all: () => [...entries], find: (pred) => entries.find(pred) },
-      waivers: this.store.waivers(thread.projectId, thread.id),
+      waivers: this.store.waivers(thread.id),
       scratch: new Map()
     };
-    const emit = (block: Block) => void this.appendAndBroadcast(thread.projectId, thread.id, block.type === "note" ? "system" : "agent", block, run.id);
+    const emit = (block: Block) => void this.appendAndBroadcast(thread.id, block.type === "note" ? "system" : "agent", block, run.id);
     const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) =>
       this.broadcast(thread.id, { type: "progress", runId: run.id, ...p });
     const tools = {
@@ -495,7 +443,7 @@ export class Agent extends Service {
           const suspended = isSuspended(result);
           const summary = suspended ? "waiting for the user" : summarize(result);
           entries.push({ seq: entries.length + 1, tool: name, args, ok: true, summary, ms });
-          this.store.appendLedger(thread.projectId, run.id, entries.length, name, args, true, summary, ms);
+          this.store.appendLedger(run.id, entries.length, name, args, true, summary, ms);
           progress({ activity: null });
           if (!suspended) emit({ type: "trace", tool: name, args, ok: true, summary, ms });
           return result;
@@ -503,7 +451,7 @@ export class Agent extends Service {
           const ms = Date.now() - t0;
           const summary = message(err);
           entries.push({ seq: entries.length + 1, tool: name, args, ok: false, summary, ms });
-          this.store.appendLedger(thread.projectId, run.id, entries.length, name, args, false, summary, ms);
+          this.store.appendLedger(run.id, entries.length, name, args, false, summary, ms);
           progress({ activity: null });
           emit({ type: "trace", tool: name, args, ok: false, summary, ms });
           throw err;
@@ -529,7 +477,7 @@ export class Agent extends Service {
       llm,
       run: handle,
       signal: abort.signal,
-      resume: this.store.external(thread.projectId, thread.id)[engine.id]
+      resume: this.store.external(thread.id)[engine.id]
     };
     return { run, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle } };
   }
@@ -545,28 +493,24 @@ export class Agent extends Service {
       await this.refreshProjectPlaybooks(rc.projectId);
       const settings = this.settingsOf();
       const engineOptions = settings.engines[rc.engine.id];
-      const pending = this.store.pending(rc.projectId, rc.threadId);
-      // A thread on a workstream runs where that workstream's code is; a missing checkout stops the run before the engine starts.
-      const where = await this.workdir(rc.projectId, rc.threadId);
-      if (where.problem) throw new Error(where.problem);
+      const pending = this.store.pending(rc.threadId);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
         input,
-        messages: this.store.messages(rc.projectId, rc.threadId),
-        cards: this.store.cards(rc.projectId, rc.threadId),
+        messages: this.store.messages(rc.threadId),
+        cards: this.store.cards(rc.threadId),
         brief: this.store.brief(rc.projectId),
         pending: pending ? this.pendingView(pending) : null,
-        options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions,
-        ...(where.cwd ? { cwd: where.cwd, workdir: { remote: where.remote!, branch: where.branch!, worktree: where.worktree } } : {})
+        options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions
       };
       result = await rc.engine.turn(turnInput, rc.io);
-      if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);
+      if (result.resume) this.store.setExternal(rc.threadId, rc.engine.id, result.resume);
     } catch (err) {
       if (rc.abort.signal.aborted) {
         result = { stop: "cancelled" };
       } else {
-        this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: message(err) }, rc.run.id);
+        this.appendAndBroadcast(rc.threadId, "agent", { type: "error", text: message(err) }, rc.run.id);
         result = { stop: "error", error: message(err) };
       }
     } finally {
@@ -582,28 +526,28 @@ export class Agent extends Service {
    * `TurnInput.pending` and holds resume_workflow / cancel_workflow.
    */
   private async routePending(rc: RunCtx, input: UserInput): Promise<"engine" | "suspended"> {
-    const pending = this.store.pending(rc.projectId, rc.threadId);
+    const pending = this.store.pending(rc.threadId);
     if (!pending) return "engine";
     const value = input.kind === "answer" ? input.value : input.kind === "text" ? input.text : "";
     const values = Array.isArray(value) ? value : [value];
     const explicit = input.kind === "answer" && input.questionId === pending.question.id;
     const onScript = explicit || pending.accepts === "text" || values.every((v) => pending.question.options?.includes(v));
 
-    if (pending.waiveRule && values.some((v) => pending.waiveOn.includes(v))) this.store.addWaiver(rc.projectId, rc.threadId, pending.waiveRule);
+    if (pending.waiveRule && values.some((v) => pending.waiveOn.includes(v))) this.store.addWaiver(rc.threadId, pending.waiveRule);
 
     if (pending.kind === "ask") {
       // The engine asked; whatever came back is its answer.
-      this.store.clearPending(rc.projectId, rc.threadId);
+      this.store.clearPending(rc.threadId);
       this.broadcast(rc.threadId, { type: "pending", pending: null });
       return "engine";
     }
     if (!onScript) return "engine";
 
-    this.store.clearPending(rc.projectId, rc.threadId);
+    this.store.clearPending(rc.threadId);
     this.broadcast(rc.threadId, { type: "pending", pending: null });
     const spec = this.workflows.get(pending.workflow!);
     if (!spec) {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: `The waiting workflow "${pending.workflow}" is no longer installed.` }, rc.run.id);
+      this.appendAndBroadcast(rc.threadId, "system", { type: "note", text: `The waiting workflow "${pending.workflow}" is no longer installed.` }, rc.run.id);
       return "engine";
     }
     const outcome = await this.driveWorkflow(spec, pending.step!, spec.state.parse(pending.state), value, rc);
@@ -628,7 +572,7 @@ export class Agent extends Service {
       state = transition.state;
       if ("ask" in transition) {
         const question = { id: randomUUID(), ...transition.ask };
-        this.store.setPending(rc.projectId, rc.threadId, {
+        this.store.setPending(rc.threadId, {
           kind: "workflow",
           workflow: spec.id,
           step,
@@ -638,8 +582,8 @@ export class Agent extends Service {
           waiveRule: null,
           waiveOn: []
         });
-        this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "question", ...question }, rc.run.id);
-        this.broadcast(rc.threadId, { type: "pending", pending: this.pendingView(this.store.pending(rc.projectId, rc.threadId)!) });
+        this.appendAndBroadcast(rc.threadId, "agent", { type: "question", ...question }, rc.run.id);
+        this.broadcast(rc.threadId, { type: "pending", pending: this.pendingView(this.store.pending(rc.threadId)!) });
         const suspended: Suspended = { __suspended: true, question, note: "Question posted to the user. End your turn and wait for the reply." };
         return suspended;
       }
@@ -652,17 +596,15 @@ export class Agent extends Service {
     rc.abort.abort();
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
-    const changes = this.store.changesOf(rc.projectId, rc.run.id);
-    if (changes > 0) {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.projectId, rc.run.id) }, rc.run.id);
-    }
+    const changes = this.store.changesOf(rc.run.id);
+    if (changes > 0) this.appendAndBroadcast(rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.run.id) }, rc.run.id);
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
-    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, costUsd: result.costUsd, changes });
+    const run = this.store.endRun(rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, costUsd: result.costUsd, changes });
     this.broadcast(rc.threadId, { type: "done", run });
   }
 
-  private appendAndBroadcast(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
-    const msg = this.store.appendMessage(projectId, threadId, role, block, runId);
+  private appendAndBroadcast(threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
+    const msg = this.store.appendMessage(threadId, role, block, runId);
     this.broadcast(threadId, { type: "message", message: msg });
     return msg;
   }
@@ -692,9 +634,9 @@ export class Agent extends Service {
           if (!inv.run) throw new Error("ask_user runs inside an assistant thread");
           const rc = this.activeById.get(inv.run.id);
           if (!rc) throw new Error("no active run");
-          if (this.store.pending(rc.projectId, rc.threadId)) throw new Error("another question is already waiting");
+          if (this.store.pending(rc.threadId)) throw new Error("another question is already waiting");
           const question = { id: randomUUID(), text: args.question, options: args.options, multiple: args.multiple, freeText: args.freeText };
-          this.store.setPending(rc.projectId, rc.threadId, {
+          this.store.setPending(rc.threadId, {
             kind: "ask",
             workflow: null,
             step: null,
@@ -704,8 +646,8 @@ export class Agent extends Service {
             waiveRule: args.waiveRule ?? null,
             waiveOn: args.waiveOn ?? []
           });
-          this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "question", ...question }, rc.run.id);
-          this.broadcast(rc.threadId, { type: "pending", pending: this.pendingView(this.store.pending(rc.projectId, rc.threadId)!) });
+          this.appendAndBroadcast(rc.threadId, "agent", { type: "question", ...question }, rc.run.id);
+          this.broadcast(rc.threadId, { type: "pending", pending: this.pendingView(this.store.pending(rc.threadId)!) });
           const suspended: Suspended = { __suspended: true, question, note: "Question posted to the user. End your turn and wait for the reply." };
           return suspended;
         }
@@ -733,7 +675,8 @@ export class Agent extends Service {
         description: "Rewrite the agent-maintained project memory: what this product is, its conventions, its main epics. Injected into every future run.",
         input: z.object({ body: z.string() }),
         execute: ({ body }, inv) => {
-          this.store.setBrief(requireProjectId("update_project_brief", undefined, inv), body);
+          if (!inv.projectId) throw new Error("update_project_brief needs a project scope");
+          this.store.setBrief(inv.projectId, body);
           return { ok: true };
         }
       })
@@ -748,11 +691,11 @@ export class Agent extends Service {
         execute: async ({ answer }, inv) => {
           if (!inv.run) throw new Error("resume_workflow runs inside an assistant thread");
           const rc = this.activeById.get(inv.run.id);
-          const pending = rc ? this.store.pending(rc.projectId, rc.threadId) : null;
+          const pending = rc ? this.store.pending(rc.threadId) : null;
           if (!rc || !pending || pending.kind !== "workflow") throw new Error("no workflow is waiting on this thread");
           const spec = this.workflows.get(pending.workflow!);
           if (!spec) throw new Error(`the waiting workflow "${pending.workflow}" is no longer installed`);
-          this.store.clearPending(rc.projectId, rc.threadId);
+          this.store.clearPending(rc.threadId);
           this.broadcast(rc.threadId, { type: "pending", pending: null });
           return this.driveWorkflow(spec, pending.step!, spec.state.parse(pending.state), answer, rc);
         }
@@ -768,9 +711,9 @@ export class Agent extends Service {
         execute: (_args, inv) => {
           if (!inv.run) throw new Error("cancel_workflow runs inside an assistant thread");
           const rc = this.activeById.get(inv.run.id);
-          const pending = rc ? this.store.pending(rc.projectId, rc.threadId) : null;
+          const pending = rc ? this.store.pending(rc.threadId) : null;
           if (!rc || !pending) throw new Error("nothing is waiting on this thread");
-          this.store.clearPending(rc.projectId, rc.threadId);
+          this.store.clearPending(rc.threadId);
           this.broadcast(rc.threadId, { type: "pending", pending: null });
           return { cancelled: pending.workflow ?? "question" };
         }
@@ -779,39 +722,12 @@ export class Agent extends Service {
   }
 
   /** `<playbooksDir>/<name>/SKILL.md` — the user slot; a plugin's id may coexist. */
-  /**
-   * The user's playbooks live in the Hub folder (`<Hub>/playbooks/`) and travel
-   * with it; the configured `playbooksDir` is where they lived before the Hub
-   * existed, and is moved into the Hub the first time one is chosen.
-   */
-  private userPlaybooksDir(): string | null {
-    const hub = this.ctx.get("hub") as { dir: string | null } | undefined;
-    if (hub?.dir) return path.join(hub.dir, "playbooks");
-    return this.config.playbooksDir ?? null;
-  }
-
-  private migratePlaybooksIntoHub(hubDir: string): void {
-    const legacy = this.config.playbooksDir;
-    const target = path.join(hubDir, "playbooks");
-    if (!legacy || legacy === target || !fs.existsSync(legacy) || fs.existsSync(target)) return;
-    try {
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.renameSync(legacy, target);
-    } catch (err) {
-      this.ctx.logger.warn(`playbooks were not moved into the Hub: ${message(err)}`);
-    }
-  }
-
-  loadUserPlaybooks(): void {
-    for (const [id, variants] of this.playbooks) {
-      delete variants.user;
-      if (!variants.plugin) this.playbooks.delete(id);
-    }
-    const dir = this.userPlaybooksDir();
-    if (!dir || !fs.existsSync(dir)) return;
-    const loaded = loadPlaybookDir(dir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
+  private loadUserPlaybooks(): void {
+    if (!this.config.playbooksDir) return;
+    const loaded = loadPlaybookDir(this.config.playbooksDir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
     for (const playbook of loaded) {
       const variants = this.playbooks.get(playbook.id) ?? {};
+      if (variants.user) continue;
       variants.user = playbook;
       this.playbooks.set(playbook.id, variants);
     }

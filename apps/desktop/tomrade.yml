@@ -11,9 +11,6 @@ modules:
   - id: db
     title: Database
     required: true
-  - id: hub
-    title: This machine
-    required: true
   - id: oplog
     title: History
     required: true
@@ -50,9 +47,6 @@ modules:
   - id: storage
     title: Destinations
     required: true
-  - id: repos
-    title: Repositories
-    required: true
   # Optional, and listed so the manager can say who fills them and what is
   # lost by switching the last one off.
   - id: llm
@@ -63,18 +57,10 @@ modules:
     title: MCP server
 
 plugins:
-  # Caches only: every file under here can be rebuilt from a project's folder.
   - id: db
     name: "@tomrade/db"
     config:
-      dir: "${userData}/cache"
-  # This machine: its id, the Hub folder, and the catalog of projects it knows.
-  - id: hub
-    name: "@tomrade/hub"
-    config:
-      stateFile: "${userData}/hub.json"
-      catalogFile: "${userData}/catalog.json"
-      deviceFile: "${userData}/device.json"
+      path: "${userData}/tomrade.db"
   - id: oplog
     name: "@tomrade/oplog"
   - id: write-policy
@@ -89,28 +75,25 @@ plugins:
     name: "@tomrade/boards"
   - id: projects
     name: "@tomrade/projects"
-    config:
-      legacyPath: "${userData}/tomrade.db"
-      backupsDir: "${userData}/backups"
   - id: settings
     name: "@tomrade/settings"
     config:
       path: "${userData}/settings.json"
-  # Each project's folder is the truth and the cache follows it: the log is
-  # written through, the snapshot shortly after, and a folder changed by anyone
-  # else is read back in. Git is driven only in folders Tomrade made itself.
+  # Where each project's shareable copy lives. An unbound project is a local
+  # project: the live SQLite file in userData is the only copy it has.
   - id: storage
     name: "@tomrade/storage"
-  # Remote transports for a project's own repository: any git URL…
+    config:
+      path: "${userData}/storage.json"
   - id: storage-git
     name: "@tomrade/storage-git"
-  # …and GitHub as a hosting choice on top: find a repository, make one.
+    config:
+      root: "${userData}/remotes"
+  # GitHub is a hosting choice on top of storage-git, not a peer of the others.
   - id: storage-github
     name: "@tomrade/storage-github"
-  # The code repositories workstreams stand for: shared identity in the project,
-  # this machine's checkout in the catalog, a worktree per agent thread.
-  - id: repos
-    name: "@tomrade/repos"
+    config:
+      root: "${userData}/remotes"
   - id: llm
     name: "@tomrade/llm"
   - id: tools

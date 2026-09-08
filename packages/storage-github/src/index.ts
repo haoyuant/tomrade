@@ -6,18 +6,25 @@ import { z } from "zod";
 import type {} from "@tomrade/settings";
 import type {} from "@tomrade/storage";
 import type { ProviderConnection } from "@tomrade/storage";
-import { createRemoteProvider } from "@tomrade/storage-git";
+import { createGitProvider, type GitRuntime, type GitTarget } from "@tomrade/storage-git";
 import { GitHub, GitHubError } from "./api.js";
 
 export { GitHub, GitHubError } from "./api.js";
 export type { Repo } from "./api.js";
 
+export const GitHubPluginConfig = z.object({
+  /** Where clones live. Inside userData: only the text artifact is ever here. */
+  root: z.string(),
+  binary: z.string().default("git")
+});
+export type GitHubPluginConfig = z.infer<typeof GitHubPluginConfig>;
 
 /** Per-project and non-secret, so it can be committed beside the code it tracks. */
 const RepoConfig = z.object({
   owner: z.string().min(1).meta({ title: "Owner" }).describe("GitHub user or organisation"),
   repo: z.string().min(1).meta({ title: "Repository" }).describe("Created for you if it does not exist yet"),
-  branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the backlog is committed on")
+  branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the backlog is committed on"),
+  path: z.string().default("").meta({ title: "Subdirectory" }).describe("Where in the repository to commit; blank for the root")
 });
 type RepoConfig = z.infer<typeof RepoConfig>;
 
@@ -44,10 +51,12 @@ const TOKEN_SECTION = {
 export const storageGithub = {
   name: "storage-github",
   inject: ["storage", "settings"],
-  apply(ctx: Context) {
+  Config: GitHubPluginConfig,
+  apply(ctx: Context, config: GitHubPluginConfig) {
     ctx.settings.register(TOKEN_SECTION);
     const token = () => ((ctx.settings.get().github as { token?: string } | undefined)?.token ?? "").trim();
     const api = new GitHub(token);
+    const runtime: GitRuntime = { root: config.root, binary: config.binary };
 
     const connection: ProviderConnection = {
       prompt: {
@@ -77,12 +86,13 @@ export const storageGithub = {
     };
 
     ctx.storage.register(
-      createRemoteProvider<RepoConfig>({
+      createGitProvider<RepoConfig>(
+        {
           id: "github",
           title: "A GitHub repository",
-          description: "The project's own repository on GitHub, pushed as text. Private by default.",
+          description: "Tomrade keeps a clone and commits the backlog as text. Private by default.",
           configSchema: RepoConfig,
-          defaults: { owner: "", repo: "", branch: "main" },
+          defaults: { owner: "", repo: "", branch: "main", path: "" },
           settingsSection: "github",
           connection,
 
@@ -92,15 +102,15 @@ export const storageGithub = {
             const [first, second] = trimmed.split("/");
             const owner = second ? first : await api.whoami();
             const repo = (second ?? first).replace(/[^A-Za-z0-9._-]/g, "-");
-            return { owner, repo, branch: "main" };
+            return { owner, repo, branch: "main", path: "" };
           },
 
           // A token, when there is one, authenticates the push; without one the
           // user's own SSH keys or credential helper are used instead.
-          toRemote: (c) => {
+          toTarget: (c): GitTarget => {
             const secret = token();
             const host = secret ? `x-access-token:${secret}@github.com` : "github.com";
-            return { url: `https://${host}/${c.owner}/${c.repo}.git`, branch: c.branch };
+            return { remote: `https://${host}/${c.owner}/${c.repo}.git`, branch: c.branch, path: c.path };
           },
 
           async ensureRemote(c) {
@@ -114,10 +124,12 @@ export const storageGithub = {
             const repos = await api.mine();
             return repos.map((r) => ({
               label: `${r.full_name}${r.private ? " (private)" : ""}`,
-              config: { owner: r.owner.login, repo: r.name, branch: r.default_branch || "main" }
+              config: { owner: r.owner.login, repo: r.name, branch: r.default_branch || "main", path: "" }
             }));
           }
-      })
+        },
+        runtime
+      )
     );
   }
 };

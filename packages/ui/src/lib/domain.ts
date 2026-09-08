@@ -182,53 +182,12 @@ export function timeAgo(ts: number, now = Date.now()): string {
   return zh ? `${years}年` : `${years}y`;
 }
 
-/** The author as history prints it: a sync is a machine settling a clash, not an agent writing. */
-export function authorLabel(by: string): string {
-  if (by === "ai:sync") return currentLocale === "zh" ? "同步" : "Sync";
-  return by;
-}
-
-const fieldWord = (field: string): string => {
-  const zh = currentLocale === "zh";
-  const table: Record<string, [string, string]> = {
-    title: ["title", "标题"],
-    body: ["description", "描述"],
-    status: ["status", "状态"],
-    priority: ["priority", "优先级"],
-    boardId: ["workstream", "工作流"],
-    parentId: ["epic", "需求组"],
-    rank: ["order", "顺序"],
-    keyNum: ["key", "编号"],
-    name: ["name", "名称"]
-  };
-  const hit = table[field];
-  return hit ? hit[zh ? 1 : 0] : field;
-};
-
-const valueWord = (value: unknown): string => {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value.length > 40 ? value.slice(0, 40) + "…" : value;
-  return typeof value === "object" ? JSON.stringify(value) : String(value);
-};
-
 /** What one oplog row did, phrased from the before/after snapshots. */
 export function describeWrite(entry: OplogEntry): string {
   const zh = currentLocale === "zh";
   if (entry.op === "create") return zh ? "创建了该工作项" : "created the issue";
   if (entry.op === "delete") return zh ? "删除了该工作项" : "deleted the issue";
   if (entry.op === "purge") return zh ? "永久删除了该工作项" : "permanently deleted the issue";
-  if (entry.op === "rank") return zh ? "调整了排序" : "moved it in a view";
-  if (entry.op === "merge") {
-    // A note a sync left: which field, what stood, what lost.
-    const winner = (entry.after ?? {}) as Record<string, unknown>;
-    const loser = (entry.before ?? {}) as Record<string, unknown>;
-    const field = Object.keys(winner)[0] ?? Object.keys(loser).find((k) => k !== "reason") ?? "";
-    if (loser.reason === "renumbered") return zh ? `将编号从 ${valueWord(loser.keyNum)} 改为 ${valueWord(winner.keyNum)}（另一台机器先用了它）` : `renumbered the key from ${valueWord(loser.keyNum)} to ${valueWord(winner.keyNum)} (another machine used it first)`;
-    if (loser.reason === "edited-over-delete") return zh ? "同步时保留了一边的编辑，另一边曾删除它" : "kept an edit over a delete from another machine";
-    return zh
-      ? `同步时将${fieldWord(field)}定为 ${valueWord(winner[field])}，另一台机器改成的 ${valueWord(loser[field])} 被搁置`
-      : `sync kept ${fieldWord(field)} ${valueWord(winner[field])} over ${valueWord(loser[field])} from another machine`;
-  }
   const before = entry.before as Item | null;
   const after = entry.after as Item | null;
   if (before && after) {
@@ -256,10 +215,9 @@ export function describeWrite(entry: OplogEntry): string {
 }
 
 /** The mark an oplog row carries in the ledger gutter. */
-export function ledgerMarkOf(entry: OplogEntry): "tick" | "lock" | "sync" | null {
+export function ledgerMarkOf(entry: OplogEntry): "tick" | "lock" | null {
   const locked = entry.op === "update" && !!(entry.after as Item | null)?.humanLocked && !(entry.before as Item | null)?.humanLocked;
   if (locked) return "lock";
-  if (entry.by === "ai:sync" || entry.op === "merge") return "sync";
   return entry.by.startsWith("ai:") ? "tick" : null;
 }
 

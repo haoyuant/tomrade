@@ -93,7 +93,7 @@ export function createCodexEngine(ctx: Context): Engine {
 
       try {
         const run = runJsonl(options.command, args, {
-          cwd: input.cwd ?? tmp,
+          cwd: tmp,
           env: { ...process.env, [TOKEN_ENV]: token },
           signal: io.signal,
           onLine: (raw) => {

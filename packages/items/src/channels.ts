@@ -7,11 +7,11 @@ declare module "@tomrade/ipc" {
   interface Channels {
     "items.list": (filter?: ListItemsFilter) => Item[];
     "items.query": (query: ItemQuery) => Item[];
-    "items.get": (projectId: string, id: string) => Item | null;
+    "items.get": (id: string) => Item | null;
     "items.create": (input: Omit<CreateItemInput, "by">) => Item;
-    "items.update": (projectId: string, id: string, patch: Patch, baseVersion: number) => Item;
-    "items.delete": (projectId: string, id: string) => void;
-    "items.purge": (projectId: string, id: string, baseVersion?: number) => void;
+    "items.update": (id: string, patch: Patch, baseVersion: number) => Item;
+    "items.delete": (id: string) => void;
+    "items.purge": (id: string, baseVersion?: number) => void;
     "items.labels": (projectId: string) => string[];
   }
 }
@@ -20,10 +20,10 @@ declare module "@tomrade/ipc" {
 export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("items.list", (filter = {}) => ctx.items.list(filter));
   ctx.ipc.handle("items.query", (query) => ctx.items.query(query));
-  ctx.ipc.handle("items.get", (projectId, id) => ctx.items.get(projectId, id));
+  ctx.ipc.handle("items.get", (id) => ctx.items.get(id));
   ctx.ipc.handle("items.create", (input) => ctx.items.create({ ...input, by: "human" }));
-  ctx.ipc.handle("items.update", (projectId, id, patch, baseVersion) => ctx.items.update(projectId, id, patch, "human", { baseVersion }));
-  ctx.ipc.handle("items.delete", (projectId, id) => ctx.items.delete(projectId, id, "human"));
-  ctx.ipc.handle("items.purge", (projectId, id, baseVersion) => ctx.items.purge(projectId, id, "human", { baseVersion }));
+  ctx.ipc.handle("items.update", (id, patch, baseVersion) => ctx.items.update(id, patch, "human", { baseVersion }));
+  ctx.ipc.handle("items.delete", (id) => ctx.items.delete(id, "human"));
+  ctx.ipc.handle("items.purge", (id, baseVersion) => ctx.items.purge(id, "human", { baseVersion }));
   ctx.ipc.handle("items.labels", (projectId) => ctx.items.labelsFor(projectId));
 }
