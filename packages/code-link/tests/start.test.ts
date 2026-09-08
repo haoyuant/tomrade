@@ -413,7 +413,7 @@ describe("starting a ticket", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result).toMatchObject({ mode: "terminal", launched: false });
-    expect(result.command).toMatch(/^claude --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
+    expect(result.command).toMatch(/^claude --mcp-config ".*mcp\.json" --strict-mcp-config --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
     const dir = codeLink.sessionDir(result.sessionId);
     const mcpConfig = JSON.parse(fs.readFileSync(path.join(dir, "mcp.json"), "utf8")) as { mcpServers: { tomrade: { url: string; headers: Record<string, string> } } };
     expect(mcpConfig.mcpServers.tomrade.url).toBe(ctx.mcp.urlFor(project.id));

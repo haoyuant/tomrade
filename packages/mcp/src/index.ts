@@ -10,6 +10,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import type { Author } from "@tomrade/domain";
 import type {} from "@tomrade/ipc";
 import type {} from "@tomrade/tools";
+import type { Tools } from "@tomrade/tools";
 
 export const MCP_SERVER_NAME = "tomrade";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -73,6 +74,8 @@ export class Mcp extends Service {
 
   url: string | null = null;
 
+  /** Captured from the injected context: HTTP callbacks run after Cordis's injection frame has closed. */
+  private tools: Tools | null = null;
   private bindings = new Map<string, RunBinding>();
   private eventListeners = new Set<(payload: unknown) => void>();
 
@@ -84,6 +87,8 @@ export class Mcp extends Service {
   }
 
   async [Service.init]() {
+    this.tools = this.ctx.get("tools") ?? null;
+    if (!this.tools) throw new Error("the MCP server needs the tools plugin");
     const transports = new Map<string, StreamableHTTPServerTransport>();
     const app = createMcpExpressApp();
 
@@ -204,11 +209,13 @@ export class Mcp extends Service {
 
   private session(binding?: RunBinding, projectId?: string): McpServer {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
-    for (const tool of this.ctx.tools.list()) {
+    const tools = this.tools;
+    if (!tools) throw new Error("the MCP server needs the tools plugin");
+    for (const tool of tools.list()) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
         try {
           if (binding) return textResult(await binding.execute(tool.name, args));
-          return textResult(await this.ctx.tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
+          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
         } catch (e) {
           return errorResult(e);
         }

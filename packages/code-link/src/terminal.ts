@@ -7,7 +7,7 @@ import { z } from "zod";
 export const TerminalSettings = z.object({
   /** Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows; "none" only prepares the command for copying. */
   terminal: z.string().default("Terminal"),
-  claudeCommand: z.string().default('claude --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
+  claudeCommand: z.string().default('claude --mcp-config "{mcpConfig}" --strict-mcp-config --settings "{settings}" {resume} "$(cat "{prompt}")"'),
   codexCommand: z.string().default('codex {resume} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"'),
   /** Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in. */
   otherCommand: z.string().default("")
