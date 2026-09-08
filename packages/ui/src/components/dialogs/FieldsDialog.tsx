@@ -17,7 +17,6 @@ import {
   useRemoveBoard,
   useRemoveField,
   useRemoveFieldOption,
-  useRepos,
   useUpdateBoard,
   useUpdateField,
   useUpdateFieldOption
@@ -81,9 +80,8 @@ function FieldRow({ def, count, selected, onSelect }: { def: FieldDef; count: nu
   );
   if (!onSelect) return <div className="cfg-row fld-row is-builtin" data-field={def.id}>{body}</div>;
   return (
-    <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-expanded={selected} onClick={onSelect}>
+    <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-pressed={selected} onClick={onSelect}>
       {body}
-      <Icon className="fld-chev" name="i-chevdown" size={11} aria-hidden />
     </button>
   );
 }
@@ -225,12 +223,11 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   );
 }
 
-/** One workstream: glyph, name, how many issues it holds, and the way out. */
+/** One workstream: glyph, name, package, how many issues it holds, and the way out. */
 function WorkstreamRow({ board, count, others, projectId }: { board: Board; count: number; others: Board[]; projectId: string }) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const update = useUpdateBoard(projectId);
-  const repos = useRepos(projectId);
   const remove = useRemoveBoard(projectId);
   const move = useMoveItemsToBoard(projectId);
   const items = useItems(projectId);
@@ -261,33 +258,14 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
     <div className="fld-opt fld-ws" data-board={board.id}>
       <IconPicker compact value={viewIcon(board.icon)} ariaLabel={t("fieldsDialog.workstreamIconAria")} onChange={(icon) => update.mutate({ id: board.id, patch: { icon } }, { onError: fail })} />
       <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-opt-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
+      <RenameInput
+        value={board.subtitle ?? ""}
+        ariaLabel={t("fieldsDialog.workstreamPkgAria")}
+        className="input fld-opt-desc num"
+        placeholder={t("fieldsDialog.workstreamPkgPlaceholder")}
+        onSave={(subtitle) => update.mutate({ id: board.id, patch: { subtitle: subtitle || null } }, { onError: fail })}
+      />
       <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
-      {/* The repository the workstream stands for: where its agents run. */}
-      <span className="row fld-ws-repo" style={{ gap: 6, gridColumn: "1 / -1" }}>
-        <select
-          className="select"
-          style={{ flex: 1 }}
-          aria-label={t("fieldsDialog.workstreamRepoAria", { name: board.name })}
-          value={board.repoId ?? ""}
-          onChange={(e) => update.mutate({ id: board.id, patch: { repoId: e.target.value || null, repoPath: e.target.value ? board.repoPath : "" } }, { onError: fail })}
-        >
-          <option value="">{t("fieldsDialog.workstreamRepoNone")}</option>
-          {(repos.data ?? []).map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-        {board.repoId && (
-          <RenameInput
-            value={board.repoPath}
-            ariaLabel={t("fieldsDialog.workstreamRepoPathAria")}
-            className="input num fld-ws-path"
-            placeholder={t("fieldsDialog.workstreamRepoPathPlaceholder")}
-            onSave={(repoPath) => update.mutate({ id: board.id, patch: { repoPath } }, { onError: fail })}
-          />
-        )}
-      </span>
       {removing && count > 0 ? (
         <span className="row" style={{ gap: 6, gridColumn: "1 / -1" }}>
           <span className="meta-txt">{t("fieldsDialog.moveIssuesTo", { n: count })}</span>
@@ -337,8 +315,9 @@ function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item
   const add = () => {
     const name = newName.trim();
     if (!name) return;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     create.mutate(
-      { name, icon: "i-board" },
+      { name, icon: "i-board", subtitle: slug ? `packages/${slug}` : null },
       { onSuccess: (b) => (setNewName(""), toast({ body: tx("fieldsDialog.addedWorkstreamToast", { name: <b>{b.name}</b> }) })), onError: (err) => toast({ body: err.message }) }
     );
   };
@@ -346,7 +325,6 @@ function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item
   return (
     <div className="fld-editor stack-3" data-editor="workstream">
       <p className="meta-txt dense">{t("fieldsDialog.workstreamNote")}</p>
-      <p className="meta-txt dense">{t("fieldsDialog.workstreamRepoNote")}</p>
       <div>
         <Eyebrow>{t("fieldsDialog.workstreamsEyebrow")}</Eyebrow>
         <div className="stack-1" style={{ marginTop: "var(--space-2)" }}>
@@ -441,16 +419,15 @@ export function FieldsDialog({
           <div className="fld-list" style={{ marginTop: "var(--space-2)" }}>
             {builtin.map((f) =>
               f.id === "board" ? (
-                <div key={f.id} className="fld-item">
-                  <FieldRow def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
-                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} />}
-                </div>
+                <FieldRow key={f.id} def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
               ) : (
                 <FieldRow key={f.id} def={f} count={null} />
               )
             )}
           </div>
-          {selectedId !== "board" && (
+          {selectedId === "board" ? (
+            <WorkstreamEditor projectId={projectId} items={rows} />
+          ) : (
             <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
               {t("fieldsDialog.builtinNote")}
             </p>
@@ -467,13 +444,12 @@ export function FieldsDialog({
             <>
               <div className="fld-list" style={{ marginTop: "var(--space-2)" }}>
                 {custom.map((f) => (
-                  <div key={f.id} className="fld-item">
-                    <FieldRow def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
-                    {f.id === selectedId && <FieldEditor projectId={projectId} def={f} count={holders(rows, f.id)} onDeleted={() => setSelectedId(null)} />}
-                  </div>
+                  <FieldRow key={f.id} def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
                 ))}
               </div>
-              {!selected && (
+              {selected ? (
+                <FieldEditor projectId={projectId} def={selected} count={holders(rows, selected.id)} onDeleted={() => setSelectedId(null)} />
+              ) : (
                 <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
                   {t("fieldsDialog.selectHint")}
                 </p>

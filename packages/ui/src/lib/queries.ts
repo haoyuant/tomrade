@@ -1,11 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommandScope } from "@tomrade/contributions";
-import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomrade/storage";
-import type {} from "@tomrade/hub";
-import type {} from "@tomrade/repos";
-import type { CheckoutView } from "@tomrade/repos";
+import type { StorageBinding, StorageProviderView, StorageStatus } from "@tomrade/storage";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
-import type { Repo, RepoPatch } from "@tomrade/domain";
 import type {
   AppSettings,
   Board,
@@ -31,27 +27,22 @@ export const keys = {
   labels: (projectId: string) => ["labels", projectId] as const,
   fields: (projectId: string) => ["fields", projectId] as const,
   ranks: (viewId: string) => ["ranks", viewId] as const,
-  history: (projectId: string, itemId: string) => ["history", projectId, itemId] as const,
-  /** Per project: with one file per project there is no cross-project "recent". */
-  oplog: (projectId: string) => ["oplog", projectId] as const,
+  history: (itemId: string) => ["history", itemId] as const,
+  oplog: ["oplog"] as const,
   settings: ["settings"] as const,
   settingsSections: ["settings", "sections"] as const,
-  mcp: (projectId?: string) => ["mcp", projectId ?? ""] as const,
-  cacheDir: ["cacheDir"] as const,
-  hub: ["hub"] as const,
-  hubRemote: ["storage", "hub"] as const,
-  repos: (projectId: string) => ["repos", projectId] as const,
-  repoCheckouts: ["repos", "checkouts"] as const,
+  mcp: ["mcp"] as const,
+  dbPath: ["dbPath"] as const,
   plugins: ["plugins"] as const,
   storageProviders: ["storage", "providers"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
-  storageInfo: (projectId: string) => ["storage", "info", projectId] as const,
+  storageBinding: (projectId: string) => ["storage", "binding", projectId] as const,
   storageConnection: (providerId: string) => ["storage", "connection", providerId] as const,
   contributions: ["contributions"] as const,
   commands: ["contributions", "commands"] as const,
   badges: (projectId: string) => ["contributions", "badges", projectId] as const,
   statusItems: (projectId?: string) => ["contributions", "status", projectId ?? ""] as const,
-  sections: (projectId: string, itemId: string) => ["contributions", "sections", projectId, itemId] as const,
+  sections: (itemId: string) => ["contributions", "sections", itemId] as const,
   graphs: ["contributions", "graphs"] as const,
   graphEdges: (projectId: string, graphId: string) => ["contributions", "graph", projectId, graphId] as const
 };
@@ -60,8 +51,8 @@ export const keys = {
 export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
   void qc.invalidateQueries({ queryKey: keys.items(projectId) });
   void qc.invalidateQueries({ queryKey: keys.labels(projectId) });
-  void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
-  void qc.invalidateQueries({ queryKey: ["history", projectId] });
+  void qc.invalidateQueries({ queryKey: keys.oplog });
+  void qc.invalidateQueries({ queryKey: ["history"] });
   void qc.invalidateQueries({ queryKey: keys.contributions });
 }
 
@@ -72,7 +63,7 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
  */
 export function invalidateProject(qc: QueryClient, projectId: string): void {
   invalidateWorkspace(qc, projectId);
-  for (const key of [keys.boards(projectId), keys.views(projectId), keys.fields(projectId), keys.projects, keys.storageStatus(projectId), keys.storageInfo(projectId)]) {
+  for (const key of [keys.boards(projectId), keys.views(projectId), keys.fields(projectId), keys.projects, keys.storageStatus(projectId), keys.storageBinding(projectId)]) {
     void qc.invalidateQueries({ queryKey: key });
   }
   void qc.invalidateQueries({ queryKey: ["ranks"] });
@@ -81,12 +72,8 @@ export function invalidateProject(qc: QueryClient, projectId: string): void {
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => invoke("projects.list") });
 export const useSettings = () => useQuery({ queryKey: keys.settings, queryFn: () => invoke("settings.get") });
 export const useSettingsSections = () => useQuery({ queryKey: keys.settingsSections, queryFn: () => invoke("settings.sections") });
-/** The project's own MCP address when one is given; the unscoped server otherwise. */
-export const useMcpUrl = (projectId?: string) => useQuery({ queryKey: keys.mcp(projectId), queryFn: () => invoke("mcp.url", projectId), retry: false });
-/** Where this machine keeps its caches. Never the truth — every file there can be rebuilt. */
-export const useCacheDir = () => useQuery({ queryKey: keys.cacheDir, queryFn: () => invoke("db.dir") });
-/** This machine: its id and its Hub folder. */
-export const useHubInfo = () => useQuery({ queryKey: keys.hub, queryFn: () => invoke("hub.info") });
+export const useMcpUrl = () => useQuery({ queryKey: keys.mcp, queryFn: () => invoke("mcp.url"), retry: false });
+export const useDbPath = () => useQuery({ queryKey: keys.dbPath, queryFn: () => invoke("db.path") });
 
 export const useBoards = (projectId: string) => useQuery({ queryKey: keys.boards(projectId), queryFn: () => invoke("boards.list", projectId) });
 export const useViews = (projectId: string) => useQuery({ queryKey: keys.views(projectId), queryFn: () => invoke("views.list", projectId) });
@@ -94,22 +81,20 @@ export const useItems = (projectId: string) => useQuery({ queryKey: keys.items(p
 export const useLabels = (projectId: string) => useQuery({ queryKey: keys.labels(projectId), queryFn: () => invoke("items.labels", projectId) });
 export const useFields = (projectId: string) => useQuery({ queryKey: keys.fields(projectId), queryFn: () => invoke("fields.list", projectId) });
 
-export const useViewRanks = (projectId: string, viewId: string | undefined) =>
-  useQuery({ queryKey: keys.ranks(viewId ?? ""), queryFn: () => invoke("views.ranks", projectId, viewId!), enabled: !!viewId });
+export const useViewRanks = (viewId: string | undefined) =>
+  useQuery({ queryKey: keys.ranks(viewId ?? ""), queryFn: () => invoke("views.ranks", viewId!), enabled: !!viewId });
 
-export const useHistory = (projectId: string, itemId: string | undefined) =>
-  useQuery({ queryKey: keys.history(projectId, itemId ?? ""), queryFn: () => invoke("oplog.history", projectId, "item", itemId!), enabled: !!itemId });
+export const useHistory = (itemId: string | undefined) =>
+  useQuery({ queryKey: keys.history(itemId ?? ""), queryFn: () => invoke("oplog.history", "item", itemId!), enabled: !!itemId });
 
-/** A project's latest writes. Undefined on the home screen: nothing is recent across projects. */
-export const useOplog = (projectId: string | undefined, limit = 5) =>
-  useQuery({ queryKey: keys.oplog(projectId ?? ""), queryFn: () => invoke("oplog.recent", projectId!, limit), enabled: !!projectId });
+export const useOplog = (limit = 5) => useQuery({ queryKey: keys.oplog, queryFn: () => invoke("oplog.recent", limit) });
 
 export const useCommands = () => useQuery({ queryKey: keys.commands, queryFn: () => invoke("contributions.commands") });
 export const useBadges = (projectId: string) => useQuery({ queryKey: keys.badges(projectId), queryFn: () => invoke("contributions.badges", projectId) });
 export const useStatusItems = (projectId?: string) =>
   useQuery({ queryKey: keys.statusItems(projectId), queryFn: () => invoke("contributions.statusItems", { projectId }) });
-export const useSections = (projectId: string, itemId: string | undefined) =>
-  useQuery({ queryKey: keys.sections(projectId, itemId ?? ""), queryFn: () => invoke("contributions.sections", projectId, itemId!), enabled: !!itemId });
+export const useSections = (itemId: string | undefined) =>
+  useQuery({ queryKey: keys.sections(itemId ?? ""), queryFn: () => invoke("contributions.sections", itemId!), enabled: !!itemId });
 export const useGraphs = () => useQuery({ queryKey: keys.graphs, queryFn: () => invoke("contributions.graphs") });
 export const useGraphEdges = (projectId: string, graphId: string | null) =>
   useQuery({ queryKey: keys.graphEdges(projectId, graphId ?? ""), queryFn: () => invoke("contributions.graph", graphId!, { projectId }), enabled: !!graphId });
@@ -155,7 +140,7 @@ export function useCreateItem(projectId: string) {
 export function usePatchItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: Patch; baseVersion: number }) => invoke("items.update", projectId, args.id, args.patch, args.baseVersion),
+    mutationFn: (args: { id: string; patch: Patch; baseVersion: number }) => invoke("items.update", args.id, args.patch, args.baseVersion),
     onSettled: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -163,7 +148,7 @@ export function usePatchItem(projectId: string) {
 export function useDeleteItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("items.delete", projectId, id),
+    mutationFn: (id: string) => invoke("items.delete", id),
     onSuccess: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -172,7 +157,7 @@ export function useDeleteItem(projectId: string) {
 export function usePurgeItem(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; baseVersion: number }) => invoke("items.purge", projectId, args.id, args.baseVersion),
+    mutationFn: (args: { id: string; baseVersion: number }) => invoke("items.purge", args.id, args.baseVersion),
     onSettled: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -180,7 +165,7 @@ export function usePurgeItem(projectId: string) {
 export function useUndo(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (entityId?: string) => invoke("oplog.undo", projectId, entityId),
+    mutationFn: (entityId?: string) => invoke("oplog.undo", entityId),
     onSuccess: () => {
       invalidateWorkspace(qc, projectId);
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
@@ -192,12 +177,8 @@ export function useUndo(projectId: string) {
 export function useSetViewRank(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { viewId: string; itemId: string; rank: number }) => invoke("views.setRank", projectId, args.viewId, args.itemId, args.rank),
-    onSuccess: (_r, args) => {
-      void qc.invalidateQueries({ queryKey: keys.ranks(args.viewId) });
-      // a rank move is logged now, so the ribbon and ⌘Z see it
-      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
-    }
+    mutationFn: (args: { viewId: string; itemId: string; rank: number }) => invoke("views.setRank", args.viewId, args.itemId, args.rank),
+    onSuccess: (_r, args) => void qc.invalidateQueries({ queryKey: keys.ranks(args.viewId) })
   });
 }
 
@@ -207,7 +188,7 @@ export function useCreateBoard(projectId: string) {
     mutationFn: (input: Omit<CreateBoardInput, "projectId">): Promise<Board> => invoke("boards.create", { ...input, projectId }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
 }
@@ -215,7 +196,7 @@ export function useCreateBoard(projectId: string) {
 export function useUpdateBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: BoardPatch }) => invoke("boards.update", projectId, args.id, args.patch),
+    mutationFn: (args: { id: string; patch: BoardPatch }) => invoke("boards.update", args.id, args.patch),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.boards(projectId) })
   });
 }
@@ -223,10 +204,10 @@ export function useUpdateBoard(projectId: string) {
 export function useRemoveBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("boards.remove", projectId, id),
+    mutationFn: (id: string) => invoke("boards.remove", id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
 }
@@ -234,7 +215,7 @@ export function useRemoveBoard(projectId: string) {
 export function useMoveItemsToBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { from: string; to: string; itemIds: string[] }) => invoke("boards.moveItems", projectId, args.from, args.to, args.itemIds),
+    mutationFn: (args: { from: string; to: string; itemIds: string[] }) => invoke("boards.moveItems", args.from, args.to, args.itemIds),
     onSuccess: () => invalidateWorkspace(qc, projectId)
   });
 }
@@ -250,7 +231,7 @@ export function useCreateView(projectId: string) {
       // the caller navigates straight to the new view, so the cache sees it before the refetch lands
       qc.setQueryData<View[]>(keys.views(projectId), (prev) => (prev ? [...prev, view] : prev));
       void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
 }
@@ -258,10 +239,10 @@ export function useCreateView(projectId: string) {
 export function useUpdateView(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; patch: ViewPatch }) => invoke("views.update", projectId, args.id, args.patch),
+    mutationFn: (args: { id: string; patch: ViewPatch }) => invoke("views.update", args.id, args.patch),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
 }
@@ -269,10 +250,10 @@ export function useUpdateView(projectId: string) {
 export function useRemoveView(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke("views.remove", projectId, id),
+    mutationFn: (id: string) => invoke("views.remove", id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
     }
   });
 }
@@ -294,20 +275,19 @@ function useFieldMutation<A, R>(projectId: string, fn: (args: A) => Promise<R>) 
 
 export const useCreateField = (projectId: string) =>
   useFieldMutation(projectId, (input: Omit<CreateFieldInput, "projectId">) => invoke("fields.create", { ...input, projectId }));
-export const useUpdateField = (projectId: string) => useFieldMutation(projectId, (args: { id: string; patch: FieldPatch }) => invoke("fields.update", projectId, args.id, args.patch));
-export const useRemoveField = (projectId: string) => useFieldMutation(projectId, (id: string) => invoke("fields.remove", projectId, id));
+export const useUpdateField = (projectId: string) => useFieldMutation(projectId, (args: { id: string; patch: FieldPatch }) => invoke("fields.update", args.id, args.patch));
+export const useRemoveField = (projectId: string) => useFieldMutation(projectId, (id: string) => invoke("fields.remove", id));
 export const useAddFieldOption = (projectId: string) =>
-  useFieldMutation(projectId, (args: { fieldId: string; input: FieldOptionInput }) => invoke("fields.addOption", projectId, args.fieldId, args.input));
+  useFieldMutation(projectId, (args: { fieldId: string; input: FieldOptionInput }) => invoke("fields.addOption", args.fieldId, args.input));
 export const useUpdateFieldOption = (projectId: string) =>
-  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; patch: FieldOptionPatch }) => invoke("fields.updateOption", projectId, args.fieldId, args.optionId, args.patch));
+  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; patch: FieldOptionPatch }) => invoke("fields.updateOption", args.fieldId, args.optionId, args.patch));
 export const useRemoveFieldOption = (projectId: string) =>
-  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; moveTo?: string }) => invoke("fields.removeOption", projectId, args.fieldId, args.optionId, args.moveTo));
+  useFieldMutation(projectId, (args: { fieldId: string; optionId: string; moveTo?: string }) => invoke("fields.removeOption", args.fieldId, args.optionId, args.moveTo));
 
-/** `dir` is where the project's folder goes; blank lets the Hub place it under `projects/<slug>`. */
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { input: CreateProjectInput; dir?: string }): Promise<Project> => invoke("projects.create", args.input, args.dir ? { dir: args.dir } : undefined),
+    mutationFn: (input: CreateProjectInput): Promise<Project> => invoke("projects.create", input),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.projects })
   });
 }
@@ -329,12 +309,13 @@ export function useUpdateProject() {
 export function useRemoveProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; deleteFolder?: boolean }) => invoke("projects.remove", args.id, args.deleteFolder ? { deleteFolder: true } : undefined),
-    onSuccess: (_r, { id }) => {
-      for (const key of [keys.boards(id), keys.views(id), keys.items(id), keys.labels(id), keys.badges(id), keys.statusItems(id), keys.oplog(id)]) {
+    mutationFn: (id: string) => invoke("projects.remove", id),
+    onSuccess: (_r, id) => {
+      for (const key of [keys.boards(id), keys.views(id), keys.items(id), keys.labels(id), keys.badges(id), keys.statusItems(id)]) {
         qc.removeQueries({ queryKey: key });
       }
       void qc.invalidateQueries({ queryKey: keys.projects });
+      void qc.invalidateQueries({ queryKey: keys.oplog });
       void qc.invalidateQueries({ queryKey: keys.contributions });
     }
   });
@@ -352,40 +333,14 @@ export function useSaveSettings() {
 
 export const useStorageProviders = () => useQuery({ queryKey: keys.storageProviders, queryFn: (): Promise<StorageProviderView[]> => invoke("storage.providers") });
 
-/** The folder, who drives git in it, the remote, and what travels — everything the block draws. */
-export const useStorageInfo = (projectId: string) =>
-  useQuery({ queryKey: keys.storageInfo(projectId), queryFn: (): Promise<StorageInfo> => invoke("storage.info", projectId) });
+export const useStorageBinding = (projectId: string) =>
+  useQuery({ queryKey: keys.storageBinding(projectId), queryFn: (): Promise<StorageBinding | null> => invoke("storage.binding", projectId) });
 
 /** Contacts the remote, so it is asked for on open and after an action — never polled. */
 export const useStorageStatus = (projectId: string) =>
   useQuery({ queryKey: keys.storageStatus(projectId), queryFn: (): Promise<StorageStatus> => invoke("storage.status", projectId), retry: false, staleTime: 10_000 });
 
-/** Re-point the project at a folder. Empty: written; holding this project: adopted; another's: refused. */
-export function useSetFolder(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (dir: string) => invoke("storage.setFolder", projectId, dir),
-    onSettled: () => invalidateProject(qc, projectId)
-  });
-}
-
-export function useSetAutoCommit(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (on: boolean) => invoke("storage.setAutoCommit", projectId, on),
-    onSettled: () => void qc.invalidateQueries({ queryKey: keys.storageInfo(projectId) })
-  });
-}
-
-export function useSetExports(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (namespaces: string[]) => invoke("storage.setExports", projectId, namespaces),
-    onSettled: () => invalidateProject(qc, projectId)
-  });
-}
-
-/** Give the project's own repository a remote and push. Refused inside the user's own checkout. */
+/** Point a project at a destination and publish it there. */
 export function useBindStorage(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -394,7 +349,7 @@ export function useBindStorage(projectId: string) {
   });
 }
 
-/** Forget the remote. The repository and nothing remote is deleted. */
+/** Forget the destination. Nothing there is deleted. */
 export function useUnbindStorage(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -408,15 +363,6 @@ export function useSyncStorage(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => invoke("storage.sync", projectId),
-    onSettled: () => invalidateProject(qc, projectId)
-  });
-}
-
-/** Drop the cache and read the folder again. The folder is the truth, so nothing but the undo window is lost. */
-export function useRebuildStorage(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => invoke("storage.rebuild", projectId),
     onSettled: () => invalidateProject(qc, projectId)
   });
 }
@@ -456,113 +402,13 @@ export function useDraftStorage() {
   return useMutation({ mutationFn: (args: { providerId: string; name: string }) => invoke("storage.draft", args.providerId, args.name) });
 }
 
-/** Open a folder that already holds a project; resolves to its id. */
-export function useAttachFolder() {
+/** Bring in a project this machine does not know; resolves to its id. */
+export function useAttachProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dir: string) => invoke("storage.attach", dir),
+    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.attach", args.providerId, args.config),
     onSuccess: (projectId) => invalidateProject(qc, projectId)
-  });
-}
-
-/** Clone a published project into the Hub and open it; resolves to its id. */
-export function useAttachRemote() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.attachRemote", args.providerId, args.config),
-    onSuccess: (projectId) => invalidateProject(qc, projectId)
-  });
-}
-
-/* ── this machine ──────────────────────────────────────────────────────── */
-
-/** First run, or a move: name the Hub folder. Every project without a folder gets one under it. */
-export function useConfigureHub() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (dir: string) => invoke("hub.configure", dir),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.hub });
-      void qc.invalidateQueries({ queryKey: keys.projects });
-      void qc.invalidateQueries({ queryKey: ["storage"] });
-    }
   });
 }
 
 export type { Board, Item, Project, View };
-
-/* ── the Hub's own remote ─────────────────────────────────────────────── */
-
-/** The Hub folder's remote, its state, and the projects its catalog names that are not here. Contacts the remote. */
-export const useHubRemote = () => useQuery({ queryKey: keys.hubRemote, queryFn: () => invoke("storage.hubInfo"), retry: false, staleTime: 10_000 });
-
-const invalidateHub = (qc: QueryClient) => {
-  void qc.invalidateQueries({ queryKey: keys.hubRemote });
-  void qc.invalidateQueries({ queryKey: keys.hub });
-  void qc.invalidateQueries({ queryKey: keys.projects });
-};
-
-/** Make the Hub folder a repository of Tomrade's own and give it a remote. */
-export function useBindHub() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.hubBind", args.providerId, args.config),
-    onSettled: () => invalidateHub(qc)
-  });
-}
-
-export function useUnbindHub() {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: () => invoke("storage.hubUnbind"), onSettled: () => invalidateHub(qc) });
-}
-
-export function useSyncHub() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => invoke("storage.hubSync"),
-    onSettled: () => {
-      invalidateHub(qc);
-      void qc.invalidateQueries({ queryKey: keys.settings });
-    }
-  });
-}
-
-/** Clone every project the Hub knows and this machine does not; resolves to their ids. */
-export function useAttachAll() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => invoke("storage.hubAttachAll"),
-    onSettled: () => {
-      invalidateHub(qc);
-      void qc.invalidateQueries({ queryKey: ["storage"] });
-    }
-  });
-}
-
-/* ── repositories ────────────────────────────────────────────────────────
-   The URL is the project's; the checkout is this machine's. */
-
-export const useRepos = (projectId: string) => useQuery({ queryKey: keys.repos(projectId), queryFn: (): Promise<Repo[]> => invoke("repos.list", projectId) });
-export const useRepoCheckouts = () => useQuery({ queryKey: keys.repoCheckouts, queryFn: (): Promise<CheckoutView[]> => invoke("repos.checkouts") });
-
-function useRepoMutation<A, R>(projectId: string | null, fn: (args: A) => Promise<R>) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    onSettled: () => {
-      if (projectId) void qc.invalidateQueries({ queryKey: keys.repos(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.repoCheckouts });
-      // where an agent would run may have changed
-      void qc.invalidateQueries({ queryKey: ["agent", "workdir"] });
-    }
-  });
-}
-
-export const useCreateRepo = (projectId: string) =>
-  useRepoMutation(projectId, (input: { remote: string; name?: string; defaultBranch?: string }): Promise<Repo> => invoke("repos.create", { ...input, projectId }));
-export const useUpdateRepo = (projectId: string) => useRepoMutation(projectId, (args: { id: string; patch: RepoPatch }) => invoke("repos.update", projectId, args.id, args.patch));
-export const useRemoveRepo = (projectId: string) => useRepoMutation(projectId, (id: string) => invoke("repos.remove", projectId, id));
-export const useSetCheckout = () => useRepoMutation(null, (args: { remote: string; dir: string }) => invoke("repos.setCheckout", args.remote, args.dir));
-export const useClearCheckout = () => useRepoMutation(null, (remote: string) => invoke("repos.clearCheckout", remote));
-export const useSetRunInCheckout = () => useRepoMutation(null, (args: { remote: string; on: boolean }) => invoke("repos.setRunInCheckout", args.remote, args.on));
-export const useCloneRepo = () => useRepoMutation(null, (args: { remote: string; branch: string }) => invoke("repos.clone", args.remote, args.branch));

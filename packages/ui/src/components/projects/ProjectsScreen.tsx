@@ -9,10 +9,7 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { keys, useAttachFolder, useHubInfo, useMcpUrl, useProjects } from "~/lib/queries";
-import { pickDirectory } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
-import { HubSetup } from "./HubSetup";
+import { keys, useMcpUrl, useProjects } from "~/lib/queries";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { OpenProjectDialog } from "./OpenProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
@@ -114,21 +111,11 @@ function ProjectCard({
   );
 }
 
-/** The home grid, or — before the Hub folder exists — the one question that comes first. */
 export function ProjectsScreen() {
-  const hub = useHubInfo();
-  if (hub.data && !hub.data.configured) return <HubSetup />;
-  return <ProjectsHome />;
-}
-
-function ProjectsHome() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const projects = useProjects();
   const mcp = useMcpUrl();
-  const attachFolder = useAttachFolder();
-  const toast = useToast();
-  const [pickingFolder, setPickingFolder] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [openOpen, setOpenOpen] = useState(false);
@@ -153,18 +140,6 @@ function ProjectsHome() {
     queries: list.map((p) => ({ queryKey: keys.boards(p.id), queryFn: () => invoke("boards.list", p.id) }))
   });
 
-  /* A folder that already holds a project: pick it, and it is on this machine. */
-  const openFolder = async () => {
-    setPickingFolder(true);
-    const chosen = await pickDirectory(t("projectsScreen.openFolderTitle"), t("projectsScreen.openFolderButton"));
-    setPickingFolder(false);
-    if (!chosen) return;
-    attachFolder.mutate(chosen, {
-      onSuccess: (projectId) => void navigate({ to: "/p/$projectId", params: { projectId } }),
-      onError: (error) => toast({ body: error instanceof Error ? error.message : String(error) })
-    });
-  };
-
   return (
     <div className="app">
       <header className="titlebar">
@@ -174,10 +149,7 @@ function ProjectsHome() {
           {t("projectsScreen.crumbProjects")}
         </span>
         <Spacer />
-        <button type="button" className="btn btn-secondary no-drag open-folder" disabled={pickingFolder || attachFolder.isPending} onClick={() => void openFolder()}>
-          <Icon name="i-archive" size={14} /> {attachFolder.isPending ? t("projectsScreen.openingFolder") : t("projectsScreen.openFolder")}
-        </button>
-        <button type="button" className="btn btn-secondary no-drag open-remote" onClick={() => setOpenOpen(true)}>
+        <button type="button" className="btn btn-secondary no-drag" onClick={() => setOpenOpen(true)}>
           <Icon name="i-search" size={14} /> {t("projectsScreen.openProject")}
         </button>
         <button type="button" className="btn btn-primary no-drag" onClick={() => setNewOpen(true)}>

@@ -3,14 +3,14 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { Eyebrow } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n } from "~/lib/i18n";
-import { useAttachRemote, useStorageConnection, useStorageProviders } from "~/lib/queries";
+import { useAttachProject, useStorageConnection, useStorageProviders } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { ConnectionPanel, DestinationPicker, message } from "./destination";
 
 /**
- * Joining a project someone else published to a remote: it is cloned into the
- * Hub as a folder of its own and opened. A folder already on this machine goes
- * through "Open folder…" instead.
+ * Joining a project someone else published. `attach` was always provider-agnostic;
+ * this is the way in for every destination rather than only for a folder somebody
+ * had already cloned by hand.
  *
  * Nothing is created here: the project already exists, and its own file names it.
  * That is why the id, the name and the key prefix are never asked for.
@@ -26,9 +26,9 @@ export function OpenProjectDialog({
 }) {
   const { t } = useI18n();
   const providers = useStorageProviders();
-  const attach = useAttachRemote();
+  const attach = useAttachProject();
   const toast = useToast();
-  const [providerId, setProviderId] = useState("");
+  const [providerId, setProviderId] = useState("folder");
   const [config, setConfig] = useState<Record<string, unknown>>({});
 
   const provider = providers.data?.find((p) => p.id === providerId);
@@ -38,10 +38,10 @@ export function OpenProjectDialog({
   // Opening starts clean: a half-typed repository from last time is not an answer.
   useEffect(() => {
     if (!open) return;
-    const first = providers.data?.[0];
-    setProviderId(first?.id ?? "");
+    const first = providers.data?.find((p) => p.id === "folder") ?? providers.data?.[0];
+    setProviderId(first?.id ?? "folder");
     setConfig(first ? defaultsOf(first.schema as JsonSchema) : {});
-  }, [open, providers.data?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (id: string) => {
     setProviderId(id);

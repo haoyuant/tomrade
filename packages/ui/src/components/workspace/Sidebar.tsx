@@ -184,7 +184,10 @@ function WorkstreamRow({ board }: { board: Board }) {
       onClick={() => !current && openWorkstream(board.id)}
     >
       <Icon className="ico" name={viewIcon(board.icon)} size={15} />
-      <span className="side-name">{board.name}</span>
+      <span className="side-stack">
+        <span className="side-name">{board.name}</span>
+        {board.subtitle && <span className="side-pkg">{board.subtitle}</span>}
+      </span>
       <span className="side-count num">{count}</span>
     </button>
   );
