@@ -6,14 +6,14 @@ Talk to the agent → it shapes the requirement with you → plans epics and **f
 
 ## Product decisions (direction of record)
 
-1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Data lives in **SQLite (+FTS5)**, on the user's machine. Cloud is a *future* migration, not today's constraint.
+1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. Cloud is a *future* transport, not today's constraint — see [`docs/plugin-api.md`](docs/plugin-api.md) (Storage).
 2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
 3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
 4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A third-party plugin uses the same mechanism with the same rights — see [`docs/plugin-api.md`](docs/plugin-api.md) and [`examples/stale`](examples/stale).
 5. **One agent platform, pluggable conductors.** `ctx.agent` owns what every conductor needs — threads, runs, the per-run ledger, cards, suspended workflows, run-scoped undo — and holds no opinion about what to do next. **Engines** decide that, and are plugins: `engine-loop` (a conversation model over the tool registry, guided by playbooks), `engine-scripted` (menu-driven, no model, offline), `engine-claude-code` / `engine-codex` (the user's own CLI agents, tools over MCP). Deterministic multi-step jobs are **workflows** — typed, resumable step machines exposed as tools to every engine; invariants are **policies** on `tools/pre-execute` (an agent create without a duplicate check is refused, whoever conducts). `ctx.llm` stays the model seam: profiles (DeepSeek/Anthropic/OpenAI-compatible/local) with `conversation` and `worker` roles.
 6. **One tool registry, every surface.** A tool registered on `ctx.tools` appears in the in-app assistant's prompt and on the MCP server at once. There is no per-surface code.
 7. **MCP server is a first-class interface.** VS Code coding agents list/read/write/search tickets over MCP (`@modelcontextprotocol/sdk`, TS). This is the product's open API.
-8. **Data shaped for future sync.** UUID PKs, `updated_at` + `updated_by` + `version` per row, an append-only **oplog** (feeds undo today, sync later). A permanent delete is the single exception: it removes the purged item's own rows and leaves a tombstone.
+8. **Data shaped for future sync.** UUID PKs, `updated_at` + `updated_by` + `version` per row, an append-only **oplog** whose rows are stamped with the machine that wrote them (`device`/`device_seq` name one op everywhere) and carry the fields they changed (`patch_json`). It feeds undo today and the project folder's write-through log always. A permanent delete is the single exception: it removes the purged item's own rows and leaves a tombstone.
 9. **Boards are workstreams; views are slices.** A project holds any number of **boards**, and a board is the container an issue belongs to. A **view** is a saved slice of one board. Dragging a card writes the grouped field and never the board. See [`docs/design-system.md`](docs/design-system.md).
 
 ## Explicitly NOT doing
@@ -33,8 +33,9 @@ apps/desktop          Electron shell: boots the context from tomrade.yml, suppli
 apps/desktop/tomrade.yml   the application — the modules it needs, then one row per plugin
 
 packages/domain       types + zod schemas + typed errors. Zero I/O, zero ctx. Everyone imports this.
-packages/db           ctx.db           SQLite connection, core schema, plugin migration registry
-packages/oplog        ctx.oplog        append, read, undo
+packages/db           ctx.db           a pool of SQLite caches — hub.db plus one project.db per project; core schema, plugin table registry
+packages/hub          ctx.hub          this machine: device id, and the catalog of projects and repository checkouts it knows
+packages/oplog        ctx.oplog        append, read, undo — per project, each row stamped with the machine that wrote it
 packages/write        —                write/pre-commit waterfall + the default policy plugins
 packages/items        ctx.items        issues, labels, relations (+ their tools and channels)
 packages/boards       ctx.boards, ctx.views
@@ -65,6 +66,8 @@ docs/                 plugin-api.md (the contract), design-system.md (tokens, in
 
 ### Data model
 
+Each project's cache is its own SQLite file (`<dir>/projects/<id>/project.db`); the Hub's own file (`hub.db`) tracks which projects and repository checkouts this machine knows.
+
 ```
 projects  ── boards ── views ── view_item_rank
               │  └─ repos (remote URL = identity; checkouts live in catalog.json)
@@ -73,8 +76,8 @@ projects  ── boards ── views ── view_item_rank
                         version, updated_by, human_locked)
                    ├─ item_labels ── labels
                    └─ item_relations   (blocks)
-oplog     append-only, spans items/boards/views; feeds undo today, sync later
-plugin_migrations   one version counter per plugin namespace; plugins own plugin_<id>_* tables
+oplog     append-only, spans items/boards/views; each row stamped with device + device_seq, carries the fields it changed; feeds undo and the folder's log
+plugin_migrations   one version counter per plugin namespace per file (project or hub); plugins declare their plugin_<id>_* tables (scope, project column, export)
 ```
 
 Issues carry a human key (`TOM-142`) from the project's `key_prefix` and a per-project counter that never reuses a number. Epics are items with `kind: 'epic'`. Provenance (`human` / `ai` / `locked`) is derived from `updated_by` + `human_locked`, never stored.
