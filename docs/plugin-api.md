@@ -118,13 +118,15 @@ consumer follows.
 | `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams (the options of the built-in Workstream field) and the project's saved views |
 | `ctx.projects` | spine | `@tomrade/projects` | The container; outside the oplog and undo |
 | `ctx.tools` | spine | `@tomrade/tools` | The registry and guarded `execute` |
-| `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs |
+| `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs, assistant accessories |
 | `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
+| `ctx.desktopSurfaces` | seam | `@tomrade/desktop-surface` (contract), desktop shell (Electron) | Transparent auxiliary-window mechanics for feature plugins |
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
 | `ctx.storage` | spine registry | `@tomrade/storage` | The project folder as the truth: the text artifact, the write-through log, publish/refresh/merge, remote providers, the Hub's catalog |
 | `ctx.repos` | spine | `@tomrade/repos` | The code repositories workstreams stand for; this machine's checkouts; the worktrees agents run in |
 | `ctx.llm` | seam | `@tomrade/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
 | `ctx.agent` | spine registry | `@tomrade/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
+| `ctx.pet` | optional feature | `@tomrade/pet` | Pet task-state reduction, settings, renderer state and its embedded/desktop lifecycle |
 | `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
 | `ctx.plugins` | — | `@tomrade/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
 
@@ -272,6 +274,11 @@ inside a SQLite transaction.
 | `tools/pre-execute` | waterfall | Refuse or allow a tool call, first-party or plugin, whoever invokes it. `ToolCall.run` is present when it belongs to an agent run. |
 | `tools/result` | emit | The outcome of a tool call, success or failure. |
 | `settings/changed` | emit | Settings were saved; providers re-read. |
+| `agent/event` | emit | Main-process agent lifecycle stream. Receives `(threadId, AgentEvent)`; feature plugins subscribe here instead of observing renderer IPC. |
+
+A main-process observer loaded while work is already active can seed itself
+from `ctx.agent.activities()`, which returns current in-memory runs and durable
+pending questions; subsequent changes arrive through `agent/event`.
 
 The rule everything else rests on: **every mutation of an item, board or view
 passes `write/pre-commit` and lands an oplog row.** `@tomrade/write` enforces the
@@ -542,6 +549,7 @@ ctx.contributions.badge({ id: "hello", compute: (items) => ({ [items[0]?.id]: [{
 ctx.contributions.statusItem({ id: "hello", text: ({ projectId }) => "hello" });
 ctx.contributions.section({ id: "hello", title: "Hello", render: (item) => ({ rows: [{ label: "Key", value: item.key }] }) });
 ctx.contributions.graph({ id: "hello", title: "Hello", icon: "i-graph", compute: (items) => items.flatMap((i) => (i.parentId ? [{ from: i.parentId, to: i.id }] : [])) });
+ctx.contributions.assistantAccessory({ id: "hello.sprite", kind: "sprite-pet", title: "Helper", stateChannel: "hello.sprite.state", changedChannel: "hello.sprite.changed", width: 96, height: 72, animations: { idle: { source: "data:image/png;base64,…", frames: 4, frameWidth: 320, frameHeight: 240, frameMs: 200 } } });
 ```
 
 Commands appear in the palette under their group and run in the main process
@@ -550,6 +558,14 @@ on every board refresh over the project's items. Status items render in the
 status bar; sections in the detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
 refetches.
+
+A `sprite-pet` **assistant accessory** reserves the renderer-owned stage directly
+above the composer. Its strip URLs, frame geometry and timing are data; the
+renderer owns animation and accessibility, and removes the stage when the
+contribution disappears. `stateChannel` returns `{ mood }` for a selected
+thread and `changedChannel` broadcasts `(threadId, { mood })`; naming both in
+the descriptor keeps the renderer independent of the feature package.
+`@tomrade/pet` is the shipped example.
 
 A **graph** is what a view with the Graph layout draws: the renderer puts the
 same issue cards on an interactive canvas with the plugin's edges as arrows,
@@ -580,6 +596,28 @@ ctx.inject(["ipc"], (ctx) => {
 The renderer calls `invoke("hello.count", projectId)` and gets the declared
 return type. Every renderer write is a human write; channel handlers pass
 `"human"` as the author.
+
+## Auxiliary desktop surfaces
+
+`@tomrade/desktop-surface` is the non-Electron contract for a feature-owned
+top-level window. A plugin calls `ctx.desktopSurfaces.open({ id, url, width,
+height, ... })`; the returned controller can send serializable state, inspect
+the current work area, move the surface and close it. Opening is a Cordis
+effect, so unloading the caller destroys its window even if the caller forgets
+to close it explicitly. The shell owns frameless/transparent BrowserWindow
+policy and an isolated preload; the feature owns its document, state and the
+decision to open or close.
+
+Transparent pixels do not imply click-through in Electron. With
+`clickThrough`, the generic preload forwards mouse movement on macOS and
+Windows and lets the surface document mark only its opaque pixels interactive;
+those pixels may use the native draggable region. Linux keeps the tightly sized
+surface interactive because forwarded moves are unavailable. Programmatic
+top-level positioning is also unavailable on native Wayland, exposed as
+`surface.capabilities.programmaticPosition === false`; roaming features must
+stay stationary there. Surface documents can report preferences such as
+`prefers-reduced-motion` through `onMessage` so feature-owned movement stops as
+well as CSS animation.
 
 ## What is deliberately not here
 

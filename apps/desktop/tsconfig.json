@@ -27,6 +27,9 @@
       "path": "../../packages/db"
     },
     {
+      "path": "../../packages/desktop-surface"
+    },
+    {
       "path": "../../packages/engine-claude-code"
     },
     {
@@ -58,6 +61,9 @@
     },
     {
       "path": "../../packages/oplog"
+    },
+    {
+      "path": "../../packages/pet"
     },
     {
       "path": "../../packages/plugins"

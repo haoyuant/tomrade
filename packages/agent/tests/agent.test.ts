@@ -36,6 +36,10 @@ describe("the loop engine on the platform", () => {
   it("answers chit-chat with no tools and no writes", async () => {
     const { ctx, agent, project } = await boot([{ text: "It never rains in the backlog." }]);
     const thread = agent.newThread(project.id);
+    const lifecycle: string[] = [];
+    ctx.on("agent/event", (threadId, event) => {
+      if (threadId === thread.id) lifecycle.push(event.type);
+    });
     expect(thread.engine).toBe("loop");
     const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "今天天气怎么样" });
     const run = await settled(ctx, project.id, runId);
@@ -43,6 +47,9 @@ describe("the loop engine on the platform", () => {
     expect(run.changes).toBe(0);
     const blocks = agent.store.messages(project.id, thread.id).map((m) => m.block);
     expect(blocks.some((b) => b.type === "text" && b.text.includes("never rains"))).toBe(true);
+    expect(lifecycle[0]).toBe("message");
+    expect(lifecycle).toContain("run");
+    expect(lifecycle.at(-1)).toBe("done");
   });
 
   it("carries what the user was viewing into the prompt and persists it on the message", async () => {

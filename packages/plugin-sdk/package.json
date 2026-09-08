@@ -21,6 +21,7 @@
     "@tomrade/boards": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
+    "@tomrade/desktop-surface": "workspace:*",
     "@tomrade/domain": "workspace:*",
     "@tomrade/fields": "workspace:*",
     "@tomrade/hub": "workspace:*",
