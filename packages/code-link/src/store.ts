@@ -81,6 +81,11 @@ CREATE TABLE IF NOT EXISTS plugin_code_link_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_plugin_code_link_sessions_project ON plugin_code_link_sessions(project_id, state);
 `
+  },
+  {
+    // What the agent is doing right now, as its last hook said: "Bash · flutter create…", "needs your approval".
+    version: 2,
+    up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN activity TEXT"
   }
 ];
 
@@ -154,7 +159,8 @@ export interface ProposalView {
 }
 
 export type SessionMode = "headless" | "terminal";
-export type SessionState = "running" | "waiting" | "idle" | "ended" | "lost";
+/** `error`: the agent stopped on its own account (rate limit, auth) and is not working; the process may still be there. */
+export type SessionState = "running" | "waiting" | "idle" | "error" | "ended" | "lost";
 
 export interface SessionView {
   id: string;
@@ -170,7 +176,10 @@ export interface SessionView {
   lastEventAt: number | null;
   lastToolAt: number | null;
   lastCommitAt: number | null;
+  /** The agent's own one-liner about where it is (note_progress, or what it said when it last stopped). */
   summary: string | null;
+  /** What it is doing this moment, from its last hook; null between tools. */
+  activity: string | null;
   device: string;
   startedAt: number;
   endedAt: number | null;
@@ -243,6 +252,7 @@ interface SessionRow {
   last_tool_at: number | null;
   last_commit_at: number | null;
   summary: string | null;
+  activity: string | null;
   device: string;
   started_at: number;
   ended_at: number | null;
@@ -315,6 +325,7 @@ const toSession = (r: SessionRow): SessionView => ({
   lastToolAt: r.last_tool_at,
   lastCommitAt: r.last_commit_at,
   summary: r.summary,
+  activity: r.activity ?? null,
   device: r.device,
   startedAt: r.started_at,
   endedAt: r.ended_at
@@ -357,6 +368,7 @@ export interface SessionPatch {
   lastToolAt?: number | null;
   lastCommitAt?: number | null;
   summary?: string | null;
+  activity?: string | null;
   endedAt?: number | null;
 }
 
@@ -605,6 +617,7 @@ export class CodeLinkStore {
       lastToolAt: "last_tool_at",
       lastCommitAt: "last_commit_at",
       summary: "summary",
+      activity: "activity",
       endedAt: "ended_at"
     };
     const sets: string[] = [];

@@ -38,7 +38,15 @@ export async function launchTerminal(input: LaunchInput, terminal: string): Prom
   fs.mkdirSync(input.dir, { recursive: true });
   const script = path.join(input.dir, "run.command");
   const exports = Object.entries(input.env ?? {}).map(([k, v]) => `export ${k}=${shellQuote(v)}`);
-  fs.writeFileSync(script, ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, ...exports, input.command, ""].join("\n"), { mode: 0o755 });
+  // The script's own pid is the session's heartbeat: the shell outlives the agent
+  // it runs by a moment and dies with the window, so "is the pid alive" answers
+  // "is the session alive" whether or not a hook got to say so.
+  const pidFile = path.join(input.dir, "pid");
+  fs.writeFileSync(
+    script,
+    ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, `echo $$ > ${shellQuote(pidFile)}`, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, input.command, ""].join("\n"),
+    { mode: 0o755 }
+  );
   if (terminal === "none") return { script, launched: false };
   try {
     if (process.platform === "darwin") await run("open", ["-a", terminal, script]);

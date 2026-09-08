@@ -15,23 +15,40 @@ export const END_AFTER_MS = 60 * 60 * 1000;
 /** The coding session a tool call belongs to, when it came in over a session's MCP token. */
 export const sessionContext = new AsyncLocalStorage<{ projectId: string; sessionId: string }>();
 
-/** What Claude Code's hooks post: the event name is what matters; the session id is a bonus. */
+/** What Claude Code's hooks post. Only the fields read here; the rest of the payload is the agent's business. */
 interface HookPayload {
   hook_event_name?: string;
   session_id?: string;
+  tool_name?: string;
+  tool_input?: Record<string, unknown>;
+  notification_type?: string;
+  message?: string;
+  last_assistant_message?: string;
+  error?: string;
+  error_details?: string;
+  reason?: string;
 }
 
-/** The Claude Code hook events a session listens to, and what each says about it. */
-const HOOK_STATES: Record<string, SessionState | "touch"> = {
-  SessionStart: "running",
-  UserPromptSubmit: "running",
-  PreToolUse: "running",
-  PostToolUse: "running",
-  SubagentStop: "touch",
-  Notification: "waiting",
-  Stop: "waiting",
-  SessionEnd: "ended"
-};
+/**
+ * The Claude Code hook events a session listens to. Each says something about
+ * the session; the ones that say nothing new still count as a sign of life.
+ * `Stop` does not fire on a user interrupt — the process check covers that end.
+ */
+export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStop", "SessionEnd"] as const;
+
+/** A moment worth a line in the ticket's thread, as the session's owner reports it. */
+export interface SessionMoment {
+  kind: "said" | "failed" | "ended";
+  text: string;
+}
+
+export interface SessionsOptions {
+  /** Where a session's files (mcp.json, settings.json, pid) live. */
+  dirOf(sessionId: string): string;
+  onChange(projectId: string): void;
+  /** Something the thread should hear about: what the agent said when it stopped, why it failed, that it ended. */
+  onMoment?(session: SessionView, moment: SessionMoment): void;
+}
 
 export interface SessionFiles {
   dir: string;
@@ -43,11 +60,32 @@ export interface SessionFiles {
   token: string;
 }
 
+/** What a tool call is doing, for the ticket: the tool, and the one argument a person recognises it by. */
+export function describeTool(name: string, input: Record<string, unknown> | undefined): string {
+  const pick = (...keys: string[]) => {
+    for (const key of keys) {
+      const v = input?.[key];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  };
+  const detail = name === "Bash" ? pick("command") : name === "Read" || name === "Edit" || name === "Write" || name === "MultiEdit" ? path.basename(pick("file_path", "path")) : name === "Grep" || name === "Glob" ? pick("pattern") : name === "Task" || name === "Agent" ? pick("description") : pick("description", "query", "url");
+  const clipped = detail.replace(/\s+/g, " ").slice(0, 60) + (detail.length > 60 ? "…" : "");
+  return clipped ? `${name} · ${clipped}` : name;
+}
+
+const firstLine = (text: string | undefined, max: number): string => {
+  const t = (text ?? "").trim();
+  if (!t) return "";
+  const line = t.split("\n").find((l) => l.trim()) ?? t;
+  return line.length > max ? line.slice(0, max - 1) + "…" : line;
+};
+
 /**
  * A coding agent's session as Tomrade follows it: a token that binds its MCP
- * calls and hook events to one ticket, and a state read from those signals.
- * Nothing here owns the process — the session may be a terminal the user has
- * open — so liveness is inferred, and a quiet session ends by the clock.
+ * calls and hook events to one ticket, and a state read from those signals —
+ * plus the process itself, when Tomrade launched it, because a hook can only
+ * report what the agent lived to report. Nothing here owns the process.
  */
 export class Sessions {
   private readonly live = new Map<string, { token: string; unbind: () => void }>();
@@ -55,7 +93,7 @@ export class Sessions {
   constructor(
     private readonly ctx: Context,
     private readonly store: CodeLinkStore,
-    private readonly onChange: (projectId: string) => void
+    private readonly options: SessionsOptions
   ) {}
 
   /** What a session's token does when it is used: attribute the call, note the sign of life, hear the hooks. */
@@ -90,6 +128,7 @@ export class Sessions {
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(settings, JSON.stringify(hooksSettings(eventUrl), null, 2));
     fs.writeFileSync(promptFile, prompt);
+    fs.rmSync(path.join(dir, "pid"), { force: true });
     return { dir, mcpConfig, settings, prompt: promptFile, mcpUrl, eventUrl, token };
   }
 
@@ -125,20 +164,62 @@ export class Sessions {
     this.live.delete(sessionId);
   }
 
-  /** A hook fired in the agent's process. */
+  /** A hook fired in the agent's process: what it says about the session, and what the thread should hear. */
   event(projectId: string, sessionId: string, payload: unknown): void {
     const p = (payload ?? {}) as HookPayload;
-    const state = p.hook_event_name ? HOOK_STATES[p.hook_event_name] : undefined;
-    const patch: { state?: SessionState; externalId?: string; endedAt?: number } = {};
-    if (state && state !== "touch") patch.state = state;
+    const session = this.store.session(projectId, sessionId);
+    if (!session) return;
+    const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
-    if (state === "ended") patch.endedAt = Date.now();
+    let moment: SessionMoment | null = null;
+    switch (p.hook_event_name) {
+      case "SessionStart":
+      case "UserPromptSubmit":
+        Object.assign(patch, { state: "running", activity: null });
+        break;
+      case "PreToolUse":
+        Object.assign(patch, { state: "running", activity: p.tool_name ? describeTool(p.tool_name, p.tool_input) : null });
+        break;
+      case "PostToolUse":
+        Object.assign(patch, { state: "running", tool: true, activity: null });
+        break;
+      case "PostToolUseFailure":
+        Object.assign(patch, { state: "running", tool: true, activity: p.tool_name ? `${p.tool_name} failed` : "a tool failed" });
+        break;
+      case "PermissionRequest":
+        Object.assign(patch, { state: "waiting", activity: `needs your approval${p.tool_name ? `: ${p.tool_name}` : ""}` });
+        break;
+      case "Notification":
+        if (p.notification_type === "permission_prompt") Object.assign(patch, { state: "waiting", activity: "needs your approval" });
+        else if (p.notification_type === "idle_prompt") Object.assign(patch, { state: "waiting", activity: null });
+        else if (p.notification_type === "agent_needs_input" || p.notification_type === "elicitation_dialog") Object.assign(patch, { state: "waiting", activity: "asking you something" });
+        break;
+      case "Stop": {
+        const said = firstLine(p.last_assistant_message, 200);
+        Object.assign(patch, { state: "waiting", activity: null, ...(said ? { summary: said } : {}) });
+        if (p.last_assistant_message?.trim()) moment = { kind: "said", text: p.last_assistant_message.trim().slice(0, 600) };
+        break;
+      }
+      case "StopFailure": {
+        const why = [p.error, firstLine(p.error_details, 160)].filter(Boolean).join(" — ");
+        Object.assign(patch, { state: "error", activity: null, summary: `stopped: ${why || "unknown error"}` });
+        moment = { kind: "failed", text: why || "unknown error" };
+        break;
+      }
+      case "SessionEnd":
+        Object.assign(patch, { state: "ended", activity: null, endedAt: Date.now() });
+        moment = { kind: "ended", text: p.reason ?? "" };
+        break;
+      default:
+        break;
+    }
     this.touch(projectId, sessionId, patch);
-    if (state === "ended") this.release(sessionId);
+    if (moment) this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, moment);
+    if (patch.state === "ended") this.release(sessionId);
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();
@@ -150,35 +231,65 @@ export class Sessions {
       ...(state ? { state } : {}),
       ...(patch.externalId ? { externalId: patch.externalId } : {}),
       ...(patch.endedAt ? { endedAt: patch.endedAt } : {}),
-      ...(patch.summary !== undefined ? { summary: patch.summary } : {})
+      ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+      ...(patch.activity !== undefined ? { activity: patch.activity } : {})
     });
-    this.onChange(projectId);
+    this.options.onChange(projectId);
   }
 
   end(projectId: string, sessionId: string, state: "ended" | "lost" = "ended"): void {
     const session = this.store.session(projectId, sessionId);
     if (!session || session.state === "ended") return;
-    this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now() });
+    this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now(), activity: null });
     this.release(sessionId);
-    this.onChange(projectId);
+    this.options.onChange(projectId);
   }
 
-  /** The clock's verdict on quiet sessions: idle after a while, over after a long while. */
+  /** The process Tomrade launched for the session, if its script left a pid and it still answers. */
+  private processAlive(sessionId: string): boolean | null {
+    const file = path.join(this.options.dirOf(sessionId), "pid");
+    let pid: number;
+    try {
+      pid = Number(fs.readFileSync(file, "utf8").trim());
+    } catch {
+      return null;
+    }
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === "EPERM" ? true : false;
+    }
+  }
+
+  /**
+   * The clock's verdict on quiet sessions — idle after a while, over after a
+   * long while — and the process's: a terminal Tomrade launched whose pid is
+   * gone ended, however it ended, hook or no hook.
+   */
   sweep(projectId: string, now = Date.now()): void {
     let changed = false;
     for (const s of this.store.sessions(projectId, { live: true })) {
-      const quiet = now - (s.lastEventAt ?? s.startedAt);
       if (s.state === "lost") continue;
+      if (s.mode === "terminal" && this.processAlive(s.id) === false) {
+        this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
+        this.release(s.id);
+        this.options.onMoment?.(this.store.session(projectId, s.id)!, { kind: "ended", text: "process exited" });
+        changed = true;
+        continue;
+      }
+      const quiet = now - (s.lastEventAt ?? s.startedAt);
       if ((s.state === "running" || s.state === "waiting") && quiet >= IDLE_AFTER_MS) {
         this.store.patchSession(projectId, s.id, { state: "idle" });
         changed = true;
       } else if (s.state === "idle" && s.mode === "terminal" && quiet >= END_AFTER_MS) {
-        this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now });
+        this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
         this.release(s.id);
         changed = true;
       }
     }
-    if (changed) this.onChange(projectId);
+    if (changed) this.options.onChange(projectId);
   }
 
   /** After a restart no headless process is left; the row says so, and the ticket still offers Continue. */
@@ -186,10 +297,10 @@ export class Sessions {
     let changed = false;
     for (const s of this.store.sessions(projectId, { live: true })) {
       if (s.mode !== "headless" || s.state === "lost") continue;
-      this.store.patchSession(projectId, s.id, { state: "lost" });
+      this.store.patchSession(projectId, s.id, { state: "lost", activity: null });
       changed = true;
     }
-    if (changed) this.onChange(projectId);
+    if (changed) this.options.onChange(projectId);
   }
 }
 
@@ -197,6 +308,6 @@ export class Sessions {
 export function hooksSettings(eventUrl: string): Record<string, unknown> {
   const post = { type: "command", command: `curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- '${eventUrl}' >/dev/null 2>&1 || true` };
   const hooks: Record<string, unknown> = {};
-  for (const event of Object.keys(HOOK_STATES)) hooks[event] = [{ hooks: [post] }];
+  for (const event of HOOK_EVENTS) hooks[event] = [{ hooks: [post] }];
   return { hooks };
 }

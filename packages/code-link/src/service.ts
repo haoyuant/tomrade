@@ -22,7 +22,7 @@ import { writeConnectFiles } from "./connect.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
-import { Sessions, sessionContext } from "./sessions.js";
+import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { Starter, type StartMode, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { TerminalSettings, commandOk, exec, launchTerminal } from "./terminal.js";
@@ -113,6 +113,8 @@ export const CodeLinkConfig = z.preprocess(
     gitBinary: z.string().default("git"),
     /** Rescan cadence for open projects; 0 turns the timer off (tests, or a machine that only rescans by hand). */
     scanMs: z.number().int().min(0).default(120_000),
+    /** How often sessions are checked against the clock and their process; 0 turns it off. */
+    sweepMs: z.number().int().min(0).default(30_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
     fetch: z.boolean().default(true)
   })
@@ -202,7 +204,11 @@ export class CodeLink extends Service {
   [Service.init]() {
     this.ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
     this.store = new CodeLinkStore(this.ctx.db);
-    this.sessions = new Sessions(this.ctx, this.store, (projectId) => this.notify(projectId));
+    this.sessions = new Sessions(this.ctx, this.store, {
+      dirOf: (id) => this.sessionDir(id),
+      onChange: (projectId) => this.notify(projectId),
+      onMoment: (session, moment) => this.noteMoment(session, moment)
+    });
     this.starter = new Starter({
       ctx: this.ctx,
       store: this.store,
@@ -277,16 +283,19 @@ export class CodeLink extends Service {
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
 
-    const timer =
-      this.config.scanMs > 0
+    const timer = this.config.scanMs > 0 ? setInterval(() => void this.scanOpen(), this.config.scanMs) : null;
+    timer?.unref?.();
+    // Sessions are judged more often than repositories are scanned: a process that is gone should read as gone within the minute.
+    const sweeper =
+      this.config.sweepMs > 0
         ? setInterval(() => {
             for (const projectId of this.ctx.db.openIds()) this.sessions.sweep(projectId);
-            void this.scanOpen();
-          }, this.config.scanMs)
+          }, this.config.sweepMs)
         : null;
-    timer?.unref?.();
+    sweeper?.unref?.();
     return () => {
       if (timer) clearInterval(timer);
+      if (sweeper) clearInterval(sweeper);
     };
   }
 
@@ -758,12 +767,14 @@ export class CodeLink extends Service {
         if (live) {
           const where = live.mode === "terminal" ? "in a terminal" : "run by Tomrade";
           const when = live.lastEventAt ? ago(live.lastEventAt) : ago(live.startedAt);
-          const state = ({ running: "live", waiting: "waiting", idle: "idle", ended: "ended", lost: "lost" } as const)[live.state];
+          const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[live.state];
+          // What it is doing beats what it last said; an error is what it last said.
+          const doing = live.state === "error" ? (live.summary ?? "stopped") : (live.activity ?? live.summary ?? "");
           rows.push({
             label: "Session",
             icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
             state,
-            value: `${live.state}${live.state === "waiting" ? " for you" : ""} · ${where} · ${when}${live.summary ? ` · ${live.summary}` : ""}`
+            value: `${live.state}${live.state === "waiting" ? " for you" : ""} · ${where}${doing ? ` · ${doing}` : ""} · last signal ${when}`
           });
           if (live.state !== "running") rows.push({ label: "Continue", icon: "i-send", value: live.mode === "terminal" ? "Continue in terminal" : "Continue here", command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
         }
@@ -787,14 +798,19 @@ export class CodeLink extends Service {
         const flags = new Map<string, ProposalView>();
         for (const p of this.store.proposals(projectId)) if (p.kind === "flag" && !flags.has(p.itemId)) flags.set(p.itemId, p);
         const waiting = new Set<string>();
-        for (const s of this.store.sessions(projectId, { live: true })) if (s.state === "waiting") for (const id of s.itemIds) waiting.add(id);
+        const stuck = new Map<string, string>();
+        for (const s of this.store.sessions(projectId, { live: true })) {
+          if (s.state === "waiting") for (const id of s.itemIds) waiting.add(id);
+          if (s.state === "error") for (const id of s.itemIds) stuck.set(id, s.summary ?? "stopped");
+        }
         const out: Record<string, Badge[]> = {};
         for (const item of items) {
           const links = byItem.get(item.id) ?? [];
           const flag = flags.get(item.id);
-          if (!links.length && !flag && !waiting.has(item.id)) continue;
+          if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
           const badges: Badge[] = [];
           if (waiting.has(item.id)) badges.push({ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" });
+          if (stuck.has(item.id)) badges.push({ id: "stuck", label: "stuck", tone: "strong", title: stuck.get(item.id) });
           if (flag) badges.push({ id: "mismatch", label: "mismatch", tone: "strong", title: flag.reason });
           const primary = primaryOf(links);
           if (primary?.prState === "open") badges.push({ id: "pr", label: primary.prNumber !== null ? `PR #${primary.prNumber}` : "PR", tone: "strong", title: primary.prUrl ?? undefined });
@@ -814,7 +830,8 @@ export class CodeLink extends Service {
         const parts: string[] = [];
         const live = this.store.sessions(projectId, { live: true }).filter((s) => s.state !== "lost");
         const waiting = live.filter((s) => s.state === "waiting").length;
-        if (live.length) parts.push(`${live.length} session${live.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} waiting for you` : ""}`);
+        const stuck = live.filter((s) => s.state === "error").length;
+        if (live.length) parts.push(`${live.length} session${live.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} waiting for you` : ""}${stuck ? ` · ${stuck} stuck` : ""}`);
         const unlinked = this.unlinked(projectId).length;
         const open = this.store.proposals(projectId).length;
         if (unlinked) parts.push(`${unlinked} unlinked`);
@@ -932,6 +949,17 @@ export class CodeLink extends Service {
 
   private sessionOf(thread: ThreadSummary): SessionView | null {
     return this.store.sessions(thread.projectId, { live: true }).find((s) => s.threadId === thread.id) ?? null;
+  }
+
+  /** A terminal session's moments reach the ticket's thread as notes, so the panel mirrors what happened out there. */
+  private noteMoment(session: SessionView, moment: SessionMoment): void {
+    if (!session.threadId) return;
+    const agent = this.ctx.get("agent");
+    if (!agent?.store.thread(session.projectId, session.threadId)) return;
+    const who = session.agent === "claude-code" ? "Claude Code" : session.agent === "codex" ? "Codex" : session.agent;
+    const text = moment.kind === "said" ? `${who}: ${moment.text}` : moment.kind === "failed" ? `${who} stopped: ${moment.text}` : `${who} session ended${moment.text ? ` (${moment.text})` : ""}.`;
+    const message = agent.store.appendMessage(session.projectId, session.threadId, "system", { type: "note", text }, null);
+    this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });
   }
 
   /** Per-session files (mcp.json, hooks settings, the prompt, the launch script) live in the Hub where the user can see them. */

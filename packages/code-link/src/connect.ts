@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { HOOK_EVENTS } from "./sessions.js";
 
 export interface ConnectInput {
   projectName: string;
@@ -10,9 +11,6 @@ export interface ConnectInput {
   prefix: string;
   branchTemplate: string;
 }
-
-/** The hook events a committed `.claude/settings.json` reports; the same set a per-session one does. */
-const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PostToolUse", "Notification", "Stop", "SessionEnd"];
 
 const SECTION_START = "## Tomrade";
 
