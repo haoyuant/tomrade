@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
+import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
@@ -59,6 +60,7 @@ export function Workspace() {
   const [settings, setSettings] = useState<string | null>(null);
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [codeInbox, setCodeInbox] = useState(false);
   /** Which field the Fields sheet lands on; null for the list. */
   const [fieldsFocus, setFieldsFocus] = useState<string | null>(null);
   const openFields = useCallback((fieldId?: string) => {
@@ -114,7 +116,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -235,10 +237,20 @@ export function Workspace() {
           openViewSettings: () => setViewSettings(true),
           openFields: () => openFields(),
           openProjectSettings,
-          openProjectMenu: () => setProjectMenu(true)
+          openProjectMenu: () => setProjectMenu(true),
+          openCodeInbox: () => setCodeInbox(true)
         }}
       />
       <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} />
+      <CodeInboxDialog
+        projectId={ws.project.id}
+        open={codeInbox}
+        onOpenChange={setCodeInbox}
+        onOpenIssue={(id) => {
+          setCodeInbox(false);
+          ws.select(id);
+        }}
+      />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
       <ViewSettingsDialog open={viewSettings} onOpenChange={setViewSettings} />

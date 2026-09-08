@@ -632,7 +632,19 @@ strong { font-weight: 500; }
    left-bar callout: it is title-height and sits outside the text column */
 .card-gutter { display: flex; justify-content: center; padding-top: 3px; }
 .prov-tick { width: 2px; height: 17px; background: var(--accent); border-radius: 1px; }
+/* A write git made (a merge moved the ticket) is neither a person's nor a model's: a muted tick. */
+.prov-tick.is-sync { background: var(--meta); }
 .prov-lock { color: var(--meta); margin-top: 1px; }
+
+/* Code inbox: one row per thing git says that the backlog has not confirmed. */
+.inbox-list { display: flex; flex-direction: column; }
+.inbox-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.inbox-row:last-child { border-bottom: 0; }
+.inbox-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inbox-title { font-size: var(--text-sm); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
 .card-body { min-width: 0; }
 .card-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .card-id { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }

@@ -24,6 +24,7 @@ export const commandPalette = {
     allProjects: "All projects",
     settings: "Settings",
     plugins: "Plugins",
+    codeInbox: "Code inbox: proposals and unlinked branches",
     fields: "Fields…",
     projectSettings: "Project settings",
     themeAction: "Theme · {{label}}"
@@ -53,6 +54,7 @@ export const commandPalette = {
     allProjects: "全部项目",
     settings: "设置",
     plugins: "插件",
+    codeInbox: "代码收件箱:待确认与未关联分支",
     fields: "字段…",
     projectSettings: "项目设置",
     themeAction: "主题 · {{label}}"

@@ -24,6 +24,7 @@ export interface PaletteActions {
   openFields: () => void;
   openProjectSettings: () => void;
   openProjectMenu: () => void;
+  openCodeInbox: () => void;
 }
 
 /** One palette spanning every view, every issue and every action. */
@@ -68,6 +69,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },
     { label: t("commandPalette.fields"), kb: undefined, run: actions.openFields },
+    { label: t("commandPalette.codeInbox"), kb: undefined, run: actions.openCodeInbox },
     { label: t("commandPalette.switchProject"), kb: "⌘P", run: actions.openProjectMenu },
     { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
     { label: t("commandPalette.settings"), kb: "⌘,", run: actions.openSettings },

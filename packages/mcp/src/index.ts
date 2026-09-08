@@ -74,6 +74,7 @@ export class Mcp extends Service {
   url: string | null = null;
 
   private bindings = new Map<string, RunBinding>();
+  private eventListeners = new Set<(payload: unknown) => void>();
 
   constructor(
     ctx: Context,
@@ -122,6 +123,18 @@ export class Mcp extends Service {
     app.post("/mcp/:projectId", (req, res) => open(req.params.projectId)(req, res));
     app.get("/mcp/:projectId", attached);
     app.delete("/mcp/:projectId", attached);
+    // Hooks committed into a repository carry no token: whoever listens sorts
+    // them out by the cwd and session id in the payload.
+    app.post("/sessions/event", (req, res) => {
+      for (const listener of this.eventListeners) {
+        try {
+          listener(req.body);
+        } catch {
+          // one listener's failure is not another's
+        }
+      }
+      res.json({ ok: true });
+    });
     // A coding agent's hooks (SessionStart, Stop, Notification…) post here with
     // the session's token; the binding that owns the token hears them.
     app.post("/sessions/:token/event", (req, res) => {
@@ -163,6 +176,19 @@ export class Mcp extends Service {
   /** Where a session's hooks post their lifecycle events. */
   eventUrlFor(token: string): string | null {
     return this.url ? `${this.url.replace(/\/mcp$/, "")}/sessions/${encodeURIComponent(token)}/event` : null;
+  }
+
+  /** Where hooks with no token post — the ones a repository commits for every developer. */
+  get eventUrl(): string | null {
+    return this.url ? `${this.url.replace(/\/mcp$/, "")}/sessions/event` : null;
+  }
+
+  /** Hear tokenless hook events. Reversible: the listener goes with the plugin that registered it. */
+  onEvent(listener: (payload: unknown) => void): () => void {
+    return this.ctx.effect(() => {
+      this.eventListeners.add(listener);
+      return () => this.eventListeners.delete(listener);
+    }, "mcp.onEvent");
   }
 
   /** Reversible: the token dies with the run (or the plugin) that registered it. */

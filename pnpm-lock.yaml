@@ -298,6 +298,9 @@ importers:
       '@tomrade/tools':
         specifier: workspace:*
         version: link:../tools
+      '@tomrade/write':
+        specifier: workspace:*
+        version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8

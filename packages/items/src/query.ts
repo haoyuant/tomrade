@@ -15,7 +15,7 @@ export interface Compiled {
   params: unknown[];
 }
 
-const PROVENANCE_SQL = "CASE WHEN i.human_locked = 1 THEN 'locked' WHEN i.updated_by LIKE 'ai:%' THEN 'ai' ELSE 'human' END";
+const PROVENANCE_SQL = "CASE WHEN i.human_locked = 1 THEN 'locked' WHEN i.updated_by LIKE 'ai:%' THEN 'ai' WHEN i.updated_by LIKE 'sync:%' THEN 'sync' ELSE 'human' END";
 const STATUS_RANK_SQL = `CASE i.status ${ITEM_STATUSES.map((s, n) => `WHEN '${s}' THEN ${n}`).join(" ")} END`;
 export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, defs: Map<string, FieldDef>): Compiled {
   const joins: string[] = [];
@@ -152,7 +152,7 @@ function sortExprOf(def: FieldDef, aliasOf: (fieldId: string) => string): string
     case "key":
       return "i.key_num";
     case "provenance":
-      return `(CASE ${PROVENANCE_SQL} WHEN 'human' THEN 0 WHEN 'ai' THEN 1 ELSE 2 END)`;
+      return `(CASE ${PROVENANCE_SQL} WHEN 'human' THEN 0 WHEN 'ai' THEN 1 WHEN 'sync' THEN 2 ELSE 3 END)`;
     case "labels":
       return null;
     default: {

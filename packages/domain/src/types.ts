@@ -12,10 +12,11 @@ export type Priority = 0 | 1 | 2 | 3 | 4;
 export const DEFAULT_PRIORITY: Priority = 2;
 
 /** Who wrote a change. Human edits are 'human'; every agent or plugin write is 'ai:<source>'. */
-export type Author = "human" | `ai:${string}`;
+/** Who wrote: a person, a model, or a sync reading evidence in from outside (`sync:git` — a merge moved the ticket). */
+export type Author = "human" | `ai:${string}` | `sync:${string}`;
 
 /** Derived from updatedBy + humanLocked; never stored. */
-export type Provenance = "human" | "ai" | "locked";
+export type Provenance = "human" | "ai" | "sync" | "locked";
 
 /** A stored custom-field value. Dates are ISO `YYYY-MM-DD`; selects hold the option id. */
 export type FieldValue = string | number;

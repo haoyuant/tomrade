@@ -17,7 +17,19 @@ export const codeLink = {
     readiness_empty: "empty repository",
     readiness_scaffolded: "scaffolded",
     readiness_unknown: "not scanned here",
-    noBrief: "no CLAUDE.md"
+    noBrief: "no CLAUDE.md",
+    inboxTitle: "Code inbox",
+    proposalsHeading: "What git says, waiting for you",
+    noProposals: "Nothing to confirm — the backlog and the code agree.",
+    unlinkedHeading: "Branches that name no ticket",
+    noUnlinked: "Every keyed branch belongs to a ticket.",
+    accept: "Move to {{status}}",
+    dismiss: "Dismiss",
+    createTicket: "Create ticket",
+    adopted: "Created {{key}} for the branch",
+    rescan: "Rescan",
+    scanning: "Scanning…",
+    rescanned: "Scanned {{scanned}}/{{repos}} repositories · {{moved}} moved"
   },
   zh: {
     start: "开始",
@@ -37,6 +49,18 @@ export const codeLink = {
     readiness_empty: "空仓库",
     readiness_scaffolded: "已有脚手架",
     readiness_unknown: "本机未扫描",
-    noBrief: "没有 CLAUDE.md"
+    noBrief: "没有 CLAUDE.md",
+    inboxTitle: "代码收件箱",
+    proposalsHeading: "git 看到的,等你确认",
+    noProposals: "没有待确认的——看板和代码是一致的。",
+    unlinkedHeading: "没有对应 ticket 的分支",
+    noUnlinked: "每条带 key 的分支都有主。",
+    accept: "移到{{status}}",
+    dismiss: "忽略",
+    createTicket: "建 ticket",
+    adopted: "已为该分支创建 {{key}}",
+    rescan: "重新扫描",
+    scanning: "扫描中…",
+    rescanned: "扫描了 {{scanned}}/{{repos}} 个仓库 · 移动 {{moved}} 张"
   }
 };

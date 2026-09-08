@@ -1,6 +1,7 @@
 import type {} from "cordis";
 
-export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, primaryOf, type OpenPrResult, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
+export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, primaryOf, type ConnectResult, type OpenPrResult, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
+export { tomradeSection, writeConnectFiles, type ConnectInput } from "./connect.js";
 export {
   CodeLinkStore,
   MIGRATIONS,

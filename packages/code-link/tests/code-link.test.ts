@@ -85,7 +85,8 @@ describe("code link", () => {
     const [link] = codeLink.links(project.id, item.id);
     expect(link).toMatchObject({ repoId: repo.id, branch, headSha: sha, ahead: 1, behind: 0, mergedSha: null, source: "scan" });
     expect(items.get(project.id, item.id)!.status).toBe("doing");
-    expect(items.get(project.id, item.id)!.updatedBy).toBe("ai:code-link");
+    expect(items.get(project.id, item.id)!.updatedBy).toBe("sync:git");
+    expect(items.query({ projectId: project.id, filter: [{ field: "provenance", op: "in", values: ["sync"] }] }).map((i) => i.id)).toEqual([item.id]);
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "branch", label: "branch", tone: "neutral", title: branch }]);
     const section = ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!;
     expect(section.rows.map((r) => r.label)).toEqual(["Branch", "Last commit"]);

@@ -3,8 +3,10 @@ import { z } from "zod";
 import type {} from "@tomrade/agent";
 import type {} from "@tomrade/boards";
 import type {} from "@tomrade/items";
+import type {} from "@tomrade/repos";
 import type { Item } from "@tomrade/domain";
 import { defineTool, requireProjectId, type ToolInvocation } from "@tomrade/tools";
+import { DEFAULT_BRANCH_TEMPLATE, branchFor } from "./keys.js";
 import { sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
@@ -15,6 +17,10 @@ export interface ToolHost {
   /** Re-judge one ticket in one repository after a link changed by hand or by tool. */
   reevaluate(projectId: string, itemId: string, repoId: string): void;
   noteProgress(projectId: string, sessionId: string, text: string): void;
+  /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
+  attach(projectId: string, sessionId: string, itemId: string, branch: string): void;
+  /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet. */
+  externalSession(projectId: string, repoId: string): SessionView | null;
   notify(projectId: string): void;
 }
 
@@ -102,6 +108,52 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (!session) throw new Error(`note_progress: no live coding session on ${item.key}`);
         host.noteProgress(projectId, session.id, args.text.trim());
         return { ok: true, key: item.key };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "claim_ticket",
+      title: "Claim a ticket to work on",
+      description:
+        "Before implementing a ticket from your own terminal: returns the ticket, the branch name to use, the repository's conventions, and marks it Doing. A session that already holds a ticket may claim another — the work is then attributed to both.",
+      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      execute: (args, inv) => {
+        const projectId = requireProjectId("claim_ticket", args.projectId, inv);
+        const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
+        if (!item) throw new Error(`claim_ticket: no ticket ${args.key} in this project`);
+        if (item.humanLocked) throw new Error(`claim_ticket: ${item.key} is human-locked — ask the owner to unlock it`);
+        const board = ctx.boards.get(projectId, item.boardId);
+        const repoId = board?.repoId ?? null;
+        const repo = repoId ? ctx.repos.get(projectId, repoId) : null;
+        const state = repoId ? host.store.repoState(projectId, repoId) : null;
+        const blockers = item.blockedBy.map((id) => ctx.items.get(projectId, id)).filter((b): b is Item => !!b && b.status !== "done" && b.status !== "cancelled");
+
+        const bound = sessionContext.getStore();
+        const session = (bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null) ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.branch) : null;
+        // An external session starts with no branch of its own; the template names one.
+        const branch = existing?.branch || session?.branch || branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title);
+        if (repoId) host.store.upsertLink(projectId, { itemId: item.id, repoId, branch }, { source: "mcp", lastSeenAt: Date.now() });
+        if (session) host.attach(projectId, session.id, item.id, branch);
+        if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, inv.by);
+        host.notify(projectId);
+        return {
+          key: item.key,
+          title: item.title,
+          body: item.body,
+          status: ctx.items.get(projectId, item.id)!.status,
+          branch,
+          repository: repo ? { name: repo.name, remote: repo.remote, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false } : null,
+          blockedBy: blockers.map((b) => ({ key: b.key, title: b.title, status: b.status })),
+          conventions: [
+            `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
+            `every commit message names ${item.key}`,
+            "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",
+            "call note_progress with one line at milestones"
+          ]
+        };
       }
     })
   );

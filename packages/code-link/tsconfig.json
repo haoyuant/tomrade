@@ -19,6 +19,7 @@
     { "path": "../repos" },
     { "path": "../settings" },
     { "path": "../storage" },
-    { "path": "../tools" }
+    { "path": "../tools" },
+    { "path": "../write" }
   ]
 }

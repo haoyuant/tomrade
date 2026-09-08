@@ -252,7 +252,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               <span className="fs-item">
                 <span className="fs-k">{t("detailPane.fieldLastWrite")}</span>
                 <span className="fs-v">
-                  {prov === "ai" && <span className="prov-tick" style={{ height: 12 }} />}
+                  {(prov === "ai" || prov === "sync") && <span className={prov === "sync" ? "prov-tick is-sync" : "prov-tick"} style={{ height: 12 }} />}
                   {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={13} />}
                   {PROVENANCE[prov]} · {agoLabel(item.updatedAt)}
                 </span>

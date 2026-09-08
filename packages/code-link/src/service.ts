@@ -15,19 +15,21 @@ import type {} from "@tomrade/items";
 import type {} from "@tomrade/mcp";
 import type {} from "@tomrade/repos";
 import type {} from "@tomrade/settings";
+import type {} from "@tomrade/write";
 import type { Author, Item, Repo } from "@tomrade/domain";
-import { gitRunner, type Git } from "@tomrade/storage";
+import { GitFolder, gitRunner, type Git } from "@tomrade/storage";
+import { writeConnectFiles } from "./connect.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
-import { Sessions } from "./sessions.js";
+import { Sessions, sessionContext } from "./sessions.js";
 import { Starter, type StartMode, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { TerminalSettings, commandOk, exec, launchTerminal } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
-export const AUTHOR: Author = "ai:code-link";
+export const AUTHOR: Author = "sync:git";
 
 declare module "cordis" {
   interface Context {
@@ -67,6 +69,17 @@ export interface OpenPrResult {
 
 export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "readiness">;
 
+export interface ConnectResult {
+  branch: string;
+  /** Files written or changed, relative to the repository root. */
+  files: string[];
+  committed: boolean;
+  pushed: boolean;
+  /** The pull request, or the compare page to open one from; null when nothing could be pushed. */
+  url: string | null;
+  message: string;
+}
+
 declare module "@tomrade/ipc" {
   interface Channels {
     "codeLink.links": (projectId: string, itemId?: string) => CodeLinkView[];
@@ -84,6 +97,10 @@ declare module "@tomrade/ipc" {
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** Where this machine's worktree for the ticket is, if it has one. */
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
+    /** A branch nobody's ticket names becomes a ticket, linked to it. */
+    "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
+    /** Put .mcp.json, a CLAUDE.md section and hooks into the repository, on a branch, as a pull request. */
+    "codeLink.connect": (projectId: string, repoId: string) => ConnectResult;
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -205,9 +222,20 @@ export class CodeLink extends Service {
         store: this.store,
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
+        attach: (projectId, sessionId, itemId, branch) => this.attach(projectId, sessionId, itemId, branch),
+        externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
         notify: (projectId) => this.notify(projectId)
       })
     );
+    // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
+    this.home.inject(["mcp"], (ctx) => ctx.mcp.onEvent((payload) => this.externalEvent(payload)));
+    // A ticket an agent creates mid-session belongs to that session too.
+    this.ctx.on("write/committed", (intent) => {
+      const bound = sessionContext.getStore();
+      if (!bound || intent.entity !== "item" || intent.op !== "create" || intent.projectId !== bound.projectId) return;
+      const session = this.store.session(bound.projectId, bound.sessionId);
+      if (session && !session.itemIds.includes(intent.id)) this.store.patchSession(bound.projectId, session.id, { itemIds: [...session.itemIds, intent.id] });
+    });
     this.home.inject(["agent"], (ctx) => {
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
       ctx.on("agent/run-started", (_run, thread) => {
@@ -238,6 +266,8 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
+      ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
+      ctx.ipc.handle("codeLink.connect", (projectId, repoId) => ctx.codeLink.connect(projectId, repoId));
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
 
@@ -330,6 +360,108 @@ export class CodeLink extends Service {
   /** Start or continue a ticket with a local coding agent. See `Starter` for the gates. */
   start(projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }): Promise<StartResult> {
     return this.starter.start(projectId, itemId, opts);
+  }
+
+  /** A session took a ticket on — its first, or another beside it. */
+  attach(projectId: string, sessionId: string, itemId: string, branch: string): void {
+    const session = this.store.session(projectId, sessionId);
+    if (!session) return;
+    this.store.patchSession(projectId, sessionId, {
+      itemIds: session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
+      ...(session.branch ? {} : { branch }),
+      ...(session.state === "ended" ? {} : { state: "running" as const }),
+      lastEventAt: Date.now()
+    });
+    this.notify(projectId);
+  }
+
+  /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet, else any live one there. */
+  externalSession(projectId: string, repoId: string): SessionView | null {
+    const live = this.store.sessions(projectId, { live: true }).filter((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost");
+    return live.find((s) => s.itemIds.length === 0) ?? live[0] ?? null;
+  }
+
+  /** A branch that names no ticket becomes one, linked from the start. */
+  adoptBranch(projectId: string, repoId: string, branch: string): Item {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    if (!repo) throw new Error(`unknown repository ${repoId}`);
+    const name = branch.trim().replace(/^origin\//, "");
+    if (!name) throw new Error("a branch name is required");
+    const board = this.ctx.boards.list(projectId).find((b) => b.repoId === repoId) ?? this.ctx.boards.defaultFor(projectId);
+    const prefix = this.prefixOf(projectId);
+    const words =
+      name
+        .split("/")
+        .filter((seg) => !new RegExp(`^${prefix}-\\d+$`, "i").test(seg))
+        .join(" ")
+        .replace(/[-_]+/g, " ")
+        .trim() || name;
+    const item = this.ctx.items.create({ projectId, boardId: board.id, title: words.charAt(0).toUpperCase() + words.slice(1), status: "todo", by: "human" });
+    this.store.upsertLink(projectId, { itemId: item.id, repoId, branch: name }, { source: "manual", lastSeenAt: Date.now() });
+    this.unlinkedByProject.set(
+      projectId,
+      this.unlinked(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
+    );
+    this.notify(projectId);
+    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${message(err)}`));
+    return item;
+  }
+
+  /**
+   * Connect a repository to Tomrade for everyone who clones it: `.mcp.json`,
+   * a `## Tomrade` section in CLAUDE.md, hooks in `.claude/settings.json` —
+   * written in a worktree on a branch of their own and offered as a pull
+   * request, never into the user's checkout.
+   */
+  async connect(projectId: string, repoId: string): Promise<ConnectResult> {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    if (!repo) throw new Error(`unknown repository ${repoId}`);
+    const board = this.ctx.boards.list(projectId).find((b) => b.repoId === repoId);
+    if (!board) throw new Error(`no workstream stands for ${repo.name}`);
+    const mcp = this.ctx.get("mcp");
+    if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
+    const placement = this.ctx.repos.checkout(repo.remote);
+    if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
+
+    const branch = "tomrade/connect";
+    const view = await this.ctx.repos.workdirFor(projectId, board.id, `connect-${Date.now()}`, { branch });
+    if (!view?.worktree) throw new Error(`${board.name} runs in your checkout — Connect needs a worktree; switch the workstream off "run in checkout" first`);
+    const state = this.store.repoState(projectId, repoId);
+    const project = this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
+    try {
+      const files = writeConnectFiles(view.worktree, {
+        projectName: project?.name ?? "Tomrade project",
+        mcpUrl: mcp.urlFor(projectId)!,
+        eventUrl: mcp.eventUrl!,
+        prefix: this.prefixOf(projectId),
+        branchTemplate: state?.branchTemplate ?? "{key}/{slug}"
+      });
+      const folder = new GitFolder(this.git, view.worktree);
+      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\n.mcp.json names the project's MCP endpoint, CLAUDE.md tells coding agents the ticket conventions, .claude/settings.json reports session lifecycle back."));
+      if (!committed) return { branch, files, committed: false, pushed: false, url: null, message: files.length ? "nothing new to commit" : `${repo.name} is already connected` };
+      if (state && !state.agentPush) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch} in the checkout — pushing from Tomrade is off for ${repo.name}` };
+      const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: view.worktree, ok: true })).code === 0;
+      if (!pushed) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch}, but git push failed — check your credentials for ${repo.remote}` };
+      let url: string | null = null;
+      let created = false;
+      if (await commandOk("gh")) {
+        try {
+          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], view.worktree)).trim().split("\n").pop() ?? null;
+          created = !!url;
+        } catch {
+          try {
+            url = (await exec("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], view.worktree)).trim() || null;
+          } catch {
+            url = null;
+          }
+        }
+      }
+      url ??= compareUrl(repo.remote, repo.defaultBranch, branch);
+      this.notify(projectId);
+      return { branch, files, committed, pushed, url, message: created ? `opened ${url}` : url ? `pushed ${branch} — open the pull request: ${url}` : `pushed ${branch}; open the pull request on your forge` };
+    } finally {
+      await this.ctx.repos.removeWorktree(view).catch(() => {});
+    }
   }
 
   /** Push the ticket's branch from its Tomrade worktree and open a pull request. Never from the user's own checkout, never the default branch. */
@@ -593,6 +725,11 @@ export class CodeLink extends Service {
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
         if (worktree) rows.push({ label: "Worktree", value: worktree, command: "code-link.open-terminal" });
+        const proposal = open.find((p) => p.kind === "propose");
+        if (proposal) {
+          rows.push({ label: "Proposal", value: `Accept → ${proposal.toStatus}`, command: "code-link.accept-proposal" });
+          rows.push({ label: "Dismiss", value: "Not this time", command: "code-link.reject-proposal" });
+        }
         const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${p.toStatus}: ${p.reason}`)).join("\n");
         return { rows, text: text || undefined };
       }
@@ -675,6 +812,30 @@ export class CodeLink extends Service {
         return { toast: launch.launched ? `Opened ${cwd}` : `cd ${cwd}` };
       }
     });
+    const settle = (accept: boolean) => (scope: { projectId?: string; itemId?: string | null }) => {
+      if (!scope.projectId || !scope.itemId) return { toast: "Select a ticket first" };
+      const proposal = this.store.proposals(scope.projectId, scope.itemId, "open").find((p) => p.kind === "propose");
+      if (!proposal) return { toast: "Nothing proposed for this ticket" };
+      this.resolve(scope.projectId, proposal.id, accept);
+      return { toast: accept ? `Moved to ${proposal.toStatus}` : "Dismissed — asked again only on new evidence" };
+    };
+    ctx.contributions.command({ id: "code-link.accept-proposal", title: "Accept the code proposal", group: "Code", run: settle(true) });
+    ctx.contributions.command({ id: "code-link.reject-proposal", title: "Dismiss the code proposal", group: "Code", run: settle(false) });
+    ctx.contributions.command({
+      id: "code-link.connect",
+      title: "Connect repository to Claude Code",
+      group: "Code",
+      run: async ({ projectId, itemId }) => {
+        if (!projectId) return { toast: "Open a project first" };
+        const item = itemId ? this.ctx.items.get(projectId, itemId) : null;
+        const fromItem = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
+        const repos = this.ctx.repos.list(projectId);
+        const repoId = fromItem ?? (repos.length === 1 ? repos[0]!.id : null);
+        if (!repoId) return { toast: "Select a ticket on the workstream whose repository to connect" };
+        const r = await this.connect(projectId, repoId);
+        return { toast: r.message };
+      }
+    });
     ctx.contributions.command({
       id: "code-link.rescan",
       title: "Rescan repositories",
@@ -689,6 +850,41 @@ export class CodeLink extends Service {
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
+
+  /** A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's checkout. */
+  private externalEvent(payload: unknown): void {
+    const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string };
+    if (!p.cwd) return;
+    const cwd = path.resolve(p.cwd);
+    const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
+    for (const [threadId, dir] of this.worktrees) {
+      if (!within(path.resolve(dir))) continue;
+      for (const projectId of this.ctx.db.openIds()) {
+        const session = this.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId);
+        if (session) {
+          this.sessions.event(projectId, session.id, payload);
+          return;
+        }
+      }
+      return;
+    }
+    for (const projectId of this.ctx.db.openIds()) {
+      for (const repo of this.ctx.repos.list(projectId)) {
+        const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+        if (!checkout || !within(path.resolve(checkout))) continue;
+        const known = p.session_id ? this.store.sessions(projectId, { live: true }).find((s) => s.threadId === null && s.repoId === repo.id && s.externalId === p.session_id) : undefined;
+        if (known) {
+          this.sessions.event(projectId, known.id, payload);
+          return;
+        }
+        // The end of a session never heard of is nothing to record.
+        if (p.hook_event_name === "SessionEnd") return;
+        const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
+        this.sessions.event(projectId, created.id, payload);
+        return;
+      }
+    }
+  }
 
   private sessionOf(thread: ThreadSummary): SessionView | null {
     return this.store.sessions(thread.projectId, { live: true }).find((s) => s.threadId === thread.id) ?? null;

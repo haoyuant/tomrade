@@ -224,7 +224,7 @@ export function WorkspaceProvider({
         case "priority":
           return ["4", "3", "2", "1", "0"].map((p) => ({ key: p, name: PRIORITY_LABEL[Number(p)] }));
         case "provenance":
-          return (["human", "ai", "locked"] as const).map((p) => ({ key: p, name: PROVENANCE[p] }));
+          return (["human", "ai", "sync", "locked"] as const).map((p) => ({ key: p, name: PROVENANCE[p] }));
         case "epic":
           return epics.map((e) => ({ key: e.id, name: e.title }));
         case "board":

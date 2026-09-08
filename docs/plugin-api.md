@@ -259,6 +259,9 @@ engine like any other: it gets the tools over MCP with a per-run token
 unchanged. A binding may also carry `event(payload)`: whatever is POSTed to
 `/sessions/<token>/event` on the MCP server — a coding agent's hooks reporting
 it started, stopped or is waiting — reaches the binding that owns the token.
+Hooks a repository commits for every developer carry no token; they post to
+`/sessions/event`, and `ctx.mcp.onEvent(listener)` hears them with the `cwd`
+and `session_id` the payload carries.
 
 An engine declares **capabilities**: `backlog` (the default) talks to the app
 through its tools; `code` also edits files and runs commands in a repository.

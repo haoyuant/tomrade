@@ -39,7 +39,7 @@ function Cell({ item, def, ws, write }: { item: Item; def: FieldDef; ws: Workspa
     case "provenance":
       return (
         <span className="tbl-prov">
-          {prov === "ai" && <span className="prov-tick" style={{ height: 12 }} />}
+          {(prov === "ai" || prov === "sync") && <span className={prov === "sync" ? "prov-tick is-sync" : "prov-tick"} style={{ height: 12 }} />}
           {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={12} />}
           <span className="num">{PROVENANCE[prov]}</span>
         </span>

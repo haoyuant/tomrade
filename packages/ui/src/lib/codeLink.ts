@@ -51,6 +51,18 @@ export function useResolveProposal(projectId: string) {
   });
 }
 
+/** A branch that names no ticket becomes one, linked from the start. */
+export function useAdoptBranch(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { repoId: string; branch: string }) => invoke("codeLink.adoptBranch", projectId, args.repoId, args.branch),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
 export function useRescan(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
