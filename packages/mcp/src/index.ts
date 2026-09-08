@@ -22,7 +22,8 @@ declare module "cordis" {
 
 declare module "@tomrade/ipc" {
   interface Channels {
-    "mcp.url": () => string | null;
+    /** The MCP base url, or the per-project endpoint when a project is named. */
+    "mcp.url": (projectId?: string) => string | null;
   }
 }
 
@@ -83,13 +84,16 @@ export class Mcp extends Service {
     const transports = new Map<string, StreamableHTTPServerTransport>();
     const app = createMcpExpressApp();
 
-    app.post("/mcp", async (req, res) => {
+    // `/mcp/<projectId>` binds every call in the session to one project, so a
+    // coding agent in that project's repository needs no projectId argument;
+    // bare `/mcp` is for clients that span projects and must name one per call.
+    const open = (projectId: string | undefined) => async (req: express.Request, res: express.Response) => {
       const existing = transports.get(sessionIdOf(req) ?? "");
       if (existing) return existing.handleRequest(req, res, req.body);
       const header = req.headers["x-tomrade-run"];
       const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
       const token = typeof header === "string" ? header : bearer;
-      const server = this.session(token ? this.bindings.get(token) : undefined);
+      const server = this.session(token ? this.bindings.get(token) : undefined, projectId);
       const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
@@ -102,7 +106,7 @@ export class Mcp extends Service {
       };
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
-    });
+    };
     const attached = async (req: express.Request, res: express.Response) => {
       const sid = sessionIdOf(req);
       const transport = transports.get(sid ?? "");
@@ -110,8 +114,12 @@ export class Mcp extends Service {
       await transport.handleRequest(req, res);
       if (req.method === "DELETE" && sid) transports.delete(sid);
     };
+    app.post("/mcp", open(undefined));
     app.get("/mcp", attached);
     app.delete("/mcp", attached);
+    app.post("/mcp/:projectId", (req, res) => open(req.params.projectId)(req, res));
+    app.get("/mcp/:projectId", attached);
+    app.delete("/mcp/:projectId", attached);
 
     const server = await new Promise<HttpServer>((resolve, reject) => {
       const srv = app.listen(this.config.port, this.config.host, () => resolve(srv));
@@ -123,7 +131,7 @@ export class Mcp extends Service {
     this.url = `http://${this.config.host}:${(address as AddressInfo).port}/mcp`;
     this.ctx.logger.info(`MCP server ready: ${this.url}`);
     this.ctx.inject(["ipc"], (ctx) => {
-      ctx.ipc.handle("mcp.url", () => ctx.mcp.url);
+      ctx.ipc.handle("mcp.url", (projectId) => (projectId ? ctx.mcp.urlFor(projectId) : ctx.mcp.url));
     });
 
     return () => {
@@ -131,6 +139,11 @@ export class Mcp extends Service {
       for (const t of transports.values()) void t.close();
       return new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     };
+  }
+
+  /** The endpoint whose sessions are scoped to one project. The same on every machine, because the id lives in the project's own folder. */
+  urlFor(projectId: string): string | null {
+    return this.url ? `${this.url}/${encodeURIComponent(projectId)}` : null;
   }
 
   /** Reversible: the token dies with the run (or the plugin) that registered it. */
@@ -141,13 +154,13 @@ export class Mcp extends Service {
     }, `mcp.bindRun`);
   }
 
-  private session(binding?: RunBinding): McpServer {
+  private session(binding?: RunBinding, projectId?: string): McpServer {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
     for (const tool of this.ctx.tools.list()) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
         try {
           if (binding) return textResult(await binding.execute(tool.name, args));
-          return textResult(await this.ctx.tools.execute(tool.name, args, { by: "ai:mcp" }));
+          return textResult(await this.ctx.tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
         } catch (e) {
           return errorResult(e);
         }

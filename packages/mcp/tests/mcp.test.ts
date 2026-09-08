@@ -38,4 +38,22 @@ describe("the MCP surface", () => {
     expect(seen).toEqual([{ name: "echo_tool", args: { v: "hi" } }]);
     await bound.close();
   });
+
+  it("scopes a /mcp/<projectId> session to that project, and leaves the bare endpoint unscoped", async () => {
+    const { ctx, project } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    ctx.tools.register(
+      defineTool({ name: "whose_project", title: "Whose", description: "test", input: z.object({}), execute: (_args, inv) => ({ projectId: inv.projectId ?? null }) })
+    );
+    const scoped = new Client({ name: "s", version: "0" });
+    await scoped.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.urlFor(project.id)!)));
+    const answer = (result: { content?: unknown }) => JSON.parse((result.content as { text: string }[])[0].text) as { projectId: string | null };
+    expect(answer(await scoped.callTool({ name: "whose_project", arguments: {} })).projectId).toBe(project.id);
+    await scoped.close();
+
+    const plain = new Client({ name: "p", version: "0" });
+    await plain.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+    expect(answer(await plain.callTool({ name: "whose_project", arguments: {} })).projectId).toBeNull();
+    await plain.close();
+  });
 });

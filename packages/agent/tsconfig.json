@@ -11,13 +11,32 @@
     "src"
   ],
   "references": [
-    { "path": "../db" },
-    { "path": "../domain" },
-    { "path": "../ipc" },
-    { "path": "../llm" },
-    { "path": "../oplog" },
-    { "path": "../settings" },
-    { "path": "../tools" },
-    { "path": "../write" }
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../domain"
+    },
+    {
+      "path": "../hub"
+    },
+    {
+      "path": "../ipc"
+    },
+    {
+      "path": "../llm"
+    },
+    {
+      "path": "../oplog"
+    },
+    {
+      "path": "../settings"
+    },
+    {
+      "path": "../tools"
+    },
+    {
+      "path": "../write"
+    }
   ]
 }

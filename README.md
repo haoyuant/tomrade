@@ -42,9 +42,10 @@ packages/projects     ctx.projects
 packages/tools        ctx.tools        one registry, guarded execute
 packages/llm          ctx.llm          model profiles + roles; chat-with-tools + structured JSON; OpenAI-compatible & Anthropic adapters
 packages/settings     ctx.settings     file-backed; sections registered by zod schema
-packages/storage      ctx.storage      where a project's shareable copy lives; the text artifact; flush/refresh
-packages/storage-git  —                a git repository as a destination (the base the hosting providers use)
+packages/storage      ctx.storage      the project folder as the truth: text artifact, write-through log, publish/refresh/merge, the Hub's catalog
+packages/storage-git  —                any git URL as a remote for a project's own repository
 packages/storage-github —              GitHub: repository discovery and creation on top of storage-git
+packages/repos        ctx.repos        the code repositories workstreams stand for; this machine's checkouts; agent worktrees
 packages/agent        ctx.agent        the platform: threads, runs, ledger, cards, workflows, run undo, registries
 packages/engine-loop  —                the hybrid conversational conductor
 packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu
@@ -66,6 +67,7 @@ docs/                 plugin-api.md (the contract), design-system.md (tokens, in
 
 ```
 projects  ── boards ── views ── view_item_rank
+              │  └─ repos (remote URL = identity; checkouts live in catalog.json)
               │
               └─ items (board_id, key_num, status, priority, parent_id, rank,
                         version, updated_by, human_locked)

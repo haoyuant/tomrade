@@ -1,0 +1,163 @@
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Context, Service } from "cordis";
+import { z } from "zod";
+import type {} from "@tomrade/ipc";
+import { Catalog, RemoteRef } from "./catalog.js";
+
+declare module "cordis" {
+  interface Context {
+    hub: Hub;
+  }
+  interface Events {
+    /** The Hub folder was chosen or moved. */
+    "hub/configured"(dir: string): void;
+  }
+}
+
+export interface HubInfo {
+  deviceId: string;
+  /** The Hub folder, or null before first-run chose one. */
+  dir: string | null;
+  defaultDir: string;
+  configured: boolean;
+}
+
+declare module "@tomrade/ipc" {
+  interface Channels {
+    "hub.info": () => HubInfo;
+    /** First run, or a move: name the Hub folder. Created if absent. */
+    "hub.configure": (dir: string) => HubInfo;
+  }
+  interface Broadcasts {
+    "hub.changed": () => void;
+  }
+}
+
+export const HubConfig = z.object({
+  /** `hub.json`: the Hub folder and its remote binding. Machine-local. */
+  stateFile: z.string().optional(),
+  /** `catalog.json`: the projects and repository checkouts this machine knows. Machine-local. */
+  catalogFile: z.string().optional(),
+  /** `device.json`: this machine's id, stamped on every oplog row. */
+  deviceFile: z.string().optional(),
+  /** Offered on first run. Not ~/Documents: macOS may hand that folder to iCloud and evict files. */
+  defaultDir: z.string().optional(),
+  /** Tests: keep everything in RAM and treat the Hub as configured at `defaultDir`. */
+  memory: z.boolean().default(false)
+});
+export type HubConfig = z.infer<typeof HubConfig>;
+
+const HubState = z.object({
+  v: z.literal(1).default(1),
+  dir: z.string().nullable().default(null),
+  remote: RemoteRef.nullable().default(null),
+  lastPublishedDigest: z.string().nullable().default(null),
+  lastSyncAt: z.number().nullable().default(null)
+});
+type HubState = z.infer<typeof HubState>;
+
+const readJson = (file: string): unknown => {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+};
+
+const writeJson = (file: string, value: unknown): void => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
+  fs.renameSync(tmp, file);
+};
+
+/**
+ * This machine, as far as Tomrade is concerned: a stable device id, the Hub
+ * folder where the user's own files live, and the catalog of what is here.
+ * Nothing in this service is ever synced; all of it can be rebuilt.
+ */
+export class Hub extends Service {
+  static provide = "hub";
+  static Config = HubConfig;
+
+  deviceId!: string;
+  catalog!: Catalog;
+  private state: HubState = { v: 1, dir: null, remote: null, lastPublishedDigest: null, lastSyncAt: null };
+  private readonly home: Context;
+
+  constructor(
+    ctx: Context,
+    public readonly config: HubConfig
+  ) {
+    super(ctx, "hub");
+    this.home = ctx;
+  }
+
+  [Service.init]() {
+    this.deviceId = this.loadDevice();
+    this.catalog = new Catalog(this.config.memory ? null : (this.config.catalogFile ?? null));
+    if (this.config.memory) {
+      this.state.dir = this.config.defaultDir ?? null;
+    } else if (this.config.stateFile) {
+      const parsed = HubState.safeParse(readJson(this.config.stateFile) ?? {});
+      if (parsed.success) this.state = parsed.data;
+    }
+    this.home.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("hub.info", () => ctx.hub.info());
+      ctx.ipc.handle("hub.configure", (dir) => ctx.hub.configure(dir));
+    });
+  }
+
+  get dir(): string | null {
+    return this.state.dir;
+  }
+
+  get defaultDir(): string {
+    return this.config.defaultDir ?? path.join(os.homedir(), "Tomrade");
+  }
+
+  get configured(): boolean {
+    return this.state.dir !== null;
+  }
+
+  get remote(): HubState["remote"] {
+    return this.state.remote;
+  }
+
+  info(): HubInfo {
+    return { deviceId: this.deviceId, dir: this.state.dir, defaultDir: this.defaultDir, configured: this.configured };
+  }
+
+  /** Choose (or move to) the Hub folder. The folder is created; nothing is moved into it here. */
+  configure(dir: string): HubInfo {
+    const resolved = path.resolve(dir);
+    fs.mkdirSync(resolved, { recursive: true });
+    this.state = { ...this.state, dir: resolved };
+    this.persist();
+    this.home.emit("hub/configured", resolved);
+    this.home.get("ipc")?.send("hub.changed");
+    return this.info();
+  }
+
+  patchState(patch: Partial<Omit<HubState, "v" | "dir">>): void {
+    this.state = { ...this.state, ...patch };
+    this.persist();
+  }
+
+  private persist(): void {
+    if (this.config.memory || !this.config.stateFile) return;
+    writeJson(this.config.stateFile, this.state);
+  }
+
+  private loadDevice(): string {
+    if (this.config.memory || !this.config.deviceFile) return this.config.memory ? "test-device" : randomBytes(6).toString("hex");
+    const existing = readJson(this.config.deviceFile) as { id?: unknown } | undefined;
+    if (existing && typeof existing.id === "string" && existing.id) return existing.id;
+    const id = randomBytes(6).toString("hex");
+    writeJson(this.config.deviceFile, { id });
+    return id;
+  }
+}

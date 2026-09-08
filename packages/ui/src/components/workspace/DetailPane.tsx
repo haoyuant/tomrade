@@ -16,7 +16,7 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
-import { PROVENANCE, agoLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
+import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useSections } from "~/lib/queries";
 import { useWorkspace } from "./context";
@@ -35,9 +35,9 @@ function LockBar() {
 }
 
 /** Derived from the oplog itself, so it can never drift from the data it describes. */
-export function Ledger({ itemId }: { itemId: string }) {
+export function Ledger({ projectId, itemId }: { projectId: string; itemId: string }) {
   const { t, tx } = useI18n();
-  const history = useHistory(itemId);
+  const history = useHistory(projectId, itemId);
   const rows = history.data ?? [];
   return (
     <section className="detail-sect">
@@ -54,8 +54,8 @@ export function Ledger({ itemId }: { itemId: string }) {
 }
 
 /** Plugin sections come as rows and text; the pane draws them with its own primitives. */
-export function PluginSections({ itemId, variant = "pane" }: { itemId: string; variant?: "pane" | "sheet" }) {
-  const sections = useSections(itemId);
+export function PluginSections({ projectId, itemId, variant = "pane" }: { projectId: string; itemId: string; variant?: "pane" | "sheet" }) {
+  const sections = useSections(projectId, itemId);
   return (
     <>
       {(sections.data ?? []).map((s) => {
@@ -101,10 +101,11 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
       <span className="ledger-mark">
         {mark === "lock" && <Icon className="prov-lock" name="i-lock" size={12} />}
         {mark === "tick" && <span className="prov-tick" style={{ height: 11 }} />}
+        {mark === "sync" && <Icon name="i-undo" size={11} style={{ color: "var(--meta)" }} />}
       </span>
       <span className="ledger-txt">
-        <b>{entry.by}</b> {describeWrite(entry)}
-        {after ? (
+        <b>{authorLabel(entry.by)}</b> {describeWrite(entry)}
+        {after && entry.op !== "merge" && entry.op !== "rank" ? (
           <>
             {" "}
             · {t("detailPane.versionWord")} <span className="num">{after.version}</span>
@@ -283,10 +284,10 @@ function DetailBody({
           <div className="detail-main">
             {item.humanLocked && <LockBar />}
             <IssueBody item={item} write={write} className="issue-body" />
-            <PluginSections itemId={item.id} />
+            <PluginSections projectId={item.projectId} itemId={item.id} />
           </div>
           <aside className="detail-side">
-            <Ledger itemId={item.id} />
+            <Ledger projectId={item.projectId} itemId={item.id} />
           </aside>
         </div>
       </div>

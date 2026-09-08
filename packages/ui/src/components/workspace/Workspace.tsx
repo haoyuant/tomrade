@@ -65,7 +65,8 @@ export function Workspace() {
     setFieldsFocus(fieldId ?? null);
     setFieldsOpen(true);
   }, []);
-  const [projectSettings, setProjectSettings] = useState(false);
+  /** false: closed; true: the sheet; "repositories": the sheet scrolled to its Repositories block. */
+  const [projectSettings, setProjectSettings] = useState<boolean | "repositories">(false);
   const [projectMenu, setProjectMenu] = useState(false);
   /** The issue the confirmation is open on, held by id so it can go stale. */
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -202,7 +203,15 @@ export function Workspace() {
           />
         )}
 
-        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={ws.project.id} onOpenSettings={() => setSettings("assistant")} onOpenIssue={ws.select} />
+        <AgentPanel
+          open={aiOpen}
+          onToggle={setAiOpen}
+          projectId={ws.project.id}
+          boardId={ws.workstream?.id ?? null}
+          onOpenSettings={() => setSettings("assistant")}
+          onOpenRepositories={() => setProjectSettings("repositories")}
+          onOpenIssue={ws.select}
+        />
       </div>
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} />
@@ -231,6 +240,7 @@ export function Workspace() {
       <ProjectSettingsDialog
         project={projectSettings ? ws.project : null}
         projects={ws.projects}
+        section={projectSettings === "repositories" ? "repositories" : undefined}
         onOpenChange={setProjectSettings}
         // The route names the project that no longer exists, so leave before the
         // caches it was rendered from are dropped.

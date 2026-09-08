@@ -120,8 +120,8 @@ describe("the loop engine prompt", () => {
     const agent = base.ctx.agent;
     agent.playbook({ id: "acme.review", title: "Review", when: "the user asks for a review", body: "look closely" });
     const thread = agent.newThread(base.project.id);
-    const { runId } = agent.send(thread.id, { kind: "text", text: "hi" });
-    for (let i = 0; i < 400 && agent.store.run(runId)?.status === "running"; i += 1) await new Promise((r) => setTimeout(r, 10));
+    const { runId } = agent.send(base.project.id, thread.id, { kind: "text", text: "hi" });
+    for (let i = 0; i < 400 && agent.store.run(base.project.id, runId)?.status === "running"; i += 1) await new Promise((r) => setTimeout(r, 10));
     const system = model.requests[0].system ?? "";
     expect(system).toContain("House rules:");
     expect(system).toContain("acme.review — the user asks for a review");

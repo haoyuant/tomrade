@@ -117,7 +117,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
 
       try {
         const run = runJsonl(options.command, args, {
-          cwd: tmp,
+          cwd: input.cwd ?? tmp,
           signal: io.signal,
           onLine: (raw) => {
             const line = raw as StreamLine;
