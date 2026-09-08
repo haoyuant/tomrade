@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, isSuspended, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
+import { HOUSE_RULES, focusSuffix, isSuspended, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
 import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomrade/llm";
 import { ToolInputError } from "@tomrade/tools";
 
@@ -41,7 +41,7 @@ function historyMessages(messages: ThreadMessage[]): Message[] {
   };
   for (const m of messages) {
     const b = m.block;
-    if (m.role === "user" && b.type === "text") push("user", b.text);
+    if (m.role === "user" && b.type === "text") push("user", b.text + focusSuffix(b.focus));
     else if (b.type === "text") push("assistant", b.text);
     else if (b.type === "question") push("assistant", `(asked the user: ${b.text}${b.options ? " — options: " + b.options.join(" / ") : ""})`);
     else if (b.type === "trace") push("assistant", `(${b.ok ? "did" : "failed"} ${b.tool} → ${b.summary})`);

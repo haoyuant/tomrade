@@ -1,4 +1,4 @@
-import { HOUSE_RULES, promptSections, type TurnIO, type TurnInput } from "@tomrade/agent";
+import { HOUSE_RULES, focusSuffix, promptSections, type TurnIO, type TurnInput } from "@tomrade/agent";
 
 /** The appended system prompt an external agent gets: its identity, the shared house rules, the playbook index, the durable state. */
 export function buildSystem(input: TurnInput, io: TurnIO, agentName: string): string {
@@ -9,4 +9,4 @@ export function buildSystem(input: TurnInput, io: TurnIO, agentName: string): st
 }
 
 export const promptOf = (input: TurnInput): string =>
-  input.input.kind === "text" ? input.input.text : Array.isArray(input.input.value) ? input.input.value.join(", ") : input.input.value;
+  input.input.kind === "text" ? input.input.text + focusSuffix(input.input.focus) : Array.isArray(input.input.value) ? input.input.value.join(", ") : input.input.value;

@@ -1,5 +1,6 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { IconSprite } from "~/components/icons";
+import { ProjectShell } from "~/components/chrome/ProjectShell";
 import { IssueScreen } from "~/components/issue/IssueScreen";
 import { ProjectsScreen } from "~/components/projects/ProjectsScreen";
 import { Workspace } from "~/components/workspace/Workspace";
@@ -24,10 +25,17 @@ const rootRoute = createRootRoute({
 
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: ProjectsScreen });
 
-/** Opening a project resolves to its first saved view. */
-const projectRoute = createRoute({
+/** Everything inside a project shares one shell — the assistant panel mounts once, above the screens. */
+const projectShellRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/p/$projectId",
+  component: ProjectShell
+});
+
+/** Opening a project resolves to its first saved view. */
+const projectIndexRoute = createRoute({
+  getParentRoute: () => projectShellRoute,
+  path: "/",
   loader: async ({ params }) => {
     const views = await invoke("views.list", params.projectId);
     const view = [...views].sort((a, b) => a.rank - b.rank)[0];
@@ -37,8 +45,8 @@ const projectRoute = createRoute({
 });
 
 const viewRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/v/$viewId",
+  getParentRoute: () => projectShellRoute,
+  path: "v/$viewId",
   component: function ViewRoute() {
     const { projectId, viewId } = viewRoute.useParams();
     return (
@@ -51,8 +59,8 @@ const viewRoute = createRoute({
 
 /** A workstream's page: an unsaved board pinned to it. Saving makes a view. */
 const workstreamRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/w/$boardId",
+  getParentRoute: () => projectShellRoute,
+  path: "w/$boardId",
   component: function WorkstreamRoute() {
     const { projectId, boardId } = workstreamRoute.useParams();
     return (
@@ -64,15 +72,15 @@ const workstreamRoute = createRoute({
 });
 
 const issueRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/i/$itemId",
+  getParentRoute: () => projectShellRoute,
+  path: "i/$itemId",
   component: function IssueRoute() {
     const { projectId, itemId } = issueRoute.useParams();
     return <IssueScreen projectId={projectId} itemId={itemId} />;
   }
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectRoute, viewRoute, workstreamRoute, issueRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, projectShellRoute.addChildren([projectIndexRoute, viewRoute, workstreamRoute, issueRoute])]);
 
 // Hash history: the production build is loaded from file://, where a path-based
 // history has nothing to resolve a reload against.

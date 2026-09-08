@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
@@ -8,12 +8,12 @@ import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
 import { ProjectSettingsDialog } from "~/components/projects/ProjectSettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
+import { useScreenBinding, useAgentDock, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useCreateView, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
-import { AgentPanel, aiOpenKey } from "./AgentPanel";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
@@ -49,7 +49,7 @@ export function Workspace() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey);
+  const { setAiOpen } = useAgentDock();
   const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey);
   const [expanded, setExpanded] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
@@ -73,6 +73,24 @@ export function Workspace() {
 
   const selected = ws.items.find((i) => i.id === ws.selectedId) ?? null;
   const deleteTarget = ws.items.find((i) => i.id === deleting) ?? null;
+
+  // What the global panel should know while this screen is up: chips select
+  // into the sidebar detail, and "this" means the open detail, then the view.
+  const binding = useMemo<ScreenBinding>(
+    () => ({
+      openIssue: ws.select,
+      openSettings: () => setSettings("assistant"),
+      focus: [
+        ...(selected ? [{ kind: "item", id: selected.id, key: selected.key, title: selected.title }] : []),
+        { kind: "view", id: ws.view.id, title: ws.view.name }
+      ],
+      boardId: ws.workstream?.id ?? null,
+      onOpenRepositories: () => setProjectSettings("repositories")
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id]
+  );
+  useScreenBinding(binding);
 
   // The sheet is rendered from a live lookup, so an agent deleting the issue out
   // from under it unmounts the dialog without ever calling onOpenChange — and a
@@ -136,9 +154,6 @@ export function Workspace() {
       if (meta && key === "k") {
         e.preventDefault();
         setPalette(true);
-      } else if (meta && key === "j") {
-        e.preventDefault();
-        setAiOpen((v) => !v);
       } else if (meta && key === "b") {
         e.preventDefault();
         setSideOpen((v) => !v);
@@ -202,16 +217,6 @@ export function Workspace() {
             onDelete={() => setDeleting(selected.id)}
           />
         )}
-
-        <AgentPanel
-          open={aiOpen}
-          onToggle={setAiOpen}
-          projectId={ws.project.id}
-          boardId={ws.workstream?.id ?? null}
-          onOpenSettings={() => setSettings("assistant")}
-          onOpenRepositories={() => setProjectSettings("repositories")}
-          onOpenIssue={ws.select}
-        />
       </div>
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} />

@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { Item, ItemStatus } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
-import { usePanelOpen } from "~/lib/panel";
-import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
+import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
@@ -46,9 +45,21 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [aiOpen, setAiOpen] = usePanelOpen(aiOpenKey);
 
   const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
+
+  const openIssue = useCallback((id: string) => void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: id } }), [navigate, projectId]);
+  const binding = useMemo<ScreenBinding>(
+    () => ({
+      openIssue,
+      openSettings: () => setSettingsOpen(true),
+      focus: item ? [{ kind: "item", id: item.id, key: item.key, title: item.title }] : []
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openIssue, item?.id, item?.key, item?.title]
+  );
+  useScreenBinding(binding);
+
   if (!item) {
     return (
       <div className="app">
@@ -69,7 +80,6 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
   const board = boards.data?.find((b) => b.id === item.boardId);
   const epics = (items.data ?? []).filter((i) => i.kind === "epic");
-  const openIssue = (id: string) => void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: id } });
   const prov = provenanceOf(item);
   const next = nextStatus(item.status);
 
@@ -216,8 +226,6 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             </p>
           </div>
         </main>
-
-        <AgentPanel open={aiOpen} onToggle={setAiOpen} projectId={projectId} onOpenSettings={() => setSettingsOpen(true)} onOpenIssue={openIssue} />
       </div>
 
       <StatusBar projectId={projectId} onUndo={() => undo.mutate(undefined)}>

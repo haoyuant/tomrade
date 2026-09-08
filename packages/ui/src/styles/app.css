@@ -285,6 +285,15 @@ strong { font-weight: 500; }
 .prose p + p { margin-top: var(--space-3); }
 
 /* ─── app shell ──────────────────────────────────────────────────────── */
+/* Inside a project the assistant is chrome: one full-height dock on the
+   right, the screens swap on the left without touching it. */
+.shell { display: flex; height: 100%; min-width: 0; }
+.shell-main { flex: 1; min-width: 0; }
+/* beside the titlebar now, so its head keeps the window draggable up top;
+   the menus portal to body, so only the head's own buttons need opting out */
+.shell .ai-head { -webkit-app-region: drag; }
+.shell .ai-head button { -webkit-app-region: no-drag; }
+
 .app {
   display: grid;
   grid-template-rows: var(--titlebar-h) minmax(0, 1fr) var(--statusbar-h);
@@ -971,9 +980,13 @@ strong { font-weight: 500; }
 .ai-input:focus-visible { box-shadow: none; }
 .ai-input::placeholder { color: var(--meta); }
 .ai-send:disabled { opacity: 0.45; cursor: default; }
-/* the knobs under the composer sit right; the left half is spoken for later */
+/* the knobs under the composer sit right; the context chip owns the left */
 .ai-knobs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
 .chip-btn.is-quiet { color: var(--meta); }
+.ctx-chip { margin-right: auto; min-width: 0; }
+.ctx-chip-label { max-width: 148px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* what was on screen when a message went out — small, under the text */
+.turn-ctx { font-size: var(--text-xs); color: var(--meta); }
 
 /* collapsed rails — one shape for both side panes */
 .rail {

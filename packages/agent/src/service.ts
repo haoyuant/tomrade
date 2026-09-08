@@ -21,6 +21,7 @@ import {
   type CardView,
   type Engine,
   type EngineView,
+  type FocusRef,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
@@ -70,7 +71,7 @@ declare module "@tomrade/ipc" {
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
-    "agent.send": (projectId: string, threadId: string, text: string) => { runId: string };
+    "agent.send": (projectId: string, threadId: string, text: string, focus?: FocusRef[]) => { runId: string };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
@@ -195,7 +196,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId) => ctx.agent.newThread(projectId, engine, boardId ?? null));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
-      ctx.ipc.handle("agent.send", (projectId, threadId, text) => ctx.agent.send(projectId, threadId, { kind: "text", text }));
+      ctx.ipc.handle("agent.send", (projectId, threadId, text, focus) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus }));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
@@ -410,7 +411,8 @@ export class Agent extends Service {
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
-    this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text }, null);
+    const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
+    this.appendAndBroadcast(projectId, threadId, "user", focus ? { type: "text", text, focus } : { type: "text", text }, null);
     if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
 
     const run = this.store.beginRun(projectId, threadId, engine.id);
@@ -557,6 +559,7 @@ export class Agent extends Service {
         cards: this.store.cards(rc.projectId, rc.threadId),
         brief: this.store.brief(rc.projectId),
         pending: pending ? this.pendingView(pending) : null,
+        focus: input.kind === "text" && input.focus?.length ? input.focus : undefined,
         options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions,
         ...(where.cwd ? { cwd: where.cwd, workdir: { remote: where.remote!, branch: where.branch!, worktree: where.worktree } } : {})
       };

@@ -4,7 +4,7 @@ export { Agent, AgentConfig, AGENT_SECTION, type AgentSettings, type ThreadDetai
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
-export { HOUSE_RULES, promptSections } from "./prompt.js";
+export { HOUSE_RULES, focusSuffix, promptSections } from "./prompt.js";
 export {
   isSuspended,
   type AgentEvent,
@@ -14,6 +14,7 @@ export {
   type Engine,
   type EnginePick,
   type EngineView,
+  type FocusRef,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,

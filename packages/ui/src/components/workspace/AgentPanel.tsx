@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { AgentSettings, Block, EnginePick, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
+import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
 import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
@@ -188,10 +188,16 @@ function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Bl
 function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
   const b = m.block;
   if (m.role === "user") {
+    const focus = b.type === "text" ? b.focus : undefined;
     return (
       <div className="turn turn-user">
         <span className="turn-rule" />
         <p>{b.type === "text" ? b.text : ""}</p>
+        {!!focus?.length && (
+          <span className="turn-ctx num" title={focus.map((r) => r.title).join(" · ")}>
+            {focus.map((r) => r.key ?? r.title).join(" · ")}
+          </span>
+        )}
       </div>
     );
   }
@@ -227,6 +233,7 @@ export function AgentPanel({
   onToggle,
   projectId,
   boardId = null,
+  focus,
   onOpenSettings,
   onOpenRepositories,
   onOpenIssue
@@ -236,6 +243,7 @@ export function AgentPanel({
   projectId: string;
   /** The workstream page the panel is open on, if any: a new thread starts there. */
   boardId?: string | null;
+  focus: FocusRef[];
   onOpenSettings: () => void;
   /** Where a workstream's repository is placed on this machine — the way out of "no local checkout". */
   onOpenRepositories?: () => void;
@@ -270,6 +278,11 @@ export function AgentPanel({
   const workdirProblem = threadBoardId ? (workdir.data?.problem ?? null) : null;
 
   const [draft, setDraft] = useState("");
+  // What rides along as "(viewing: …)": follow tracks the screen, pinned holds
+  // a snapshot across navigation, off sends nothing. Session state on purpose —
+  // the panel never unmounts inside a project, so it survives navigation.
+  const [ctxMode, setCtxMode] = useState<"follow" | "pinned" | "off">("follow");
+  const [pinnedFocus, setPinnedFocus] = useState<FocusRef[]>([]);
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
@@ -355,6 +368,9 @@ export function AgentPanel({
     localStorage.setItem(STORE.thread(projectId), id);
   };
 
+  // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
+  const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
+
   const doSend = async () => {
     const text = draft.trim();
     if (!text || busy || blocked) return;
@@ -362,7 +378,7 @@ export function AgentPanel({
     let target = threadId;
     if (!target) target = (await newThread.mutateAsync({ boardId })).id;
     pickThread(target);
-    send.mutate({ threadId: target, text });
+    send.mutate({ threadId: target, text, focus: sendFocus.length ? sendFocus : undefined });
   };
 
   const doAnswer = (questionId: string, value: string | string[]) => {
@@ -529,6 +545,37 @@ export function AgentPanel({
             {(boardsQ.data ?? []).map((b) => (
               <MenuRadioItem key={b.id} checked={b.id === pickedBoardId} name={b.name} onSelect={() => chooseBoard(b.id)} />
             ))}
+          </Menu>
+          <Menu
+            label={t("agentPanel.contextHead")}
+            trigger={
+              <button type="button" className={`tag chip-btn ctx-chip${ctxMode === "off" || !sendFocus.length ? " is-quiet" : ""}`} title={t("agentPanel.contextChipTitle")}>
+                <Icon name="i-monitor" size={11} />
+                <span className="ctx-chip-label">
+                  {ctxMode === "off" ? t("agentPanel.contextOff") : sendFocus.length ? sendFocus.map((r) => r.key ?? r.title).join(" · ") : t("agentPanel.contextFollow")}
+                </span>
+                <Icon name="i-chevdown" size={9} />
+              </button>
+            }
+          >
+            <MenuHead title={t("agentPanel.contextHead")} />
+            <MenuRadioItem
+              checked={ctxMode === "follow"}
+              name={t("agentPanel.contextFollow")}
+              sub={focus.map((r) => r.key ?? r.title).join(" · ") || undefined}
+              onSelect={() => setCtxMode("follow")}
+            />
+            <MenuRadioItem
+              checked={ctxMode === "pinned"}
+              name={t("agentPanel.contextPin")}
+              sub={(ctxMode === "pinned" ? pinnedFocus : focus).map((r) => r.key ?? r.title).join(" · ") || undefined}
+              onSelect={() => {
+                if (!focus.length && !pinnedFocus.length) return;
+                if (focus.length) setPinnedFocus(focus);
+                setCtxMode("pinned");
+              }}
+            />
+            <MenuRadioItem checked={ctxMode === "off"} name={t("agentPanel.contextOff")} onSelect={() => setCtxMode("off")} />
           </Menu>
           <Menu
             label={t("agentPanel.engineLabel")}
