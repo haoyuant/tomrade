@@ -8,10 +8,11 @@ import type {} from "@tomrade/repos";
 import type {} from "@tomrade/settings";
 import type {} from "@tomrade/storage";
 import type { Author, Board, Item, Repo } from "@tomrade/domain";
-import { GitFolder, type Git } from "@tomrade/storage";
+import type { Git } from "@tomrade/storage";
 import { listDecisions } from "./decisions.js";
 import { branchFor } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
+import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal } from "./terminal.js";
@@ -35,6 +36,8 @@ export type StartResult =
       command: string | null;
       /** Terminal mode: whether a terminal window was actually opened. */
       launched: boolean;
+      /** Conditions that do not prevent local work, but constrain what the agent may do. */
+      warnings?: string[];
     };
 
 /** What the starter needs from the service. */
@@ -81,17 +84,31 @@ export class Starter {
       await this.host.scan(projectId);
       state = store.repoState(projectId, repo.id);
     }
+    const warnings: string[] = [];
+    const probe = await probeRemote(this.host.git, placement.checkout, repo.defaultBranch);
+    if (probe.state === "offline") {
+      if (probe.failure !== "network") return { ok: false, gate: "remote", message: remoteFailureMessage(probe.stderr), remote: repo.remote };
+      warnings.push(`origin unreachable right now (${probe.detail ?? "network error"}) — commit locally, do not push until it is back`);
+    }
     // "Empty" is only believed when the remote confirms it. A checkout whose
     // fetch fails — wrong account, no network — looks the same from here, and
     // bootstrapping a repository that is full elsewhere would be the wrong move.
     if (state?.readiness === "empty" || state?.readiness === "unknown") {
-      const probe = await new GitFolder(this.host.git, placement.checkout).probe(repo.defaultBranch);
-      if (probe === "offline") return { ok: false, gate: "remote", message: `Tomrade cannot reach ${repo.remote} from ${placement.checkout} — git fetch fails there; check the credentials that checkout uses`, remote: repo.remote };
-      if (probe === "exists") {
+      if (probe.state === "exists") {
         // The remote has the branch but this machine never fetched it: fetch now and read again.
         await this.host.scan(projectId);
         state = store.repoState(projectId, repo.id);
         if (state?.readiness === "unknown") return { ok: false, gate: "remote", message: `${repo.remote} has ${repo.defaultBranch}, but this checkout cannot fetch it — check the credentials that checkout uses`, remote: repo.remote };
+      }
+    }
+    const plannedBranch = store.links(projectId, item.id).find((link) => link.repoId === repo.id && link.branch)?.branch ?? branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
+    if (probe.state !== "offline" && (state?.agentPush ?? true)) {
+      const pushed = await this.host.git(["push", "--dry-run", "origin", `HEAD:refs/heads/${plannedBranch}`], { cwd: placement.checkout, ok: true });
+      if (pushed.code !== 0) {
+        const stderr = scrubRemoteOutput(pushed.stderr ?? "");
+        const failure = classifyRemoteFailure(stderr);
+        if (failure === "credentials") return { ok: false, gate: "remote", message: remoteFailureMessage(stderr), remote: repo.remote };
+        if (failure === "network") warnings.push(`origin unreachable right now (${remoteFailureDetail(stderr) ?? "network error"}) — commit locally, do not push until it is back`);
       }
     }
     const bootstrapping = item.labels.includes(BOOTSTRAP_LABEL);
@@ -127,7 +144,7 @@ export class Starter {
       continued = true;
       if (engineId !== "other" && thread.engine !== engineId && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engineId);
     } else {
-      branch = branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
+      branch = plannedBranch;
       thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}` });
     }
 
@@ -158,15 +175,16 @@ export class Starter {
       });
     const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
-    const prompt = continued
+    const basePrompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link)
       : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, "") });
+    const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
 
     if (opts.mode === "run") {
       if (!agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.send(projectId, thread.id, { kind: "text", text: prompt });
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);
-      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true };
+      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, ...(warnings.length ? { warnings } : {}) };
     }
 
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), prompt);
@@ -177,7 +195,7 @@ export class Starter {
     const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);
-    return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched };
+    return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, ...(warnings.length ? { warnings } : {}) };
   }
 
   /** A local coding agent that is installed and ready; the in-app model never qualifies. */

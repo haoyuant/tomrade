@@ -48,21 +48,24 @@ export function StartTicketMenu({
             const actions =
               result.gate === "readiness" && result.bootstrapKey && onOpenIssue
                 ? [{ label: t("codeLink.gateOpenBootstrap", { key: result.bootstrapKey }), run: () => onOpenIssue(result.bootstrapKey!) }]
-                : (result.gate === "checkout" || result.gate === "workstream") && onOpenRepositories
+                : (result.gate === "checkout" || result.gate === "workstream" || result.gate === "remote") && onOpenRepositories
                   ? [{ label: t("codeLink.gateRepositories"), run: onOpenRepositories }]
                   : undefined;
             toast({ body: result.message, actions });
             return;
           }
           const vars = { key: item.key, branch: result.branch };
+          const warning = result.warnings?.join("\n");
           if (result.mode === "run") {
-            toast({ body: t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars) });
+            const started = t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars);
+            toast({ body: warning ? `${started}\n${warning}` : started });
             showThread(result.threadId);
           } else if (result.launched) {
-            toast({ body: t("codeLink.terminalToast", vars) });
+            const started = t("codeLink.terminalToast", vars);
+            toast({ body: warning ? `${started}\n${warning}` : started });
           } else {
             const command = result.command ?? "";
-            toast({ body: command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
+            toast({ body: warning ? `${command}\n${warning}` : command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
           }
         },
         onError: (e) => toast({ body: e.message })

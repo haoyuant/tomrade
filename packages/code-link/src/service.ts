@@ -865,8 +865,9 @@ export class CodeLink extends Service {
       if (!scope.projectId || !scope.itemId) return { toast: "Select a ticket first" };
       const result = await this.start(scope.projectId, scope.itemId, { mode });
       if (!result.ok) return { toast: result.message };
-      if (result.mode === "terminal") return { toast: result.launched ? `${result.continued ? "Continuing" : "Started"} in ${result.branch} — your terminal has it` : `Run this in a terminal:\n${result.command}` };
-      return { toast: `${result.continued ? "Continuing" : "Started"} on ${result.branch}` };
+      const warning = result.warnings?.join("\n");
+      if (result.mode === "terminal") return { toast: `${result.launched ? `${result.continued ? "Continuing" : "Started"} in ${result.branch} — your terminal has it` : `Run this in a terminal:\n${result.command}`}${warning ? `\n${warning}` : ""}` };
+      return { toast: `${result.continued ? "Continuing" : "Started"} on ${result.branch}${warning ? `\n${warning}` : ""}` };
     };
     ctx.contributions.command({ id: "code-link.start-run", title: "Start ticket here", group: "Code", run: startCommand("run") });
     ctx.contributions.command({ id: "code-link.start-terminal", title: "Open ticket in terminal", group: "Code", run: startCommand("terminal") });

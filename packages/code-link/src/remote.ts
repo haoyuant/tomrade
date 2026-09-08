@@ -8,6 +8,13 @@ export interface RemoteIdentity {
   login: string | null;
 }
 
+export interface RemoteProbe {
+  state: "exists" | "absent" | "offline";
+  stderr: string;
+  detail: string | null;
+  failure: RemoteFailure | null;
+}
+
 /** Git repeats remotes in errors; credentials embedded in one never leave this boundary. */
 export const scrubRemoteOutput = (text: string): string => text.replace(/\/\/[^@\s/]*@/g, "//");
 
@@ -34,6 +41,14 @@ export function remoteFailureMessage(stderr: string): string {
   if (kind === "credentials") return `origin rejected the credentials git uses in this checkout (${detail})`;
   if (kind === "network") return `origin is unreachable on the network (${detail})`;
   return `origin is unreachable from this checkout (${detail})`;
+}
+
+export async function probeRemote(git: Git, checkout: string, branch: string): Promise<RemoteProbe> {
+  const result = await git(["ls-remote", "--exit-code", "origin", `refs/heads/${branch}`], { cwd: checkout, ok: true });
+  const stderr = scrubRemoteOutput(result.stderr ?? "");
+  if (result.code === 0) return { state: "exists", stderr: "", detail: null, failure: null };
+  if (result.code === 2) return { state: "absent", stderr: "", detail: null, failure: null };
+  return { state: "offline", stderr, detail: remoteFailureDetail(stderr), failure: classifyRemoteFailure(stderr) };
 }
 
 function remoteParts(remote: string): { kind: "https" | "ssh"; host: string; path: string } | null {

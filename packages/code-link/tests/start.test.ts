@@ -43,6 +43,13 @@ function codeRepo(opts: { manifest?: boolean } = {}): { remote: string; checkout
   return { remote, checkout };
 }
 
+function gitWithFailure(command: "ls-remote" | "push", stderr: string): string {
+  const file = path.join(root, `git-${n++}`);
+  fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "${command}" ]; then\n  echo "${stderr.replaceAll('"', '\\"')}" >&2\n  exit 128\nfi\nexec git "$@"\n`);
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+
 /** A code-capable engine that records what it was asked and makes one commit in the worktree. */
 function fakeCodeEngine(turns: TurnInput[]): Engine {
   return {
@@ -64,7 +71,7 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
   };
 }
 
-async function machine(repo: { remote: string; checkout: string } | null) {
+async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const turns: TurnInput[] = [];
@@ -79,7 +86,7 @@ async function machine(repo: { remote: string; checkout: string } | null) {
       Contributions,
       Agent,
       enginePlugin,
-      [CodeLink, { scanMs: 0 }]
+      [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git" }]
     ]
   });
   await settle();
@@ -156,6 +163,43 @@ describe("starting a ticket", () => {
     const gated = await codeLink.start(project.id, item.id, { mode: "run" });
     expect(gated).toMatchObject({ ok: false, gate: "remote" });
     expect(ctx.items.list({ projectId: project.id }).some((i) => i.labels.includes(BOOTSTRAP_LABEL))).toBe(false);
+  });
+
+  it("refuses a scaffolded repository when the live probe reports a credential failure", async () => {
+    const source = codeRepo();
+    const world = await machine(source, { gitBinary: gitWithFailure("ls-remote", "remote: Repository not found.") });
+    const { codeLink, ctx, project, repo, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, source.checkout);
+    await codeLink.scan(project.id);
+    expect(codeLink.repoState(project.id, repo!.id)?.readiness).toBe("scaffolded");
+
+    const result = await codeLink.start(project.id, ticket("Private work").id, { mode: "run" });
+    expect(result).toMatchObject({ ok: false, gate: "remote", remote: repo!.remote, message: expect.stringContaining("private repository") });
+    expect(codeLink.sessionsOf(project.id)).toEqual([]);
+  });
+
+  it("starts a scaffolded repository with a prompt warning during a network outage", async () => {
+    const source = codeRepo();
+    const world = await machine(source, { gitBinary: gitWithFailure("ls-remote", "fatal: Could not resolve host: github.com") });
+    const { codeLink, ctx, agent, project, repo, ticket, turns } = world;
+    await ctx.repos.setCheckout(repo!.remote, source.checkout);
+    await codeLink.scan(project.id);
+
+    const result = await codeLink.start(project.id, ticket("Offline work").id, { mode: "run" });
+    expect(result).toMatchObject({ ok: true, warnings: [expect.stringContaining("commit locally, do not push")] });
+    await untilRunsSettle(agent);
+    expect((turns[0].messages[0]?.block as { text: string }).text).toContain(result.ok ? result.warnings?.[0] : "missing warning");
+  });
+
+  it("refuses an account that can read origin but cannot dry-run a push", async () => {
+    const source = codeRepo();
+    const world = await machine(source, { gitBinary: gitWithFailure("push", "remote: Permission denied\nfatal: The requested URL returned error: 403") });
+    const { codeLink, ctx, project, repo, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, source.checkout);
+    await codeLink.scan(project.id);
+
+    const result = await codeLink.start(project.id, ticket("Protected write").id, { mode: "run" });
+    expect(result).toMatchObject({ ok: false, gate: "remote", message: expect.stringContaining("credentials") });
   });
 
   it("starts the bootstrap ticket in an empty repository on an unborn branch, and its first push creates the default branch", async () => {
