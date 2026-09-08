@@ -145,7 +145,7 @@ export class Starter {
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const prompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link)
-      : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions });
+      : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, "") });
 
     if (opts.mode === "run") {
       if (!agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.send(projectId, thread.id, { kind: "text", text: prompt });

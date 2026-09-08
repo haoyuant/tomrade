@@ -268,7 +268,10 @@ export class Repos extends Service {
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new CheckoutUnsetError(repo.remote);
     const sub = board.repo_path.replace(/^\/+/, "");
     if (placement.runInCheckout) {
-      return { repo, cwd: path.join(placement.checkout, sub), worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
+      const cwd = path.join(placement.checkout, sub);
+      // The user's own checkout is never written, not even an empty folder.
+      if (!fs.existsSync(cwd)) throw new Error(`${sub || "the repository root"} does not exist in ${placement.checkout} — the workstream's folder has to be there before an agent runs in it`);
+      return { repo, cwd, worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
     }
     const hubDir = this.hub.dir;
     if (!hubDir) throw new Error("Choose the Hub folder first");
@@ -299,7 +302,11 @@ export class Repos extends Service {
         await this.runGit(["worktree", "add", "--orphan", "-b", `tomrade/${threadId.slice(0, 8)}`, worktree], { cwd: checkout });
       }
     }
-    return { repo, cwd: path.join(worktree, sub), worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
+    // A workstream's folder may not exist yet — an empty repository, or one being
+    // bootstrapped into a monorepo layout. In Tomrade's own worktree it can be made.
+    const cwd = path.join(worktree, sub);
+    fs.mkdirSync(cwd, { recursive: true });
+    return { repo, cwd, worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
   }
 
   /** Remove a thread's worktree. The branch, if the agent made one, stays in the checkout. */

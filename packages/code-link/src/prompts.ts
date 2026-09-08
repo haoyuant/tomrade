@@ -14,6 +14,8 @@ export interface FirstPromptInput {
   mcpUrl: string | null;
   /** What the project has already settled, so the agent neither re-decides it nor decides around it. */
   decisions?: Decision[];
+  /** The workstream's folder inside the repository, '' for the root. */
+  subdir?: string;
 }
 
 const conventions = (key: string, defaultBranch: string) =>
@@ -38,6 +40,7 @@ export function firstPrompt(input: FirstPromptInput): string {
     item.body?.trim() || "(no description yet — read the backlog around it, and ask before assuming)",
     "",
     `Repository: ${repo.name} (${repo.remote}) · default branch ${repo.defaultBranch} · your branch ${branch}.`,
+    input.subdir ? `This workstream's code lives in ${input.subdir}/ inside the repository — you are started there; keep the work under it, and put shared files (CLAUDE.md, CI) at the repository root.` : "",
     state?.hasBrief
       ? "Read CLAUDE.md or AGENTS.md before writing anything."
       : state?.readiness === "scaffolded"

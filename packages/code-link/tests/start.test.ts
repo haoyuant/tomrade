@@ -153,6 +153,8 @@ describe("starting a ticket", () => {
     const world = await machine({ remote, checkout });
     const { codeLink, ctx, agent, project, repo, turns, ticket } = world;
     await ctx.repos.setCheckout(remote, checkout);
+    // A monorepo layout from day one: the workstream's folder does not exist yet either.
+    world.boards.update(project.id, world.board.id, { repoPath: "mobile-app" });
     const feature = ticket("First feature");
     const gated = await codeLink.start(project.id, feature.id, { mode: "run" });
     expect(gated).toMatchObject({ ok: false, gate: "readiness" });
@@ -161,11 +163,14 @@ describe("starting a ticket", () => {
     const result = await codeLink.start(project.id, bootstrap.id, { mode: "run" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // No commit anywhere yet: the worktree sits on the ticket's branch, unborn.
+    // No commit anywhere yet: the worktree sits on the ticket's branch, unborn, and the workstream's folder was made for the agent.
+    expect(result.cwd).toBe(path.join(result.worktree!, "mobile-app"));
+    expect(fs.existsSync(result.cwd)).toBe(true);
     expect(git(["symbolic-ref", "HEAD"], result.cwd)).toBe(`refs/heads/${result.branch}`);
     await untilRunsSettle(agent);
     expect(turns).toHaveLength(1);
     expect(turns[0].messages[0]?.block).toMatchObject({ type: "text", text: expect.stringContaining("Bootstrap") });
+    expect((turns[0].messages[0]?.block as { text: string }).text).toContain("lives in mobile-app/");
     // The fake agent made the repository's first commit on that branch.
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], result.cwd)).toBe(result.branch);
 
