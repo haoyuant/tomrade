@@ -49,28 +49,4 @@ describe("settings", () => {
     expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "language"]);
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
-
-  it("user-scope sections follow the Hub folder; secrets and machine sections stay put", async () => {
-    const hubDir = path.join(dir, `hub-${n++}`);
-    const machineFile = file();
-    const { ctx } = await fresh({ hubDir, plugins: [[Settings, { path: machineFile }]] });
-    ctx.settings.register({ id: "token", title: "Token", schema: z.object({ token: z.string().meta({ format: "password" }) }), defaults: { token: "" }, scope: "user" });
-    ctx.settings.register({ id: "git", title: "Git", schema: z.object({ binary: z.string() }), defaults: { binary: "git" } });
-    const scopes = Object.fromEntries(ctx.settings.sections().map((s) => [s.id, s.scope]));
-    expect(scopes).toMatchObject({ theme: "user", language: "user", token: "machine", git: "machine" });
-
-    ctx.settings.set({ ...ctx.settings.get(), theme: "dark", token: { token: "s3cret" }, git: { binary: "/opt/git" } });
-    const user = JSON.parse(fs.readFileSync(path.join(hubDir, "settings.json"), "utf8"));
-    expect(user.sections.theme.value).toBe("dark");
-    expect(typeof user.sections.theme.updatedAt).toBe("number");
-    expect(user.sections.token).toBeUndefined();
-    expect(user.sections.git).toBeUndefined();
-    const machine = JSON.parse(fs.readFileSync(machineFile, "utf8"));
-    expect(machine.token.token).toBe("s3cret");
-
-    // Another machine's file arrives: the later stamp wins per section.
-    ctx.settings.mergeUser({ v: 1, sections: { theme: { value: "matcha", updatedAt: Date.now() + 1000 }, language: { value: "zh", updatedAt: 1 } } });
-    expect(ctx.settings.get().theme).toBe("matcha");
-    expect(ctx.settings.get().language).toBe("system");
-  });
 });

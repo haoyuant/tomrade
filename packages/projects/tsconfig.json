@@ -15,13 +15,7 @@
       "path": "../domain"
     },
     {
-      "path": "../hub"
-    },
-    {
       "path": "../ipc"
-    },
-    {
-      "path": "../tools"
     }
   ]
 }

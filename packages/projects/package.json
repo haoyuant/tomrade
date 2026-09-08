@@ -19,16 +19,10 @@
   "dependencies": {
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
     "@tomrade/ipc": "workspace:*",
-    "@tomrade/tools": "workspace:*",
-    "better-sqlite3": "^13.0.3",
-    "cordis": "4.0.0-rc.8",
-    "zod": "^4.4.3"
+    "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^26.2.0",
     "typescript": "^6.0.0"
   }
 }

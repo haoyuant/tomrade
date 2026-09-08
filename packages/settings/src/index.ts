@@ -3,16 +3,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { AppSettings } from "@tomrade/domain";
-import type {} from "@tomrade/hub";
 import type {} from "@tomrade/ipc";
-
-/**
- * `machine` settings stay on this machine — credentials, paths, binaries.
- * `user` settings are the person's and follow the Hub folder: theme, language,
- * how the assistant is conducted. The safe default is `machine`: a section
- * that forgets to say is one that does not travel, never one that leaks.
- */
-export type SettingsScope = "machine" | "user";
 
 export interface SettingsSection<T = unknown> {
   id: string;
@@ -22,7 +13,6 @@ export interface SettingsSection<T = unknown> {
   defaults: T;
   /** Lower renders first. Core sections sit below 10. */
   order?: number;
-  scope?: SettingsScope;
 }
 
 /** What the renderer gets: the schema as JSON Schema, so a card can be drawn without the plugin's code. */
@@ -31,7 +21,6 @@ export interface SettingsSectionView {
   title: string;
   description?: string;
   order: number;
-  scope: SettingsScope;
   schema: Record<string, unknown>;
 }
 
@@ -52,27 +41,15 @@ declare module "@tomrade/ipc" {
   }
 }
 
-export const SettingsConfig = z.object({
-  /** The machine file. */
-  path: z.string()
-});
+export const SettingsConfig = z.object({ path: z.string() });
 export type SettingsConfig = z.infer<typeof SettingsConfig>;
-
-/** The Hub's settings file: user-scope sections, each stamped so two machines can settle a clash by time. */
-export const USER_SETTINGS_FILE = "settings.json";
-
-interface UserSettingsFile {
-  v: 1;
-  sections: Record<string, { value: unknown; updatedAt: number }>;
-}
 
 const THEME: SettingsSection<AppSettings["theme"]> = {
   id: "theme",
   title: "Appearance",
   schema: z.enum(["system", "light", "dark", "matcha"]),
   defaults: "system",
-  order: 0,
-  scope: "user"
+  order: 0
 };
 
 const LANGUAGE: SettingsSection<AppSettings["language"]> = {
@@ -80,33 +57,10 @@ const LANGUAGE: SettingsSection<AppSettings["language"]> = {
   title: "Language",
   schema: z.enum(["system", "en", "zh"]),
   defaults: "system",
-  order: 1,
-  scope: "user"
+  order: 1
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-
-const readJson = (file: string): unknown => {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return undefined;
-  }
-};
-
-const writeJson = (file: string, value: unknown): void => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
-  fs.renameSync(tmp, file);
-};
-
-/** A section whose schema names a password never leaves the machine, whatever it declares. */
-function holdsSecret(schema: z.ZodType): boolean {
-  const json = z.toJSONSchema(schema) as { format?: string; properties?: Record<string, { format?: string }> };
-  if (json.format === "password") return true;
-  return Object.values(json.properties ?? {}).some((p) => p.format === "password");
-}
 
 export class Settings extends Service {
   static provide = "settings";
@@ -114,52 +68,28 @@ export class Settings extends Service {
 
   private registry = new Map<string, SettingsSection>();
   private stored: Record<string, unknown> = {};
-  private user: UserSettingsFile = { v: 1, sections: {} };
-  private userFile: string | null = null;
-  private readonly home: Context;
 
   constructor(
     ctx: Context,
     public readonly config: SettingsConfig
   ) {
     super(ctx, "settings");
-    this.home = ctx;
   }
 
   [Service.init]() {
-    const raw = readJson(this.config.path);
-    if (isRecord(raw)) this.stored = raw;
+    try {
+      const raw: unknown = JSON.parse(fs.readFileSync(this.config.path, "utf8"));
+      if (isRecord(raw)) this.stored = raw;
+    } catch {
+      // first run
+    }
     this.register(THEME);
     this.register(LANGUAGE);
-    this.home.inject(["ipc"], (ctx) => {
+    this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
       ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));
       ctx.ipc.handle("settings.sections", () => ctx.settings.sections());
     });
-    // User-scope sections follow the Hub folder once there is one.
-    this.home.inject(["hub"], (ctx) => {
-      const attach = (dir: string | null) => {
-        this.userFile = dir ? path.join(dir, USER_SETTINGS_FILE) : null;
-        this.loadUser();
-      };
-      attach(ctx.hub.dir);
-      const off = ctx.on("hub/configured", (dir) => {
-        const before = this.get();
-        attach(dir);
-        // Whatever this machine had chosen travels along when the Hub is first set up.
-        if (!Object.keys(this.user.sections).length) this.persistUser();
-        this.home.emit("settings/changed", this.get(), before);
-      });
-      return () => {
-        off();
-        this.userFile = null;
-        this.user = { v: 1, sections: {} };
-      };
-    });
-  }
-
-  scopeOf(section: SettingsSection): SettingsScope {
-    return section.scope === "user" && !holdsSecret(section.schema) ? "user" : "machine";
   }
 
   /** Reversible: the section and its card disappear with the plugin that registered them. */
@@ -173,23 +103,15 @@ export class Settings extends Service {
 
   sections(): SettingsSectionView[] {
     return [...this.registry.values()]
-      .map((s) => ({ id: s.id, title: s.title, description: s.description, order: s.order ?? 100, scope: this.scopeOf(s), schema: z.toJSONSchema(s.schema) as Record<string, unknown> }))
+      .map((s) => ({ id: s.id, title: s.title, description: s.description, order: s.order ?? 100, schema: z.toJSONSchema(s.schema) as Record<string, unknown> }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-  }
-
-  private storedValue(section: SettingsSection): unknown {
-    if (this.userFile && this.scopeOf(section) === "user") {
-      const entry = this.user.sections[section.id];
-      if (entry) return entry.value;
-    }
-    return this.stored[section.id];
   }
 
   /** Registered sections come back complete: defaults filled in under whatever was stored. */
   get(): AppSettings {
     const out: Record<string, unknown> = { ...this.stored };
     for (const s of this.registry.values()) {
-      const stored = this.storedValue(s);
+      const stored = this.stored[s.id];
       out[s.id] = isRecord(s.defaults) && isRecord(stored) ? { ...s.defaults, ...stored } : (stored ?? s.defaults);
     }
     return out as AppSettings;
@@ -198,67 +120,16 @@ export class Settings extends Service {
   set(next: AppSettings): AppSettings {
     const previous = this.get();
     const stored = { ...this.stored };
-    const now = Date.now();
-    let userTouched = false;
     for (const [id, value] of Object.entries(next)) {
       const section = this.registry.get(id);
-      const parsed = section ? section.schema.parse(value) : value;
-      if (section && this.userFile && this.scopeOf(section) === "user") {
-        if (JSON.stringify(this.user.sections[id]?.value) !== JSON.stringify(parsed)) {
-          this.user.sections[id] = { value: parsed, updatedAt: now };
-          userTouched = true;
-        }
-        // The machine file keeps a copy, so a Hub that is moved away leaves nothing behind.
-        stored[id] = parsed;
-      } else {
-        stored[id] = parsed;
-      }
+      stored[id] = section ? section.schema.parse(value) : value;
     }
     this.stored = stored;
-    writeJson(this.config.path, stored);
-    if (userTouched) this.persistUser();
+    fs.mkdirSync(path.dirname(this.config.path), { recursive: true });
+    fs.writeFileSync(this.config.path, JSON.stringify(stored, null, 2), "utf8");
     const current = this.get();
-    this.home.emit("settings/changed", current, previous);
+    this.ctx.emit("settings/changed", current, previous);
     return current;
-  }
-
-  /** The user-scope file as another machine may have written it, folded in: the later stamp wins per section. */
-  mergeUser(theirs: unknown): void {
-    if (!isRecord(theirs) || !isRecord(theirs.sections)) return;
-    let changed = false;
-    for (const [id, entry] of Object.entries(theirs.sections)) {
-      if (!isRecord(entry) || typeof entry.updatedAt !== "number") continue;
-      const mine = this.user.sections[id];
-      if (!mine || entry.updatedAt > mine.updatedAt) {
-        this.user.sections[id] = { value: entry.value, updatedAt: entry.updatedAt };
-        changed = true;
-      }
-    }
-    if (changed) {
-      this.persistUser();
-      this.home.emit("settings/changed", this.get(), this.get());
-    }
-  }
-
-  private loadUser(): void {
-    this.user = { v: 1, sections: {} };
-    if (!this.userFile) return;
-    const raw = readJson(this.userFile);
-    if (isRecord(raw) && isRecord(raw.sections)) {
-      for (const [id, entry] of Object.entries(raw.sections)) {
-        if (isRecord(entry) && typeof entry.updatedAt === "number") this.user.sections[id] = { value: entry.value, updatedAt: entry.updatedAt };
-      }
-    }
-  }
-
-  private persistUser(): void {
-    if (!this.userFile) return;
-    // Seed from the machine file the first time, so a fresh Hub starts with what the person already chose.
-    for (const s of this.registry.values()) {
-      if (this.scopeOf(s) !== "user" || this.user.sections[s.id] || this.stored[s.id] === undefined) continue;
-      this.user.sections[s.id] = { value: this.stored[s.id], updatedAt: Date.now() };
-    }
-    writeJson(this.userFile, this.user);
   }
 }
 

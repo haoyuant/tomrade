@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
