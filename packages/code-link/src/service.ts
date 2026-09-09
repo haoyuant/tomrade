@@ -34,6 +34,8 @@ import { registerTools } from "./tools.js";
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
 export const AUTHOR: Author = "sync:git";
 
+const hasLiveSession = (sessions: SessionView[]): boolean => sessions.some((s) => s.state !== "lost");
+
 declare module "cordis" {
   interface Context {
     codeLink: CodeLink;
@@ -721,10 +723,11 @@ export class CodeLink extends Service {
         unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum: b.keyNum, sha: b.sha, committedAt: b.committedAt });
         continue;
       }
+      const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
       const link = this.store.upsertLink(
         projectId,
         { itemId: item.id, repoId: repo.id, branch: b.name },
-        { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
+        { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: working ? null : (b.merged ? result.defaultSha : undefined), lastSeenAt: now }
       );
       seen.add(link.id);
       touched.add(item.id);
@@ -738,7 +741,8 @@ export class CodeLink extends Service {
       if (l.source !== "manual" || seen.has(l.id) || !l.branch) continue;
       const b = result.branches.find((x) => x.name === l.branch);
       if (!b) continue;
-      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now });
+      const working = hasLiveSession(this.store.sessions(projectId, { itemId: l.itemId, live: true }));
+      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: working ? null : (b.merged ? result.defaultSha : undefined), lastSeenAt: now });
       seen.add(l.id);
     }
 
@@ -746,9 +750,16 @@ export class CodeLink extends Service {
       const item = byNum.get(keyNum);
       if (!item) continue;
       const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id);
+      const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
       if (own.length) {
-        for (const l of own) if (!l.mergedSha) this.store.patchLink(projectId, l.id, { mergedSha: commit.sha });
-      } else {
+        for (const l of own) {
+          if (working) {
+            if (l.mergedSha) this.store.patchLink(projectId, l.id, { mergedSha: null });
+          } else if (!l.mergedSha) {
+            this.store.patchLink(projectId, l.id, { mergedSha: commit.sha });
+          }
+        }
+      } else if (!working) {
         this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "" }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
       }
       touched.add(item.id);
@@ -782,11 +793,13 @@ export class CodeLink extends Service {
     if (!links.length) return { changed: 0, proposals: 0 };
     const present = links.filter((l) => l.branch && seen.has(l.id));
     const primary = primaryOf(links);
+    const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
+    if (working) for (const link of links) if (link.mergedSha) this.store.patchLink(projectId, link.id, { mergedSha: null });
     const evidence: Evidence = {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: links.some((l) => !!l.mergedSha),
-      working: this.store.sessions(projectId, { itemId: item.id, live: true }).some((s) => s.state === "running"),
+      merged: !working && links.some((l) => !!l.mergedSha),
+      working,
       pr: primary?.prState ?? null,
       movedAfterDone:
         item.status === "done" &&
@@ -798,8 +811,17 @@ export class CodeLink extends Service {
     const evidenceSha = primary?.mergedSha ?? primary?.headSha ?? null;
     let changed = 0;
     let proposals = 0;
+    let status = item.status;
+    // A previous scan may have written Done just before the terminal session
+    // was rebound after an app restart. Once the live process is visible again,
+    // undo that sync-only transition so the ticket reflects the work in flight.
+    if (evidence.working && status === "done" && item.updatedBy === AUTHOR) {
+      this.ctx.items.update(projectId, item.id, { status: "doing" }, AUTHOR);
+      status = "doing";
+      changed += 1;
+    }
     const standing = new Set<string>();
-    for (let d of decide(item.status, evidence, { autoDone, humanLocked: item.humanLocked })) {
+    for (let d of decide(status, evidence, { autoDone, humanLocked: item.humanLocked })) {
       if (d.kind === "auto") {
         try {
           this.ctx.items.update(projectId, item.id, { status: d.to }, AUTHOR);

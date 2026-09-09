@@ -130,6 +130,32 @@ describe("code link", () => {
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 0, behind: 0, mergedSha: null });
   });
 
+  it("ignores merge-message evidence while the ticket still has an active session", async () => {
+    const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Merge message while working", "doing");
+    const branch = `tom-${item.keyNum}/merge-message`;
+    commitOn(checkout, branch, "work.ts", "work in progress");
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--squash", branch], checkout);
+    git(["commit", "-q", "-m", `TOM-${item.keyNum}: squash merge`], checkout);
+    git(["branch", "-q", "-D", branch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    codeLink.store.createSession(project.id, {
+      repoId: repo.id,
+      branch,
+      itemIds: [item.id],
+      mode: "terminal",
+      agent: "claude-code",
+      threadId: null,
+      device: "test"
+    });
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(codeLink.links(project.id, item.id)[0].mergedSha).toBeNull();
+    expect(ctx.items.get(project.id, item.id)!.updatedBy).toBe("human");
+  });
+
   it("reads a squash merge from the default branch's message when the branch is already gone", async () => {
     const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Squashed", "doing");

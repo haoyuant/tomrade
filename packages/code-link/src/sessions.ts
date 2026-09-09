@@ -354,10 +354,19 @@ export class Sessions {
   /** After a restart no headless process is left; the row says so, and the ticket still offers Continue. */
   reconcile(projectId: string): void {
     let changed = false;
-    for (const s of this.store.sessions(projectId, { live: true })) {
-      if (s.mode !== "headless" || s.state === "lost") continue;
-      this.store.patchSession(projectId, s.id, { state: "lost", activity: null });
-      changed = true;
+    for (const s of this.store.sessions(projectId)) {
+      if (s.mode === "headless" && s.state !== "ended" && s.state !== "lost") {
+        this.store.patchSession(projectId, s.id, { state: "lost", activity: null });
+        changed = true;
+        continue;
+      }
+      // The app may restart while the terminal wrapper (and its agent) keeps
+      // running. Preserve that session so a startup scan cannot call its
+      // ticket merged merely because the old process lost its in-memory hook.
+      if (s.mode === "terminal" && s.state === "ended" && this.processAlive(s.id) === true) {
+        this.store.patchSession(projectId, s.id, { state: "running", endedAt: null });
+        changed = true;
+      }
     }
     if (changed) this.options.onChange(projectId);
   }
