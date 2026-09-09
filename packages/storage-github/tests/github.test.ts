@@ -89,6 +89,7 @@ describe("the GitHub provider", () => {
     // The renderer draws this inline; it also knows where to send the user for one.
     expect(provider.connection?.label).toMatch(/token/i);
     expect(provider.connection?.url).toMatch(/^https:\/\/github\.com\//);
+    expect(new URL(provider.connection!.url!).searchParams.get("scopes")).toBe("repo,workflow");
     expect(provider.creatable).toBe(true);
     // The section still exists — it is where the token is kept — but the provider
     // claims it, and the settings dialog skips any section a provider claims.
