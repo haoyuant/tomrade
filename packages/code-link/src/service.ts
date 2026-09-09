@@ -34,7 +34,8 @@ import { registerTools } from "./tools.js";
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
 export const AUTHOR: Author = "sync:git";
 
-const hasLiveSession = (sessions: SessionView[]): boolean => sessions.some((s) => s.state !== "lost");
+const hasLiveSession = (sessions: SessionView[]): boolean =>
+  sessions.some((s) => s.mode === "terminal" || s.state === "running" || s.state === "waiting" || s.state === "error");
 
 declare module "cordis" {
   interface Context {
@@ -108,7 +109,7 @@ declare module "@tomrade/ipc" {
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
     "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
-    /** Put .mcp.json, a CLAUDE.md section and hooks into the repository, on a branch, as a pull request. */
+    /** Put Claude/Codex MCP config, agent instructions and hooks into the repository, on a branch, as a pull request. */
     "codeLink.connect": (projectId: string, repoId: string) => ConnectResult;
   }
   interface Broadcasts {
@@ -269,6 +270,16 @@ export class CodeLink extends Service {
       if (session && !session.itemIds.includes(intent.id)) this.store.patchSession(bound.projectId, session.id, { itemIds: [...session.itemIds, intent.id] });
     });
     this.home.inject(["agent"], (ctx) => {
+      const placeTerminalThreads = (projectId: string) => {
+        for (const session of this.store.sessions(projectId)) {
+          if (session.mode !== "terminal" || !session.threadId) continue;
+          const thread = ctx.agent.store.thread(projectId, session.threadId);
+          if (thread && thread.surface !== "code") ctx.agent.store.touchThread(projectId, thread.id, { surface: "code" });
+        }
+      };
+      for (const projectId of this.ctx.db.openIds()) placeTerminalThreads(projectId);
+      ctx.on("db/opened", placeTerminalThreads);
+      ctx.on("storage/imported", placeTerminalThreads);
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
       ctx.on("agent/run-started", (_run, thread) => {
         const session = this.sessionOf(thread);
@@ -514,8 +525,8 @@ export class CodeLink extends Service {
   }
 
   /**
-   * Connect a repository to Tomrade for everyone who clones it: `.mcp.json`,
-   * a `## Tomrade` section in CLAUDE.md, hooks in `.claude/settings.json` —
+   * Connect a repository to Tomrade for everyone who clones it: Claude and
+   * Codex MCP config, agent instruction files, and Claude lifecycle hooks —
    * written in a worktree on a branch of their own and offered as a pull
    * request, never into the user's checkout.
    */
@@ -543,7 +554,7 @@ export class CodeLink extends Service {
         branchTemplate: state?.branchTemplate ?? "{key}/{slug}"
       });
       const folder = new GitFolder(this.git, view.worktree);
-      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\n.mcp.json names the project's MCP endpoint, CLAUDE.md tells coding agents the ticket conventions, .claude/settings.json reports session lifecycle back."));
+      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code and Codex discover Tomrade, agent instructions describe the ticket conventions, and Claude hooks report session lifecycle back."));
       if (!committed) return { branch, files, committed: false, pushed: false, url: null, message: files.length ? "nothing new to commit" : `${repo.name} is already connected` };
       if (state && !state.agentPush) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch} in the checkout — pushing from Tomrade is off for ${repo.name}` };
       const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: view.worktree, ok: true })).code === 0;
@@ -759,8 +770,10 @@ export class CodeLink extends Service {
             this.store.patchLink(projectId, l.id, { mergedSha: commit.sha });
           }
         }
-      } else if (!working) {
-        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "" }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
+      } else {
+        // Keep the evidence visible even while a live session makes it too
+        // early to accept that evidence as completion.
+        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "" }, { headSha: commit.sha, headAt: commit.at, mergedSha: working ? null : commit.sha, lastSeenAt: now, source: "scan" });
       }
       touched.add(item.id);
     }
@@ -999,7 +1012,7 @@ export class CodeLink extends Service {
     ctx.contributions.command({ id: "code-link.reject-proposal", title: "Dismiss the code proposal", group: "Code", run: settle(false) });
     ctx.contributions.command({
       id: "code-link.connect",
-      title: "Connect repository to Claude Code",
+      title: "Connect repository to coding agents",
       group: "Code",
       run: async ({ projectId, itemId }) => {
         if (!projectId) return { toast: "Open a project first" };
@@ -1066,8 +1079,9 @@ export class CodeLink extends Service {
     return this.store.sessions(thread.projectId, { live: true }).find((s) => s.threadId === thread.id) ?? null;
   }
 
-  /** A terminal session's moments reach the ticket's thread as notes, so the panel mirrors what happened out there. */
+  /** Headless sessions may annotate their Assistant thread; terminal results stay in Code > Session. */
   private noteMoment(session: SessionView, moment: SessionMoment): void {
+    if (session.mode === "terminal") return;
     if (!session.threadId) return;
     const agent = this.ctx.get("agent");
     if (!agent?.store.thread(session.projectId, session.threadId)) return;

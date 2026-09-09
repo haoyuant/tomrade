@@ -1,6 +1,6 @@
 /**
  * The fast path for a developer's own terminal: a repository connected to
- * Tomrade (.mcp.json, CLAUDE.md, hooks) as a pull request, tokenless hooks that
+ * Tomrade (Claude and Codex MCP config, agent instructions, hooks) as a pull request, tokenless hooks that
  * still find their session by cwd, claim_ticket from such a session, and a
  * branch nobody's ticket names becoming a ticket.
  */
@@ -73,17 +73,24 @@ describe("connecting a repository", () => {
     const dir = path.join(root, `files-${n++}`);
     fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { other: { type: "stdio", command: "x" } } }));
+    fs.mkdirSync(path.join(dir, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".codex", "config.toml"), '[mcp_servers.other]\ncommand = "x"\n');
     fs.writeFileSync(path.join(dir, "CLAUDE.md"), "# app\n\n## Tomrade\n\nold words\n\n## Layout\n\nkeep me\n");
+    fs.writeFileSync(path.join(dir, "AGENTS.md"), "# Agents\n\nKeep this.\n");
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).sort()).toEqual([".claude/settings.json", ".mcp.json", "CLAUDE.md"]);
+    expect(writeConnectFiles(dir, input).sort()).toEqual([".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
+    const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
+    expect(codex).toContain('[mcp_servers.other]\ncommand = "x"');
+    expect(codex).toContain('[mcp_servers.tomrade]\nurl = "http://127.0.0.1:19090/mcp/p1"');
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).not.toContain("old words");
     expect(claude).toContain('claim_ticket("APP-42")');
     expect(claude).toContain("## Layout\n\nkeep me");
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
     const settings = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")) as { permissions: unknown; hooks: Record<string, unknown[]> };
     expect(settings.permissions).toEqual({ allow: ["Bash(pnpm test)"] });
     expect(settings.hooks.Stop).toHaveLength(2);
@@ -97,11 +104,12 @@ describe("connecting a repository", () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
     const result = await codeLink.connect(project.id, repo.id);
     expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
-    expect(result.files.sort()).toEqual([".claude/settings.json", ".mcp.json", "CLAUDE.md"]);
+    expect(result.files.sort()).toEqual([".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
     git(["fetch", "-q", "origin"], checkout);
     expect(git(["show", "origin/tomrade/connect:.mcp.json"], checkout)).toContain("/mcp/");
+    expect(git(["show", "origin/tomrade/connect:.codex/config.toml"], checkout)).toContain("mcp_servers.tomrade");
     expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
     expect(git(["status", "--porcelain"], checkout)).toBe("");
   });

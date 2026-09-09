@@ -35,6 +35,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^26.2.0",
     "typescript": "^6.0.0"
   }

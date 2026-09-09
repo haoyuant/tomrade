@@ -101,12 +101,12 @@ ALTER TABLE plugin_code_link_repos ADD COLUMN remote_at INTEGER;
   }
 ];
 
-/** Every table travels in the project's folder; the merge is row-level, later write wins. */
+/** Durable code links travel with the project; running sessions belong to this machine. */
 export const TABLES = {
   plugin_code_link_links: { project: "project_id", export: { order: "id" } },
   plugin_code_link_repos: { project: "project_id", export: { order: "repo_id" } },
   plugin_code_link_proposals: { project: "project_id", export: { order: "id" } },
-  plugin_code_link_sessions: { project: "project_id", export: { order: "id" } }
+  plugin_code_link_sessions: { project: "project_id", export: false }
 } as const;
 
 export type LinkSource = "start" | "scan" | "mcp" | "manual";

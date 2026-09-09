@@ -61,6 +61,8 @@ export interface NewThreadOptions {
   itemId?: string | null;
   branch?: string | null;
   title?: string;
+  /** The UI that owns this thread. Defaults to the Assistant panel. */
+  surface?: "assistant" | "code";
 }
 
 declare module "cordis" {
@@ -369,7 +371,7 @@ export class Agent extends Service {
 
   newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
     const chosen = engine ?? this.settingsOf().defaultEngine;
-    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null);
+    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
   }
 
   /** The engines that may take a code turn — a local coding agent, never the in-app model. */

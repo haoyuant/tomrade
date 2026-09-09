@@ -9,6 +9,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomrade/agent";
 import { CodeLink, BOOTSTRAP_LABEL } from "@tomrade/code-link";
@@ -424,6 +426,15 @@ describe("starting a ticket", () => {
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`Implement ${item.key}`);
     expect(fs.existsSync(path.join(dir, "run.command"))).toBe(true);
 
+    // The native MCP client goes through the session binding, not the plain
+    // project endpoint. Deferred tool execution must retain the Tools service.
+    const client = new Client({ name: "terminal-test", version: "0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(mcpConfig.mcpServers.tomrade.url), { requestInit: { headers: { "X-Tomrade-Run": token } } }));
+    const listed = await client.callTool({ name: "list_items", arguments: {} });
+    expect(listed.isError).not.toBe(true);
+    expect(JSON.stringify(listed.content)).toContain(item.key);
+    await client.close();
+
     // A hook posts to the event URL: the session's state follows.
     const post = async (payload: unknown) => {
       const res = await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -435,7 +446,7 @@ describe("starting a ticket", () => {
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual(expect.arrayContaining([{ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" }]));
 
-    // Each tool call says what the agent is doing; what it says when it stops reaches the ticket and its thread.
+    // Each tool call says what the agent is doing; what it says when it stops stays with the Code session.
     await post({ hook_event_name: "PreToolUse", session_id: "cli-abc", tool_name: "Bash", tool_input: { command: "flutter create ." } });
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "running", activity: "Bash · flutter create ." });
     expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ state: "live", value: expect.stringContaining("Bash · flutter create .") });
@@ -443,13 +454,12 @@ describe("starting a ticket", () => {
     expect(codeLink.sessionsOf(project.id, item.id)[0].activity).toBeNull();
     await post({ hook_event_name: "Stop", session_id: "cli-abc", last_assistant_message: "Scaffold in place.\n\nNext: CI." });
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "waiting", summary: "Scaffold in place." });
-    const notes = () => ctx.agent.store.messages(project.id, result.threadId).filter((m) => m.block.type === "note").map((m) => (m.block as { text: string }).text);
-    // The note names the engine the session runs — the fake one here, Claude Code in life.
-    expect(notes()).toContain("fake-code: Scaffold in place.\n\nNext: CI.");
+    expect(ctx.agent.store.threads(project.id)).toEqual([]);
+    expect(ctx.agent.store.thread(project.id, result.threadId)).toMatchObject({ surface: "code" });
+    expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
     await post({ hook_event_name: "StopFailure", session_id: "cli-abc", error_type: "rate_limit", error_message: "retry after 20:00" });
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", summary: "stopped: rate_limit — retry after 20:00" });
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual(expect.arrayContaining([{ id: "stuck", label: "stuck", tone: "strong", title: "stopped: rate_limit — retry after 20:00" }]));
-    expect(notes()).toContain("fake-code stopped: rate_limit — retry after 20:00");
     // Tomrade restarts: the binding is gone from memory, the token is still in the session's folder, and comes back.
     codeLink.sessions.release(result.sessionId);
     expect(await post({ hook_event_name: "PostToolUse" })).toBe(404);
@@ -459,9 +469,8 @@ describe("starting a ticket", () => {
 
     expect(await post({ hook_event_name: "SessionEnd" })).toBe(200);
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("ended");
+    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("ended") });
     expect(await post({ hook_event_name: "SessionStart" })).toBe(404);
-
-    expect(notes()).toContain("fake-code session ended.");
 
     // Continuing resumes the CLI session it learned about.
     const again = await codeLink.start(project.id, item.id, { mode: "terminal" });
@@ -475,6 +484,6 @@ describe("starting a ticket", () => {
     fs.writeFileSync(path.join(codeLink.sessionDir(again.sessionId), "pid"), "99999\n");
     codeLink.sessions.sweep(project.id);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: again.sessionId, state: "ended" });
-    expect(notes().at(-1)).toBe("fake-code session ended (process exited).");
+    expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
   });
 });

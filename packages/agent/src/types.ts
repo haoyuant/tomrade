@@ -38,6 +38,8 @@ export interface ThreadMessage {
   at: number;
 }
 
+export type ThreadSurface = "assistant" | "code";
+
 export interface ThreadSummary {
   id: string;
   projectId: string;
@@ -49,6 +51,8 @@ export interface ThreadSummary {
   branch: string | null;
   title: string;
   engine: string;
+  /** Which product surface owns the thread. Code sessions use Agent's worktree machinery without becoming Assistant conversations. */
+  surface: ThreadSurface;
   createdAt: number;
   updatedAt: number;
 }

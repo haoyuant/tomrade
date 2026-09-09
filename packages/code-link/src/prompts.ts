@@ -51,7 +51,7 @@ export function firstPrompt(input: FirstPromptInput): string {
     accepted.length
       ? `Decisions on record (list_decisions has the details): ${accepted.map((d) => `${d.id} ${d.title}${d.areas.length ? ` [${d.areas.join(", ")}]` : ""}`).join("; ")}. Anything cross-cutting outside these: ask, then record_decision.`
       : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",
-    mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json: ${mcpUrl}` : "",
+    mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json and .codex/config.toml: ${mcpUrl}` : "",
     "",
     conventions(item.key, repo.defaultBranch)
   ];

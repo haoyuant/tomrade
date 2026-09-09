@@ -25,6 +25,7 @@ export {
   type Suspended,
   type ThreadMessage,
   type ThreadSummary,
+  type ThreadSurface,
   type TurnInput,
   type TurnIO,
   type TurnPurpose,

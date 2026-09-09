@@ -128,12 +128,17 @@ export class Sessions {
 
   /** What a session's token does when it is used: attribute the call, note the sign of life, hear the hooks. */
   private binding(session: SessionView, author: Author) {
+    // Cordis service access through `ctx.tools` is scoped to the synchronous
+    // inject callback. MCP invokes this function later, after that scope has
+    // gone, so retain the concrete service while the binding is created.
+    const tools = this.ctx.get("tools");
+    if (!tools) throw new Error("the tools plugin is not loaded");
     return {
       author,
       projectId: session.projectId,
       execute: (name: string, args: unknown) => {
         this.touch(session.projectId, session.id, { state: "running", tool: true });
-        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => this.ctx.tools.execute(name, args, { by: author, projectId: session.projectId }));
+        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => tools.execute(name, args, { by: author, projectId: session.projectId }));
       },
       event: (payload: unknown) => this.event(session.projectId, session.id, payload)
     };

@@ -124,6 +124,8 @@ export class Starter {
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
     const terminalSettings = TerminalSettings.parse(ctx.settings.get().codeLink ?? {});
+    const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
+    const surface = mode === "terminal" ? "code" : "assistant";
     // In a terminal any CLI agent with an MCP client will do: "other" is whatever the machine's command template names.
     const other = opts.mode === "terminal" && (opts.engine === "other" || (!opts.engine && agent.codeEngines().length === 0)) && !!terminalSettings.otherCommand.trim();
     let engineId = "other";
@@ -143,10 +145,14 @@ export class Starter {
     let branch = previous?.branch ?? links[0]?.branch ?? "";
     if (thread) {
       continued = true;
+      if (thread.surface !== surface) {
+        agent.store.touchThread(projectId, thread.id, { surface });
+        thread = agent.store.thread(projectId, thread.id)!;
+      }
       if (engineId !== "other" && thread.engine !== engineId && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engineId);
     } else {
       branch = plannedBranch;
-      thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}` });
+      thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}`, surface });
     }
 
     const where = await agent.workdir(projectId, thread.id);
@@ -157,7 +163,6 @@ export class Starter {
     const link = store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch }, { threadId: thread.id, source: continued ? undefined : "start", lastSeenAt: now });
     if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, "human");
 
-    const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
     const onThread = store.sessions(projectId, { itemId: item.id }).filter((s) => s.threadId === thread!.id);
     const live = onThread.find((s) => s.state !== "ended" && s.mode === mode) ?? null;
     // The CLI's own session id is what Continue resumes: the platform learned it from a headless run, a hook from a terminal one.
