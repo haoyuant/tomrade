@@ -1,0 +1,228 @@
+import type { Context } from "cordis";
+import { z } from "zod";
+import type {} from "@tomrade/agent";
+import type {} from "@tomrade/boards";
+import type {} from "@tomrade/items";
+import type {} from "@tomrade/repos";
+import type {} from "@tomrade/storage";
+import type { Item } from "@tomrade/domain";
+import { defineTool, requireProjectId, type ToolInvocation } from "@tomrade/tools";
+import { covered, listDecisions, recordDecision } from "./decisions.js";
+import { DEFAULT_BRANCH_TEMPLATE, branchFor } from "./keys.js";
+import { sessionContext } from "./sessions.js";
+import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
+import type { PrState } from "./rules.js";
+
+/** What the tools need from the service without importing it. */
+export interface ToolHost {
+  store: CodeLinkStore;
+  /** Re-judge one ticket in one repository after a link changed by hand or by tool. */
+  reevaluate(projectId: string, itemId: string, repoId: string): void;
+  noteProgress(projectId: string, sessionId: string, text: string): void;
+  /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
+  attach(projectId: string, sessionId: string, itemId: string, branch: string): void;
+  /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet. */
+  externalSession(projectId: string, repoId: string): SessionView | null;
+  notify(projectId: string): void;
+}
+
+/** The ticket, repository and branch a call is about: named by key, or implied by the session or the run's thread. */
+interface Subject {
+  item: Item;
+  repoId: string | null;
+  branch: string | null;
+  session: SessionView | null;
+}
+
+const PR_NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/;
+
+export function registerTools(ctx: Context, host: ToolHost): void {
+  const subject = (tool: string, projectId: string, key: string | undefined, inv: ToolInvocation): Subject => {
+    const bound = sessionContext.getStore();
+    const session = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
+    const thread = inv.run ? (ctx.get("agent")?.store.thread(projectId, inv.run.threadId) ?? null) : null;
+    const runSession = thread ? (host.store.sessions(projectId, { live: true }).find((s) => s.threadId === thread.id) ?? null) : null;
+    const s = session ?? runSession;
+
+    let item: Item | null = null;
+    if (key) item = ctx.items.getByKey(projectId, key.toUpperCase());
+    else if (s?.itemIds[0]) item = ctx.items.get(projectId, s.itemIds[0]);
+    else if (thread?.itemId) item = ctx.items.get(projectId, thread.itemId);
+    if (!item) throw new Error(key ? `${tool}: no ticket ${key} in this project` : `${tool}: this session is not on a ticket — pass key`);
+    if (s?.itemIds.length && !s.itemIds.includes(item.id)) {
+      const held = ctx.items.get(projectId, s.itemIds[0]);
+      throw new Error(`${tool}: this session owns ${held?.key ?? "another ticket"}, not ${item.key} — use a separate session`);
+    }
+
+    const board = ctx.boards.get(projectId, item.boardId);
+    const repoId = s?.repoId ?? board?.repoId ?? null;
+    const branch = s?.branch ?? thread?.branch ?? null;
+    return { item, repoId, branch, session: s };
+  };
+
+  ctx.tools.register(
+    defineTool({
+      name: "link_code",
+      title: "Link code to a ticket",
+      description:
+        "Attach a branch and/or pull request to a ticket. A coding session must inspect its complete diff and pass scopeChecked: true; then the ticket moves to Verifying. Without `key` it applies to the ticket this session was started from.",
+      input: z.object({
+        key: z.string().optional().describe("Ticket key, e.g. TOM-42; defaults to this session's ticket"),
+        branch: z.string().optional().describe("Branch name; defaults to this session's branch"),
+        prUrl: z.string().url().optional(),
+        prNumber: z.number().int().positive().optional(),
+        prState: z.enum(["open", "merged", "closed"]).optional().describe("Defaults to open when a prUrl is given"),
+        scopeChecked: z.literal(true).optional().describe("Required from a coding session: every change in the full diff maps to this ticket's acceptance criteria"),
+        projectId: z.string().optional()
+      }),
+      execute: (args, inv) => {
+        const projectId = requireProjectId("link_code", args.projectId, inv);
+        const { item, repoId, branch: implied, session } = subject("link_code", projectId, args.key, inv);
+        if (session && args.scopeChecked !== true) {
+          throw new Error("link_code: inspect the complete diff against the default branch, remove work outside this ticket, then pass scopeChecked: true");
+        }
+        if (!repoId) throw new Error(`link_code: ${item.key}'s workstream has no repository`);
+        const existing = host.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.branch);
+        const branch = args.branch?.replace(/^origin\//, "") ?? implied ?? existing[0]?.branch ?? "";
+        if (!branch) throw new Error("link_code: pass branch — this session has none");
+        const prNumber = args.prNumber ?? (args.prUrl ? Number(PR_NUMBER.exec(args.prUrl)?.[1]) || null : null);
+        const prState: PrState | null = args.prState ?? (args.prUrl ? "open" : null);
+        const link: CodeLinkView = host.store.upsertLink(
+          projectId,
+          { itemId: item.id, repoId, branch },
+          {
+            ...(args.prUrl ? { prUrl: args.prUrl } : {}),
+            ...(prNumber ? { prNumber } : {}),
+            ...(prState ? { prState } : {}),
+            ...(inv.run ? { threadId: inv.run.threadId } : {}),
+            source: "mcp",
+            lastSeenAt: Date.now()
+          }
+        );
+        host.reevaluate(projectId, item.id, repoId);
+        const after = ctx.items.get(projectId, item.id)!;
+        return { key: after.key, status: after.status, branch: link.branch, prUrl: link.prUrl, prState: link.prState };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "note_progress",
+      title: "Note progress on the ticket",
+      description: "One line about where the work stands (\"tests green, wiring the API next\"). Shown on the ticket while the session runs. Applies to this session's ticket unless `key` is given.",
+      input: z.object({ text: z.string().min(1).max(280), key: z.string().optional(), projectId: z.string().optional() }),
+      execute: (args, inv) => {
+        const projectId = requireProjectId("note_progress", args.projectId, inv);
+        const { item, session } = subject("note_progress", projectId, args.key, inv);
+        if (!session) throw new Error(`note_progress: no live coding session on ${item.key}`);
+        host.noteProgress(projectId, session.id, args.text.trim());
+        return { ok: true, key: item.key };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "claim_ticket",
+      title: "Claim a ticket to work on",
+      description:
+        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. One session may own only one ticket; start a separate session for another ticket.",
+      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      execute: (args, inv) => {
+        const projectId = requireProjectId("claim_ticket", args.projectId, inv);
+        const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
+        if (!item) throw new Error(`claim_ticket: no ticket ${args.key} in this project`);
+        if (item.humanLocked) throw new Error(`claim_ticket: ${item.key} is human-locked — ask the owner to unlock it`);
+        const board = ctx.boards.get(projectId, item.boardId);
+        const repoId = board?.repoId ?? null;
+        const repo = repoId ? ctx.repos.get(projectId, repoId) : null;
+        const state = repoId ? host.store.repoState(projectId, repoId) : null;
+        const blockers = item.blockedBy.map((id) => ctx.items.get(projectId, id)).filter((b): b is Item => !!b && b.status !== "done" && b.status !== "cancelled");
+
+        const bound = sessionContext.getStore();
+        const session = (bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null) ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        const other = session?.itemIds.find((id) => id !== item.id);
+        if (other) {
+          const held = ctx.items.get(projectId, other);
+          throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
+        }
+        const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.branch) : null;
+        // An external session starts with no branch of its own; the template names one.
+        const branch = existing?.branch || session?.branch || branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title);
+        if (repoId) host.store.upsertLink(projectId, { itemId: item.id, repoId, branch }, { source: "mcp", lastSeenAt: Date.now() });
+        if (session) host.attach(projectId, session.id, item.id, branch);
+        if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, inv.by);
+        host.notify(projectId);
+        return {
+          key: item.key,
+          title: item.title,
+          body: item.body,
+          status: ctx.items.get(projectId, item.id)!.status,
+          branch,
+          repository: repo ? { name: repo.name, remote: repo.remote, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false } : null,
+          blockedBy: blockers.map((b) => ({ key: b.key, title: b.title, status: b.status })),
+          conventions: [
+            `this session owns only ${item.key}; implement only its stated outcome and acceptance criteria`,
+            "neighboring tickets are context, not extra implementation work; leave their code for separate sessions",
+            "before pushing, review the full diff and remove anything this ticket does not require",
+            `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
+            `every commit message names ${item.key}`,
+            "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",
+            "call note_progress with one line at milestones"
+          ]
+        };
+      }
+    })
+  );
+
+  // ── decisions: the cross-cutting choices no ticket should make twice, or silently ──
+  const decisionsRoot = (tool: string, projectId: string): string => {
+    const dir = ctx.get("storage")?.artifactDirFor(projectId);
+    if (!dir) throw new Error(`${tool}: this project has no folder yet — choose one under the project's settings first`);
+    return dir;
+  };
+
+  ctx.tools.register(
+    defineTool({
+      name: "list_decisions",
+      title: "List the project's decisions",
+      description:
+        "The cross-cutting decisions on record for this project (stack, state management, routing, persistence, deployment…), from .tomrade/docs/decisions/. Pass `area` to ask whether one area is settled — the pre-flight before touching it.",
+      input: z.object({ area: z.string().optional(), projectId: z.string().optional() }),
+      execute: ({ area, projectId: given }, inv) => {
+        const projectId = requireProjectId("list_decisions", given, inv);
+        const decisions = listDecisions(decisionsRoot("list_decisions", projectId));
+        return {
+          decisions: decisions.map(({ file: _file, ...d }) => d),
+          ...(area ? { area, covered: covered(decisions, area) } : {})
+        };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "record_decision",
+      title: "Record a decision",
+      description:
+        "Write a short decision note (context, decision, alternatives, consequences) into the project's .tomrade/docs/decisions/. Use it once the user has confirmed a cross-cutting choice; name the areas it settles so later tickets find it.",
+      input: z.object({
+        title: z.string().min(3),
+        context: z.string().min(1),
+        decision: z.string().min(1),
+        alternatives: z.string().optional(),
+        consequences: z.string().optional(),
+        areas: z.array(z.string()).optional().describe('What it settles, e.g. ["state management", "routing"]'),
+        status: z.enum(["proposed", "accepted", "superseded"]).optional(),
+        supersedes: z.string().optional().describe("The id of the decision this one replaces"),
+        projectId: z.string().optional()
+      }),
+      execute: ({ projectId: given, ...input }, inv) => {
+        const projectId = requireProjectId("record_decision", given, inv);
+        const { file, ...written } = recordDecision(decisionsRoot("record_decision", projectId), input);
+        return { ...written, path: file };
+      }
+    })
+  );
+}

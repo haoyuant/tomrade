@@ -56,6 +56,7 @@ export const agentPanel = {
     wholeProject: "Whole project",
     runsIn: "Runs in {{path}}",
     noCheckout: "No local checkout",
+    workdirError: "Working folder unavailable",
     repositoriesLink: "Repositories…"
   },
   zh: {
@@ -115,6 +116,7 @@ export const agentPanel = {
     wholeProject: "整个项目",
     runsIn: "运行于 {{path}}",
     noCheckout: "未指定本机仓库",
+    workdirError: "工作目录不可用",
     repositoriesLink: "仓库…"
   }
 };

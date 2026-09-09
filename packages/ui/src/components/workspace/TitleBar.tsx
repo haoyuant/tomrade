@@ -5,6 +5,7 @@ import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
 import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
+import { useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import { useRemoveView, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -167,9 +168,14 @@ function ViewName({ editRequest }: { editRequest: number }) {
  * Railed, or hidden under 990px, the sidebar is gone — so the head also grows
  * a view switcher exactly then.
  */
+const READINESS_KEY = { empty: "codeLink.readiness_empty", scaffolded: "codeLink.readiness_scaffolded", unknown: "codeLink.readiness_unknown" } as const;
+
 export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => void }) {
   const ws = useWorkspace();
   const { t, tx } = useI18n();
+  // A workstream page says what its repository is ready for: empty repositories bootstrap first.
+  const repoStates = useRepoStates(ws.project.id);
+  const readiness = ws.workstream?.repoId ? (repoStates.data ?? []).find((r) => r.repoId === ws.workstream!.repoId) ?? null : null;
   const toast = useToast();
   const remove = useRemoveView(ws.project.id);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -222,6 +228,12 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
       )}
       <div className="board-facts">
         {ws.virtual && <span className="tag neutral view-kind">{FIELD_LABEL.board}</span>}
+        {readiness && (
+          <span className="tag faint readiness" title={readiness.remoteDetail ?? readiness.summary ?? undefined}>
+            {readiness.remote === "unreachable" ? t("codeLink.remoteUnreachable") : t(READINESS_KEY[readiness.readiness])}
+            {readiness.remote !== "unreachable" && readiness.readiness === "scaffolded" && !readiness.hasBrief ? ` · ${t("codeLink.noBrief")}` : ""}
+          </span>
+        )}
         {ws.dirty && <span className="tag faint view-dirty">{t("titleBar.unsaved")}</span>}
         <span className="meta-txt">
           {tx("titleBar.shownOf", { shown: <span className="num">{ws.visible.length}</span>, total: <span className="num">{ws.owned.length}</span> })}

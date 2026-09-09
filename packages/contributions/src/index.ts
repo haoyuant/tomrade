@@ -70,9 +70,26 @@ export interface GraphSpec {
 
 export type GraphInfo = Omit<GraphSpec, "compute">;
 
+/**
+ * What a row's value is doing right now, drawn as a mark before it: `live`
+ * breathes, `waiting` blinks (someone's turn), the rest are steady; hollow marks
+ * (`ended`, `lost`) say the thing is over. The word in the value stays the signal;
+ * the mark confirms it.
+ */
+export type SectionState = "live" | "waiting" | "idle" | "ended" | "lost" | "ok" | "warn";
+
 export interface SectionRow {
   label: string;
   value: string;
+  /** Icon id from the renderer's sprite, drawn before the label; unknown ids draw nothing. */
+  icon?: string;
+  /** The value is an identifier — a branch, a hash, a path — and is set in the mono face. */
+  mono?: boolean;
+  state?: SectionState;
+  /** The value opens this link in the browser. */
+  href?: string;
+  /** The value runs this palette command with the item in scope. */
+  command?: string;
 }
 
 export interface Section {

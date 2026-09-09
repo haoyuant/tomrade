@@ -38,13 +38,21 @@ export interface ThreadMessage {
   at: number;
 }
 
+export type ThreadSurface = "assistant" | "code";
+
 export interface ThreadSummary {
   id: string;
   projectId: string;
   /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */
   boardId: string | null;
+  /** The ticket the thread implements, when it was started from one. Such a thread runs a code engine in its own branch. */
+  itemId: string | null;
+  /** The branch the thread's worktree is on; null for a free-form thread, which sits detached at the default branch. */
+  branch: string | null;
   title: string;
   engine: string;
+  /** Which product surface owns the thread. Code sessions use Agent's worktree machinery without becoming Assistant conversations. */
+  surface: ThreadSurface;
   createdAt: number;
   updatedAt: number;
 }
@@ -131,9 +139,15 @@ export interface PlaybookIndexEntry {
   shadows: PlaybookSource[];
 }
 
+/** What a turn is for. A `code` turn edits a repository and gets the engine's fuller powers; a `backlog` turn talks to the app through tools. */
+export type TurnPurpose = "backlog" | "code";
+
 export interface TurnInput {
   threadId: string;
   projectId: string;
+  purpose: TurnPurpose;
+  /** The ticket a code thread implements — the branch it must stay on, the key its commits must name. */
+  ticket?: { id: string; key: string; title: string; branch: string | null };
   input: UserInput;
   /** Full persisted history, the triggering user message included. */
   messages: ThreadMessage[];
@@ -147,6 +161,8 @@ export interface TurnInput {
   options: unknown;
   /** Where a code-running engine works: a worktree of the workstream's repository. Absent for a thread without one. */
   cwd?: string;
+  /** Ephemeral subprocess credentials supplied by plugins; never persist or include in prompts. */
+  env?: Record<string, string>;
   workdir?: { remote: string; branch: string; worktree: string | null };
 }
 
@@ -179,11 +195,21 @@ export interface TurnResult {
   resume?: string;
 }
 
+/**
+ * What an engine can be trusted with. `backlog` talks to the app through its
+ * tools; `code` also edits files and runs commands in a repository — only a
+ * local coding agent (Claude Code, Codex…) declares it, and only such an engine
+ * is offered when a ticket is started.
+ */
+export type EngineCapability = "backlog" | "code";
+
 /** Anything that can take one turn on a thread. The conductor seam. */
 export interface Engine {
   id: string;
   title: string;
   author: Author;
+  /** Absent means `["backlog"]`. */
+  capabilities?: EngineCapability[];
   available(): Promise<{ ok: boolean; reason?: string }>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
@@ -204,6 +230,7 @@ export interface EnginePick {
 export interface EngineView {
   id: string;
   title: string;
+  capabilities: EngineCapability[];
   ok: boolean;
   reason?: string;
   picks?: EnginePick[];
@@ -257,6 +284,16 @@ export interface Suspended {
 
 export const isSuspended = (value: unknown): value is Suspended =>
   typeof value === "object" && value !== null && (value as { __suspended?: unknown }).__suspended === true;
+
+declare module "cordis" {
+  interface Events {
+    "agent/prepare-turn"(input: TurnInput): Promise<void> | void;
+    /** A run began driving a thread. */
+    "agent/run-started"(run: RunView, thread: ThreadSummary): void;
+    /** A run settled, however it stopped; `run.stop` says how. */
+    "agent/run-ended"(run: RunView, thread: ThreadSummary): void;
+  }
+}
 
 export interface AgentPolicy {
   id: string;

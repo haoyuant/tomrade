@@ -13,6 +13,7 @@
   "references": [
     { "path": "../agent" },
     { "path": "../engine-claude-code" },
-    { "path": "../mcp" }
+    { "path": "../mcp" },
+    { "path": "../settings" }
   ]
 }

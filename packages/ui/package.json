@@ -37,6 +37,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "@tomrade/agent": "workspace:*",
     "@tomrade/boards": "workspace:*",
+    "@tomrade/code-link": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",

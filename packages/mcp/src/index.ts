@@ -10,6 +10,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import type { Author } from "@tomrade/domain";
 import type {} from "@tomrade/ipc";
 import type {} from "@tomrade/tools";
+import type { Tools } from "@tomrade/tools";
 
 export const MCP_SERVER_NAME = "tomrade";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -47,6 +48,8 @@ export interface RunBinding {
   author: Author;
   projectId?: string;
   execute(name: string, args: unknown): Promise<unknown>;
+  /** A lifecycle event posted to `/sessions/<token>/event` — a coding agent's hook reporting it started, stopped, or is waiting. */
+  event?(payload: unknown): unknown | Promise<unknown>;
 }
 
 const sessionIdOf = (req: express.Request): string | undefined => {
@@ -71,7 +74,10 @@ export class Mcp extends Service {
 
   url: string | null = null;
 
+  /** Captured from the injected context: HTTP callbacks run after Cordis's injection frame has closed. */
+  private tools: Tools | null = null;
   private bindings = new Map<string, RunBinding>();
+  private eventListeners = new Set<(payload: unknown) => void>();
 
   constructor(
     ctx: Context,
@@ -81,6 +87,8 @@ export class Mcp extends Service {
   }
 
   async [Service.init]() {
+    this.tools = this.ctx.get("tools") ?? null;
+    if (!this.tools) throw new Error("the MCP server needs the tools plugin");
     const transports = new Map<string, StreamableHTTPServerTransport>();
     const app = createMcpExpressApp();
 
@@ -88,8 +96,12 @@ export class Mcp extends Service {
     // coding agent in that project's repository needs no projectId argument;
     // bare `/mcp` is for clients that span projects and must name one per call.
     const open = (projectId: string | undefined) => async (req: express.Request, res: express.Response) => {
-      const existing = transports.get(sessionIdOf(req) ?? "");
+      const sid = sessionIdOf(req);
+      const existing = transports.get(sid ?? "");
       if (existing) return existing.handleRequest(req, res, req.body);
+      // A session id this server never issued — the client outlived a restart.
+      // 404 is what tells a Streamable HTTP client to open a new session rather than give up.
+      if (sid) return res.status(404).json({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found — start a new one" }, id: null });
       const header = req.headers["x-tomrade-run"];
       const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
       const token = typeof header === "string" ? header : bearer;
@@ -120,6 +132,29 @@ export class Mcp extends Service {
     app.post("/mcp/:projectId", (req, res) => open(req.params.projectId)(req, res));
     app.get("/mcp/:projectId", attached);
     app.delete("/mcp/:projectId", attached);
+    // Hooks committed into a repository carry no token: whoever listens sorts
+    // them out by the cwd and session id in the payload.
+    app.post("/sessions/event", (req, res) => {
+      for (const listener of this.eventListeners) {
+        try {
+          listener(req.body);
+        } catch {
+          // one listener's failure is not another's
+        }
+      }
+      res.json({ ok: true });
+    });
+    // A coding agent's hooks (SessionStart, Stop, Notification…) post here with
+    // the session's token; the binding that owns the token hears them.
+    app.post("/sessions/:token/event", async (req, res) => {
+      const binding = this.bindings.get(req.params.token);
+      if (!binding?.event) return res.status(404).json({ error: "unknown session" });
+      try {
+        res.json((await binding.event(req.body)) ?? {});
+      } catch (e) {
+        res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+      }
+    });
 
     const server = await new Promise<HttpServer>((resolve, reject) => {
       const srv = app.listen(this.config.port, this.config.host, () => resolve(srv));
@@ -146,6 +181,24 @@ export class Mcp extends Service {
     return this.url ? `${this.url}/${encodeURIComponent(projectId)}` : null;
   }
 
+  /** Where a session's hooks post their lifecycle events. */
+  eventUrlFor(token: string): string | null {
+    return this.url ? `${this.url.replace(/\/mcp$/, "")}/sessions/${encodeURIComponent(token)}/event` : null;
+  }
+
+  /** Where hooks with no token post — the ones a repository commits for every developer. */
+  get eventUrl(): string | null {
+    return this.url ? `${this.url.replace(/\/mcp$/, "")}/sessions/event` : null;
+  }
+
+  /** Hear tokenless hook events. Reversible: the listener goes with the plugin that registered it. */
+  onEvent(listener: (payload: unknown) => void): () => void {
+    return this.ctx.effect(() => {
+      this.eventListeners.add(listener);
+      return () => this.eventListeners.delete(listener);
+    }, "mcp.onEvent");
+  }
+
   /** Reversible: the token dies with the run (or the plugin) that registered it. */
   bindRun(token: string, binding: RunBinding): () => void {
     return this.ctx.effect(() => {
@@ -156,11 +209,13 @@ export class Mcp extends Service {
 
   private session(binding?: RunBinding, projectId?: string): McpServer {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
-    for (const tool of this.ctx.tools.list()) {
+    const tools = this.tools;
+    if (!tools) throw new Error("the MCP server needs the tools plugin");
+    for (const tool of tools.list()) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
         try {
           if (binding) return textResult(await binding.execute(tool.name, args));
-          return textResult(await this.ctx.tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
+          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
         } catch (e) {
           return errorResult(e);
         }

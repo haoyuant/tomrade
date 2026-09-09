@@ -11,6 +11,7 @@ import { Tools, ToolInputError, UnknownToolError, defineTool } from "@tomrade/to
 
 const BACKLOG_TOOLS = [
   "change_status",
+  "count_items",
   "create_field",
   "create_item",
   "create_workstream",

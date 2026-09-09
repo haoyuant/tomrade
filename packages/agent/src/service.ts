@@ -56,6 +56,15 @@ export interface ThreadDetail {
   pending: PendingView | null;
 }
 
+/** What a new thread may be about beyond its workstream: the ticket it implements and the branch it works on. */
+export interface NewThreadOptions {
+  itemId?: string | null;
+  branch?: string | null;
+  title?: string;
+  /** The UI that owns this thread. Defaults to the Assistant panel. */
+  surface?: "assistant" | "code";
+}
+
 /** Current in-memory work plus durable questions, for main-process observers that load mid-run. */
 export interface AgentActivity {
   threadId: string;
@@ -77,7 +86,7 @@ declare module "@tomrade/ipc" {
   interface Channels {
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
-    "agent.newThread": (projectId: string, engine?: string, boardId?: string | null) => ThreadSummary;
+    "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
@@ -100,8 +109,10 @@ export const AgentConfig = z.preprocess(
   z.object({
     /** Folder of user playbooks: one SKILL.md per subdirectory. */
     playbooksDir: z.string().optional(),
-    /** Hard wall-clock ceiling per run. */
-    maxWallMs: z.number().int().min(10_000).default(180_000)
+    /** Hard wall-clock ceiling per run, for a thread that talks to the backlog. */
+    maxWallMs: z.number().int().min(10_000).default(180_000),
+    /** The ceiling for a run that implements a ticket in a repository — hours, not minutes. */
+    codeMaxWallMs: z.number().int().min(60_000).default(4 * 60 * 60 * 1000)
   })
 );
 export type AgentConfig = z.infer<typeof AgentConfig>;
@@ -131,6 +142,7 @@ export const AGENT_SECTION: SettingsSection<AgentSettings> = {
 
 interface RunCtx {
   run: RunView;
+  thread: ThreadSummary;
   threadId: string;
   projectId: string;
   engine: Engine;
@@ -204,7 +216,7 @@ export class Agent extends Service {
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
-      ctx.ipc.handle("agent.newThread", (projectId, engine, boardId) => ctx.agent.newThread(projectId, engine, boardId ?? null));
+      ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus }));
@@ -329,9 +341,9 @@ export class Agent extends Service {
       [...this.engines.values()].map(async (engine) => {
         try {
           const state = await engine.available();
-          return { id: engine.id, title: engine.title, ok: state.ok, reason: state.reason, picks: engine.picks?.() };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, picks: engine.picks?.() };
         } catch (err) {
-          return { id: engine.id, title: engine.title, ok: false, reason: message(err) };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
       })
     );
@@ -388,9 +400,19 @@ export class Agent extends Service {
     this.ctx.settings.set({ ...all, agent: { ...agent, engines: { ...agent.engines, loop: { ...loop, profile: legacy } } } });
   }
 
-  newThread(projectId: string, engine?: string, boardId: string | null = null): ThreadSummary {
+  newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
     const chosen = engine ?? this.settingsOf().defaultEngine;
-    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), "", boardId);
+    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
+  }
+
+  /** The engines that may take a code turn — a local coding agent, never the in-app model. */
+  codeEngines(): Engine[] {
+    return [...this.engines.values()].filter((e) => e.capabilities?.includes("code"));
+  }
+
+  /** Runs in flight right now, across projects — what a quit would interrupt. */
+  activeRuns(): { run: RunView; thread: ThreadSummary }[] {
+    return [...this.activeById.values()].map((rc) => ({ run: rc.run, thread: rc.thread }));
   }
 
   setWorkstream(projectId: string, threadId: string, boardId: string | null): ThreadSummary {
@@ -404,10 +426,12 @@ export class Agent extends Service {
     const none: WorkdirStatus = { cwd: null, remote: null, branch: null, worktree: null, problem: null, code: null };
     const thread = this.store.thread(projectId, threadId);
     if (!thread?.boardId) return none;
-    const repos = this.ctx.get("repos") as { workdirFor(projectId: string, boardId: string, threadId: string): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> } | undefined;
+    const repos = this.ctx.get("repos") as
+      | { workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null }): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> }
+      | undefined;
     if (!repos) return { ...none, problem: "the repos plugin is not loaded", code: "no-repos" };
     try {
-      const view = await repos.workdirFor(projectId, thread.boardId, threadId);
+      const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch });
       if (!view) return none;
       return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
     } catch (err) {
@@ -451,6 +475,7 @@ export class Agent extends Service {
     this.activeByThread.set(threadId, rc);
     this.activeById.set(run.id, rc);
     this.broadcast(threadId, { type: "run", run });
+    this.ctx.emit("agent/run-started", run, thread);
     void this.drive(rc, input);
     return { runId: run.id };
   }
@@ -502,7 +527,7 @@ export class Agent extends Service {
 
   private makeRunCtx(run: RunView, thread: ThreadSummary, engine: Engine): RunCtx {
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), this.config.maxWallMs);
+    const timer = setTimeout(() => abort.abort(), thread.itemId ? this.config.codeMaxWallMs : this.config.maxWallMs);
     abort.signal.addEventListener("abort", () => clearTimeout(timer));
     const entries: LedgerEntry[] = [];
     const handle: RunHandle = {
@@ -564,7 +589,15 @@ export class Agent extends Service {
       signal: abort.signal,
       resume: this.store.external(thread.projectId, thread.id)[engine.id]
     };
-    return { run, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle } };
+    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle } };
+  }
+
+  /** The ticket a code thread implements, as the engine should hear about it. */
+  private ticketOf(thread: ThreadSummary): TurnInput["ticket"] {
+    if (!thread.itemId) return undefined;
+    const items = this.ctx.get("items") as { get(projectId: string, id: string): { id: string; key: string; title: string } | null } | undefined;
+    const item = items?.get(thread.projectId, thread.itemId);
+    return item ? { id: item.id, key: item.key, title: item.title, branch: thread.branch } : undefined;
   }
 
   private async drive(rc: RunCtx, input: UserInput): Promise<void> {
@@ -585,6 +618,8 @@ export class Agent extends Service {
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
+        purpose: rc.thread.itemId ? "code" : "backlog",
+        ticket: this.ticketOf(rc.thread),
         input,
         messages: this.store.messages(rc.projectId, rc.threadId),
         cards: this.store.cards(rc.projectId, rc.threadId),
@@ -594,13 +629,13 @@ export class Agent extends Service {
         options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions,
         ...(where.cwd ? { cwd: where.cwd, workdir: { remote: where.remote!, branch: where.branch!, worktree: where.worktree } } : {})
       };
+      await this.ctx.parallel("agent/prepare-turn", turnInput);
       result = await rc.engine.turn(turnInput, rc.io);
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);
     } catch (err) {
       if (rc.abort.signal.aborted) {
         result = { stop: "cancelled" };
       } else {
-        this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: message(err) }, rc.run.id);
         result = { stop: "error", error: message(err) };
       }
     } finally {
@@ -686,6 +721,9 @@ export class Agent extends Service {
     rc.abort.abort();
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
+    if (result.stop === "error") {
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: result.error ?? "The engine stopped without an error message." }, rc.run.id);
+    }
     const changes = this.store.changesOf(rc.projectId, rc.run.id);
     if (changes > 0) {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.projectId, rc.run.id) }, rc.run.id);
@@ -693,6 +731,7 @@ export class Agent extends Service {
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
     const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, costUsd: result.costUsd, changes });
     this.broadcast(rc.threadId, { type: "done", run });
+    this.ctx.emit("agent/run-ended", run, this.store.thread(rc.projectId, rc.threadId) ?? rc.thread);
   }
 
   private appendAndBroadcast(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {

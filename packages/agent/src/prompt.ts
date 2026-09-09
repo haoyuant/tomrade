@@ -10,6 +10,7 @@ import type { FocusRef, TurnInput, TurnIO } from "./types.js";
 export const HOUSE_RULES = [
   "House rules:",
   "- Do the smallest thing that satisfies the request. A plain question deserves a plain answer, no tools.",
+  "- For backlog totals, counts, or breakdowns, call count_items exactly once and use its computed count. In Tomrade, a ticket is kind ticket; item totals also include epics. Never fetch or manually count list_items rows for a quantity question.",
   "- Before creating an item, check for duplicates (find_similar); a policy will refuse the create otherwise.",
   "- Features are sized for one pull request, with short imperative titles.",
   "- Propose defaults instead of interrogating; ask at most three questions per turn, through ask_user.",
@@ -44,6 +45,15 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
           index.map((p) => `- ${p.id} — ${p.when}`).join("\n")
       );
     }
+  }
+  if (input.ticket) {
+    const t = input.ticket;
+    parts.push(
+      `You are implementing ticket ${t.key} — "${t.title}"${t.branch ? ` on branch ${t.branch}` : ""}${input.cwd ? ` in ${input.cwd}` : ""}.\n` +
+        `Code conventions: stay on this branch and never commit to the default branch; every commit message names ${t.key}; ` +
+        `read the repository's CLAUDE.md or AGENTS.md before writing; when you push and open a pull request, call link_code with its URL; ` +
+        `do not mark the ticket done yourself — merging does that. Report progress in one line with note_progress when you reach a milestone.`
+    );
   }
   if (input.brief) parts.push("Project brief:\n" + input.brief);
   for (const card of input.cards) parts.push(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));

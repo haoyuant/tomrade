@@ -8,6 +8,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
+import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
@@ -87,6 +88,8 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
     if (next) write(item, { status: next }, tx("fields.movedToStatusToast", { key: <span className="num">{item.key}</span>, status: STATUS[next].label }));
   };
 
+  const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
+
   return (
     <div className="app">
       <header className="titlebar">
@@ -106,8 +109,14 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         >
           <Icon name="i-trash" size={15} />
         </button>
-        {next && (
+        <StartTicketMenu projectId={projectId} item={item} onOpenIssue={openIssue} onOpenRepositories={() => setSettingsOpen(true)} className="no-drag" />
+        {next && !startable && (
           <button type="button" className="btn btn-primary no-drag" onClick={advance}>
+            {t("issueScreen.moveToButton", { status: STATUS[next].label })}
+          </button>
+        )}
+        {next && startable && (
+          <button type="button" className="btn btn-secondary no-drag" onClick={advance}>
             {t("issueScreen.moveToButton", { status: STATUS[next].label })}
           </button>
         )}
@@ -192,7 +201,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               <span className="fs-item">
                 <span className="fs-k">{t("detailPane.fieldLastWrite")}</span>
                 <span className="fs-v">
-                  {prov === "ai" && <span className="prov-tick" style={{ height: 12 }} />}
+                  {(prov === "ai" || prov === "sync") && <span className={prov === "sync" ? "prov-tick is-sync" : "prov-tick"} style={{ height: 12 }} />}
                   {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={13} />}
                   {PROVENANCE[prov]} · {agoLabel(item.updatedAt)}
                 </span>

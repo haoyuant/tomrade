@@ -78,7 +78,7 @@ export const BUILTIN_FIELDS: readonly FieldDef[] = [
   builtin("key", "Key", "number", 7, { readonly: true, can: { filter: false, sort: true, group: false } }),
   builtin("provenance", "Last write", "select", 8, {
     readonly: true,
-    options: staticOptions(["human", "ai", "locked"], (p) => ({ human: "human", ai: "ai", locked: "human-locked" })[p as Provenance]!)
+    options: staticOptions(["human", "ai", "sync", "locked"], (p) => ({ human: "human", ai: "ai", sync: "sync", locked: "human-locked" })[p as Provenance]!)
   })
 ];
 
@@ -89,7 +89,8 @@ export const isBuiltinFieldId = (id: string): id is BuiltinFieldId => BUILTIN_FI
 /** The empty-value sentinel a group key uses, and the literal a filter may name. */
 export const EMPTY_KEY = "none";
 
-const provenanceOf = (item: Pick<Item, "humanLocked" | "updatedBy">): Provenance => (item.humanLocked ? "locked" : item.updatedBy.startsWith("ai:") ? "ai" : "human");
+const provenanceOf = (item: Pick<Item, "humanLocked" | "updatedBy">): Provenance =>
+  item.humanLocked ? "locked" : item.updatedBy.startsWith("ai:") ? "ai" : item.updatedBy.startsWith("sync:") ? "sync" : "human";
 
 /**
  * The raw value of a field on an item, built-in or custom. Labels are the one

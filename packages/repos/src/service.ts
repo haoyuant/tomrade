@@ -15,6 +15,10 @@ declare module "cordis" {
   interface Context {
     repos: Repos;
   }
+  interface Events {
+    /** A checkout was placed successfully; consumers may inspect it immediately. */
+    "repos/checkout-set"(remote: string): void;
+  }
 }
 
 /** Where a workstream's code is on this machine, and whether it is ready for an agent. */
@@ -223,6 +227,7 @@ export class Repos extends Service {
     if (origin && normalizeRemote(origin) !== key) throw new Error(`${dir} is a checkout of ${normalizeRemote(origin)}, not of ${key}`);
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();
+    this.home.emit("repos/checkout-set", key);
     return this.checkout(key);
   }
 
@@ -249,6 +254,7 @@ export class Repos extends Service {
     await cloneInto(this.runGit, remote.trim(), branch, dir);
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();
+    this.home.emit("repos/checkout-set", key);
     return this.checkout(key);
   }
 
@@ -259,7 +265,7 @@ export class Repos extends Service {
    * detached at the remote's default branch, under the Hub where the user can
    * open it; or the checkout itself when the user chose that for the workstream.
    */
-  async workdirFor(projectId: string, boardId: string, threadId: string): Promise<WorkdirView | null> {
+  async workdirFor(projectId: string, boardId: string, threadId: string, opts: { branch?: string | null } = {}): Promise<WorkdirView | null> {
     const board = this.db(projectId).prepare("SELECT repo_id, repo_path FROM boards WHERE id = ?").get(boardId) as { repo_id: string | null; repo_path: string } | undefined;
     if (!board?.repo_id) return null;
     const repo = this.get(projectId, board.repo_id);
@@ -268,7 +274,10 @@ export class Repos extends Service {
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new CheckoutUnsetError(repo.remote);
     const sub = board.repo_path.replace(/^\/+/, "");
     if (placement.runInCheckout) {
-      return { repo, cwd: path.join(placement.checkout, sub), worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
+      const cwd = path.join(placement.checkout, sub);
+      // The user's own checkout is never written, not even an empty folder.
+      if (!fs.existsSync(cwd)) throw new Error(`${sub || "the repository root"} does not exist in ${placement.checkout} — the workstream's folder has to be there before an agent runs in it`);
+      return { repo, cwd, worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
     }
     const hubDir = this.hub.dir;
     if (!hubDir) throw new Error("Choose the Hub folder first");
@@ -277,10 +286,33 @@ export class Repos extends Service {
       const g = new GitFolder(this.runGit, placement.checkout);
       await g.fetch(repo.defaultBranch);
       fs.mkdirSync(path.dirname(worktree), { recursive: true });
-      const start = (await this.runGit(["rev-parse", "--verify", `origin/${repo.defaultBranch}`], { cwd: placement.checkout, ok: true })).code === 0 ? `origin/${repo.defaultBranch}` : "HEAD";
-      await this.runGit(["worktree", "add", "--detach", worktree, start], { cwd: placement.checkout });
+      const checkout = placement.checkout;
+      const verify = async (ref: string) => (await this.runGit(["rev-parse", "--verify", "--quiet", ref], { cwd: checkout, ok: true })).code === 0;
+      // Where a new branch starts: the remote's default branch, else whatever the
+      // checkout has, else nothing — an empty repository has no commit to start
+      // from, so the branch is born unborn (`--orphan`) and its first commit is
+      // the repository's first.
+      const start = (await verify(`refs/remotes/origin/${repo.defaultBranch}`)) ? `origin/${repo.defaultBranch}` : (await verify("HEAD")) ? "HEAD" : null;
+      const branch = opts.branch ?? null;
+      if (branch) {
+        // A ticket's branch: continued where it already exists (an earlier
+        // session here, or a push from elsewhere), started from the default
+        // branch otherwise. Detached is for a thread with no ticket.
+        if (await verify(`refs/heads/${branch}`)) await this.runGit(["worktree", "add", worktree, branch], { cwd: checkout });
+        else if (await verify(`refs/remotes/origin/${branch}`)) await this.runGit(["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`], { cwd: checkout });
+        else if (start) await this.runGit(["worktree", "add", "-b", branch, worktree, start], { cwd: checkout });
+        else await this.runGit(["worktree", "add", "--orphan", "-b", branch, worktree], { cwd: checkout });
+      } else if (start) {
+        await this.runGit(["worktree", "add", "--detach", worktree, start], { cwd: checkout });
+      } else {
+        await this.runGit(["worktree", "add", "--orphan", "-b", `tomrade/${threadId.slice(0, 8)}`, worktree], { cwd: checkout });
+      }
     }
-    return { repo, cwd: path.join(worktree, sub), worktree, checkout: placement.checkout, branch: repo.defaultBranch };
+    // A workstream's folder may not exist yet — an empty repository, or one being
+    // bootstrapped into a monorepo layout. In Tomrade's own worktree it can be made.
+    const cwd = path.join(worktree, sub);
+    fs.mkdirSync(cwd, { recursive: true });
+    return { repo, cwd, worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
   }
 
   /** Remove a thread's worktree. The branch, if the agent made one, stays in the checkout. */

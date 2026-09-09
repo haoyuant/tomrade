@@ -1,0 +1,42 @@
+{
+  "name": "@tomrade/code-link",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.codeLink — a ticket's branches, worktrees, pull requests and coding sessions. Derives status from git, shows the code on the ticket, and starts a local coding agent on it. First-party, optional.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/agent": "workspace:*",
+    "@tomrade/boards": "workspace:*",
+    "@tomrade/contributions": "workspace:*",
+    "@tomrade/db": "workspace:*",
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/hub": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/items": "workspace:*",
+    "@tomrade/mcp": "workspace:*",
+    "@tomrade/repos": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "@tomrade/storage": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "@tomrade/write": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

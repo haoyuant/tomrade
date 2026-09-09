@@ -5,6 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
 import type {} from "@tomrade/repos";
+import type {} from "@tomrade/code-link";
 import { invalidateProject } from "./lib/queries.js";
 import { watchWindowChrome } from "./lib/window-chrome.js";
 import "./styles/app.css";
@@ -36,7 +37,14 @@ if (window.tomrade) {
   // A repository was added or a checkout named: where a workstream's agent runs may have changed.
   subscribe("repos.changed", () => {
     void queryClient.invalidateQueries({ queryKey: ["repos"] });
+    void queryClient.invalidateQueries({ queryKey: ["codeLink"] });
     void queryClient.invalidateQueries({ queryKey: ["agent", "workdir"] });
+  });
+  // A scan found new branches, pull requests or merges: the Code section, the badges and any moved status.
+  subscribe("codeLink.changed", (projectId) => {
+    void queryClient.invalidateQueries({ queryKey: ["codeLink", projectId] });
+    void queryClient.invalidateQueries({ queryKey: ["contributions"] });
+    invalidateProject(queryClient, projectId);
   });
 }
 

@@ -234,6 +234,7 @@ export function AgentPanel({
   onToggle,
   projectId,
   boardId = null,
+  requestedThread = null,
   focus,
   onOpenSettings,
   onOpenRepositories,
@@ -244,6 +245,8 @@ export function AgentPanel({
   projectId: string;
   /** The workstream page the panel is open on, if any: a new thread starts there. */
   boardId?: string | null;
+  /** A thread a screen asked to see (a ticket's Start); `at` makes a repeat request for the same id visible. */
+  requestedThread?: { id: string; at: number } | null;
   focus: FocusRef[];
   onOpenSettings: () => void;
   /** Where a workstream's repository is placed on this machine — the way out of "no local checkout". */
@@ -369,6 +372,11 @@ export function AgentPanel({
     setChosenThread(id);
     localStorage.setItem(STORE.thread(projectId), id);
   };
+  useEffect(() => {
+    if (!requestedThread) return;
+    setChosenThread(requestedThread.id);
+    localStorage.setItem(STORE.thread(projectId), requestedThread.id);
+  }, [requestedThread, projectId]);
 
   // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
   const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
@@ -508,7 +516,7 @@ export function AgentPanel({
             {workdirProblem ? (
               <>
                 <Icon name="i-warn" size={12} style={{ color: "var(--danger)", flexShrink: 0 }} />
-                <span style={{ color: "var(--danger)" }}>{t("agentPanel.noCheckout")}</span>
+                <span style={{ color: "var(--danger)" }}>{t(workdir.data?.code === "no-checkout" ? "agentPanel.noCheckout" : "agentPanel.workdirError")}</span>
                 <span title={workdirProblem} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
                   {workdirProblem}
                 </span>

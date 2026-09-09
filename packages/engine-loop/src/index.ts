@@ -64,6 +64,8 @@ export function createLoopEngine(ctx: Context): Engine {
     id: "loop",
     title: "Tomrade loop",
     author: "ai:agent",
+    // Talks to the backlog through tools; it has no file or shell tools and never implements a ticket.
+    capabilities: ["backlog"],
     options: LoopOptions,
     available: async () => {
       const llm = ctx.get("llm");

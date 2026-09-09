@@ -65,5 +65,20 @@ describe("the Claude Code engine", () => {
     const args2 = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
     expect(args2).toContain("--resume");
     expect(args2).toContain("sess-1");
+
+    const codeThread = ctx.agent.newThread(project.id, "claude-code", null, {
+      itemId: "ticket-1",
+      branch: "tom-1/code-task"
+    });
+    ctx.on("agent/prepare-turn", (input) => {
+      input.env = { TOMRADE_ENV_TEST: "passed" };
+    });
+    fs.writeFileSync(bin, FAKE.replace('dir="$(dirname "$0")"', 'dir="$(dirname "$0")"\ntest "$TOMRADE_ENV_TEST" = "passed" || exit 1'), { mode: 0o755 });
+    const codeRun = ctx.agent.send(project.id, codeThread.id, { kind: "text", text: "implement it" });
+    expect((await settled(ctx, project.id, codeRun.runId)).status).toBe("done");
+    const codeArgs = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
+    expect(codeArgs).toContain("--strict-mcp-config");
+    expect(codeArgs).toContain("--permission-mode\nacceptEdits");
+    expect(codeArgs).toContain("--max-turns\n200");
   });
 });

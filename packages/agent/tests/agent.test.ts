@@ -33,6 +33,23 @@ async function settled(ctx: Context, projectId: string, runId: string, timeout =
 }
 
 describe("the loop engine on the platform", () => {
+  it("shows an engine-returned error in the thread instead of leaving a blank turn", async () => {
+    const { ctx, agent, project } = await boot([]);
+    agent.engine({
+      id: "failing",
+      title: "Failing engine",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      turn: async () => ({ stop: "error", error: "The selected model is unavailable." })
+    });
+    const thread = agent.newThread(project.id, "failing");
+    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "hello" });
+    expect((await settled(ctx, project.id, runId)).status).toBe("error");
+    const errors = agent.store.messages(project.id, thread.id).filter((entry) => entry.block.type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.block).toEqual({ type: "error", text: "The selected model is unavailable." });
+  });
+
   it("answers chit-chat with no tools and no writes", async () => {
     const { ctx, agent, project } = await boot([{ text: "It never rains in the backlog." }]);
     const thread = agent.newThread(project.id);

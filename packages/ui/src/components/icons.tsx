@@ -40,6 +40,10 @@ export const ICON_IDS = [
   "i-send",
   "i-stop",
   "i-graph",
+  "i-branch",
+  "i-merge",
+  "i-terminal",
+  "i-folder",
   "s-backlog",
   "s-todo",
   "s-doing",
@@ -94,6 +98,11 @@ export function IconSprite() {
         <symbol id="i-sliders" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M1.9 4.6h10.2M1.9 9.4h10.2"/></g><g fill="currentColor"><circle cx="5.2" cy="4.6" r="1.7"/><circle cx="9" cy="9.4" r="1.7"/></g></symbol>
         <symbol id="i-clock" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.2"/><path d="M7 4.2V7l2 1.4"/></g></symbol>
         <symbol id="i-graph" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="3.2" cy="3.4" r="1.7"/><circle cx="10.8" cy="5.4" r="1.7"/><circle cx="5.6" cy="10.6" r="1.7"/><path d="M4.8 4 9.2 4.9M4.4 9.2 3.5 5.1M7.2 9.9 9.7 6.8" strokeLinecap="round"/></g></symbol>
+        {/* code: a branch leaving the line, a pull request coming back, a prompt, a folder */}
+        <symbol id="i-branch" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="4.6" r="1.5"/><path d="M3.6 4.7v4.6M10.4 6.1c0 2.4-2.4 3-4.6 3.2"/></g></symbol>
+        <symbol id="i-merge" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="10.8" r="1.5"/><path d="M3.6 4.7v4.6M10.4 9.3V7.2a2.4 2.4 0 0 0-2.4-2.4H6.2M7.6 3.2 6 4.8l1.6 1.6"/></g></symbol>
+        <symbol id="i-terminal" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="1.6" y="2.4" width="10.8" height="9.2" rx="1.2"/><path d="M4 5.4 6 7.2 4 9M7.6 9h2.6"/></g></symbol>
+        <symbol id="i-folder" viewBox="0 0 14 14"><path d="M1.8 3.6a1 1 0 0 1 1-1h2.7l1.3 1.4h4.4a1 1 0 0 1 1 1v5.6a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
     
         {/* status marks: shape-coded, legible without colour */}
         <symbol id="s-backlog" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.1" fill="none" stroke="currentColor" strokeWidth="1.3" strokeDasharray="2 2.1"/></symbol>

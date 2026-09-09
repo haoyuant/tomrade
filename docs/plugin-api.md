@@ -258,7 +258,23 @@ run-bound: the oplog rows it produces carry the `run_id`, which is what makes
 "Changed 15 items · Revert" one click. A CLI agent (Claude Code, Codex) is an
 engine like any other: it gets the tools over MCP with a per-run token
 (`ctx.mcp.bindRun`), so the ledger, the policies and the revert apply to it
-unchanged.
+unchanged. A binding may also carry `event(payload)`: whatever is POSTed to
+`/sessions/<token>/event` on the MCP server — a coding agent's hooks reporting
+it started, stopped or is waiting — reaches the binding that owns the token.
+Hooks a repository commits for every developer carry no token; they post to
+`/sessions/event`, and `ctx.mcp.onEvent(listener)` hears them with the `cwd`
+and `session_id` the payload carries.
+
+An engine declares **capabilities**: `backlog` (the default) talks to the app
+through its tools; `code` also edits files and runs commands in a repository.
+Only a local coding agent (Claude Code, Codex) declares `code`, and only such
+an engine is offered when a ticket is started — the in-app loop never
+implements a ticket. A thread started from a ticket carries `itemId` and
+`branch`; its turns arrive with `purpose: "code"` and a `ticket`, run in a
+worktree on that branch (`Repos.workdirFor` with the branch), and get the code
+wall clock (`AgentConfig.codeMaxWallMs`, hours) instead of the backlog one. The
+platform emits `agent/run-started` and `agent/run-ended` for whoever follows
+runs; `ctx.agent.activeRuns()` is what a quit would interrupt.
 
 ## Events
 
@@ -557,7 +573,12 @@ with the current `{ projectId, boardId, viewId, itemId }`. Badges are computed
 on every board refresh over the project's items. Status items render in the
 status bar; sections in the detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
-refetches.
+refetches. A section row may carry `href` — its value opens that link in the
+browser — or `command`, the id of a palette command the value runs with the
+item in scope; `icon` (a sprite id) leads the label, `mono` sets the value in
+the mono face, and `state` puts a mark before the value — `live` breathes,
+`waiting` blinks, `ended`/`lost` are hollow — still declarative, still drawn by
+the renderer.
 
 A `sprite-pet` **assistant accessory** reserves the renderer-owned stage directly
 above the composer. Its strip URLs, frame geometry and timing are data; the

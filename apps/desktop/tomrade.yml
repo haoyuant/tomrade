@@ -47,6 +47,9 @@ modules:
   - id: desktopSurfaces
     title: Desktop surfaces
     required: true
+  - id: desktopSurfaces
+    title: Desktop surfaces
+    required: true
   # The registry, not the destinations. storage-git and storage-github register
   # providers into it and hold no module of their own, so either can go without
   # taking a project's own copy with it.
@@ -64,6 +67,8 @@ modules:
     title: Assistant
   - id: mcp
     title: MCP server
+  - id: codeLink
+    title: Code link
   - id: pet
     title: Pet
 
@@ -142,6 +147,13 @@ plugins:
   # "blocked" badge. Optional — the platform stores the edges either way.
   - id: deps-graph
     name: "@tomrade/deps-graph"
+  # Ticket ↔ code: the branches, pull requests and coding sessions of a ticket,
+  # its status read from git, and the Start button that hands a ticket to a
+  # local coding agent. Optional — nothing else reads its tables.
+  - id: code-link
+    name: "@tomrade/code-link"
+    config:
+      scanMs: 120000
   - id: mcp
     name: "@tomrade/mcp"
     config:

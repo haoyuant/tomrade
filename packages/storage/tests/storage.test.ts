@@ -113,15 +113,20 @@ describe("the artifact", () => {
     expect(() => readArtifact(dir)).toThrow(/conflict markers/);
   });
 
-  it("carries declared plugin tables, and leaves undeclared ones alone", async () => {
+  it("carries declared plugin tables, and leaves undeclared and machine-local ones alone", async () => {
     const { ctx, db, project, hub } = await machine();
     ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
       tables: { plugin_demo_notes: { project: "project_id", export: { order: "id" } } }
     });
+    ctx.db.migrate("local", [{ version: 1, up: "CREATE TABLE plugin_local_sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
+      tables: { plugin_local_sessions: { project: "project_id", export: false } }
+    });
     db.prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'hi')").run(project.id);
+    db.prepare("INSERT INTO plugin_local_sessions (id, project_id, body) VALUES ('s1', ?, 'running here')").run(project.id);
     const state = exportState(db, project.id, { registrations: ctx.db.registrations("project"), exports: ["demo"] });
     expect(state.plugins.demo.plugin_demo_notes).toEqual([{ id: "n1", project_id: project.id, body: "hi" }]);
     expect(state.manifest.exports).toEqual(["demo"]);
+    expect(state.plugins.local).toBeUndefined();
     const dir = tmp("plug");
     writeArtifact(dir, state);
     expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo", "plugin_demo_notes.jsonl"))).toBe(true);
@@ -130,6 +135,12 @@ describe("the artifact", () => {
     expect(without.plugins).toEqual({});
     expect(digestState(without)).not.toBe(digestState(state));
     expect(hub.catalog.project(project.id)?.exports).toEqual([]);
+
+    // An older artifact may still contain this table. Once its registration
+    // becomes machine-local, importing that artifact must not clear local rows.
+    state.plugins.local = { plugin_local_sessions: [] };
+    importState(db, state, { registrations: ctx.db.registrations("project") });
+    expect(db.prepare("SELECT body FROM plugin_local_sessions WHERE id = 's1'").get()).toEqual({ body: "running here" });
   });
 });
 

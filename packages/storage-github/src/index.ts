@@ -52,8 +52,8 @@ export const storageGithub = {
     const connection: ProviderConnection = {
       prompt: {
         label: "Personal access token",
-        help: "A token with repo scope. Tomrade finds and creates repositories with it, and pushes with it when your own git credentials cannot reach the remote.",
-        url: "https://github.com/settings/tokens/new?scopes=repo&description=Tomrade"
+        help: "A token with repo and workflow scopes. Tomrade finds and creates repositories with it, and can push both code and GitHub Actions workflows when your own git credentials cannot reach the remote.",
+        url: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Tomrade"
       },
       async status() {
         if (!token()) return { connected: false };

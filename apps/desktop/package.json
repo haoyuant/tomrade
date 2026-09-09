@@ -20,6 +20,7 @@
     "@tomrade/agent": "workspace:*",
     "@tomrade/agent-backlog": "workspace:*",
     "@tomrade/boards": "workspace:*",
+    "@tomrade/code-link": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/desktop-surface": "workspace:*",

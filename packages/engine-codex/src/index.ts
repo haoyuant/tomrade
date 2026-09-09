@@ -7,6 +7,7 @@ import { z } from "zod";
 import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
 import { binaryOk, buildSystem, promptOf, runJsonl } from "@tomrade/engine-claude-code";
 import type {} from "@tomrade/mcp";
+import type {} from "@tomrade/settings";
 
 export const CodexOptions = z.object({
   command: z.string().default("codex"),
@@ -25,6 +26,21 @@ interface CodexLine {
 }
 
 const TOKEN_ENV = "TOMRADE_MCP_TOKEN";
+const LEGACY_CHATGPT_MODEL = "gpt-5-codex";
+
+/** This was once Tomrade's preset, but Codex now rejects it for ChatGPT accounts. */
+export const codexModel = (model?: string): string | undefined => (model === LEGACY_CHATGPT_MODEL ? undefined : model);
+
+function migrateLegacyModel(ctx: Context): void {
+  const all = ctx.settings.get();
+  const agent = all.agent as { engines?: Record<string, unknown> } | undefined;
+  const engines = agent?.engines ?? {};
+  const current = engines.codex as Record<string, unknown> | undefined;
+  if (current?.model !== LEGACY_CHATGPT_MODEL) return;
+  const next = { ...current };
+  delete next.model;
+  ctx.settings.set({ ...all, agent: { ...agent, engines: { ...engines, codex: next } } });
+}
 
 export function createCodexEngine(ctx: Context): Engine {
   let probe: { at: number; state: { ok: boolean; reason?: string } } | null = null;
@@ -32,9 +48,13 @@ export function createCodexEngine(ctx: Context): Engine {
     id: "codex",
     title: "Codex",
     author: "ai:codex",
+    capabilities: ["backlog", "code"],
     options: CodexOptions,
     picks: () => [
-      { key: "model", title: "Model", choices: [{ value: "gpt-5-codex" }, { value: "gpt-5" }], freeText: true },
+      // Codex CLI resolves its authenticated account's current default. Model
+      // ids change and differ between ChatGPT and API accounts, so custom ids
+      // remain possible without shipping presets that become invalid.
+      { key: "model", title: "Model", choices: [], freeText: true },
       { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
     ],
     async available() {
@@ -71,21 +91,27 @@ export function createCodexEngine(ctx: Context): Engine {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-"));
       // codex has no appended-system-prompt flag; the context rides ahead of the message.
       const prompt = buildSystem(input, io, "Codex") + "\n\n---\n\nUSER MESSAGE:\n" + promptOf(input);
+      // A code turn may write in its worktree; a backlog turn reads only.
       const shared = [
         "--json",
         "--skip-git-repo-check",
-        "-s",
-        "read-only",
-        "-C",
-        tmp,
         "-c",
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
         `mcp_servers.tomrade.bearer_token_env_var="${TOKEN_ENV}"`,
-        ...(options.model ? ["-m", options.model] : []),
+        "-c",
+        // The in-app runner cannot display Codex CLI approval prompts. Tomrade
+        // already scopes this server to the run and applies its own write
+        // policy, so its tools can execute without a second approval layer.
+        'mcp_servers.tomrade.default_tools_approval_mode="approve"',
+        ...(codexModel(options.model) ? ["-m", codexModel(options.model)!] : []),
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])
       ];
-      const args = io.resume ? ["exec", "resume", io.resume, ...shared, prompt] : ["exec", ...shared, prompt];
+      // Resume has a smaller option set than the initial exec: its session
+      // already remembers the working root and sandbox, and rejects -s/-C.
+      const args = io.resume
+        ? ["exec", "resume", ...shared, io.resume, prompt]
+        : ["exec", ...shared, "-s", input.purpose === "code" ? "workspace-write" : "read-only", "-C", input.cwd ?? tmp, prompt];
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       let session: string | undefined;
@@ -94,7 +120,7 @@ export function createCodexEngine(ctx: Context): Engine {
       try {
         const run = runJsonl(options.command, args, {
           cwd: input.cwd ?? tmp,
-          env: { ...process.env, [TOKEN_ENV]: token },
+          env: { ...process.env, ...input.env, [TOKEN_ENV]: token },
           signal: io.signal,
           onLine: (raw) => {
             const line = raw as CodexLine;
@@ -122,8 +148,9 @@ export function createCodexEngine(ctx: Context): Engine {
 
 export default {
   name: "engine-codex",
-  inject: ["agent", "mcp"],
+  inject: ["agent", "mcp", "settings"],
   apply(ctx: Context) {
+    migrateLegacyModel(ctx);
     ctx.agent.engine(createCodexEngine(ctx));
   }
 };

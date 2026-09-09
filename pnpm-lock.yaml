@@ -29,6 +29,9 @@ importers:
       '@tomrade/boards':
         specifier: workspace:*
         version: link:../../packages/boards
+      '@tomrade/code-link':
+        specifier: workspace:*
+        version: link:../../packages/code-link
       '@tomrade/contributions':
         specifier: workspace:*
         version: link:../../packages/contributions
@@ -260,6 +263,67 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/code-link:
+    dependencies:
+      '@tomrade/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomrade/boards':
+        specifier: workspace:*
+        version: link:../boards
+      '@tomrade/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomrade/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@tomrade/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@tomrade/write':
+        specifier: workspace:*
+        version: link:../write
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/contributions:
     dependencies:
       '@tomrade/domain':
@@ -364,6 +428,9 @@ importers:
       '@tomrade/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
@@ -371,12 +438,21 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@tomrade/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
 
   packages/engine-loop:
     dependencies:
@@ -1025,6 +1101,9 @@ importers:
       '@tomrade/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomrade/code-link':
+        specifier: workspace:*
+        version: link:../code-link
       '@tomrade/contributions':
         specifier: workspace:*
         version: link:../contributions

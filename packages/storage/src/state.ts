@@ -427,7 +427,10 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
       const reg = declared.get(ns);
       if (!reg) continue; // a plugin this machine lacks: its files ride along untouched
       for (const [table, rows] of Object.entries(tables)) {
-        if (!reg.tables[table]) continue;
+        // A table can become machine-local in a newer plugin version. An old
+        // artifact may still name it; its stale copy must never replace this
+        // machine's live state.
+        if (!reg.tables[table]?.export) continue;
         let columns: string[];
         try {
           columns = columnsOf(db, table);

@@ -1,6 +1,7 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type {} from "@tomrade/agent";
 import type {} from "@tomrade/storage";
 import { boot } from "./boot.js";
 import { createWindow } from "./window.js";
@@ -36,8 +37,27 @@ app.whenReady().then(async () => {
   // on the way out — with a deadline, because quitting must not hang on a remote.
   let flushed = false;
   app.on("before-quit", (event) => {
+    if (flushed) return;
+    // A coding run in flight dies with the process. Its session is kept and the
+    // ticket offers Continue afterwards, but the person decides — no daemon.
+    const active = ctx.get("agent")?.activeRuns() ?? [];
+    if (active.length) {
+      const code = active.filter((a) => a.thread.itemId).length;
+      const choice = dialog.showMessageBoxSync({
+        type: "warning",
+        buttons: ["Quit", "Cancel"],
+        defaultId: 1,
+        cancelId: 1,
+        message: `${active.length} agent run${active.length === 1 ? " is" : "s are"} in progress`,
+        detail: code ? `${code} of them implement${code === 1 ? "s" : ""} a ticket. Quitting interrupts them; each ticket keeps its branch and offers Continue.` : "Quitting interrupts them."
+      });
+      if (choice === 1) {
+        event.preventDefault();
+        return;
+      }
+    }
     const storage = ctx.get("storage");
-    if (flushed || !storage) return;
+    if (!storage) return;
     event.preventDefault();
     const done = () => {
       flushed = true;

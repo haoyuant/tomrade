@@ -1,6 +1,6 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { Item, OplogEntry } from "@tomrade/domain";
-import { Icon } from "~/components/icons";
+import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import {
   BoardField,
@@ -16,9 +16,12 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
+import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useFields, useHistory, useSections } from "~/lib/queries";
+import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
+import { openExternal } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
@@ -53,9 +56,13 @@ export function Ledger({ projectId, itemId }: { projectId: string; itemId: strin
   );
 }
 
-/** Plugin sections come as rows and text; the pane draws them with its own primitives. */
+/** Plugin sections come as rows and text; the pane draws them with its own primitives. A row may open a link or run a command. */
 export function PluginSections({ projectId, itemId, variant = "pane" }: { projectId: string; itemId: string; variant?: "pane" | "sheet" }) {
   const sections = useSections(projectId, itemId);
+  const runCommand = useRunCommand(projectId);
+  const toast = useToast();
+  const run = (id: string) =>
+    runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast({ body: e.message }) });
   return (
     <>
       {(sections.data ?? []).map((s) => {
@@ -63,12 +70,39 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
           <>
             {s.rows.length > 0 && (
               <dl className="fieldstrip" style={{ marginTop: 0 }}>
-                {s.rows.map((r) => (
-                  <div className="field-row" key={r.label}>
-                    <dt>{r.label}</dt>
-                    <dd>{r.value}</dd>
-                  </div>
-                ))}
+                {s.rows.map((r, i) => {
+                  const icon = r.icon && (ICON_IDS as readonly string[]).includes(r.icon) ? (r.icon as IconId) : null;
+                  const value = r.href ? (
+                    <a
+                      href={r.href}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openExternal(r.href!);
+                      }}
+                    >
+                      {r.value}
+                    </a>
+                  ) : r.command ? (
+                    <button type="button" className="btn btn-secondary" disabled={runCommand.isPending} onClick={() => run(r.command!)}>
+                      {r.value}
+                    </button>
+                  ) : (
+                    <span className={r.mono ? "num sect-value" : "sect-value"}>{r.value}</span>
+                  );
+                  return (
+                    <div className={r.state === "live" ? "field-row sect-row is-live" : "field-row sect-row"} key={`${r.label}-${i}`}>
+                      <dt className={icon ? "sect-dt" : undefined}>
+                        {icon && <Icon name={icon} size={12} aria-hidden="true" />}
+                        {r.label}
+                      </dt>
+                      <dd>
+                        {r.state && <span className={`state-mark is-${r.state}`} aria-hidden="true" />}
+                        {value}
+                        {r.state === "live" && <span className="sect-runner" aria-hidden="true" />}
+                      </dd>
+                    </div>
+                  );
+                })}
               </dl>
             )}
             {s.text && <p className="meta-txt detail-note">{s.text}</p>}
@@ -199,7 +233,8 @@ export function DetailPane({
   expanded,
   onToggleExpand,
   onClose,
-  onDelete
+  onDelete,
+  onOpenRepositories
 }: {
   item: Item;
   expanded: boolean;
@@ -207,8 +242,10 @@ export function DetailPane({
   onClose: () => void;
   /** Opens the confirmation. The pane never destroys anything itself. */
   onDelete: () => void;
+  /** Where Start sends the user when the workstream has no repository, or this machine no checkout of it. */
+  onOpenRepositories?: () => void;
 }) {
-  const body = <DetailBody item={item} expanded={expanded} onToggleExpand={onToggleExpand} onClose={onClose} onDelete={onDelete} />;
+  const body = <DetailBody item={item} expanded={expanded} onToggleExpand={onToggleExpand} onClose={onClose} onDelete={onDelete} onOpenRepositories={onOpenRepositories} />;
 
   // Expanded, the pane reads as a modal overlay, so it is one: Radix supplies
   // the focus trap, the focus restore and the Escape that collapses it.
@@ -233,18 +270,25 @@ function DetailBody({
   expanded,
   onToggleExpand,
   onClose,
-  onDelete
+  onDelete,
+  onOpenRepositories
 }: {
   item: Item;
   expanded: boolean;
   onToggleExpand: () => void;
   onClose: () => void;
   onDelete: () => void;
+  onOpenRepositories?: () => void;
 }) {
   const { t } = useI18n();
-  const { project, boards } = useWorkspace();
+  const { project, boards, items, select } = useWorkspace();
   const { write } = useIssueWriter(project.id);
   const owner = boards.find((b) => b.id === item.boardId);
+  // A gate may name another ticket (the bootstrap one) by key; the pane shows it in place.
+  const openIssue = (idOrKey: string) => {
+    const target = items.find((i) => i.id === idOrKey || i.key === idOrKey);
+    if (target) select(target.id);
+  };
 
   return (
     <>
@@ -252,6 +296,7 @@ function DetailBody({
         <span className="card-id">{item.key}</span>
         {owner && <span className="tag neutral">{owner.name}</span>}
         <Spacer />
+        <StartTicketMenu projectId={project.id} item={item} onOpenIssue={openIssue} onOpenRepositories={onOpenRepositories} />
         <LockButton item={item} write={write} />
         {/* Sits away from Close, and carries its own class rather than another
             bare `.btn-icon` — the head is addressed by position in places. */}

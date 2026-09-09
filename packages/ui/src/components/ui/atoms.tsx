@@ -67,6 +67,7 @@ export function ProvenanceMark({ item, height = 17 }: { item: Item; height?: num
   const { t } = useI18n();
   const prov = provenanceOf(item);
   if (prov === "ai") return <span className="prov-tick" style={{ height }} title={t("common.agentWrite")} />;
+  if (prov === "sync") return <span className="prov-tick is-sync" style={{ height }} title={t("common.syncWrite")} />;
   if (prov === "locked") return <Icon className="prov-lock" name="i-lock" size={12} aria-label={t("common.humanLocked")} />;
   return null;
 }

@@ -1,9 +1,17 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 
-const exec = promisify(execFile);
+const exec = (binary: string, args: string[], options: Parameters<typeof execFile>[2], stdin?: string): Promise<{ stdout: string | Buffer; stderr: string | Buffer }> =>
+  new Promise((resolve, reject) => {
+    const child = execFile(binary, args, options, (error, stdout, stderr) => {
+      if (error) {
+        Object.assign(error, { stdout, stderr });
+        reject(error);
+      } else resolve({ stdout, stderr });
+    });
+    if (stdin !== undefined) child.stdin?.end(stdin);
+  });
 
 export class GitMissingError extends Error {
   constructor(public readonly binary: string) {
@@ -30,7 +38,7 @@ export class GitError extends Error {
  * A GUI-launched Electron app has a minimal PATH and no terminal: git must never
  * be allowed to sit waiting for a password, or a publish hangs for ever.
  */
-const ENV = {
+export const GIT_ENV = {
   GIT_TERMINAL_PROMPT: "0",
   GIT_ASKPASS: "",
   SSH_ASKPASS: "",
@@ -38,19 +46,19 @@ const ENV = {
 };
 
 export interface Git {
-  (args: string[], opts?: { cwd?: string; ok?: boolean }): Promise<{ stdout: string; code: number }>;
+  (args: string[], opts?: { cwd?: string; ok?: boolean; stdin?: string }): Promise<{ stdout: string; stderr?: string; code: number }>;
 }
 
 export function gitRunner(binary: string, defaultCwd?: string): Git {
   return async (args, opts = {}) => {
     try {
-      const { stdout } = await exec(binary, args, { cwd: opts.cwd ?? defaultCwd, env: { ...process.env, ...ENV }, maxBuffer: 16 * 1024 * 1024 });
-      return { stdout: stdout.toString(), code: 0 };
+      const { stdout, stderr } = await exec(binary, args, { cwd: opts.cwd ?? defaultCwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
+      return { stdout: stdout.toString(), stderr: stderr.toString(), code: 0 };
     } catch (error) {
       const e = error as { code?: number | string; stderr?: string | Buffer; stdout?: string | Buffer };
       if (e.code === "ENOENT") throw new GitMissingError(binary);
       // `ok` means a non-zero exit is an answer, not a failure — `diff --quiet`, say.
-      if (opts.ok) return { stdout: String(e.stdout ?? ""), code: typeof e.code === "number" ? e.code : 1 };
+      if (opts.ok) return { stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? ""), code: typeof e.code === "number" ? e.code : 1 };
       throw new GitError(args, String(e.stderr ?? ""));
     }
   };

@@ -48,8 +48,8 @@ const PRIORITY_LABEL_BY_LOCALE: Record<Locale, readonly string[]> = {
 export const PRIORITY_LABEL: string[] = [...PRIORITY_LABEL_BY_LOCALE.en];
 
 const PROVENANCE_BY_LOCALE: Record<Locale, Record<Provenance, string>> = {
-  en: { ai: "ai:mcp", human: "human", locked: "human-locked" },
-  zh: { ai: "ai:mcp", human: "人工", locked: "人工锁定" }
+  en: { ai: "ai:mcp", human: "human", sync: "git", locked: "human-locked" },
+  zh: { ai: "ai:mcp", human: "人工", sync: "git 同步", locked: "人工锁定" }
 };
 
 export const PROVENANCE: Record<Provenance, string> = { ...PROVENANCE_BY_LOCALE.en };
