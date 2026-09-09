@@ -7,6 +7,7 @@ import { z } from "zod";
 import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
 import { binaryOk, buildSystem, promptOf, runJsonl } from "@tomrade/engine-claude-code";
 import type {} from "@tomrade/mcp";
+import type {} from "@tomrade/settings";
 
 export const CodexOptions = z.object({
   command: z.string().default("codex"),
@@ -25,6 +26,21 @@ interface CodexLine {
 }
 
 const TOKEN_ENV = "TOMRADE_MCP_TOKEN";
+const LEGACY_CHATGPT_MODEL = "gpt-5-codex";
+
+/** This was once Tomrade's preset, but Codex now rejects it for ChatGPT accounts. */
+export const codexModel = (model?: string): string | undefined => (model === LEGACY_CHATGPT_MODEL ? undefined : model);
+
+function migrateLegacyModel(ctx: Context): void {
+  const all = ctx.settings.get();
+  const agent = all.agent as { engines?: Record<string, unknown> } | undefined;
+  const engines = agent?.engines ?? {};
+  const current = engines.codex as Record<string, unknown> | undefined;
+  if (current?.model !== LEGACY_CHATGPT_MODEL) return;
+  const next = { ...current };
+  delete next.model;
+  ctx.settings.set({ ...all, agent: { ...agent, engines: { ...engines, codex: next } } });
+}
 
 export function createCodexEngine(ctx: Context): Engine {
   let probe: { at: number; state: { ok: boolean; reason?: string } } | null = null;
@@ -35,7 +51,10 @@ export function createCodexEngine(ctx: Context): Engine {
     capabilities: ["backlog", "code"],
     options: CodexOptions,
     picks: () => [
-      { key: "model", title: "Model", choices: [{ value: "gpt-5-codex" }, { value: "gpt-5" }], freeText: true },
+      // Codex CLI resolves its authenticated account's current default. Model
+      // ids change and differ between ChatGPT and API accounts, so custom ids
+      // remain possible without shipping presets that become invalid.
+      { key: "model", title: "Model", choices: [], freeText: true },
       { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
     ],
     async available() {
@@ -84,7 +103,7 @@ export function createCodexEngine(ctx: Context): Engine {
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
         `mcp_servers.tomrade.bearer_token_env_var="${TOKEN_ENV}"`,
-        ...(options.model ? ["-m", options.model] : []),
+        ...(codexModel(options.model) ? ["-m", codexModel(options.model)!] : []),
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])
       ];
       const args = io.resume ? ["exec", "resume", io.resume, ...shared, prompt] : ["exec", ...shared, prompt];
@@ -124,8 +143,9 @@ export function createCodexEngine(ctx: Context): Engine {
 
 export default {
   name: "engine-codex",
-  inject: ["agent", "mcp"],
+  inject: ["agent", "mcp", "settings"],
   apply(ctx: Context) {
+    migrateLegacyModel(ctx);
     ctx.agent.engine(createCodexEngine(ctx));
   }
 };

@@ -636,7 +636,6 @@ export class Agent extends Service {
       if (rc.abort.signal.aborted) {
         result = { stop: "cancelled" };
       } else {
-        this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: message(err) }, rc.run.id);
         result = { stop: "error", error: message(err) };
       }
     } finally {
@@ -722,6 +721,9 @@ export class Agent extends Service {
     rc.abort.abort();
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
+    if (result.stop === "error") {
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: result.error ?? "The engine stopped without an error message." }, rc.run.id);
+    }
     const changes = this.store.changesOf(rc.projectId, rc.run.id);
     if (changes > 0) {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.projectId, rc.run.id) }, rc.run.id);

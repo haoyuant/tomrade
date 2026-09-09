@@ -428,6 +428,9 @@ importers:
       '@tomrade/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8

@@ -33,4 +33,20 @@ describe("list_items tool", () => {
     items.create({ projectId: project.id, title: "B", boardId: board.id, by: "human" });
     expect(((await run("list_items", {})) as unknown[]).length).toBe(2);
   });
+
+  it("counts tickets exactly and returns compact breakdowns without listing rows", async () => {
+    const { run, items, boards, board, project } = await withTools();
+    const cloud = boards.create({ projectId: project.id, name: "Cloud" });
+    items.create({ projectId: project.id, title: "Backlog ticket", boardId: board.id, kind: "ticket", status: "backlog", by: "human" });
+    items.create({ projectId: project.id, title: "Done ticket", boardId: cloud.id, kind: "ticket", status: "done", by: "human" });
+    items.create({ projectId: project.id, title: "Epic", boardId: board.id, kind: "epic", status: "backlog", by: "human" });
+
+    expect(await run("count_items", { kind: "ticket" })).toEqual({
+      count: 2,
+      byKind: { ticket: 2, epic: 0 },
+      byStatus: { backlog: 1, todo: 0, doing: 0, verifying: 0, done: 1, cancelled: 0 },
+      byWorkstream: { Main: 1, Cloud: 1 }
+    });
+    expect(await run("count_items", {})).toMatchObject({ count: 3, byKind: { ticket: 2, epic: 1 } });
+  });
 });

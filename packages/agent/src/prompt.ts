@@ -10,6 +10,7 @@ import type { FocusRef, TurnInput, TurnIO } from "./types.js";
 export const HOUSE_RULES = [
   "House rules:",
   "- Do the smallest thing that satisfies the request. A plain question deserves a plain answer, no tools.",
+  "- For backlog totals, counts, or breakdowns, call count_items exactly once and use its computed count. In Tomrade, a ticket is kind ticket; item totals also include epics. Never fetch or manually count list_items rows for a quantity question.",
   "- Before creating an item, check for duplicates (find_similar); a policy will refuse the create otherwise.",
   "- Features are sized for one pull request, with short imperative titles.",
   "- Propose defaults instead of interrogating; ask at most three questions per turn, through ask_user.",

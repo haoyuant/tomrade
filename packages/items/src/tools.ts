@@ -1,12 +1,14 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import { createItemSchema, filterClauseSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, sortKeySchema, NotFoundError, type Item, type Patch } from "@tomrade/domain";
+import { ITEM_STATUSES, createItemSchema, filterClauseSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, sortKeySchema, NotFoundError, type Item, type Patch } from "@tomrade/domain";
 import { defineTool, requireProjectId } from "@tomrade/tools";
 import type {} from "@tomrade/boards";
 
 const withVersion = z.object({ projectId: z.string().optional(), id: z.string(), baseVersion: z.number().optional() });
 
 type Simple = z.output<typeof listItemsFilterSchema>;
+const readInput = listItemsFilterSchema.extend({ search: z.string().optional(), filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() });
+type ReadInput = z.output<typeof readInput>;
 
 /** The legacy scalar filters, applied after a clause query so both styles compose. */
 function matchesSimple(item: Item, f: Simple): boolean {
@@ -32,24 +34,50 @@ export function registerTools(ctx: Context): void {
     return existing.version;
   };
 
+  const find = (tool: string, { search, filter: clauses, sort, ...filter }: ReadInput, inv: { projectId?: string }): { projectId: string; items: Item[] } => {
+    const projectId = requireProjectId(tool, filter.projectId, inv);
+    // A boardId that names no real workstream would otherwise match zero rows
+    // silently — indistinguishable from a project that genuinely has none.
+    if (filter.boardId !== undefined && !ctx.boards.list(projectId).some((b) => b.id === filter.boardId)) throw new NotFoundError(filter.boardId);
+    const rows =
+      clauses?.length || sort?.length
+        ? ctx.items.query({ projectId, filter: clauses, sortBy: sort }).filter((i) => matchesSimple(i, filter))
+        : ctx.items.list({ ...filter, projectId });
+    const q = search?.trim().toLowerCase();
+    return { projectId, items: q ? rows.filter((i) => i.title.toLowerCase().includes(q) || (i.body ?? "").toLowerCase().includes(q)) : rows };
+  };
+
   ctx.tools.register(
     defineTool({
       name: "list_items",
       title: "List backlog items",
       description:
-        "List backlog items. Simple filters (board, status, kind, priority, label, parent) and a search string over title and body; or `filter` clauses over any field (see list_fields) with `sort` keys — a null value in a clause means empty.",
-      input: listItemsFilterSchema.extend({ search: z.string().optional(), filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() }),
-      execute({ search, filter: clauses, sort, ...filter }, inv) {
-        const projectId = requireProjectId("list_items", filter.projectId, inv);
-        // A boardId that names no real workstream would otherwise match zero rows
-        // silently — indistinguishable from a project that genuinely has none.
-        if (filter.boardId !== undefined && !ctx.boards.list(projectId).some((b) => b.id === filter.boardId)) throw new NotFoundError(filter.boardId);
-        const items =
-          clauses?.length || sort?.length
-            ? ctx.items.query({ projectId, filter: clauses, sortBy: sort }).filter((i) => matchesSimple(i, filter))
-            : ctx.items.list({ ...filter, projectId });
-        const q = search?.trim().toLowerCase();
-        return q ? items.filter((i) => i.title.toLowerCase().includes(q) || (i.body ?? "").toLowerCase().includes(q)) : items;
+        "List backlog item details. Use count_items instead for totals, counts, or breakdowns; do not fetch rows merely to count them. Supports simple filters (board, status, kind, priority, label, parent), search over title/body, filter clauses, and sort keys.",
+      input: readInput,
+      execute: (args, inv) => find("list_items", args, inv).items
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "count_items",
+      title: "Count backlog items",
+      description:
+        "Answer backlog quantity questions in one call without listing rows. Returns the exact matched count plus breakdowns by kind, status, and workstream. In Tomrade, `ticket` and `epic` are distinct item kinds; for 'how many tickets', pass kind: ticket.",
+      input: readInput,
+      execute(args, inv) {
+        const { projectId, items } = find("count_items", args, inv);
+        const boards = new Map(ctx.boards.list(projectId).map((board) => [board.id, board.name]));
+        const byKind = { ticket: 0, epic: 0 };
+        const byStatus = Object.fromEntries(ITEM_STATUSES.map((status) => [status, 0])) as Record<(typeof ITEM_STATUSES)[number], number>;
+        const byWorkstream: Record<string, number> = {};
+        for (const item of items) {
+          byKind[item.kind] += 1;
+          byStatus[item.status] += 1;
+          const board = boards.get(item.boardId) ?? item.boardId;
+          byWorkstream[board] = (byWorkstream[board] ?? 0) + 1;
+        }
+        return { count: items.length, byKind, byStatus, byWorkstream };
       }
     })
   );
