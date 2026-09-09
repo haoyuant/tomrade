@@ -21,8 +21,12 @@ export interface FirstPromptInput {
 const conventions = (key: string, defaultBranch: string) =>
   [
     "Conventions:",
+    `- this run owns exactly ${key}; implement only its stated outcome and acceptance criteria`,
+    "- use neighboring tickets only for context and dependencies; do not implement their models, screens, flows, APIs, or cleanup while you are here",
+    "- before the first edit, name the smallest expected change; before pushing, inspect the full diff and remove work that is not required by this ticket",
+    "- if required work belongs to another ticket, report it with note_progress and leave it for a separate branch and session",
     `- every commit message names ${key}; never commit to ${defaultBranch}, stay on your branch`,
-    "- call link_code with the pull request URL once you push and open one — that moves the ticket to Verifying",
+    "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
     "- call note_progress with one line at each milestone; it is what the ticket shows while you work",
     "- if git push, fetch, pull or gh fails with an authentication or repository-not-found error, do not switch accounts, edit credential helpers or change the remote; commit locally, call note_progress with 'blocked: push …', and stop — the human owns credentials",
     "- do not mark the ticket done; merging does that"

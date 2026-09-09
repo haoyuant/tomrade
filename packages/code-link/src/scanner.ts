@@ -32,8 +32,6 @@ export interface ScanOptions {
   sinceSha: string | null;
   /** Fetch from origin first. Off, only what this machine already has is read. */
   fetch?: boolean;
-  /** Branches to measure besides the keyed ones — those a person linked by hand under a name the template does not know. */
-  track?: string[];
   logCap?: number;
 }
 
@@ -42,6 +40,8 @@ export interface ScannedBranch {
   sha: string;
   committedAt: number;
   keyNum: number | null;
+  /** Every ticket named by the branch or by commits unique to it. */
+  keyNums: number[];
   ahead: number;
   behind: number;
   /** The head is an ancestor of the default branch. */
@@ -118,7 +118,8 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     const committedAt = Number(date) * 1000 || 0;
     const seen = byName.get(name);
     if (!seen) {
-      byName.set(name, { name, sha, committedAt, keyNum: parseBranch(name, opts.prefix), ahead: 0, behind: 0, merged: false, local, remote: !local });
+      const keyNum = parseBranch(name, opts.prefix);
+      byName.set(name, { name, sha, committedAt, keyNum, keyNums: keyNum === null ? [] : [keyNum], ahead: 0, behind: 0, merged: false, local, remote: !local });
       continue;
     }
     // The same branch here and on the remote: the newer head is where the work is.
@@ -128,10 +129,8 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
   }
 
   const branches = [...byName.values()];
-  const tracked = new Set(opts.track ?? []);
   if (defaultRef) {
     for (const b of branches) {
-      if (b.keyNum === null && !tracked.has(b.name)) continue;
       const counts = await run(["rev-list", "--left-right", "--count", `${b.sha}...${defaultRef}`]);
       if (counts.code === 0) {
         const [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number);
@@ -143,6 +142,20 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
       // as unmerged; a later scan sees a real merge commit or the default-log
       // key evidence instead.
       b.merged = (b.ahead > 0 || b.behind > 0) && (await run(["merge-base", "--is-ancestor", b.sha, defaultRef])).code === 0;
+      // Work started outside Tomrade does not necessarily follow the branch
+      // template. Commit keys are the cheap, local fallback: no model call and
+      // no forge API are needed to discover it.
+      if (b.ahead > 0) {
+        const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), `${defaultRef}..${b.sha}`]);
+        for (const keyNum of keysInText(log.stdout, opts.prefix)) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
+      }
+    }
+  } else {
+    // In a repository without a default branch, every commit on a branch is
+    // unique work and can still identify a ticket started from another tool.
+    for (const b of branches) {
+      const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), b.sha]);
+      for (const keyNum of keysInText(log.stdout, opts.prefix)) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
     }
   }
 

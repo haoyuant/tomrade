@@ -685,13 +685,9 @@ export class CodeLink extends Service {
         continue;
       }
       const before = this.store.repoState(projectId, repo.id);
-      const track = this.store
-        .linksForRepo(projectId, repo.id)
-        .filter((l) => l.source === "manual" && l.branch)
-        .map((l) => l.branch);
       let result: ScanResult;
       try {
-        result = await scanRepo(this.git, placement.checkout, { defaultBranch: repo.defaultBranch, prefix, sinceSha: before?.scannedSha ?? null, fetch: this.config.fetch, track });
+        result = await scanRepo(this.git, placement.checkout, { defaultBranch: repo.defaultBranch, prefix, sinceSha: before?.scannedSha ?? null, fetch: this.config.fetch });
       } catch (err) {
         summary.skipped.push({ repoId: repo.id, reason: message(err) });
         continue;
@@ -736,23 +732,24 @@ export class CodeLink extends Service {
     let links = 0;
 
     for (const b of result.branches) {
-      if (b.keyNum === null) continue;
-      const item = byNum.get(b.keyNum);
-      if (!item) {
-        unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum: b.keyNum, sha: b.sha, committedAt: b.committedAt });
-        continue;
+      for (const keyNum of b.keyNums) {
+        const item = byNum.get(keyNum);
+        if (!item) {
+          unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum, sha: b.sha, committedAt: b.committedAt });
+          continue;
+        }
+        const link = this.store.upsertLink(
+          projectId,
+          { itemId: item.id, repoId: repo.id, branch: b.name },
+          { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
+        );
+        if (b.merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
+        seen.add(link.id);
+        touched.add(item.id);
+        links += 1;
+        // A branch with commits is a session's heartbeat too.
+        for (const s of this.store.sessions(projectId, { itemId: item.id, live: true })) if (s.branch === b.name && (s.lastCommitAt ?? 0) < b.committedAt) this.store.patchSession(projectId, s.id, { lastCommitAt: b.committedAt });
       }
-      const link = this.store.upsertLink(
-        projectId,
-        { itemId: item.id, repoId: repo.id, branch: b.name },
-        { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
-      );
-      if (b.merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
-      seen.add(link.id);
-      touched.add(item.id);
-      links += 1;
-      // A branch with commits is a session's heartbeat too.
-      for (const s of this.store.sessions(projectId, { itemId: item.id, live: true })) if (s.branch === b.name && (s.lastCommitAt ?? 0) < b.committedAt) this.store.patchSession(projectId, s.id, { lastCommitAt: b.committedAt });
     }
 
     // A branch linked by hand under a name the template does not know is still one of ours.

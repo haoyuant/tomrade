@@ -424,6 +424,8 @@ describe("starting a ticket", () => {
     expect(Object.keys(settings.hooks)).toEqual(expect.arrayContaining(["SessionStart", "Stop", "Notification", "SessionEnd"]));
     expect(JSON.stringify(settings)).not.toMatch(/(?:^|\s)>\/dev\/null/);
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`Implement ${item.key}`);
+    expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`this run owns exactly ${item.key}`);
+    expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain("inspect the full diff");
     expect(fs.existsSync(path.join(dir, "run.command"))).toBe(true);
 
     // The native MCP client goes through the session binding, not the plain
@@ -433,6 +435,13 @@ describe("starting a ticket", () => {
     const listed = await client.callTool({ name: "list_items", arguments: {} });
     expect(listed.isError).not.toBe(true);
     expect(JSON.stringify(listed.content)).toContain(item.key);
+    const crossTicketWrite = await client.callTool({ name: "change_status", arguments: { id: item.id, status: "done" } });
+    expect(crossTicketWrite.isError).toBe(true);
+    expect(JSON.stringify(crossTicketWrite.content)).toContain("coding session cannot edit the backlog");
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("doing");
+    const uncheckedLink = await client.callTool({ name: "link_code", arguments: { prUrl: "https://github.com/acme/app/pull/9" } });
+    expect(uncheckedLink.isError).toBe(true);
+    expect(JSON.stringify(uncheckedLink.content)).toContain("scopeChecked: true");
     await client.close();
 
     // A hook posts to the event URL: the session's state follows.

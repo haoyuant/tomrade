@@ -49,6 +49,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
     else if (s?.itemIds[0]) item = ctx.items.get(projectId, s.itemIds[0]);
     else if (thread?.itemId) item = ctx.items.get(projectId, thread.itemId);
     if (!item) throw new Error(key ? `${tool}: no ticket ${key} in this project` : `${tool}: this session is not on a ticket — pass key`);
+    if (s?.itemIds.length && !s.itemIds.includes(item.id)) {
+      const held = ctx.items.get(projectId, s.itemIds[0]);
+      throw new Error(`${tool}: this session owns ${held?.key ?? "another ticket"}, not ${item.key} — use a separate session`);
+    }
 
     const board = ctx.boards.get(projectId, item.boardId);
     const repoId = s?.repoId ?? board?.repoId ?? null;
@@ -61,18 +65,22 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       name: "link_code",
       title: "Link code to a ticket",
       description:
-        "Attach a branch and/or pull request to a ticket. Call it when you push and open a PR (pass prUrl); the ticket moves to Verifying. Without `key` it applies to the ticket this session was started from.",
+        "Attach a branch and/or pull request to a ticket. A coding session must inspect its complete diff and pass scopeChecked: true; then the ticket moves to Verifying. Without `key` it applies to the ticket this session was started from.",
       input: z.object({
         key: z.string().optional().describe("Ticket key, e.g. TOM-42; defaults to this session's ticket"),
         branch: z.string().optional().describe("Branch name; defaults to this session's branch"),
         prUrl: z.string().url().optional(),
         prNumber: z.number().int().positive().optional(),
         prState: z.enum(["open", "merged", "closed"]).optional().describe("Defaults to open when a prUrl is given"),
+        scopeChecked: z.literal(true).optional().describe("Required from a coding session: every change in the full diff maps to this ticket's acceptance criteria"),
         projectId: z.string().optional()
       }),
       execute: (args, inv) => {
         const projectId = requireProjectId("link_code", args.projectId, inv);
-        const { item, repoId, branch: implied } = subject("link_code", projectId, args.key, inv);
+        const { item, repoId, branch: implied, session } = subject("link_code", projectId, args.key, inv);
+        if (session && args.scopeChecked !== true) {
+          throw new Error("link_code: inspect the complete diff against the default branch, remove work outside this ticket, then pass scopeChecked: true");
+        }
         if (!repoId) throw new Error(`link_code: ${item.key}'s workstream has no repository`);
         const existing = host.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.branch);
         const branch = args.branch?.replace(/^origin\//, "") ?? implied ?? existing[0]?.branch ?? "";
@@ -119,7 +127,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       name: "claim_ticket",
       title: "Claim a ticket to work on",
       description:
-        "Before implementing a ticket from your own terminal: returns the ticket, the branch name to use, the repository's conventions, and marks it Doing. A session that already holds a ticket may claim another — the work is then attributed to both.",
+        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. One session may own only one ticket; start a separate session for another ticket.",
       input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
       execute: (args, inv) => {
         const projectId = requireProjectId("claim_ticket", args.projectId, inv);
@@ -134,6 +142,11 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
         const bound = sessionContext.getStore();
         const session = (bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null) ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        const other = session?.itemIds.find((id) => id !== item.id);
+        if (other) {
+          const held = ctx.items.get(projectId, other);
+          throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
+        }
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.
         const branch = existing?.branch || session?.branch || branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title);
@@ -150,6 +163,9 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           repository: repo ? { name: repo.name, remote: repo.remote, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false } : null,
           blockedBy: blockers.map((b) => ({ key: b.key, title: b.title, status: b.status })),
           conventions: [
+            `this session owns only ${item.key}; implement only its stated outcome and acceptance criteria`,
+            "neighboring tickets are context, not extra implementation work; leave their code for separate sessions",
+            "before pushing, review the full diff and remove anything this ticket does not require",
             `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
             `every commit message names ${item.key}`,
             "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",

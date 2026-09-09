@@ -88,6 +88,19 @@ const firstLine = (text: string | undefined, max: number): string => {
 
 const REMOTE_COMMAND = /\bgit\s+(?:push|fetch|pull|ls-remote|clone)\b|^\s*gh\s/;
 const BLOCKED_COMMAND = /\bgit\s+(?:push|fetch|pull)\b|^\s*gh\s/;
+/** Backlog planning and status writes do not belong to a ticket's coding session. */
+const OUT_OF_SCOPE_TOOLS = new Set([
+  "create_item",
+  "update_item",
+  "change_status",
+  "delete_item",
+  "create_workstream",
+  "update_workstream",
+  "remove_workstream",
+  "update_dossier",
+  "plan_and_apply",
+  "update_project_brief"
+]);
 
 const bashCommand = (p: HookPayload): string => (p.tool_name === "Bash" && typeof p.tool_input?.command === "string" ? p.tool_input.command : "");
 
@@ -139,6 +152,9 @@ export class Sessions {
       author,
       projectId: session.projectId,
       execute: (name: string, args: unknown) => {
+        if (OUT_OF_SCOPE_TOOLS.has(name)) {
+          throw new Error(`${name}: a coding session cannot edit the backlog or another ticket — finish the current ticket, then use a separate planning or coding session`);
+        }
         this.touch(session.projectId, session.id, { state: "running", tool: true });
         return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => tools.execute(name, args, { by: author, projectId: session.projectId }));
       },

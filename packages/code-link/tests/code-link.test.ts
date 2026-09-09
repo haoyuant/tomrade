@@ -118,6 +118,22 @@ describe("code link", () => {
     expect((await codeLink.scan(project.id)).changed).toBe(0);
   });
 
+  it("discovers work started outside Tomrade from ticket keys in commits on an arbitrary branch", async () => {
+    const { codeLink, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const first = ticket("Manual work", "todo");
+    const second = ticket("Paired work", "backlog");
+    const branch = "feature/from-another-agent";
+    commitOn(checkout, branch, "manual.ts", `${first.key}: started outside Tomrade\n\nAlso covers ${second.key}`);
+
+    const summary = await codeLink.scan(project.id);
+
+    expect(summary.changed).toBe(2);
+    expect(items.get(project.id, first.id)!.status).toBe("doing");
+    expect(items.get(project.id, second.id)!.status).toBe("doing");
+    expect(codeLink.links(project.id, first.id)[0]).toMatchObject({ repoId: repo.id, branch, source: "scan", ahead: 1 });
+    expect(codeLink.links(project.id, second.id)[0]).toMatchObject({ repoId: repo.id, branch, source: "scan", ahead: 1 });
+  });
+
   it("does not mark a ticket done while its active session is on an uncommitted branch", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Still working", "doing");

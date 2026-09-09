@@ -25,8 +25,11 @@ export function tomradeSection(input: ConnectInput): string {
     `Tickets for this repository live in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code, \`.codex/config.toml\` for Codex).`,
     "",
     `- Before starting a ticket, call \`claim_ticket("${example}")\`: it returns the ticket, the branch to use, and marks it Doing.`,
+    "- One coding session owns one ticket. Implement only that ticket's stated outcome and acceptance criteria; neighboring tickets are context, not extra work.",
+    "- Before pushing, inspect the complete diff against the default branch and remove models, screens, flows, APIs, refactors, and cleanup that the ticket does not require.",
+    "- If you discover work for another ticket, leave it untouched, report it with `note_progress`, and start a separate branch and session for that ticket.",
     `- Branch names follow \`${input.branchTemplate}\` (for example \`${example.toLowerCase()}/short-slug\`); every commit message names the key (\`${example}: …\`).`,
-    "- When you push and open a pull request, call `link_code` with its URL. Never mark a ticket done yourself — merging does that.",
+    "- After the full-diff scope review, call `link_code` with the pull request URL and `scopeChecked: true`. Never mark a ticket done yourself — merging does that.",
     "- Call `note_progress` with one line at milestones; it is what the ticket shows while you work.",
     ""
   ].join("\n");

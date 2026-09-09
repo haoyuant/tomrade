@@ -89,6 +89,8 @@ describe("connecting a repository", () => {
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).not.toContain("old words");
     expect(claude).toContain('claim_ticket("APP-42")');
+    expect(claude).toContain("One coding session owns one ticket");
+    expect(claude).toContain("inspect the complete diff");
     expect(claude).toContain("## Layout\n\nkeep me");
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
     const settings = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")) as { permissions: unknown; hooks: Record<string, unknown[]> };
@@ -130,6 +132,12 @@ describe("a developer's own Claude Code session", () => {
     expect(claimed.branch).toBe(`tom-${item.keyNum}/offline-work`);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: session.id, itemIds: [item.id], branch: claimed.branch });
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: claimed.branch, source: "mcp" });
+
+    const other = items.create({ projectId: project.id, boardId: board.id, title: "Separate work", status: "todo", by: "human" });
+    await expect(ctx.tools.execute("claim_ticket", { key: other.key }, { by: "ai:claude-code", projectId: project.id })).rejects.toThrow(
+      `this session already owns ${item.key}`
+    );
+    expect(items.get(project.id, other.id)!.status).toBe("todo");
 
     await post({ hook_event_name: "Stop", session_id: "cli-9", cwd: checkout });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");
