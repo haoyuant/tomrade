@@ -106,7 +106,9 @@ export function createCodexEngine(ctx: Context): Engine {
         ...(codexModel(options.model) ? ["-m", codexModel(options.model)!] : []),
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])
       ];
-      const args = io.resume ? ["exec", "resume", io.resume, ...shared, prompt] : ["exec", ...shared, prompt];
+      // `codex exec resume` parses options only before SESSION_ID. Putting the
+      // shared flags after it makes clap treat `-s` as an unexpected argument.
+      const args = io.resume ? ["exec", "resume", ...shared, io.resume, prompt] : ["exec", ...shared, prompt];
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       let session: string | undefined;

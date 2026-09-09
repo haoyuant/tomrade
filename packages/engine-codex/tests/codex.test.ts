@@ -52,5 +52,11 @@ describe("the Codex engine", () => {
 
     const args = fs.readFileSync(path.join(dir, "args.txt"), "utf8").split("\n");
     expect(args).not.toContain("-m");
+
+    const next = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
+    expect((await settled(ctx, project.id, next.runId)).status).toBe("done");
+    const resumed = fs.readFileSync(path.join(dir, "args.txt"), "utf8").split("\n");
+    expect(resumed.slice(0, 2)).toEqual(["exec", "resume"]);
+    expect(resumed.indexOf("-s")).toBeLessThan(resumed.indexOf("codex-session-1"));
   });
 });
