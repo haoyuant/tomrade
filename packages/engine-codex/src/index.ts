@@ -99,6 +99,11 @@ export function createCodexEngine(ctx: Context): Engine {
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
         `mcp_servers.tomrade.bearer_token_env_var="${TOKEN_ENV}"`,
+        "-c",
+        // The in-app runner cannot display Codex CLI approval prompts. Tomrade
+        // already scopes this server to the run and applies its own write
+        // policy, so its tools can execute without a second approval layer.
+        'mcp_servers.tomrade.default_tools_approval_mode="approve"',
         ...(codexModel(options.model) ? ["-m", codexModel(options.model)!] : []),
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])
       ];

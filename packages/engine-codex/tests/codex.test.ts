@@ -52,6 +52,7 @@ describe("the Codex engine", () => {
 
     const args = fs.readFileSync(path.join(dir, "args.txt"), "utf8").split("\n");
     expect(args).not.toContain("-m");
+    expect(args).toContain('mcp_servers.tomrade.default_tools_approval_mode="approve"');
 
     const next = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
     expect((await settled(ctx, project.id, next.runId)).status).toBe("done");
@@ -59,6 +60,7 @@ describe("the Codex engine", () => {
     expect(resumed.slice(0, 2)).toEqual(["exec", "resume"]);
     expect(resumed).not.toContain("-s");
     expect(resumed).not.toContain("-C");
+    expect(resumed).toContain('mcp_servers.tomrade.default_tools_approval_mode="approve"');
     expect(resumed.indexOf("--json")).toBeLessThan(resumed.indexOf("codex-session-1"));
   });
 });
