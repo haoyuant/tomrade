@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tomrade pet</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+      body { display: grid; place-items: center; user-select: none; }
+      canvas {
+        width: 100vw;
+        height: 100vh;
+        image-rendering: pixelated;
+        -webkit-user-drag: none;
+        -webkit-app-region: drag;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="pet" width="352" height="280" aria-label="Tomrade pet"></canvas>
+    <script>
+      (() => {
+        const canvas = document.getElementById("pet");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = false;
+        const images = new Map();
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+        let state = { mood: "idle", animation: { source: "cat-idle-strip.png", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 360 } };
+        let startedAt = performance.now();
+        let frame = -1;
+
+        const imageFor = (source) => {
+          if (images.has(source)) return images.get(source);
+          const image = new Image();
+          image.decoding = "async";
+          image.src = source;
+          image.onload = () => { frame = -1; draw(performance.now()); };
+          images.set(source, image);
+          return image;
+        };
+
+        const draw = (now) => {
+          const animation = state.animation;
+          const image = imageFor(animation.source);
+          const next = reduced.matches ? 0 : Math.floor((now - startedAt) / animation.frameMs) % animation.frames;
+          if (image.complete && image.naturalWidth && next !== frame) {
+            frame = next;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, frame * animation.frameWidth, 0, animation.frameWidth, animation.frameHeight, 0, 0, canvas.width, canvas.height);
+          }
+          requestAnimationFrame(draw);
+        };
+
+        window.tomradeSurface.onState((next) => {
+          if (!next || !next.animation) return;
+          state = next;
+          canvas.setAttribute("aria-label", `Tomrade pet: ${next.mood}`);
+          startedAt = performance.now();
+          frame = -1;
+        });
+
+        const hit = (event) => {
+          const box = canvas.getBoundingClientRect();
+          const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(((event.clientX - box.left) / box.width) * canvas.width)));
+          const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(((event.clientY - box.top) / box.height) * canvas.height)));
+          let opaque = false;
+          try { opaque = ctx.getImageData(x, y, 1, 1).data[3] > 24; } catch {}
+          window.tomradeSurface.setInteractive(opaque);
+        };
+        addEventListener("mousemove", hit);
+        addEventListener("mouseleave", () => window.tomradeSurface.setInteractive(false));
+        const reportMotion = () => {
+          frame = -1;
+          window.tomradeSurface.send({ type: "reduced-motion", value: reduced.matches });
+        };
+        reduced.addEventListener("change", reportMotion);
+        reportMotion();
+        requestAnimationFrame(draw);
+      })();
+    </script>
+  </body>
+</html>

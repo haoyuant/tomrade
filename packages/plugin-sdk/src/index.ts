@@ -21,6 +21,8 @@ export type { ChatEvent, ChatModel, ChatRequest, CompletionRequest, LlmService, 
 export { isSuspended } from "@tomrade/agent";
 export type {
   Agent,
+  AgentActivity,
+  AgentEvent,
   AgentPolicy,
   Block,
   CardView,
@@ -37,7 +39,24 @@ export type {
   WorkflowSpec
 } from "@tomrade/agent";
 export type { Mcp } from "@tomrade/mcp";
-export type { Contributions, Command, CommandResult, CommandScope, Badge, BadgeProvider, BadgeTone, GraphEdge, GraphInfo, GraphSpec, StatusItem, Section, SectionRow } from "@tomrade/contributions";
+export type {
+  Contributions,
+  Command,
+  CommandResult,
+  CommandScope,
+  Badge,
+  BadgeProvider,
+  BadgeTone,
+  GraphEdge,
+  GraphInfo,
+  GraphSpec,
+  StatusItem,
+  Section,
+  SectionRow,
+  AssistantAccessory,
+  SpriteAnimation
+} from "@tomrade/contributions";
+export type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities } from "@tomrade/desktop-surface";
 export type { Ipc, Channels, Broadcasts, ChannelHandler, Invoke } from "@tomrade/ipc";
 
 /** Identity with types: an object plugin with `name`, optional `inject`/`Config`, and `apply(ctx, config)`. */

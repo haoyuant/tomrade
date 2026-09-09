@@ -15,6 +15,16 @@ describe("contributions", () => {
         ctx.contributions.badge({ id: "demo", compute: (items) => Object.fromEntries(items.filter((i) => i.labels.includes("bug")).map((i) => [i.id, [{ id: "bug", label: "bug!" }]])) });
         ctx.contributions.statusItem({ id: "demo", text: () => (acked.length ? `${acked.length} acked` : null) });
         ctx.contributions.section({ id: "demo", title: "Demo", render: (item) => (item.labels.includes("bug") ? { rows: [{ label: "Severity", value: "high" }] } : null) });
+        ctx.contributions.assistantAccessory({
+          id: "demo.pet",
+          kind: "sprite-pet",
+          title: "Demo pet",
+          stateChannel: "demo.pet.state",
+          changedChannel: "demo.pet.changed",
+          width: 32,
+          height: 24,
+          animations: { idle: { source: "data:image/png;base64,demo", frames: 4, frameWidth: 32, frameHeight: 24, frameMs: 200 } }
+        });
       }
     });
 
@@ -24,10 +34,23 @@ describe("contributions", () => {
     expect(await ctx.contributions.run("demo.ack", { projectId: project.id, itemId: item.id })).toEqual({ toast: "Acknowledged" });
     expect(ctx.contributions.statusItems({ projectId: project.id })).toEqual([{ id: "demo", text: "1 acked" }]);
     expect(ctx.contributions.sectionsFor(project.id, item.id)).toEqual([{ id: "demo", title: "Demo", rows: [{ label: "Severity", value: "high" }], text: undefined }]);
+    expect(ctx.contributions.assistantAccessories()).toEqual([
+      {
+        id: "demo.pet",
+        kind: "sprite-pet",
+        title: "Demo pet",
+        stateChannel: "demo.pet.state",
+        changedChannel: "demo.pet.changed",
+        width: 32,
+        height: 24,
+        animations: { idle: { source: "data:image/png;base64,demo", frames: 4, frameWidth: 32, frameHeight: 24, frameMs: 200 } }
+      }
+    ]);
 
     await fiber.dispose();
     expect(ctx.contributions.commands()).toEqual([]);
     expect(ctx.contributions.badgesFor(project.id)).toEqual({});
+    expect(ctx.contributions.assistantAccessories()).toEqual([]);
     await expect(ctx.contributions.run("demo.ack", {})).rejects.toThrow(/Unknown command/);
   });
 });

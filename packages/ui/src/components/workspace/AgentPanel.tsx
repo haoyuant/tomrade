@@ -2,12 +2,13 @@ import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } fr
 import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
 import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
+import { PetStage } from "./PetStage";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
-import { useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
+import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -257,6 +258,7 @@ export function AgentPanel({
   const settings = useSettings();
   const itemsQ = useItems(projectId);
   const boardsQ = useBoards(projectId);
+  const accessories = useAssistantAccessories();
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
   const threadId = (chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
   const detail = useAgentThread(projectId, threadId);
@@ -476,6 +478,9 @@ export function AgentPanel({
       </div>
 
       <div className="ai-foot">
+        {(accessories.data ?? []).map((accessory) => (
+          <PetStage key={accessory.id} accessory={accessory} threadId={threadId} />
+        ))}
         <div className="ai-composer">
           <input
             ref={composer}

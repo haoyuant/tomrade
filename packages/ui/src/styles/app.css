@@ -1000,6 +1000,17 @@ strong { font-weight: 500; }
 .ai-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .ai-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
+.pet-stage {
+  height: 112px; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;
+  display: flex; align-items: flex-end; justify-content: center;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pet-sprite {
+  display: block; flex: 0 0 auto; image-rendering: pixelated;
+  background-repeat: no-repeat; background-position: 0 0;
+  animation: pet-frames var(--pet-duration) steps(var(--pet-frame-count), end) var(--pet-iterations);
+}
+@keyframes pet-frames { to { background-position-x: var(--pet-travel); } }
 /* the composer is the input: the send/stop control lives inside its border */
 .ai-composer {
   display: flex; align-items: center; gap: 4px;
@@ -1503,6 +1514,7 @@ html.overlay-open .titlebar .btn-primary {
 @keyframes w-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .working .w-tick, .working .w-dots span { animation: none; }
+  .pet-sprite { animation: none; }
 }
 
 /* Item keys in prose: one word wide, the card one click away. */

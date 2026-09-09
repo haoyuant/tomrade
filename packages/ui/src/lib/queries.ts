@@ -53,7 +53,8 @@ export const keys = {
   statusItems: (projectId?: string) => ["contributions", "status", projectId ?? ""] as const,
   sections: (projectId: string, itemId: string) => ["contributions", "sections", projectId, itemId] as const,
   graphs: ["contributions", "graphs"] as const,
-  graphEdges: (projectId: string, graphId: string) => ["contributions", "graph", projectId, graphId] as const
+  graphEdges: (projectId: string, graphId: string) => ["contributions", "graph", projectId, graphId] as const,
+  assistantAccessories: ["contributions", "assistant-accessories"] as const
 };
 
 /** Everything a board write can invalidate, in one call. */
@@ -113,6 +114,8 @@ export const useSections = (projectId: string, itemId: string | undefined) =>
 export const useGraphs = () => useQuery({ queryKey: keys.graphs, queryFn: () => invoke("contributions.graphs") });
 export const useGraphEdges = (projectId: string, graphId: string | null) =>
   useQuery({ queryKey: keys.graphEdges(projectId, graphId ?? ""), queryFn: () => invoke("contributions.graph", graphId!, { projectId }), enabled: !!graphId });
+export const useAssistantAccessories = () =>
+  useQuery({ queryKey: keys.assistantAccessories, queryFn: () => invoke("contributions.assistantAccessories"), staleTime: Infinity });
 
 export const usePlugins = () => useQuery({ queryKey: keys.plugins, queryFn: () => invoke("plugins.list") });
 

@@ -44,6 +44,12 @@ modules:
   - id: ipc
     title: Renderer channels
     required: true
+  - id: desktopSurfaces
+    title: Desktop surfaces
+    required: true
+  - id: desktopSurfaces
+    title: Desktop surfaces
+    required: true
   # The registry, not the destinations. storage-git and storage-github register
   # providers into it and hold no module of their own, so either can go without
   # taking a project's own copy with it.
@@ -63,6 +69,8 @@ modules:
     title: MCP server
   - id: codeLink
     title: Code link
+  - id: pet
+    title: Pet
 
 plugins:
   # Caches only: every file under here can be rebuilt from a project's folder.
@@ -154,8 +162,16 @@ plugins:
     name: ./dist/ipc.js
   - id: shell
     name: ./dist/shell.js
+  # Generic native host for feature-owned auxiliary windows. The host owns
+  # Electron mechanics; a feature plugin owns whether its surface exists.
+  - id: desktop-surfaces
+    name: ./dist/surfaces.js
   - id: contributions
     name: "@tomrade/contributions"
+  # Optional task-state companion: its row switch unloads the contribution,
+  # channels, listeners, timers and desktop surface together.
+  - id: pet
+    name: "@tomrade/pet"
   # A third-party plugin: it edits nothing above, it is only listed here.
   - id: stale
     name: ../../examples/stale/dist/index.js

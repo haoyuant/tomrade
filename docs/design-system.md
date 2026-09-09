@@ -20,7 +20,7 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 | Theme resolution and the crossfade | `packages/ui/src/lib/theme.tsx` |
 | Toasts, including the hold-on-hover countdown | `packages/ui/src/lib/toast.tsx` |
 | Every call into the main process | `packages/ui/src/lib/api.ts` + `queries.ts`, typed by the channels plugins contribute (`@tomrade/ipc`) |
-| Plugin contributions: palette commands, card badges, status items, detail sections, settings cards | rendered where each lives — `CommandPalette.tsx`, `Card.tsx`, `StatusBar.tsx`, `DetailPane.tsx`, `SettingsDialog.tsx` — from data, never from plugin code |
+| Plugin contributions: palette commands, card badges, status items, detail sections, settings cards, assistant accessories | rendered where each lives — `CommandPalette.tsx`, `Card.tsx`, `StatusBar.tsx`, `DetailPane.tsx`, `SettingsDialog.tsx`, `PetStage.tsx` — from data, never from plugin React code |
 
 ## Tokens
 

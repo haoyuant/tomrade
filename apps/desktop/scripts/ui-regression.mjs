@@ -784,6 +784,7 @@ const run = async () => {
   check("and the row names the module it holds", (await $(`${rowFor("db")}.textContent.includes('holds db')`)) === true);
   check("with the reason on the control itself", (await $(`${rowFor("db")}.querySelector('.switch').title.includes('only plugin providing db')`)) === true);
   check("a third-party plugin's switch is free", (await $(`!${rowFor("stale")}.querySelector('.switch[disabled]')`)) === true);
+  check("the pet is an optional plugin row", (await $(`!${rowFor("pet")}.querySelector('.switch[disabled]')`)) === true);
   check("the manager fits the frame the other panes set", (await $(sheetBox)) === boxOnAppearance);
   await shot("18-plugins");
   await $(`${rowFor("write-policy")}.scrollIntoView({ block: 'center' });true`);
@@ -798,13 +799,31 @@ const run = async () => {
   await press(`${rowFor("stale")}.querySelector('.switch')`);
   await sleep(1200);
   check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "list_stale_items"));
+  await press(`${rowFor("pet")}.querySelector('.switch')`);
+  await sleep(900);
+  check("switching the pet off unloads its service and accessory", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);
+  await press(`${rowFor("pet")}.querySelector('.switch')`);
+  await sleep(1200);
+  check("switching the pet back on restores its accessory", !!ctx.get("pet") && ctx.contributions.assistantAccessories().some((a) => a.id === "tomrade.pet"));
+  const appSettings = ctx.settings.get();
+  ctx.settings.set({ ...appSettings, pet: { ...appSettings.pet, displayMode: "desktop", roam: false } });
+  await sleep(900);
+  const petWindow = BrowserWindow.getAllWindows().find((candidate) => candidate !== win && candidate.getTitle() === "Tomrade pet");
+  check("desktop mode owns a separate always-on-top window", !!petWindow?.isAlwaysOnTop());
+  check("desktop mode removes the embedded contribution", ctx.contributions.assistantAccessories().length === 0);
+  check("the desktop surface loads the pet canvas", petWindow ? await petWindow.webContents.executeJavaScript(`!!document.querySelector('#pet')`, true) : false);
+  ctx.settings.set({ ...ctx.settings.get(), pet: { ...ctx.settings.get().pet, displayMode: "embedded" } });
+  await sleep(700);
+  check("returning to embedded mode closes the pet window", !BrowserWindow.getAllWindows().some((candidate) => candidate !== win && candidate.getTitle() === "Tomrade pet"));
   await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
   await sleep(700);
 
   // ── assistant panel ────────────────────────────────────────────────
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
-  check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-head .chip-btn')?.textContent ?? '').trim().length > 0`)) === true);
+  check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-knobs .chip-btn:not(.ai-ws)')?.textContent ?? '').trim().length > 0`)) === true);
   check("an empty thread introduces the agent", (await $(`!!document.querySelector('.ai-scroll .turn-ai, .ai-scroll .agent-empty')`)) === true);
+  check("the embedded pet stage sits immediately above the composer", (await $(`document.querySelector('.ai-foot > .pet-stage + .ai-composer') !== null`)) === true);
+  check("the embedded pet exposes its task state", (await $(`document.querySelector('.pet-stage')?.dataset.petState`)) === "idle");
   // The workstream is a chip beside the engine's, opening a menu — not a form field.
   await press(`document.querySelector('.ai-knobs .ai-ws')`);
   await sleep(500);

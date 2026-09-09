@@ -106,6 +106,33 @@ export interface SectionView {
   text?: string;
 }
 
+export interface SpriteAnimation {
+  /** Renderer-safe URL, normally a data URL supplied by the contributing plugin. */
+  source: string;
+  frames: number;
+  frameWidth: number;
+  frameHeight: number;
+  frameMs: number;
+  loop?: boolean;
+}
+
+/**
+ * Declarative content for the assistant accessory slot. The renderer owns the
+ * stage and sprite player; plugins provide only dimensions and animation data.
+ */
+export interface AssistantAccessory {
+  id: string;
+  kind: "sprite-pet";
+  title: string;
+  /** `(threadId: string | null) => { mood: string }`. */
+  stateChannel: string;
+  /** Broadcast shape: `(threadId: string, state: { mood: string })`. */
+  changedChannel: string;
+  width: number;
+  height: number;
+  animations: Record<string, SpriteAnimation>;
+}
+
 declare module "cordis" {
   interface Context {
     contributions: Contributions;
@@ -121,6 +148,7 @@ declare module "@tomrade/ipc" {
     "contributions.sections": (projectId: string, itemId: string) => SectionView[];
     "contributions.graphs": () => GraphInfo[];
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
+    "contributions.assistantAccessories": () => AssistantAccessory[];
   }
   interface Broadcasts {
     "contributions.changed": () => void;
@@ -136,6 +164,7 @@ export class Contributions extends Service {
   private statusMap = new Map<string, StatusItem>();
   private sectionMap = new Map<string, Section>();
   private graphMap = new Map<string, GraphSpec>();
+  private assistantAccessoryMap = new Map<string, AssistantAccessory>();
   private notify: () => void = () => {};
 
   constructor(ctx: Context) {
@@ -151,6 +180,7 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.sections", (projectId, itemId) => ctx.contributions.sectionsFor(projectId, itemId));
       ctx.ipc.handle("contributions.graphs", () => ctx.contributions.graphs());
       ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
+      ctx.ipc.handle("contributions.assistantAccessories", () => ctx.contributions.assistantAccessories());
       this.notify = () => ctx.ipc.send("contributions.changed");
       return () => {
         this.notify = () => {};
@@ -176,6 +206,10 @@ export class Contributions extends Service {
 
   graph(def: GraphSpec): () => void {
     return this.add(this.graphMap, def, "graph");
+  }
+
+  assistantAccessory(def: AssistantAccessory): () => void {
+    return this.add(this.assistantAccessoryMap, def, "assistantAccessory");
   }
 
   commands(): CommandView[] {
@@ -209,6 +243,10 @@ export class Contributions extends Service {
 
   graphs(): GraphInfo[] {
     return [...this.graphMap.values()].map(({ compute: _compute, ...info }) => info);
+  }
+
+  assistantAccessories(): AssistantAccessory[] {
+    return [...this.assistantAccessoryMap.values()];
   }
 
   graphEdges(id: string, scope: { projectId: string }): GraphEdge[] {

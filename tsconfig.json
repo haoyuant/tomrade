@@ -26,6 +26,9 @@
       "path": "./packages/db"
     },
     {
+      "path": "./packages/desktop-surface"
+    },
+    {
       "path": "./packages/deps-graph"
     },
     {
@@ -63,6 +66,9 @@
     },
     {
       "path": "./packages/oplog"
+    },
+    {
+      "path": "./packages/pet"
     },
     {
       "path": "./packages/plugin-sdk"
