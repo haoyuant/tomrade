@@ -438,12 +438,21 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@tomrade/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
 
   packages/engine-loop:
     dependencies:

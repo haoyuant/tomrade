@@ -26,6 +26,9 @@
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "typescript": "^6.0.0"
+    "@tomrade/testkit": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "typescript": "^6.0.0",
+    "vitest": "^3.2.7"
   }
 }
