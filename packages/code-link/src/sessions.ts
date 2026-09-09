@@ -342,7 +342,7 @@ export class Sessions {
       if ((s.state === "running" || s.state === "waiting") && quiet >= IDLE_AFTER_MS) {
         this.store.patchSession(projectId, s.id, { state: "idle" });
         changed = true;
-      } else if (s.state === "idle" && s.mode === "terminal" && quiet >= END_AFTER_MS) {
+      } else if (s.state === "idle" && s.mode === "terminal" && quiet >= END_AFTER_MS && this.processAlive(s.id) === false) {
         this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
         this.release(s.id);
         changed = true;
