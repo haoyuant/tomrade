@@ -51,6 +51,8 @@ export interface SessionsOptions {
   onChange(projectId: string): void;
   /** Something the thread should hear about: what the agent said when it stopped, why it failed, that it ended. */
   onMoment?(session: SessionView, moment: SessionMoment): void;
+  /** The process is over; code evidence may have changed while it was still counted as active. */
+  onEnd?(session: SessionView): void;
 }
 
 export interface SessionFiles {
@@ -275,7 +277,11 @@ export class Sessions {
     }
     this.touch(projectId, sessionId, patch);
     if (moment) this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, moment);
-    if (patch.state === "ended") this.release(sessionId);
+    if (patch.state === "ended") {
+      this.release(sessionId);
+      const ended = this.store.session(projectId, sessionId);
+      if (ended) this.options.onEnd?.(ended);
+    }
     return {};
   }
 
@@ -307,6 +313,7 @@ export class Sessions {
     this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now(), activity: null });
     this.release(sessionId);
     this.options.onChange(projectId);
+    if (state === "ended") this.options.onEnd?.(this.store.session(projectId, sessionId)!);
   }
 
   /** The process Tomrade launched for the session, if its script left a pid and it still answers. */
@@ -334,12 +341,14 @@ export class Sessions {
    */
   sweep(projectId: string, now = Date.now()): void {
     let changed = false;
+    const ended: SessionView[] = [];
     for (const s of this.store.sessions(projectId, { live: true })) {
       if (s.state === "lost") continue;
       if (s.mode === "terminal" && this.processAlive(s.id) === false) {
         this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
         this.release(s.id);
         this.options.onMoment?.(this.store.session(projectId, s.id)!, { kind: "ended", text: "process exited" });
+        ended.push(this.store.session(projectId, s.id)!);
         changed = true;
         continue;
       }
@@ -350,10 +359,12 @@ export class Sessions {
       } else if (s.state === "idle" && s.mode === "terminal" && quiet >= END_AFTER_MS && this.processAlive(s.id) === false) {
         this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
         this.release(s.id);
+        ended.push(this.store.session(projectId, s.id)!);
         changed = true;
       }
     }
     if (changed) this.options.onChange(projectId);
+    for (const session of ended) this.options.onEnd?.(session);
   }
 
   /** After a restart no headless process is left; the row says so, and the ticket still offers Continue. */

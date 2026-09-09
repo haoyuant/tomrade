@@ -217,7 +217,15 @@ export class CodeLink extends Service {
     this.sessions = new Sessions(this.ctx, this.store, {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
-      onMoment: (session, moment) => this.noteMoment(session, moment)
+      onMoment: (session, moment) => this.noteMoment(session, moment),
+      onEnd: (session) => {
+        // If SessionEnd lands during a scan, wait for that pass before asking
+        // again; the first pass still saw this session as active.
+        const current = this.inFlight.get(session.projectId);
+        void (current ? current.catch(() => undefined) : Promise.resolve())
+          .then(() => this.scan(session.projectId))
+          .catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${message(err)}`));
+      }
     });
     this.starter = new Starter({
       ctx: this.ctx,
@@ -734,12 +742,12 @@ export class CodeLink extends Service {
         unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum: b.keyNum, sha: b.sha, committedAt: b.committedAt });
         continue;
       }
-      const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
       const link = this.store.upsertLink(
         projectId,
         { itemId: item.id, repoId: repo.id, branch: b.name },
-        { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: working ? null : (b.merged ? result.defaultSha : undefined), lastSeenAt: now }
+        { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
       );
+      if (b.merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
       seen.add(link.id);
       touched.add(item.id);
       links += 1;
@@ -752,8 +760,7 @@ export class CodeLink extends Service {
       if (l.source !== "manual" || seen.has(l.id) || !l.branch) continue;
       const b = result.branches.find((x) => x.name === l.branch);
       if (!b) continue;
-      const working = hasLiveSession(this.store.sessions(projectId, { itemId: l.itemId, live: true }));
-      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: working ? null : (b.merged ? result.defaultSha : undefined), lastSeenAt: now });
+      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, ...(b.merged && l.prState === "open" ? { prState: "merged" } : {}), lastSeenAt: now });
       seen.add(l.id);
     }
 
@@ -761,19 +768,14 @@ export class CodeLink extends Service {
       const item = byNum.get(keyNum);
       if (!item) continue;
       const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id);
-      const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
       if (own.length) {
         for (const l of own) {
-          if (working) {
-            if (l.mergedSha) this.store.patchLink(projectId, l.id, { mergedSha: null });
-          } else if (!l.mergedSha) {
-            this.store.patchLink(projectId, l.id, { mergedSha: commit.sha });
+          if (!l.mergedSha || l.prState === "open") {
+            this.store.patchLink(projectId, l.id, { ...(!l.mergedSha ? { mergedSha: commit.sha } : {}), ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
           }
         }
       } else {
-        // Keep the evidence visible even while a live session makes it too
-        // early to accept that evidence as completion.
-        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "" }, { headSha: commit.sha, headAt: commit.at, mergedSha: working ? null : commit.sha, lastSeenAt: now, source: "scan" });
+        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "" }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
       }
       touched.add(item.id);
     }
@@ -807,11 +809,10 @@ export class CodeLink extends Service {
     const present = links.filter((l) => l.branch && seen.has(l.id));
     const primary = primaryOf(links);
     const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
-    if (working) for (const link of links) if (link.mergedSha) this.store.patchLink(projectId, link.id, { mergedSha: null });
     const evidence: Evidence = {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: !working && links.some((l) => !!l.mergedSha),
+      merged: !working && links.some((l) => !!l.mergedSha || l.prState === "merged"),
       working,
       pr: primary?.prState ?? null,
       movedAfterDone:

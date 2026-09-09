@@ -55,6 +55,14 @@ function commitOn(checkout: string, branch: string, file: string, message: strin
   return git(["rev-parse", "HEAD"], checkout);
 }
 
+async function until(check: () => boolean, timeout = 3000): Promise<void> {
+  const started = Date.now();
+  while (!check()) {
+    if (Date.now() - started > timeout) throw new Error("condition did not become true");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function machine(repo: { remote: string; checkout: string }) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
@@ -130,9 +138,9 @@ describe("code link", () => {
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 0, behind: 0, mergedSha: null });
   });
 
-  it("ignores merge-message evidence while the ticket still has an active session", async () => {
+  it("defers merge completion while a session is active, then finishes when the session ends", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
-    const item = ticket("Merge message while working", "doing");
+    const item = ticket("Merge message while working", "verifying");
     const branch = `tom-${item.keyNum}/merge-message`;
     commitOn(checkout, branch, "work.ts", "work in progress");
     git(["checkout", "-q", "main"], checkout);
@@ -140,7 +148,12 @@ describe("code link", () => {
     git(["commit", "-q", "-m", `TOM-${item.keyNum}: squash merge`], checkout);
     git(["branch", "-q", "-D", branch], checkout);
     git(["push", "-q", "origin", "main"], checkout);
-    codeLink.store.createSession(project.id, {
+    codeLink.store.upsertLink(
+      project.id,
+      { itemId: item.id, repoId: repo.id, branch },
+      { prNumber: 1, prUrl: "https://github.com/example/app/pull/1", prState: "open", source: "mcp" }
+    );
+    const session = codeLink.store.createSession(project.id, {
       repoId: repo.id,
       branch,
       itemIds: [item.id],
@@ -151,9 +164,15 @@ describe("code link", () => {
     });
 
     await codeLink.scan(project.id);
-    expect(items.get(project.id, item.id)!.status).toBe("doing");
-    expect(codeLink.links(project.id, item.id)[0].mergedSha).toBeNull();
+    expect(items.get(project.id, item.id)!.status).toBe("verifying");
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: expect.any(String), prState: "merged" });
     expect(ctx.items.get(project.id, item.id)!.updatedBy).toBe("human");
+
+    // Claude exits after the merge scan. Ending the session must re-run the
+    // evidence pass; otherwise the ticket and PR stay stuck in Verifying/open.
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "SessionEnd" });
+    await until(() => items.get(project.id, item.id)?.status === "done");
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: expect.any(String), prState: "merged" });
   });
 
   it("reads a squash merge from the default branch's message when the branch is already gone", async () => {
