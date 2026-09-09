@@ -95,10 +95,6 @@ export function createCodexEngine(ctx: Context): Engine {
       const shared = [
         "--json",
         "--skip-git-repo-check",
-        "-s",
-        input.purpose === "code" ? "workspace-write" : "read-only",
-        "-C",
-        tmp,
         "-c",
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
@@ -106,9 +102,11 @@ export function createCodexEngine(ctx: Context): Engine {
         ...(codexModel(options.model) ? ["-m", codexModel(options.model)!] : []),
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])
       ];
-      // `codex exec resume` parses options only before SESSION_ID. Putting the
-      // shared flags after it makes clap treat `-s` as an unexpected argument.
-      const args = io.resume ? ["exec", "resume", ...shared, io.resume, prompt] : ["exec", ...shared, prompt];
+      // Resume has a smaller option set than the initial exec: its session
+      // already remembers the working root and sandbox, and rejects -s/-C.
+      const args = io.resume
+        ? ["exec", "resume", ...shared, io.resume, prompt]
+        : ["exec", ...shared, "-s", input.purpose === "code" ? "workspace-write" : "read-only", "-C", input.cwd ?? tmp, prompt];
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       let session: string | undefined;
