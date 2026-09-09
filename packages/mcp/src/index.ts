@@ -105,7 +105,9 @@ export class Mcp extends Service {
       const header = req.headers["x-tomrade-run"];
       const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
       const token = typeof header === "string" ? header : bearer;
-      const server = this.session(token ? this.bindings.get(token) : undefined, projectId);
+      // Keep the identity, not a closure over the first turn's ledger. An idle
+      // or revoked runtime must never fall back to the unbound MCP gateway.
+      const server = this.session(token, projectId);
       const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
@@ -203,18 +205,24 @@ export class Mcp extends Service {
   bindRun(token: string, binding: RunBinding): () => void {
     return this.ctx.effect(() => {
       this.bindings.set(token, binding);
-      return () => this.bindings.delete(token);
+      return () => {
+        if (this.bindings.get(token) === binding) this.bindings.delete(token);
+      };
     }, `mcp.bindRun`);
   }
 
-  private session(binding?: RunBinding, projectId?: string): McpServer {
+  private session(token?: string, projectId?: string): McpServer {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
     for (const tool of tools.list()) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
         try {
-          if (binding) return textResult(await binding.execute(tool.name, args));
+          if (token) {
+            const binding = this.bindings.get(token);
+            if (!binding) throw new Error("No active run for this runtime");
+            return textResult(await binding.execute(tool.name, args));
+          }
           return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
         } catch (e) {
           return errorResult(e);

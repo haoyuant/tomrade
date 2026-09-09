@@ -193,6 +193,7 @@ export interface TurnResult {
   error?: string;
   /** External session id to store on the thread for the next turn. */
   resume?: string;
+  metrics?: import("./evaluation.js").TurnMetrics;
 }
 
 /**

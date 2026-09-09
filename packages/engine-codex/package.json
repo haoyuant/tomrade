@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "OpenAI Codex CLI as a conductor: codex exec --json, tomrade tools over streamable-HTTP MCP with a per-run bearer token",
+  "description": "OpenAI Codex app-server conductor with one reusable local runtime per hot thread, resumable sessions, and explicit CLI fallback",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

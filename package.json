@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@11.17.0",
   "scripts": {
+    "eval:agents": "vitest run packages/agent/tests/engine-ab.live.test.ts --reporter=verbose",
     "dev": "pnpm dev:desktop",
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "dev:desktop": "pnpm --filter @tomrade/desktop dev",

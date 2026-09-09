@@ -2,11 +2,20 @@ import { HOUSE_RULES, focusSuffix, promptSections, type TurnIO, type TurnInput }
 
 /** The appended system prompt an external agent gets: its identity, the shared house rules, the playbook index, the durable state. */
 export function buildSystem(input: TurnInput, io: TurnIO, agentName: string): string {
-  const identity =
-    `You are conducting a thread inside Tomrade, a local-first backlog workbench, as ${agentName}. Operate the backlog ONLY through the "tomrade" MCP tools; every write is attributed to you, run-scoped, and revertible in one click — act, don't ask permission.\n` +
-    HOUSE_RULES;
-  return [identity, ...promptSections(input, io)].join("\n\n");
+  return [staticSystem(agentName), ...promptSections(input, io)].join("\n\n");
 }
+
+export function staticSystem(agentName: string): string {
+  return (
+    `You are conducting a thread inside Tomrade, a local-first backlog workbench, as ${agentName}. Operate the backlog ONLY through the "tomrade" MCP tools; every write is attributed to you, run-scoped, and revertible in one click — act, don't ask permission.\n` +
+    HOUSE_RULES
+  );
+}
+
+export const turnPrompt = (input: TurnInput, io: TurnIO): string =>
+  ["Current Tomrade state (supersedes earlier snapshots):", ...promptSections(input, io),
+    ...(input.pending ? [] : ["No workflow is currently waiting for an answer."]),
+    "USER MESSAGE:", promptOf(input)].join("\n\n");
 
 export const promptOf = (input: TurnInput): string =>
   input.input.kind === "text" ? input.input.text + focusSuffix(input.input.focus) : Array.isArray(input.input.value) ? input.input.value.join(", ") : input.input.value;

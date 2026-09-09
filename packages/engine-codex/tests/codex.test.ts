@@ -35,7 +35,7 @@ describe("the Codex engine", () => {
     const settingsPath = path.join(dir, "settings.json");
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({ agent: { defaultEngine: "codex", confirmWritesOver: 0, engines: { codex: { command: bin, model: "gpt-5-codex" } }, playbookChoices: {} } })
+      JSON.stringify({ agent: { defaultEngine: "codex", confirmWritesOver: 0, engines: { codex: { transport: "cli", command: bin, model: "gpt-5-codex" } }, playbookChoices: {} } })
     );
 
     const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineCodex] });
