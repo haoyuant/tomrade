@@ -5,6 +5,7 @@ export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 export { HOUSE_RULES, focusSuffix, promptSections } from "./prompt.js";
+export { evaluateTurn, summarizeEvaluation, type TurnMetrics, type EvaluationObservation } from "./evaluation.js";
 export {
   isSuspended,
   type AgentEvent,

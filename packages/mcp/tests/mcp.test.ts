@@ -7,6 +7,25 @@ import { Tools, defineTool } from "@tomrade/tools";
 import { Mcp } from "@tomrade/mcp";
 
 describe("the MCP surface", () => {
+  it("rebinds an existing connection to the new run and denies idle or revoked tokens", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    let unscoped = 0;
+    ctx.tools.register(defineTool({ name: "touch", title: "Touch", description: "test", input: z.object({}), execute: () => { unscoped++; return "unscoped"; } }));
+    const first = ctx.mcp.bindRun("persistent", { author: "ai:codex", execute: async () => "run-1" });
+    const client = new Client({ name: "persistent", version: "0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers: { "X-Tomrade-Run": "persistent" } } }));
+      const call = () => client.callTool({ name: "touch", arguments: {} });
+      expect(JSON.stringify(await call())).toContain("run-1");
+      first();
+      expect((await call()).isError).toBe(true);
+      const second = ctx.mcp.bindRun("persistent", { author: "ai:codex", execute: async () => "run-2" });
+      expect(JSON.stringify(await call())).toContain("run-2");
+      second();
+      expect((await call()).isError).toBe(true);
+      expect(unscoped).toBe(0);
+    } finally { await client.close(); await ctx.fiber.dispose(); }
+  });
   it("lists tools under their own names and routes a run token to its binding", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();

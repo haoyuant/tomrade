@@ -37,7 +37,7 @@ describe("the Claude Code engine", () => {
     const settingsPath = path.join(dir, "settings.json");
     fs.writeFileSync(
       settingsPath,
-      JSON.stringify({ agent: { defaultEngine: "claude-code", confirmWritesOver: 0, engines: { "claude-code": { command: bin, model: "opus", effort: "high" } } } })
+      JSON.stringify({ agent: { defaultEngine: "claude-code", confirmWritesOver: 0, engines: { "claude-code": { transport: "cli", command: bin, model: "opus", effort: "high" } } } })
     );
 
     const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
