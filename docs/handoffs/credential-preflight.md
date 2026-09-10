@@ -74,7 +74,7 @@ session row keeps saying `running`, the ticket wears no badge, the thread gets n
   Note: for a private repository the wrong account yields `Repository not found` — the message must say so:
   "origin says the repository does not exist; for a private repository that usually means the account git uses here
   cannot see it".
-- Run the probe after `repos.setCheckout` and `repos.clone` succeed (fire-and-forget via the code-link scan, or a
+- Run the probe after a checkout is selected or `repos.cloneInto` succeeds (fire-and-forget via the code-link scan, or a
   direct probe that writes the same fields), so the Repositories row can say "cannot reach origin from this checkout"
   right after the user points Tomrade at a folder.
 - UI: the Repositories row (`RepositoriesBlock.tsx`) shows the remote state with the detail as tooltip/hint (follow

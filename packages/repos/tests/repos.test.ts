@@ -92,6 +92,31 @@ describe("repositories", () => {
     expect(repos.checkout(a.remote).checkout).toBeNull();
   });
 
+  it("requires an explicit parent-folder selection and clones into a repository-named child", async () => {
+    const { repos } = await machine();
+    const code = codeRepo();
+    const parent = path.join(root, `chosen-${n++}`);
+    fs.mkdirSync(parent);
+    fs.writeFileSync(path.join(parent, "keep.txt"), "keep");
+    const target = path.join(parent, path.basename(code.remote, ".git"));
+
+    expect(await repos.selectCheckout(code.remote, parent)).toEqual({ state: "clone", remote: normalizeRemote(code.remote), parent, dir: target });
+    expect(repos.checkout(code.remote).checkout).toBeNull();
+
+    const view = await repos.cloneInto(code.remote, "main", parent);
+    expect(view.checkout).toBe(target);
+    expect(fs.existsSync(path.join(target, "packages", "ui", "index.ts"))).toBe(true);
+    expect(fs.readFileSync(path.join(parent, "keep.txt"), "utf8")).toBe("keep");
+
+    const conflictParent = path.join(root, `conflict-${n++}`);
+    const conflictTarget = path.join(conflictParent, path.basename(code.remote, ".git"));
+    fs.mkdirSync(conflictTarget, { recursive: true });
+    fs.writeFileSync(path.join(conflictTarget, "keep.txt"), "keep");
+    await expect(repos.selectCheckout(code.remote, conflictParent)).rejects.toThrow(/already exists and is not empty/);
+    await expect(repos.cloneInto(code.remote, "main", conflictParent)).rejects.toThrow(/already exists and is not empty/);
+    expect(fs.readFileSync(path.join(conflictTarget, "keep.txt"), "utf8")).toBe("keep");
+  });
+
   it("runs a thread in a worktree of the checkout, or in the checkout itself when asked; refuses without one", async () => {
     const { repos, boards, project, board, hubDir } = await machine();
     const code = codeRepo();
@@ -119,11 +144,4 @@ describe("repositories", () => {
     expect(fs.existsSync(view.worktree!)).toBe(false);
   });
 
-  it("clones into the Hub for a machine without a checkout", async () => {
-    const { repos, hubDir } = await machine();
-    const code = codeRepo();
-    const view = await repos.clone(code.remote, "main");
-    expect(view.checkout!.startsWith(path.join(hubDir, "repos"))).toBe(true);
-    expect(fs.existsSync(path.join(view.checkout!, "packages", "ui", "index.ts"))).toBe(true);
-  });
 });

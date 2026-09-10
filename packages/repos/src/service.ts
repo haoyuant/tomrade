@@ -28,6 +28,11 @@ export interface CheckoutView {
   runInCheckout: boolean;
 }
 
+/** Result of inspecting the folder the user explicitly chose. */
+export type CheckoutSelection =
+  | { state: "ready"; view: CheckoutView }
+  | { state: "clone"; remote: string; parent: string; dir: string };
+
 export interface WorkdirView {
   repo: Repo;
   /** The folder the agent runs in: a worktree of the checkout by default, the checkout itself when asked. */
@@ -45,12 +50,12 @@ declare module "@tomrade/ipc" {
     "repos.remove": (projectId: string, id: string) => void;
     /** Every remote this machine has placed, by remote URL. */
     "repos.checkouts": () => CheckoutView[];
-    /** Name the local checkout of a remote; refused when the folder's origin is a different repository. */
-    "repos.setCheckout": (remote: string, dir: string) => CheckoutView;
+    /** Inspect the folder the user chose. If it is not this checkout, offer a named child folder for cloning. */
+    "repos.selectCheckout": (remote: string, dir: string) => CheckoutSelection;
     "repos.clearCheckout": (remote: string) => void;
     "repos.setRunInCheckout": (remote: string, on: boolean) => CheckoutView;
-    /** Clone the remote into the Hub's repos/ folder and record it as the checkout. */
-    "repos.clone": (remote: string, branch: string) => CheckoutView;
+    /** Clone as a named child of the folder the user chose, after explicit confirmation. */
+    "repos.cloneInto": (remote: string, branch: string, parent: string) => CheckoutView;
   }
   interface Broadcasts {
     "repos.changed": () => void;
@@ -81,6 +86,12 @@ const rowToRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, re
 export const normalizeRemote = (remote: string): string => cleanRemote(remote.trim()).replace(/\/+$/, "").replace(/\.git$/, "");
 
 const nameOf = (remote: string): string => normalizeRemote(remote).split(/[/:]/).filter(Boolean).pop() ?? "repo";
+
+/** Keep ordinary remote basenames intact, but never allow a remote to escape the selected parent. */
+const checkoutFolderNameOf = (remote: string): string => {
+  const name = nameOf(remote);
+  return name !== "." && name !== ".." && /^[a-zA-Z0-9._-]+$/.test(name) ? name : slugOf(name);
+};
 
 /** The workstream has a repository but this machine has not said where its checkout is. */
 export class CheckoutUnsetError extends Error {
@@ -120,10 +131,10 @@ export class Repos extends Service {
       ctx.ipc.handle("repos.update", (projectId, id, patch) => ctx.repos.update(projectId, id, patch));
       ctx.ipc.handle("repos.remove", (projectId, id) => ctx.repos.remove(projectId, id));
       ctx.ipc.handle("repos.checkouts", () => ctx.repos.checkouts());
-      ctx.ipc.handle("repos.setCheckout", (remote, dir) => ctx.repos.setCheckout(remote, dir));
+      ctx.ipc.handle("repos.selectCheckout", (remote, dir) => ctx.repos.selectCheckout(remote, dir));
       ctx.ipc.handle("repos.clearCheckout", (remote) => ctx.repos.clearCheckout(remote));
       ctx.ipc.handle("repos.setRunInCheckout", (remote, on) => ctx.repos.setRunInCheckout(remote, on));
-      ctx.ipc.handle("repos.clone", (remote, branch) => ctx.repos.clone(remote, branch));
+      ctx.ipc.handle("repos.cloneInto", (remote, branch, dir) => ctx.repos.cloneInto(remote, branch, dir));
     });
     this.home.inject(["tools"], (ctx) => {
       ctx.tools.register(
@@ -231,6 +242,28 @@ export class Repos extends Service {
     return this.checkout(key);
   }
 
+  /** Choosing a folder never mutates it. A folder without this checkout gets an explicit clone offer. */
+  async selectCheckout(remote: string, rawDir: string): Promise<CheckoutSelection> {
+    const key = normalizeRemote(remote);
+    const parent = path.resolve(rawDir);
+    if (!fs.existsSync(parent)) throw new Error(`${parent} does not exist`);
+    if (!fs.statSync(parent).isDirectory()) throw new Error(`${parent} is not a folder`);
+
+    if (fs.existsSync(path.join(parent, ".git"))) {
+      const selected = new GitFolder(this.runGit, parent);
+      const origin = await selected.remoteUrl();
+      if (!origin || normalizeRemote(origin) === key) return { state: "ready", view: await this.setCheckout(key, parent) };
+    }
+
+    const dir = path.join(parent, checkoutFolderNameOf(key));
+    if (fs.existsSync(dir)) {
+      if (!fs.statSync(dir).isDirectory()) throw new Error(`${dir} already exists and is not a folder — nothing was cloned`);
+      if (fs.existsSync(path.join(dir, ".git"))) return { state: "ready", view: await this.setCheckout(key, dir) };
+      if (fs.readdirSync(dir).length !== 0) throw new Error(`${dir} already exists and is not empty — nothing was cloned`);
+    }
+    return { state: "clone", remote: key, parent, dir };
+  }
+
   clearCheckout(remote: string): void {
     this.hub.catalog.removeRepo(normalizeRemote(remote));
     this.notify();
@@ -243,14 +276,15 @@ export class Repos extends Service {
     return this.checkout(key);
   }
 
-  /** For whoever has no checkout: clone into the Hub's `repos/`, where the user can see it. Still their repository — never pushed. */
-  async clone(remote: string, branch = "main"): Promise<CheckoutView> {
+  /** Clone into a repository-named child of the folder the user selected and then confirmed. */
+  async cloneInto(remote: string, branch: string, rawParent: string): Promise<CheckoutView> {
     const key = normalizeRemote(remote);
-    const hubDir = this.hub.dir;
-    if (!hubDir) throw new Error("Choose the Hub folder first");
-    const base = path.join(hubDir, "repos", slugOf(nameOf(key)));
-    let dir = base;
-    for (let n = 2; fs.existsSync(dir); n++) dir = `${base}-${n}`;
+    const parent = path.resolve(rawParent);
+    if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) throw new Error(`${parent} is not an existing folder`);
+    const dir = path.join(parent, checkoutFolderNameOf(key));
+    if (fs.existsSync(dir) && (!fs.statSync(dir).isDirectory() || fs.readdirSync(dir).length !== 0)) {
+      throw new Error(`${dir} already exists and is not empty — nothing was cloned`);
+    }
     await cloneInto(this.runGit, remote.trim(), branch, dir);
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();

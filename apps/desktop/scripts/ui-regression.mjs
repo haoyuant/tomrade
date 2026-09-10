@@ -669,7 +669,7 @@ const run = async () => {
   check("a repository is named by its remote", (await $(`document.querySelector('#psRepos .repo-remote')?.textContent`)) === sampleRepo.remote);
   check("and by the workstreams that stand for it", (await $(`document.querySelector('#psRepos .repo-used')?.textContent ?? ''`)).includes("UI"));
   check("with no checkout on this machine, it says so", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
-  check("and offers to clone one", (await $(`!!document.querySelector('#psRepos .repo-clone')`)) === true);
+  check("and waits for an explicit folder before offering clone", (await $(`!!document.querySelector('#psRepos .repo-clone')`)) === false);
   await shot("15-project-repositories");
   // A checkout is believed only when the folder's own origin is that repository.
   const checkoutDir = path.join(WORK, "checkouts", "tomrade-next");
