@@ -173,7 +173,7 @@ export class CodexRuntime implements Runtime {
         // Read effective local/project policy even on resume: old Tomrade
         // sessions may have persisted the former forced `never` policy.
         const local = this.code ? (await this.request("config/read", { cwd: this.cwd })).config : null;
-        const policy = input.permissionMode === "full-access" ? { approvalPolicy: "never", sandbox: "danger-full-access" }
+        const policy = input.permissionMode === "full-access" ? { approvalPolicy: "never", sandbox: "danger-full-access", config: { sandbox_workspace_write: { network_access: true } } }
           : input.permissionMode === "workspace" ? { approvalPolicy: "on-request", sandbox: "workspace-write" }
           : input.permissionMode === "read-only" ? { approvalPolicy: "on-request", sandbox: "read-only" }
           : { approvalPolicy: local?.approval_policy ?? "on-request", sandbox: local?.sandbox_mode ?? "workspace-write" };
