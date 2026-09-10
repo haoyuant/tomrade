@@ -40,6 +40,9 @@ export const agentPanel = {
     manageModelsEngines: "Manage models & engines…",
     threadsLabel: "Threads",
     newThread: "New thread",
+    archiveThread: "Archive thread",
+    deleteThread: "Delete thread",
+    deleteThreadConfirm: "Delete this thread permanently?",
     collapsePanel: "Collapse panel — ⌘J",
     collapseAssistantAria: "Collapse assistant panel",
 
@@ -103,6 +106,9 @@ export const agentPanel = {
     manageModelsEngines: "管理模型与引擎…",
     threadsLabel: "对话",
     newThread: "新对话",
+    archiveThread: "归档对话",
+    deleteThread: "删除对话",
+    deleteThreadConfirm: "永久删除这个对话？",
     collapsePanel: "收起面板 — ⌘J",
     collapseAssistantAria: "收起助手面板",
 

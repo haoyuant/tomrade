@@ -90,6 +90,8 @@ declare module "@tomrade/ipc" {
     "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
+    "agent.archiveThread": (projectId: string, threadId: string) => boolean;
+    "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
     "agent.send": (projectId: string, threadId: string, text: string, focus?: FocusRef[]) => { runId: string };
@@ -222,6 +224,8 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
+      ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
+      ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus }));
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
@@ -425,6 +429,20 @@ export class Agent extends Service {
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
     this.store.touchThread(projectId, threadId, { boardId });
     return this.store.thread(projectId, threadId)!;
+  }
+
+  archiveThread(projectId: string, threadId: string): boolean {
+    if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
+    if (!this.store.thread(projectId, threadId)) return false;
+    this.store.setArchived(projectId, threadId, true);
+    return true;
+  }
+
+  deleteThread(projectId: string, threadId: string): boolean {
+    if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
+    if (!this.store.thread(projectId, threadId)) return false;
+    this.store.deleteThread(projectId, threadId);
+    return true;
   }
 
   /** Where the thread's engine works, resolved through the workstream's repository and this machine's checkout of it. */

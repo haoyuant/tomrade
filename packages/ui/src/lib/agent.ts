@@ -90,6 +90,23 @@ export function useSetWorkstream(projectId: string) {
   });
 }
 
+export function useArchiveThread(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) }) });
+}
+
+export function useDeleteThread(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (threadId: string) => invoke("agent.deleteThread", projectId, threadId),
+    onSuccess: (_deleted, threadId) => {
+      qc.setQueryData(agentKeys.threads(projectId), (threads: { id: string }[] | undefined) => threads?.filter((thread) => thread.id !== threadId));
+      qc.removeQueries({ queryKey: agentKeys.thread(projectId, threadId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+    }
+  });
+}
+
 /** Where the thread's engine would run, or why it cannot yet (no checkout of the workstream's repository here). */
 export const useWorkdir = (projectId: string, threadId: string | null, enabled = true) =>
   useQuery({ queryKey: agentKeys.workdir(projectId, threadId ?? ""), queryFn: () => invoke("agent.workdir", projectId, threadId!), enabled: !!threadId && enabled, retry: false, staleTime: 5_000 });
