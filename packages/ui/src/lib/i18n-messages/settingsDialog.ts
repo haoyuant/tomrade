@@ -94,8 +94,12 @@ export const settingsDialog = {
     dataLabel: "Data",
     dataLede:
       "Every project is a folder of text under the Hub, or wherever you put it — that folder is the truth, and what a teammate clones. The SQLite cache on this machine follows it and can always be rebuilt from it.",
+    cloudDataLede:
+      "Supabase stores your Hub catalog and preferences. Project folders remain the durable source of truth on this machine; SQLite is only a rebuildable cache.",
     hubDirLabel: "Hub folder",
     hubDirNote: "Where new projects get their folder, under projects/. Move a project elsewhere from its own settings.",
+    projectsDirLabel: "Projects folder",
+    projectsDirNote: "The default location for new project folders on this machine. Project contents are not temporary cache and are not uploaded to Supabase.",
     reveal: "Reveal",
     cacheDirLabel: "Cache folder",
     cacheDirNote: "One database per project lives here. Delete it and Tomrade reads the folders again."
@@ -193,8 +197,11 @@ export const settingsDialog = {
     scopeUser: "随主目录",
     dataLabel: "数据",
     dataLede: "每个项目都是主目录下（或你指定的任何位置）的一个文本文件夹——文件夹才是事实，也是队友克隆的对象。本机上的 SQLite 缓存跟随它，随时可以从它重建。",
+    cloudDataLede: "Supabase 保存你的 Hub 目录和用户偏好。项目文件夹仍是这台机器上的持久事实来源；SQLite 只是可重建缓存。",
     hubDirLabel: "主目录",
     hubDirNote: "新项目的文件夹默认放在这里的 projects/ 下。要把某个项目放到别处，在它自己的设置里更换。",
+    projectsDirLabel: "项目文件夹",
+    projectsDirNote: "这台机器上新项目的默认位置。项目内容不是临时缓存，也不会上传到 Supabase。",
     reveal: "在访达中显示",
     cacheDirLabel: "缓存目录",
     cacheDirNote: "每个项目一个数据库，都放在这里。删掉它，Tomrade 会重新读取文件夹。"

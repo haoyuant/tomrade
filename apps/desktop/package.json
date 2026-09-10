@@ -31,6 +31,7 @@
     "@tomrade/engine-scripted": "workspace:*",
     "@tomrade/fields": "workspace:*",
     "@tomrade/hub": "workspace:*",
+    "@tomrade/hub-cloud": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/llm": "workspace:*",

@@ -21,6 +21,10 @@ watchWindowChrome();
 
 // A plugin loading or unloading changes what the palette, cards and status bar show.
 if (window.tomrade) {
+  subscribe("account.changed", () => {
+    void queryClient.invalidateQueries({ queryKey: ["account"] });
+    void queryClient.invalidateQueries({ queryKey: ["settings"] });
+  });
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
   // Switched from another window, or from the manager in this one.
   subscribe("plugins.changed", () => void queryClient.invalidateQueries({ queryKey: ["plugins"] }));

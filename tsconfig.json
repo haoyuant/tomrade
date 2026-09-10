@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/hub-cloud" },
     {
       "path": "./apps/desktop"
     },

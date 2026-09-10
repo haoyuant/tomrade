@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
 import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
+import { confirmationMatches } from "~/lib/confirmation";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
 import { RepositoriesBlock } from "./RepositoriesBlock";
@@ -307,7 +308,7 @@ function DeleteFace({
   const [typed, setTyped] = useState("");
   /** Off by default: forgetting a project on this machine is reversible; deleting its folder is not. */
   const [deleteFolder, setDeleteFolder] = useState(false);
-  const matches = typed.trim() === project.name.trim();
+  const matches = confirmationMatches(typed, project.name);
   const info = useStorageInfo(project.id);
   const published = !!info.data?.remote;
   const lost = consequences(project, facts, last, published, deleteFolder, t);

@@ -532,6 +532,13 @@ reads what travels beside the state (playbooks, docs).
 
 ## Settings
 
+Configured Supabase deployments install `ctx.cloudHub`. It supplies the Hub-only
+`ctx.storage.useHubBackend()` port and the user-only
+`ctx.settings.useUserStore()` port. Project storage providers, machine settings
+and local catalog paths keep their existing roles. The old Hub JSON files are
+retained as migration inputs. See [Supabase Hub migration](supabase-hub.md) for
+the cloud tables, outbox, account binding and deployment procedure.
+
 ```ts
 ctx.settings.register({
   id: "hello",

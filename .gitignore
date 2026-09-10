@@ -16,3 +16,6 @@ data/*.db-*
 # UI harness output
 apps/desktop/scripts/shots/
 artifacts/agent-eval/
+
+# Supabase CLI cache
+supabase/.temp/

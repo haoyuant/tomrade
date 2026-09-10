@@ -19,10 +19,13 @@ declare module "cordis" {
 
 export interface HubInfo {
   deviceId: string;
-  /** The Hub folder, or null before first-run chose one. */
+  /** Legacy local-Hub root. Cloud builds use it only as a managed-files root. */
   dir: string | null;
+  /** Default location for durable project folders on this machine. */
+  projectsDir: string;
   defaultDir: string;
   configured: boolean;
+  cloudEnabled: boolean;
 }
 
 declare module "@tomrade/ipc" {
@@ -84,6 +87,7 @@ export class Hub extends Service {
   static Config = HubConfig;
 
   deviceId!: string;
+  cloudEnabled = false;
   catalog!: Catalog;
   private state: HubState = { v: 1, dir: null, remote: null, lastPublishedDigest: null, lastSyncAt: null };
   private readonly home: Context;
@@ -112,7 +116,11 @@ export class Hub extends Service {
   }
 
   get dir(): string | null {
-    return this.state.dir;
+    return this.state.dir ?? (this.cloudEnabled ? this.defaultDir : null);
+  }
+
+  get projectsDir(): string {
+    return path.join(this.dir ?? this.defaultDir, "projects");
   }
 
   get defaultDir(): string {
@@ -120,7 +128,7 @@ export class Hub extends Service {
   }
 
   get configured(): boolean {
-    return this.state.dir !== null;
+    return this.cloudEnabled || this.state.dir !== null;
   }
 
   get remote(): HubState["remote"] {
@@ -128,7 +136,17 @@ export class Hub extends Service {
   }
 
   info(): HubInfo {
-    return { deviceId: this.deviceId, dir: this.state.dir, defaultDir: this.defaultDir, configured: this.configured };
+    return { deviceId: this.deviceId, dir: this.dir, projectsDir: this.projectsDir, defaultDir: this.defaultDir, configured: this.configured, cloudEnabled: this.cloudEnabled };
+  }
+
+  /** Cloud owns Hub metadata; this only enables local placement defaults. */
+  enableCloud(): () => void {
+    this.cloudEnabled = true;
+    this.home.get("ipc")?.send("hub.changed");
+    return () => {
+      this.cloudEnabled = false;
+      this.home.get("ipc")?.send("hub.changed");
+    };
   }
 
   /** Choose (or move to) the Hub folder. The folder is created; nothing is moved into it here. */

@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["node"] },
+  "include": ["src"],
+  "references": [
+    { "path": "../hub" }, { "path": "../ipc" },
+    { "path": "../settings" }, { "path": "../storage" }, { "path": "../projects" }
+  ]
+}

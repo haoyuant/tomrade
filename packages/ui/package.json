@@ -23,6 +23,7 @@
     "@tomrade/domain": "workspace:*",
     "@tomrade/fields": "workspace:*",
     "@tomrade/hub": "workspace:*",
+    "@tomrade/hub-cloud": "workspace:*",
     "@tomrade/repos": "workspace:*",
     "@tomrade/settings": "workspace:*",
     "@tomrade/storage": "workspace:*",

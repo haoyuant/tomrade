@@ -12,7 +12,7 @@ import type {} from "@tomrade/projects";
 import type {} from "@tomrade/write";
 import type {} from "./channels.js";
 import { GitFolder, GitMissingError, cleanRemote, cloneInto, gitRunner, type Git } from "./git.js";
-import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest } from "./hub.js";
+import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, mergeStates, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
 import {
@@ -119,6 +119,13 @@ export class Storage extends Service {
   /** Projects removed on purpose on this machine; the Hub's catalog must not bring them back. */
   private tombstones = new Map<string, number>();
   private closing = false;
+  private hubBackend: HubBackend | null = null;
+
+  useHubBackend(backend: HubBackend): () => void {
+    if (this.hubBackend) throw new Error("A Hub backend is already installed");
+    this.hubBackend = backend;
+    return () => { this.hubBackend = null; };
+  }
   private readonly home: Context;
   private readonly runGit: Git;
 
@@ -137,6 +144,7 @@ export class Storage extends Service {
     this.home.on("projects/removed", (projectId) => {
       this.forget(projectId);
       this.tombstones.set(projectId, Date.now());
+      this.hubBackend?.removeProject(projectId);
       this.scheduleHubWrite();
     });
     this.home.on("hub/configured", () => void this.reconcileAll("configured"));
@@ -1109,9 +1117,9 @@ export class Storage extends Service {
   /** What this machine knows, folded into the Hub's portable catalog, plus the ignore list a Hub repository needs. */
   async writeHub(): Promise<HubManifest | null> {
     const dir = this.hub.dir;
-    if (!dir) return null;
+    if (!dir && !this.hubBackend) return null;
     const now = Date.now();
-    const current = readHubManifest(dir) ?? emptyHub();
+    const current = this.hubBackend?.read() ?? (dir ? readHubManifest(dir) : null) ?? emptyHub();
     const mine: HubManifest = { v: 1, projects: [], repos: [], removed: [...this.tombstones].map(([id, at]) => ({ id, at })) };
     const ignores = new Set<string>(["repos/", "worktrees/", "*.tmp", ".DS_Store"]);
     for (const entry of this.hub.catalog.projects()) {
@@ -1124,7 +1132,7 @@ export class Storage extends Service {
           origin = null;
         }
         // A project with a repository of its own inside the Hub folder is not the Hub repository's to track.
-        if (entry.git === "dedicated") {
+        if (!this.hubBackend && dir && entry.git === "dedicated") {
           const rel = path.relative(dir, entry.dir);
           if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) ignores.add(rel.split(path.sep).join("/") + "/");
         }
@@ -1143,7 +1151,9 @@ export class Storage extends Service {
         if (JSON.stringify({ ...fresh, updatedAt: 0 }) !== JSON.stringify({ ...p, updatedAt: 0 })) Object.assign(p, fresh, { updatedAt: now });
       }
     }
-    writeHubManifest(dir, merged);
+    if (this.hubBackend) this.hubBackend.observe(mine);
+    else if (dir) writeHubManifest(dir, merged);
+    if (this.hubBackend || !dir) return merged;
     const ignoreFile = path.join(dir, ".gitignore");
     const body = ["# Written by Tomrade: projects with a repository of their own, agent worktrees, cloned code.", ...[...ignores].sort(), ""].join("\n");
     try {
@@ -1155,6 +1165,7 @@ export class Storage extends Service {
   }
 
   hubManifest(): HubManifest | null {
+    if (this.hubBackend) return this.hubBackend.read();
     return this.hub.dir ? readHubManifest(this.hub.dir) : null;
   }
 
@@ -1162,7 +1173,7 @@ export class Storage extends Service {
     const dir = this.hub.dir;
     const manifest = this.hubManifest();
     const attachable = (manifest?.projects ?? []).filter((p) => p.remote && !this.entry(p.id)).map((p) => p.id);
-    return { dir, remote: this.hub.remote, status: await this.hubStatus(), manifest, attachable };
+    return { dir, remote: this.hubBackend ? null : this.hub.remote, status: await this.hubStatus(), manifest, attachable };
   }
 
   private async hubRemote(): Promise<{ url: string; branch: string } | null> {
@@ -1173,6 +1184,7 @@ export class Storage extends Service {
   }
 
   async hubStatus(): Promise<StorageStatus> {
+    if (this.hubBackend) return this.hubBackend.status();
     const dir = this.hub.dir;
     if (!dir) return LOCAL;
     if (!fs.existsSync(dir)) return { state: "unavailable", location: dir, detail: "Folder not found", lastSyncAt: null };
@@ -1198,6 +1210,7 @@ export class Storage extends Service {
 
   /** Make the Hub folder a repository of Tomrade's own and give it a remote. */
   async bindHub(providerId: string, rawConfig: unknown): Promise<StorageStatus> {
+    if (this.hubBackend) throw new Error("This Hub syncs through your account; its legacy Git binding is inactive.");
     const dir = this.hub.dir;
     if (!dir) throw new HubUnconfiguredError();
     const provider = this.get(providerId);
@@ -1214,6 +1227,7 @@ export class Storage extends Service {
   }
 
   async unbindHub(): Promise<void> {
+    if (this.hubBackend) throw new Error("This Hub syncs through your account.");
     const dir = this.hub.dir;
     if (dir) await this.git(dir).removeRemote().catch(() => {});
     this.hub.patchState({ remote: null });
@@ -1222,6 +1236,7 @@ export class Storage extends Service {
 
   /** Bring the remote's Hub in (merging the catalog and settings by their own rules), then push ours. */
   async syncHub(): Promise<StorageStatus> {
+    if (this.hubBackend) { await this.writeHub(); return this.hubBackend.sync(); }
     const dir = this.hub.dir;
     if (!dir) return LOCAL;
     await this.writeHub();

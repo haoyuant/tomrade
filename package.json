@@ -17,6 +17,7 @@
     "dump-config": "pnpm --filter @tomrade/desktop dump-config"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "vitest": "^3.2.7",
     "typescript": "^6.0.0",
     "@types/node": "^26.2.0"
