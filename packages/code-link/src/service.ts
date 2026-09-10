@@ -20,7 +20,7 @@ import type {} from "@tomrade/write";
 import type { Author, Item, Repo } from "@tomrade/domain";
 import { GitFolder, gitRunner, type Git } from "@tomrade/storage";
 import { writeConnectFiles } from "./connect.js";
-import { githubEnvironment, githubHttps, installGithubCredential, usesTomradeCredential } from "./credentials.js";
+import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential } from "./credentials.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
@@ -240,7 +240,7 @@ export class CodeLink extends Service {
     this.ctx.settings.register(SETTINGS_SECTION);
     this.ctx.on("agent/prepare-turn", async (input) => {
       if (input.cwd && input.workdir && githubHttps(input.workdir.remote)) {
-        input.env = { ...input.env, ...await githubEnvironment(this.git, input.cwd, this.ctx.hub.dir, this.ctx.settings.config.path) };
+        input.env = { ...input.env, ...await githubEnvironment(this.git, input.cwd, this.ctx.settings.config.path) };
       }
     });
     // A headless session cannot have survived a restart; say so, and let the ticket offer Continue.
@@ -251,6 +251,11 @@ export class CodeLink extends Service {
         if (!this.ctx.repos.list(projectId).some((repo) => repo.remote === remote)) continue;
         void this.scan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${message(err)}`));
       }
+    });
+    // An earlier version wrote the helper under the Hub; repoint it before a
+    // session can fall back to the wrong global account.
+    this.home.inject(["repos"], () => {
+      for (const projectId of this.ctx.db.openIds()) void this.migrateCredentialHelpers(projectId);
     });
 
     this.home.inject(["tools"], (ctx) =>
@@ -370,7 +375,7 @@ export class CodeLink extends Service {
   async remoteIdentity(remote: string): Promise<RemoteIdentity> {
     const checkout = this.ctx.repos.checkout(remote).checkout;
     if (!checkout || !fs.existsSync(checkout)) return { host: null, login: null };
-    if (githubHttps(remote) && this.ctx.hub.dir && await usesTomradeCredential(this.git, checkout, this.ctx.hub.dir)) {
+    if (githubHttps(remote) && await usesTomradeCredential(this.git, checkout, this.ctx.settings.config.path)) {
       const account = await this.githubAccount();
       return { host: "github.com", login: account?.replace(/^@/, "") ?? null };
     }
@@ -401,9 +406,7 @@ export class CodeLink extends Service {
     if (!await this.githubAccount()) throw new Error("Connect your GitHub account in Tomrade first.");
     const origin = await new GitFolder(this.git, checkout).remoteUrl();
     if (!origin || !githubHttps(origin) || normalizeRemote(origin) !== normalizeRemote(repo.remote)) throw new Error("The checkout's origin has changed. Choose the checkout again.");
-    const hub = this.ctx.hub.dir;
-    if (!hub) throw new Error("Choose a Tomrade Hub folder first.");
-    await installGithubCredential(this.git, checkout, hub, this.ctx.settings.config.path);
+    await installGithubCredential(this.git, checkout, this.ctx.settings.config.path);
     await this.inFlight.get(projectId);
     const probe = await probeRemote(this.git, checkout, repo.defaultBranch);
     const reachable = probe.state !== "offline";
@@ -570,7 +573,7 @@ export class CodeLink extends Service {
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
-        const env = await githubEnvironment(this.git, view.worktree, this.ctx.hub.dir, this.ctx.settings.config.path);
+        const env = await githubEnvironment(this.git, view.worktree, this.ctx.settings.config.path);
         try {
           url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], view.worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
@@ -624,7 +627,7 @@ export class CodeLink extends Service {
     let url: string | null = null;
     let created = false;
     if (await commandOk("gh")) {
-      const env = await githubEnvironment(this.git, cwd, this.ctx.hub.dir, this.ctx.settings.config.path);
+      const env = await githubEnvironment(this.git, cwd, this.ctx.settings.config.path);
       try {
         const out = await exec("gh", ["pr", "create", "--head", link.branch, "--base", repo.defaultBranch, "--title", `${item.key}: ${item.title}`, "--body", `${item.body ?? ""}\n\nRefs ${item.key}`.trim()], cwd, env);
         url = out.trim().split("\n").pop() ?? null;
@@ -650,6 +653,19 @@ export class CodeLink extends Service {
   }
 
   // ── the scan ───────────────────────────────────────────────────────────────
+
+  /** Repoint every checkout still naming a Hub helper at the userData one. Idempotent, so a later scan catches one that appears late. */
+  private async migrateCredentialHelpers(projectId: string): Promise<void> {
+    for (const repo of this.ctx.repos.list(projectId)) {
+      const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+      if (!checkout || !fs.existsSync(checkout)) continue;
+      try {
+        await migrateGithubCredential(this.git, checkout, this.ctx.settings.config.path);
+      } catch (err) {
+        this.ctx.logger.warn(`credential helper migration for ${checkout} failed: ${message(err)}`);
+      }
+    }
+  }
 
   /** One scan per project at a time; a second caller gets the running one. */
   scan(projectId: string): Promise<ScanSummary> {
@@ -677,6 +693,7 @@ export class CodeLink extends Service {
     summary.repos = repos.length;
     const unlinked: UnlinkedBranch[] = [];
     const now = Date.now();
+    await this.migrateCredentialHelpers(projectId);
     for (const repo of repos) {
       const placement = this.ctx.repos.checkout(repo.remote);
       if (!placement.checkout || !fs.existsSync(placement.checkout)) {

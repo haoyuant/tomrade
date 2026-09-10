@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { GIT_ENV, type Git } from "@tomrade/storage";
-import { githubEnvironment, githubHttps, installGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/credentials.js";
+import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/credentials.js";
 import { exec } from "../src/terminal.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-credentials-"));
@@ -12,9 +12,11 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 async function fixture() {
   const dir = fs.mkdtempSync(path.join(root, "repo-"));
-  const hub = path.join(dir, "hub's folder");
-  const settings = path.join(dir, "machine settings.json");
+  // Paths hold the spaces and apostrophes of a real macOS userData folder.
+  const userData = path.join(dir, "user data's folder");
+  const settings = path.join(userData, "settings.json");
   const globalConfig = path.join(dir, "global.config");
+  fs.mkdirSync(userData, { recursive: true });
   fs.writeFileSync(globalConfig, '[credential]\n\thelper = "!f() { echo username=wrong-account; echo password=wrong-token; }; f"\n');
   fs.writeFileSync(settings, JSON.stringify({ github: { token: "test-token-one" } }));
   const git: Git = (args, opts = {}) => new Promise((resolve, reject) => {
@@ -27,7 +29,7 @@ async function fixture() {
   await git(["init", "-q", "-b", "main"]);
   await git(["-c", "user.name=Test", "-c", "user.email=test@localhost", "commit", "--allow-empty", "-qm", "initial"]);
   const fill = (cwd = dir, host = "github.com", protocol = "https") => git(["credential", "fill"], { cwd, ok: true, stdin: `protocol=${protocol}\nhost=${host}\npath=owner/repo.git\n\n` });
-  return { dir, hub, settings, globalConfig, git, fill };
+  return { dir, userData, settings, globalConfig, git, fill };
 }
 
 it("overrides the wrong global account in the checkout and existing worktrees, and reads rotated tokens", async () => {
@@ -36,8 +38,8 @@ it("overrides the wrong global account in the checkout and existing worktrees, a
   expect((await f.fill()).stdout).toContain("username=wrong-account");
   const worktree = path.join(f.dir, "linked");
   await f.git(["worktree", "add", "-qb", "ticket", worktree]);
-  await installGithubCredential(f.git, f.dir, f.hub, f.settings);
-  expect(await usesTomradeCredential(f.git, worktree, f.hub)).toBe(true);
+  await installGithubCredential(f.git, f.dir, f.settings);
+  expect(await usesTomradeCredential(f.git, worktree, f.settings)).toBe(true);
   for (const cwd of [f.dir, worktree]) {
     const result = await f.fill(cwd);
     expect(result.code).toBe(0);
@@ -47,10 +49,10 @@ it("overrides the wrong global account in the checkout and existing worktrees, a
   fs.writeFileSync(f.settings, JSON.stringify({ github: { token: "test-token-two" } }));
   expect((await f.fill(worktree)).stdout).toContain("password=test-token-two");
   const config = fs.readFileSync(path.join(f.dir, ".git/config"), "utf8");
-  await installGithubCredential(f.git, worktree, f.hub, f.settings);
+  await installGithubCredential(f.git, worktree, f.settings);
   expect(fs.readFileSync(path.join(f.dir, ".git/config"), "utf8")).toBe(config);
   expect(fs.readFileSync(f.globalConfig, "utf8")).toBe(before);
-  for (const file of [path.join(f.dir, ".git/config"), ...fs.readdirSync(path.join(f.hub, "bin")).map(name => path.join(f.hub, "bin", name))]) {
+  for (const file of [path.join(f.dir, ".git/config"), ...fs.readdirSync(path.join(f.userData, "bin")).map(name => path.join(f.userData, "bin", name))]) {
     expect(fs.readFileSync(file, "utf8")).not.toMatch(/test-token|wrong-token/);
   }
   expect((await f.fill(f.dir, "example.com")).stdout).toContain("username=wrong-account");
@@ -59,7 +61,7 @@ it("overrides the wrong global account in the checkout and existing worktrees, a
 
 it("does not leak a previous token when settings are missing, malformed, disconnected or contain newlines", async () => {
   const f = await fixture();
-  await installGithubCredential(f.git, f.dir, f.hub, f.settings);
+  await installGithubCredential(f.git, f.dir, f.settings);
   for (const value of ["{}", "not json", JSON.stringify({ github: { token: "" } }), JSON.stringify({ github: { token: "bad\npassword=injected" } })]) {
     fs.writeFileSync(f.settings, value);
     const result = await f.fill();
@@ -80,11 +82,11 @@ it("leaves the original config intact when a config write fails or another git p
   const config = path.join(f.dir, ".git/config");
   const before = fs.readFileSync(config, "utf8");
   const failing: Git = (args, opts) => args.includes("--add") ? Promise.reject(new Error("write failed")) : f.git(args, opts);
-  await expect(installGithubCredential(failing, f.dir, f.hub, f.settings)).rejects.toThrow("write failed");
+  await expect(installGithubCredential(failing, f.dir, f.settings)).rejects.toThrow("write failed");
   expect(fs.readFileSync(config, "utf8")).toBe(before);
   expect(fs.existsSync(`${config}.lock`)).toBe(false);
   fs.writeFileSync(`${config}.lock`, "someone else's lock");
-  await expect(installGithubCredential(f.git, f.dir, f.hub, f.settings)).rejects.toThrow();
+  await expect(installGithubCredential(f.git, f.dir, f.settings)).rejects.toThrow();
   expect(fs.readFileSync(`${config}.lock`, "utf8")).toBe("someone else's lock");
   expect(fs.readFileSync(config, "utf8")).toBe(before);
 });
@@ -97,17 +99,31 @@ it("only offers the token for plain HTTPS github.com repository URLs", () => {
 it("passes gh credentials only to opted-in subprocesses and keeps terminal scripts free of tokens", async () => {
   const f = await fixture();
   await f.git(["remote", "add", "origin", "https://github.com/owner/repo"]);
-  expect(await githubEnvironment(f.git, f.dir, f.hub, f.settings)).toEqual({});
-  await installGithubCredential(f.git, f.dir, f.hub, f.settings);
-  expect(await githubEnvironment(f.git, f.dir, f.hub, f.settings)).toEqual({ GH_TOKEN: "test-token-one", GITHUB_TOKEN: "test-token-one" });
-  const command = withGithubCredential(f.hub, 'test "$GH_TOKEN" = "test-token-two" && test "$GITHUB_TOKEN" = "$GH_TOKEN" && echo account-ready');
+  expect(await githubEnvironment(f.git, f.dir, f.settings)).toEqual({});
+  await installGithubCredential(f.git, f.dir, f.settings);
+  expect(await githubEnvironment(f.git, f.dir, f.settings)).toEqual({ GH_TOKEN: "test-token-one", GITHUB_TOKEN: "test-token-one" });
+  const command = withGithubCredential(f.settings, 'test "$GH_TOKEN" = "test-token-two" && test "$GITHUB_TOKEN" = "$GH_TOKEN" && echo account-ready');
   fs.writeFileSync(f.settings, JSON.stringify({ github: { token: "test-token-two" } }));
   expect(await exec("bash", ["-c", command], f.dir)).toBe("account-ready\n");
-  const scriptCommand = withGithubCredential(f.hub, "gh pr view");
+  const scriptCommand = withGithubCredential(f.settings, "gh pr view");
   expect(scriptCommand).not.toContain("test-token");
-  expect(await exec("bash", ["-c", 'test "$GH_TOKEN" = "test-token-two" && echo account-ready'], f.dir, await githubEnvironment(f.git, f.dir, f.hub, f.settings))).toBe("account-ready\n");
+  expect(await exec("bash", ["-c", 'test "$GH_TOKEN" = "test-token-two" && echo account-ready'], f.dir, await githubEnvironment(f.git, f.dir, f.settings))).toBe("account-ready\n");
   fs.writeFileSync(f.settings, "{}");
-  await expect(githubEnvironment(f.git, f.dir, f.hub, f.settings)).rejects.toThrow("Reconnect");
+  await expect(githubEnvironment(f.git, f.dir, f.settings)).rejects.toThrow("Reconnect");
   await f.git(["remote", "set-url", "origin", "https://example.com/owner/repo"]);
-  expect(await githubEnvironment(f.git, f.dir, f.hub, f.settings)).toEqual({});
+  expect(await githubEnvironment(f.git, f.dir, f.settings)).toEqual({});
+});
+
+it("moves an installed helper from the old Hub location to userData, once", async () => {
+  const f = await fixture();
+  await installGithubCredential(f.git, f.dir, f.settings);
+  const legacy = path.join(f.dir, "old-hub", "bin", "tomrade-credential");
+  await f.git(["config", "--local", "--replace-all", "credential.https://github.com.helper", ""]);
+  await f.git(["config", "--local", "--add", "credential.https://github.com.helper", `!'${legacy}'`]);
+  expect(await usesTomradeCredential(f.git, f.dir, f.settings)).toBe(false);
+  expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(true);
+  expect(await usesTomradeCredential(f.git, f.dir, f.settings)).toBe(true);
+  expect(fs.readFileSync(path.join(f.dir, ".git/config"), "utf8")).not.toContain(legacy);
+  expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(false);
+  expect((await f.fill()).stdout).toContain("password=test-token-one");
 });
