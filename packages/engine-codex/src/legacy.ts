@@ -98,7 +98,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       const shared = [
         "--json",
         "--skip-git-repo-check",
-        ...(mode && mode !== "local" ? ["-c", `sandbox_mode="${sandbox}"`, "-c", `approval_policy="${mode === "full-access" ? "never" : "on-request"}"`] : []),
+        ...(mode && mode !== "local" ? ["-c", `sandbox_mode="${sandbox}"`, "-c", `approval_policy="${mode === "full-access" ? "never" : "on-request"}"`, ...(mode === "full-access" ? ["-c", "sandbox_workspace_write.network_access=true"] : [])] : []),
         "-c",
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
