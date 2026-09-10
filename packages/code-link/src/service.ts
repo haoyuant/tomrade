@@ -27,7 +27,7 @@ import { scanRepo, type ScanResult } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { Starter, type StartMode, type StartResult } from "./start.js";
-import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { TerminalSettings, commandOk, exec, launchTerminal } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
@@ -89,6 +89,7 @@ export interface ConnectResult {
 declare module "@tomrade/ipc" {
   interface Channels {
     "codeLink.links": (projectId: string, itemId?: string) => CodeLinkView[];
+    "codeLink.deliveries": (projectId: string, itemId?: string) => DeliveryView[];
     "codeLink.rescan": (projectId: string) => ScanSummary;
     "codeLink.proposals": (projectId: string, itemId?: string) => ProposalView[];
     "codeLink.resolve": (projectId: string, proposalId: string, accept: boolean) => ProposalView;
@@ -214,6 +215,9 @@ export class CodeLink extends Service {
   [Service.init]() {
     this.ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
     this.store = new CodeLinkStore(this.ctx.db);
+    for (const projectId of this.ctx.db.openIds()) this.store.repairLegacyDeliveries(projectId);
+    this.ctx.on("db/opened", (projectId) => this.store.repairLegacyDeliveries(projectId));
+    this.ctx.on("storage/imported", (projectId) => this.store.repairLegacyDeliveries(projectId));
     this.sessions = new Sessions(this.ctx, this.store, {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
@@ -263,7 +267,7 @@ export class CodeLink extends Service {
         store: this.store,
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
-        attach: (projectId, sessionId, itemId, branch) => this.attach(projectId, sessionId, itemId, branch),
+        attach: (projectId, sessionId, itemId, branch, delivery) => this.attach(projectId, sessionId, itemId, branch, delivery),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
         notify: (projectId) => this.notify(projectId)
       })
@@ -278,9 +282,31 @@ export class CodeLink extends Service {
     // A ticket an agent creates mid-session belongs to that session too.
     this.ctx.on("write/committed", (intent) => {
       const bound = sessionContext.getStore();
-      if (!bound || intent.entity !== "item" || intent.op !== "create" || intent.projectId !== bound.projectId) return;
-      const session = this.store.session(bound.projectId, bound.sessionId);
-      if (session && !session.itemIds.includes(intent.id)) this.store.patchSession(bound.projectId, session.id, { itemIds: [...session.itemIds, intent.id] });
+      if (bound && intent.entity === "item" && intent.op === "create" && intent.projectId === bound.projectId) {
+        const session = this.store.session(bound.projectId, bound.sessionId);
+        if (session && !session.itemIds.includes(intent.id)) this.store.patchSession(bound.projectId, session.id, { itemIds: [...session.itemIds, intent.id] });
+      }
+      if (intent.entity !== "item" || intent.op !== "update") return;
+      const before = intent.before as Item | null;
+      const after = intent.after as Item | null;
+      if (!before || !after || before.status === after.status) return;
+      const open = new Set(["backlog", "todo", "doing", "verifying"]);
+      if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
+        this.store.ensureActiveDelivery(intent.projectId, intent.id, after.updatedAt);
+        this.notify(intent.projectId);
+        return;
+      }
+      if (open.has(before.status) && (after.status === "done" || after.status === "cancelled")) {
+        const active = this.store.activeDelivery(intent.projectId, intent.id);
+        if (!active) return;
+        const delivered = this.store.links(intent.projectId, intent.id).some((link) => link.delivery === active.sequence && (!!link.mergedSha || link.prState === "merged"));
+        // A person may claim Done before git agrees. Keep that delivery active
+        // so the evidence pass can flag the mismatch instead of hiding it.
+        if (after.status === "done" && !delivered) return;
+        this.store.finishActiveDelivery(intent.projectId, intent.id, after.status === "done" ? "completed" : "cancelled", after.updatedAt);
+        for (const proposal of this.store.proposalsForDelivery(intent.projectId, intent.id, active.sequence, "open")) this.store.setProposalState(intent.projectId, proposal.id, "stale");
+        this.notify(intent.projectId);
+      }
     });
     this.home.inject(["agent"], (ctx) => {
       const placeTerminalThreads = (projectId: string) => {
@@ -315,6 +341,7 @@ export class CodeLink extends Service {
     });
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("codeLink.links", (projectId, itemId) => ctx.codeLink.links(projectId, itemId));
+      ctx.ipc.handle("codeLink.deliveries", (projectId, itemId) => ctx.codeLink.deliveries(projectId, itemId));
       ctx.ipc.handle("codeLink.rescan", (projectId) => ctx.codeLink.scan(projectId));
       ctx.ipc.handle("codeLink.proposals", (projectId, itemId) => ctx.codeLink.proposals(projectId, itemId));
       ctx.ipc.handle("codeLink.resolve", (projectId, proposalId, accept) => ctx.codeLink.resolve(projectId, proposalId, accept));
@@ -354,6 +381,15 @@ export class CodeLink extends Service {
 
   links(projectId: string, itemId?: string): CodeLinkView[] {
     return this.store.links(projectId, itemId);
+  }
+
+  deliveries(projectId: string, itemId?: string): DeliveryView[] {
+    return this.store.deliveries(projectId, itemId);
+  }
+
+  private currentLinks(projectId: string, itemId: string): CodeLinkView[] {
+    const delivery = this.store.currentDelivery(projectId, itemId);
+    return delivery ? this.store.links(projectId, itemId).filter((link) => link.delivery === delivery.sequence) : [];
   }
 
   proposals(projectId: string, itemId?: string): ProposalView[] {
@@ -434,7 +470,7 @@ export class CodeLink extends Service {
 
   /** This machine's worktree for the ticket's most recent thread, if one was started here. */
   worktreeOf(projectId: string, itemId: string): string | null {
-    for (const link of this.store.links(projectId, itemId)) {
+    for (const link of this.currentLinks(projectId, itemId)) {
       const dir = link.threadId ? this.worktrees.get(link.threadId) : undefined;
       if (dir && fs.existsSync(dir)) return dir;
     }
@@ -491,10 +527,11 @@ export class CodeLink extends Service {
   }
 
   /** A session took a ticket on — its first, or another beside it. */
-  attach(projectId: string, sessionId: string, itemId: string, branch: string): void {
+  attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     this.store.patchSession(projectId, sessionId, {
+      delivery,
       itemIds: session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
       ...(session.branch ? {} : { branch }),
       ...(session.state === "ended" ? {} : { state: "running" as const }),
@@ -597,7 +634,7 @@ export class CodeLink extends Service {
   async openPr(projectId: string, itemId: string): Promise<OpenPrResult> {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown item ${itemId}`);
-    const links = this.store.links(projectId, itemId).filter((l) => l.branch);
+    const links = this.currentLinks(projectId, itemId).filter((l) => l.branch);
     const link = primaryOf(links);
     if (!link) return { pushed: false, url: null, created: false, message: `${item.key} has no branch yet` };
     const repo = this.ctx.repos.get(projectId, link.repoId);
@@ -728,7 +765,7 @@ export class CodeLink extends Service {
           if (session.repoId === repo.id && session.blocked) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
         }
       }
-      const outcome = this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
+      const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
       summary.links += outcome.links;
       summary.changed += outcome.changed;
       summary.proposals += outcome.proposals;
@@ -740,7 +777,7 @@ export class CodeLink extends Service {
   }
 
   /** Turn one repository's scan into links, then judge every ticket the repository touches. */
-  private absorb(projectId: string, repo: Repo, result: ScanResult, autoDone: boolean, now: number, unlinked: UnlinkedBranch[]): { links: number; changed: number; proposals: number } {
+  private async absorb(projectId: string, repo: Repo, result: ScanResult, autoDone: boolean, now: number, unlinked: UnlinkedBranch[]): Promise<{ links: number; changed: number; proposals: number }> {
     const items = this.ctx.items.list({ projectId });
     const byNum = new Map(items.map((i) => [i.keyNum, i]));
     const previous = new Map(this.store.linksForRepo(projectId, repo.id).map((l) => [l.id, l]));
@@ -755,17 +792,31 @@ export class CodeLink extends Service {
           unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum, sha: b.sha, committedAt: b.committedAt });
           continue;
         }
-        const link = this.store.upsertLink(
-          projectId,
-          { itemId: item.id, repoId: repo.id, branch: b.name },
-          { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
-        );
+        const sameBranch = [...previous.values()].filter((link) => link.itemId === item.id && link.branch === b.name).sort((a, z) => z.delivery - a.delivery);
+        const active = this.store.activeDelivery(projectId, item.id);
+        const current = active ? sameBranch.find((link) => link.delivery === active.sequence) : undefined;
+        const unchangedHistory = !current ? sameBranch.find((link) => link.headSha === b.sha) : undefined;
+        const target = current ?? unchangedHistory;
+        const link = target
+          ? this.store.patchLink(projectId, target.id, {
+              headSha: b.sha,
+              headAt: b.committedAt,
+              ahead: b.ahead,
+              behind: b.behind,
+              mergedSha: b.merged ? (target.mergedSha ?? result.defaultSha) : undefined,
+              lastSeenAt: now
+            })
+          : this.store.upsertLink(
+              projectId,
+              { itemId: item.id, repoId: repo.id, branch: b.name },
+              { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
+            );
         if (b.merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
-        seen.add(link.id);
+        if (link.delivery === this.store.activeDelivery(projectId, item.id)?.sequence) seen.add(link.id);
         touched.add(item.id);
         links += 1;
         // A branch with commits is a session's heartbeat too.
-        for (const s of this.store.sessions(projectId, { itemId: item.id, live: true })) if (s.branch === b.name && (s.lastCommitAt ?? 0) < b.committedAt) this.store.patchSession(projectId, s.id, { lastCommitAt: b.committedAt });
+        for (const s of this.store.sessions(projectId, { itemId: item.id, delivery: link.delivery, live: true })) if (s.branch === b.name && (s.lastCommitAt ?? 0) < b.committedAt) this.store.patchSession(projectId, s.id, { lastCommitAt: b.committedAt });
       }
     }
 
@@ -781,7 +832,20 @@ export class CodeLink extends Service {
     for (const [keyNum, commit] of result.mergedKeys) {
       const item = byNum.get(keyNum);
       if (!item) continue;
-      const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id);
+      let active = this.store.activeDelivery(projectId, item.id);
+      if (!active && item.status !== "done" && item.status !== "cancelled") active = this.store.ensureActiveDelivery(projectId, item.id, commit.at);
+      if (!active) continue;
+      const base = active.bases[repo.id];
+      if (base && active.sequence > 1) {
+        const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
+        const ancestor = await this.git(["merge-base", "--is-ancestor", commit.sha, base], { cwd, ok: true });
+        if (ancestor.code !== 1) continue;
+      } else if (active.sequence > 1) {
+        // Without a known starting ref, require branch/PR evidence instead of
+        // assigning a historical ticket mention to a reopened delivery.
+        continue;
+      }
+      const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === active.sequence);
       if (own.length) {
         for (const l of own) {
           if (!l.mergedSha || l.prState === "open") {
@@ -789,7 +853,7 @@ export class CodeLink extends Service {
           }
         }
       } else {
-        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "" }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
+        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "", delivery: active.sequence }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
       }
       touched.add(item.id);
     }
@@ -818,15 +882,17 @@ export class CodeLink extends Service {
 
   /** Apply the sync matrix to one ticket in one repository. */
   private judge(projectId: string, item: Item, repoId: string, previous: Map<string, CodeLinkView>, seen: Set<string>, autoDone: boolean): { changed: number; proposals: number } {
-    const links = this.store.links(projectId, item.id).filter((l) => l.repoId === repoId);
+    const delivery = this.store.activeDelivery(projectId, item.id);
+    if (!delivery) return { changed: 0, proposals: 0 };
+    const links = this.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.delivery === delivery.sequence);
     if (!links.length) return { changed: 0, proposals: 0 };
     const present = links.filter((l) => l.branch && seen.has(l.id));
     const primary = primaryOf(links);
-    const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, live: true }));
+    const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, delivery: delivery.sequence, live: true }));
     const evidence: Evidence = {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: !working && links.some((l) => !!l.mergedSha || l.prState === "merged"),
+      merged: links.some((l) => !!l.mergedSha || l.prState === "merged"),
       working,
       pr: primary?.prState ?? null,
       movedAfterDone:
@@ -840,10 +906,10 @@ export class CodeLink extends Service {
     let changed = 0;
     let proposals = 0;
     let status = item.status;
-    // A previous scan may have written Done just before the terminal session
-    // was rebound after an app restart. Once the live process is visible again,
-    // undo that sync-only transition so the ticket reflects the work in flight.
-    if (evidence.working && status === "done" && item.updatedBy === AUTHOR) {
+    // A previous scan may have written Done just before an unmerged terminal
+    // session was rebound after an app restart. Once the live process is visible
+    // again, undo that sync-only transition. Definitive merge evidence still wins.
+    if (evidence.working && !evidence.merged && status === "done" && item.updatedBy === AUTHOR) {
       this.ctx.items.update(projectId, item.id, { status: "doing" }, AUTHOR);
       status = "doing";
       changed += 1;
@@ -862,12 +928,13 @@ export class CodeLink extends Service {
       }
       const to = d.kind === "propose" ? d.to : null;
       standing.add(signature(d.kind, to, d.reason));
-      if (this.store.hasRecentProposal(projectId, item.id, d.kind, to, d.reason, evidenceSha)) continue;
-      this.store.addProposal(projectId, { itemId: item.id, linkId: primary?.id ?? null, kind: d.kind, fromStatus: item.status, toStatus: to, reason: d.reason, evidenceSha });
+      if (this.store.hasRecentProposal(projectId, item.id, delivery.sequence, d.kind, to, d.reason, evidenceSha)) continue;
+      this.store.addProposal(projectId, { itemId: item.id, delivery: delivery.sequence, linkId: primary?.id ?? null, kind: d.kind, fromStatus: item.status, toStatus: to, reason: d.reason, evidenceSha });
       proposals += 1;
     }
     // A proposal the evidence no longer supports is withdrawn, not left for someone to reject.
-    for (const p of this.store.proposals(projectId, item.id, "open")) if (!standing.has(signature(p.kind, p.toStatus, p.reason))) this.store.setProposalState(projectId, p.id, "stale");
+    for (const p of this.store.proposalsForDelivery(projectId, item.id, delivery.sequence, "open")) if (!standing.has(signature(p.kind, p.toStatus, p.reason))) this.store.setProposalState(projectId, p.id, "stale");
+    if (evidence.merged && this.ctx.items.get(projectId, item.id)?.status === "done") this.store.finishActiveDelivery(projectId, item.id, "completed");
     return { changed, proposals };
   }
 
@@ -879,13 +946,24 @@ export class CodeLink extends Service {
       title: "Code",
       render: (item) => {
         const links = this.store.links(item.projectId, item.id);
-        const open = this.store.proposals(item.projectId, item.id, "open");
-        const sessions = this.store.sessions(item.projectId, { itemId: item.id });
-        if (!links.length && !open.length && !sessions.length) return null;
-        const primary = primaryOf(links);
-        const ordered = primary ? [primary, ...links.filter((l) => l.id !== primary.id)] : links;
+        const delivery = this.store.currentDelivery(item.projectId, item.id);
+        const open = delivery ? this.store.proposalsForDelivery(item.projectId, item.id, delivery.sequence, "open") : [];
+        const sessions = this.store.sessions(item.projectId, { itemId: item.id, ...(delivery ? { delivery: delivery.sequence } : {}) });
+        if (!delivery && !links.length && !open.length && !sessions.length) return null;
+        const current = this.currentLinks(item.projectId, item.id);
+        const primary = primaryOf(current);
+        const ordered = primary ? [primary, ...current.filter((l) => l.id !== primary.id), ...links.filter((l) => l.delivery !== primary.delivery).reverse()] : [...links].reverse();
+        const deliveries = this.store.deliveries(item.projectId, item.id);
+        const deliveryBySequence = new Map(deliveries.map((entry) => [entry.sequence, entry]));
         const rows: SectionRow[] = [];
+        if (delivery && !current.length) rows.push({ label: "Delivery", icon: "i-merge", state: "live", value: `#${delivery.sequence} · ${delivery.state}` });
+        let shownDelivery: number | null = null;
         for (const l of ordered) {
+          if (deliveries.length > 1 && shownDelivery !== l.delivery) {
+            const entry = deliveryBySequence.get(l.delivery);
+            rows.push({ label: "Delivery", icon: "i-merge", state: entry?.state === "active" ? "live" : entry?.state === "completed" ? "ok" : "ended", value: `#${l.delivery} · ${entry?.state ?? "historical"}` });
+            shownDelivery = l.delivery;
+          }
           const repo = this.ctx.repos.get(item.projectId, l.repoId);
           const name = repo?.name ?? "repository";
           if (l.branch) rows.push({ label: "Branch", icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
@@ -940,12 +1018,17 @@ export class CodeLink extends Service {
         const waiting = new Set<string>();
         const stuck = new Map<string, string>();
         for (const s of this.store.sessions(projectId, { live: true })) {
-          if (s.state === "waiting") for (const id of s.itemIds) waiting.add(id);
-          if (s.state === "error") for (const id of s.itemIds) stuck.set(id, s.summary ?? "stopped");
+          for (const id of s.itemIds) {
+            if (this.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
+            if (s.state === "waiting") waiting.add(id);
+            if (s.state === "error") stuck.set(id, s.summary ?? "stopped");
+          }
         }
         const out: Record<string, Badge[]> = {};
         for (const item of items) {
-          const links = byItem.get(item.id) ?? [];
+          const allLinks = byItem.get(item.id) ?? [];
+          const delivery = this.store.currentDelivery(projectId, item.id);
+          const links = delivery ? allLinks.filter((link) => link.delivery === delivery.sequence) : [];
           const flag = flags.get(item.id);
           if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
           const badges: Badge[] = [];

@@ -154,7 +154,7 @@ describe("code link", () => {
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 0, behind: 0, mergedSha: null });
   });
 
-  it("defers merge completion while a session is active, then finishes when the session ends", async () => {
+  it("finishes a merged ticket while its terminal session is still active", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Merge message while working", "verifying");
     const branch = `tom-${item.keyNum}/merge-message`;
@@ -180,15 +180,62 @@ describe("code link", () => {
     });
 
     await codeLink.scan(project.id);
-    expect(items.get(project.id, item.id)!.status).toBe("verifying");
+    expect(items.get(project.id, item.id)!.status).toBe("done");
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: expect.any(String), prState: "merged" });
-    expect(ctx.items.get(project.id, item.id)!.updatedBy).toBe("human");
+    expect(ctx.items.get(project.id, item.id)!.updatedBy).toBe("sync:git");
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: session.id, state: "running" });
 
-    // Claude exits after the merge scan. Ending the session must re-run the
-    // evidence pass; otherwise the ticket and PR stay stuck in Verifying/open.
+    // The process lifecycle is independent from delivery: ending it later is
+    // still recorded, but it is not what makes the ticket Done.
     codeLink.sessions.event(project.id, session.id, { hook_event_name: "SessionEnd" });
-    await until(() => items.get(project.id, item.id)?.status === "done");
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: session.id, state: "ended" });
+    expect(items.get(project.id, item.id)!.status).toBe("done");
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: expect.any(String), prState: "merged" });
+  });
+
+  it("starts a new delivery when a done ticket is reopened, without old merge evidence completing it", async () => {
+    const { codeLink, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Ship, then revise", "todo");
+    const firstBranch = `tom-${item.keyNum}/ship`;
+    commitOn(checkout, firstBranch, "ship.ts", `${item.key}: ship`);
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--no-ff", "-m", `Merge ${firstBranch}`, firstBranch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    expect(codeLink.deliveries(project.id, item.id).map((delivery) => [delivery.sequence, delivery.state])).toEqual([[1, "completed"]]);
+
+    items.update(project.id, item.id, { status: "todo" }, "human");
+    expect(codeLink.deliveries(project.id, item.id).map((delivery) => [delivery.sequence, delivery.state])).toEqual([
+      [1, "completed"],
+      [2, "active"]
+    ]);
+    const secondBranch = `tom-${item.keyNum}/revise-2`;
+    // Losing the incremental scan cursor must not replay delivery 1 into 2.
+    codeLink.store.upsertRepoState(project.id, repo.id, { scannedSha: null });
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("todo");
+    commitOn(checkout, secondBranch, "revise.ts", `${item.key}: revise`);
+    git(["push", "-q", "origin", secondBranch], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(codeLink.links(project.id, item.id).map((link) => [link.branch, link.delivery])).toEqual([
+      [firstBranch, 1],
+      [secondBranch, 2]
+    ]);
+
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--no-ff", "-m", `Merge ${secondBranch}`, secondBranch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    expect(codeLink.links(project.id, item.id).filter((link) => link.mergedSha).map((link) => link.delivery)).toEqual([1, 2]);
+    expect(codeLink.deliveries(project.id, item.id).map((delivery) => [delivery.sequence, delivery.state])).toEqual([
+      [1, "completed"],
+      [2, "completed"]
+    ]);
   });
 
   it("reads a squash merge from the default branch's message when the branch is already gone", async () => {

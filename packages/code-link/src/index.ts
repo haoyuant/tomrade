@@ -8,6 +8,8 @@ export {
   MIGRATIONS,
   TABLES,
   type CodeLinkView,
+  type DeliveryState,
+  type DeliveryView,
   type LinkPatch,
   type LinkSource,
   type ProposalKind,

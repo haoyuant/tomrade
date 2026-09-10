@@ -44,7 +44,6 @@ export function decide(status: ItemStatus, e: Evidence, policy: RulePolicy): Dec
     return out;
   }
   if (e.merged) {
-    if (e.working) return out;
     if (BEFORE_DONE.has(status)) {
       if (policy.autoDone) forward("done", "merged into the default branch");
       else propose("done", "merged into the default branch");

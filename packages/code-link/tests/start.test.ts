@@ -13,7 +13,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomrade/agent";
-import { CodeLink, BOOTSTRAP_LABEL } from "@tomrade/code-link";
+import { CodeLink, BOOTSTRAP_LABEL, sessionContext } from "@tomrade/code-link";
 import { Contributions } from "@tomrade/contributions";
 import { Repos } from "@tomrade/repos";
 import { Settings } from "@tomrade/settings";
@@ -397,6 +397,36 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "Session")?.value).toMatch(/^idle · run by Tomrade/);
     expect(section.rows.find((r) => r.label === "Worktree")).toMatchObject({ value: result.worktree, command: "code-link.open-terminal" });
     expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
+  });
+
+  it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Revise notifications");
+
+    const first = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await untilRunsSettle(agent);
+    await ctx.tools.execute("link_code", { key: item.key, branch: first.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+
+    await expect(sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute("link_code", { prState: "merged", scopeChecked: true }, { by: "human", projectId: project.id }))).rejects.toThrow("reopen");
+    expect(codeLink.deliveries(project.id, item.id)).toHaveLength(1);
+    ctx.items.update(project.id, item.id, { status: "todo" }, "human");
+    await expect(sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute("claim_ticket", { key: item.key }, { by: "human", projectId: project.id }))).rejects.toThrow("earlier delivery");
+    expect(codeLink.store.session(project.id, first.sessionId)?.delivery).toBe(1);
+    const second = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second).toMatchObject({ continued: false, branch: `tom-${item.keyNum}/revise-notifications-2` });
+    expect(second.threadId).not.toBe(first.threadId);
+    expect(codeLink.links(project.id, item.id).map((link) => [link.delivery, link.branch])).toEqual([
+      [1, first.branch],
+      [2, second.branch]
+    ]);
+    expect(codeLink.sessionsOf(project.id, item.id).map((session) => session.delivery).sort()).toEqual([1, 2]);
   });
 
   it("stops a session retry loop after git reports that its credentials cannot see origin", async () => {

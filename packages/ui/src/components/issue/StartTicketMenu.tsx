@@ -2,7 +2,7 @@ import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";
-import { useCodeSessions, useStartTicket } from "~/lib/codeLink";
+import { useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
@@ -32,11 +32,13 @@ export function StartTicketMenu({
   const toast = useToast();
   const { showThread } = useAgentDock();
   const sessions = useCodeSessions(projectId, item.id);
+  const deliveries = useCodeDeliveries(projectId, item.id);
   const start = useStartTicket(projectId);
 
   const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
   if (!startable) return null;
-  const hasSession = (sessions.data?.length ?? 0) > 0;
+  const active = deliveries.data?.find((delivery) => delivery.state === "active");
+  const hasSession = !!active && !!sessions.data?.some((session) => session.delivery === active.sequence);
   const label = start.isPending ? t("codeLink.starting") : t(hasSession ? "codeLink.continue" : "codeLink.start");
 
   const startTicket = (mode: "run" | "terminal") =>

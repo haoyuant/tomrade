@@ -70,6 +70,7 @@ export class Starter {
     const found = ctx.items.get(projectId, itemId);
     if (!found) throw new Error(`unknown item ${itemId}`);
     let item: Item = found;
+    if (!OPEN.has(item.status)) throw new Error(`Reopen ${item.key} before starting another delivery`);
     if (item.humanLocked) return { ok: false, gate: "locked", message: `${item.key} is human-locked — unlock it before starting work on it` };
 
     const board = ctx.boards.get(projectId, item.boardId);
@@ -103,7 +104,10 @@ export class Starter {
         if (state?.readiness === "unknown") return { ok: false, gate: "remote", message: `${repo.remote} has ${repo.defaultBranch}, but this checkout cannot fetch it — check the credentials that checkout uses`, remote: repo.remote };
       }
     }
-    const plannedBranch = store.links(projectId, item.id).find((link) => link.repoId === repo.id && link.branch)?.branch ?? branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
+    const delivery = store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
+    const deliveryLinks = store.links(projectId, item.id).filter((link) => link.delivery === delivery.sequence);
+    const baseBranch = branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
+    const plannedBranch = deliveryLinks.find((link) => link.repoId === repo.id && link.branch)?.branch ?? (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
     if (probe.state !== "offline" && (state?.agentPush ?? true)) {
       const pushed = await this.host.git(["push", "--dry-run", "origin", `HEAD:refs/heads/${plannedBranch}`], { cwd: placement.checkout, ok: true });
       if (pushed.code !== 0) {
@@ -148,7 +152,7 @@ export class Starter {
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
 
     // An open thread on this ticket is continued, not duplicated.
-    const links = store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.branch);
+    const links = store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === delivery.sequence && l.branch);
     const previous = links.map((l) => (l.threadId ? agent.store.thread(projectId, l.threadId) : null)).find((t) => !!t) ?? null;
     let continued = false;
     let thread = previous;
@@ -170,10 +174,10 @@ export class Starter {
     this.host.worktrees.set(thread.id, where.worktree ?? where.cwd);
 
     const now = Date.now();
-    const link = store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch }, { threadId: thread.id, source: continued ? undefined : "start", lastSeenAt: now });
+    const link = store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch, delivery: delivery.sequence }, { threadId: thread.id, source: continued ? undefined : "start", lastSeenAt: now });
     if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, "human");
 
-    const onThread = store.sessions(projectId, { itemId: item.id }).filter((s) => s.threadId === thread!.id);
+    const onThread = store.sessions(projectId, { itemId: item.id, delivery: delivery.sequence }).filter((s) => s.threadId === thread!.id);
     const live = onThread.find((s) => s.state !== "ended" && s.mode === mode) ?? null;
     // The CLI's own session id is what Continue resumes: the platform learned it from a headless run, a hook from a terminal one.
     const externalId = agent.store.external(projectId, thread.id)[engineId] ?? onThread.find((s) => s.agent === engineId && s.externalId)?.externalId ?? null;
@@ -181,6 +185,7 @@ export class Starter {
       live ??
       store.createSession(projectId, {
         repoId: repo.id,
+        delivery: delivery.sequence,
         branch,
         itemIds: [item.id],
         mode,
