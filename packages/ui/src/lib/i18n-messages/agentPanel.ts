@@ -1,5 +1,8 @@
 export const agentPanel = {
   en: {
+    permissions: "Permissions / mode",
+    modeNextTurn: "Applies to the next turn",
+    modeQueued: "Next turn: {{mode}}",
     writing: "writing",
     thinking: "thinking",
     secondsShort: "{{n}}s",
@@ -60,6 +63,9 @@ export const agentPanel = {
     repositoriesLink: "Repositories…"
   },
   zh: {
+    permissions: "权限 / 模式",
+    modeNextTurn: "下一轮生效",
+    modeQueued: "下一轮：{{mode}}",
     writing: "正在写入",
     thinking: "正在思考",
     secondsShort: "{{n}}秒",

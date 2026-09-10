@@ -20,10 +20,10 @@ export const ClaudeCodeOptions = z.object({
   maxBudgetUsd: z.number().positive().optional(),
   /** Claude Code's own tools to allow besides the tomrade MCP tools (e.g. "WebSearch", "Read", "Bash"). */
   allowTools: z.array(z.string()).default([]),
-  /** A turn that implements a ticket runs long: its own turn ceiling… */
-  codeMaxTurns: z.number().int().min(1).max(1000).default(200),
+  /** Optional coding turn ceiling; omitted uses the local agent's unlimited default. */
+  codeMaxTurns: z.number().int().min(1).optional(),
   /** …and its own permission mode, in a worktree of its own. The user's settings.json allow-rules still apply. */
-  codePermissionMode: z.enum(["acceptEdits", "bypassPermissions", "dontAsk", "default"]).default("acceptEdits")
+  codePermissionMode: z.enum(["acceptEdits", "bypassPermissions", "dontAsk", "default", "auto", "plan"]).optional()
 });
 export type ClaudeCodeOptions = z.infer<typeof ClaudeCodeOptions>;
 
@@ -65,6 +65,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
     },
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       const options = ClaudeCodeOptions.parse(input.options ?? {});
+      if (input.permissionMode) options.codePermissionMode = input.permissionMode === "local" ? undefined : ClaudeCodeOptions.shape.codePermissionMode.parse(input.permissionMode);
       const url = ctx.mcp.url;
       if (!url) return { stop: "error", error: "the MCP server is not running" };
 
@@ -104,16 +105,15 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
         "--include-partial-messages",
         "--mcp-config",
         mcpFile,
-        "--strict-mcp-config",
-        "--permission-mode",
-        code ? options.codePermissionMode : "dontAsk",
+        ...(!code ? ["--strict-mcp-config"] : []),
+        ...(!code || options.codePermissionMode ? ["--permission-mode", code ? options.codePermissionMode! : "dontAsk"] : []),
         "--allowedTools",
         "mcp__tomrade__*",
         ...options.allowTools,
         "--append-system-prompt-file",
         sysFile,
-        "--max-turns",
-        String(code ? options.codeMaxTurns : options.maxTurns)
+        ...((code ? options.codeMaxTurns : options.maxTurns) !== undefined
+          ? ["--max-turns", String(code ? options.codeMaxTurns : options.maxTurns)] : [])
       ];
       if (options.maxBudgetUsd) args.push("--max-budget-usd", String(options.maxBudgetUsd));
       if (options.model) args.push("--model", options.model);

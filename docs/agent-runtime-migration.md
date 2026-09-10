@@ -48,3 +48,46 @@ provide a cost field, in which case it remains `null`; do not substitute a
 local price estimate. Cache counters are provider counters and are reported
 separately from uncached input.
 
+
+## Local coding agent parity
+
+A `code` turn (Run here) uses the installed local coding agent with its native
+coding tools. Tomrade adds ticket context and its run-bound MCP server; the
+backlog tool allowlist must not restrict coding tools, subagents, skills, or
+other locally configured MCP servers. Claude loads user, project, and local
+settings and the Claude Code tool preset. Both Claude transports, and the
+terminal launch template, merge Tomrade's MCP configuration with local MCP
+configuration instead of using strict MCP isolation for coding.
+
+Coding turns have no default Tomrade turn-count ceiling. An explicit
+`codeMaxTurns` or `maxBudgetUsd` remains respected. Backlog turns retain their
+restricted tool set and default turn limit.
+
+### Interactive permissions
+
+The Agent Panel has a per-thread Permissions / mode selector for coding
+threads. Claude defaults to native `auto`; Codex defaults to full access
+(`danger-full-access` + `never`). Claude also offers full access, accept edits,
+manual approval, plan, and local rules. Codex also offers workspace, read-only,
+and local rules. Auto uses Claude's own classifier; it is not bypass mode.
+The underlying provider may restrict mode availability.
+
+Selections persist with the thread and do not change another thread. A choice
+made during a run applies to its next turn; the panel keeps displaying the
+active mode and labels the queued choice separately. Runtime fingerprints
+include the mode, so the next turn reopens the provider runtime with the new
+policy while resuming the conversation. Switching engines clears the selection.
+Claude's initialization event reports its actual mode, including a provider
+fallback from Auto. Local rules inherit Claude settings or read Codex's effective
+local/project approval and sandbox config, also on resume.
+
+Requests keep the current run alive. Users can allow one operation or deny it;
+additional Codex permissions are granted only for the current turn. No permanent
+allow-rule is written. Concurrent requests are queued, cancellation resolves as
+denial, and old responses cannot approve a later request. Pending approvals are
+in-memory and disappear after restart; the conversation retains their text.
+
+Legacy `transport: "cli"` is a headless rollback path and has no interactive
+permission bridge. Use the default transport or an external terminal when human
+approval is required. MCP elicitation and provider-specific non-permission
+interaction are not yet bridged by the app-server adapter.

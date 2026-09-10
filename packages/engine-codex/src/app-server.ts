@@ -23,6 +23,8 @@ export class CodexRuntime implements Runtime {
   private failure?: (error: Error) => void;
   private totals?: Counters;
   private stderr = "";
+  private activeIO?: TurnIO;
+  private code = false;
 
   constructor(private ctx: Context, input: TurnInput) {
     const directory = runtimeDirectory(input);
@@ -71,17 +73,32 @@ export class CodexRuntime implements Runtime {
       if (msg.error) pending.reject(new Error(msg.error.message ?? "Codex protocol error"));
       else pending.resolve(msg.result ?? {});
     } else if (msg.id !== undefined) {
-      // Match the existing unattended policy; never leave a server request hanging.
-      const result = msg.method === "item/commandExecution/requestApproval" || msg.method === "item/fileChange/requestApproval"
-        ? { decision: "decline" }
-        : msg.method === "item/permissions/requestApproval" ? { permissions: {}, scope: "turn" }
-        : msg.method === "mcpServer/elicitation/request" ? { action: "cancel", content: null }
-        : undefined;
-      this.send(result ? { id: msg.id, result } : { id: msg.id, error: { code: -32601, message: "No interactive host for this request" } });
+      void this.respondToRequest(msg).catch((error) => { this.fail(new Error(String(error))); this.close(); });
     } else if (msg.method) this.notification?.(msg.method, msg.params ?? {});
   }
 
+
+  private async respondToRequest(msg: Json): Promise<void> {
+    const io = this.activeIO;
+    const params = msg.params ?? {};
+    const active = this.code && io && !io.signal.aborted && (!params.threadId || params.threadId === this.session);
+    const command = msg.method === "item/commandExecution/requestApproval";
+    const file = msg.method === "item/fileChange/requestApproval";
+    let result: Json | undefined;
+    if (command || file) {
+      const answer = active ? await io.requestPermission?.(
+        `${command ? "Command" : "File changes"} permission\n${JSON.stringify(params, null, 2)}`,
+        ["Allow once", "Deny"], io.signal) : null;
+      result = { decision: answer === "Allow once" && !io?.signal.aborted ? "accept" : "decline" };
+    } else if (msg.method === "item/permissions/requestApproval") {
+      const answer = active ? await io.requestPermission?.(`Additional permissions\n${JSON.stringify(params, null, 2)}`, ["Allow for this turn", "Deny"], io.signal) : null;
+      result = { permissions: answer === "Allow for this turn" && !io?.signal.aborted ? params.permissions : {}, scope: "turn" };
+    } else if (msg.method === "mcpServer/elicitation/request") result = { action: "cancel", content: null };
+    if (this.alive) this.send(result ? { id: msg.id, result } : { id: msg.id, error: { code: -32601, message: "Unsupported interactive request" } });
+  }
+
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
+    this.activeIO = io; this.code = input.purpose === "code";
     const options = CodexOptions.parse(input.options ?? {});
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "app-server", runtime: warm ? "warm" : "cold", toolCalls: 0, compactions: 0 };
@@ -153,10 +170,17 @@ export class CodexRuntime implements Runtime {
         this.child.on("close", (code) => { reader.close(); this.fail(new Error(`Codex exited with ${code}: ${this.stderr.slice(-400)}`)); this.alive = false; });
         await this.request("initialize", { clientInfo: { name: "tomrade", version: "0.0.0" } });
         this.send({ method: "initialized", params: {} });
+        // Read effective local/project policy even on resume: old Tomrade
+        // sessions may have persisted the former forced `never` policy.
+        const local = this.code ? (await this.request("config/read", { cwd: this.cwd })).config : null;
+        const policy = input.permissionMode === "full-access" ? { approvalPolicy: "never", sandbox: "danger-full-access" }
+          : input.permissionMode === "workspace" ? { approvalPolicy: "on-request", sandbox: "workspace-write" }
+          : input.permissionMode === "read-only" ? { approvalPolicy: "on-request", sandbox: "read-only" }
+          : { approvalPolicy: local?.approval_policy ?? "on-request", sandbox: local?.sandbox_mode ?? "workspace-write" };
         const response = await this.request(io.resume ? "thread/resume" : "thread/start", {
           ...(io.resume ? { threadId: io.resume } : {}),
-          cwd: this.cwd, model: codexModel(options.model), approvalPolicy: "never",
-          sandbox: input.purpose === "code" ? "workspace-write" : "read-only",
+          cwd: this.cwd, model: codexModel(options.model),
+          ...(this.code ? { ...policy, approvalsReviewer: "user" } : { approvalPolicy: "never", sandbox: "read-only" }),
           developerInstructions: staticSystem("Codex")
         });
         this.session = response.thread.id;
@@ -176,7 +200,7 @@ export class CodexRuntime implements Runtime {
       return { stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error), resume: this.session, usage, metrics };
     } finally {
       io.signal.removeEventListener("abort", abort); clearTimeout(interruptTimer);
-      this.notification = undefined; this.failure = undefined;
+      this.notification = undefined; this.failure = undefined; this.activeIO = undefined;
       await binding.release();
     }
   }

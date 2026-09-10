@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS plugin_agent_runs (
   stop       TEXT,
   error      TEXT,
   usage_json TEXT,
+  metrics_json TEXT,
   cost_usd   REAL,
   changes    INTEGER NOT NULL DEFAULT 0,
   reverted   INTEGER NOT NULL DEFAULT 0,
@@ -99,7 +100,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
     // in the ticket's Code section rather than the Assistant panel.
     version: 4,
     up: "ALTER TABLE plugin_agent_threads ADD COLUMN surface TEXT NOT NULL DEFAULT 'assistant'"
-  }
+  },
+  { version: 5, up: "ALTER TABLE plugin_agent_threads ADD COLUMN permission_mode TEXT" },
+  { version: 6, up: "ALTER TABLE plugin_agent_runs ADD COLUMN metrics_json TEXT" }
 ];
 
 interface ThreadRow {
@@ -111,6 +114,7 @@ interface ThreadRow {
   title: string;
   engine: string;
   surface: string;
+  permission_mode: string | null;
   external_json: string;
   waivers_json: string;
   created_at: number;
@@ -125,6 +129,7 @@ interface RunRow {
   stop: string | null;
   error: string | null;
   usage_json: string | null;
+  metrics_json: string | null;
   cost_usd: number | null;
   changes: number;
   reverted: number;
@@ -161,6 +166,7 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   title: r.title,
   engine: r.engine,
   surface: r.surface === "code" ? "code" : "assistant",
+  permissionMode: r.permission_mode,
   createdAt: r.created_at,
   updatedAt: r.updated_at
 });
@@ -179,6 +185,7 @@ const toRun = (r: RunRow): RunView => ({
   keptOnRevert: r.kept,
   startedAt: r.started_at,
   endedAt: r.ended_at
+  , metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null
 });
 
 /**
@@ -226,13 +233,14 @@ export class AgentStore {
     return this.thread(projectId, id)!;
   }
 
-  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null; itemId?: string | null; branch?: string | null; surface?: ThreadSurface } = {}): void {
+  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null; itemId?: string | null; branch?: string | null; surface?: ThreadSurface; permissionMode?: string | null } = {}): void {
     const db = this.db(projectId);
     if (fields.title !== undefined) db.prepare("UPDATE plugin_agent_threads SET title = ? WHERE id = ?").run(fields.title, id);
     if (fields.engine !== undefined) db.prepare("UPDATE plugin_agent_threads SET engine = ? WHERE id = ?").run(fields.engine, id);
     if (fields.boardId !== undefined) db.prepare("UPDATE plugin_agent_threads SET board_id = ? WHERE id = ?").run(fields.boardId, id);
     if (fields.itemId !== undefined) db.prepare("UPDATE plugin_agent_threads SET item_id = ? WHERE id = ?").run(fields.itemId, id);
     if (fields.branch !== undefined) db.prepare("UPDATE plugin_agent_threads SET branch = ? WHERE id = ?").run(fields.branch, id);
+    if (fields.permissionMode !== undefined) db.prepare("UPDATE plugin_agent_threads SET permission_mode = ? WHERE id = ?").run(fields.permissionMode, id);
     if (fields.surface !== undefined) db.prepare("UPDATE plugin_agent_threads SET surface = ? WHERE id = ?").run(fields.surface, id);
     db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
   }
@@ -334,15 +342,16 @@ export class AgentStore {
   endRun(
     projectId: string,
     id: string,
-    fields: { status: RunStatus; stop?: string; error?: string; usage?: { inputTokens?: number; outputTokens?: number }; costUsd?: number; changes: number }
+    fields: { status: RunStatus; stop?: string; error?: string; usage?: { inputTokens?: number; outputTokens?: number }; metrics?: RunView["metrics"]; costUsd?: number; changes: number }
   ): RunView {
     this.db(projectId)
-      .prepare("UPDATE plugin_agent_runs SET status = ?, stop = ?, error = ?, usage_json = ?, cost_usd = ?, changes = ?, ended_at = ? WHERE id = ?")
+      .prepare("UPDATE plugin_agent_runs SET status = ?, stop = ?, error = ?, usage_json = ?, metrics_json = ?, cost_usd = ?, changes = ?, ended_at = ? WHERE id = ?")
       .run(
         fields.status,
         fields.stop ?? null,
         fields.error ?? null,
         fields.usage ? JSON.stringify({ inputTokens: fields.usage.inputTokens ?? 0, outputTokens: fields.usage.outputTokens ?? 0 }) : null,
+        fields.metrics ? JSON.stringify(fields.metrics) : null,
         fields.costUsd ?? null,
         fields.changes,
         Date.now(),

@@ -10,6 +10,10 @@ export function createCodexEngine(ctx: Context): Engine {
   ctx.effect(() => () => pool.close());
   return {
     ...baseline,
+    permissionModes: { default: "full-access", choices: [
+      { value: "full-access", label: "Full access" }, { value: "workspace", label: "Workspace" },
+      { value: "read-only", label: "Read only" }, { value: "local", label: "Local rules" }
+    ] },
     async turn(input, io) {
       const options = CodexOptions.parse(input.options ?? {});
       if (options.transport === "cli") return baseline.turn(input, io);
