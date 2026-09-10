@@ -183,6 +183,32 @@ it("keeps an unsuccessful credential reprobe unreachable and does not offer acco
 });
 
 describe("starting a ticket", () => {
+  it("recognises a project rooted at the workstream's repository path", async () => {
+    const local = codeRepo({ manifest: false });
+    const world = await machine(local);
+    const { codeLink, ctx, project, board, repo, ticket } = world;
+    world.boards.update(project.id, board.id, { repoPath: "mobile-app" });
+    await ctx.repos.setCheckout(repo!.remote, local.checkout);
+    await codeLink.scan(project.id);
+    const feature = ticket("Add charts");
+    expect(await codeLink.start(project.id, feature.id, { mode: "run" })).toMatchObject({ ok: false, gate: "readiness" });
+    const bootstrap = ctx.items.list({ projectId: project.id }).find((item) => item.labels.includes(BOOTSTRAP_LABEL))!;
+    expect(bootstrap.blocks).toContain(feature.id);
+
+    fs.mkdirSync(path.join(local.checkout, "mobile-app"));
+    fs.writeFileSync(path.join(local.checkout, "mobile-app", "package.json"), '{ "name": "mobile-app" }\n');
+    git(["add", "-A"], local.checkout);
+    git(["commit", "-q", "-m", "add mobile app"], local.checkout);
+    git(["push", "-q", "origin", "main"], local.checkout);
+    await codeLink.scan(project.id);
+    expect(codeLink.repoState(project.id, repo!.id)).toMatchObject({ readiness: "scaffolded", manifests: ["mobile-app/package.json"] });
+
+    const started = await codeLink.start(project.id, feature.id, { mode: "run" });
+    expect(started).toMatchObject({ ok: true });
+    expect(ctx.items.get(project.id, bootstrap.id)!.blocks).not.toContain(feature.id);
+    await untilRunsSettle(world.agent);
+  });
+
   it("answers each gate with the thing that clears it", async () => {
     const world = await machine(null);
     const { codeLink, ctx, project, board, ticket } = world;
