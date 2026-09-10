@@ -34,6 +34,7 @@ export class ClaudeRuntime implements Runtime {
   private onMessage?: (message: SDKMessage) => void;
   private onFailure?: (error: unknown) => void;
   private cost = 0;
+  private activeIO?: TurnIO;
 
   constructor(private ctx: Context, input: TurnInput) {
     const directory = runtimeDirectory(input);
@@ -49,7 +50,9 @@ export class ClaudeRuntime implements Runtime {
   }
 
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
+    this.activeIO = io;
     const options = ClaudeCodeOptions.parse(input.options ?? {});
+    if (input.permissionMode) options.codePermissionMode = input.permissionMode === "local" ? undefined : ClaudeCodeOptions.shape.codePermissionMode.parse(input.permissionMode);
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "sdk", runtime: warm ? "warm" : "cold", compactions: 0, toolCalls: 0 };
     const binding = bindTurn(this.ctx, this.token, io, input);
@@ -69,7 +72,8 @@ export class ClaudeRuntime implements Runtime {
       if (message.type === "system" && message.subtype === "init") {
         this.session = message.session_id;
         metrics.providerModel = message.model;
-        metrics.readyMs ??= performance.now() - start;
+        if (input.purpose === "code" && message.permissionMode) io.permissionMode?.(message.permissionMode);
+          metrics.readyMs ??= performance.now() - start;
       } else if (message.type === "system" && message.subtype === "compact_boundary") {
         metrics.compactions!++;
       } else if (message.type === "stream_event" && !message.parent_tool_use_id) {
@@ -119,11 +123,11 @@ export class ClaudeRuntime implements Runtime {
             // perfectly healthy MCP tool as "not enabled" in a turn.
             tools: this.ctx.tools.list().map((tool) => ({ name: tool.name, permission_policy: "always_allow" as const }))
           } },
-          strictMcpConfig: true,
+          strictMcpConfig: !code,
           // Explicitly expose the MCP registry and the configured native
           // tools. `allowedTools` controls approval only; `tools` controls
           // whether a tool is included in the model's tool set.
-          tools: ["mcp__tomrade__*", ...options.allowTools],
+          tools: code ? { type: "preset", preset: "claude_code" } : ["mcp__tomrade__*", ...options.allowTools],
           // MCP tools must be listed for Claude Code to expose the HTTP server's
           // dynamic tool set. They are safe to auto-approve here because every
           // request still carries this runtime's run-scoped token and the MCP
@@ -135,6 +139,9 @@ export class ClaudeRuntime implements Runtime {
           hooks: {
             PreToolUse: [{ hooks: [async (hookInput) => {
               const tool = (hookInput as { tool_name?: string }).tool_name ?? "";
+              // Coding tools follow codePermissionMode and the user's rules.
+              // Do not apply the backlog allowlist or auto-approve them here.
+              if (code && !tool.startsWith("mcp__tomrade__")) return { continue: true };
               const allowed = tool.startsWith("mcp__tomrade__") || options.allowTools.some((pattern) => matchesTool(tool, pattern));
               return {
                 continue: true,
@@ -146,6 +153,12 @@ export class ClaudeRuntime implements Runtime {
               };
             }] }]
           },
+          canUseTool: code ? async (tool, args, request) => {
+            const answer = await this.activeIO?.requestPermission?.(
+              `${request.title ?? tool}\n${request.description ?? request.decisionReason ?? "Permission requested by Claude Code"}\n${JSON.stringify(args, null, 2)}`,
+              ["Allow once", "Deny"], request.signal);
+            return answer === "Allow once" && !request.signal.aborted && !this.activeIO?.signal.aborted ? { behavior: "allow", updatedInput: args } : { behavior: "deny", message: "Permission was denied or cancelled by the user" };
+          } : undefined,
           permissionMode: code ? options.codePermissionMode : "dontAsk",
           allowDangerouslySkipPermissions: code && options.codePermissionMode === "bypassPermissions",
           maxTurns: code ? options.codeMaxTurns : options.maxTurns,
@@ -167,7 +180,7 @@ export class ClaudeRuntime implements Runtime {
     } finally {
       io.signal.removeEventListener("abort", abort);
       clearTimeout(interruptTimer);
-      this.onMessage = undefined; this.onFailure = undefined;
+      this.onMessage = undefined; this.onFailure = undefined; this.activeIO = undefined;
       await binding.release();
     }
   }

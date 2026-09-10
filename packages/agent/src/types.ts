@@ -53,6 +53,7 @@ export interface ThreadSummary {
   engine: string;
   /** Which product surface owns the thread. Code sessions use Agent's worktree machinery without becoming Assistant conversations. */
   surface: ThreadSurface;
+  permissionMode?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -73,6 +74,7 @@ export interface RunView {
   keptOnRevert: number;
   startedAt: number;
   endedAt: number | null;
+  metrics?: import("./evaluation.js").TurnMetrics | null;
 }
 
 export interface CardView {
@@ -92,7 +94,7 @@ export type UserInput =
 
 export interface PendingView {
   threadId: string;
-  kind: "ask" | "workflow";
+  kind: "ask" | "workflow" | "permission";
   workflow: string | null;
   question: { id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean };
   accepts: "options" | "text";
@@ -100,10 +102,11 @@ export interface PendingView {
 
 /** Pushed to the renderer over the `agent.event` broadcast. `progress` is transient — never persisted. */
 export type AgentEvent =
+  | { type: "permission-mode"; mode: string }
   | { type: "run"; run: RunView }
   | { type: "message"; message: ThreadMessage }
   | { type: "delta"; runId: string; text: string }
-  | { type: "progress"; runId: string; activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }
+  | { type: "progress"; runId: string; activity?: string | null; usage?: { inputTokens: number; outputTokens: number }; elapsedMs?: number; metrics?: RunView["metrics"] }
   | { type: "card"; card: CardView }
   | { type: "pending"; pending: PendingView | null }
   | { type: "done"; run: RunView };
@@ -146,6 +149,7 @@ export interface TurnInput {
   threadId: string;
   projectId: string;
   purpose: TurnPurpose;
+  permissionMode?: string;
   /** The ticket a code thread implements — the branch it must stay on, the key its commits must name. */
   ticket?: { id: string; key: string; title: string; branch: string | null };
   input: UserInput;
@@ -167,6 +171,9 @@ export interface TurnInput {
 }
 
 export interface TurnIO {
+  permissionMode?(mode: string): void;
+  /** Pause this live run for a human response. Null means cancelled, never approval. */
+  requestPermission?(text: string, options: string[], signal?: AbortSignal): Promise<string | null>;
   /** Persist + broadcast one finished block. Text streams through delta() first. */
   emit(block: Block): void;
   delta(text: string): void;
@@ -216,6 +223,7 @@ export interface Engine {
   options?: z.ZodType<unknown>;
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
   picks?(): EnginePick[];
+  permissionModes?: { default: string; choices: { value: string; label: string }[] };
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
 }
 
@@ -235,6 +243,7 @@ export interface EngineView {
   ok: boolean;
   reason?: string;
   picks?: EnginePick[];
+  permissionModes?: Engine["permissionModes"];
 }
 
 export interface WorkflowQuestion {

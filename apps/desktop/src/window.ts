@@ -32,6 +32,7 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false }
   });
+  win.maximize();
 
   const sendChrome = () => {
     if (win.isDestroyed()) return;

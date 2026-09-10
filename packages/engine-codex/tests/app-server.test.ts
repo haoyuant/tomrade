@@ -46,5 +46,24 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
     expect(requests.filter((r) => r.method === "thread/start")).toHaveLength(1);
     expect(requests.filter((r) => r.method === "turn/start")).toHaveLength(4);
     expect(requests.some((r) => r.method === "turn/interrupt")).toBe(true);
+    input.purpose = "code";
+    input.input = { kind: "text", text: "REQUEST_PERMISSION" };
+    for (const choice of ["Allow once", "Deny", null]) {
+      io.requestPermission = async (text) => { expect(text).toContain("npm test"); return choice; };
+      const result = await engine.turn(input, io);
+      expect(result.stop, result.error).toBe("end");
+      io.resume = result.resume;
+    }
+    const all = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+    expect(all.filter((r) => r.id === "permission-request").map((r) => r.result.decision)).toEqual(["accept", "decline", "decline"]);
+    const resumed = all.find((r) => r.method === "thread/resume");
+    expect(resumed.params.approvalPolicy).toBe("on-request");
+    expect(resumed.params.sandbox).toBe("workspace-write");
+    expect(resumed.params.approvalsReviewer).toBe("user");
+    input.permissionMode = "full-access";
+    input.input = { kind: "text", text: "again" };
+    expect((await engine.turn(input, io)).stop).toBe("end");
+    const changed = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+    expect(changed.filter((r) => r.method === "thread/resume").at(-1).params).toMatchObject({ approvalPolicy: "never", sandbox: "danger-full-access" });
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

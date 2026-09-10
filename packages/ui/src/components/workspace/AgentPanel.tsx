@@ -7,7 +7,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
@@ -118,7 +118,7 @@ function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "
   return (
     <div className={live ? "q-ask" : "q-ask done"}>
       <span className="q-eyebrow">{live ? t(block.multiple ? "agentPanel.waitingPickAny" : "agentPanel.waitingPickOne") : t("agentPanel.asked")}</span>
-      <p>{block.text}</p>
+      <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{block.text}</p>
       {block.options && (
         <div className="chips">
           {block.options.map((option) => (
@@ -154,7 +154,11 @@ function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "
 
 function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onRevert: (runId: string) => void; busy: boolean }) {
   const { t } = useI18n();
-  const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null].filter(Boolean).join(" · ") : "";
+  const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null,
+    run.endedAt != null ? `${Math.round((run.endedAt - run.startedAt) / 1000)}s` : null,
+    run.usage ? `↑${tokens(run.usage.inputTokens)} ↓${tokens(run.usage.outputTokens)}` : null,
+    run.metrics?.readyMs != null ? `init ${Math.round(run.metrics.readyMs / 1000)}s` : null,
+    run.metrics?.firstTokenMs != null ? `first ${Math.round(run.metrics.firstTokenMs / 1000)}s` : null].filter(Boolean).join(" · ") : "";
   return (
     <div className="run-wrap">
     <div className="run-foot">
@@ -168,7 +172,6 @@ function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Bl
           </button>
         </>
       )}
-      {meta && <span className="rf-meta num">{meta}</span>}
     </div>
     {!!block.items?.length && (
       <details className="rf-list">
@@ -182,8 +185,18 @@ function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Bl
         ))}
       </details>
     )}
+    {meta && <div className="rf-meta run-metrics num">{meta}</div>}
     </div>
   );
+}
+
+function RunMetrics({ run }: { run: RunView | undefined }) {
+  if (!run || run.endedAt == null) return null;
+  const elapsed = `${Math.max(0, Math.round((run.endedAt - run.startedAt) / 1000))}s`;
+  const usage = run.usage ? `↑${tokens(run.usage.inputTokens)} ↓${tokens(run.usage.outputTokens)}` : null;
+  const timings = [run.metrics?.readyMs != null ? `init ${Math.round(run.metrics.readyMs / 1000)}s` : null,
+    run.metrics?.firstTokenMs != null ? `first ${Math.round(run.metrics.firstTokenMs / 1000)}s` : null].filter(Boolean).join(" · ");
+  return <p className="meta-txt num" style={{ margin: "8px 0 0 22px" }}>{elapsed}{usage ? ` · ${usage}` : ""}{timings ? ` · ${timings}` : ""}</p>;
 }
 
 function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
@@ -205,11 +218,14 @@ function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }:
   if (b.type === "note") return <p className="agent-note">{b.text}</p>;
   const body =
     b.type === "text" ? (
-      b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue)}</p>)
+      <>
+        {b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue)}</p>)}
+        {m.role === "agent" && m.runId && (runs.get(m.runId)?.changes ?? 0) === 0 && <RunMetrics run={runs.get(m.runId)} />}
+      </>
     ) : b.type === "trace" ? (
       <Trace block={b} />
     ) : b.type === "question" ? (
-      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy} />
+      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} />
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
@@ -265,6 +281,7 @@ export function AgentPanel({
   const engines = useEngines();
   const newThread = useNewThread(projectId);
   const setEngine = useSetEngine(projectId);
+  const setPermissionMode = useSetPermissionMode(projectId);
   const send = useSend(projectId);
   const answer = useAnswer(projectId);
   const cancel = useCancelRun();
@@ -314,6 +331,10 @@ export function AgentPanel({
   const defaultEngine = agentSettings?.defaultEngine ?? "loop";
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
   const engine = engines.data?.find((e) => e.id === currentEngineId);
+  const permissionModes = detail.data?.thread.itemId ? engine?.permissionModes : undefined;
+  const selectedPermissionMode = detail.data?.thread.permissionMode ?? permissionModes?.default;
+  const activePermissionMode = runningRun ? detail.data?.activePermissionMode : undefined;
+  const permissionLabel = (value?: string) => permissionModes?.choices.find((choice) => choice.value === value)?.label ?? value;
   const noEngineReady = engines.data ? !engines.data.some((e) => e.ok) : false;
 
   // Quick picks ride on the engine's global options — the same knobs settings edits.
@@ -333,7 +354,7 @@ export function AgentPanel({
 
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
-    if (saved && panel.current) panel.current.style.width = `${saved}px`;
+    if (panel.current) panel.current.style.width = `${saved ? Math.min(MAX_W, Math.max(MIN_W, Number(saved))) : MAX_W}px`;
   }, [open]);
 
   // After layout, so a working line or question that just mounted is inside scrollHeight.
@@ -392,7 +413,7 @@ export function AgentPanel({
   };
 
   const doAnswer = (questionId: string, value: string | string[]) => {
-    if (!threadId || busy) return;
+    if (!threadId || answer.isPending || (busy && pending?.kind !== "permission")) return;
     answer.mutate({ threadId, questionId, value });
   };
 
@@ -617,6 +638,24 @@ export function AgentPanel({
             ))}
             <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={onOpenSettings} />
           </Menu>
+          {permissionModes && (
+            <Menu label={t("agentPanel.permissions")} align="end" trigger={
+              <button type="button" className="tag chip-btn" aria-label={t("agentPanel.permissions")} disabled={setPermissionMode.isPending}>
+                {permissionLabel(activePermissionMode ?? selectedPermissionMode)}
+                <Icon name="i-chevdown" size={9} />
+              </button>
+            }>
+              <MenuHead title={t("agentPanel.permissions")} />
+              {permissionModes.choices.map((choice) => (
+                <MenuRadioItem key={choice.value} checked={choice.value === selectedPermissionMode} name={choice.label}
+                  sub={runningRun ? t("agentPanel.modeNextTurn") : undefined}
+                  onSelect={() => { if (threadId) setPermissionMode.mutate({ threadId, mode: choice.value }); }} />
+              ))}
+            </Menu>
+          )}
+          {activePermissionMode && activePermissionMode !== selectedPermissionMode && (
+            <span className="meta-txt">{t("agentPanel.modeQueued", { mode: permissionLabel(selectedPermissionMode) ?? "" })}</span>
+          )}
           {picks.map((pick) => {
             const current = pickValue(pick.key);
             const shown = current ? (pick.choices.find((c) => c.value === current)?.label ?? current) : pickTitle(pick);

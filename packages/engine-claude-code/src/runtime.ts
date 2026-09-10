@@ -61,7 +61,7 @@ export class RuntimePool<T extends Runtime> {
 /** Hash secrets; never persist or log the fingerprint inputs. */
 export function runtimeFingerprint(input: TurnInput, io: TurnIO, url: string | null): string {
   return createHash("sha256").update(JSON.stringify({
-    cwd: input.cwd, purpose: input.purpose, options: input.options,
+    cwd: input.cwd, purpose: input.purpose, permissionMode: input.permissionMode, options: input.options,
     env: input.env, url, tools: io.tools.describe()
   })).digest("hex");
 }

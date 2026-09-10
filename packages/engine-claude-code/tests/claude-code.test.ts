@@ -77,8 +77,8 @@ describe("the Claude Code engine", () => {
     const codeRun = ctx.agent.send(project.id, codeThread.id, { kind: "text", text: "implement it" });
     expect((await settled(ctx, project.id, codeRun.runId)).status).toBe("done");
     const codeArgs = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
-    expect(codeArgs).toContain("--strict-mcp-config");
-    expect(codeArgs).toContain("--permission-mode\nacceptEdits");
-    expect(codeArgs).toContain("--max-turns\n200");
+    expect(codeArgs).not.toContain("--strict-mcp-config");
+    expect(codeArgs).toContain("--permission-mode\nauto");
+    expect(codeArgs).not.toContain("--max-turns");
   });
 });

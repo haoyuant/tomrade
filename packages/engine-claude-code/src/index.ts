@@ -10,6 +10,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
   ctx.effect(() => () => pool.close());
   return {
     ...baseline,
+    permissionModes: { default: "auto", choices: [
+      { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },
+      { value: "acceptEdits", label: "Accept edits" }, { value: "default", label: "Ask permissions" },
+      { value: "plan", label: "Plan" }, { value: "local", label: "Local rules" }
+    ] },
     async turn(input, io) {
       const options = ClaudeCodeOptions.parse(input.options ?? {});
       if (options.transport === "cli") return baseline.turn(input, io);

@@ -105,6 +105,17 @@ export function useSetEngine(projectId: string) {
   });
 }
 
+export function useSetPermissionMode(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; mode: string }) => invoke("agent.setPermissionMode", projectId, args.threadId, args.mode),
+    onSuccess: (_thread, args) => {
+      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+    }
+  });
+}
+
 export const useSend = (projectId: string) =>
   useMutation({ mutationFn: (args: { threadId: string; text: string; focus?: FocusRef[] }) => invoke("agent.send", projectId, args.threadId, args.text, args.focus) });
 export const useAnswer = (projectId: string) =>
@@ -130,6 +141,8 @@ export interface RunProgress {
   runId: string;
   activity: string | null;
   usage: { inputTokens: number; outputTokens: number } | null;
+  elapsedMs?: number;
+  metrics?: ThreadDetail["runs"][number]["metrics"];
 }
 
 export function useAgentEvents(
@@ -148,11 +161,14 @@ export function useAgentEvents(
       const key = agentKeys.thread(projectId, threadId);
       const patch = (fn: (detail: ThreadDetail) => ThreadDetail) => qc.setQueryData<ThreadDetail>(key, (d) => (d ? fn(d) : d));
       switch (event.type) {
+        case "permission-mode":
+          patch((d) => ({ ...d, activePermissionMode: event.mode }));
+          break;
         case "delta":
           onDelta(event.runId, event.text);
           break;
         case "progress":
-          onProgress({ runId: event.runId, activity: event.activity !== undefined ? event.activity : null, usage: event.usage ?? null });
+          onProgress({ runId: event.runId, activity: event.activity !== undefined ? event.activity : null, usage: event.usage ?? null, elapsedMs: event.elapsedMs, metrics: event.metrics });
           break;
         case "message":
           if (event.message.block.type === "text" && event.message.role === "agent") onDelta(event.message.runId ?? "", null);

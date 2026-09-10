@@ -93,9 +93,12 @@ export function createCodexCliEngine(ctx: Context): Engine {
       // codex has no appended-system-prompt flag; the context rides ahead of the message.
       const prompt = buildSystem(input, io, "Codex") + "\n\n---\n\nUSER MESSAGE:\n" + promptOf(input);
       // A code turn may write in its worktree; a backlog turn reads only.
+      const mode = input.purpose === "code" ? input.permissionMode : undefined;
+      const sandbox = mode === "full-access" ? "danger-full-access" : mode === "read-only" ? "read-only" : "workspace-write";
       const shared = [
         "--json",
         "--skip-git-repo-check",
+        ...(mode && mode !== "local" ? ["-c", `sandbox_mode="${sandbox}"`, "-c", `approval_policy="${mode === "full-access" ? "never" : "on-request"}"`] : []),
         "-c",
         `mcp_servers.tomrade.url="${url}"`,
         "-c",
@@ -112,7 +115,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       // already remembers the working root and sandbox, and rejects -s/-C.
       const args = io.resume
         ? ["exec", "resume", ...shared, io.resume, prompt]
-        : ["exec", ...shared, "-s", input.purpose === "code" ? "workspace-write" : "read-only", "-C", input.cwd ?? tmp, prompt];
+        : ["exec", ...shared, "-s", input.purpose === "code" ? sandbox : "read-only", "-C", input.cwd ?? tmp, prompt];
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       const metrics: import("@tomrade/agent").TurnMetrics = { transport: "cli", runtime: "cold" };

@@ -54,6 +54,7 @@ export interface ThreadDetail {
   runs: RunView[];
   cards: CardView[];
   pending: PendingView | null;
+  activePermissionMode?: string;
 }
 
 /** What a new thread may be about beyond its workstream: the ticket it implements and the branch it works on. */
@@ -96,6 +97,7 @@ declare module "@tomrade/ipc" {
     "agent.cancel": (runId: string) => boolean;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
     "agent.engines": () => EngineView[];
+    "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
     "agent.setEngine": (projectId: string, threadId: string, engineId: string) => ThreadSummary;
     "agent.playbooks": (projectId?: string) => PlaybookIndexEntry[];
   }
@@ -184,6 +186,8 @@ export class Agent extends Service {
   private playbooks = new Map<string, PlaybookVariants>();
   /** Playbooks read from each project's shared copy; refreshed when a run starts. */
   private projectPlaybooks = new Map<string, Map<string, Playbook>>();
+  private permissions = new Map<string, { pending: PendingView; answer(value: string | null): void }>();
+  private permissionQueues = new Map<string, Promise<unknown>>();
   private activeByThread = new Map<string, RunCtx>();
   private activeById = new Map<string, RunCtx>();
 
@@ -220,6 +224,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus }));
+      ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
@@ -305,10 +310,11 @@ export class Agent extends Service {
     const pending = this.store.pending(projectId, threadId);
     return {
       thread,
+      activePermissionMode: this.activeByThread.get(threadId)?.io.run.scratch.get("permissionMode") as string | undefined,
       messages: this.store.messages(projectId, threadId),
       runs: this.store.runs(projectId, threadId),
       cards: this.store.cards(projectId, threadId),
-      pending: pending ? this.pendingView(pending) : null
+      pending: this.permissions.get(threadId)?.pending ?? (pending ? this.pendingView(pending) : null)
     };
   }
 
@@ -319,7 +325,7 @@ export class Agent extends Service {
       out.set(rc.threadId, {
         threadId: rc.threadId,
         run: this.store.run(rc.projectId, rc.run.id) ?? rc.run,
-        pending: pending ? this.pendingView(pending) : null
+        pending: this.permissions.get(rc.threadId)?.pending ?? (pending ? this.pendingView(pending) : null)
       });
     }
     for (const projectId of this.ctx.db.openIds()) {
@@ -341,7 +347,7 @@ export class Agent extends Service {
       [...this.engines.values()].map(async (engine) => {
         try {
           const state = await engine.available();
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, picks: engine.picks?.() };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, picks: engine.picks?.(), permissionModes: engine.permissionModes };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
@@ -440,6 +446,15 @@ export class Agent extends Service {
     }
   }
 
+  setPermissionMode(projectId: string, threadId: string, mode: string): ThreadSummary {
+    const thread = this.store.thread(projectId, threadId);
+    if (!thread?.itemId) throw new Error("Permission modes require a coding thread");
+    const choices = this.engines.get(thread.engine)?.permissionModes?.choices;
+    if (!choices?.some((choice) => choice.value === mode)) throw new Error("Unsupported permission mode");
+    this.store.touchThread(projectId, threadId, { permissionMode: mode });
+    return this.store.thread(projectId, threadId)!;
+  }
+
   setEngine(projectId: string, threadId: string, engineId: string): ThreadSummary {
     if (!this.engines.has(engineId)) throw new Error(`unknown engine ${engineId}`);
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
@@ -450,7 +465,7 @@ export class Agent extends Service {
       this.broadcast(threadId, { type: "pending", pending: null });
       this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: "Cancelled the waiting question — the engine changed." }, null);
     }
-    this.store.touchThread(projectId, threadId, { engine: engineId });
+    this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null });
     const thread = this.store.thread(projectId, threadId)!;
     this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: `Engine switched to ${this.engines.get(engineId)?.title ?? engineId}.` }, null);
     return thread;
@@ -461,7 +476,16 @@ export class Agent extends Service {
   send(projectId: string, threadId: string, input: UserInput): { runId: string } {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
+    const permission = this.permissions.get(threadId);
+    if (permission && input.kind === "answer") {
+      if (input.questionId !== permission.pending.question.id || typeof input.value !== "string" || !permission.pending.question.options?.includes(input.value)) throw new Error("Invalid or expired permission response");
+      const active = this.activeByThread.get(threadId)!;
+      this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text: input.value }, active.run.id);
+      permission.answer(input.value);
+      return { runId: active.run.id };
+    }
     if (this.activeByThread.has(threadId)) throw new Error("a run is already in progress on this thread");
+    if (input.kind === "answer" && this.store.pending(projectId, threadId)?.question.id !== input.questionId) throw new Error("Invalid or expired question response");
     const engine = this.engines.get(thread.engine) ?? [...this.engines.values()][0];
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
 
@@ -540,8 +564,11 @@ export class Agent extends Service {
       scratch: new Map()
     };
     const emit = (block: Block) => void this.appendAndBroadcast(thread.projectId, thread.id, block.type === "note" ? "system" : "agent", block, run.id);
+    const startedAt = performance.now();
+    let streamedOutputChars = 0;
     const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) =>
-      this.broadcast(thread.id, { type: "progress", runId: run.id, ...p });
+      this.broadcast(thread.id, { type: "progress", runId: run.id, elapsedMs: Math.round(performance.now() - startedAt), ...p });
+    progress({ usage: { inputTokens: 0, outputTokens: 0 } });
     const tools = {
       describe: () => this.ctx.tools.describe(),
       execute: async (name: string, args: unknown): Promise<unknown> => {
@@ -571,7 +598,42 @@ export class Agent extends Service {
     const llm = (this.ctx.get("llm") as LlmService | undefined) ?? null;
     const io: TurnIO = {
       emit,
-      delta: (text) => this.broadcast(thread.id, { type: "delta", runId: run.id, text }),
+      permissionMode: (mode) => { handle.scratch.set("permissionMode", mode); this.broadcast(thread.id, { type: "permission-mode", mode }); },
+      requestPermission: (text, options, signal) => {
+        const previous = this.permissionQueues.get(thread.id) ?? Promise.resolve();
+        const request = previous.catch(() => {}).then(() => new Promise<string | null>((resolve) => {
+          if (abort.signal.aborted || signal?.aborted) { resolve(null); return; }
+          const pending: PendingView = { threadId: thread.id, kind: "permission", workflow: null, accepts: "options",
+            question: { id: randomUUID(), text, options, freeText: false } };
+          const cancel = () => answer(null);
+          const answer = (value: string | null) => {
+            abort.signal.removeEventListener("abort", cancel);
+            signal?.removeEventListener("abort", cancel);
+            if (this.permissions.get(thread.id)?.pending.question.id === pending.question.id) {
+              this.permissions.delete(thread.id);
+              const durable = this.store.pending(thread.projectId, thread.id);
+              this.broadcast(thread.id, { type: "pending", pending: durable ? this.pendingView(durable) : null });
+            }
+            resolve(value);
+          };
+          this.permissions.set(thread.id, { pending, answer });
+          abort.signal.addEventListener("abort", cancel, { once: true });
+          signal?.addEventListener("abort", cancel, { once: true });
+          emit({ type: "question", ...pending.question });
+          this.broadcast(thread.id, { type: "pending", pending });
+        }));
+        this.permissionQueues.set(thread.id, request);
+        void request.finally(() => { if (this.permissionQueues.get(thread.id) === request) this.permissionQueues.delete(thread.id); });
+        return request;
+      },
+      delta: (text) => {
+        streamedOutputChars += text.length;
+        this.broadcast(thread.id, { type: "delta", runId: run.id, text });
+        // Providers only publish authoritative usage at turn completion. Keep
+        // the live line useful meanwhile with a conservative streamed-output
+        // estimate; the final run replaces it with provider counters.
+        progress({ usage: { inputTokens: 0, outputTokens: Math.ceil(streamedOutputChars / 4) } });
+      },
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
       tools,
       playbooks: { index: () => this.playbookIndex(thread.projectId), open: (id) => this.openPlaybook(id, thread.projectId) },
@@ -615,10 +677,14 @@ export class Agent extends Service {
       // A thread on a workstream runs where that workstream's code is; a missing checkout stops the run before the engine starts.
       const where = await this.workdir(rc.projectId, rc.threadId);
       if (where.problem) throw new Error(where.problem);
+      const modes = rc.engine.permissionModes;
+      const selectedMode = rc.thread.itemId && modes ? rc.thread.permissionMode ?? modes.default : undefined;
+      if (selectedMode) rc.io.permissionMode?.(selectedMode);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
         purpose: rc.thread.itemId ? "code" : "backlog",
+        permissionMode: selectedMode,
         ticket: this.ticketOf(rc.thread),
         input,
         messages: this.store.messages(rc.projectId, rc.threadId),
@@ -729,7 +795,7 @@ export class Agent extends Service {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.projectId, rc.run.id) }, rc.run.id);
     }
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
-    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, costUsd: result.costUsd, changes });
+    const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
     this.broadcast(rc.threadId, { type: "done", run });
     this.ctx.emit("agent/run-ended", run, this.store.thread(rc.projectId, rc.threadId) ?? rc.thread);
   }
