@@ -355,8 +355,11 @@ sidebar's Workstreams group and the Fields sheet.
 A workstream may **stand for a code repository**: `Board.repoId` names a row of
 `ctx.repos` (shared with the project — the remote URL is its identity) and
 `Board.repoPath` a folder inside it. Where that repository is checked out is
-this machine's alone (`ctx.repos.setCheckout(remote, dir)`, verified against the
-folder's origin, or `ctx.repos.clone(remote, branch)` into `<Hub>/repos/`). A
+this machine's alone (`ctx.repos.selectCheckout(remote, dir)`, verified against
+the folder's origin). If the selected folder is not that checkout, the UI offers
+a separate explicit `ctx.repos.cloneInto(remote, branch, dir)` action which clones
+into a repository-named child of the selected folder; Tomrade never overwrites the
+selected folder's contents. A
 thread on such a workstream runs its engine in a detached worktree of the
 checkout under `<Hub>/worktrees/`, or in the checkout itself when the user
 chose that, and refuses to start while no checkout is named. Tomrade never

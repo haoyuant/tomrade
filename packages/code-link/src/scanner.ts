@@ -2,7 +2,7 @@ import type { Git } from "@tomrade/storage";
 import { keysInText, parseBranch } from "./keys.js";
 import { remoteFailureDetail, remoteFailureMessage } from "./remote.js";
 
-/** Files at a repository's root that say "there is a project here" — one is enough for `scaffolded`. */
+/** Project manifests anywhere in a repository — one is enough for `scaffolded`. */
 export const MANIFESTS = [
   "package.json",
   "pubspec.yaml",
@@ -178,10 +178,12 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
   let manifests: string[] = [];
   let hasBrief = false;
   if (defaultRef) {
-    const tree = await run(["ls-tree", "--name-only", defaultRef]);
-    const names = new Set(tree.stdout.split("\n").map((s) => s.trim()).filter(Boolean));
-    manifests = MANIFESTS.filter((m) => names.has(m));
-    hasBrief = BRIEF_FILES.some((f) => names.has(f));
+    const tree = await run(["ls-tree", "-r", "--name-only", defaultRef]);
+    const names = tree.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+    manifests = names.filter((name) => MANIFESTS.includes(name.split("/").pop() ?? ""));
+    // A repository-level brief governs every workstream beneath it. Nested
+    // briefs may describe only that subtree and are not equivalent here.
+    hasBrief = BRIEF_FILES.some((file) => names.includes(file));
   }
   // No default branch anywhere and the fetch failed: that is not an empty
   // repository, it is a repository this machine cannot see — credentials, most often.

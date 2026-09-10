@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RepoStateView } from "@tomrade/code-link";
 import type { Board, Repo } from "@tomrade/domain";
 import type { CheckoutView } from "@tomrade/repos";
@@ -9,12 +9,12 @@ import { useI18n } from "~/lib/i18n";
 import {
   useBoards,
   useClearCheckout,
-  useCloneRepo,
+  useCloneRepoInto,
   useCreateRepo,
   useRemoveRepo,
   useRepoCheckouts,
   useRepos,
-  useSetCheckout,
+  useSelectCheckout,
   useSetRunInCheckout,
   useUpdateRepo
 } from "~/lib/queries";
@@ -135,15 +135,19 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
   const toast = useToast();
   const update = useUpdateRepo(projectId);
   const remove = useRemoveRepo(projectId);
-  const setCheckout = useSetCheckout();
+  const selectCheckout = useSelectCheckout();
   const clearCheckout = useClearCheckout();
   const setRun = useSetRunInCheckout();
-  const clone = useCloneRepo();
+  const clone = useCloneRepoInto();
   const identity = useRemoteIdentity(repo.remote, !!checkout?.checkout);
   const account = useGithubCredentialAccount(projectId, repo.id, !!checkout?.checkout && remoteState?.remote === "unreachable");
   const useCredential = useGithubCredential(projectId, repo.remote);
   const [picking, setPicking] = useState(false);
-  const busy = update.isPending || remove.isPending || setCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending || useCredential.isPending;
+  const [cloneTarget, setCloneTarget] = useState<{ parent: string; dir: string } | null>(null);
+  useEffect(() => {
+    if (checkout?.checkout) setCloneTarget(null);
+  }, [checkout?.checkout]);
+  const busy = update.isPending || remove.isPending || selectCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending || useCredential.isPending;
   const fail = (error: unknown) => toast({ body: message(error) });
 
   const choose = async () => {
@@ -151,11 +155,36 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
     const dir = await pickDirectory(t("repositories.pickTitle", { name: repo.name }), t("repositories.pickButton"));
     setPicking(false);
     if (!dir) return;
-    setCheckout.mutate({ remote: repo.remote, dir }, { onSuccess: (view) => toast({ body: t("repositories.checkoutSetToast", { name: repo.name, dir: view.checkout ?? dir }) }), onError: fail });
+    selectCheckout.mutate(
+      { remote: repo.remote, dir },
+      {
+        onSuccess: (selection) => {
+          if (selection.state === "clone") {
+            setCloneTarget({ parent: selection.parent, dir: selection.dir });
+            return;
+          }
+          setCloneTarget(null);
+          toast({ body: t("repositories.checkoutSetToast", { name: repo.name, dir: selection.view.checkout ?? dir }) });
+        },
+        onError: (error) => {
+          setCloneTarget(null);
+          fail(error);
+        }
+      }
+    );
   };
 
   const cloneNow = () =>
-    clone.mutate({ remote: repo.remote, branch: repo.defaultBranch }, { onSuccess: (view) => toast({ body: t("repositories.clonedToast", { name: repo.name, dir: view.checkout ?? "" }) }), onError: fail });
+    cloneTarget && clone.mutate(
+      { remote: repo.remote, branch: repo.defaultBranch, parent: cloneTarget.parent },
+      {
+        onSuccess: (view) => {
+          setCloneTarget(null);
+          toast({ body: t("repositories.clonedToast", { name: repo.name, dir: view.checkout ?? "" }) });
+        },
+        onError: fail
+      }
+    );
 
   return (
     <div className="panel repo-row project-settings-copy" data-repo={repo.id} style={{ padding: "var(--space-3)" }}>
@@ -222,17 +251,24 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         <button type="button" className="btn btn-ghost repo-choose" disabled={busy || picking} onClick={() => void choose()}>
           {picking ? t("repositories.choosing") : t("repositories.choose")}
         </button>
-        {!checkout?.checkout && (
-          <button type="button" className="btn btn-ghost repo-clone" disabled={busy} onClick={cloneNow}>
-            {clone.isPending ? t("repositories.cloning") : t("repositories.cloneForMe")}
-          </button>
-        )}
         {checkout?.checkout && (
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => clearCheckout.mutate(repo.remote, { onError: fail })}>
             {t("repositories.clear")}
           </button>
         )}
       </div>
+      {!checkout?.checkout && cloneTarget && (
+        <div className="cfg-row repo-clone-offer" style={{ marginTop: 0 }}>
+          <Icon name="i-folder" size={14} style={{ color: "var(--meta)" }} />
+          <span className="repo-remote-copy">
+            <span className="cfg-name">{t("repositories.cloneOffer", { name: repo.name })}</span>
+            <span className="meta-txt num repo-clone-target" title={cloneTarget.dir}>{cloneTarget.dir}</span>
+          </span>
+          <button type="button" className="btn btn-secondary repo-clone" disabled={busy} onClick={cloneNow}>
+            {clone.isPending ? t("repositories.cloning") : t("repositories.cloneIntoFolder")}
+          </button>
+        </div>
+      )}
       {checkout?.checkout && (
         <div className="cfg-row" style={{ marginTop: 0 }}>
           <Icon name="i-pen" size={14} style={{ color: checkout.runInCheckout ? "var(--accent)" : "var(--meta)" }} />

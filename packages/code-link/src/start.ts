@@ -67,8 +67,9 @@ export class Starter {
 
   async start(projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }): Promise<StartResult> {
     const { ctx, store } = this.host;
-    const item = ctx.items.get(projectId, itemId);
-    if (!item) throw new Error(`unknown item ${itemId}`);
+    const found = ctx.items.get(projectId, itemId);
+    if (!found) throw new Error(`unknown item ${itemId}`);
+    let item: Item = found;
     if (item.humanLocked) return { ok: false, gate: "locked", message: `${item.key} is human-locked — unlock it before starting work on it` };
 
     const board = ctx.boards.get(projectId, item.boardId);
@@ -116,6 +117,15 @@ export class Starter {
     if (state?.readiness === "empty" && !bootstrapping) {
       const bootstrap = this.ensureBootstrap(projectId, item, board, repo);
       return { ok: false, gate: "readiness", message: `${repo.name} has no project in it yet — ${bootstrap.key} bootstraps it first and blocks ${item.key} until it lands`, bootstrapKey: bootstrap.key };
+    }
+
+    // The readiness gate creates this dependency, so it also owns removing it
+    // when a later scan finds that the repository has been scaffolded elsewhere.
+    if (state?.readiness === "scaffolded") {
+      for (const bootstrap of ctx.items.list({ projectId }).filter((candidate) => candidate.boardId === board.id && candidate.labels.includes(BOOTSTRAP_LABEL) && OPEN.has(candidate.status) && candidate.blocks.includes(item.id))) {
+        ctx.items.update(projectId, bootstrap.id, { blocks: bootstrap.blocks.filter((id) => id !== item.id) }, "sync:git");
+      }
+      item = ctx.items.get(projectId, item.id) ?? item;
     }
 
     const blockers = item.blockedBy.map((id) => ctx.items.get(projectId, id)).filter((b): b is Item => !!b && OPEN.has(b.status));

@@ -3,7 +3,7 @@ import type { CommandScope } from "@tomrade/contributions";
 import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomrade/storage";
 import type {} from "@tomrade/hub";
 import type {} from "@tomrade/repos";
-import type { CheckoutView } from "@tomrade/repos";
+import type { CheckoutSelection, CheckoutView } from "@tomrade/repos";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
 import type { Repo, RepoPatch } from "@tomrade/domain";
 import type {
@@ -571,7 +571,7 @@ export const useCreateRepo = (projectId: string) =>
   useRepoMutation(projectId, (input: { remote: string; name?: string; defaultBranch?: string }): Promise<Repo> => invoke("repos.create", { ...input, projectId }));
 export const useUpdateRepo = (projectId: string) => useRepoMutation(projectId, (args: { id: string; patch: RepoPatch }) => invoke("repos.update", projectId, args.id, args.patch));
 export const useRemoveRepo = (projectId: string) => useRepoMutation(projectId, (id: string) => invoke("repos.remove", projectId, id));
-export const useSetCheckout = () => useRepoMutation(null, (args: { remote: string; dir: string }) => invoke("repos.setCheckout", args.remote, args.dir));
+export const useSelectCheckout = () => useRepoMutation(null, (args: { remote: string; dir: string }): Promise<CheckoutSelection> => invoke("repos.selectCheckout", args.remote, args.dir));
 export const useClearCheckout = () => useRepoMutation(null, (remote: string) => invoke("repos.clearCheckout", remote));
 export const useSetRunInCheckout = () => useRepoMutation(null, (args: { remote: string; on: boolean }) => invoke("repos.setRunInCheckout", args.remote, args.on));
-export const useCloneRepo = () => useRepoMutation(null, (args: { remote: string; branch: string }) => invoke("repos.clone", args.remote, args.branch));
+export const useCloneRepoInto = () => useRepoMutation(null, (args: { remote: string; branch: string; parent: string }) => invoke("repos.cloneInto", args.remote, args.branch, args.parent));
