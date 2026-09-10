@@ -6,6 +6,15 @@ import { type Git } from "@tomrade/storage";
 const key = "credential.https://github.com.helper";
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
+/**
+ * The helper sits beside the settings file it reads — `<userData>/bin`, not the
+ * Hub. It is machine-local (it execs this machine's Electron and reads this
+ * machine's token) and every opted-in checkout's git config names its absolute
+ * path, so it must not move when the user picks another Hub folder.
+ */
+const helperDir = (settings: string): string => path.join(path.dirname(settings), "bin");
+const helperPath = (settings: string): string => path.join(helperDir(settings), "tomrade-credential");
+
 const writeHelper = (file: string, content: string, mode: number): void => {
   const temporary = `${file}.${randomUUID()}`;
   try {
@@ -25,12 +34,12 @@ export function githubHttps(remote: string): boolean {
   }
 }
 
-export const credentialCommand = (hub: string): string => `!${quote(path.join(hub, "bin", "tomrade-credential"))}`;
+export const credentialCommand = (settings: string): string => `!${quote(helperPath(settings))}`;
 
-export const withGithubCredential = (hub: string, command: string): string => `${quote(path.join(hub, "bin", "tomrade-credential"))} run bash -c ${quote(command)}`;
+export const withGithubCredential = (settings: string, command: string): string => `${quote(helperPath(settings))} run bash -c ${quote(command)}`;
 
-export async function githubEnvironment(git: Git, checkout: string, hub: string | null, settings: string): Promise<Record<string, string>> {
-  if (!hub || !await usesTomradeCredential(git, checkout, hub)) return {};
+export async function githubEnvironment(git: Git, checkout: string, settings: string): Promise<Record<string, string>> {
+  if (!await usesTomradeCredential(git, checkout, settings)) return {};
   const origin = await git(["remote", "get-url", "origin"], { cwd: checkout, ok: true });
   if (!githubHttps(origin.stdout.trim())) return {};
   try {
@@ -40,16 +49,30 @@ export async function githubEnvironment(git: Git, checkout: string, hub: string 
   throw new Error("Reconnect your GitHub account in Tomrade before continuing this checkout.");
 }
 
-export async function usesTomradeCredential(git: Git, checkout: string, hub: string): Promise<boolean> {
+export async function usesTomradeCredential(git: Git, checkout: string, settings: string): Promise<boolean> {
   const result = await git(["config", "--local", "--get-all", key], { cwd: checkout, ok: true });
-  return result.code === 0 && result.stdout.trimEnd() === `\n${credentialCommand(hub)}`;
+  return result.code === 0 && result.stdout.trimEnd() === `\n${credentialCommand(settings)}`;
+}
+
+/** A helper command this plugin wrote, wherever it lived. Earlier versions put it under the Hub. */
+const namesOurHelper = (value: string): boolean => /^!.*[/\\]bin[/\\]tomrade-credential'?$/.test(value);
+
+/** Repoint a checkout whose helper still lives under a Hub folder at the userData one. */
+export async function migrateGithubCredential(git: Git, checkout: string, settings: string): Promise<boolean> {
+  const result = await git(["config", "--local", "--get-all", key], { cwd: checkout, ok: true });
+  if (result.code !== 0) return false;
+  const current = credentialCommand(settings);
+  const stale = result.stdout.split("\n").map((line) => line.trimEnd()).some((line) => !!line && line !== current && namesOurHelper(line));
+  if (!stale) return false;
+  await installGithubCredential(git, checkout, settings);
+  return true;
 }
 
 /** The helper reads settings for each request, so token rotation never leaves a stale secret in git config. */
-export async function installGithubCredential(git: Git, checkout: string, hub: string, settings: string): Promise<void> {
-  const bin = path.join(hub, "bin");
+export async function installGithubCredential(git: Git, checkout: string, settings: string): Promise<void> {
+  const bin = helperDir(settings);
   fs.mkdirSync(bin, { recursive: true });
-  const helper = path.join(bin, "tomrade-credential");
+  const helper = helperPath(settings);
   const source = `${helper}.cjs`;
   writeHelper(source, [
     'const fs = require("node:fs");',
@@ -89,7 +112,7 @@ export async function installGithubCredential(git: Git, checkout: string, hub: s
   }
   try {
     await git(["config", "--file", lock, "--replace-all", key, ""], { cwd: checkout });
-    await git(["config", "--file", lock, "--add", key, credentialCommand(hub)], { cwd: checkout });
+    await git(["config", "--file", lock, "--add", key, credentialCommand(settings)], { cwd: checkout });
     fs.renameSync(lock, config);
   } finally {
     fs.rmSync(lock, { force: true });

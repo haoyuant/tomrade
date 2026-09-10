@@ -141,6 +141,28 @@ it("offers the connected account for credential failures, reprobes after switchi
   connection.mockRestore();
 });
 
+it("repoints a helper an earlier version left under the Hub, on the next scan", async () => {
+  const local = codeRepo();
+  const remote = "https://github.com/example/private-app";
+  git(["remote", "set-url", "origin", remote], local.checkout);
+  const world = await machine({ ...local, remote });
+  const { ctx, codeLink, project, hubDir } = world;
+  const connection = vi.spyOn(ctx.storage, "connection").mockResolvedValue({ connected: true, label: "@right-account" });
+  fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ github: { token: "fake-project-token" } }));
+  // An upgrade left this checkout opted in, naming the helper's old Hub home.
+  const legacy = path.join(hubDir, "old-hub", "bin", "tomrade-credential");
+  git(["config", "--local", "--replace-all", "credential.https://github.com.helper", ""], local.checkout);
+  git(["config", "--local", "--add", "credential.https://github.com.helper", `!'${legacy}'`], local.checkout);
+  expect(git(["config", "--local", "--get-all", "credential.https://github.com.helper"], local.checkout)).toContain(legacy);
+  await ctx.repos.setCheckout(remote, local.checkout);
+  await codeLink.scan(project.id);
+  const config = fs.readFileSync(path.join(local.checkout, ".git/config"), "utf8");
+  expect(config).toContain(path.join(hubDir, "bin", "tomrade-credential"));
+  expect(config).not.toContain(legacy);
+  expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account" });
+  connection.mockRestore();
+});
+
 it("keeps an unsuccessful credential reprobe unreachable and does not offer account switching for network failures", async () => {
   const local = codeRepo();
   const remote = "https://github.com/example/still-private";
