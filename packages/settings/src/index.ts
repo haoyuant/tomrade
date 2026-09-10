@@ -61,9 +61,14 @@ export type SettingsConfig = z.infer<typeof SettingsConfig>;
 /** The Hub's settings file: user-scope sections, each stamped so two machines can settle a clash by time. */
 export const USER_SETTINGS_FILE = "settings.json";
 
-interface UserSettingsFile {
+export interface UserSettingsFile {
   v: 1;
   sections: Record<string, { value: unknown; updatedAt: number }>;
+}
+
+export interface UserSettingsStore {
+  read(): UserSettingsFile;
+  write(file: UserSettingsFile): void;
 }
 
 const THEME: SettingsSection<AppSettings["theme"]> = {
@@ -103,9 +108,12 @@ const writeJson = (file: string, value: unknown): void => {
 
 /** A section whose schema names a password never leaves the machine, whatever it declares. */
 function holdsSecret(schema: z.ZodType): boolean {
-  const json = z.toJSONSchema(schema) as { format?: string; properties?: Record<string, { format?: string }> };
-  if (json.format === "password") return true;
-  return Object.values(json.properties ?? {}).some((p) => p.format === "password");
+  const visit = (v: unknown): boolean => {
+    if (!v || typeof v !== "object") return false;
+    if (isRecord(v) && v.format === "password") return true;
+    return Object.values(v).some(visit);
+  };
+  return visit(z.toJSONSchema(schema));
 }
 
 export class Settings extends Service {
@@ -116,6 +124,40 @@ export class Settings extends Service {
   private stored: Record<string, unknown> = {};
   private user: UserSettingsFile = { v: 1, sections: {} };
   private userFile: string | null = null;
+  private userStore: UserSettingsStore | null = null;
+
+  /** Only registered, validated user sections may cross the cloud boundary. */
+  exportUser(): UserSettingsFile {
+    const sections: UserSettingsFile["sections"] = {};
+    for (const s of this.registry.values()) {
+      if (this.scopeOf(s) !== "user") continue;
+      const entry = this.user.sections[s.id];
+      if (!entry) continue;
+      const parsed = s.schema.safeParse(entry.value);
+      if (parsed.success) sections[s.id] = { value: parsed.data, updatedAt: entry.updatedAt };
+    }
+    return { v: 1, sections };
+  }
+
+  useUserStore(store: UserSettingsStore): () => void {
+    if (this.userStore) throw new Error("A user settings store is already installed");
+    this.userStore = store;
+    return () => { this.userStore = null; };
+  }
+
+  /** A cloud revision is authoritative, independently of device clock skew. */
+  refreshUserStore(): void {
+    if (!this.userStore) return;
+    const before = this.get();
+    for (const [id, entry] of Object.entries(this.userStore.read().sections)) {
+      const section = this.registry.get(id);
+      if (!section || this.scopeOf(section) !== "user") continue;
+      const parsed = section.schema.safeParse(entry.value);
+      if (parsed.success) this.user.sections[id] = { value: parsed.data, updatedAt: entry.updatedAt };
+    }
+    const after = this.get();
+    if (JSON.stringify(before) !== JSON.stringify(after)) this.home.emit("settings/changed", after, before);
+  }
   private readonly home: Context;
 
   constructor(
@@ -140,7 +182,8 @@ export class Settings extends Service {
     this.home.inject(["hub"], (ctx) => {
       const attach = (dir: string | null) => {
         this.userFile = dir ? path.join(dir, USER_SETTINGS_FILE) : null;
-        this.loadUser();
+        if (this.userStore) this.refreshUserStore();
+        else this.loadUser();
       };
       attach(ctx.hub.dir);
       const off = ctx.on("hub/configured", (dir) => {
@@ -178,7 +221,7 @@ export class Settings extends Service {
   }
 
   private storedValue(section: SettingsSection): unknown {
-    if (this.userFile && this.scopeOf(section) === "user") {
+    if ((this.userFile || this.userStore) && this.scopeOf(section) === "user") {
       const entry = this.user.sections[section.id];
       if (entry) return entry.value;
     }
@@ -203,7 +246,7 @@ export class Settings extends Service {
     for (const [id, value] of Object.entries(next)) {
       const section = this.registry.get(id);
       const parsed = section ? section.schema.parse(value) : value;
-      if (section && this.userFile && this.scopeOf(section) === "user") {
+      if (section && (this.userFile || this.userStore) && this.scopeOf(section) === "user") {
         if (JSON.stringify(this.user.sections[id]?.value) !== JSON.stringify(parsed)) {
           this.user.sections[id] = { value: parsed, updatedAt: now };
           userTouched = true;
@@ -252,6 +295,7 @@ export class Settings extends Service {
   }
 
   private persistUser(): void {
+    if (this.userStore) { this.userStore.write(this.exportUser()); return; }
     if (!this.userFile) return;
     // Seed from the machine file the first time, so a fresh Hub starts with what the person already chose.
     for (const s of this.registry.values()) {

@@ -6,9 +6,10 @@ import { ConnectionPanel, DestinationPicker, message } from "~/components/projec
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
+import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useProjects, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { AccountPanel } from "./AccountPanel";
 
 /** The same words the project block uses for the same states. */
 function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: string; tone: "faint" | "neutral" | "strong"; warn?: boolean }> {
@@ -35,6 +36,8 @@ export function HubPane() {
   const qc = useQueryClient();
   const STATE = stateOf(t);
   const hub = useHubInfo();
+  const projects = useProjects();
+  const localProjectIds = new Set((projects.data ?? []).map(p => p.id));
   const remote = useHubRemote();
   const providers = useStorageProviders();
   const sync = useSyncHub();
@@ -44,7 +47,8 @@ export function HubPane() {
   const status = remote.data?.status;
   const state = STATE[status?.state ?? "local"];
   const busy = sync.isPending || attachAll.isPending;
-  const others = (remote.data?.manifest?.projects ?? []).filter((p) => remote.data?.attachable.includes(p.id));
+  const others = (remote.data?.manifest?.projects ?? []).filter((p) => hub.data?.cloudEnabled
+    ? !localProjectIds.has(p.id) : remote.data?.attachable.includes(p.id));
 
   const syncNow = () =>
     sync.mutate(undefined, {
@@ -63,23 +67,25 @@ export function HubPane() {
 
   return (
     <>
-      <SectionHead title={t("hubPane.title")}>{t("hubPane.lede")}</SectionHead>
-      <div className="panel stack-3 hub-pane">
-        <div className="field">
-          <label htmlFor="hubDir">{t("hubPane.folderLabel")}</label>
-          <div className="row" style={{ gap: "var(--space-2)" }}>
-            <input id="hubDir" className="input num" style={{ flex: 1 }} readOnly value={dir ?? ""} />
-            {dir && (
-              <button type="button" className="btn btn-ghost" onClick={() => reveal(dir)}>
-                {t("hubPane.reveal")}
-              </button>
-            )}
+      <SectionHead title={t("hubPane.title")}>{t(hub.data?.cloudEnabled ? "hubPane.cloudLede" : "hubPane.lede")}</SectionHead>
+      {!hub.data?.cloudEnabled && (
+        <div className="panel stack-3 hub-pane">
+          <div className="field">
+            <label htmlFor="hubDir">{t("hubPane.folderLabel")}</label>
+            <div className="row" style={{ gap: "var(--space-2)" }}>
+              <input id="hubDir" className="input num" style={{ flex: 1 }} readOnly value={dir ?? ""} />
+              {dir && (
+                <button type="button" className="btn btn-ghost" onClick={() => reveal(dir)}>
+                  {t("hubPane.reveal")}
+                </button>
+              )}
+            </div>
+            <span className="meta-txt">{t("hubPane.folderNote")}</span>
           </div>
-          <span className="meta-txt">{t("hubPane.folderNote")}</span>
         </div>
-      </div>
+      )}
 
-      <HubRemoteSection bound={remote.data?.remote ?? null} location={status?.location ?? null} disabled={busy || !dir} providers={providers.data ?? []} />
+      {hub.data?.cloudEnabled ? <AccountPanel /> : <HubRemoteSection bound={remote.data?.remote ?? null} location={status?.location ?? null} disabled={busy || !dir} providers={providers.data ?? []} />}
 
       {remote.data?.remote && (
         <div style={{ marginTop: "var(--space-4)" }}>

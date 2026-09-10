@@ -11,6 +11,7 @@
     "src"
   ],
   "references": [
+    { "path": "../../packages/hub-cloud" },
     {
       "path": "../../packages/agent"
     },

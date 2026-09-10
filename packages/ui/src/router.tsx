@@ -9,6 +9,7 @@ import { invoke } from "~/lib/api";
 import { I18nProvider } from "~/lib/i18n";
 import { ThemeProvider } from "~/lib/theme";
 import { ToastProvider } from "~/lib/toast";
+import { AccountGate } from "~/components/dialogs/AccountPanel";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -16,7 +17,7 @@ const rootRoute = createRootRoute({
       <ThemeProvider>
         <ToastProvider>
           <IconSprite />
-          <Outlet />
+          <AccountGate><Outlet /></AccountGate>
         </ToastProvider>
       </ThemeProvider>
     </I18nProvider>

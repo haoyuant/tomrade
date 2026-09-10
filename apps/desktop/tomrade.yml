@@ -78,11 +78,11 @@ plugins:
     name: "@tomrade/db"
     config:
       dir: "${userData}/cache"
-  # This machine: its id, the Hub folder, and the catalog of projects it knows.
+  # This machine: its id and local project/repository placements. Hub metadata
+  # belongs to Supabase; no local Hub state file is created.
   - id: hub
     name: "@tomrade/hub"
     config:
-      stateFile: "${userData}/hub.json"
       catalogFile: "${userData}/catalog.json"
       deviceFile: "${userData}/device.json"
   - id: oplog
@@ -111,6 +111,12 @@ plugins:
   # else is read back in. Git is driven only in folders Tomrade made itself.
   - id: storage
     name: "@tomrade/storage"
+  # Activated when the deployment supplies a Supabase URL and publishable key.
+  # Migrates only Hub metadata; project storage providers below keep their role.
+  - id: hub-cloud
+    name: ./dist/hub-cloud.js
+    config:
+      userData: "${userData}"
   # Remote transports for a project's own repository: any git URL…
   - id: storage-git
     name: "@tomrade/storage-git"

@@ -6,7 +6,7 @@ Talk to the agent → it shapes the requirement with you → plans epics and **f
 
 ## Product decisions (direction of record)
 
-1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. Cloud is a *future* transport, not today's constraint — see [`docs/plugin-api.md`](docs/plugin-api.md) (Storage).
+1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. Configured cloud builds use Supabase for accounts and portable Hub metadata, with an offline outbox; project storage remains local-first. See [`docs/supabase-hub.md`](docs/supabase-hub.md).
 2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
 3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
 4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A third-party plugin uses the same mechanism with the same rights — see [`docs/plugin-api.md`](docs/plugin-api.md) and [`examples/stale`](examples/stale).
@@ -24,7 +24,7 @@ Talk to the agent → it shapes the requirement with you → plans epics and **f
 - No code evaluation in configuration. `tomrade.yml` is static YAML with `${userData}`-style substitution and nothing more.
 - No profile or bundle layering. One file plus one patch file, merged by id.
 - No renderer plugin bundles. Plugins contribute data — commands, badges, status items, sections, settings cards — and the UI draws it with its own primitives.
-- No LangGraph, no LangChain, no separate vector DB. No Supabase / RLS / Realtime / Auth. No Docker. No Postgres *yet*. No multi-device sync *yet*. No SSR web.
+- No LangGraph, no LangChain, no separate vector DB. No cloud project database or Realtime project collaboration. Supabase Auth/Postgres is limited to Hub metadata. No Docker runtime requirement. No SSR web.
 
 ## Repo layout
 
@@ -35,6 +35,7 @@ apps/desktop/tomrade.yml   the application — the modules it needs, then one ro
 packages/domain       types + zod schemas + typed errors. Zero I/O, zero ctx. Everyone imports this.
 packages/db           ctx.db           a pool of SQLite caches — hub.db plus one project.db per project; core schema, plugin table registry
 packages/hub          ctx.hub          this machine: device id, and the catalog of projects and repository checkouts it knows
+packages/hub-cloud    ctx.cloudHub     Supabase accounts and Hub metadata; encrypted sessions, durable outbox and conflicts (when configured)
 packages/oplog        ctx.oplog        append, read, undo — per project, each row stamped with the machine that wrote it
 packages/write        —                write/pre-commit waterfall + the default policy plugins
 packages/items        ctx.items        issues, labels, relations (+ their tools and channels)

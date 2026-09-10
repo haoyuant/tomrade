@@ -1,6 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CatalogProject, RemoteRef } from "@tomrade/hub";
+import type { StorageStatus } from "./types.js";
+
+/** A Hub catalog backend. Project folder storage is independent of this port. */
+export interface HubBackend {
+  read(): HubManifest;
+  observe(local: HubManifest): void;
+  removeProject(projectId: string): void;
+  sync(): Promise<StorageStatus>;
+  status(): StorageStatus;
+}
 
 export const HUB_MANIFEST = "hub.json";
 

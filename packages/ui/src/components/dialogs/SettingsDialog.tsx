@@ -301,19 +301,21 @@ export function SettingsDialog({
       group: "app",
       render: () => (
         <>
-          <SectionHead title={t("settingsDialog.dataLabel")} aside={<ScopeTag scope="machine" />}>{t("settingsDialog.dataLede")}</SectionHead>
+          <SectionHead title={t("settingsDialog.dataLabel")} aside={<ScopeTag scope="machine" />}>
+            {t(hub.data?.cloudEnabled ? "settingsDialog.cloudDataLede" : "settingsDialog.dataLede")}
+          </SectionHead>
           <div className="panel stack-3">
             <div className="field">
-              <label htmlFor="stHub">{t("settingsDialog.hubDirLabel")}</label>
+              <label htmlFor="stHub">{t(hub.data?.cloudEnabled ? "settingsDialog.projectsDirLabel" : "settingsDialog.hubDirLabel")}</label>
               <div className="row" style={{ gap: "var(--space-2)" }}>
-                <input id="stHub" className="input num" style={{ flex: 1 }} readOnly value={hub.data?.dir ?? ""} />
-                {hub.data?.dir && (
-                  <button type="button" className="btn btn-ghost" onClick={() => reveal(hub.data!.dir!)}>
+                <input id="stHub" className="input num" style={{ flex: 1 }} readOnly value={(hub.data?.cloudEnabled ? hub.data.projectsDir : hub.data?.dir) ?? ""} />
+                {(hub.data?.cloudEnabled ? hub.data.projectsDir : hub.data?.dir) && (
+                  <button type="button" className="btn btn-ghost" onClick={() => reveal((hub.data?.cloudEnabled ? hub.data.projectsDir : hub.data!.dir)!)}>
                     {t("settingsDialog.reveal")}
                   </button>
                 )}
               </div>
-              <span className="meta-txt">{t("settingsDialog.hubDirNote")}</span>
+              <span className="meta-txt">{t(hub.data?.cloudEnabled ? "settingsDialog.projectsDirNote" : "settingsDialog.hubDirNote")}</span>
             </div>
             <div className="field">
               <label htmlFor="stDb">{t("settingsDialog.cacheDirLabel")}</label>
