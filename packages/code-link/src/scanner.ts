@@ -169,8 +169,8 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
       const [sha, ct, subject, body] = record.replace(/^\n/, "").split(US);
       if (!sha?.trim()) continue;
       for (const keyNum of keysInText(`${subject ?? ""}\n${body ?? ""}`, opts.prefix)) {
-        // Oldest wins: the log is newest-first, so the last write for a key is its first mention.
-        mergedKeys.set(keyNum, { sha: sha.trim(), at: Number(ct) * 1000 || 0, subject: (subject ?? "").trim() });
+        // Newest evidence wins when a full rescan contains several deliveries.
+        if (!mergedKeys.has(keyNum)) mergedKeys.set(keyNum, { sha: sha.trim(), at: Number(ct) * 1000 || 0, subject: (subject ?? "").trim() });
       }
     }
   }

@@ -17,6 +17,9 @@ export const codeLinkKeys = {
 export const useCodeLinks = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: codeLinkKeys.links(projectId, itemId), queryFn: () => invoke("codeLink.links", projectId, itemId) });
 
+export const useCodeDeliveries = (projectId: string, itemId: string) =>
+  useQuery({ queryKey: ["codeLink", projectId, "deliveries", itemId], queryFn: () => invoke("codeLink.deliveries", projectId, itemId) });
+
 export const useCodeSessions = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: codeLinkKeys.sessions(projectId, itemId), queryFn: () => invoke("codeLink.sessions", projectId, itemId) });
 

@@ -20,7 +20,7 @@ export interface ToolHost {
   reevaluate(projectId: string, itemId: string, repoId: string): void;
   noteProgress(projectId: string, sessionId: string, text: string): void;
   /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
-  attach(projectId: string, sessionId: string, itemId: string, branch: string): void;
+  attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void;
   /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet. */
   externalSession(projectId: string, repoId: string): SessionView | null;
   notify(projectId: string): void;
@@ -82,14 +82,19 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           throw new Error("link_code: inspect the complete diff against the default branch, remove work outside this ticket, then pass scopeChecked: true");
         }
         if (!repoId) throw new Error(`link_code: ${item.key}'s workstream has no repository`);
-        const existing = host.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.branch);
+        if (item.status === "done" || item.status === "cancelled") throw new Error(`link_code: reopen ${item.key} before starting another delivery`);
+        const currentDelivery = host.store.currentDelivery(projectId, item.id);
+        if (session && currentDelivery && session.delivery !== currentDelivery.sequence) throw new Error("link_code: this session belongs to an earlier delivery; start a new session");
+        const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
+        if (session && session.delivery !== delivery.sequence) throw new Error(`link_code: this session belongs to delivery ${session.delivery}; ${item.key} is now on delivery ${delivery.sequence}`);
+        const existing = host.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch);
         const branch = args.branch?.replace(/^origin\//, "") ?? implied ?? existing[0]?.branch ?? "";
         if (!branch) throw new Error("link_code: pass branch — this session has none");
         const prNumber = args.prNumber ?? (args.prUrl ? Number(PR_NUMBER.exec(args.prUrl)?.[1]) || null : null);
         const prState: PrState | null = args.prState ?? (args.prUrl ? "open" : null);
         const link: CodeLinkView = host.store.upsertLink(
           projectId,
-          { itemId: item.id, repoId, branch },
+          { itemId: item.id, repoId, branch, delivery: delivery.sequence },
           {
             ...(args.prUrl ? { prUrl: args.prUrl } : {}),
             ...(prNumber ? { prNumber } : {}),
@@ -133,6 +138,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const projectId = requireProjectId("claim_ticket", args.projectId, inv);
         const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
         if (!item) throw new Error(`claim_ticket: no ticket ${args.key} in this project`);
+        if (item.status === "done" || item.status === "cancelled") throw new Error(`claim_ticket: reopen ${item.key} before starting another delivery`);
         if (item.humanLocked) throw new Error(`claim_ticket: ${item.key} is human-locked — ask the owner to unlock it`);
         const board = ctx.boards.get(projectId, item.boardId);
         const repoId = board?.repoId ?? null;
@@ -143,15 +149,19 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const bound = sessionContext.getStore();
         const session = (bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null) ?? (repoId ? host.externalSession(projectId, repoId) : null);
         const other = session?.itemIds.find((id) => id !== item.id);
+        const currentDelivery = host.store.currentDelivery(projectId, item.id);
+        if (session?.itemIds.includes(item.id) && currentDelivery && session.delivery !== currentDelivery.sequence) throw new Error("claim_ticket: this session belongs to an earlier delivery; start a new session");
         if (other) {
           const held = ctx.items.get(projectId, other);
           throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
         }
-        const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.branch) : null;
+        const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
+        const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.
-        const branch = existing?.branch || session?.branch || branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title);
-        if (repoId) host.store.upsertLink(projectId, { itemId: item.id, repoId, branch }, { source: "mcp", lastSeenAt: Date.now() });
-        if (session) host.attach(projectId, session.id, item.id, branch);
+        const baseBranch = branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title);
+        const branch = existing?.branch || (session?.delivery === delivery.sequence ? session.branch : "") || (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
+        if (repoId) host.store.upsertLink(projectId, { itemId: item.id, repoId, branch, delivery: delivery.sequence }, { source: "mcp", lastSeenAt: Date.now() });
+        if (session) host.attach(projectId, session.id, item.id, branch, delivery.sequence);
         if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, inv.by);
         host.notify(projectId);
         return {

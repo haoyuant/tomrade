@@ -15,8 +15,8 @@ describe("the sync matrix", () => {
     expect(decide("todo", merged, free)).toEqual([{ kind: "auto", to: "done", reason: "merged into the default branch" }]);
   });
 
-  it("waits for an active coding session before marking merged evidence done", () => {
-    expect(decide("doing", { ...merged, working: true }, free)).toEqual([]);
+  it("lets definitive merge evidence finish a ticket independently of its coding session", () => {
+    expect(decide("doing", { ...merged, working: true }, free)).toEqual([{ kind: "auto", to: "done", reason: "merged into the default branch" }]);
   });
 
   it("does nothing when the status already says as much, or when a branch has no commits yet", () => {

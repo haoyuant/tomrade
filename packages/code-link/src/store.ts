@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Db, ProjectDb } from "@tomrade/db";
+import type { Db, ProjectDb, Sqlite } from "@tomrade/db";
 import type { ItemStatus } from "@tomrade/domain";
 import { DEFAULT_BRANCH_TEMPLATE } from "./keys.js";
 import type { PrState } from "./rules.js";
@@ -98,12 +98,56 @@ ALTER TABLE plugin_code_link_repos ADD COLUMN remote_at INTEGER;
   {
     version: 4,
     up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN blocked TEXT"
-  }
+  },
+  {
+    version: 5,
+    up: (db: Sqlite) => {
+      db.exec(`
+CREATE TABLE plugin_code_link_deliveries (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  item_id       TEXT NOT NULL,
+  sequence      INTEGER NOT NULL,
+  state         TEXT NOT NULL,
+  started_at    INTEGER NOT NULL,
+  completed_at  INTEGER,
+  updated_at    INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_plugin_code_link_deliveries_sequence ON plugin_code_link_deliveries(project_id, item_id, sequence);
+CREATE UNIQUE INDEX idx_plugin_code_link_deliveries_active ON plugin_code_link_deliveries(project_id, item_id) WHERE state = 'active';
+ALTER TABLE plugin_code_link_links ADD COLUMN delivery INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE plugin_code_link_proposals ADD COLUMN delivery INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN delivery INTEGER NOT NULL DEFAULT 1;
+`);
+      db.exec(`
+INSERT INTO plugin_code_link_deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at)
+SELECT l.item_id || ':delivery:1', l.project_id, l.item_id, 1,
+       CASE
+         WHEN i.status = 'cancelled' THEN 'cancelled'
+         WHEN i.status = 'done' OR MAX(CASE WHEN l.merged_sha IS NOT NULL OR l.pr_state = 'merged' THEN 1 ELSE 0 END) = 1 THEN 'completed'
+         ELSE 'active'
+       END,
+       MIN(l.created_at),
+       CASE
+         WHEN i.status IN ('done', 'cancelled') OR MAX(CASE WHEN l.merged_sha IS NOT NULL OR l.pr_state = 'merged' THEN 1 ELSE 0 END) = 1 THEN MAX(l.updated_at)
+         ELSE NULL
+       END,
+       MAX(l.updated_at)
+FROM plugin_code_link_links l
+LEFT JOIN items i ON i.id = l.item_id
+GROUP BY l.project_id, l.item_id;
+DROP INDEX idx_plugin_code_link_links_key;
+CREATE UNIQUE INDEX idx_plugin_code_link_links_key ON plugin_code_link_links(project_id, repo_id, branch, item_id, delivery);
+`);
+    }
+  },
+  { version: 6, up: "ALTER TABLE plugin_code_link_deliveries ADD COLUMN bases_json TEXT NOT NULL DEFAULT '{}'" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
 export const TABLES = {
   plugin_code_link_links: { project: "project_id", export: { order: "id" } },
+  plugin_code_link_deliveries: { project: "project_id", export: { order: "id" } },
   plugin_code_link_repos: { project: "project_id", export: { order: "repo_id" } },
   plugin_code_link_proposals: { project: "project_id", export: { order: "id" } },
   plugin_code_link_sessions: { project: "project_id", export: false }
@@ -117,6 +161,8 @@ export interface CodeLinkView {
   projectId: string;
   itemId: string;
   repoId: string;
+  /** One-based delivery number within the ticket. */
+  delivery: number;
   /** '' when only a default-branch commit named the ticket (the branch is gone or never existed). */
   branch: string;
   headSha: string | null;
@@ -131,6 +177,21 @@ export interface CodeLinkView {
   source: LinkSource;
   lastSeenAt: number | null;
   createdAt: number;
+  updatedAt: number;
+}
+
+export type DeliveryState = "active" | "completed" | "cancelled";
+
+/** One attempt to deliver a ticket. Historical deliveries stay visible; only the active one drives status. */
+export interface DeliveryView {
+  bases: Record<string, string | null>;
+  id: string;
+  projectId: string;
+  itemId: string;
+  sequence: number;
+  state: DeliveryState;
+  startedAt: number;
+  completedAt: number | null;
   updatedAt: number;
 }
 
@@ -164,6 +225,7 @@ export interface ProposalView {
   id: string;
   projectId: string;
   itemId: string;
+  delivery: number;
   linkId: string | null;
   kind: ProposalKind;
   fromStatus: ItemStatus;
@@ -183,6 +245,7 @@ export interface SessionView {
   id: string;
   projectId: string;
   repoId: string;
+  delivery: number;
   branch: string;
   itemIds: string[];
   mode: SessionMode;
@@ -208,6 +271,7 @@ interface LinkRow {
   project_id: string;
   item_id: string;
   repo_id: string;
+  delivery: number;
   branch: string;
   head_sha: string | null;
   head_at: number | null;
@@ -221,6 +285,18 @@ interface LinkRow {
   source: string;
   last_seen_at: number | null;
   created_at: number;
+  updated_at: number;
+}
+
+interface DeliveryRow {
+  bases_json: string;
+  id: string;
+  project_id: string;
+  item_id: string;
+  sequence: number;
+  state: string;
+  started_at: number;
+  completed_at: number | null;
   updated_at: number;
 }
 
@@ -247,6 +323,7 @@ interface ProposalRow {
   id: string;
   project_id: string;
   item_id: string;
+  delivery: number;
   link_id: string | null;
   kind: string;
   from_status: string;
@@ -262,6 +339,7 @@ interface SessionRow {
   id: string;
   project_id: string;
   repo_id: string;
+  delivery: number;
   branch: string;
   item_ids_json: string;
   mode: string;
@@ -285,6 +363,7 @@ const toLink = (r: LinkRow): CodeLinkView => ({
   projectId: r.project_id,
   itemId: r.item_id,
   repoId: r.repo_id,
+  delivery: r.delivery,
   branch: r.branch,
   headSha: r.head_sha,
   headAt: r.head_at,
@@ -298,6 +377,18 @@ const toLink = (r: LinkRow): CodeLinkView => ({
   source: r.source as LinkSource,
   lastSeenAt: r.last_seen_at,
   createdAt: r.created_at,
+  updatedAt: r.updated_at
+});
+
+const toDelivery = (r: DeliveryRow): DeliveryView => ({
+  bases: JSON.parse(r.bases_json ?? "{}"),
+  id: r.id,
+  projectId: r.project_id,
+  itemId: r.item_id,
+  sequence: r.sequence,
+  state: r.state as DeliveryState,
+  startedAt: r.started_at,
+  completedAt: r.completed_at,
   updatedAt: r.updated_at
 });
 
@@ -324,6 +415,7 @@ const toProposal = (r: ProposalRow): ProposalView => ({
   id: r.id,
   projectId: r.project_id,
   itemId: r.item_id,
+  delivery: r.delivery,
   linkId: r.link_id,
   kind: r.kind as ProposalKind,
   fromStatus: r.from_status as ItemStatus,
@@ -339,6 +431,7 @@ const toSession = (r: SessionRow): SessionView => ({
   id: r.id,
   projectId: r.project_id,
   repoId: r.repo_id,
+  delivery: r.delivery,
   branch: r.branch,
   itemIds: JSON.parse(r.item_ids_json) as string[],
   mode: r.mode as SessionMode,
@@ -388,6 +481,7 @@ export interface RepoStatePatch {
 }
 
 export interface SessionPatch {
+  delivery?: number;
   branch?: string;
   itemIds?: string[];
   externalId?: string | null;
@@ -410,18 +504,91 @@ export class CodeLinkStore {
     return this.pool.for(projectId);
   }
 
+  // ── deliveries ─────────────────────────────────────────────────────────────
+
+  deliveries(projectId: string, itemId?: string): DeliveryView[] {
+    const rows = itemId
+      ? (this.db(projectId).prepare("SELECT * FROM plugin_code_link_deliveries WHERE project_id = ? AND item_id = ? ORDER BY sequence ASC").all(projectId, itemId) as DeliveryRow[])
+      : (this.db(projectId).prepare("SELECT * FROM plugin_code_link_deliveries WHERE project_id = ? ORDER BY item_id, sequence ASC").all(projectId) as DeliveryRow[]);
+    return rows.map(toDelivery);
+  }
+
+  activeDelivery(projectId: string, itemId: string): DeliveryView | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_code_link_deliveries WHERE project_id = ? AND item_id = ? AND state = 'active'").get(projectId, itemId) as DeliveryRow | undefined;
+    return row ? toDelivery(row) : null;
+  }
+
+  currentDelivery(projectId: string, itemId: string): DeliveryView | null {
+    return this.activeDelivery(projectId, itemId) ?? this.deliveries(projectId, itemId).at(-1) ?? null;
+  }
+
+  ensureActiveDelivery(projectId: string, itemId: string, at = Date.now()): DeliveryView {
+    const active = this.activeDelivery(projectId, itemId);
+    if (active) return active;
+    const previous = this.deliveries(projectId, itemId).at(-1);
+    const sequence = (previous?.sequence ?? 0) + 1;
+    const id = `${itemId}:delivery:${sequence}`;
+    this.db(projectId)
+      .prepare("INSERT INTO plugin_code_link_deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, bases_json) VALUES (?, ?, ?, ?, 'active', ?, NULL, ?, ?)")
+      .run(id, projectId, itemId, sequence, at, at, JSON.stringify(Object.fromEntries(this.repoStates(projectId).map((repo) => [repo.repoId, repo.defaultSha]))));
+    return this.activeDelivery(projectId, itemId)!;
+  }
+
+  finishActiveDelivery(projectId: string, itemId: string, state: Exclude<DeliveryState, "active">, at = Date.now()): DeliveryView | null {
+    const active = this.activeDelivery(projectId, itemId);
+    if (!active) return null;
+    this.db(projectId).prepare("UPDATE plugin_code_link_deliveries SET state = ?, completed_at = ?, updated_at = ? WHERE id = ?").run(state, at, at, active.id);
+    return this.deliveries(projectId, itemId).find((delivery) => delivery.id === active.id) ?? null;
+  }
+
+  /** Restore delivery rows when an older exported artifact carried only links. */
+  repairLegacyDeliveries(projectId: string): void {
+    const rows = this.db(projectId)
+      .prepare(
+        `SELECT DISTINCT l.item_id, l.delivery
+         FROM plugin_code_link_links l
+         LEFT JOIN plugin_code_link_deliveries d
+           ON d.project_id = l.project_id AND d.item_id = l.item_id AND d.sequence = l.delivery
+         WHERE l.project_id = ? AND d.id IS NULL`
+      )
+      .all(projectId) as { item_id: string; delivery: number }[];
+    for (const { item_id: itemId, delivery } of rows) {
+      const aggregate = this.db(projectId)
+        .prepare(
+          `SELECT MIN(l.created_at) AS started_at, MAX(l.updated_at) AS updated_at,
+                  MAX(CASE WHEN l.merged_sha IS NOT NULL OR l.pr_state = 'merged' THEN 1 ELSE 0 END) AS merged,
+                  i.status AS status
+           FROM plugin_code_link_links l LEFT JOIN items i ON i.id = l.item_id
+           WHERE l.project_id = ? AND l.item_id = ? AND l.delivery = ?`
+        )
+        .get(projectId, itemId, delivery) as { started_at: number; updated_at: number; merged: number; status: ItemStatus | null };
+      const state: DeliveryState = aggregate.status === "cancelled" ? "cancelled" : aggregate.status === "done" || aggregate.merged || this.activeDelivery(projectId, itemId) ? "completed" : "active";
+      const id = `${itemId}:delivery:${delivery}`;
+      this.db(projectId)
+        .prepare("INSERT OR IGNORE INTO plugin_code_link_deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, projectId, itemId, delivery, state, aggregate.started_at, state === "active" ? null : aggregate.updated_at, aggregate.updated_at);
+    }
+    const items = this.db(projectId).prepare("SELECT id, status, updated_at FROM items WHERE project_id = ?").all(projectId) as { id: string; status: ItemStatus; updated_at: number }[];
+    for (const item of items) {
+      const current = this.currentDelivery(projectId, item.id);
+      if (!current) continue;
+      if (item.status !== "done" && item.status !== "cancelled" && current.state !== "active") this.ensureActiveDelivery(projectId, item.id, item.updated_at);
+      if (item.status === "cancelled") this.finishActiveDelivery(projectId, item.id, "cancelled", item.updated_at);
+    }
+  }
+
   // ── links ──────────────────────────────────────────────────────────────────
 
   links(projectId: string, itemId?: string): CodeLinkView[] {
     const db = this.db(projectId);
     const rows = itemId
-      ? (db.prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND item_id = ? ORDER BY created_at ASC").all(projectId, itemId) as LinkRow[])
-      : (db.prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? ORDER BY created_at ASC").all(projectId) as LinkRow[]);
+      ? (db.prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND item_id = ? ORDER BY delivery ASC, created_at ASC").all(projectId, itemId) as LinkRow[])
+      : (db.prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? ORDER BY item_id, delivery ASC, created_at ASC").all(projectId) as LinkRow[]);
     return rows.map(toLink);
   }
 
   linksForRepo(projectId: string, repoId: string): CodeLinkView[] {
-    return (this.db(projectId).prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND repo_id = ? ORDER BY created_at ASC").all(projectId, repoId) as LinkRow[]).map(toLink);
+    return (this.db(projectId).prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND repo_id = ? ORDER BY delivery ASC, created_at ASC").all(projectId, repoId) as LinkRow[]).map(toLink);
   }
 
   link(projectId: string, id: string): CodeLinkView | null {
@@ -430,11 +597,12 @@ export class CodeLinkStore {
   }
 
   /** One row per (repo, branch, item). A field left undefined in the patch keeps what the row had. */
-  upsertLink(projectId: string, key: { itemId: string; repoId: string; branch: string }, patch: LinkPatch): CodeLinkView {
+  upsertLink(projectId: string, key: { itemId: string; repoId: string; branch: string; delivery?: number }, patch: LinkPatch): CodeLinkView {
     const db = this.db(projectId);
+    const delivery = key.delivery ?? this.ensureActiveDelivery(projectId, key.itemId).sequence;
     const existing = db
-      .prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND repo_id = ? AND branch = ? AND item_id = ?")
-      .get(projectId, key.repoId, key.branch, key.itemId) as LinkRow | undefined;
+      .prepare("SELECT * FROM plugin_code_link_links WHERE project_id = ? AND repo_id = ? AND branch = ? AND item_id = ? AND delivery = ?")
+      .get(projectId, key.repoId, key.branch, key.itemId, delivery) as LinkRow | undefined;
     const now = Date.now();
     if (existing) {
       this.applyLinkPatch(db, existing.id, patch, now);
@@ -442,13 +610,14 @@ export class CodeLinkStore {
     }
     const id = randomUUID();
     db.prepare(
-      `INSERT INTO plugin_code_link_links (id, project_id, item_id, repo_id, branch, head_sha, head_at, ahead, behind, merged_sha, pr_number, pr_url, pr_state, thread_id, source, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO plugin_code_link_links (id, project_id, item_id, repo_id, delivery, branch, head_sha, head_at, ahead, behind, merged_sha, pr_number, pr_url, pr_state, thread_id, source, last_seen_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       projectId,
       key.itemId,
       key.repoId,
+      delivery,
       key.branch,
       patch.headSha ?? null,
       patch.headAt ?? null,
@@ -586,31 +755,35 @@ export class CodeLinkStore {
     return row ? toProposal(row) : null;
   }
 
+  proposalsForDelivery(projectId: string, itemId: string, delivery: number, state: ProposalState | "any" = "open"): ProposalView[] {
+    return this.proposals(projectId, itemId, state).filter((proposal) => proposal.delivery === delivery);
+  }
+
   /**
    * Whether the same proposal is already standing, or was rejected against the
    * very same evidence — the second case is what keeps a "no" from being asked
    * again every scan until something actually changes.
    */
-  hasRecentProposal(projectId: string, itemId: string, kind: ProposalKind, toStatus: ItemStatus | null, reason: string, evidenceSha: string | null): boolean {
+  hasRecentProposal(projectId: string, itemId: string, delivery: number, kind: ProposalKind, toStatus: ItemStatus | null, reason: string, evidenceSha: string | null): boolean {
     const row = this.db(projectId)
       .prepare(
         `SELECT 1 FROM plugin_code_link_proposals
-         WHERE item_id = ? AND kind = ? AND to_status IS ? AND reason = ?
+         WHERE item_id = ? AND delivery = ? AND kind = ? AND to_status IS ? AND reason = ?
            AND (state = 'open' OR (state = 'rejected' AND evidence_sha IS ?))
          LIMIT 1`
       )
-      .get(itemId, kind, toStatus, reason, evidenceSha);
+      .get(itemId, delivery, kind, toStatus, reason, evidenceSha);
     return !!row;
   }
 
-  addProposal(projectId: string, input: { itemId: string; linkId: string | null; kind: ProposalKind; fromStatus: ItemStatus; toStatus: ItemStatus | null; reason: string; evidenceSha: string | null }): ProposalView {
+  addProposal(projectId: string, input: { itemId: string; delivery: number; linkId: string | null; kind: ProposalKind; fromStatus: ItemStatus; toStatus: ItemStatus | null; reason: string; evidenceSha: string | null }): ProposalView {
     const id = randomUUID();
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_proposals (id, project_id, item_id, link_id, kind, from_status, to_status, reason, evidence_sha, state, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`
+        `INSERT INTO plugin_code_link_proposals (id, project_id, item_id, delivery, link_id, kind, from_status, to_status, reason, evidence_sha, state, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`
       )
-      .run(id, projectId, input.itemId, input.linkId, input.kind, input.fromStatus, input.toStatus, input.reason, input.evidenceSha, Date.now());
+      .run(id, projectId, input.itemId, input.delivery, input.linkId, input.kind, input.fromStatus, input.toStatus, input.reason, input.evidenceSha, Date.now());
     return this.proposal(projectId, id)!;
   }
 
@@ -621,9 +794,9 @@ export class CodeLinkStore {
 
   // ── sessions ───────────────────────────────────────────────────────────────
 
-  sessions(projectId: string, filter: { itemId?: string; live?: boolean } = {}): SessionView[] {
+  sessions(projectId: string, filter: { itemId?: string; delivery?: number; live?: boolean } = {}): SessionView[] {
     const rows = (this.db(projectId).prepare("SELECT * FROM plugin_code_link_sessions WHERE project_id = ? ORDER BY started_at DESC").all(projectId) as SessionRow[]).map(toSession);
-    return rows.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.live ? s.state !== "ended" : true));
+    return rows.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.delivery !== undefined ? s.delivery === filter.delivery : true) && (filter.live ? s.state !== "ended" : true));
   }
 
   session(projectId: string, id: string): SessionView | null {
@@ -631,20 +804,21 @@ export class CodeLinkStore {
     return row ? toSession(row) : null;
   }
 
-  createSession(projectId: string, input: { id?: string; repoId: string; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null }): SessionView {
+  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null }): SessionView {
     const id = input.id ?? randomUUID();
     const now = Date.now();
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, branch, item_ids_json, mode, agent, external_id, thread_id, state, last_event_at, device, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, state, last_event_at, device, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
-      .run(id, projectId, input.repoId, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, now, input.device, now);
+      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, now, input.device, now);
     return this.session(projectId, id)!;
   }
 
   patchSession(projectId: string, id: string, patch: SessionPatch): SessionView {
     const columns: Record<keyof SessionPatch, string> = {
+      delivery: "delivery",
       branch: "branch",
       itemIds: "item_ids_json",
       externalId: "external_id",
