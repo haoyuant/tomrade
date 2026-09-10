@@ -7,7 +7,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useCancelRun, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
@@ -280,6 +280,8 @@ export function AgentPanel({
   const detail = useAgentThread(projectId, threadId);
   const engines = useEngines();
   const newThread = useNewThread(projectId);
+  const archiveThread = useArchiveThread(projectId);
+  const deleteThread = useDeleteThread(projectId);
   const setEngine = useSetEngine(projectId);
   const setPermissionMode = useSetPermissionMode(projectId);
   const send = useSend(projectId);
@@ -417,6 +419,15 @@ export function AgentPanel({
     answer.mutate({ threadId, questionId, value });
   };
 
+  const archiveThreadById = (id: string) => {
+    if (busy) return;
+    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) setChosenThread(null); } });
+  };
+  const deleteThreadById = (id: string) => {
+    if (busy || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
+    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) setChosenThread(null); } });
+  };
+
   if (!open) {
     return (
       <div className="rail ai-rail">
@@ -443,15 +454,39 @@ export function AgentPanel({
             </button>
           }
         >
-          <MenuHead title={t("agentPanel.threadsLabel")} />
-          {(threads.data ?? []).slice(0, 12).map((th) => (
-            <MenuRadioItem key={th.id} checked={th.id === threadId} name={th.title || t("agentPanel.newThread")} sub={timeAgo(th.updatedAt)} onSelect={() => pickThread(th.id)} />
-          ))}
-          <MenuActionItem
-            icon={<Icon name="i-plus" size={13} />}
-            name={t("agentPanel.newThread")}
-            onSelect={() => void newThread.mutateAsync({ boardId }).then((th) => pickThread(th.id))}
+          <MenuHead
+            title={t("agentPanel.threadsLabel")}
+            aside={
+              <button
+                type="button"
+                className="btn btn-icon"
+                title={t("agentPanel.newThread")}
+                aria-label={t("agentPanel.newThread")}
+                onClick={() => void newThread.mutateAsync({ boardId }).then((th) => pickThread(th.id))}
+              >
+                <Icon name="i-plus" size={13} />
+              </button>
+            }
           />
+          {(threads.data ?? []).slice(0, 12).map((th) => (
+            <MenuRadioItem
+              key={th.id}
+              checked={th.id === threadId}
+              name={th.title || t("agentPanel.newThread")}
+              sub={timeAgo(th.updatedAt)}
+              onSelect={() => pickThread(th.id)}
+              actions={
+                <>
+                  <button type="button" className="btn btn-icon" title={t("agentPanel.archiveThread")} aria-label={t("agentPanel.archiveThread")} onClick={() => archiveThreadById(th.id)}>
+                    <Icon name="i-archive" size={12} />
+                  </button>
+                  <button type="button" className="btn btn-icon" title={t("agentPanel.deleteThread")} aria-label={t("agentPanel.deleteThread")} onClick={() => deleteThreadById(th.id)}>
+                    <Icon name="i-trash" size={12} />
+                  </button>
+                </>
+              }
+            />
+          ))}
         </Menu>
         <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} />

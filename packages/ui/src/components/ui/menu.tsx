@@ -90,7 +90,8 @@ export function MenuRadioItem({
   mark,
   name,
   sub,
-  count
+  count,
+  actions
 }: {
   checked: boolean;
   onSelect: () => void;
@@ -98,6 +99,7 @@ export function MenuRadioItem({
   name: string;
   sub?: string;
   count?: number;
+  actions?: ReactNode;
 }) {
   return (
     <RadixMenu.Item className="menu-row is-radio" role="menuitemradio" aria-checked={checked} onSelect={onSelect}>
@@ -112,6 +114,7 @@ export function MenuRadioItem({
         <span className="m-name">{name}</span>
       )}
       {count !== undefined && <span className="m-count">{count}</span>}
+      {actions && <span className="m-actions" onClick={(event) => event.stopPropagation()}>{actions}</span>}
     </RadixMenu.Item>
   );
 }

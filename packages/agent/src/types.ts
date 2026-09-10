@@ -54,6 +54,7 @@ export interface ThreadSummary {
   /** Which product surface owns the thread. Code sessions use Agent's worktree machinery without becoming Assistant conversations. */
   surface: ThreadSurface;
   permissionMode?: string | null;
+  archived: boolean;
   createdAt: number;
   updatedAt: number;
 }

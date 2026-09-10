@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
     up: "ALTER TABLE plugin_agent_threads ADD COLUMN surface TEXT NOT NULL DEFAULT 'assistant'"
   },
   { version: 5, up: "ALTER TABLE plugin_agent_threads ADD COLUMN permission_mode TEXT" },
-  { version: 6, up: "ALTER TABLE plugin_agent_runs ADD COLUMN metrics_json TEXT" }
+  { version: 6, up: "ALTER TABLE plugin_agent_runs ADD COLUMN metrics_json TEXT" },
+  { version: 7, up: "ALTER TABLE plugin_agent_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0" }
 ];
 
 interface ThreadRow {
@@ -115,6 +116,7 @@ interface ThreadRow {
   engine: string;
   surface: string;
   permission_mode: string | null;
+  archived: number;
   external_json: string;
   waivers_json: string;
   created_at: number;
@@ -167,6 +169,7 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   engine: r.engine,
   surface: r.surface === "code" ? "code" : "assistant",
   permissionMode: r.permission_mode,
+  archived: r.archived === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at
 });
@@ -214,9 +217,24 @@ export class AgentStore {
 
   threads(projectId: string, surface: ThreadSurface | null = "assistant"): ThreadSummary[] {
     const rows = surface
-      ? (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface = ? ORDER BY updated_at DESC").all(projectId, surface) as ThreadRow[])
-      : (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? ORDER BY updated_at DESC").all(projectId) as ThreadRow[]);
+      ? (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface = ? AND archived = 0 ORDER BY updated_at DESC").all(projectId, surface) as ThreadRow[])
+      : (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND archived = 0 ORDER BY updated_at DESC").all(projectId) as ThreadRow[]);
     return rows.map(toThread);
+  }
+
+  setArchived(projectId: string, id: string, archived: boolean): void {
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET archived = ?, updated_at = ? WHERE id = ?").run(archived ? 1 : 0, Date.now(), id);
+  }
+
+  deleteThread(projectId: string, id: string): void {
+    const db = this.db(projectId);
+    const runIds = (db.prepare("SELECT id FROM plugin_agent_runs WHERE thread_id = ?").all(id) as { id: string }[]).map((r) => r.id);
+    for (const runId of runIds) db.prepare("DELETE FROM plugin_agent_ledger WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM plugin_agent_messages WHERE thread_id = ?").run(id);
+    db.prepare("DELETE FROM plugin_agent_runs WHERE thread_id = ?").run(id);
+    db.prepare("DELETE FROM plugin_agent_cards WHERE thread_id = ?").run(id);
+    db.prepare("DELETE FROM plugin_agent_pending WHERE thread_id = ?").run(id);
+    db.prepare("DELETE FROM plugin_agent_threads WHERE id = ?").run(id);
   }
 
   thread(projectId: string, id: string): ThreadSummary | null {
