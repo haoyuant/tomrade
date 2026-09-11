@@ -74,8 +74,8 @@ export interface UserSettingsStore {
 const THEME: SettingsSection<AppSettings["theme"]> = {
   id: "theme",
   title: "Appearance",
-  schema: z.enum(["system", "light", "dark", "matcha"]),
-  defaults: "system",
+  schema: z.string().refine(v => ["system", "light", "dark", "matcha"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)) as z.ZodType<AppSettings["theme"]>,
+  defaults: "light",
   order: 0,
   scope: "user"
 };
@@ -87,6 +87,29 @@ const LANGUAGE: SettingsSection<AppSettings["language"]> = {
   defaults: "system",
   order: 1,
   scope: "user"
+};
+
+const CSS_VALUE = z.string().min(1).max(256).refine(v => !/[{};]/.test(v), "Invalid CSS token value");
+const THEME_TOKEN_KEYS = ["bg", "surface", "surface-warm", "fg", "fg-2", "muted", "meta", "border", "border-soft", "accent", "accent-on", "accent-light", "accent-active", "success", "warn", "danger", "tag-bg-faint", "tag-bg-soft", "tag-bg-base", "tag-bg-strong", "tag-fg"] as const;
+const THEME_FONT_KEYS = ["font-display", "font-body", "font-mono", "text-xs", "text-sm", "text-base", "text-md", "text-lg", "text-xl", "text-2xl", "font-weight-regular", "font-weight-medium"] as const;
+const valuesOf = <T extends readonly string[]>(keys: T) => z.object(Object.fromEntries(keys.map(key => [key, CSS_VALUE])) as Record<T[number], typeof CSS_VALUE>);
+const CUSTOM_THEMES: SettingsSection<unknown[]> = {
+  id: "customThemes", title: "Custom themes", description: "Hub-synchronized custom colours and fonts.",
+  schema: z.array(z.object({
+    id: z.string().regex(/^custom:[a-z0-9-]+$/), name: z.string().trim().min(1).max(64),
+    base: z.enum(["light", "dark", "matcha"]), icon: z.enum(["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"]).default("i-sliders"), tokens: valuesOf(THEME_TOKEN_KEYS), fonts: valuesOf(THEME_FONT_KEYS).partial()
+  })).max(32),
+  defaults: [], order: 0.5, scope: "user"
+};
+const THEME_AUTOMATION: SettingsSection<unknown> = {
+  id: "themeAutomation", title: "Theme automation", description: "Automatic theme switching.", scope: "user", order: 0.25,
+  schema: z.object({
+    mode: z.enum(["none", "system", "schedule", "shuffle"]),
+    defaultTheme: z.string().refine(v => ["light", "dark", "matcha"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)),
+    schedule: z.array(z.object({ start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default("23:59"), theme: z.string().refine(v => ["light", "dark", "matcha"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)) }).refine(rule => rule.start !== rule.end, "A time range needs different start and end times.")).max(24),
+    shuffleMinutes: z.number().int().min(1).max(10080)
+  }),
+  defaults: { mode: "none", defaultTheme: "light", schedule: [], shuffleMinutes: 60 }
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -172,6 +195,8 @@ export class Settings extends Service {
     const raw = readJson(this.config.path);
     if (isRecord(raw)) this.stored = raw;
     this.register(THEME);
+    this.register(THEME_AUTOMATION);
+    this.register(CUSTOM_THEMES);
     this.register(LANGUAGE);
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());

@@ -226,7 +226,33 @@ export interface CreateViewInput {
 
 export type ViewPatch = Partial<Pick<View, "name" | "icon" | "layout" | "query" | "rank">>;
 
-export type ThemePreference = "system" | "light" | "dark" | "matcha";
+export type BuiltInTheme = "light" | "dark" | "matcha";
+export type ThemePreference = "system" | BuiltInTheme | `custom:${string}`;
+
+export const THEME_TOKEN_NAMES = ["bg", "surface", "surface-warm", "fg", "fg-2", "muted", "meta", "border", "border-soft", "accent", "accent-on", "accent-light", "accent-active", "success", "warn", "danger", "tag-bg-faint", "tag-bg-soft", "tag-bg-base", "tag-bg-strong", "tag-fg"] as const;
+export type ThemeTokenName = (typeof THEME_TOKEN_NAMES)[number];
+export const THEME_FONT_NAMES = ["font-display", "font-body", "font-mono"] as const;
+export type ThemeFontName = (typeof THEME_FONT_NAMES)[number];
+export const THEME_FONT_SIZE_NAMES = ["text-xs", "text-sm", "text-base", "text-md", "text-lg", "text-xl", "text-2xl"] as const;
+export const THEME_FONT_WEIGHT_NAMES = ["font-weight-regular", "font-weight-medium"] as const;
+export const THEME_TYPOGRAPHY_NAMES = [...THEME_FONT_NAMES, ...THEME_FONT_SIZE_NAMES, ...THEME_FONT_WEIGHT_NAMES] as const;
+export type ThemeTypographyName = (typeof THEME_TYPOGRAPHY_NAMES)[number];
+export interface CustomTheme {
+  id: `custom:${string}`;
+  name: string;
+  base: BuiltInTheme;
+  icon: "i-sun" | "i-moon" | "i-leaf" | "i-tag" | "i-bug" | "i-board" | "i-stack" | "i-sliders";
+  tokens: Record<ThemeTokenName, string>;
+  fonts: Record<ThemeTypographyName, string>;
+}
+export type ThemeAutomationMode = "none" | "system" | "schedule" | "shuffle";
+export interface ThemeScheduleRule { start: string; end: string; theme: Exclude<ThemePreference, "system">; }
+export interface ThemeAutomation {
+  mode: ThemeAutomationMode;
+  defaultTheme: Exclude<ThemePreference, "system">;
+  schedule: ThemeScheduleRule[];
+  shuffleMinutes: number;
+}
 
 /** 'system' follows the OS locale, falling back to English when that locale isn't supported. */
 export type LanguagePreference = "system" | "en" | "zh";
@@ -244,4 +270,3 @@ export interface AppSettings {
   llm?: LlmSettings;
   [section: string]: unknown;
 }
-

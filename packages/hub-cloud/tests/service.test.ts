@@ -8,6 +8,7 @@ import { Storage, readArtifact, readHubManifest } from "@tomrade/storage";
 import Settings from "@tomrade/settings";
 import { CloudHub } from "../src/service.js";
 import type { CloudRecord, Mutation } from "../src/cache.js";
+import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@tomrade/domain";
 
 const remote = vi.hoisted(() => ({
   offline: false, loseReply: false, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", hubId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -92,6 +93,17 @@ it("migrates only portable metadata, preserves legacy files, and continues the p
   ctx.settings.set({ ...ctx.settings.get(), theme: "matcha" });
   await cloud.sync();
   expect(remote.records.get("preference:settings")?.value).toMatchObject({ sections: { theme: { value: "matcha" } } });
+  const custom = {
+    id: "custom:test-theme", name: "Test theme", base: "dark",
+    tokens: Object.fromEntries(THEME_TOKEN_NAMES.map(name => [name, "#123456"])),
+    fonts: Object.fromEntries(THEME_TYPOGRAPHY_NAMES.map(name => [name, "Test Font"]))
+  } as CustomTheme;
+  ctx.settings.set({ ...ctx.settings.get(), theme: custom.id, customThemes: [custom], themeAutomation: { mode: "schedule", defaultTheme: "light", schedule: [{ start: "18:00", end: "23:00", theme: custom.id }], shuffleMinutes: 30 } });
+  await cloud.sync();
+  expect(remote.records.get("preference:settings")?.value).toMatchObject({ sections: {
+    theme: { value: custom.id }, customThemes: { value: [{ name: "Test theme", tokens: { accent: "#123456" }, fonts: { "font-body": "Test Font" } }] },
+    themeAutomation: { value: { mode: "schedule", schedule: [{ start: "18:00", end: "23:00", theme: custom.id }] } }
+  } });
   expect(JSON.parse(fs.readFileSync(path.join(hubDir, "settings.json"), "utf8")).sections.theme.value).toBe("dark");
 });
 

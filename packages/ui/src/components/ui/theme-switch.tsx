@@ -1,17 +1,18 @@
 import { Icon } from "~/components/icons";
+import type { ReactNode } from "react";
 import { useI18n } from "~/lib/i18n";
-import { THEME_OPTIONS, useTheme } from "~/lib/theme";
+import { BUILT_IN_THEME_OPTIONS, useTheme } from "~/lib/theme";
 
 /**
  * The switcher reports the *preference*, so System stays selectable rather
  * than collapsing into whichever theme it resolved to.
  */
-export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
-  const { preference, setPreference } = useTheme();
+export function ThemeSwitch({ compact = false, selectedEditor }: { compact?: boolean; selectedEditor?: ReactNode }) {
+  const { preference, customThemes, setPreference } = useTheme();
   const { t } = useI18n();
   return (
     <div className="theme-switch" role="group" aria-label={t("theme.ariaLabel")}>
-      {THEME_OPTIONS.map((opt) => {
+      {BUILT_IN_THEME_OPTIONS.map((opt) => {
         const label = t(opt.labelKey);
         return (
           <button
@@ -28,6 +29,14 @@ export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
           </button>
         );
       })}
+      {customThemes.map(theme => <span className="theme-option" key={theme.id}>
+        <button type="button" className="theme-seg" aria-pressed={preference === theme.id}
+          aria-label={theme.name} title={theme.name} onClick={() => setPreference(theme.id)}>
+          <Icon name={theme.icon ?? "i-sliders"} size={13} />
+          {!compact && theme.name}
+        </button>
+        {preference === theme.id && selectedEditor}
+      </span>)}
     </div>
   );
 }
