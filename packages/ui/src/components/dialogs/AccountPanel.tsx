@@ -4,6 +4,7 @@ import { useAccount } from "~/lib/account";
 import { invoke } from "~/lib/api";
 import { useHubInfo } from "~/lib/queries";
 import { useI18n } from "~/lib/i18n";
+import { AccountSunrise } from "./AccountSunrise";
 
 const copy = {
   en: { title: "Tomrade account", intro: "Your account synchronizes the Hub catalog and preferences. Project content stays in your project folders.", email: "Email", password: "Password", signIn: "Sign in", signUp: "Create account", signOut: "Sign out", sync: "Sync Hub", busy: "Working…", confirmation: "Check your email to confirm your account, then sign in here.", pending: "Pending changes", local: "Keep local", cloud: "Use cloud", conflict: "Choose which version of this Hub record to keep", loading: "Loading account…", retry: "Retry" },
@@ -69,6 +70,15 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const hub = useHubInfo();
   const account = useAccount();
   if (hub.isPending) return null;
-  if (hub.data?.cloudEnabled && !account.data?.user && !account.data?.offlineAccess) return <main className="sheet"><div className="wrap" style={{ maxWidth: 640, paddingTop: "var(--space-6)" }}><AccountPanel /></div></main>;
+  if (hub.data?.cloudEnabled && !account.data?.user && !account.data?.offlineAccess) return <main className="sheet account-gate">
+    <AccountSunrise />
+    <div className="account-gate__content">
+      <header className="account-gate__brand">
+        <h1>TOMRADE</h1>
+        <p>一起，向前 <span aria-hidden="true">✦</span> FORWARD, TOGETHER</p>
+      </header>
+      <div className="account-gate__form"><AccountPanel /></div>
+    </div>
+  </main>;
   return children;
 }
