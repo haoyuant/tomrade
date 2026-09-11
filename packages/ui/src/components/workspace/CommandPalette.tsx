@@ -75,7 +75,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     { label: t("commandPalette.settings"), kb: "⌘,", run: actions.openSettings },
     { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
     { label: t("commandPalette.projectSettings"), kb: undefined, run: actions.openProjectSettings },
-    ...THEME_OPTIONS.filter((opt) => opt.value !== "system").map((opt) => ({
+    ...THEME_OPTIONS.map((opt) => ({
       label: t("commandPalette.themeAction", { label: t(opt.labelKey) }),
       kb: undefined,
       run: () => setPreference(opt.value)
