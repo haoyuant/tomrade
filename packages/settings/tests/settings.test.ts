@@ -15,16 +15,31 @@ describe("settings", () => {
   it("returns defaults for registered sections and persists what is set", async () => {
     const p = file();
     const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
-    expect(ctx.settings.get().theme).toBe("light");
+    expect(ctx.settings.get().theme).toBe("dawn");
     expect(ctx.settings.get().language).toBe("system");
+    expect(ctx.settings.get().themeAutomation.defaultTheme).toBe("dawn");
     const changes: string[] = [];
     ctx.on("settings/changed", (next, previous) => changes.push(`${previous.theme}->${next.theme}`));
     ctx.settings.set({ ...ctx.settings.get(), theme: "dark" });
-    expect(changes).toEqual(["light->dark"]);
+    expect(changes).toEqual(["dawn->dark"]);
     expect(JSON.parse(fs.readFileSync(p, "utf8")).theme).toBe("dark");
 
     const reopened = await fresh({ plugins: [[Settings, { path: p }]] });
     expect(reopened.ctx.settings.get().theme).toBe("dark");
+  });
+
+  it("persists Dawn as a selected theme and in automatic schedules", async () => {
+    const p = file();
+    const { ctx } = await fresh({ plugins: [[Settings, { path: p }]] });
+    ctx.settings.set({ ...ctx.settings.get(), theme: "dawn", themeAutomation: {
+      mode: "schedule", defaultTheme: "dawn", shuffleMinutes: 60,
+      schedule: [{ start: "08:00", end: "18:00", theme: "dawn" }]
+    } });
+    const reopened = await fresh({ plugins: [[Settings, { path: p }]] });
+    expect(reopened.ctx.settings.get().theme).toBe("dawn");
+    expect(reopened.ctx.settings.get().themeAutomation).toMatchObject({
+      defaultTheme: "dawn", schedule: [{ theme: "dawn" }]
+    });
   });
 
   it("a plugin section gets defaults under stored values, validation, and a JSON-schema card", async () => {

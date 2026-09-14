@@ -4,7 +4,7 @@
  * Tomrade — "The Ledger" · kami (紙 / 纸) bound to a desktop app shell.
  *
  * Single source of truth for the three themes. Tokens are declared once
- * here (:root / .dark / .matcha); every component consumes var(--*).
+ * here (:root / .dark / .matcha / .dawn); every component consumes var(--*).
  * No raw hex exists outside the token blocks.
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -184,6 +184,34 @@ html[data-traffic-lights="on"] {
   --tag-fg: oklch(0.87 0.11 133);
 
   --elev-raised: 0 4px 24px rgba(0, 0, 0, 0.30);
+  --focus-ring: 0 0 0 2px var(--accent-active);
+}
+
+/* Dawn — the entrance poster's warm paper, vermilion and brown ink. */
+.dawn {
+  --bg: #f4ead7;
+  --surface: #faf3e6;
+  --surface-warm: #eaddc5;
+  --fg: #532f27;
+  --fg-2: #634437;
+  --muted: #795c4c;
+  --meta: #795c4c;
+  --border: #c7ad91;
+  --border-soft: #dfcdb3;
+  --accent: #9c392c;
+  --accent-on: #f4ead7;
+  --accent-light: #af4936;
+  --accent-hover: var(--accent);
+  --accent-active: #762a22;
+  --success: #4d653b;
+  --warn: #805d1d;
+  --danger: #9b302b;
+  --tag-bg-faint: #f3e6d6;
+  --tag-bg-soft: #eedbca;
+  --tag-bg-base: #e7cbb8;
+  --tag-bg-strong: #dfbda7;
+  --tag-fg: #762a22;
+  --elev-raised: 0 4px 24px rgba(83, 47, 39, 0.09);
   --focus-ring: 0 0 0 2px var(--accent-active);
 }
 

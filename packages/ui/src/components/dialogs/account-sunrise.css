@@ -1,0 +1,112 @@
+/* The entrance is one continuous printed scene, including its form.
+   Scoped tokens keep it coherent with Ink and custom workspace themes. */
+.account-gate {
+  --poster-paper: #f4ead7;
+  --poster-red: #9c392c;
+  --poster-ink: #532f27;
+  --poster-muted: #795c4c;
+  --poster-horizon: clamp(280px, 50vh, 620px);
+  --fg: var(--poster-ink);
+  --fg-2: var(--poster-ink);
+  --muted: var(--poster-muted);
+  --meta: var(--poster-muted);
+  --accent: var(--poster-red);
+  --accent-on: var(--poster-paper);
+  --accent-active: var(--poster-ink);
+  --surface: var(--poster-paper);
+  --surface-warm: #eaddc5;
+  --border: #c7ad91;
+  --focus-ring: 0 0 0 3px #9c392c20;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  color: var(--poster-ink);
+  color-scheme: light;
+  background: var(--poster-paper);
+}
+.account-gate::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 36px;
+  -webkit-app-region: drag;
+}
+.account-sunrise {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(ellipse 65% 46% at 50% var(--poster-horizon), #edc98950, transparent 100%);
+}
+.account-sunrise__sky { position: absolute; inset: 0 0 auto; height: var(--poster-horizon); overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
+.account-sunrise__rays {
+  position: absolute;
+  width: max(220vmax, 1600px);
+  aspect-ratio: 1;
+  left: 50%;
+  top: 100%;
+  translate: -50% -50%;
+  background: repeating-conic-gradient(from -6deg, #b2523426 0deg 9deg, transparent 9deg 22.5deg);
+  mask-image: radial-gradient(ellipse closest-side, #000 5%, #0009 28%, transparent 65%);
+  animation: account-rays-reveal 2.8s ease-out both;
+}
+.account-sunrise__sun {
+  position: absolute;
+  width: clamp(200px, 29vh, 290px);
+  aspect-ratio: 1;
+  bottom: -9px;
+  left: 50%;
+  translate: -50% 0;
+  /* The original cutout is printed directly onto the sky. */
+  mix-blend-mode: multiply;
+  mask-image: linear-gradient(#000 72%, transparent 100%);
+  animation: account-sun-rise 1.9s cubic-bezier(.16,.65,.25,1) both;
+}
+.account-sunrise__sun img { display: block; width: 100%; height: 100%; object-fit: contain; filter: sepia(1) saturate(.65); }
+.account-sunrise__sea {
+  position: absolute;
+  top: calc(var(--poster-horizon) - 23px);
+  left: -5%;
+  width: 110%;
+  height: clamp(160px, 25vh, 250px);
+  mask-image: linear-gradient(#000, transparent 90%);
+}
+.account-sunrise__wave--back { fill: #b9683820; animation: account-wave 8s ease-in-out 2 alternate; }
+.account-sunrise__wave--front { fill: #bc754416; animation: account-wave 10s ease-in-out 2 alternate-reverse; }
+.account-gate__content { position: relative; width: min(100% - 48px, 380px); margin: 0 auto; padding: calc(var(--poster-horizon) + 10px) 0 48px; }
+.account-gate__brand { text-align: center; animation: account-form-rise 1s .7s both; }
+.account-gate__brand h1 { margin: 0; font: 800 clamp(32px, 5vw, 42px)/1.1 sans-serif; letter-spacing: .19em; text-indent: .19em; color: var(--poster-red); }
+.account-gate__brand p { margin: 13px 0 0; font: 10px/1.5 sans-serif; letter-spacing: .13em; color: var(--poster-muted); }
+.account-gate__brand p span { margin: 0 9px; color: var(--poster-red); }
+.account-gate__form { margin-top: 32px; animation: account-form-rise 1s 1.15s both; }
+.account-gate__form > .panel { padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.account-gate__form .sec-title { text-align: center; font-size: var(--text-md); font-weight: 400; }
+.account-gate__form .meta-txt { text-align: center; line-height: 1.7; }
+.account-gate__form form { margin-top: 24px; gap: 20px; }
+.account-gate__form .field { color: var(--poster-muted); font-size: 12px; letter-spacing: .04em; }
+.account-gate__form .input { min-height: 42px; padding: 8px 2px; background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; font-size: 16px; }
+.account-gate__form .input:focus { border-color: var(--poster-red); box-shadow: 0 1px 0 var(--poster-red); }
+.account-gate__form .input:autofill { -webkit-text-fill-color: var(--poster-ink); box-shadow: 0 0 0 100px var(--poster-paper) inset; }
+.account-gate__form form > .row { flex-wrap: wrap; padding-top: 4px; }
+.account-gate__form form .btn { flex: 1; min-height: 44px; border-radius: 3px; box-shadow: none; }
+.account-gate__form .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--poster-red); }
+.account-gate__form .btn-secondary:hover { background: var(--surface-warm); }
+.account-gate__form [role="status"], .account-gate__form [role="alert"] { font-size: 12px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
+/* Keyboard users can enter immediately, even during the entrance. */
+.account-gate__form:focus-within { animation: none; }
+@keyframes account-sun-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes account-rays-reveal { from { opacity: 0; transform: rotate(-5deg); } to { opacity: 1; transform: rotate(0); } }
+@keyframes account-form-rise { from { transform: translateY(26px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes account-wave { from { transform: translateX(-20px); } to { transform: translateX(20px); } }
+@media (max-height: 720px) {
+  .account-gate { --poster-horizon: clamp(240px, 46vh, 330px); }
+  .account-sunrise__sun { width: 200px; }
+  .account-gate__form { margin-top: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-gate *, .account-gate *::before, .account-gate *::after { animation: none !important; }
+}
