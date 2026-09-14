@@ -9,7 +9,7 @@ export const settingsDialog = {
 
     appearanceLabel: "Appearance",
     appearanceLede:
-      "Three themes, one token block. Every colour in the app resolves from a single declaration set, so a theme is a class on the document — not a second copy of the stylesheet.",
+      "Choose from four built-in themes, or create your own. Dawn pairs warm paper with vermilion accents and is the default for new users.",
     themeSwitchMode: "Automatic switching",
     themeSelectionTitle: "Theme",
     refreshFrequency: "Refresh frequency",
@@ -122,7 +122,7 @@ export const settingsDialog = {
     manageLabel: "管理插件",
 
     appearanceLabel: "外观",
-    appearanceLede: "三套主题共享同一组变量：应用里的每一种颜色都从同一份声明解析而来，因此切换主题只是给文档换一个类名——而不是再复制一份样式表。",
+    appearanceLede: "选择四款内置主题，或创建自己的配色。默认主题「曙光」以暖纸色搭配朱红色点缀。",
     themeSwitchMode: "自动切换",
     themeSelectionTitle: "主题",
     refreshFrequency: "刷新频率",

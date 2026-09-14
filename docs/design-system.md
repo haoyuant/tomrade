@@ -24,8 +24,10 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 
 ## Tokens
 
-Three themes, one declaration set. `:root` is Paper; `.dark` (Ink) and
-`.matcha` override only the 24 colour tokens that vary. Everything else —
+Four themes, one declaration set. Dawn (`.dawn`) is the default: warm paper,
+vermilion accents, and brown ink, drawn from the login poster. `:root` is Paper;
+`.dark` (Ink), `.matcha`, and `.dawn` override the colour tokens that vary.
+Saved theme preferences remain in effect. Everything else —
 type scale, leading, tracking, radii, spacing, chrome geometry — is declared
 once and never re-declared per theme.
 

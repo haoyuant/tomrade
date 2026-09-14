@@ -3,6 +3,7 @@ export const theme = {
     ariaLabel: "Theme preference",
     createCustom: "Create custom theme from current theme",
     system: "System",
+    dawn: "Dawn",
     paper: "Paper",
     ink: "Ink",
     matcha: "Matcha"
@@ -11,6 +12,7 @@ export const theme = {
     ariaLabel: "主题偏好",
     createCustom: "基于当前主题创建自定义主题",
     system: "系统",
+    dawn: "曙光",
     paper: "纸白",
     ink: "墨黑",
     matcha: "抹茶"

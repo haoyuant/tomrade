@@ -226,7 +226,7 @@ export interface CreateViewInput {
 
 export type ViewPatch = Partial<Pick<View, "name" | "icon" | "layout" | "query" | "rank">>;
 
-export type BuiltInTheme = "light" | "dark" | "matcha";
+export type BuiltInTheme = "light" | "dark" | "matcha" | "dawn";
 export type ThemePreference = "system" | BuiltInTheme | `custom:${string}`;
 
 export const THEME_TOKEN_NAMES = ["bg", "surface", "surface-warm", "fg", "fg-2", "muted", "meta", "border", "border-soft", "accent", "accent-on", "accent-light", "accent-active", "success", "warn", "danger", "tag-bg-faint", "tag-bg-soft", "tag-bg-base", "tag-bg-strong", "tag-fg"] as const;
