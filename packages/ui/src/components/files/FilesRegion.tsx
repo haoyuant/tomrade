@@ -138,12 +138,48 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
   );
 }
 
-function FolderView({ projectId, path, entries, conflicts, status, state, onOpenSharing, onAddFiles }: { projectId: string; path: string; entries: FileEntry[]; conflicts: FileConflict[]; status: FilesStatus | undefined; state: StateView; onOpenSharing: () => void; onAddFiles: () => void }) {
+function FolderView({
+  projectId,
+  path,
+  entries,
+  conflicts,
+  status,
+  state,
+  onOpenSharing,
+  onAddFiles,
+  onDropFiles,
+  dragOver,
+  onDragOverChange
+}: {
+  projectId: string;
+  path: string;
+  entries: FileEntry[];
+  conflicts: FileConflict[];
+  status: FilesStatus | undefined;
+  state: StateView;
+  onOpenSharing: () => void;
+  onAddFiles: () => void;
+  onDropFiles: (dataTransfer: DataTransfer) => void;
+  dragOver: boolean;
+  onDragOverChange: (over: boolean) => void;
+}) {
   const { t } = useI18n();
   const { openFile } = useWorkspace();
   const kids = entries.filter((e) => parentOf(e.path) === path);
   return (
-    <div className="files-main stack-4">
+    <div
+      className={`files-main stack-4${dragOver ? " is-drag-over" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOverChange(true);
+      }}
+      onDragLeave={() => onDragOverChange(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDragOverChange(false);
+        onDropFiles(e.dataTransfer);
+      }}
+    >
       {path === "" && conflicts.length > 0 && <ConflictList projectId={projectId} conflicts={conflicts} />}
       {path === "" && <SharingCard status={status} state={state} onOpenSharing={onOpenSharing} />}
       {kids.length > 0 ? (
@@ -303,11 +339,13 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const [deleting, setDeleting] = useState(false);
   const [newFolder, setNewFolder] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   useEffect(() => {
     setRenaming(false);
     setDeleting(false);
     setNewFolder(false);
     setAttaching(false);
+    setDragOver(false);
   }, [path]);
 
   const entries = tree.data ?? [];
@@ -332,6 +370,20 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
     if (!chosen?.length) return;
     importFiles.mutate(
       { dir, sources: chosen },
+      {
+        onSuccess: (added) => {
+          const one = added.length === 1 ? added[0]! : null;
+          toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) });
+        },
+        onError: (error) => toast({ body: error.message })
+      }
+    );
+  };
+  const dropFiles = (dataTransfer: DataTransfer) => {
+    const sources = [...dataTransfer.files].map((f) => (f as File & { path?: string }).path).filter((p): p is string => !!p);
+    if (!sources.length) return;
+    importFiles.mutate(
+      { dir, sources },
       {
         onSuccess: (added) => {
           const one = added.length === 1 ? added[0]! : null;
@@ -384,14 +436,47 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           <button type="button" className="crumb" aria-current={path === ""} onClick={() => ws.openFile("")}>
             {t("files.home")}
           </button>
-          {segments.map((segment, i) => (
-            <Fragment key={i}>
-              <span className="crumb-sep">/</span>
-              <button type="button" className="crumb" aria-current={i === segments.length - 1} onClick={() => ws.openFile(segments.slice(0, i + 1).join("/"))}>
-                {segment}
-              </button>
-            </Fragment>
-          ))}
+          {segments.map((segment, i) =>
+            renaming && i === segments.length - 1 ? (
+              <Fragment key={i}>
+                <span className="crumb-sep">/</span>
+                <input
+                  className="crumb crumb-edit"
+                  autoFocus
+                  type="text"
+                  aria-label={t("files.renameAria")}
+                  defaultValue={segment}
+                  disabled={busy}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const name = (e.target as HTMLInputElement).value.trim();
+                      if (name) rename(name);
+                      else setRenaming(false);
+                    }
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                  onBlur={(e) => {
+                    const name = e.target.value.trim();
+                    if (name && name !== segment) rename(name);
+                    else setRenaming(false);
+                  }}
+                />
+              </Fragment>
+            ) : (
+              <Fragment key={i}>
+                <span className="crumb-sep">/</span>
+                <button type="button" className="crumb" aria-current={i === segments.length - 1} onClick={() => ws.openFile(segments.slice(0, i + 1).join("/"))}>
+                  {segment}
+                </button>
+              </Fragment>
+            )
+          )}
+          {path && !renaming && (
+            <button type="button" className="btn btn-icon crumb-rename" data-tip={t("files.rename")} data-tip-side="bottom" aria-label={t("files.rename")} onClick={() => setRenaming(true)}>
+              <Icon name="i-pen" size={12} />
+            </button>
+          )}
         </nav>
         <div className="board-facts">
           {entry && !isDir && <span className="tag faint num">{formatSize(entry.size)}</span>}
@@ -401,28 +486,49 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         <Tag tone={state.tone} title={status.data?.detail ?? state.hint}>
           {state.label}
         </Tag>
-        <button type="button" className="btn btn-ghost files-sync" disabled={sync.isPending || stateKey === "unavailable"} onClick={syncNow}>
-          <Icon name="i-undo" size={13} />
+        <button type="button" className="btn btn-ghost files-sync" title={t("files.sync")} aria-label={t("files.sync")} disabled={sync.isPending || stateKey === "unavailable"} onClick={syncNow}>
+          <Icon name="i-sync" size={13} />
           {sync.isPending || stateKey === "syncing" ? t("files.syncing") : t("files.sync")}
         </button>
-        <Menu
-          label={t("files.actions")}
-          align="end"
-          trigger={
-            <button type="button" className="btn btn-icon files-actions" aria-label={t("files.actions")} title={t("files.actions")}>
-              <Icon name="i-bars" size={15} />
+        <div className="files-dir-actions" style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
+          {isDir && (
+            <Menu
+              label={t("files.addFiles")}
+              align="end"
+              trigger={
+                <button type="button" className="btn btn-icon" data-tip={t("files.addFiles")} data-tip-side="bottom" aria-label={t("files.addFiles")}>
+                  <Icon name="i-upload" size={14} />
+                </button>
+              }
+            >
+              <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
+              <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
+            </Menu>
+          )}
+          {isDir && (
+            <button type="button" className="btn btn-icon" data-tip={t("files.newFolder")} data-tip-side="bottom" aria-label={t("files.newFolder")} onClick={() => setNewFolder(true)}>
+              <Icon name="i-plus" size={14} />
             </button>
-          }
-        >
-          <MenuActionItem icon={<Icon name="i-upload" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
-          <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
-          <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setNewFolder(true)} />
-          {!isDir && <MenuActionItem icon={<Icon name="i-tag" size={13} />} name={t("files.attachToTicket")} onSelect={() => setAttaching(true)} />}
-          {path && <MenuActionItem icon={<Icon name="i-pen" size={13} />} name={t("files.rename")} onSelect={() => setRenaming(true)} />}
-          {absPath && <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.reveal")} onSelect={() => reveal(absPath)} />}
-          <MenuActionItem icon={<Icon name="i-plug" size={13} />} name={t("files.sharing")} onSelect={onOpenSharing} />
-          {path && <MenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => setDeleting(true)} />}
-        </Menu>
+          )}
+          {!isDir && (
+            <button type="button" className="btn btn-icon" data-tip={t("files.attachToTicket")} data-tip-side="bottom" aria-label={t("files.attachToTicket")} onClick={() => setAttaching(true)}>
+              <Icon name="i-tag" size={14} />
+            </button>
+          )}
+          {absPath && (
+            <button type="button" className="btn btn-icon" data-tip={t("files.reveal")} data-tip-side="bottom" aria-label={t("files.reveal")} onClick={() => reveal(absPath)}>
+              <Icon name="i-folder" size={14} />
+            </button>
+          )}
+          <button type="button" className="btn btn-icon" data-tip={t("files.sharing")} data-tip-side="bottom" aria-label={t("files.sharing")} onClick={onOpenSharing}>
+            <Icon name="i-plug" size={14} />
+          </button>
+          {path && (
+            <button type="button" className="btn btn-icon" data-tip={t("files.delete")} data-tip-side="bottom" aria-label={t("files.delete")} onClick={() => setDeleting(true)}>
+              <Icon name="i-trash" size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {conflictCount > 0 && path !== "" && (
@@ -434,7 +540,6 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           </button>
         </div>
       )}
-      {renaming && <NamePrompt initial={nameOf(path)} ariaLabel={t("files.renameAria")} busy={busy} onCommit={rename} onCancel={() => setRenaming(false)} />}
       {newFolder && <NamePrompt ariaLabel={t("files.newFolderNameAria")} placeholder={t("files.folderNamePlaceholder")} busy={busy} onCommit={createFolder} onCancel={() => setNewFolder(false)} />}
       {deleting && (
         <div className="dangerbar files-delete" role="alertdialog">
@@ -463,7 +568,19 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         ) : pinned ? (
           <PinnedVersion projectId={projectId} ref={pinned} />
         ) : isDir ? (
-          <FolderView projectId={projectId} path={path} entries={entries} conflicts={conflicts.data ?? []} status={status.data} state={state} onOpenSharing={onOpenSharing} onAddFiles={() => void addFiles()} />
+          <FolderView
+            projectId={projectId}
+            path={path}
+            entries={entries}
+            conflicts={conflicts.data ?? []}
+            status={status.data}
+            state={state}
+            onOpenSharing={onOpenSharing}
+            onAddFiles={() => void addFiles()}
+            onDropFiles={dropFiles}
+            dragOver={dragOver}
+            onDragOverChange={setDragOver}
+          />
         ) : (
           <FileView projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />
         )}

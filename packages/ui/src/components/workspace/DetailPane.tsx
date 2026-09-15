@@ -137,7 +137,7 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
       <span className="ledger-mark">
         {mark === "lock" && <Icon className="prov-lock" name="i-lock" size={12} />}
         {mark === "tick" && <span className="prov-tick" style={{ height: 11 }} />}
-        {mark === "sync" && <Icon name="i-undo" size={11} style={{ color: "var(--meta)" }} />}
+        {mark === "sync" && <Icon name="i-sync" size={11} style={{ color: "var(--meta)" }} />}
       </span>
       <span className="ledger-txt">
         <b>{authorLabel(entry.by)}</b> {describeWrite(entry)}
