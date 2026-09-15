@@ -45,7 +45,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
     id: "claude-code",
     title: "Claude Code",
     author: "ai:claude-code",
-    capabilities: ["backlog", "code"],
+    capabilities: ["backlog", "code", "general"],
     options: ClaudeCodeOptions,
     picks: () => [
       // aliases the CLI resolves itself, so they don't go stale with releases
@@ -95,7 +95,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       // timeout; terminal sessions remain the place for the user's full setup.
       // dontAsk denies anything not allowlisted on backlog turns, while code
       // turns work in their own worktree and accept edits.
-      const code = input.purpose === "code";
+      const code = input.purpose !== "backlog";
       const args = [
         "-p",
         promptOf(input),

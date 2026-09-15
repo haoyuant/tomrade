@@ -83,6 +83,63 @@ async function machine(repo: { remote: string; checkout: string }) {
 }
 
 describe("code link", () => {
+  it("honors a human completion policy in any linked repository", async () => {
+    const { codeLink, ctx, project, checkout, ticket, items } = await machine(codeRepo());
+    try {
+      const second = codeRepo();
+      const repo = ctx.repos.create({ projectId: project.id, remote: second.remote });
+      await ctx.repos.setCheckout(second.remote, second.checkout);
+      const item = ticket("Coordinate two repositories", "todo");
+      const branch = `tom-${item.keyNum}/coordinated`;
+      for (const cwd of [checkout, second.checkout]) {
+        commitOn(cwd, branch, "change.ts", `${item.key}: coordinated change`);
+        git(["push", "-q", "origin", branch], cwd);
+      }
+      await codeLink.scan(project.id);
+      codeLink.setRepoPolicy(project.id, repo.id, { autoDone: false });
+      expect(codeLink.completionPolicy(project.id, items.get(project.id, item.id)!)).toBe("human");
+      for (const cwd of [checkout, second.checkout]) {
+        git(["checkout", "-q", "main"], cwd);
+        git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], cwd);
+        git(["push", "-q", "origin", "main"], cwd);
+      }
+      await codeLink.scan(project.id);
+      expect(items.get(project.id, item.id)?.status).not.toBe("done");
+      codeLink.setRepoPolicy(project.id, repo.id, { autoDone: true });
+      await codeLink.scan(project.id);
+      expect(items.get(project.id, item.id)?.status).toBe("done");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("requires every code link to merge and a human to accept mixed output", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Ship code and guide", "todo");
+      const branches = [`tom-${item.keyNum}/first`, `tom-${item.keyNum}/second`];
+      for (const [index, branch] of branches.entries()) {
+        commitOn(checkout, branch, `change-${index}.ts`, `${item.key}: change ${index}`);
+        git(["push", "-q", "origin", branch], checkout);
+      }
+      await codeLink.scan(project.id);
+      items.files({ async getVersion(_project, ref) { return ref; } });
+      let updated = await items.addResource(project.id, item.id, { name: "Guide", role: "output", file: { fileId: "guide", versionId: "v1" } }, "human");
+      updated = items.submitDelivery(project.id, item.id, { report: "Code and guide", artifactIds: updated.evidence.resources.map(r => r.id) }, "human");
+      const accept = () => {
+        const current = items.get(project.id, item.id)!;
+        return items.reviewDelivery(project.id, item.id, { submissionId: current.evidence.submissions.at(-1)!.id, decision: "accepted" }, current.version);
+      };
+      expect(() => accept()).toThrow("Merge all code links");
+      for (const [index, branch] of branches.entries()) {
+        git(["checkout", "-q", "main"], checkout);
+        git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+        git(["push", "-q", "origin", "main"], checkout);
+        await codeLink.scan(project.id);
+        expect(items.get(project.id, item.id)?.status).not.toBe("done");
+        if (!index) expect(() => accept()).toThrow("Merge all code links");
+      }
+      expect(accept().status).toBe("done");
+      expect(items.deliveries.current(project.id, item.id)?.state).toBe("completed");
+    } finally { await ctx.fiber.dispose(); }
+  });
   it("links a branch named after a ticket and moves the ticket to doing, then done on merge", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Push notifications", "todo");

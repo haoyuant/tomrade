@@ -20,6 +20,6 @@ This playbook is about how Tomrade and you stay in step. How to write the code i
 4. Work in small commits. When you reach a milestone — tests green, a subsystem wired — call note_progress with one line; it is what the ticket shows while you work.
 5. Run the repository's own checks (tests, lint, typecheck) before you consider the work finished.
 6. Before pushing, review the complete diff against the default branch, map every changed file and behavior to an acceptance criterion, and remove anything that does not map. Push and open a pull request whose title starts with the key. Then call link_code with the pull request URL and `scopeChecked: true`. That moves the ticket to Verifying.
-7. Do not mark the ticket done. Merging does that.
+7. Do not mark the ticket done. Follow the delivery's completion policy: merge-based delivery completes only after all code links merge; human-review delivery also requires human acceptance. When artifacts are required, store them through Files, link immutable versions with add_delivery_resource, and submit_delivery for review. Merging alone does not accept artifacts.
 8. If the ticket turns out to need a decision nobody has made (a library, an architecture choice with lasting cost), stop and ask_user rather than choosing silently.
 9. If `git push`, `git fetch`, `git pull` or `gh` fails with an authentication or "repository not found" error, do not switch accounts, edit credential helpers or change the remote. Commit locally, call note_progress with `blocked: push …`, and stop — the human owns credentials.

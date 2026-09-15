@@ -1,10 +1,17 @@
 import type { Context } from "cordis";
 import type { CreateItemInput, Item, ListItemsFilter, Patch } from "@tomrade/domain";
+import type { z } from "zod";
+import type { addResourceSchema, submitDeliverySchema, reviewDeliverySchema } from "@tomrade/domain";
+import type { DeliveryView } from "@tomrade/db";
 import type {} from "@tomrade/ipc";
 import type { ItemQuery } from "./service.js";
 
 declare module "@tomrade/ipc" {
   interface Channels {
+    "items.deliveries": (projectId: string, id: string) => DeliveryView[];
+    "items.addResource": (projectId: string, id: string, input: z.input<typeof addResourceSchema>) => Item;
+    "items.submitDelivery": (projectId: string, id: string, input: z.input<typeof submitDeliverySchema>) => Item;
+    "items.reviewDelivery": (projectId: string, id: string, input: z.input<typeof reviewDeliverySchema>, baseVersion: number) => Item;
     "items.list": (filter?: ListItemsFilter) => Item[];
     "items.query": (query: ItemQuery) => Item[];
     "items.get": (projectId: string, id: string) => Item | null;
@@ -18,6 +25,10 @@ declare module "@tomrade/ipc" {
 
 /** Every renderer write is a human write. */
 export function registerChannels(ctx: Context): void {
+  ctx.ipc.handle("items.deliveries", (projectId, id) => ctx.items.deliveries.list(projectId, id));
+  ctx.ipc.handle("items.addResource", (projectId, id, input) => ctx.items.addResource(projectId, id, input, "human"));
+  ctx.ipc.handle("items.submitDelivery", (projectId, id, input) => ctx.items.submitDelivery(projectId, id, input, "human"));
+  ctx.ipc.handle("items.reviewDelivery", (projectId, id, input, baseVersion) => ctx.items.reviewDelivery(projectId, id, input, baseVersion));
   ctx.ipc.handle("items.list", (filter = {}) => ctx.items.list(filter));
   ctx.ipc.handle("items.query", (query) => ctx.items.query(query));
   ctx.ipc.handle("items.get", (projectId, id) => ctx.items.get(projectId, id));

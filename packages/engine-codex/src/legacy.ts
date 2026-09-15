@@ -49,7 +49,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
     id: "codex",
     title: "Codex",
     author: "ai:codex",
-    capabilities: ["backlog", "code"],
+    capabilities: ["backlog", "code", "general"],
     options: CodexOptions,
     picks: () => [
       // Codex CLI resolves its authenticated account's current default. Model
@@ -93,7 +93,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       // codex has no appended-system-prompt flag; the context rides ahead of the message.
       const prompt = buildSystem(input, io, "Codex") + "\n\n---\n\nUSER MESSAGE:\n" + promptOf(input);
       // A code turn may write in its worktree; a backlog turn reads only.
-      const mode = input.purpose === "code" ? input.permissionMode : undefined;
+      const mode = input.purpose !== "backlog" ? input.permissionMode : undefined;
       const sandbox = mode === "full-access" ? "danger-full-access" : mode === "read-only" ? "read-only" : "workspace-write";
       const shared = [
         "--json",
@@ -115,7 +115,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       // already remembers the working root and sandbox, and rejects -s/-C.
       const args = io.resume
         ? ["exec", "resume", ...shared, io.resume, prompt]
-        : ["exec", ...shared, "-s", input.purpose === "code" ? sandbox : "read-only", "-C", input.cwd ?? tmp, prompt];
+        : ["exec", ...shared, "-s", input.purpose !== "backlog" ? sandbox : "read-only", "-C", input.cwd ?? tmp, prompt];
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       const metrics: import("@tomrade/agent").TurnMetrics = { transport: "cli", runtime: "cold" };

@@ -1,4 +1,9 @@
 import type { Item } from "@tomrade/domain";
+import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEngines, usePlaybooks } from "~/lib/agent";
+import { invoke } from "~/lib/api";
+import { invalidateWorkspace } from "~/lib/queries";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";
@@ -13,7 +18,7 @@ import { cn } from "~/lib/utils";
  * fails answers with the one thing that clears it. Shared by the issue sheet
  * and the docked detail pane, so the button reads the same in both.
  */
-export function StartTicketMenu({
+function CodingStartTicketMenu({
   projectId,
   item,
   onOpenIssue,
@@ -36,7 +41,7 @@ export function StartTicketMenu({
   const start = useStartTicket(projectId);
 
   const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
-  if (!startable) return null;
+  if (!startable || item.workType === "general") return null;
   const active = deliveries.data?.find((delivery) => delivery.state === "active");
   const hasSession = !!active && !!sessions.data?.some((session) => session.delivery === active.sequence);
   const label = start.isPending ? t("codeLink.starting") : t(hasSession ? "codeLink.continue" : "codeLink.start");
@@ -89,4 +94,60 @@ export function StartTicketMenu({
       <MenuActionItem icon={<Icon name="i-monitor" size={14} />} name={t("codeLink.startTerminal")} onSelect={() => startTicket("terminal")} />
     </Menu>
   );
+}
+
+export function StartTicketMenu(props: Parameters<typeof CodingStartTicketMenu>[0]) {
+  return props.item.workType === "general" ? <GeneralStartTicketMenu {...props} /> : <CodingStartTicketMenu {...props} />;
+}
+
+function GeneralStartTicketMenu({ projectId, item, className }: Parameters<typeof CodingStartTicketMenu>[0]) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const { showThread } = useAgentDock();
+  const qc = useQueryClient();
+  const playbooks = usePlaybooks(projectId);
+  const engines = useEngines();
+  const [engine, setEngine] = useState("");
+  const [playbook, setPlaybook] = useState(item.playbookId ?? "");
+  useEffect(() => setPlaybook(item.playbookId ?? ""), [item.id, item.playbookId]);
+  const savePlaybook = useMutation({
+    mutationFn: (next: string) => invoke("items.update", projectId, item.id, { playbookId: next || null }, item.version),
+    onSuccess: () => invalidateWorkspace(qc, projectId),
+    onError: error => { setPlaybook(item.playbookId ?? ""); toast({ body: error.message }); }
+  });
+  const start = useMutation({
+    mutationFn: () => invoke("agent.startGeneral", projectId, item.id, { ...(playbook ? { playbook } : {}), ...(engine ? { engine } : {}) }),
+    onSuccess: result => showThread(result.threadId),
+    onError: error => toast({ body: error.message }),
+    onSettled: () => { invalidateWorkspace(qc, projectId); void qc.invalidateQueries({ queryKey: ["agent", "threads", projectId] }); }
+  });
+  const takeover = useMutation({
+    mutationFn: () => invoke("agent.takeoverGeneral", projectId, item.id),
+    onSuccess: result => toast({ body: t(result.stopped > 0 ? "fields.takeoverReady" : "fields.takeoverNoRun") }),
+    onError: error => toast({ body: error.message }),
+    onSettled: () => invalidateWorkspace(qc, projectId)
+  });
+  if (item.kind !== "ticket" || item.status === "done" || item.status === "cancelled") return null;
+  return <span className={cn("row", className)}>
+    <button type="button" data-testid="start-general" className="btn btn-primary" disabled={start.isPending || takeover.isPending || savePlaybook.isPending} onClick={() => start.mutate()}>
+      {start.isPending ? t("codeLink.starting") : t("fields.startGeneral")}
+    </button>
+    <Menu label={t("fields.executionMethod")} align="end" trigger={<button type="button" data-testid="general-options" className="btn" aria-label={t("fields.executionMethod")}><Icon name="i-chevdown" size={12} /></button>}>
+    <div className="stack-3" style={{ padding: "var(--space-3)", width: 280 }}>
+    <label className="stack-2">{t("fields.executionMethod")}
+    <select className="select" aria-label={t("fields.executionMethod")} value={playbook} onChange={e => { const next = e.target.value; setPlaybook(next); savePlaybook.mutate(next); }} disabled={start.isPending || savePlaybook.isPending}>
+      <option value="">{t("fields.defaultMethod")}</option>
+      {[...(playbooks.data ?? [])].filter(p => !p.id.startsWith("backlog.") && !p.id.startsWith("code.")).sort((a, b) => Number(!!b.workTypes?.includes("general")) - Number(!!a.workTypes?.includes("general"))).map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+    </select>
+    </label>
+    <label className="stack-2">{t("fields.executionEngine")}
+    <select className="select" aria-label={t("fields.executionEngine")} value={engine} onChange={event => setEngine(event.target.value)} disabled={start.isPending || takeover.isPending}>
+      <option value="">{t("fields.defaultEngine")}</option>
+      {(engines.data ?? []).filter(e => e.capabilities.includes("general")).map(e => <option key={e.id} value={e.id} disabled={!e.ok}>{e.title}</option>)}
+    </select>
+    </label>
+    <button type="button" className="btn btn-secondary" disabled={start.isPending || takeover.isPending || savePlaybook.isPending} onClick={() => takeover.mutate()}>{t("fields.humanTakeover")}</button>
+    </div>
+    </Menu>
+  </span>;
 }

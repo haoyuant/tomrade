@@ -41,6 +41,7 @@ const VIEWS_OF = "SELECT id FROM views WHERE project_id = @projectId";
  * cannot drift from the schema in only one of those places.
  */
 export const TABLES: readonly TableSpec[] = [
+  { name: "deliveries", columns: ["id", "project_id", "item_id", "sequence", "state", "started_at", "completed_at", "updated_at", "bases_json"], scope: "project_id = @projectId", order: "item_id, sequence" },
   {
     name: "boards",
     columns: ["id", "project_id", "name", "icon", "across", "sort", "note", "rank", "repo_id", "repo_path", "created_at", "updated_at"],
@@ -57,7 +58,7 @@ export const TABLES: readonly TableSpec[] = [
   },
   {
     name: "items",
-    columns: ["id", "project_id", "board_id", "key_num", "title", "body", "kind", "status", "priority", "parent_id", "rank", "updated_at", "updated_by", "version", "human_locked"],
+    columns: ["id", "project_id", "board_id", "key_num", "title", "body", "kind", "work_type", "playbook_id", "evidence_json", "status", "priority", "parent_id", "rank", "updated_at", "updated_by", "version", "human_locked"],
     scope: "project_id = @projectId",
     order: "id"
   },
@@ -111,7 +112,7 @@ export const projectIdOf = (state: ProjectState): string => String(state.manifes
 /** Rows in declared column order, so `JSON.stringify` is canonical. */
 function pick(row: Record<string, unknown>, columns: readonly string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const c of columns) out[c] = row[c] ?? null;
+  for (const c of columns) out[c] = row[c] ?? (c === "work_type" ? "coding" : c === "evidence_json" ? '{"resources":[],"submissions":[],"reviews":[]}' : null);
   return out;
 }
 
@@ -397,6 +398,7 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
     db.prepare(`DELETE FROM item_relations WHERE from_item_id IN (${ITEMS_OF}) OR to_item_id IN (${ITEMS_OF})`).run({ projectId });
     db.prepare("DELETE FROM views WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM items WHERE project_id = @projectId").run({ projectId });
+    db.prepare("DELETE FROM deliveries WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM labels WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM boards WHERE project_id = @projectId").run({ projectId });
     db.prepare("DELETE FROM repos WHERE project_id = @projectId").run({ projectId });
@@ -411,6 +413,10 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
 
     for (const spec of TABLES) {
       let rows = state.tables[spec.name] ?? [];
+      if (spec.name === "deliveries" && !rows.length) {
+        rows = state.plugins?.code_link?.plugin_code_link_deliveries ?? [];
+        rows = rows.map(row => ({ ...row, bases_json: row.bases_json ?? "{}" }));
+      }
       // An artifact from before views belonged to the project has rows nothing can place; the project gets the defaults instead.
       if (spec.name === "views") rows = rows.filter((r) => typeof r.layout === "string" && r.project_id === projectId);
       if (!rows.length) continue;

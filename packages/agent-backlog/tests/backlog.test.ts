@@ -27,13 +27,18 @@ const item = (title: string, extra: Partial<Item> = {}): Item => ({
 });
 
 describe("readiness", () => {
-  it("counts the six required fields and names the missing ones", () => {
+  it("collects universal requirements without requiring a software platform", () => {
     const d = emptyDossier();
-    expect(readiness(d)).toEqual({ filled: 0, required: 6, missing: ["goal", "users", "platform", "coreLoop", "outOfScope", "successSignal"] });
+    expect(readiness(d)).toEqual({ filled: 0, required: 5, missing: ["goal", "materials", "constraints", "outcomes", "successSignal"] });
     d.goal = "hydrate";
-    d.outOfScope = ["-"];
+    d.materials = ["-"];
     expect(readiness(d).filled).toBe(2);
     expect(renderDossier(d)).toContain("hydrate");
+    d.constraints = ["-"];
+    d.outcomes = ["A completed human activity"];
+    d.successSignal = "The person confirms completion";
+    expect(readiness(d).missing).toEqual([]);
+    expect(d.platform).toBe("");
   });
 });
 

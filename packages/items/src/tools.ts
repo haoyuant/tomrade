@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ITEM_STATUSES, createItemSchema, filterClauseSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, sortKeySchema, NotFoundError, type Item, type Patch } from "@tomrade/domain";
 import { defineTool, requireProjectId } from "@tomrade/tools";
 import type {} from "@tomrade/boards";
+import { addResourceSchema, submitDeliverySchema } from "@tomrade/domain";
 
 const withVersion = z.object({ projectId: z.string().optional(), id: z.string(), baseVersion: z.number().optional() });
 
@@ -15,6 +16,7 @@ function matchesSimple(item: Item, f: Simple): boolean {
   if (f.boardId !== undefined && item.boardId !== f.boardId) return false;
   if (f.status !== undefined && item.status !== f.status) return false;
   if (f.kind !== undefined && item.kind !== f.kind) return false;
+  if (f.workType !== undefined && item.workType !== f.workType) return false;
   if (f.priority !== undefined && item.priority !== f.priority) return false;
   if (f.parentId === null ? item.parentId !== null : f.parentId !== undefined && item.parentId !== f.parentId) return false;
   if (f.label !== undefined && !item.labels.includes(f.label)) return false;
@@ -27,6 +29,18 @@ function matchesSimple(item: Item, f: Simple): boolean {
  * unconditional even when the caller could not read first.
  */
 export function registerTools(ctx: Context): void {
+  ctx.tools.register(defineTool({
+    name: "add_delivery_resource", title: "Link a file version",
+    description: "Link an existing immutable Files plugin version as input material or an output artifact. Does not store file bytes or accept local paths. Fails when the Files plugin or version is unavailable.",
+    input: z.object({ projectId: z.string().optional(), id: z.string(), resource: addResourceSchema }),
+    execute: ({ projectId, id, resource }, inv) => ctx.items.addResource(requireProjectId("add_delivery_resource", projectId, inv), id, resource, inv.by)
+  }));
+  ctx.tools.register(defineTool({
+    name: "submit_delivery", title: "Submit results for review",
+    description: "Submit a completion report and selected output artifact IDs for human review. A successful run does not complete the ticket. Human activities can submit a report without files.",
+    input: z.object({ projectId: z.string().optional(), id: z.string(), submission: submitDeliverySchema }),
+    execute: ({ projectId, id, submission }, inv) => ctx.items.submitDelivery(requireProjectId("submit_delivery", projectId, inv), id, submission, inv.by)
+  }));
   const versionOf = (projectId: string, id: string, asserted?: number) => {
     if (asserted !== undefined) return asserted;
     const existing = ctx.items.get(projectId, id);
@@ -98,9 +112,27 @@ export function registerTools(ctx: Context): void {
       title: "Create item",
       description: "Create a ticket or epic. Recorded in the oplog with the caller as author; lands on the project's first board unless boardId is given.",
       input: createItemSchema,
-      execute(args, inv) {
+      async execute(args, inv) {
         const projectId = requireProjectId("create_item", args.projectId, inv);
-        return ctx.items.create({ ...args, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
+        // Agent-created tickets should receive the same recommendation as tickets
+        // created through the UI. Keep this optional and duck-typed here so the
+        // items package does not depend on the agent package (MCP/tool-only hosts
+        // simply retain the explicit/default values).
+        let playbookId = args.playbookId;
+        let workType = args.workType;
+        if (playbookId === undefined && inv.by.startsWith("ai:")) {
+          const agent = ctx.get("agent") as { recommendPlaybook?: (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }) => Promise<{ playbookId: string | null; workType: "coding" | "general" }> } | undefined;
+          if (agent?.recommendPlaybook) {
+            try {
+              const recommendation = await agent.recommendPlaybook(projectId, { title: args.title, body: args.body ?? null, workType });
+              playbookId = recommendation.playbookId;
+              if (workType === undefined) workType = recommendation.workType;
+            } catch {
+              // Recommendation is advisory; ticket creation must still succeed.
+            }
+          }
+        }
+        return ctx.items.create({ ...args, playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
       }
     })
   );

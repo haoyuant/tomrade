@@ -1,17 +1,19 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type {} from "@tomrade/db";
+import { DeliveryStore } from "@tomrade/db";
 import type {} from "@tomrade/hub";
 import type {} from "@tomrade/oplog";
 import type {} from "@tomrade/ipc";
-import type { UndoRunResult } from "@tomrade/domain";
+import type { Item, Patch, UndoRunResult } from "@tomrade/domain";
 import type { LlmService } from "@tomrade/llm";
 import type { SettingsSection } from "@tomrade/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomrade/tools";
-import { loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
+import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import {
   isSuspended,
@@ -47,6 +49,22 @@ export interface WorkdirStatus {
   problem: string | null;
   code: "no-checkout" | "no-repos" | "error" | null;
 }
+
+export interface PlaybookRecommendation {
+  workType: "coding" | "general";
+  playbookId: string | null;
+  confidence: number;
+  reason: string;
+  source: "llm" | "fallback";
+  requires: string[];
+}
+
+const recommendationSchema = z.object({
+  workType: z.enum(["coding", "general"]),
+  playbookId: z.string().min(1).nullable(),
+  confidence: z.number().min(0).max(1),
+  reason: z.string().min(1)
+});
 
 export interface ThreadDetail {
   thread: ThreadSummary;
@@ -85,6 +103,9 @@ declare module "cordis" {
 
 declare module "@tomrade/ipc" {
   interface Channels {
+    "agent.recommendPlaybook": (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }) => PlaybookRecommendation;
+    "agent.startGeneral": (projectId: string, itemId: string, opts?: { engine?: string; playbook?: string }) => { threadId: string; runId: string; continued: boolean };
+    "agent.takeoverGeneral": (projectId: string, itemId: string) => { stopped: number };
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
     "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
@@ -203,6 +224,7 @@ export class Agent extends Service {
   [Service.init]() {
     this.ctx.db.migrate("agent", MIGRATIONS, { tables: TABLES });
     this.store = new AgentStore(this.ctx.db);
+    for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later.
     for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId);
@@ -223,6 +245,8 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
+      ctx.ipc.handle("agent.startGeneral", (projectId, itemId, opts) => ctx.agent.startGeneral(projectId, itemId, opts));
+      ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
@@ -238,6 +262,7 @@ export class Agent extends Service {
         if (projectId) await ctx.agent.refreshProjectPlaybooks(projectId);
         return ctx.agent.playbookIndex(projectId);
       });
+      ctx.ipc.handle("agent.recommendPlaybook", (projectId, input) => ctx.agent.recommendPlaybook(projectId, input));
     });
     return () => {
       for (const rc of this.activeById.values()) rc.abort.abort();
@@ -372,6 +397,35 @@ export class Agent extends Service {
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }): Promise<PlaybookRecommendation> {
+    await this.refreshProjectPlaybooks(projectId);
+    const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (!input.workType || !entry.workTypes?.length || entry.workTypes.includes(input.workType)));
+    const candidateIds = new Set(candidates.map((entry) => entry.id));
+    const fallback = (): PlaybookRecommendation => {
+      const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
+      const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
+      const preferred = workType === "coding"
+        ? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "code.implement" : null)
+        : (text.match(/design|visual|ui|ux|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
+      const playbookId = preferred && candidateIds.has(preferred) ? preferred : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
+      const selected = candidates.find((entry) => entry.id === playbookId);
+      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: "Selected from the task type and available playbook metadata.", source: "fallback", requires: selected?.requires ?? [] };
+    };
+    const llm = this.ctx.get("llm") as LlmService | undefined;
+    if (!llm || !llm.ready().ok || !candidates.length) return fallback();
+    try {
+      const result = await llm.completeJson(recommendationSchema, {
+        system: "Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation briefly.",
+        user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
+      });
+      if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();
+      const selected = candidates.find((entry) => entry.id === result.playbookId);
+      return { ...result, source: "llm", requires: selected?.requires ?? [] };
+    } catch {
+      return fallback();
+    }
+  }
+
   openPlaybook(id: string, projectId?: string): string | null {
     const project = projectId ? this.projectPlaybooks.get(projectId)?.get(id) : undefined;
     const resolved = resolvePlaybook({ ...this.playbooks.get(id), project }, (this.settingsOf().playbookChoices ?? {})[id]);
@@ -420,6 +474,88 @@ export class Agent extends Service {
     return [...this.engines.values()].filter((e) => e.capabilities?.includes("code"));
   }
 
+  private generalStarts = new Set<string>();
+  private generalTakeovers = new Set<string>();
+  private generalScratch: string | null = null;
+  private executionCapabilities = new Map<string, number>();
+
+  async takeoverGeneral(projectId: string, itemId: string): Promise<{ stopped: number }> {
+    const key = `${projectId}:${itemId}`;
+    if (this.generalStarts.has(key)) throw new Error("The agent is still starting; try takeover again shortly");
+    this.generalStarts.add(key);
+    this.generalTakeovers.add(key);
+    try {
+      const active = this.activeRuns().filter(({ thread }) => thread.projectId === projectId && thread.itemId === itemId && thread.execution);
+      for (const { run } of active) this.cancel(run.id);
+      const deadline = Date.now() + 15_000;
+      while (active.some(({ run }) => this.activeById.has(run.id))) {
+        if (Date.now() > deadline) throw new Error("The agent has not stopped yet; wait for cancellation before taking over");
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      for (const { thread } of active) this.appendAndBroadcast(projectId, thread.id, "system", { type: "note", text: "The human took over this delivery. Agent execution has stopped." }, null);
+      return { stopped: active.length };
+    } finally {
+      this.generalStarts.delete(key);
+      this.generalTakeovers.delete(key);
+    }
+  }
+
+  /** A plugin advertises an available capability; this never grants tool permissions. */
+  capability(name: string): () => void {
+    this.executionCapabilities.set(name, (this.executionCapabilities.get(name) ?? 0) + 1);
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      const count = (this.executionCapabilities.get(name) ?? 1) - 1;
+      if (count) this.executionCapabilities.set(name, count);
+      else this.executionCapabilities.delete(name);
+    };
+  }
+
+  async startGeneral(projectId: string, itemId: string, opts: { engine?: string; playbook?: string } = {}): Promise<{ threadId: string; runId: string; continued: boolean }> {
+    const key = `${projectId}:${itemId}`;
+    if (this.generalStarts.has(key)) throw new Error("This ticket is already starting");
+    this.generalStarts.add(key);
+    try {
+      const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null; update(projectId: string, id: string, patch: Patch, by: "human"): Item } | undefined;
+      const item = items?.get(projectId, itemId);
+      if (!item || item.kind !== "ticket" || item.workType !== "general") throw new Error("Choose a General ticket");
+      if (item.humanLocked) throw new Error("Unlock the ticket before starting an agent");
+      if (item.status === "done" || item.status === "cancelled") throw new Error("Reopen the ticket before starting another delivery");
+      if (item.blockedBy.some(id => { const blocker = items!.get(projectId, id); return blocker && blocker.status !== "done" && blocker.status !== "cancelled"; })) throw new Error("Complete this ticket's dependencies first");
+      const deliveries = new DeliveryStore(this.ctx.db);
+      const active = deliveries.active(projectId, itemId);
+      let thread = active ? this.store.threadsForItem(projectId, itemId).find(t => !t.archived && t.execution?.deliveryId === active.id) : undefined;
+      if (thread && this.activeByThread.has(thread.id)) throw new Error("An agent is already working on this ticket");
+      const engine = opts.engine ? this.engines.get(opts.engine) : (thread ? this.engines.get(thread.engine) : [...this.engines.values()].find(e => e.capabilities?.includes("general")));
+      if (!engine?.capabilities?.includes("general")) throw new Error("No compatible General execution engine is available");
+      const available = await engine.available();
+      if (!available.ok) throw new Error(available.reason ?? "The selected engine is unavailable");
+      await this.refreshProjectPlaybooks(projectId);
+      let selected = thread?.execution?.playbook;
+      if (!selected || (opts.playbook && opts.playbook !== selected.id)) {
+        const id = opts.playbook ?? item.playbookId ?? "task.assist";
+        const source = resolvePlaybook({ ...this.playbooks.get(id), project: this.projectPlaybooks.get(projectId)?.get(id) }, this.settingsOf().playbookChoices[id]);
+        if (!source) throw new Error(`Unknown playbook ${id}`);
+        selected = { id, source: source.entry.source, digest: createHash("sha256").update(JSON.stringify(source.winner)).digest("hex"), body: source.winner.body, requires: source.winner.requires ?? [] };
+      }
+      const missing = missingPlaybookCapabilities(selected, [...this.executionCapabilities.keys()]);
+      if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
+      // Re-read after asynchronous preflight; a human may have closed or changed it.
+      const latest = items!.get(projectId, itemId);
+      if (!latest || latest.version !== item.version) throw new Error("The ticket changed while preparing execution; start again");
+      const delivery = deliveries.ensure(projectId, itemId);
+      const continued = !!thread;
+      if (!thread) thread = this.newThread(projectId, engine.id, item.boardId, { itemId, title: `${item.key} ${item.title}` });
+      else if (thread.engine !== engine.id) this.setEngine(projectId, thread.id, engine.id);
+      this.store.setExecution(projectId, thread.id, { deliveryId: delivery.id, playbook: selected });
+      if (item.status === "backlog" || item.status === "todo") items!.update(projectId, itemId, { status: "doing" }, "human");
+      const { runId } = this.send(projectId, thread.id, { kind: "text", text: `${continued ? "Continue" : "Work on"} ${item.key}: ${item.title}. Follow the selected delivery playbook and submit results for review.` });
+      return { threadId: thread.id, runId, continued };
+    } finally { this.generalStarts.delete(key); }
+  }
+
   /** Runs in flight right now, across projects — what a quit would interrupt. */
   activeRuns(): { run: RunView; thread: ThreadSummary }[] {
     return [...this.activeById.values()].map((rc) => ({ run: rc.run, thread: rc.thread }));
@@ -449,6 +585,13 @@ export class Agent extends Service {
   async workdir(projectId: string, threadId: string): Promise<WorkdirStatus> {
     const none: WorkdirStatus = { cwd: null, remote: null, branch: null, worktree: null, problem: null, code: null };
     const thread = this.store.thread(projectId, threadId);
+    if (thread?.execution) {
+      this.generalScratch ??= this.ctx.db.config.dir === ":memory:" ? fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-general-")) : path.join(this.ctx.db.config.dir, "general-work");
+      const identity = createHash("sha256").update(`${projectId}:${thread.execution.deliveryId}`).digest("hex");
+      const cwd = path.join(this.generalScratch, identity);
+      fs.mkdirSync(cwd, { recursive: true });
+      return { ...none, cwd };
+    }
     if (!thread?.boardId) return none;
     const repos = this.ctx.get("repos") as
       | { workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null }): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> }
@@ -494,6 +637,7 @@ export class Agent extends Service {
   send(projectId: string, threadId: string, input: UserInput): { runId: string } {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
+    if (thread.execution && this.generalTakeovers.has(`${projectId}:${thread.itemId}`)) throw new Error("Human takeover is in progress; wait for the agent to stop");
     const permission = this.permissions.get(threadId);
     if (permission && input.kind === "answer") {
       if (input.questionId !== permission.pending.question.id || typeof input.value !== "string" || !permission.pending.question.options?.includes(input.value)) throw new Error("Invalid or expired permission response");
@@ -675,9 +819,9 @@ export class Agent extends Service {
   /** The ticket a code thread implements, as the engine should hear about it. */
   private ticketOf(thread: ThreadSummary): TurnInput["ticket"] {
     if (!thread.itemId) return undefined;
-    const items = this.ctx.get("items") as { get(projectId: string, id: string): { id: string; key: string; title: string } | null } | undefined;
+    const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
     const item = items?.get(thread.projectId, thread.itemId);
-    return item ? { id: item.id, key: item.key, title: item.title, branch: thread.branch } : undefined;
+    return item ? { id: item.id, key: item.key, title: item.title, branch: thread.branch, workType: item.workType, body: item.body } : undefined;
   }
 
   private async drive(rc: RunCtx, input: UserInput): Promise<void> {
@@ -689,6 +833,19 @@ export class Agent extends Service {
         return;
       }
       await this.refreshProjectPlaybooks(rc.projectId);
+      if (!rc.thread.execution && this.ticketOf(rc.thread)?.workType === "general") throw new Error("Start General work from the ticket to bind its delivery and playbook before executing");
+      if (rc.thread.execution) {
+        const ticket = this.ticketOf(rc.thread);
+        const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
+        const currentItem = items?.get(rc.projectId, rc.thread.itemId!);
+        if (!currentItem || currentItem.humanLocked || currentItem.status === "done" || currentItem.status === "cancelled") throw new Error("The ticket is closed, missing, or human-locked");
+        if (currentItem.blockedBy.some(id => { const dependency = items?.get(rc.projectId, id); return dependency && dependency.status !== "done" && dependency.status !== "cancelled"; })) throw new Error("Complete this ticket's dependencies first");
+        const active = new DeliveryStore(this.ctx.db).active(rc.projectId, rc.thread.itemId!);
+        if (!ticket || ticket.workType !== "general" || active?.id !== rc.thread.execution.deliveryId) throw new Error("This thread no longer belongs to an active General delivery");
+        if (!rc.engine.capabilities?.includes("general")) throw new Error("This engine cannot execute General work");
+        const missing = missingPlaybookCapabilities(rc.thread.execution.playbook, [...this.executionCapabilities.keys()]);
+        if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
+      }
       const settings = this.settingsOf();
       const engineOptions = settings.engines[rc.engine.id];
       const pending = this.store.pending(rc.projectId, rc.threadId);
@@ -701,7 +858,8 @@ export class Agent extends Service {
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
-        purpose: rc.thread.itemId ? "code" : "backlog",
+        purpose: rc.thread.execution ? "general" : rc.thread.itemId ? "code" : "backlog",
+        execution: rc.thread.execution ?? undefined,
         permissionMode: selectedMode,
         ticket: this.ticketOf(rc.thread),
         input,
@@ -711,11 +869,15 @@ export class Agent extends Service {
         pending: pending ? this.pendingView(pending) : null,
         focus: input.kind === "text" && input.focus?.length ? input.focus : undefined,
         options: rc.engine.options && engineOptions !== undefined ? rc.engine.options.parse(engineOptions) : engineOptions,
-        ...(where.cwd ? { cwd: where.cwd, workdir: { remote: where.remote!, branch: where.branch!, worktree: where.worktree } } : {})
+        ...(where.cwd ? { cwd: where.cwd } : {}),
+        ...(where.remote && where.branch ? { workdir: { remote: where.remote, branch: where.branch, worktree: where.worktree } } : {})
       };
       await this.ctx.parallel("agent/prepare-turn", turnInput);
       result = await rc.engine.turn(turnInput, rc.io);
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);
+      // Engines may return normally while handling an interrupt. Cancellation
+      // remains authoritative even when the adapter reports a successful end.
+      if (rc.abort.signal.aborted) result = { ...result, stop: "cancelled" };
     } catch (err) {
       if (rc.abort.signal.aborted) {
         result = { stop: "cancelled" };
@@ -877,9 +1039,13 @@ export class Agent extends Service {
         description: "Load the full body of one playbook from the index into view.",
         input: z.object({ id: z.string().min(1) }),
         execute: ({ id }, inv) => {
-          const body = this.openPlaybook(id, inv.projectId);
-          if (body === null) throw new Error(`unknown playbook "${id}" — available: ${this.playbookIndex(inv.projectId).map((e) => e.id).join(", ") || "(none)"}`);
-          return { id, body };
+          const source = resolvePlaybook({ ...this.playbooks.get(id), project: inv.projectId ? this.projectPlaybooks.get(inv.projectId)?.get(id) : undefined }, this.settingsOf().playbookChoices[id]);
+          if (!source) throw new Error(`unknown playbook "${id}" — available: ${this.playbookIndex(inv.projectId).map((e) => e.id).join(", ") || "(none)"}`);
+          const snapshot = { id, source: source.entry.source, digest: createHash("sha256").update(JSON.stringify(source.winner)).digest("hex"), body: source.winner.body, requires: source.winner.requires ?? [] };
+          const missing = missingPlaybookCapabilities(snapshot, [...this.executionCapabilities.keys()]);
+          if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
+          if (inv.projectId && inv.run) this.store.recordPlaybook(inv.projectId, inv.run.id, snapshot);
+          return snapshot;
         }
       })
     );

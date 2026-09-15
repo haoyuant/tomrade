@@ -3,6 +3,8 @@ import { z } from "zod";
 export const dossierSchema = z.object({
   title: z.string().default(""),
   goal: z.string().default(""),
+  materials: z.array(z.string()).default([]),
+  outcomes: z.array(z.string()).default([]),
   users: z.string().default(""),
   platform: z.string().default(""),
   /** The 1–3 things the product must do. */
@@ -18,7 +20,7 @@ export type Dossier = z.infer<typeof dossierSchema>;
 
 export const emptyDossier = (): Dossier => dossierSchema.parse({});
 
-export const REQUIRED_FIELDS = ["goal", "users", "platform", "coreLoop", "outOfScope", "successSignal"] as const;
+export const REQUIRED_FIELDS = ["goal", "materials", "constraints", "outcomes", "successSignal"] as const;
 export type RequiredField = (typeof REQUIRED_FIELDS)[number];
 
 const filled = (dossier: Dossier, field: RequiredField): boolean => {
@@ -33,7 +35,7 @@ export interface Readiness {
   missing: RequiredField[];
 }
 
-/** The deterministic half of "is this enough": six required fields. The user's "go" overrides it. */
+/** Domain-specific fields remain optional. The user's "go" overrides readiness. */
 export function readiness(dossier: Dossier): Readiness {
   const missing = REQUIRED_FIELDS.filter((f) => !filled(dossier, f));
   return { filled: REQUIRED_FIELDS.length - missing.length, required: REQUIRED_FIELDS.length, missing };
@@ -46,6 +48,8 @@ export function renderDossier(dossier: Dossier): string {
   const parts = [
     `# ${dossier.title || dossier.goal || "Requirement"}`,
     `**Goal** ${dossier.goal}`,
+    `## Materials\n${list(dossier.materials)}`,
+    `## Expected outcomes\n${list(dossier.outcomes)}`,
     `**Users** ${dossier.users}`,
     `**Platform** ${dossier.platform}`,
     `**Success signal** ${dossier.successSignal}`,

@@ -38,7 +38,7 @@ export interface FieldDef {
   rank: number;
 }
 
-export type BuiltinFieldId = "title" | "status" | "priority" | "epic" | "labels" | "board" | "updated" | "key" | "provenance";
+export type BuiltinFieldId = "title" | "status" | "workType" | "priority" | "epic" | "labels" | "board" | "updated" | "key" | "provenance";
 
 const PRIORITY_NAMES = ["None", "Low", "Medium", "High", "Urgent"];
 const STATUS_NAMES: Record<ItemStatus, string> = { backlog: "Backlog", todo: "To Do", doing: "Doing", verifying: "Verifying", done: "Done", cancelled: "Cancelled" };
@@ -69,6 +69,7 @@ const builtin = (
 export const BUILTIN_FIELDS: readonly FieldDef[] = [
   builtin("title", "Title", "text", 0, { can: { filter: true, sort: true, group: false } }),
   builtin("status", "Status", "select", 1, { options: staticOptions(ITEM_STATUSES, (s) => STATUS_NAMES[s as ItemStatus]) }),
+  builtin("workType", "Work type", "select", 9, { options: staticOptions(["coding", "general"], (s) => s === "coding" ? "Coding" : "General") }),
   // Urgent first: the column order a priority board reads in.
   builtin("priority", "Priority", "select", 2, { options: staticOptions(["4", "3", "2", "1", "0"], (p) => PRIORITY_NAMES[Number(p)]) }),
   builtin("epic", "Epic", "item", 3, { optionsFrom: "epics" }),
@@ -102,6 +103,8 @@ export function fieldValueOf(item: Item, fieldId: string): FieldValue | FieldVal
       return item.title;
     case "status":
       return item.status;
+    case "workType":
+      return item.workType;
     case "priority":
       return String(item.priority);
     case "epic":
@@ -134,6 +137,8 @@ export function patchForGroup(fieldId: string, key: string, def: FieldDef | unde
   switch (fieldId) {
     case "status":
       return empty ? null : { status: key as ItemStatus };
+    case "workType":
+      return key === "coding" || key === "general" ? { workType: key } : null;
     case "priority":
       return empty ? null : { priority: Number(key) as Priority };
     case "epic":

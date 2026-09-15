@@ -1,6 +1,8 @@
 import type { Layout, ViewQuery } from "./query.js";
+import type { TicketEvidence } from "./delivery.js";
 
 export type ItemKind = "ticket" | "epic";
+export type WorkType = "coding" | "general";
 
 export type ItemStatus = "backlog" | "todo" | "doing" | "verifying" | "done" | "cancelled";
 
@@ -22,6 +24,7 @@ export type Provenance = "human" | "ai" | "sync" | "locked";
 export type FieldValue = string | number;
 
 export interface Item {
+  evidence: TicketEvidence;
   id: string;
   projectId: string;
   /** The board that owns this issue. Dragging never changes it. */
@@ -33,6 +36,8 @@ export interface Item {
   title: string;
   body: string | null;
   kind: ItemKind;
+  workType: WorkType;
+  playbookId: string | null;
   status: ItemStatus;
   priority: Priority;
   parentId: string | null;
@@ -52,7 +57,7 @@ export interface Item {
 }
 
 /** `fields` merges: a key set to null clears that value, absent keys are left alone. */
-export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "status" | "priority" | "parentId" | "rank" | "boardId" | "labels" | "blocks" | "humanLocked">> & {
+export type Patch = Partial<Pick<Item, "title" | "body" | "kind" | "workType" | "playbookId" | "status" | "priority" | "parentId" | "rank" | "boardId" | "labels" | "blocks" | "humanLocked">> & {
   fields?: Record<string, FieldValue | null>;
 };
 
@@ -108,6 +113,8 @@ export interface CreateItemInput {
   title: string;
   body?: string | null;
   kind?: ItemKind;
+  workType?: WorkType;
+  playbookId?: string | null;
   status?: ItemStatus;
   priority?: Priority;
   parentId?: string | null;
@@ -122,6 +129,7 @@ export interface ListItemsFilter {
   boardId?: string;
   status?: ItemStatus;
   kind?: ItemKind;
+  workType?: WorkType;
   priority?: Priority;
   parentId?: string | null;
   label?: string;

@@ -75,8 +75,8 @@ export const BOARD_GLYPHS: [IconId, string][] = [
 ];
 
 const FIELD_LABEL_BY_LOCALE: Record<Locale, Record<BuiltinFieldId, string>> = {
-  en: { title: "Title", status: "Status", priority: "Priority", epic: "Epic", labels: "Labels", board: "Workstream", updated: "Updated", key: "Key", provenance: "Last write" },
-  zh: { title: "标题", status: "状态", priority: "优先级", epic: "需求组", labels: "标签", board: "工作流", updated: "更新时间", key: "编号", provenance: "最后写入" }
+  en: { title: "Title", status: "Status", workType: "Work type", priority: "Priority", epic: "Epic", labels: "Labels", board: "Workstream", updated: "Updated", key: "Key", provenance: "Last write" },
+  zh: { title: "标题", status: "状态", workType: "工作类型", priority: "优先级", epic: "需求组", labels: "标签", board: "工作流", updated: "更新时间", key: "编号", provenance: "最后写入" }
 };
 
 /** Built-in field names, localized in place like the tables above. */

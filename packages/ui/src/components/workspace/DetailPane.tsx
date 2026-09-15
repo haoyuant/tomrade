@@ -13,10 +13,12 @@ import {
   LockButton,
   PriorityField,
   StatusField,
+  WorkTypeField,
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
 import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
+import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
@@ -160,6 +162,10 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
   return (
     <dl className="fieldstrip">
       <div className="field-row">
+        <dt>{t("fields.workType")}</dt>
+        <dd><WorkTypeField item={item} write={write} /></dd>
+      </div>
+      <div className="field-row">
         <dt>{t("detailPane.fieldStatus")}</dt>
         <dd>
           <StatusField item={item} write={write} />
@@ -293,7 +299,7 @@ function DetailBody({
   return (
     <>
       <div className="detail-head">
-        <span className="card-id">{item.key}</span>
+        <span className="card-id" style={{ whiteSpace: "nowrap" }}>{item.key}</span>
         {owner && <span className="tag neutral">{owner.name}</span>}
         <Spacer />
         <StartTicketMenu projectId={project.id} item={item} onOpenIssue={openIssue} onOpenRepositories={onOpenRepositories} />
@@ -329,6 +335,7 @@ function DetailBody({
           <div className="detail-main">
             {item.humanLocked && <LockBar />}
             <IssueBody item={item} write={write} className="issue-body" />
+            <DeliveryPanel key={item.id} item={item} />
             <PluginSections projectId={item.projectId} itemId={item.id} />
           </div>
           <aside className="detail-side">

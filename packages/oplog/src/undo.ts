@@ -1,5 +1,6 @@
-import type { ProjectDb } from "@tomrade/db";
+import type { DeliveryView, ProjectDb } from "@tomrade/db";
 import { InUseError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomrade/domain";
+import { emptyEvidence } from "@tomrade/domain";
 import { rowToEntry, type OplogRow } from "./rows.js";
 
 interface ViewSnapshot extends View {
@@ -13,16 +14,16 @@ interface ViewSnapshot extends View {
  */
 export const wasPurged = (db: ProjectDb, id: string): boolean => !!db.prepare("SELECT 1 FROM oplog WHERE op = 'purge' AND entity_id = ?").get(id);
 
-function restoreItem(db: ProjectDb, item: Item): void {
+function restoreItem(db: ProjectDb, item: Item & { deliveries?: DeliveryView[] }): void {
   // A snapshot written before a purge can still name what the purge destroyed;
   // restoring the issue must not restore a dangling parent or edge with it.
   const parentId = item.parentId && wasPurged(db, item.parentId) ? null : item.parentId;
   db.prepare(
-    `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
-     VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)
+    `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, work_type, playbook_id, evidence_json, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
+     VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @workType, @playbookId, @evidenceJson, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)
      ON CONFLICT(id) DO UPDATE SET
        board_id = excluded.board_id, title = excluded.title, body = excluded.body, kind = excluded.kind,
-       status = excluded.status, priority = excluded.priority, parent_id = excluded.parent_id, rank = excluded.rank,
+       work_type = excluded.work_type, playbook_id = excluded.playbook_id, evidence_json = excluded.evidence_json, status = excluded.status, priority = excluded.priority, parent_id = excluded.parent_id, rank = excluded.rank,
        updated_at = excluded.updated_at, updated_by = excluded.updated_by, version = excluded.version,
        human_locked = excluded.human_locked`
   ).run({
@@ -33,6 +34,9 @@ function restoreItem(db: ProjectDb, item: Item): void {
     title: item.title,
     body: item.body,
     kind: item.kind,
+    workType: item.workType ?? "coding",
+    playbookId: item.playbookId ?? null,
+    evidenceJson: JSON.stringify(item.evidence ?? emptyEvidence()),
     status: item.status,
     priority: item.priority,
     parentId,
@@ -42,6 +46,12 @@ function restoreItem(db: ProjectDb, item: Item): void {
     version: item.version,
     humanLocked: item.humanLocked ? 1 : 0
   });
+
+  if (item.deliveries) {
+    db.prepare("DELETE FROM deliveries WHERE project_id = ? AND item_id = ?").run(item.projectId, item.id);
+    const insert = db.prepare("INSERT INTO deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, bases_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (const d of item.deliveries) insert.run(d.id, item.projectId, item.id, d.sequence, d.state, d.startedAt, d.completedAt, d.updatedAt, JSON.stringify(d.bases));
+  }
 
   // Values are replaced to match the snapshot; a field deleted since has no row to land on and is skipped.
   db.prepare("DELETE FROM item_values WHERE item_id = ?").run(item.id);
@@ -128,6 +138,7 @@ function revertEntry(db: ProjectDb, entry: OplogEntry): void {
       db.prepare("DELETE FROM item_values WHERE item_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
       db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM deliveries WHERE item_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
     } else if (entry.before) {
       restoreItem(db, entry.before as Item);

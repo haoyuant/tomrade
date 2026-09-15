@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { CodeLinkStore, MIGRATIONS, TABLES } from "@tomrade/code-link";
-import { ProjectDb } from "@tomrade/db";
+import { ProjectDb, migrateCore } from "@tomrade/db";
 import { fresh } from "@tomrade/testkit";
 import { exportState, importState } from "@tomrade/storage";
 
 describe("code-link delivery migration", () => {
+  it("moves legacy delivery identities and baselines into core and imports them without code-link", async () => {
+    const { ctx, db, items, project, board } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Old delivery", by: "human" });
+    db.prepare("INSERT INTO plugin_code_link_deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, bases_json) VALUES (?, ?, ?, 1, 'completed', 10, 20, 20, ?)")
+      .run("legacy-identity", project.id, item.id, '{"repo":"sha"}');
+    db.pragma("user_version = 10");
+    migrateCore(db.handle);
+    expect(items.deliveries.list(project.id, item.id)).toEqual([expect.objectContaining({ id: "legacy-identity", state: "completed", bases: { repo: "sha" }, startedAt: 10, completedAt: 20 })]);
+    const snapshot = exportState(db, project.id);
+    const oldRows = snapshot.tables.deliveries;
+    delete snapshot.tables.deliveries;
+    snapshot.plugins.code_link = { plugin_code_link_deliveries: oldRows };
+    importState(db, snapshot);
+    expect(items.deliveries.list(project.id, item.id)[0].id).toBe("legacy-identity");
+    await ctx.fiber.dispose();
+  });
   it("recovers an old artifact with a reopened ticket and keeps recovery idempotent", async () => {
     const { ctx, db, items, project, board } = await fresh();
     ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
@@ -14,6 +31,7 @@ describe("code-link delivery migration", () => {
     const registrations = ctx.db.registrations("project");
     const artifact = exportState(db, project.id, { registrations, exports: ["code_link"] });
     delete artifact.plugins.code_link.plugin_code_link_deliveries;
+    delete artifact.tables.deliveries;
     for (const link of artifact.plugins.code_link.plugin_code_link_links) delete link.delivery;
     db.prepare("DELETE FROM plugin_code_link_deliveries").run();
     importState(db, artifact, { registrations });

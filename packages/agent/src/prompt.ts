@@ -12,7 +12,7 @@ export const HOUSE_RULES = [
   "- Do the smallest thing that satisfies the request. A plain question deserves a plain answer, no tools.",
   "- For backlog totals, counts, or breakdowns, call count_items exactly once and use its computed count. In Tomrade, a ticket is kind ticket; item totals also include epics. Never fetch or manually count list_items rows for a quantity question.",
   "- Before creating an item, check for duplicates (find_similar); a policy will refuse the create otherwise.",
-  "- Features are sized for one pull request, with short imperative titles.",
+  "- Tickets describe independently deliverable and reviewable outcomes, with short imperative titles. Only coding work is sized for one pull request. Use workType general for documents, design, media, and human activities unless the requested delivery is a code change.",
   "- Propose defaults instead of interrogating; ask at most three questions per turn, through ask_user.",
   "- NEVER ask the user to choose between actions in prose. Offer choices ONLY through ask_user with options (multiple: true when they combine) — prose gets no buttons and stalls the thread.",
   "- When the user says to proceed, proceed.",
@@ -46,13 +46,21 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
       );
     }
   }
-  if (input.ticket) {
+  if (input.ticket && input.purpose === "general") {
+    parts.push(`You are delivering ${input.ticket.key} — ${input.ticket.title}.\n${input.ticket.body ?? ""}\n` +
+      "Work only toward this ticket's outcome and acceptance criteria. Report progress and missing inputs. Human activities require a human completion report; do not claim to have performed offline actions.\n" +
+      "A successful agent turn does not complete a ticket. Submit results for human review. Files must enter the Files plugin before becoming delivery artifacts; temporary paths and external links are not delivered files. If file storage is unavailable, report the draft as not delivered.\n" +
+      "Call get_item to read current input materials and previous outputs. Use add_delivery_resource to link an existing Files version, then submit_delivery with a report and selected output artifact IDs. Human review is a separate action.\n" +
+      `Working directory: ${input.cwd ?? "none"}. This work has no Git or pull-request requirement.`);
+    if (input.execution) parts.push(`Selected playbook ${input.execution.playbook.id} (${input.execution.playbook.source}, ${input.execution.playbook.digest}):\n${input.execution.playbook.body}`);
+  }
+  if (input.ticket && input.purpose === "code") {
     const t = input.ticket;
     parts.push(
       `You are implementing ticket ${t.key} — "${t.title}"${t.branch ? ` on branch ${t.branch}` : ""}${input.cwd ? ` in ${input.cwd}` : ""}.\n` +
         `Code conventions: stay on this branch and never commit to the default branch; every commit message names ${t.key}; ` +
         `read the repository's CLAUDE.md or AGENTS.md before writing; when you push and open a pull request, call link_code with its URL; ` +
-        `do not mark the ticket done yourself — merging does that. Report progress in one line with note_progress when you reach a milestone.`
+        `do not mark the ticket done yourself. Completion policy: ${t.completionPolicy === "merge" ? "all code links must merge; the platform then completes the delivery" : "human acceptance is required; merging alone does not complete the delivery"}. Report progress in one line with note_progress when you reach a milestone.`
     );
   }
   if (input.brief) parts.push("Project brief:\n" + input.brief);

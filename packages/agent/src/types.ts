@@ -41,6 +41,7 @@ export interface ThreadMessage {
 export type ThreadSurface = "assistant" | "code";
 
 export interface ThreadSummary {
+  execution?: GeneralExecution | null;
   id: string;
   projectId: string;
   /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */
@@ -62,6 +63,8 @@ export interface ThreadSummary {
 export type RunStatus = "running" | "done" | "asked" | "cancelled" | "error";
 
 export interface RunView {
+  playbooks?: GeneralExecution["playbook"][];
+  execution?: GeneralExecution | null;
   id: string;
   threadId: string;
   status: RunStatus;
@@ -123,8 +126,21 @@ export interface WorkflowInfo {
 /** Where a playbook came from. Same id from several sources is a conflict the user can settle in settings. */
 export type PlaybookSource = "plugin" | "user" | "project";
 
+/** Recommendations and prerequisites, never permission grants. */
+export interface PlaybookRequirements {
+  workTypes?: ("coding" | "general")[];
+  requires?: string[];
+  optionalCapabilities?: string[];
+  outputs?: string[];
+}
+
+export interface GeneralExecution {
+  deliveryId: string;
+  playbook: { id: string; source: PlaybookSource; digest: string; body: string; requires: string[] };
+}
+
 /** A methodology document: the `when` line lives in every prompt, the body loads on demand. */
-export interface Playbook {
+export interface Playbook extends PlaybookRequirements {
   id: string;
   title: string;
   when: string;
@@ -132,7 +148,7 @@ export interface Playbook {
   body: string;
 }
 
-export interface PlaybookIndexEntry {
+export interface PlaybookIndexEntry extends PlaybookRequirements {
   id: string;
   title: string;
   when: string;
@@ -144,7 +160,7 @@ export interface PlaybookIndexEntry {
 }
 
 /** What a turn is for. A `code` turn edits a repository and gets the engine's fuller powers; a `backlog` turn talks to the app through tools. */
-export type TurnPurpose = "backlog" | "code";
+export type TurnPurpose = "backlog" | "code" | "general";
 
 export interface TurnInput {
   threadId: string;
@@ -152,7 +168,8 @@ export interface TurnInput {
   purpose: TurnPurpose;
   permissionMode?: string;
   /** The ticket a code thread implements — the branch it must stay on, the key its commits must name. */
-  ticket?: { id: string; key: string; title: string; branch: string | null };
+  ticket?: { id: string; key: string; title: string; branch: string | null; workType?: "coding" | "general"; body?: string | null; completionPolicy?: "merge" | "human" };
+  execution?: GeneralExecution;
   input: UserInput;
   /** Full persisted history, the triggering user message included. */
   messages: ThreadMessage[];
@@ -210,7 +227,7 @@ export interface TurnResult {
  * local coding agent (Claude Code, Codex…) declares it, and only such an engine
  * is offered when a ticket is started.
  */
-export type EngineCapability = "backlog" | "code";
+export type EngineCapability = "backlog" | "code" | "general";
 
 /** Anything that can take one turn on a thread. The conductor seam. */
 export interface Engine {
