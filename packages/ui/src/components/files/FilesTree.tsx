@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { FileEntry } from "@tomrade/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Menu, MenuActionItem } from "~/components/ui/menu";
 import { InlineNameRow } from "~/components/workspace/InlineNameRow";
 import { useWorkspace } from "~/components/workspace/context";
 import { parentOf, useFilesStatus, useFilesTree, useImportFiles, useMakeFolder } from "~/lib/files";
@@ -77,15 +78,16 @@ export function FilesTree() {
   const state = stateOf(t)[stateKey];
   const unavailable = stateKey === "unavailable";
 
-  const addFiles = async () => {
-    const chosen = await pickFiles(t("files.pickFilesTitle"), t("files.pickFilesButton"));
+  const addFiles = async (kind: "files" | "folders" = "files") => {
+    const chosen = await pickFiles(t(kind === "folders" ? "files.pickFolderTitle" : "files.pickFilesTitle"), t("files.pickFilesButton"), kind);
     if (!chosen?.length) return;
     importFiles.mutate(
       { dir: currentDir, sources: chosen },
       {
         onSuccess: (added) => {
           show(currentDir);
-          toast({ body: added.length === 1 ? t("files.addedOneToast", { name: added[0]!.name }) : t("files.addedToast", { n: added.length, dir: currentDir || t("files.home") }) });
+          const one = added.length === 1 ? added[0]! : null;
+          toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: currentDir || t("files.home") }) });
         },
         onError: (error) => toast({ body: error.message })
       }
@@ -156,9 +158,18 @@ export function FilesTree() {
         </button>
         {state.warn && !unavailable && <span className={`side-mark is-state is-${stateKey}`} title={state.label} data-state={stateKey} />}
         <Spacer />
-        <button type="button" className="btn btn-icon side-files-add" title={t("files.addFiles")} aria-label={t("files.addFiles")} disabled={unavailable || importFiles.isPending} onClick={() => void addFiles()}>
-          <Icon name="i-upload" size={13} />
-        </button>
+        <Menu
+          label={t("files.addMenu")}
+          align="end"
+          trigger={
+            <button type="button" className="btn btn-icon side-files-add" title={t("files.addMenu")} aria-label={t("files.addMenu")} disabled={unavailable || importFiles.isPending}>
+              <Icon name="i-upload" size={13} />
+            </button>
+          }
+        >
+          <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
+          <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
+        </Menu>
         <button type="button" className="btn btn-icon side-files-newfolder" title={t("files.newFolder")} aria-label={t("files.newFolder")} disabled={unavailable} onClick={() => setCreating(true)}>
           <Icon name="i-plus" size={13} />
         </button>

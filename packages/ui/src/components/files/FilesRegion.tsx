@@ -327,13 +327,16 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
       onSuccess: (next) => toast({ body: t("files.syncedToast", { label: STATE[next.state].label.toLowerCase() }) }),
       onError: (error) => toast({ body: error.message })
     });
-  const addFiles = async () => {
-    const chosen = await pickFiles(t("files.pickFilesTitle"), t("files.pickFilesButton"));
+  const addFiles = async (kind: "files" | "folders" = "files") => {
+    const chosen = await pickFiles(t(kind === "folders" ? "files.pickFolderTitle" : "files.pickFilesTitle"), t("files.pickFilesButton"), kind);
     if (!chosen?.length) return;
     importFiles.mutate(
       { dir, sources: chosen },
       {
-        onSuccess: (added) => toast({ body: added.length === 1 ? t("files.addedOneToast", { name: added[0]!.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) }),
+        onSuccess: (added) => {
+          const one = added.length === 1 ? added[0]! : null;
+          toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) });
+        },
         onError: (error) => toast({ body: error.message })
       }
     );
@@ -411,7 +414,8 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             </button>
           }
         >
-          <MenuActionItem icon={<Icon name="i-upload" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles()} />
+          <MenuActionItem icon={<Icon name="i-upload" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
+          <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
           <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setNewFolder(true)} />
           {!isDir && <MenuActionItem icon={<Icon name="i-tag" size={13} />} name={t("files.attachToTicket")} onSelect={() => setAttaching(true)} />}
           {path && <MenuActionItem icon={<Icon name="i-pen" size={13} />} name={t("files.rename")} onSelect={() => setRenaming(true)} />}

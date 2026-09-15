@@ -69,6 +69,22 @@ export type FilesConfig = z.infer<typeof FilesConfig>;
 /** The backend every project starts on: versions here, shared nowhere. */
 export const LOCAL_BACKEND = "local";
 
+/** A folder, minus hidden names; a folder left empty gets a marker so git carries it. */
+function copyTree(src: string, dest: string): void {
+  fs.mkdirSync(dest, { recursive: true });
+  let kept = 0;
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyTree(from, to);
+    else if (entry.isFile()) fs.copyFileSync(from, to);
+    else continue;
+    kept++;
+  }
+  if (!kept) fs.writeFileSync(path.join(dest, ".keep"), "", "utf8");
+}
+
 const unavailable = (detail: string): FilesStatus => ({ state: "unavailable", location: null, detail, lastSyncAt: null, conflicts: 0, ahead: 0, behind: 0, head: null });
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -414,30 +430,37 @@ export class Files extends Service {
     return saved;
   }
 
-  /** Copy files or folders from this machine into a folder of the store, each as a version. */
+  /**
+   * Copy files or folders from this machine into a folder of the store. A file
+   * is a version of its own; a folder lands whole and is saved as one version,
+   * hidden names left behind and empty folders kept with a marker.
+   */
   async importFiles(projectId: string, dir: string, sources: string[]): Promise<FileEntry[]> {
     const store = await this.store(projectId);
     const target = normalizeRel(dir);
-    const written = new Set<string>();
-    const copy = async (src: string, rel: string): Promise<void> => {
-      const stat = fs.statSync(src);
-      if (stat.isDirectory()) {
-        for (const name of fs.readdirSync(src)) {
-          if (name.startsWith(".")) continue;
-          await copy(path.join(src, name), `${rel}/${name}`);
-        }
-      } else if (stat.isFile()) {
-        await store.write(rel, fs.readFileSync(src), { message: `Imported ${rel}` });
-        written.add(rel.split("/")[target ? target.split("/").length : 0]!);
-      }
-    };
+    const names = new Set<string>();
+    const folders: string[] = [];
+    const files: { src: string; rel: string }[] = [];
     for (const src of sources) {
       const name = path.basename(src);
       if (name.startsWith(".")) continue;
-      await copy(src, target ? `${target}/${name}` : name);
+      const rel = target ? `${target}/${name}` : name;
+      const stat = fs.statSync(src);
+      if (stat.isDirectory()) {
+        if (fs.existsSync(path.join(store.dir, ...rel.split("/")))) throw new Error(`${rel} already exists`);
+        folders.push(rel);
+        copyTree(src, path.join(store.dir, ...rel.split("/")));
+        names.add(name);
+      } else if (stat.isFile()) {
+        files.push({ src, rel });
+        names.add(name);
+      }
     }
+    // Folders are saved before any file write stages them under the file's message.
+    if (folders.length) await store.settle(folders.length === 1 ? `Imported folder ${folders[0]}` : `Imported ${folders.length} folders`);
+    for (const file of files) await store.write(file.rel, fs.readFileSync(file.src), { message: `Imported ${file.rel}` });
     this.notify(projectId);
-    return (await store.list(target)).filter((e) => written.has(e.name));
+    return (await store.list(target)).filter((e) => names.has(e.name));
   }
 
   async mkdir(projectId: string, p: string): Promise<void> {

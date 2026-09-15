@@ -91,6 +91,22 @@ const run = async () => {
   check("a folder unfolds to its files, indented", (await $(`document.querySelector('.side-row.is-file[data-file="docs/brief.md"]')?.dataset.depth`)) === "1");
   check("each file row carries its stable id", brief.fileId && (await ctx.files.tree(project.id)).find((e) => e.path === "docs/brief.md")?.fileId === brief.fileId);
 
+  // ── a folder comes in whole ──────────────────────────────────────────
+  const incoming = path.join(work, "incoming");
+  fs.mkdirSync(path.join(incoming, "sub"), { recursive: true });
+  fs.writeFileSync(path.join(incoming, "sub", "deep.txt"), "deep");
+  fs.writeFileSync(path.join(incoming, "top.md"), "# top");
+  await ctx.files.importFiles(project.id, "", [incoming]);
+  await wait(() => has('.side-row.is-file[data-file="incoming"]'), "imported folder");
+  await click('.side-row.is-file[data-file="incoming"] .chev');
+  await wait(() => has('.side-row.is-file[data-file="incoming/sub"]'), "imported subfolder");
+  check("a folder is imported whole, with its subfolders", (await has('.side-row.is-file[data-file="incoming/top.md"]')) && (await ctx.files.read(project.id, "incoming/sub/deep.txt"))?.body === "deep");
+  await press(".side-files-add");
+  await wait(() => $(`document.querySelectorAll('.menu.is-floating .menu-row').length === 2`), "add menu");
+  check("the add button offers files and folders", (await $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map(n => n.textContent).join('|')`)) === "Add files…|Add folder…");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(300);
+
   // ── the viewer ───────────────────────────────────────────────────────
   await click('.side-row.is-file[data-file="docs/brief.md"]');
   await wait(() => has('[data-testid="files-region"][data-path="docs/brief.md"]'), "file screen");
@@ -131,7 +147,7 @@ const run = async () => {
   // ── folders and the root ─────────────────────────────────────────────
   await $(`location.hash = '#/p/${project.id}/f/'; true`);
   await wait(() => has('[data-testid="files-sharing"]'), "root");
-  check("the root lists folders and says how the files are shared", (await count('[data-testid="file-table"] .file-row')) === 2 && (await text('[data-testid="files-sharing"] .tag')) === "This machine");
+  check("the root lists folders and says how the files are shared", (await count('[data-testid="file-table"] .file-row')) === 3 && (await text('[data-testid="files-sharing"] .tag')) === "This machine");
   await shot("files-03-root");
 
   // ── a remote, and a clash with another machine ───────────────────────
@@ -163,7 +179,7 @@ const run = async () => {
   await wait(() => has(".delivery-add-output"), "delivery panel");
   await press(".delivery-add-output");
   await wait(() => has('[data-testid="file-picker-filter"]'), "file picker");
-  check("the picker offers the project's files", (await count(".file-picker-list .menu-row")) === 3);
+  check("the picker offers the project's files", (await count(".file-picker-list .menu-row")) === 5);
   await click('.file-picker-list .menu-row[data-file="docs/brief.md"]');
   await wait(() => has(".file-ref"), "resource link");
   const pinnedItem = ctx.items.get(project.id, ticket.id);

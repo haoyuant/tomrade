@@ -164,3 +164,36 @@ describe("ctx.files", () => {
     }
   });
 });
+
+describe("importing", () => {
+  it("brings a folder in whole as one version, hidden names left behind and empty folders kept", async () => {
+    const { ctx, project } = await machine();
+    try {
+      const src = path.join(root, `import-${n++}`);
+      fs.mkdirSync(path.join(src, "assets", "img"), { recursive: true });
+      fs.mkdirSync(path.join(src, "empty"));
+      fs.writeFileSync(path.join(src, "readme.md"), "# Readme");
+      fs.writeFileSync(path.join(src, "assets", "img", "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      fs.writeFileSync(path.join(src, ".DS_Store"), "junk");
+      const loose = path.join(root, `loose-${n++}.txt`);
+      fs.writeFileSync(loose, "loose");
+
+      const added = await ctx.files.importFiles(project.id, "in", [src, loose]);
+      expect(added.map((e) => [e.name, e.kind])).toEqual([
+        [path.basename(src), "dir"],
+        [path.basename(loose), "file"]
+      ]);
+      const paths = (await ctx.files.tree(project.id)).map((e) => e.path);
+      expect(paths).toContain(`in/${path.basename(src)}/assets/img/logo.png`);
+      expect(paths).toContain(`in/${path.basename(src)}/empty`);
+      expect(paths.some((p) => p.includes(".DS_Store"))).toBe(false);
+      const readme = await ctx.files.read(project.id, `in/${path.basename(src)}/readme.md`);
+      expect(readme?.fileId).toBeTruthy();
+      expect(readme?.versionId).toBeTruthy();
+      expect((await ctx.files.history(project.id, `in/${path.basename(src)}/readme.md`))[0]?.message).toBe(`Imported folder in/${path.basename(src)}`);
+      await expect(ctx.files.importFiles(project.id, "in", [src])).rejects.toThrow(/already exists/);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+});
