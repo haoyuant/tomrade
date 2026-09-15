@@ -6,6 +6,8 @@ declare module "@tomrade/ipc" {
   interface Channels {
     /** Native folder picker. Null when the user cancels. */
     "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
+    /** Native file picker, several allowed. Null when the user cancels. */
+    "shell.pickFiles": (title?: string, buttonLabel?: string) => string[] | null;
     /** Reveal a path in Finder/Explorer, so a destination can be inspected. */
     "shell.reveal": (target: string) => void;
     /** Open a link in the real browser — the renderer must never navigate away from the app. */
@@ -30,6 +32,17 @@ export const shell = {
       };
       const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : (result.filePaths[0] ?? null);
+    });
+
+    ctx.ipc.handle("shell.pickFiles", async (title, buttonLabel) => {
+      const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options = {
+        title: title ?? "Choose files",
+        properties: ["openFile" as const, "multiSelections" as const],
+        buttonLabel: buttonLabel ?? "Add"
+      };
+      const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+      return result.canceled ? null : result.filePaths;
     });
 
     ctx.ipc.handle("shell.reveal", (target) => {

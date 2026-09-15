@@ -7,6 +7,7 @@ import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
 import { confirmationMatches } from "~/lib/confirmation";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
+import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
 import { StorageBlock } from "./StorageBlock";
 import { useToast } from "~/lib/toast";
@@ -77,8 +78,8 @@ export function ProjectSettingsDialog({
   onOpenChange: (open: boolean) => void;
   /** Ran after the delete lands: leave the project, or render a dead route. */
   onDeleted?: (project: Project) => void;
-  /** Opens scrolled to one block — the assistant sends you to Repositories when a workstream has no checkout here. */
-  section?: "repositories";
+  /** Opens scrolled to one block — the assistant sends you to Repositories when a workstream has no checkout here, the Files screen to Files. */
+  section?: "repositories" | "files";
 }) {
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
@@ -132,10 +133,11 @@ export function ProjectSettingsDialog({
   );
 }
 
-function SettingsFace({ project, onClose, onRequestDelete, section }: { project: Project; onClose: () => void; onRequestDelete: () => void; section?: "repositories" }) {
+function SettingsFace({ project, onClose, onRequestDelete, section }: { project: Project; onClose: () => void; onRequestDelete: () => void; section?: "repositories" | "files" }) {
   const { t, tx } = useI18n();
   useEffect(() => {
     if (section === "repositories") requestAnimationFrame(() => document.getElementById("psRepos")?.scrollIntoView({ block: "start" }));
+    if (section === "files") requestAnimationFrame(() => document.getElementById("psFiles")?.scrollIntoView({ block: "start" }));
   }, [section]);
   const update = useUpdateProject();
   const toast = useToast();
@@ -209,6 +211,10 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
 
         <div className="project-settings-section">
           <RepositoriesBlock projectId={project.id} />
+        </div>
+
+        <div className="project-settings-section" id="psFiles">
+          <FilesBlock projectId={project.id} />
         </div>
 
         <div className="project-settings-section project-settings-copy">

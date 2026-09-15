@@ -72,6 +72,24 @@ const workstreamRoute = createRoute({
   }
 });
 
+/** A path in the project's files, "" for the root; `id` + `v` pin one immutable version instead. */
+const filesRoute = createRoute({
+  getParentRoute: () => projectShellRoute,
+  path: "f/$",
+  validateSearch: (search: Record<string, unknown>): { id?: string; v?: string } => ({
+    ...(typeof search.id === "string" && search.id ? { id: search.id } : {}),
+    ...(typeof search.v === "string" && search.v ? { v: search.v } : {})
+  }),
+  component: function FilesRoute() {
+    const { projectId, _splat } = filesRoute.useParams();
+    return (
+      <WorkspaceProvider projectId={projectId} filePath={_splat ?? ""}>
+        {() => <Workspace />}
+      </WorkspaceProvider>
+    );
+  }
+});
+
 const issueRoute = createRoute({
   getParentRoute: () => projectShellRoute,
   path: "i/$itemId",
@@ -81,7 +99,7 @@ const issueRoute = createRoute({
   }
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectShellRoute.addChildren([projectIndexRoute, viewRoute, workstreamRoute, issueRoute])]);
+const routeTree = rootRoute.addChildren([indexRoute, projectShellRoute.addChildren([projectIndexRoute, viewRoute, workstreamRoute, filesRoute, issueRoute])]);
 
 // Hash history: the production build is loaded from file://, where a path-based
 // history has nothing to resolve a reload against.

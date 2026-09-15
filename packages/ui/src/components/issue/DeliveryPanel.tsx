@@ -1,12 +1,26 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Item } from "@tomrade/domain";
+import type { DeliveryResource, Item } from "@tomrade/domain";
+import { FilePickerDialog } from "~/components/files/FilePickerDialog";
+import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
+import { useAttachFile } from "~/lib/files";
 import { invalidateWorkspace } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
 
-/** File selection/preview belongs to Files; this panel presents delivery metadata. */
+/** A resource opens the version it pinned, never the file's current head. */
+function ResourceLink({ item, resource }: { item: Item; resource: DeliveryResource }) {
+  return (
+    <Link className="file-ref" to="/p/$projectId/f/$" params={{ projectId: item.projectId, _splat: "" }} search={{ id: resource.file.fileId, v: resource.file.versionId }} title={resource.file.versionId} data-resource={resource.id}>
+      <Icon name="i-file" size={12} />
+      {resource.name}
+    </Link>
+  );
+}
+
+/** Selection is the Files tree's, preview the Files screen's; this panel pins versions and presents delivery metadata. */
 export function DeliveryPanel({ item }: { item: Item }) {
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -14,6 +28,8 @@ export function DeliveryPanel({ item }: { item: Item }) {
   const [report, setReport] = useState("");
   const [comment, setComment] = useState("");
   const [selected, setSelected] = useState<string[] | null>(null);
+  const [picking, setPicking] = useState<"input" | "output" | null>(null);
+  const attach = useAttachFile(item.projectId);
   const deliveries = useQuery({ queryKey: ["deliveries", item.projectId, item.id, item.version], queryFn: () => invoke("items.deliveries", item.projectId, item.id) });
   const current = deliveries.data?.find(d => d.state === "active") ?? deliveries.data?.at(-1);
   const evidence = item.evidence;
@@ -35,13 +51,24 @@ export function DeliveryPanel({ item }: { item: Item }) {
   if (item.kind !== "ticket") return null;
   return <section className="detail-sect stack-3" data-testid="delivery-panel" aria-label={t("fields.delivery")}>
     <h3>{t("fields.delivery")}{current ? ` · ${current.sequence}` : ""}</h3>
-    {inputs.length > 0 && <div><span className="meta-txt">{t("fields.inputMaterials")}</span><ul>{inputs.map(r => <li key={r.id}>{r.name}</li>)}</ul></div>}
-    {outputs.length > 0 && <div><span className="meta-txt">{t("fields.outputArtifacts")}</span><ul>{outputs.map(r => <li key={r.id}>
+    {inputs.length > 0 && <div><span className="meta-txt">{t("fields.inputMaterials")}</span><ul className="resource-list">{inputs.map(r => <li key={r.id}><ResourceLink item={item} resource={r} /></li>)}</ul></div>}
+    {outputs.length > 0 && <div><span className="meta-txt">{t("fields.outputArtifacts")}</span><ul className="resource-list">{outputs.map(r => <li key={r.id}>
       {open && <input type="checkbox" aria-label={r.name} checked={(selected ?? outputs.map(o => o.id)).includes(r.id)} onChange={event => {
         const ids = selected ?? outputs.map(o => o.id);
         setSelected(event.target.checked ? [...ids, r.id] : ids.filter(id => id !== r.id));
-      }} />} {r.name}
+      }} />} <ResourceLink item={item} resource={r} />
     </li>)}</ul></div>}
+    {open && <div className="row" style={{ flexWrap: "wrap" }}>
+      <button className="btn btn-ghost delivery-add-input" type="button" disabled={attach.isPending} onClick={() => setPicking("input")}><Icon name="i-file" size={13} />{t("files.addMaterial")}</button>
+      <button className="btn btn-ghost delivery-add-output" type="button" disabled={attach.isPending} onClick={() => setPicking("output")}><Icon name="i-file" size={13} />{t("files.addOutput")}</button>
+    </div>}
+    {picking && <FilePickerDialog projectId={item.projectId} open={!!picking} onOpenChange={o => !o && setPicking(null)} title={t("files.pickTitle")} busy={attach.isPending} onPick={entry => {
+      const role = picking;
+      attach.mutate({ itemId: item.id, path: entry.path, role }, {
+        onSuccess: () => { setPicking(null); toast({ body: t("files.attachedToast", { name: entry.name, key: item.key }) }); },
+        onError: error => toast({ body: error.message })
+      });
+    }} />}
     {open && <div className="stack-2">
       <textarea className="input" data-testid="delivery-report" aria-label={t("fields.completionReport")} placeholder={t("fields.completionReport")} value={report} onChange={e => setReport(e.target.value)} />
       <button className="btn btn-secondary" data-testid="delivery-submit" type="button" disabled={!report.trim() || mutate.isPending || deliveries.isLoading} onClick={() => mutate.mutate("submit")}>{t("fields.submitReview")}</button>
@@ -61,7 +88,7 @@ export function DeliveryPanel({ item }: { item: Item }) {
         return <div className="stack-2" key={s.id}>
           <p className="meta-txt">{sequence ? `${sequence} · ` : ""}{r ? t(r.decision === "accepted" ? "fields.accepted" : "fields.changesRequested") : t("fields.submitted")}</p>
           <p style={{ whiteSpace: "pre-wrap" }}>{s.report}</p>
-          {s.artifactIds.length > 0 && <ul>{s.artifactIds.map(id => { const artifact = evidence.resources.find(a => a.id === id); return <li key={id} title={artifact?.file.versionId}>{artifact?.name ?? id}</li>; })}</ul>}
+          {s.artifactIds.length > 0 && <ul className="resource-list">{s.artifactIds.map(id => { const artifact = evidence.resources.find(a => a.id === id); return <li key={id}>{artifact ? <ResourceLink item={item} resource={artifact} /> : id}</li>; })}</ul>}
           {r?.comment && <p style={{ whiteSpace: "pre-wrap" }}>{r.comment}</p>}
         </div>;
       })}

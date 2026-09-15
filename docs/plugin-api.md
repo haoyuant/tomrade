@@ -124,6 +124,7 @@ consumer follows.
 | `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
 | `ctx.storage` | spine registry | `@tomrade/storage` | The project folder as the truth: the text artifact, the write-through log, publish/refresh/merge, remote providers, the Hub's catalog |
 | `ctx.repos` | spine | `@tomrade/repos` | The code repositories workstreams stand for; this machine's checkouts; the worktrees agents run in |
+| `ctx.files` | optional registry | `@tomrade/files` | The project's files beside its backlog: a folder tree with versions, the backend registry, the remote a project shares through, sync and conflicts, the versioned references tickets pin |
 | `ctx.llm` | seam | `@tomrade/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
 | `ctx.agent` | spine registry | `@tomrade/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
 | `ctx.pet` | optional feature | `@tomrade/pet` | Pet task-state reduction, settings, renderer state and its embedded/desktop lifecycle |
@@ -254,13 +255,14 @@ ctx.agent.policy({
 });
 ```
 
-### General work, deliveries and the future Files plugin
+### General work, deliveries and the Files plugin
 
 Ticket `workType` defaults to `coding`; `general` needs no repository. Structural
 `kind` still distinguishes tickets and epics. `playbookId` is an optional default
 method, including `task.assist`, `document.write`, `design.create` and
-`media.generate`. The latter methods require provider capabilities; Files and
-media generation providers are intentionally not implemented in core.
+`media.generate`. The latter methods require provider capabilities: `@tomrade/files`
+advertises `files.read`, `files.write` and `document.preview`; media generation
+providers are intentionally not implemented in core.
 
 `agent.startGeneral(projectId, itemId, { engine?, playbook? })` preflights the
 engine, ticket/dependencies and required capabilities. A run uses a temporary
@@ -279,11 +281,12 @@ overwriting it. If no model is configured or the response is invalid, the Agent
 uses a deterministic keyword/metadata fallback. Recommendation never starts a
 run and never bypasses capability checks.
 
-Files providers register `ctx.items.files({ getVersion(projectId, reference) })`
-and retain the returned disposer. The resolver must check project access and
-return the exact `{ fileId, versionId }`, or `null`; versions must be immutable.
-Registering a resolver does not grant agent tools permission to read/write files.
-There is no fallback attachment directory or file-content field on Ticket.
+A Files provider registers `ctx.items.files({ getVersion(projectId, reference) })`
+and retains the returned disposer; `@tomrade/files` is the one shipped. The
+resolver must check project access and return the exact `{ fileId, versionId }`,
+or `null`; versions must be immutable. Registering a resolver does not grant
+agent tools permission to read/write files. There is no fallback attachment
+directory or file-content field on Ticket.
 
 After persisting a version in Files, call
 `items.addResource(projectId, itemId, { name, role: "input" | "output", file }, by)`.
@@ -295,12 +298,13 @@ Human-only `items.reviewDelivery` IPC takes submission ID, decision, comment and
 the observed item version. Stale review is refused. Acceptance completes;
 changes requested return to Doing without losing earlier submissions.
 
-The future Files UI owns selection, preview, download and file permissions. A
-picker must return a versioned reference, never a machine-local path or mutable
-“latest” alias. Preview must resolve the submitted version rather than the
-current file head, and display a missing/unavailable state if access is revoked.
-The current Delivery panel shows metadata and review history; it does not claim
-to preview or upload files before that plugin exists.
+The Files screen owns selection, preview and file permissions. Its picker returns
+a versioned reference, never a machine-local path or a mutable “latest” alias
+(`files.attach` saves the working copy first, so what is pinned is what is
+there). A pinned artifact opens the submitted version rather than the current
+file head, and reads as unavailable when that version is gone or the plugin is
+off. The Delivery panel adds materials and outputs through that picker and links
+each to its pinned version.
 
 Shared Delivery rows travel with snapshots. Item evidence and delivery status
 participate in undo. Independent evidence additions merge; incompatible active
@@ -588,6 +592,64 @@ Events: `storage/registered`, `storage/unregistered`, `storage/synced`,
 `storage/imported`; the renderer hears `storage.changed(projectId)`.
 `ctx.storage.artifactDirFor(projectId)` names `<dir>/.tomrade` for whatever
 reads what travels beside the state (playbooks, docs).
+
+## Files
+
+Every project keeps its files beside its backlog: `<dir>/files/` next to
+`.tomrade/` (inside `.tomrade/files/` when the folder is somebody's checkout,
+where Tomrade writes nothing else). The folder is a git repository of its own —
+every save is a version, ids follow files across renames through
+`.tomrade-files/ids.jsonl` (append-only, `merge=union`), and hidden names are
+never files. A **backend** is a way of keeping those files; `local` is always
+there, and a remote backend adds where they are shared:
+
+```ts
+ctx.files.register(createGitBackend({
+  id: "acme-drive", title: "Acme Drive",
+  configSchema: z.object({ space: z.string() }), defaults: { space: "" },
+  describe: (c) => `drive.acme.dev/${c.space}`,
+  remote: (c) => ({ url: `https://drive.acme.dev/${c.space}.git`, branch: "main" }),
+  async ensureRemote(c) { /* create it */ },
+  async browse() { return [{ label: "acme/docs", config: { space: "acme/docs" } }]; }
+}));
+```
+
+`register` is an effect and refuses a `format: "password"` field, as
+`ctx.storage` does: the config is per project and travels in the project's
+folder (`plugin_files_remotes`, exported), so a teammate who clones the project
+clones the files beside it. Credentials belong in a settings section named in
+`settingsSection`, collected inline through `connection`. `createGitBackend`
+is the git-backed store every remote backend builds on; a backend that keeps
+files some other way implements `FileStore` itself (`list`, `tree`, `read`,
+`readVersion`, `resolveVersion`, `locate`, `history`, `write`, `mkdir`, `move`,
+`remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`). `@tomrade/files-github`
+registers `github`, sharing the `github` token section with `@tomrade/storage-github`.
+
+Sync never forces. A save is pushed a few seconds after it lands, outside edits
+are saved as versions when they settle, and every open project is fetched,
+merged and pushed on a sweep (`autoSyncMs`). A file changed on both sides is a
+**conflict**, not a loss: the merge stays open, `status().state` reads
+`conflicted`, the other files keep syncing, and `resolve(path, "ours" | "theirs"
+| "both")` settles it — `both` keeps theirs beside ours as `name (theirs).ext`.
+
+| Call | Does |
+|---|---|
+| `ctx.files.dirFor(projectId)` | This machine's copy, or null until the project has a folder |
+| `ctx.files.info(projectId)` / `status(projectId)` | Folder, remote, `local` / `synced` / `ahead` / `behind` / `diverged` / `conflicted` / `syncing` / `offline` / `error` / `unavailable` |
+| `ctx.files.tree(projectId)` / `list(projectId, dir)` / `read(projectId, path)` | The entries and a working copy, with each file's stable id and last version |
+| `ctx.files.readVersion(projectId, { fileId, versionId })` | An immutable version, or null |
+| `ctx.files.write(projectId, path, body, { message })` | A new version, returned with its `fileId` and `versionId` |
+| `ctx.files.sync(projectId)` / `conflicts(projectId)` / `resolve(projectId, path, choice)` | Save, take theirs, push; what waits; settle one |
+| `ctx.files.bind(projectId, backendId, config)` / `unbind(projectId)` | Share through a backend's remote (and sync at once); stop sharing, keeping everything |
+| `ctx.files.attach(projectId, itemId, { path, role })` | Pin the file's latest version to a ticket as material or an output |
+
+Agent tools: `list_files`, `read_file`, `write_file` — the last returns the
+pair `add_delivery_resource` takes. Events: `files/registered`,
+`files/unregistered`, `files/changed`, `files/synced`; the renderer hears
+`files.changed(projectId)`. The renderer draws the tree above the views in the
+sidebar, the viewer (markdown rendered and sanitized, HTML in a sandboxed
+frame, text, images) with its version rail, the conflict panel, and the
+Sharing block in project settings; there is no editor yet.
 
 ## Settings
 

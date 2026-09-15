@@ -44,6 +44,8 @@ export const ICON_IDS = [
   "i-merge",
   "i-terminal",
   "i-folder",
+  "i-file",
+  "i-upload",
   "s-backlog",
   "s-todo",
   "s-doing",
@@ -102,6 +104,8 @@ export function IconSprite() {
         <symbol id="i-branch" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="4.6" r="1.5"/><path d="M3.6 4.7v4.6M10.4 6.1c0 2.4-2.4 3-4.6 3.2"/></g></symbol>
         <symbol id="i-merge" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="10.8" r="1.5"/><path d="M3.6 4.7v4.6M10.4 9.3V7.2a2.4 2.4 0 0 0-2.4-2.4H6.2M7.6 3.2 6 4.8l1.6 1.6"/></g></symbol>
         <symbol id="i-terminal" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="1.6" y="2.4" width="10.8" height="9.2" rx="1.2"/><path d="M4 5.4 6 7.2 4 9M7.6 9h2.6"/></g></symbol>
+        <symbol id="i-file" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M3.4 1.8h4.9l3.3 3.3v7.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1Z"/><path d="M8.3 1.8v3.3h3.3"/></g></symbol>
+        <symbol id="i-upload" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 9.4V2.4M4.3 5.1 7 2.4l2.7 2.7"/><path d="M2.2 9.6v1.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V9.6"/></g></symbol>
         <symbol id="i-folder" viewBox="0 0 14 14"><path d="M1.8 3.6a1 1 0 0 1 1-1h2.7l1.3 1.4h4.4a1 1 0 0 1 1 1v5.6a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
     
         {/* status marks: shape-coded, legible without colour */}

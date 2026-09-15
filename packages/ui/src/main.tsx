@@ -6,6 +6,7 @@ import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
 import type {} from "@tomrade/repos";
 import type {} from "@tomrade/code-link";
+import type {} from "@tomrade/files";
 import { invalidateProject } from "./lib/queries.js";
 import { watchWindowChrome } from "./lib/window-chrome.js";
 import "./styles/app.css";
@@ -45,6 +46,8 @@ if (window.tomrade) {
     void queryClient.invalidateQueries({ queryKey: ["agent", "workdir"] });
   });
   // A scan found new branches, pull requests or merges: the Code section, the badges and any moved status.
+  // A save, a sync or an outside edit moved a project's files or their state.
+  subscribe("files.changed", (projectId) => void queryClient.invalidateQueries({ queryKey: ["files", projectId] }));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: ["codeLink", projectId] });
     void queryClient.invalidateQueries({ queryKey: ["contributions"] });

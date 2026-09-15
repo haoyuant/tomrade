@@ -106,8 +106,9 @@ the repository's native Electron regression approach was used instead.
 
 ## Intentional boundaries
 
-- Files storage, picker/preview and media-generation providers remain future
-  plugin scope, as agreed. Core supplies resolver/capability contracts and
+- Files storage, picker/preview and media-generation providers were future
+  plugin scope when this landed. Files has since shipped as `@tomrade/files`
+  (see `docs/plugin-api.md`, Files); media generation has not. Core supplies resolver/capability contracts and
   versioned references, not an alternative attachment store. Missing capabilities
   are explicit startup errors, never fabricated generated files.
 - Sync cannot safely auto-resolve contradictory human reviews or incompatible

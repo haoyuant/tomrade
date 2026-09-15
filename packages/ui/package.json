@@ -30,6 +30,8 @@
     "@xyflow/react": "12.11.5",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "dompurify": "3.4.15",
+    "marked": "18.0.13",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0"
@@ -42,6 +44,7 @@
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",
+    "@tomrade/files": "workspace:*",
     "@tomrade/ipc": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/llm": "workspace:*",

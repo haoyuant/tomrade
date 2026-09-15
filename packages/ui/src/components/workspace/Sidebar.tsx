@@ -5,50 +5,17 @@ import { move } from "@dnd-kit/helpers";
 import type { Board, View } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { FilesTree } from "~/components/files/FilesTree";
+import { InlineNameRow } from "./InlineNameRow";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateBoard, useCreateView, useUndo, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 
-/** One inline name field, shared by the two "new …" rows. */
-function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel }: { icon: "i-board"; ariaLabel: string; placeholder: string; onCommit: (name: string) => void; onCancel: () => void }) {
-  return (
-    <div className="side-row is-view" style={{ cursor: "default", background: "var(--surface)", boxShadow: "var(--elev-ring)" }}>
-      <Icon className="ico" name={icon} size={15} />
-      <input
-        autoFocus
-        aria-label={ariaLabel}
-        placeholder={placeholder}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          border: 0,
-          background: "transparent",
-          padding: 0,
-          color: "var(--fg)",
-          fontFamily: "var(--font-display)",
-          fontSize: 14,
-          outline: "none"
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            onCancel();
-          }
-          if (e.key === "Enter") onCommit(e.currentTarget.value);
-        }}
-        onBlur={(e) => {
-          if (!e.currentTarget.value.trim()) onCancel();
-        }}
-      />
-    </div>
-  );
-}
-
 function ViewRow({ view, index }: { view: View; index: number }) {
-  const { items, view: active, openView, virtual } = useWorkspace();
-  const current = !virtual && view.id === active.id;
+  const { items, view: active, openView, virtual, filePath } = useWorkspace();
+  const current = !virtual && filePath === null && view.id === active.id;
   const { ref, isDragging } = useSortable({ id: view.id, index, type: "view", accept: "view" });
   return (
     <button
@@ -260,13 +227,18 @@ export function Sidebar({
   return (
     <nav className="sidebar">
       <div className="side-head">
-        <Eyebrow>{t("sidebar.viewsEyebrow")}</Eyebrow>
         <Spacer />
         <button type="button" className="btn btn-icon" title={t("sidebar.collapseSidebar")} aria-label={t("sidebar.collapseSidebar")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
         </button>
       </div>
-      <div className="side-group">
+      <div className="side-group side-files">
+        <FilesTree />
+      </div>
+      <div className="side-group side-views">
+        <div className="side-label-row">
+          <Eyebrow className="side-label">{t("sidebar.viewsEyebrow")}</Eyebrow>
+        </div>
         <ViewList />
         <NewViewRow />
       </div>

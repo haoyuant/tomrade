@@ -14,7 +14,7 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 |---|---|
 | Tokens, base, every component class | `packages/ui/src/styles/app.css` |
 | Tailwind + shadcn token aliases | same file, the two `@theme` blocks |
-| Icon sprite (42 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
+| Icon sprite (44 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
 | Domain vocabulary: statuses, priorities, grouping, the live query | `packages/ui/src/lib/domain.ts` |
 | Primitives on Radix, styled by the design's classes | `packages/ui/src/components/ui/` |
 | Theme resolution and the crossfade | `packages/ui/src/lib/theme.tsx` |
@@ -59,10 +59,19 @@ and the Fields sheet is where its options are renamed and retired. The sidebar
 answers "which view", never "which container".
 
 **Leaving a project is titlebar chrome.** The sidebar holds the project's
-views and the door to its fields, and nothing else. Home *leaves* the project, the switcher
+files, its views and the door to its fields, and nothing else. Home *leaves* the project, the switcher
 *rebinds* it — two jobs, two controls, separated by a hairline not a slash.
 Configuring one is chrome too: the switcher's foot inside a project, the card's
 own gear on the projects grid, and nowhere in the sidebar.
+
+**A file is a place, like a view.** The Files tree is the sidebar's first
+group: folders fold (the chevron), a row opens `f/$path` and takes the board's
+place with the same head geometry, and no view reads as current while a file
+is open. The screen never edits — it renders markdown through a sanitizer, HTML
+in a frame with an empty `sandbox`, everything else as text or a picture — and
+a version is immutable: a ticket's artifact opens the version it pinned and
+says so in a banner. A file changed on two machines is a decision, drawn with
+both sides whole, never a silent winner.
 
 **Both side panes fold to the same 48px rail, and remember it.** `⌘B` for the
 sidebar, `⌘J` for the assistant, each persisted per machine (`usePanelOpen`). A
@@ -196,10 +205,13 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 ## Verifying a change
 
 `pnpm --filter @tomrade/desktop test:ui` boots the same plugin tree the app
-does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port — over a
-throwaway database seeded with the prototype's sample project
-(`apps/desktop/scripts/seed.mjs`). It asserts 279 behaviours and writes a
-screenshot per screen and per theme into `apps/desktop/scripts/shots/`. It
-needs the dev server up (`pnpm dev:ui`) *and* a built backend — it loads
-`apps/desktop/dist` and every plugin's `dist`, so a new channel is invisible to
-it until `pnpm build:backend` has run.
+does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port and the
+cloud Hub off, since the harness never signs in — over a throwaway database
+seeded with the prototype's sample project (`apps/desktop/scripts/seed.mjs`).
+It asserts 287 behaviours and writes a screenshot per screen and per theme into
+`apps/desktop/scripts/shots/`. It needs the dev server up (`pnpm dev:ui`) *and*
+a built backend — it loads `apps/desktop/dist` and every plugin's `dist`, so a
+new channel is invisible to it until `pnpm build:backend` has run.
+`test:files` (`scripts/files-check.mjs`) drives the Files screen the same way:
+the tree, the viewer and its versions, a clash with a second machine over a
+local bare remote, and pinning a file to a ticket — 29 checks.

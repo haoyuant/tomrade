@@ -290,7 +290,9 @@ export class Files extends Service {
 
   store(projectId: string): Promise<FileStore> {
     const current = this.open.get(projectId);
-    if (current) return Promise.resolve(current.store);
+    // The project's folder moved under us: the store follows it.
+    if (current && current.store.dir !== this.dirFor(projectId)) this.close(projectId);
+    else if (current) return Promise.resolve(current.store);
     const pending = this.opening.get(projectId);
     if (pending) return pending;
     const task = this.openStore(projectId).finally(() => this.opening.delete(projectId));

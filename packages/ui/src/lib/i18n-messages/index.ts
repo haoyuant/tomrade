@@ -8,6 +8,7 @@ import { deleteIssueDialog } from "./deleteIssueDialog";
 import { destination } from "./destination";
 import { detailPane } from "./detailPane";
 import { fields } from "./fields";
+import { files } from "./files";
 import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
@@ -75,7 +76,8 @@ export const en = {
   detailPane: detailPane.en,
   fields: fields.en,
   agentPanel: agentPanel.en,
-  codeLink: codeLink.en
+  codeLink: codeLink.en,
+  files: files.en
 };
 
 export const zh: typeof en = {
@@ -118,5 +120,6 @@ export const zh: typeof en = {
   detailPane: detailPane.zh,
   fields: fields.zh,
   agentPanel: agentPanel.zh,
-  codeLink: codeLink.zh
+  codeLink: codeLink.zh,
+  files: files.zh
 };
