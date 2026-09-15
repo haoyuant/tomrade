@@ -221,6 +221,8 @@ export function WorkspaceProvider({
       switch (fieldId) {
         case "status":
           return STATUS_KEYS.map((s) => ({ key: s, name: STATUS[s].label }));
+        case "workType":
+          return [{ key: "coding", name: t("fields.coding") }, { key: "general", name: t("fields.general") }];
         case "priority":
           return ["4", "3", "2", "1", "0"].map((p) => ({ key: p, name: PRIORITY_LABEL[Number(p)] }));
         case "provenance":
@@ -399,4 +401,3 @@ export function WorkspaceProvider({
   }
   return <Ctx.Provider value={value}>{children(value)}</Ctx.Provider>;
 }
-

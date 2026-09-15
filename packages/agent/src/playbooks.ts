@@ -1,7 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { z } from "zod";
 import type { Playbook, PlaybookIndexEntry, PlaybookSource } from "./types.js";
+
+const requirementsSchema = z.object({
+  workTypes: z.array(z.enum(["coding", "general"])).optional(),
+  requires: z.array(z.string().min(1)).optional(),
+  optionalCapabilities: z.array(z.string().min(1)).optional(),
+  outputs: z.array(z.string().min(1)).optional()
+});
+
+/** Missing capabilities are visible to the caller; recommendations never hide a method. */
+export function missingPlaybookCapabilities(playbook: Pick<Playbook, "requires">, available: readonly string[]): string[] {
+  const capabilities = new Set(available);
+  return (playbook.requires ?? []).filter(capability => !capabilities.has(capability));
+}
 
 export const frontmatter = (raw: string): { meta: Record<string, unknown>; body: string } => {
   const match = /^---\n([\s\S]*?)\n---\n?/.exec(raw);
@@ -26,6 +40,7 @@ export function loadPlaybookDir(dir: string, onError?: (file: string, err: unkno
     try {
       const { meta, body } = frontmatter(fs.readFileSync(file, "utf8"));
       out.push({
+        ...requirementsSchema.parse(meta),
         id: typeof meta.name === "string" ? meta.name : entry.name,
         title: typeof meta.title === "string" ? meta.title : entry.name,
         when: typeof meta.description === "string" ? meta.description : "",
@@ -55,6 +70,6 @@ export function resolvePlaybook(variants: PlaybookVariants, choice?: PlaybookSou
   // A choice pointing at a source that is gone (file deleted, plugin disabled) falls back to precedence.
   const source = choice && variants[choice] ? choice : present[0];
   const winner = variants[source]!;
-  const { id, title, when, tools } = winner;
-  return { winner, entry: { id, title, when, tools, source, shadows: present.filter((s) => s !== source) } };
+  const { body: _body, ...index } = winner;
+  return { winner, entry: { ...index, source, shadows: present.filter((s) => s !== source) } };
 }

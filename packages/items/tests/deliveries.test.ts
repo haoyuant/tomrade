@@ -1,0 +1,70 @@
+import { expect, it } from "vitest";
+import { fresh } from "@tomrade/testkit";
+import { exportState, importState } from "@tomrade/storage";
+import { migrateCore } from "@tomrade/db";
+
+it("upgrades pre-General items and preserves default methods through snapshot and undo", async () => {
+  const { ctx, db, items, project, board } = await fresh();
+  const old = items.create({ projectId: project.id, boardId: board.id, title: "Existing code", by: "human" });
+  db.exec("ALTER TABLE items DROP COLUMN work_type; ALTER TABLE items DROP COLUMN playbook_id; ALTER TABLE items DROP COLUMN evidence_json");
+  db.pragma("user_version = 9");
+  migrateCore(db.handle);
+  expect(items.get(project.id, old.id)).toMatchObject({ title: "Existing code", workType: "coding", playbookId: null, evidence: { resources: [], submissions: [], reviews: [] } });
+  items.update(project.id, old.id, { workType: "general", playbookId: "design.create" }, "human");
+  const snapshot = exportState(db, project.id);
+  items.update(project.id, old.id, { playbookId: "task.assist" }, "human");
+  ctx.oplog.undoLast(project.id, old.id);
+  expect(items.get(project.id, old.id)?.playbookId).toBe("design.create");
+  importState(db, snapshot);
+  expect(items.get(project.id, old.id)).toMatchObject({ workType: "general", playbookId: "design.create" });
+  await ctx.fiber.dispose();
+});
+
+it("protects active delivery identity and cleans up deleted delivery rows reversibly", async () => {
+  const { ctx, items, project, board } = await fresh();
+  const item = items.create({ projectId: project.id, boardId: board.id, title: "Arrange printing", workType: "general", status: "doing", by: "human" });
+  const history = items.deliveries.list(project.id, item.id);
+  expect(() => items.update(project.id, item.id, { workType: "coding" }, "human")).toThrow("active delivery");
+  items.delete(project.id, item.id, "human");
+  expect(items.deliveries.list(project.id, item.id)).toEqual([]);
+  ctx.oplog.undoLast(project.id, item.id);
+  expect(items.deliveries.list(project.id, item.id)).toEqual(history);
+  items.update(project.id, item.id, { status: "cancelled" }, "human");
+  items.update(project.id, item.id, { workType: "coding" }, "human");
+  expect(items.deliveries.current(project.id, item.id)?.id).toBe(history[0].id);
+  items.purge(project.id, item.id, "human");
+  expect(items.deliveries.list(project.id, item.id)).toEqual([]);
+  const second = items.create({ projectId: project.id, boardId: board.id, title: "Undo initial work", workType: "general", status: "doing", by: "human" });
+  ctx.oplog.undoLast(project.id, second.id);
+  expect(items.deliveries.list(project.id, second.id)).toEqual([]);
+  await ctx.fiber.dispose();
+});
+
+it("keeps a general delivery through retries and review, and creates a new one on reopen without code-link", async () => {
+  const { ctx, items, project, board } = await fresh();
+  const item = items.create({ projectId: project.id, boardId: board.id, title: "Collect the printed materials", workType: "general", by: "human" });
+  expect(items.deliveries.list(project.id, item.id)).toEqual([]);
+  items.update(project.id, item.id, { status: "doing" }, "human");
+  const first = items.deliveries.active(project.id, item.id)!;
+  expect(first).toMatchObject({ sequence: 1, bases: {}, state: "active" });
+  expect(items.deliveries.ensure(project.id, item.id).id).toBe(first.id);
+  items.update(project.id, item.id, { status: "verifying" }, "human");
+  items.update(project.id, item.id, { status: "doing" }, "human");
+  expect(items.deliveries.current(project.id, item.id)?.id).toBe(first.id);
+  items.update(project.id, item.id, { status: "done" }, "human");
+  expect(items.deliveries.active(project.id, item.id)).toBeNull();
+  expect(items.deliveries.current(project.id, item.id)?.state).toBe("completed");
+  items.update(project.id, item.id, { status: "todo" }, "human");
+  expect(items.deliveries.list(project.id, item.id).map(d => [d.sequence, d.state])).toEqual([[1, "completed"], [2, "active"]]);
+  items.update(project.id, item.id, { status: "cancelled" }, "human");
+  expect(items.deliveries.current(project.id, item.id)?.state).toBe("cancelled");
+  ctx.oplog.undoLast(project.id, item.id);
+  expect(items.get(project.id, item.id)?.status).toBe("todo");
+  expect(items.deliveries.current(project.id, item.id)?.state).toBe("active");
+  const snapshot = exportState(ctx.db.for(project.id), project.id);
+  items.update(project.id, item.id, { status: "done" }, "human");
+  importState(ctx.db.for(project.id), snapshot);
+  expect(items.deliveries.list(project.id, item.id).map(d => [d.sequence, d.state])).toEqual([[1, "completed"], [2, "active"]]);
+  expect(items.get(project.id, item.id)?.status).toBe("todo");
+  await ctx.fiber.dispose();
+});

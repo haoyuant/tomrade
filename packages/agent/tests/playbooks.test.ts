@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomrade/testkit";
 import { Tools } from "@tomrade/tools";
 import { Settings } from "@tomrade/settings";
 import { FakeChatModel, fakeChat } from "@tomrade/llm";
-import { Agent, loadPlaybookDir } from "@tomrade/agent";
+import { Agent, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities } from "@tomrade/agent";
 import engineLoop from "@tomrade/engine-loop";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-playbooks-"));
@@ -44,6 +44,16 @@ async function boot(opts: { playbooksDir?: string; storageDir?: string } = {}) {
 }
 
 describe("loadPlaybookDir", () => {
+  it("preserves selected prerequisites without treating recommendations as restrictions", () => {
+    const resolved = resolvePlaybook({
+      plugin: { id: "document.write", title: "Write", when: "a document is needed", tools: [], body: "Draft", requires: ["files.write"] },
+      project: { id: "document.write", title: "Project writing", when: "a document is needed", tools: [], body: "Draft and review", workTypes: ["general"], requires: ["files.write", "sources.read"], optionalCapabilities: ["document.preview"], outputs: ["document"] }
+    });
+    expect(resolved?.entry).toMatchObject({ source: "project", workTypes: ["general"], outputs: ["document"], requires: ["files.write", "sources.read"] });
+    expect(missingPlaybookCapabilities(resolved!.winner, ["sources.read"])).toEqual(["files.write"]);
+    expect(missingPlaybookCapabilities(resolved!.winner, ["sources.read", "files.write"])).toEqual([]);
+    expect(missingPlaybookCapabilities({}, [])).toEqual([]);
+  });
   it("reads SKILL.md frontmatter and body", () => {
     const dir = tmp("skills");
     skillMd(dir, "acme.review", "1. Look closely.", { title: "Review", description: "the user asks for a review", tools: ["list_items", "ask_user"] });
@@ -57,6 +67,34 @@ describe("loadPlaybookDir", () => {
 });
 
 describe("playbook sources", () => {
+  it("recommends a playbook when an agent creates a ticket through create_item", async () => {
+    const base = await fresh({
+      plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([]), () => ({ workType: "general", playbookId: "document.write", confidence: 0.9, reason: "document" })), [Agent, {}], engineLoop]
+    });
+    await settle();
+    const created = await base.ctx.tools.execute("create_item", { title: "Write the project guide" }, { by: "ai:loop", projectId: base.project.id });
+    expect(created).toMatchObject({ workType: "general", playbookId: "document.write" });
+    await base.ctx.fiber.dispose();
+  });
+
+  it("uses the worker model to recommend an applicable method and rejects out-of-scope answers", async () => {
+    let response: unknown = { workType: "general", playbookId: "design.create", confidence: 0.94, reason: "The brief asks for visual design." };
+    const base = await fresh({
+      plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([]), () => response), [Agent, {}], engineLoop]
+    });
+    await settle();
+    const recommendation = await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Create a mobile app design", body: "Produce a visual prototype", workType: "general" });
+    expect(recommendation).toMatchObject({ source: "llm", workType: "general", playbookId: "design.create", confidence: 0.94 });
+    response = { workType: "general", playbookId: "document.write", confidence: 0.88, reason: "The brief is a document." };
+    expect(await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Prepare a guide", body: "Write a document" })).toMatchObject({ workType: "general", playbookId: "document.write" });
+    response = { workType: "coding", playbookId: "media.generate", confidence: 0.99, reason: "invalid" };
+    const coding = await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Fix the API bug", workType: "coding" });
+    expect(coding.workType).toBe("coding");
+    expect(coding).toMatchObject({ source: "fallback" });
+    expect(coding.playbookId).not.toBe("media.generate");
+    await base.ctx.fiber.dispose();
+  });
+
   it("keeps a user SKILL.md and a plugin playbook with the same id — user wins by default", async () => {
     const dir = tmp("user-playbooks");
     skillMd(dir, "backlog.intake", "MY intake ritual.", { title: "My intake", description: "my own way" });
@@ -66,7 +104,7 @@ describe("playbook sources", () => {
     agent.playbook({ id: "backlog.other", title: "Other", when: "something else", body: "other body" });
 
     const index = agent.playbookIndex();
-    expect(index.map((e) => e.id)).toEqual(["backlog.intake", "backlog.other"]);
+    expect(index.map((e) => e.id)).toEqual(["backlog.intake", "backlog.other", "design.create", "document.write", "media.generate", "task.assist"]);
     expect(index[0]).toMatchObject({ source: "user", shadows: ["plugin"], title: "My intake" });
     expect(index[1]).toMatchObject({ source: "plugin", shadows: [] });
     expect(agent.openPlaybook("backlog.intake")).toBe("MY intake ritual.");

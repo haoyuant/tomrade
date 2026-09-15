@@ -9,6 +9,7 @@ import { useScreenBinding, type ScreenBinding } from "~/components/chrome/Projec
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
+import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
@@ -21,6 +22,7 @@ import {
   LockButton,
   PriorityField,
   StatusField,
+  WorkTypeField,
   useIssueWriter
 } from "~/components/issue/fields";
 import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
@@ -137,6 +139,10 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
             <div className="fieldstrip">
               <span className="fs-item">
+                <span className="fs-k">{t("fields.workType")}</span>
+                <span className="fs-v"><WorkTypeField item={item} write={write} /></span>
+              </span>
+              <span className="fs-item">
                 <span className="fs-k">{t("detailPane.fieldStatus")}</span>
                 <span className="fs-v">
                   <StatusField item={item} write={write} />
@@ -219,6 +225,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
 
             <div className="body-prose">
               <IssueBody item={item} write={write} className="bp-body" />
+              <DeliveryPanel key={item.id} item={item} />
             </div>
 
             <PluginSections projectId={projectId} itemId={item.id} variant="sheet" />

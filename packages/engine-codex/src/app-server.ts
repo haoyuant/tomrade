@@ -98,7 +98,7 @@ export class CodexRuntime implements Runtime {
   }
 
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
-    this.activeIO = io; this.code = input.purpose === "code";
+    this.activeIO = io; this.code = input.purpose !== "backlog";
     const options = CodexOptions.parse(input.options ?? {});
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "app-server", runtime: warm ? "warm" : "cold", toolCalls: 0, compactions: 0 };

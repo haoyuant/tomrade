@@ -3,7 +3,7 @@ import type {} from "cordis";
 export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type NewThreadOptions, type ThreadDetail, type WorkdirStatus } from "./service.js";
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
-export { frontmatter, loadPlaybookDir, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
+export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, type PlaybookVariants } from "./playbooks.js";
 export { HOUSE_RULES, focusSuffix, promptSections } from "./prompt.js";
 export { evaluateTurn, summarizeEvaluation, type TurnMetrics, type EvaluationObservation } from "./evaluation.js";
 export {
@@ -17,6 +17,7 @@ export {
   type EnginePick,
   type EngineView,
   type FocusRef,
+  type GeneralExecution,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,

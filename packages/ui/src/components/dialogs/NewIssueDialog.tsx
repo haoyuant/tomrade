@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import type { ItemStatus, Priority } from "@tomrade/domain";
+import type { ItemStatus, Priority, WorkType } from "@tomrade/domain";
 import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
+import { usePlaybooks } from "~/lib/agent";
+import { invoke } from "~/lib/api";
 
 export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
@@ -13,12 +15,14 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const create = useCreateItem(ws.project.id);
   const undo = useUndo(ws.project.id);
   const toast = useToast();
+  const playbooks = usePlaybooks(ws.project.id);
 
   // Whatever the view is filtering on becomes the default, so the issue you just made is still on screen.
   const pinned = (fieldId: string): string[] =>
     ws.query.filter.filter((c) => c.field === fieldId && c.op === "in").flatMap((c) => c.values.filter((v): v is string | number => v !== null).map(String));
   const columnStatuses = (ws.query.columnBy ?? "status") === "status" ? (ws.columnKeys as ItemStatus[]) : STATUS_KEYS;
   const defaults = () => ({
+    workType: (pinned("workType")[0] === "general" ? "general" : "coding") as WorkType,
     boardId: pinned("board")[0] ?? ws.boards[0]?.id ?? "",
     status: (pinned("status")[0] ?? (columnStatuses.includes("todo") ? "todo" : columnStatuses[0]) ?? "todo") as ItemStatus,
     priority: (pinned("priority").length ? Math.max(...pinned("priority").map(Number)) : 2) as Priority,
@@ -26,10 +30,17 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   });
   const workstreams = ws.boards;
   const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [template, setTemplate] = useState("task.assist");
+  const [workType, setWorkType] = useState<WorkType>(defaults().workType);
   const [boardId, setBoardId] = useState(defaults().boardId);
   const [status, setStatus] = useState<ItemStatus>(defaults().status);
   const [priority, setPriority] = useState<Priority>(defaults().priority);
   const [parentId, setParentId] = useState(defaults().parentId);
+  const [templateTouched, setTemplateTouched] = useState(false);
+  const [workTypeTouched, setWorkTypeTouched] = useState(false);
+  const [recommendationKey, setRecommendationKey] = useState("");
+  const [recommendation, setRecommendation] = useState<{ playbookId: string; reason: string; source: string; requires: string[] } | null>(null);
 
   const statusOptions = columnStatuses;
 
@@ -39,17 +50,40 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     if (!open) return;
     const d = defaults();
     setTitle("");
+    setBody("");
+    setTemplate(d.workType === "general" ? "task.assist" : "");
+    setWorkType(d.workType);
     setBoardId(d.boardId);
     setStatus(d.status);
     setPriority(d.priority);
     setParentId(d.parentId);
+    setTemplateTouched(false);
+    setWorkTypeTouched(false);
+    setRecommendation(null);
+    setRecommendationKey("");
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const key = `${title.trim()}|${body.trim()}|${workType}`;
+    if (!open || templateTouched || title.trim().length < 4 || recommendationKey === key) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void invoke("agent.recommendPlaybook", ws.project.id, { title: title.trim(), body: body.trim() || null, ...(workTypeTouched ? { workType } : {}) }).then(result => {
+        if (cancelled || !result.playbookId) return;
+        if (!workTypeTouched) setWorkType(result.workType);
+        setTemplate(result.playbookId);
+        setRecommendationKey(`${title.trim()}|${body.trim()}|${result.workType}`);
+        setRecommendation({ playbookId: result.playbookId, reason: result.reason, source: result.source, requires: result.requires });
+      }).catch(() => undefined);
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [open, title, body, workType, workTypeTouched, templateTouched, recommendationKey, ws.project.id]);
 
   const submit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
     create.mutate(
-      { title: trimmed, boardId, status, priority, parentId: parentId || null, labels: pinned("labels").slice(0, 1) },
+      { title: trimmed, body: body.trim() || null, playbookId: template || null, boardId, workType, status, priority, parentId: parentId || null, labels: pinned("labels").slice(0, 1) },
       {
         onSuccess: (item) => {
           onOpenChange(false);
@@ -67,6 +101,41 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       </div>
       <div style={{ padding: "var(--space-4)" }} className="stack-3">
         <div className="field">
+          <label htmlFor="niWorkType">{t("fields.workType")}</label>
+          <select id="niWorkType" className="select" value={workType} onChange={e => {
+            const next = e.target.value as WorkType;
+            setWorkType(next);
+            setWorkTypeTouched(true);
+            setTemplateTouched(false);
+            setRecommendation(null);
+            setRecommendationKey("");
+            setTemplate(next === "general" ? "task.assist" : "");
+            if (next === "general" && !body.trim()) setBody(t("fields.manualBrief"));
+          }}>
+            <option value="coding">{t("fields.coding")}</option>
+            <option value="general">{t("fields.general")}</option>
+          </select>
+        </div>
+        {workType === "general" && <div className="field">
+          <label htmlFor="niTemplate">{t("fields.taskTemplate")}</label>
+          <select id="niTemplate" className="select" value={template} onChange={event => {
+            const value = event.target.value;
+            setTemplate(value);
+            setTemplateTouched(true);
+            setRecommendation(null);
+            setRecommendationKey("");
+            const untouched = !body.trim() || (["fields.documentBrief", "fields.designBrief", "fields.mediaBrief", "fields.manualBrief"] as const).some(key => body === t(key));
+            if (untouched) setBody(t(value === "document.write" ? "fields.documentBrief" : value === "design.create" ? "fields.designBrief" : value === "media.generate" ? "fields.mediaBrief" : "fields.manualBrief"));
+          }}>
+            <option value="task.assist">{t("fields.manualTemplate")}</option>
+            <option value="document.write">{t("fields.documentTemplate")}</option>
+            <option value="design.create">{t("fields.designTemplate")}</option>
+            <option value="media.generate">{t("fields.mediaTemplate")}</option>
+          </select>
+          {recommendation && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {playbooks.data?.find(p => p.id === recommendation.playbookId)?.title ?? recommendation.playbookId} — {recommendation.reason}{recommendation.requires.length ? ` (${t("fields.requiresCapability")}: ${recommendation.requires.join(", ")})` : ""}</p>}
+        </div>}
+        {recommendation && workType === "coding" && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {playbooks.data?.find(p => p.id === recommendation.playbookId)?.title ?? recommendation.playbookId} — {recommendation.reason}</p>}
+        <div className="field">
           <label htmlFor="niTitle">{t("newIssueDialog.titleFieldLabel")}</label>
           <input
             id="niTitle"
@@ -81,6 +150,10 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           />
         </div>
         <div className="grid-2">
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor="niBody">{t("fields.taskBrief")}</label>
+            <textarea id="niBody" className="input" rows={4} value={body} onChange={event => setBody(event.target.value)} />
+          </div>
           <div className="field">
             <label htmlFor="niStatus">{t("newIssueDialog.statusLabel")}</label>
             <select id="niStatus" className="select" value={status} onChange={(e) => setStatus(e.target.value as ItemStatus)}>

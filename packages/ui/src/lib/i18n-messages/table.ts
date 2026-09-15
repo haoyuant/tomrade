@@ -8,7 +8,7 @@ export const table = {
     emptyFiltered: "No issues match these filters.",
     emptyPlain: "No issues yet. Add one below.",
     newIssue: "New issue",
-    composerPlaceholder: "Title, sized for one PR…",
+    composerPlaceholder: "An independently reviewable outcome…",
     createdToast: "Created {{key}}"
   },
   zh: {
@@ -20,7 +20,7 @@ export const table = {
     emptyFiltered: "没有符合这些筛选条件的工作项。",
     emptyPlain: "还没有工作项。在下方新建一个。",
     newIssue: "新建工作项",
-    composerPlaceholder: "标题，控制在一个 PR 能完成的范围内…",
+    composerPlaceholder: "一个可以独立验收的成果…",
     createdToast: "已创建 {{key}}"
   }
 };

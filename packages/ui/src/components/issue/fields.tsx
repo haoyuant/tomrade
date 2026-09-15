@@ -62,18 +62,20 @@ function Picker({
   value,
   mark,
   options,
-  onPick
+  onPick,
+  minWidth
 }: {
   label: string;
   value: string;
   mark?: ReactNode;
   options: { value: string; name: string }[];
   onPick: (value: string) => void;
+  minWidth?: number;
 }) {
   return (
     <span className="fset">
       {mark}
-      <select className="fsel" aria-label={label} value={value} onChange={(e) => onPick(e.target.value)}>
+      <select className="fsel" style={minWidth ? { minWidth } : undefined} aria-label={label} value={value} onChange={(e) => onPick(e.target.value)}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.name}
@@ -100,6 +102,16 @@ export function StatusField({ item, write }: FieldProps) {
       }}
     />
   );
+}
+
+export function WorkTypeField({ item, write }: FieldProps) {
+  const { t } = useI18n();
+  return <Picker label={t("fields.workType")} value={item.workType} minWidth={90}
+    options={[{ value: "coding", name: t("fields.coding") }, { value: "general", name: t("fields.general") }]}
+    onPick={value => {
+      if ((value !== "coding" && value !== "general") || value === item.workType) return;
+      write(item, { workType: value }, t("fields.setWorkTypeToast", { key: item.key, type: t(`fields.${value}`) }));
+    }} />;
 }
 
 export function PriorityField({ item, write }: FieldProps) {

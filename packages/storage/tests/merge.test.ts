@@ -40,6 +40,36 @@ const merge = (base: MergeState | null, ours: MergeState, theirs: MergeState, lo
   mergeStates({ base, ours, theirs, logs, rules: CORE_RULES });
 
 describe("three-way merge", () => {
+  it("refuses incompatible delivery histories instead of importing two active deliveries", () => {
+    const delivery = (id: string, sequence: number) => ({ id, item_id: "a", sequence, state: "active" });
+    const base = state([item("a", 1)]);
+    expect(() => merge(base, state([item("a", 1)], { deliveries: [delivery("one", 1)] }), state([item("a", 1)], { deliveries: [delivery("two", 2)] }))).toThrow("Delivery sync conflict");
+    const both = state([item("a", 1)], { deliveries: [delivery("a:delivery:1", 1)] });
+    expect(merge(base, both, both).merged.tables.deliveries).toHaveLength(1);
+  });
+
+  it("refuses an undo that would orphan a concurrently submitted file reference", () => {
+    const resource = { id: "r", role: "output", deliveryId: "d", createdAt: 1 };
+    const evidence = (resources: unknown[], submissions: unknown[]) => JSON.stringify({ resources, submissions, reviews: [] });
+    const base = state([item("a", 1, { evidence_json: evidence([resource], []) })]);
+    const undo = state([item("a", 1, { evidence_json: evidence([], []) })]);
+    const submitted = state([item("a", 1, { evidence_json: evidence([resource], [{ id: "s", deliveryId: "d", artifactIds: ["r"], submittedAt: 2 }]) })]);
+    expect(() => merge(base, undo, submitted)).toThrow("evidence sync conflict");
+    expect(() => merge(base, submitted, undo)).toThrow("evidence sync conflict");
+  });
+  it("keeps independent delivery artifacts from both machines and honors undo removals", () => {
+    const evidence = (resources: { id: string; createdAt: number }[]) => JSON.stringify({ resources, submissions: [], reviews: [] });
+    const original = { id: "reference", createdAt: 1 };
+    const a = { id: "artifact-a", createdAt: 2 };
+    const b = { id: "artifact-b", createdAt: 3 };
+    const base = state([item("a", 1, { evidence_json: evidence([original]) })]);
+    const ours = state([item("a", 1, { evidence_json: evidence([original, a]) })]);
+    const theirs = state([item("a", 1, { evidence_json: evidence([original, b]) })]);
+    const merged = merge(base, ours, theirs).merged.tables.items[0];
+    expect(JSON.parse(String(merged.evidence_json)).resources).toEqual([original, a, b]);
+    const undone = state([item("a", 1, { evidence_json: evidence([]) })]);
+    expect(JSON.parse(String(merge(base, undone, theirs).merged.tables.items[0].evidence_json)).resources).toEqual([b]);
+  });
   it("takes each side's own edits when they touch different fields of one row", () => {
     const base = state([item("a", 1)]);
     const ours = state([item("a", 1, { status: "doing", updated_at: 200, version: 2 })]);

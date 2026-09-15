@@ -242,7 +242,24 @@ export class CodeLink extends Service {
       worktrees: this.worktrees
     });
     this.ctx.settings.register(SETTINGS_SECTION);
+    this.ctx.on("write/pre-commit", (intent, next) => {
+      if (intent.entity === "item" && intent.op === "update") {
+        const before = intent.before as Item | null;
+        const after = intent.after as Item | null;
+        const active = this.store.activeDelivery(intent.projectId, intent.id);
+        const mixed = after?.evidence.resources.some(r => r.role === "output" && r.deliveryId === active?.id) || after?.evidence.submissions.some(s => s.deliveryId === active?.id);
+        if (before?.status !== "done" && after?.status === "done" && after.workType === "coding" && mixed) {
+          const links = this.currentLinks(intent.projectId, intent.id);
+          if (!links.length || links.some(link => !link.mergedSha && link.prState !== "merged")) throw new Error("Merge all code links before accepting this mixed delivery");
+        }
+      }
+      return next();
+    });
     this.ctx.on("agent/prepare-turn", async (input) => {
+      if (input.purpose === "code" && input.ticket) {
+        const item = this.ctx.items.get(input.projectId, input.ticket.id);
+        if (item) input.ticket.completionPolicy = this.completionPolicy(input.projectId, item);
+      }
       if (input.cwd && input.workdir && githubHttps(input.workdir.remote)) {
         input.env = { ...input.env, ...await githubEnvironment(this.git, input.cwd, this.ctx.settings.config.path) };
       }
@@ -848,6 +865,10 @@ export class CodeLink extends Service {
       const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === active.sequence);
       if (own.length) {
         for (const l of own) {
+          // A ticket mention in a squash commit cannot identify which of
+          // several branches was merged. Multi-link deliveries require
+          // branch ancestry or explicit PR evidence for each link.
+          if (own.length > 1) continue;
           if (!l.mergedSha || l.prState === "open") {
             this.store.patchLink(projectId, l.id, { ...(!l.mergedSha ? { mergedSha: commit.sha } : {}), ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
           }
@@ -881,9 +902,21 @@ export class CodeLink extends Service {
   }
 
   /** Apply the sync matrix to one ticket in one repository. */
+  completionPolicy(projectId: string, item: Item): "merge" | "human" {
+    if (item.workType === "general") return "human";
+    const active = this.store.activeDelivery(projectId, item.id);
+    if (item.evidence.resources.some(r => r.role === "output" && r.deliveryId === active?.id) || item.evidence.submissions.some(s => s.deliveryId === active?.id)) return "human";
+    const links = this.currentLinks(projectId, item.id);
+    const defaultRepo = this.ctx.boards.get(projectId, item.boardId)?.repoId;
+    const repos = links.length ? links.map(l => l.repoId) : defaultRepo ? [defaultRepo] : [];
+    return repos.length && repos.every(id => this.store.repoState(projectId, id)?.autoDone ?? true) ? "merge" : "human";
+  }
+
   private judge(projectId: string, item: Item, repoId: string, previous: Map<string, CodeLinkView>, seen: Set<string>, autoDone: boolean): { changed: number; proposals: number } {
+    if (item.workType === "general") return { changed: 0, proposals: 0 };
     const delivery = this.store.activeDelivery(projectId, item.id);
     if (!delivery) return { changed: 0, proposals: 0 };
+    autoDone = autoDone && this.completionPolicy(projectId, item) === "merge";
     const links = this.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.delivery === delivery.sequence);
     if (!links.length) return { changed: 0, proposals: 0 };
     const present = links.filter((l) => l.branch && seen.has(l.id));
@@ -892,7 +925,7 @@ export class CodeLink extends Service {
     const evidence: Evidence = {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: links.some((l) => !!l.mergedSha || l.prState === "merged"),
+      merged: this.currentLinks(projectId, item.id).every(l => !!l.mergedSha || l.prState === "merged"),
       working,
       pr: primary?.prState ?? null,
       movedAfterDone:
@@ -949,6 +982,7 @@ export class CodeLink extends Service {
         const delivery = this.store.currentDelivery(item.projectId, item.id);
         const open = delivery ? this.store.proposalsForDelivery(item.projectId, item.id, delivery.sequence, "open") : [];
         const sessions = this.store.sessions(item.projectId, { itemId: item.id, ...(delivery ? { delivery: delivery.sequence } : {}) });
+        if (item.workType === "general" && !links.length && !sessions.length) return null;
         if (!delivery && !links.length && !open.length && !sessions.length) return null;
         const current = this.currentLinks(item.projectId, item.id);
         const primary = primaryOf(current);

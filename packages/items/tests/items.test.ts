@@ -8,6 +8,18 @@ import { ConflictError, DependencyCycleError, HumanLockedError, NotFoundError, P
 import { fresh } from "@tomrade/testkit";
 
 describe("items (write path)", () => {
+  it("persists and queries work type independently of hierarchy", async () => {
+    const { items, board, project } = await fresh();
+    const general = items.create({ projectId: project.id, boardId: board.id, title: "Prepare event materials", workType: "general", by: "human" });
+    const coding = items.create({ projectId: project.id, boardId: board.id, title: "Implement registration", by: "human" });
+    expect(coding.workType).toBe("coding");
+    expect(items.get(project.id, general.id)?.workType).toBe("general");
+    expect(items.list({ projectId: project.id, workType: "general" }).map(i => i.id)).toEqual([general.id]);
+    expect(items.query({ projectId: project.id, filter: [{ field: "workType", op: "in", values: ["general"] }] }).map(i => i.id)).toEqual([general.id]);
+    items.update(project.id, general.id, { workType: "coding" }, "human");
+    expect(items.get(project.id, general.id)?.kind).toBe("ticket");
+    expect(items.list({ projectId: project.id, workType: "general" })).toEqual([]);
+  });
   it("creates an item with version 1, a project key, and provenance", async () => {
     const { items, board, project } = await fresh();
     const item = items.create({ projectId: project.id, title: "Export report to PDF", boardId: board.id, by: "human" });

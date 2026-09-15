@@ -136,6 +136,14 @@ export function migrateCore(db: Sqlite): void {
     addColumn(db, "items", "board_id", "TEXT NOT NULL DEFAULT ''");
     addColumn(db, "items", "key_num", "INTEGER NOT NULL DEFAULT 0");
     addColumn(db, "items", "priority", "INTEGER NOT NULL DEFAULT 2");
+    addColumn(db, "items", "work_type", "TEXT NOT NULL DEFAULT 'coding'");
+    addColumn(db, "items", "playbook_id", "TEXT");
+    addColumn(db, "items", "evidence_json", `TEXT NOT NULL DEFAULT '{"resources":[],"submissions":[],"reviews":[]}'`);
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin_code_link_deliveries'").get()) {
+      const bases = columns(db, "plugin_code_link_deliveries").has("bases_json") ? "bases_json" : "'{}'";
+      db.exec(`INSERT OR IGNORE INTO deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, bases_json)
+        SELECT id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, ${bases} FROM plugin_code_link_deliveries`);
+    }
     addColumn(db, "oplog", "run_id", "TEXT");
     addColumn(db, "oplog", "device", "TEXT NOT NULL DEFAULT ''");
     addColumn(db, "oplog", "device_seq", "INTEGER");

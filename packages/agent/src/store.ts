@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db, ProjectDb } from "@tomrade/db";
 import type { Author } from "@tomrade/domain";
-import type { Block, CardView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
+import type { Block, CardView, GeneralExecution, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
 
 export const MIGRATIONS = [
   {
@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS plugin_agent_runs (
   stop       TEXT,
   error      TEXT,
   usage_json TEXT,
-  metrics_json TEXT,
   cost_usd   REAL,
   changes    INTEGER NOT NULL DEFAULT 0,
   reverted   INTEGER NOT NULL DEFAULT 0,
@@ -103,10 +102,14 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   },
   { version: 5, up: "ALTER TABLE plugin_agent_threads ADD COLUMN permission_mode TEXT" },
   { version: 6, up: "ALTER TABLE plugin_agent_runs ADD COLUMN metrics_json TEXT" },
-  { version: 7, up: "ALTER TABLE plugin_agent_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0" }
+  { version: 7, up: "ALTER TABLE plugin_agent_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0" },
+  { version: 8, up: "ALTER TABLE plugin_agent_threads ADD COLUMN execution_json TEXT" },
+  { version: 9, up: "ALTER TABLE plugin_agent_runs ADD COLUMN execution_json TEXT" },
+  { version: 10, up: "ALTER TABLE plugin_agent_runs ADD COLUMN playbooks_json TEXT NOT NULL DEFAULT '[]'" }
 ];
 
 interface ThreadRow {
+  execution_json: string | null;
   id: string;
   project_id: string;
   board_id: string | null;
@@ -124,6 +127,8 @@ interface ThreadRow {
 }
 
 interface RunRow {
+  playbooks_json: string;
+  execution_json: string | null;
   id: string;
   thread_id: string;
   status: RunStatus;
@@ -160,6 +165,7 @@ export interface PendingRecord extends PendingView {
 }
 
 const toThread = (r: ThreadRow): ThreadSummary => ({
+  execution: r.execution_json ? JSON.parse(r.execution_json) : null,
   id: r.id,
   projectId: r.project_id,
   boardId: r.board_id ?? null,
@@ -175,6 +181,8 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
 });
 
 const toRun = (r: RunRow): RunView => ({
+  playbooks: JSON.parse(r.playbooks_json ?? "[]"),
+  execution: r.execution_json ? JSON.parse(r.execution_json) : null,
   id: r.id,
   threadId: r.thread_id,
   status: r.status,
@@ -240,6 +248,18 @@ export class AgentStore {
   thread(projectId: string, id: string): ThreadSummary | null {
     const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE id = ?").get(id) as ThreadRow | undefined;
     return row ? toThread(row) : null;
+  }
+
+  setExecution(projectId: string, threadId: string, execution: GeneralExecution): void {
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET execution_json = ? WHERE id = ?").run(JSON.stringify(execution), threadId);
+  }
+
+  recordPlaybook(projectId: string, runId: string, playbook: GeneralExecution["playbook"]): void {
+    const run = this.run(projectId, runId);
+    if (!run) return;
+    const snapshots = run.playbooks ?? [];
+    if (snapshots.some(p => p.id === playbook.id && p.digest === playbook.digest)) return;
+    this.db(projectId).prepare("UPDATE plugin_agent_runs SET playbooks_json = ? WHERE id = ?").run(JSON.stringify([...snapshots, playbook]), runId);
   }
 
   createThread(projectId: string, engine: string, title = "", boardId: string | null = null, itemId: string | null = null, branch: string | null = null, surface: ThreadSurface = "assistant"): ThreadSummary {
@@ -353,7 +373,8 @@ export class AgentStore {
 
   beginRun(projectId: string, threadId: string, engine: string): RunView {
     const id = randomUUID();
-    this.db(projectId).prepare("INSERT INTO plugin_agent_runs (id, thread_id, status, engine, started_at) VALUES (?, ?, 'running', ?, ?)").run(id, threadId, engine, Date.now());
+    const execution = this.thread(projectId, threadId)?.execution;
+    this.db(projectId).prepare("INSERT INTO plugin_agent_runs (id, thread_id, status, engine, started_at, execution_json) VALUES (?, ?, 'running', ?, ?, ?)").run(id, threadId, engine, Date.now(), execution ? JSON.stringify(execution) : null);
     return this.run(projectId, id)!;
   }
 

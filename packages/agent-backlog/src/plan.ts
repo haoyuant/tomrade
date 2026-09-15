@@ -10,7 +10,7 @@ export const planSchema = z.object({
     z.object({
       title: z.string().min(1),
       body: z.string().default(""),
-      features: z.array(z.object({ title: z.string().min(1), body: z.string().default(""), priority: z.number().int().min(0).max(4).optional() })).default([])
+      features: z.array(z.object({ title: z.string().min(1), body: z.string().default(""), workType: z.enum(["coding", "general"]).optional(), priority: z.number().int().min(0).max(4).optional() })).default([])
     })
   ),
   notes: z.string().optional()
@@ -18,14 +18,14 @@ export const planSchema = z.object({
 export type Plan = z.infer<typeof planSchema>;
 
 const PLAN_SYSTEM = [
-  "You decompose a product requirement into a backlog tree: epics, each holding features.",
+  "You decompose a requirement into a backlog tree: epics, each holding independently deliverable tickets (the JSON field is named features for compatibility). Work may include code, documents, design, media, or offline human activities.",
   "House rules:",
   "- 2–6 epics: broad themes with clear children, no filler.",
-  "- Every feature is sized for ONE pull request by a coding agent. Split anything bigger.",
+  "- Each ticket has one independently deliverable and reviewable outcome. Coding tickets should fit one pull request; general tickets do not require Git, a file, or an agent. Assign workType coding or general to every ticket.",
   "- Titles: imperative, under 80 characters. Bodies: 1–3 sentences of intent, lean.",
   "- Do NOT invent requirements the input does not state; note genuine gaps in `notes` instead.",
   "- Do not re-propose work the existing backlog already covers.",
-  '- Return JSON: {"epics": [{"title", "body", "features": [{"title", "body", "priority"?}]}], "notes"?}'
+  '- Return JSON: {"epics": [{"title", "body", "features": [{"title", "body", "workType", "priority"?}]}], "notes"?}'
 ].join("\n");
 
 export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[]): Promise<Plan> {
@@ -77,6 +77,7 @@ export function applyPlan(
           projectId: opts.projectId,
           boardId,
           kind: "ticket",
+          workType: feature.workType ?? "coding",
           title: feature.title,
           body: feature.body || null,
           priority: (feature.priority ?? 2) as Item["priority"],
@@ -98,7 +99,7 @@ export const gapSchema = z.object({
 const GAP_SYSTEM = [
   "You are a product gap analyst.",
   "Given a stated requirement and the existing backlog, list the missing backlog items needed to fully satisfy the requirement.",
-  "- Only items that are genuinely absent. Each sized for ONE pull request.",
+  "- Only items that are genuinely absent. Each has an independently reviewable outcome; only coding work is sized for one pull request. Include required document, design, media, and human work.",
   "- Reason: one sentence explaining the gap.",
   '- Return JSON: {"missing": [{"title", "body"?, "reason"}]}'
 ].join("\n");

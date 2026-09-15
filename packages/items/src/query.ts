@@ -44,6 +44,8 @@ export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, d
         return { expr: "i.title", bind: String };
       case "status":
         return { expr: "i.status", bind: String };
+      case "workType":
+        return { expr: "i.work_type", bind: String };
       case "priority":
         return { expr: "i.priority", bind: Number };
       case "epic":

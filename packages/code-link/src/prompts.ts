@@ -16,9 +16,10 @@ export interface FirstPromptInput {
   decisions?: Decision[];
   /** The workstream's folder inside the repository, '' for the root. */
   subdir?: string;
+  completionPolicy?: "merge" | "human";
 }
 
-const conventions = (key: string, defaultBranch: string) =>
+const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human") =>
   [
     "Conventions:",
     `- this run owns exactly ${key}; implement only its stated outcome and acceptance criteria`,
@@ -29,7 +30,7 @@ const conventions = (key: string, defaultBranch: string) =>
     "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
     "- call note_progress with one line at each milestone; it is what the ticket shows while you work",
     "- if git push, fetch, pull or gh fails with an authentication or repository-not-found error, do not switch accounts, edit credential helpers or change the remote; commit locally, call note_progress with 'blocked: push …', and stop — the human owns credentials",
-    "- do not mark the ticket done; merging does that"
+    `- do not mark the ticket done; ${completionPolicy === "merge" ? "the platform completes delivery after all code links merge" : "human acceptance is required, even after code merges; submit required artifacts for review"}`
   ].join("\n");
 
 /** The first message of a thread started from a ticket: the ticket, the place, the protocol. How to code is the repository's CLAUDE.md's business. */
@@ -57,13 +58,13 @@ export function firstPrompt(input: FirstPromptInput): string {
       : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",
     mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json and .codex/config.toml: ${mcpUrl}` : "",
     "",
-    conventions(item.key, repo.defaultBranch)
+    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"))
   ];
   return parts.filter((p) => p !== "").join("\n");
 }
 
 /** Picking a thread back up: where it stopped, what the branch looks like now. */
-export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null): string {
+export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human"): string {
   const parts = [
     `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
     "",
@@ -74,7 +75,7 @@ export function continuePrompt(item: Item, repo: Repo, session: SessionView | nu
     link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : " · no pull request yet"}.` : "",
     "Check the working tree and the tests, then carry on where you stopped. get_item has the ticket's latest state if you need it.",
     "",
-    conventions(item.key, repo.defaultBranch)
+    conventions(item.key, repo.defaultBranch, completionPolicy)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }

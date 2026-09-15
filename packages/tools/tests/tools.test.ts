@@ -10,6 +10,7 @@ import { fresh } from "@tomrade/testkit";
 import { Tools, ToolInputError, UnknownToolError, defineTool } from "@tomrade/tools";
 
 const BACKLOG_TOOLS = [
+  "add_delivery_resource",
   "change_status",
   "count_items",
   "create_field",
@@ -22,6 +23,7 @@ const BACKLOG_TOOLS = [
   "list_projects",
   "list_workstreams",
   "remove_workstream",
+  "submit_delivery",
   "update_item",
   "update_workstream"
 ];

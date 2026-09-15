@@ -1,4 +1,5 @@
 export { Db, DbConfig, HUB_ID } from "./service.js";
+export { DeliveryStore, type DeliveryView, type DeliveryState } from "./deliveries.js";
 export { ProjectDb, ProjectNotOpenError } from "./project-db.js";
 export {
   applyRegistration,

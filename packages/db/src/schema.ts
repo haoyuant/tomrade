@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 9;
+export const CORE_SCHEMA_VERSION = 13;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS items (
   title         TEXT NOT NULL,
   body          TEXT,
   kind          TEXT NOT NULL DEFAULT 'ticket',
+  work_type     TEXT NOT NULL DEFAULT 'coding',
+  playbook_id   TEXT,
+  evidence_json TEXT NOT NULL DEFAULT '{"resources":[],"submissions":[],"reviews":[]}',
   status        TEXT NOT NULL DEFAULT 'backlog',
   priority      INTEGER NOT NULL DEFAULT 2,
   parent_id     TEXT,
@@ -83,6 +86,18 @@ CREATE TABLE IF NOT EXISTS labels (
   id            TEXT PRIMARY KEY,
   project_id    TEXT NOT NULL,
   name          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS deliveries (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  state TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  updated_at INTEGER NOT NULL,
+  bases_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS item_labels (
@@ -164,6 +179,8 @@ CREATE TABLE IF NOT EXISTS plugin_migrations (
 
 /** Created after migration: the unique key index cannot exist while backfill is pending. */
 export const CORE_INDEXES_SQL = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_sequence ON deliveries(project_id, item_id, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_active ON deliveries(project_id, item_id) WHERE state = 'active';
 CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id, rank);
 CREATE INDEX IF NOT EXISTS idx_views_project ON views(project_id, rank);
 CREATE INDEX IF NOT EXISTS idx_repos_project ON repos(project_id, name);

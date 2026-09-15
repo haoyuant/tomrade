@@ -5,7 +5,7 @@ export const issueScreen = {
     notInProject: "That issue is not in this project.",
     moveToButton: "Move to {{status}}",
     fieldKind: "Kind",
-    kindTicket: "Ticket · one PR"
+    kindTicket: "Ticket"
   },
   zh: {
     backProjects: "项目",
@@ -13,6 +13,6 @@ export const issueScreen = {
     notInProject: "该工作项不在此项目中。",
     moveToButton: "移动到{{status}}",
     fieldKind: "类型",
-    kindTicket: "任务 · 单个 PR"
+    kindTicket: "任务"
   }
 };

@@ -240,6 +240,11 @@ ctx.agent.workflow({
 // and the Assistant settings pane keeps a picker per conflicted id.
 ctx.agent.playbook({ id: "acme.review", title: "Review", when: "the user asks for a review", body: "…" });
 
+// Optional frontmatter / registration metadata: workTypes (recommendations),
+// requires (hard gates), optionalCapabilities, outputs. These are not tool
+// permissions. Advertise only implemented capabilities and dispose on unload.
+const releaseCapability = ctx.agent.capability("files.write");
+
 // A POLICY is an invariant in code: it runs on tools/pre-execute for calls that
 // belong to an agent run and can read the run's ledger and waivers. Throw to
 // refuse — the message reaches the model, which self-corrects.
@@ -248,6 +253,60 @@ ctx.agent.policy({
   before: (call, next) => (call.name === "write_doc" && call.run.ledger.find((e) => e.tool === "write_doc") ? Promise.reject(new Error("one document per run")) : next())
 });
 ```
+
+### General work, deliveries and the future Files plugin
+
+Ticket `workType` defaults to `coding`; `general` needs no repository. Structural
+`kind` still distinguishes tickets and epics. `playbookId` is an optional default
+method, including `task.assist`, `document.write`, `design.create` and
+`media.generate`. The latter methods require provider capabilities; Files and
+media generation providers are intentionally not implemented in core.
+
+`agent.startGeneral(projectId, itemId, { engine?, playbook? })` preflights the
+engine, ticket/dependencies and required capabilities. A run uses a temporary
+execution directory, not durable artifact storage. Resuming the active delivery
+preserves its method snapshot; `agent.takeoverGeneral` cancels and waits for
+execution to stop without marking the ticket complete. Runs expose `execution`
+and `playbooks` snapshots (source, content hash and body), including methods
+explicitly loaded through `open_playbook` on Coding runs.
+
+Ticket creation can call `agent.recommendPlaybook(projectId, { title, body,
+workType? })` before persisting. The worker model receives only the ticket brief
+and applicable Playbook metadata, and returns a suggested work type, method,
+confidence and reason. The renderer may preselect that method; it must remain an
+advisory choice. A human selection wins and stops later recommendations from
+overwriting it. If no model is configured or the response is invalid, the Agent
+uses a deterministic keyword/metadata fallback. Recommendation never starts a
+run and never bypasses capability checks.
+
+Files providers register `ctx.items.files({ getVersion(projectId, reference) })`
+and retain the returned disposer. The resolver must check project access and
+return the exact `{ fileId, versionId }`, or `null`; versions must be immutable.
+Registering a resolver does not grant agent tools permission to read/write files.
+There is no fallback attachment directory or file-content field on Ticket.
+
+After persisting a version in Files, call
+`items.addResource(projectId, itemId, { name, role: "input" | "output", file }, by)`.
+Inputs are ticket-wide materials; outputs belong to the active Delivery. Agent
+tools are `add_delivery_resource` and `submit_delivery`. Submission takes a
+nonempty report and selected output resource IDs from this delivery, transitions
+to Verifying, and pins those file versions. Report-only human work is supported.
+Human-only `items.reviewDelivery` IPC takes submission ID, decision, comment and
+the observed item version. Stale review is refused. Acceptance completes;
+changes requested return to Doing without losing earlier submissions.
+
+The future Files UI owns selection, preview, download and file permissions. A
+picker must return a versioned reference, never a machine-local path or mutable
+“latest” alias. Preview must resolve the submitted version rather than the
+current file head, and display a missing/unavailable state if access is revoked.
+The current Delivery panel shows metadata and review history; it does not claim
+to preview or upload files before that plugin exists.
+
+Shared Delivery rows travel with snapshots. Item evidence and delivery status
+participate in undo. Independent evidence additions merge; incompatible active
+deliveries, duplicate reviews, and broken submitted references fail sync with a
+reconciliation error, preserving the source snapshots rather than fabricating
+completion. Work type cannot change during an active delivery.
 
 Engines emit **blocks** — text, trace, question, card, status, changes, note —
 and the panel draws them with the design system's own primitives; a

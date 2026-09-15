@@ -217,10 +217,9 @@ describe("the scripted engine", () => {
     const answers = [
       "Requirement intake (fixed questions)",
       "Help me drink enough water every day",
-      "Just me",
-      "Flutter mobile app",
+      "Existing notes",
+      "Flutter mobile app only",
       "log water, remind me, show progress",
-      "-",
       "7-day streak of hitting the goal"
     ];
     for (const answer of answers) {
@@ -228,7 +227,7 @@ describe("the scripted engine", () => {
       ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: answer }));
       run = await settled(ctx, project.id, runId);
     }
-    // All six fields answered → the confirm question is now waiting.
+    // Universal fields answered → the confirm question is now waiting.
     pending = agent.thread(project.id, thread.id).pending!;
     expect(pending.question.text).toContain("Plan the backlog");
     ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "Stop" }));
@@ -236,7 +235,7 @@ describe("the scripted engine", () => {
     expect(run.status).toBe("done");
     const card = agent.thread(project.id, thread.id).cards.find((c) => c.id === "dossier");
     expect(card).toBeTruthy();
-    expect((card!.data as { platform: string }).platform).toBe("Flutter mobile app");
+    expect((card!.data as { constraints: string[] }).constraints).toEqual(["Flutter mobile app only"]);
     expect(run.changes).toBe(0);
   });
 });

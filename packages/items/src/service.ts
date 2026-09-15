@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { emptyEvidence, addResourceSchema, submitDeliverySchema, reviewDeliverySchema, type FilesResolver, type TicketEvidence, type DeliveryResource } from "@tomrade/domain";
 import { Context, Service } from "cordis";
 import type { ProjectDb } from "@tomrade/db";
+import { DeliveryStore } from "@tomrade/db";
 import type { Oplog } from "@tomrade/oplog";
 import { write } from "@tomrade/write";
 import {
@@ -30,6 +33,7 @@ declare module "cordis" {
 }
 
 interface ItemRow {
+  evidence_json: string;
   id: string;
   project_id: string;
   board_id: string;
@@ -38,6 +42,8 @@ interface ItemRow {
   title: string;
   body: string | null;
   kind: ItemKind;
+  work_type: Item["workType"];
+  playbook_id: string | null;
   status: ItemStatus;
   priority: number;
   parent_id: string | null;
@@ -52,6 +58,7 @@ const SELECT_ITEM = "SELECT i.*, COALESCE(p.key_prefix, 'TOM') AS key_prefix FRO
 
 function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks" | "blockedBy" | "fields"> {
   return {
+    evidence: row.evidence_json ? JSON.parse(row.evidence_json) : emptyEvidence(),
     id: row.id,
     projectId: row.project_id,
     boardId: row.board_id,
@@ -60,6 +67,8 @@ function baseItem(row: ItemRow): Omit<Item, "labels" | "blocks" | "blockedBy" | 
     title: row.title,
     body: row.body,
     kind: row.kind,
+    workType: row.work_type,
+    playbookId: row.playbook_id ?? null,
     status: row.status,
     priority: row.priority as Priority,
     parentId: row.parent_id,
@@ -84,8 +93,8 @@ function groupBy<T, V>(rows: T[], key: (r: T) => string, value: (r: T) => V): Ma
 
 /** better-sqlite3 cannot bind booleans. */
 function toSqlParams(item: Item): Record<string, unknown> {
-  const { labels: _labels, blocks: _blocks, blockedBy: _blockedBy, fields: _fields, key: _key, ...rest } = item;
-  return { ...rest, humanLocked: item.humanLocked ? 1 : 0 };
+  const { evidence, labels: _labels, blocks: _blocks, blockedBy: _blockedBy, fields: _fields, key: _key, ...rest } = item;
+  return { ...rest, evidenceJson: JSON.stringify(evidence), humanLocked: item.humanLocked ? 1 : 0 };
 }
 
 /** The stored shape read back as a value: a number if one is there, the text otherwise. */
@@ -98,6 +107,63 @@ export interface ItemQuery {
 }
 
 export class Items extends Service {
+  get deliveries(): DeliveryStore { return new DeliveryStore(this.ctx.db); }
+  private filesResolver: FilesResolver | null = null;
+
+  /** Register the Files plugin's version resolver. This service stores metadata only. */
+  files(resolver: FilesResolver): () => void {
+    if (this.filesResolver) throw new Error("A Files resolver is already registered");
+    this.filesResolver = resolver;
+    return () => { if (this.filesResolver === resolver) this.filesResolver = null; };
+  }
+
+  private openTicket(projectId: string, id: string): Item {
+    const item = this.get(projectId, id);
+    if (!item || item.kind !== "ticket") throw new Error("Choose a ticket");
+    if (item.status === "done" || item.status === "cancelled") throw new Error("Reopen the ticket before changing its delivery");
+    return item;
+  }
+
+  async addResource(projectId: string, id: string, input: z.input<typeof addResourceSchema>, by: Author): Promise<Item> {
+    const args = addResourceSchema.parse(input);
+    const item = this.openTicket(projectId, id);
+    const resolver = this.filesResolver;
+    if (!resolver) throw new Error("Files plugin is unavailable; the file has not been delivered");
+    const resolved = await resolver.getVersion(projectId, args.file);
+    if (!resolved || resolved.fileId !== args.file.fileId || resolved.versionId !== args.file.versionId) throw new Error("The requested file version does not exist in this project's Files plugin");
+    if (this.filesResolver !== resolver) throw new Error("Files plugin became unavailable; try again");
+    return this.db(projectId).transaction(() => {
+      const delivery = args.role === "output" ? this.deliveries.ensure(projectId, id) : null;
+      const resource: DeliveryResource = { id: randomUUID(), name: args.name, role: args.role, deliveryId: delivery?.id ?? null, file: args.file, createdBy: by, createdAt: Date.now() };
+      return this.updateInternal(projectId, id, item.status === "verifying" && args.role === "output" ? { status: "doing" } : {}, by,
+        { baseVersion: item.version }, { ...item.evidence, resources: [...item.evidence.resources, resource] });
+    });
+  }
+
+  submitDelivery(projectId: string, id: string, input: z.input<typeof submitDeliverySchema>, by: Author): Item {
+    const args = submitDeliverySchema.parse(input);
+    const item = this.openTicket(projectId, id);
+    return this.db(projectId).transaction(() => {
+      const delivery = this.deliveries.ensure(projectId, id);
+      const artifactIds = [...new Set(args.artifactIds)];
+      for (const artifactId of artifactIds) {
+        if (!item.evidence.resources.some(r => r.id === artifactId && r.role === "output" && r.deliveryId === delivery.id)) throw new Error("A submission can only include this delivery's output artifacts");
+      }
+      const submission = { id: randomUUID(), deliveryId: delivery.id, report: args.report, artifactIds, submittedBy: by, submittedAt: Date.now() };
+      return this.updateInternal(projectId, id, { status: "verifying" }, by, { baseVersion: item.version }, { ...item.evidence, submissions: [...item.evidence.submissions, submission] });
+    });
+  }
+
+  reviewDelivery(projectId: string, id: string, input: z.input<typeof reviewDeliverySchema>, baseVersion: number): Item {
+    const args = reviewDeliverySchema.parse(input);
+    const item = this.openTicket(projectId, id);
+    const delivery = this.deliveries.active(projectId, id);
+    const submission = item.evidence.submissions.filter(s => s.deliveryId === delivery?.id).at(-1);
+    if (!submission || submission.id !== args.submissionId || item.status !== "verifying") throw new Error("This submission is no longer awaiting review; refresh the ticket");
+    if (item.evidence.reviews.some(r => r.submissionId === submission.id)) throw new Error("This submission has already been reviewed");
+    const review = { id: randomUUID(), submissionId: submission.id, decision: args.decision, comment: args.comment, reviewedBy: "human" as const, reviewedAt: Date.now() };
+    return this.updateInternal(projectId, id, { status: args.decision === "accepted" ? "done" : "doing" }, "human", { baseVersion }, { ...item.evidence, reviews: [...item.evidence.reviews, review] });
+  }
   static provide = "items";
   static inject = ["db", "oplog", "fields"];
 
@@ -135,6 +201,7 @@ export class Items extends Service {
     if (filter.boardId !== undefined) eq("i.board_id", filter.boardId);
     if (filter.status !== undefined) eq("i.status", filter.status);
     if (filter.kind !== undefined) eq("i.kind", filter.kind);
+    if (filter.workType !== undefined) eq("i.work_type", filter.workType);
     if (filter.priority !== undefined) eq("i.priority", filter.priority);
     if (filter.parentId === null) where.push("i.parent_id IS NULL");
     else if (filter.parentId !== undefined) eq("i.parent_id", filter.parentId);
@@ -195,6 +262,7 @@ export class Items extends Service {
     const now = Date.now();
     const stored = this.fields.normalize(projectId, input.fields ?? {});
     const item: Item = {
+      evidence: emptyEvidence(),
       id: randomUUID(),
       projectId,
       boardId: input.boardId,
@@ -203,6 +271,8 @@ export class Items extends Service {
       title: input.title,
       body: input.body ?? null,
       kind: input.kind ?? "ticket",
+      workType: input.workType ?? "coding",
+      playbookId: input.playbookId ?? null,
       status: input.status ?? "backlog",
       priority: input.priority ?? 2,
       parentId: input.parentId ?? null,
@@ -216,15 +286,29 @@ export class Items extends Service {
       version: 1,
       humanLocked: false
     };
+    if (item.workType === "general" && item.status === "done" && input.by !== "human") throw new Error("General deliveries require human acceptance");
     return write(this.ctx, { projectId, entity: "item", op: "create", id: item.id, by: input.by, before: null, after: item }, () =>
       db.transaction(() => {
         db.prepare("UPDATE projects SET next_key_num = ? WHERE id = ?").run(item.keyNum + 1, projectId);
         db.prepare(
-          `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
-           VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)`
+          `INSERT INTO items (id, project_id, board_id, key_num, title, body, kind, work_type, playbook_id, evidence_json, status, priority, parent_id, rank, updated_at, updated_by, version, human_locked)
+           VALUES (@id, @projectId, @boardId, @keyNum, @title, @body, @kind, @workType, @playbookId, @evidenceJson, @status, @priority, @parentId, @rank, @updatedAt, @updatedBy, @version, @humanLocked)`
         ).run(toSqlParams(item));
         this.writeLabels(db, item.id, projectId, item.labels);
         this.writeValues(db, item.id, stored);
+        if (item.workType === "general" && item.kind === "ticket" && !["backlog", "todo"].includes(item.status)) {
+          const delivery = this.deliveries.ensure(projectId, item.id, now);
+          if (item.status === "done") {
+            const submissionId = randomUUID();
+            item.evidence = {
+              resources: [],
+              submissions: [{ id: submissionId, deliveryId: delivery.id, report: "Created as complete by a human.", artifactIds: [], submittedBy: "human", submittedAt: now }],
+              reviews: [{ id: randomUUID(), submissionId, decision: "accepted", comment: "", reviewedBy: "human", reviewedAt: now }]
+            };
+            db.prepare("UPDATE items SET evidence_json = ? WHERE id = ?").run(JSON.stringify(item.evidence), item.id);
+          }
+          if (item.status === "done" || item.status === "cancelled") this.deliveries.finish(projectId, item.id, item.status === "done" ? "completed" : "cancelled", now);
+        }
         this.oplog.append(projectId, { entity: "item", op: "create", entityId: item.id, baseVersion: null, before: null, after: item, by: input.by, at: now });
         return item;
       })
@@ -236,6 +320,11 @@ export class Items extends Service {
    * version the caller read, and the policy refuses a stale assertion whoever made it.
    */
   update(projectId: string, id: string, patch: Patch, by: Author, opts: { baseVersion?: number } = {}): Item {
+    if ("evidence" in patch) throw new Error("Use delivery resource and review operations to change evidence");
+    return this.updateInternal(projectId, id, patch, by, opts);
+  }
+
+  private updateInternal(projectId: string, id: string, patch: Patch, by: Author, opts: { baseVersion?: number } = {}, evidence?: TicketEvidence): Item {
     const db = this.db(projectId);
     const existing = this.get(projectId, id);
     if (!existing) throw new NotFoundError(id);
@@ -243,11 +332,26 @@ export class Items extends Service {
     // Validated before the write path sees it, so a bad value is refused as a bad value, not as a conflict.
     const stored = patch.fields ? this.fields.normalize(projectId, patch.fields) : null;
     const { fields: fieldsPatch, ...rest } = patch;
-    const next: Item = { ...existing, ...rest, fields: mergeFields(existing.fields, fieldsPatch ?? {}, stored ?? new Map()), updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
+    const next: Item = { ...existing, ...rest, evidence: evidence ?? existing.evidence, fields: mergeFields(existing.fields, fieldsPatch ?? {}, stored ?? new Map()), updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
+    if (next.workType === "general" && next.status === "done" && existing.status !== "done" && by !== "human") throw new Error("General deliveries require human acceptance");
+    const active = this.deliveries.active(projectId, id);
+    if (active && (next.workType !== existing.workType || next.kind !== existing.kind)) throw new Error("Finish or cancel the active delivery before changing its work type or kind");
+    const hasOutputs = existing.evidence.resources.some(r => r.role === "output" && r.deliveryId === active?.id);
+    if (next.status === "done" && existing.status !== "done" && hasOutputs && by !== "human") throw new Error("Artifact deliveries require human acceptance");
+    if (next.status === "done" && existing.status !== "done" && by === "human" && !evidence && (next.workType === "general" || hasOutputs)) {
+      const deliveryId = active?.id ?? `${id}:delivery:${(this.deliveries.current(projectId, id)?.sequence ?? 0) + 1}`;
+      const submitted = existing.evidence.submissions.filter(s => s.deliveryId === deliveryId).at(-1);
+      const current = existing.status === "verifying" && submitted && !existing.evidence.reviews.some(r => r.submissionId === submitted.id) ? submitted : null;
+      const submission = current ?? { id: randomUUID(), deliveryId, report: "Marked complete by a human.", artifactIds: existing.evidence.resources.filter(r => r.role === "output" && r.deliveryId === deliveryId).map(r => r.id), submittedBy: "human" as const, submittedAt: next.updatedAt };
+      next.evidence = { ...existing.evidence,
+        submissions: current ? existing.evidence.submissions : [...existing.evidence.submissions, submission],
+        reviews: [...existing.evidence.reviews, { id: randomUUID(), submissionId: submission.id, decision: "accepted", comment: "", reviewedBy: "human", reviewedAt: next.updatedAt }] };
+    }
+    const beforeDeliveries = this.deliveries.list(projectId, id);
     return write(this.ctx, { projectId, entity: "item", op: "update", id, by, baseVersion: opts.baseVersion, before: existing, after: next, patch }, () =>
       db.transaction(() => {
         db.prepare(
-          `UPDATE items SET board_id = @boardId, title = @title, body = @body, kind = @kind, status = @status,
+          `UPDATE items SET board_id = @boardId, title = @title, body = @body, kind = @kind, work_type = @workType, playbook_id = @playbookId, evidence_json = @evidenceJson, status = @status,
              priority = @priority, parent_id = @parentId, rank = @rank, updated_at = @updatedAt,
              updated_by = @updatedBy, version = @version, human_locked = @humanLocked
            WHERE id = @id`
@@ -255,7 +359,17 @@ export class Items extends Service {
         if (patch.labels) this.writeLabels(db, id, projectId, next.labels);
         if (patch.blocks) this.writeBlocks(db, id, next.blocks);
         if (stored) this.writeValues(db, id, stored);
-        this.oplog.append(projectId, { entity: "item", op: "update", entityId: id, baseVersion: existing.version, before: existing, after: next, by, at: next.updatedAt });
+        if ((next.workType === "general" || hasOutputs || existing.evidence.submissions.some(s => s.deliveryId === active?.id)) && next.kind === "ticket" && existing.status !== next.status) {
+          if (next.status === "doing" || next.status === "verifying" || existing.status === "done" || existing.status === "cancelled") {
+            this.deliveries.ensure(projectId, id, next.updatedAt);
+          }
+          if (next.status === "done" || next.status === "cancelled") {
+            this.deliveries.ensure(projectId, id, next.updatedAt);
+            this.deliveries.finish(projectId, id, next.status === "done" ? "completed" : "cancelled", next.updatedAt);
+          }
+        }
+        this.oplog.append(projectId, { entity: "item", op: "update", entityId: id, baseVersion: existing.version,
+          before: { ...existing, deliveries: beforeDeliveries }, after: { ...next, deliveries: this.deliveries.list(projectId, id) }, by, at: next.updatedAt });
         return next;
       })
     );
@@ -266,11 +380,13 @@ export class Items extends Service {
     const db = this.db(projectId);
     const existing = this.get(projectId, id);
     if (!existing) throw new NotFoundError(id);
+    const snapshot = { ...existing, deliveries: this.deliveries.list(projectId, id) };
     write(this.ctx, { projectId, entity: "item", op: "delete", id, by, before: existing, after: null }, () =>
       db.transaction(() => {
         this.detach(db, id);
+        db.prepare("DELETE FROM deliveries WHERE item_id = ?").run(id);
         db.prepare("DELETE FROM items WHERE id = ?").run(id);
-        this.oplog.append(projectId, { entity: "item", op: "delete", entityId: id, baseVersion: existing.version, before: existing, after: null, by, at: Date.now() });
+        this.oplog.append(projectId, { entity: "item", op: "delete", entityId: id, baseVersion: existing.version, before: snapshot, after: null, by, at: Date.now() });
       })
     );
   }
@@ -287,6 +403,7 @@ export class Items extends Service {
       db.transaction(() => {
         const releasedChildren = (db.prepare("SELECT id FROM items WHERE parent_id = ?").all(id) as { id: string }[]).map((r) => r.id);
         this.detach(db, id);
+        db.prepare("DELETE FROM deliveries WHERE item_id = ?").run(id);
         db.prepare("DELETE FROM items WHERE id = ?").run(id);
         this.oplog.erase(projectId, "item", id);
         this.oplog.append(projectId, {

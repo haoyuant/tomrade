@@ -70,6 +70,7 @@ export class Starter {
     const found = ctx.items.get(projectId, itemId);
     if (!found) throw new Error(`unknown item ${itemId}`);
     let item: Item = found;
+    if (item.workType === "general") throw new Error("General tickets require the general execution entry point");
     if (!OPEN.has(item.status)) throw new Error(`Reopen ${item.key} before starting another delivery`);
     if (item.humanLocked) return { ok: false, gate: "locked", message: `${item.key} is human-locked — unlock it before starting work on it` };
 
@@ -197,9 +198,10 @@ export class Starter {
     if (continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
+    const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
     const basePrompt = continued
-      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link)
-      : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, "") });
+      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy)
+      : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy });
     const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
 
     if (opts.mode === "run") {

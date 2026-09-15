@@ -20,15 +20,14 @@ export { PLAYBOOKS } from "./playbooks.js";
 export const DEDUP_RULE = "dedup-before-create";
 
 const QUESTIONS: Record<RequiredField, string> = {
-  goal: "What should this product achieve, in one or two sentences?",
-  users: "Who is it for?",
-  platform: "What platform or form factor? (e.g. Flutter mobile app, web, CLI)",
-  coreLoop: "What are the 1–3 things it must do? (comma-separated)",
-  outOfScope: "Anything explicitly out of scope? (comma-separated, or “-” for none)",
+  goal: "What should this work achieve, in one or two sentences?",
+  materials: "What materials are already available? (comma-separated, or “-” for none)",
+  constraints: "What constraints must the work respect? (comma-separated, or “-” for none)",
+  outcomes: "What results should be delivered? (comma-separated)",
   successSignal: "How will you know it works? Name one success signal."
 };
 
-const LIST_FIELDS: ReadonlySet<RequiredField> = new Set(["coreLoop", "outOfScope"]);
+const LIST_FIELDS: ReadonlySet<RequiredField> = new Set(["materials", "constraints", "outcomes"]);
 
 const toList = (raw: string): string[] => {
   const trimmed = raw.trim();
@@ -119,7 +118,7 @@ export default {
       id: "plan_and_apply",
       title: "Plan & apply",
       description:
-        "Decompose a requirement into a root epic → epics → PR-sized features and write the whole tree in ONE transaction (revertible in one click). Pass {requirement} for a written spec, or {} to use this thread's dossier.",
+        "Decompose a requirement into a root epic → epics → independently deliverable coding or general tickets and write the whole tree in ONE transaction (revertible in one click). Pass {requirement} for a written spec, or {} to use this thread's dossier.",
       input: z.object({ requirement: z.string().optional(), rootTitle: z.string().optional() }),
       state: z.object({ requirement: z.string(), rootTitle: z.string(), plan: planSchema.nullable(), writes: z.number() }),
       entry: "plan",

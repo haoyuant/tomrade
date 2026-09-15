@@ -72,7 +72,7 @@ export class ClaudeRuntime implements Runtime {
       if (message.type === "system" && message.subtype === "init") {
         this.session = message.session_id;
         metrics.providerModel = message.model;
-        if (input.purpose === "code" && message.permissionMode) io.permissionMode?.(message.permissionMode);
+        if (input.purpose !== "backlog" && message.permissionMode) io.permissionMode?.(message.permissionMode);
           metrics.readyMs ??= performance.now() - start;
       } else if (message.type === "system" && message.subtype === "compact_boundary") {
         metrics.compactions!++;
@@ -108,7 +108,7 @@ export class ClaudeRuntime implements Runtime {
     try {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       if (!this.query) {
-        const code = input.purpose === "code";
+        const code = input.purpose !== "backlog";
         const sdkOptions: Options = {
           pathToClaudeCodeExecutable: executable(options.command), cwd: this.cwd,
           env: { ...process.env, ...input.env },
