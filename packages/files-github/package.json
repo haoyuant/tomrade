@@ -1,0 +1,30 @@
+{
+  "name": "@tomrade/files-github",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "GitHub as the place a project's files are shared: a repository per project, found or created with the account Tomrade already publishes with",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/files": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "@tomrade/storage-github": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

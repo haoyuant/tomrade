@@ -51,6 +51,12 @@
       "path": "./packages/fields"
     },
     {
+      "path": "./packages/files"
+    },
+    {
+      "path": "./packages/files-github"
+    },
+    {
       "path": "./packages/hub"
     },
     {

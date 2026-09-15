@@ -30,6 +30,8 @@
     "@tomrade/engine-loop": "workspace:*",
     "@tomrade/engine-scripted": "workspace:*",
     "@tomrade/fields": "workspace:*",
+    "@tomrade/files": "workspace:*",
+    "@tomrade/files-github": "workspace:*",
     "@tomrade/hub": "workspace:*",
     "@tomrade/hub-cloud": "workspace:*",
     "@tomrade/ipc": "workspace:*",

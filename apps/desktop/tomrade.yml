@@ -69,6 +69,8 @@ modules:
     title: MCP server
   - id: codeLink
     title: Code link
+  - id: files
+    title: Files
   - id: pet
     title: Pet
 
@@ -160,6 +162,14 @@ plugins:
     name: "@tomrade/code-link"
     config:
       scanMs: 120000
+  # The project's files: a folder tree beside the backlog, every save a
+  # version, shared through a remote the project names. Optional — tickets keep
+  # only versioned references, which read as unavailable without it.
+  - id: files
+    name: "@tomrade/files"
+  # …and GitHub as where those files are shared: find a repository, make one.
+  - id: files-github
+    name: "@tomrade/files-github"
   - id: mcp
     name: "@tomrade/mcp"
     config:

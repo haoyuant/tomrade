@@ -62,6 +62,12 @@ importers:
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../../packages/fields
+      '@tomrade/files':
+        specifier: workspace:*
+        version: link:../../packages/files
+      '@tomrade/files-github':
+        specifier: workspace:*
+        version: link:../../packages/files-github
       '@tomrade/hub':
         specifier: workspace:*
         version: link:../../packages/hub
@@ -519,6 +525,77 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/files:
+    dependencies:
+      '@tomrade/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomrade/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomrade/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/files-github:
+    dependencies:
+      '@tomrade/files':
+        specifier: workspace:*
+        version: link:../files
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/storage-github':
+        specifier: workspace:*
+        version: link:../storage-github
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
