@@ -125,18 +125,35 @@ export class Items extends Service {
   }
 
   async addResource(projectId: string, id: string, input: z.input<typeof addResourceSchema>, by: Author): Promise<Item> {
-    const args = addResourceSchema.parse(input);
+    return this.addResources(projectId, id, [input], by);
+  }
+
+  /** Validate every file first, then add the resources in one versioned item write. */
+  async addResources(projectId: string, id: string, inputs: z.input<typeof addResourceSchema>[], by: Author): Promise<Item> {
+    const args = z.array(addResourceSchema).min(1).parse(inputs);
     const item = this.openTicket(projectId, id);
     const resolver = this.filesResolver;
     if (!resolver) throw new Error("Files plugin is unavailable; the file has not been delivered");
-    const resolved = await resolver.getVersion(projectId, args.file);
-    if (!resolved || resolved.fileId !== args.file.fileId || resolved.versionId !== args.file.versionId) throw new Error("The requested file version does not exist in this project's Files plugin");
+    const resolved = await Promise.all(args.map(resource => resolver.getVersion(projectId, resource.file)));
+    if (resolved.some((reference, index) => !reference || reference.fileId !== args[index]!.file.fileId || reference.versionId !== args[index]!.file.versionId)) {
+      throw new Error(`${args.length === 1 ? "The" : "A"} requested file version does not exist in this project's Files plugin`);
+    }
     if (this.filesResolver !== resolver) throw new Error("Files plugin became unavailable; try again");
     return this.db(projectId).transaction(() => {
-      const delivery = args.role === "output" ? this.deliveries.ensure(projectId, id) : null;
-      const resource: DeliveryResource = { id: randomUUID(), name: args.name, role: args.role, deliveryId: delivery?.id ?? null, file: args.file, createdBy: by, createdAt: Date.now() };
-      return this.updateInternal(projectId, id, item.status === "verifying" && args.role === "output" ? { status: "doing" } : {}, by,
-        { baseVersion: item.version }, { ...item.evidence, resources: [...item.evidence.resources, resource] });
+      const hasOutputs = args.some(resource => resource.role === "output");
+      const delivery = hasOutputs ? this.deliveries.ensure(projectId, id) : null;
+      const createdAt = Date.now();
+      const resources: DeliveryResource[] = args.map(resource => ({
+        id: randomUUID(),
+        name: resource.name,
+        role: resource.role,
+        deliveryId: resource.role === "output" ? delivery!.id : null,
+        file: resource.file,
+        createdBy: by,
+        createdAt
+      }));
+      return this.updateInternal(projectId, id, item.status === "verifying" && hasOutputs ? { status: "doing" } : {}, by,
+        { baseVersion: item.version }, { ...item.evidence, resources: [...item.evidence.resources, ...resources] });
     });
   }
 

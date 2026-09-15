@@ -90,6 +90,28 @@ describe("ctx.files", () => {
     }
   });
 
+  it("pins several files to a ticket in one item write and leaves no partial resources", async () => {
+    const { ctx, items, project, board } = await machine();
+    try {
+      const ticket = items.create({ projectId: project.id, boardId: board.id, title: "Ship the package", workType: "general", by: "human" });
+      const first = await ctx.files.write(project.id, "package/one.md", "one");
+      const second = await ctx.files.write(project.id, "package/two.md", "two");
+      const attached = await ctx.files.attachMany(project.id, ticket.id, { paths: ["package/one.md", "package/two.md"], role: "output" });
+      expect(attached.version).toBe(ticket.version + 1);
+      expect(attached.evidence.resources).toEqual([
+        expect.objectContaining({ name: "one.md", file: { fileId: first.fileId, versionId: first.versionId } }),
+        expect.objectContaining({ name: "two.md", file: { fileId: second.fileId, versionId: second.versionId } })
+      ]);
+      expect(new Set(attached.evidence.resources.map(resource => resource.deliveryId)).size).toBe(1);
+
+      const untouched = items.create({ projectId: project.id, boardId: board.id, title: "Reject a partial package", workType: "general", by: "human" });
+      await expect(ctx.files.attachMany(project.id, untouched.id, { paths: ["package/one.md", "package/missing.md"], role: "output" })).rejects.toThrow(/No file/);
+      expect(items.get(project.id, untouched.id)?.evidence.resources).toEqual([]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("gives the agent list, read and write, each write a version to hand to add_delivery_resource", async () => {
     const { ctx, items, project, board } = await machine();
     try {

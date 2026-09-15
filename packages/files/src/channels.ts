@@ -37,6 +37,8 @@ declare module "@tomrade/ipc" {
     "files.disconnect": (backendId: string) => void;
     /** Pin a file's latest version to a ticket as material or an output artifact. */
     "files.attach": (projectId: string, itemId: string, input: { path: string; role: "input" | "output"; name?: string }) => Item;
+    /** Pin several latest file versions to a ticket in one item write. */
+    "files.attachMany": (projectId: string, itemId: string, input: { paths: string[]; role: "input" | "output" }) => Item;
   }
   interface Broadcasts {
     /** This project's files or their sync state moved; refetch everything keyed by it. */
