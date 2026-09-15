@@ -181,9 +181,12 @@ const run = async () => {
   await wait(() => has('[data-testid="file-picker-filter"]'), "file picker");
   check("the picker offers the project's files", (await count(".file-picker-list .menu-row")) === 5);
   await click('.file-picker-list .menu-row[data-file="docs/brief.md"]');
-  await wait(() => has(".file-ref"), "resource link");
+  await click('.file-picker-list .menu-row[data-file="docs/notes.txt"]');
+  check("the picker keeps more than one file selected", (await count('.file-picker-list .menu-row[aria-checked="true"]')) === 2);
+  await click(".file-picker-add");
+  await wait(() => count(".file-ref").then(n => n === 2), "resource links");
   const pinnedItem = ctx.items.get(project.id, ticket.id);
-  check("picking a file pins its latest version to the ticket", pinnedItem.evidence.resources[0]?.file.versionId === second.versionId && pinnedItem.evidence.resources[0]?.file.fileId === brief.fileId);
+  check("picking files pins all latest versions to the ticket", pinnedItem.evidence.resources.length === 2 && pinnedItem.evidence.resources[0]?.file.versionId === second.versionId && pinnedItem.evidence.resources[0]?.file.fileId === brief.fileId);
   await shot("files-06-delivery");
   await ctx.files.write(project.id, "docs/brief.md", "# The brief\n\nThird draft.\n");
   await click(".file-ref");

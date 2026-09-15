@@ -112,6 +112,18 @@ export function useAttachFile(projectId: string) {
   });
 }
 
+/** Pin several files to one ticket atomically. */
+export function useAttachFiles(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { itemId: string; paths: string[]; role: "input" | "output" }) => invoke("files.attachMany", projectId, args.itemId, { paths: args.paths, role: args.role }),
+    onSettled: () => {
+      invalidateFiles(qc, projectId);
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
 export const formatSize = (bytes: number): string => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
 
 export const parentOf = (path: string): string => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");

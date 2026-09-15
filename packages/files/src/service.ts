@@ -183,6 +183,7 @@ export class Files extends Service {
       ctx.ipc.handle("files.connect", (backendId, secret) => this.connect(backendId, secret));
       ctx.ipc.handle("files.disconnect", (backendId) => this.disconnect(backendId));
       ctx.ipc.handle("files.attach", (projectId, itemId, input) => this.attach(projectId, itemId, input));
+      ctx.ipc.handle("files.attachMany", (projectId, itemId, input) => this.attachMany(projectId, itemId, input));
     });
 
     const timer = this.config.autoSyncMs > 0 ? setInterval(() => void this.syncAll(), this.config.autoSyncMs) : null;
@@ -541,13 +542,23 @@ export class Files extends Service {
 
   /** Pin the file's latest version to a ticket. The working copy is saved first, so what is pinned is what is there. */
   async attach(projectId: string, itemId: string, input: { path: string; role: "input" | "output"; name?: string }): Promise<Item> {
+    return this.attachMany(projectId, itemId, { paths: [input.path], role: input.role, names: input.name ? { [normalizeRel(input.path)]: input.name } : undefined });
+  }
+
+  /** Settle once and add every chosen file to the ticket in one item write. */
+  async attachMany(projectId: string, itemId: string, input: { paths: string[]; role: "input" | "output"; names?: Record<string, string> }): Promise<Item> {
     const store = await this.store(projectId);
-    const rel = normalizeRel(input.path);
-    await store.settle(`Saved ${rel}`);
-    const content = await store.read(rel);
-    if (!content) throw new Error(`No file at ${rel}`);
-    if (!content.fileId || !content.versionId) throw new Error(`${rel} has no saved version yet`);
-    const item = this.ctx.items.addResource(projectId, itemId, { name: input.name?.trim() || content.name, role: input.role, file: { fileId: content.fileId, versionId: content.versionId } }, "human");
+    const paths = [...new Set(input.paths.map(normalizeRel))];
+    if (!paths.length || paths.some(rel => !rel)) throw new Error("Choose at least one file");
+    await store.settle(paths.length === 1 ? `Saved ${paths[0]}` : `Saved ${paths.length} files`);
+    const contents = await Promise.all(paths.map(rel => store.read(rel)));
+    const resources = contents.map((content, index) => {
+      const rel = paths[index]!;
+      if (!content) throw new Error(`No file at ${rel}`);
+      if (!content.fileId || !content.versionId) throw new Error(`${rel} has no saved version yet`);
+      return { name: input.names?.[rel]?.trim() || content.name, role: input.role, file: { fileId: content.fileId, versionId: content.versionId } };
+    });
+    const item = await this.ctx.items.addResources(projectId, itemId, resources, "human");
     this.notify(projectId);
     return item;
   }

@@ -299,12 +299,13 @@ the observed item version. Stale review is refused. Acceptance completes;
 changes requested return to Doing without losing earlier submissions.
 
 The Files screen owns selection, preview and file permissions. Its picker returns
-a versioned reference, never a machine-local path or a mutable “latest” alias
-(`files.attach` saves the working copy first, so what is pinned is what is
-there). A pinned artifact opens the submitted version rather than the current
-file head, and reads as unavailable when that version is gone or the plugin is
-off. The Delivery panel adds materials and outputs through that picker and links
-each to its pinned version.
+one or more versioned references, never machine-local paths or mutable “latest”
+aliases (`files.attach` and `files.attachMany` save the working copy first, so
+what is pinned is what is there). A pinned artifact opens the submitted version
+rather than the current file head, and reads as unavailable when that version is
+gone or the plugin is off. The Delivery panel adds materials and outputs through
+that picker; a multi-selection is validated completely and added in one Ticket
+write.
 
 Shared Delivery rows travel with snapshots. Item evidence and delivery status
 participate in undo. Independent evidence additions merge; incompatible active
@@ -642,6 +643,7 @@ merged and pushed on a sweep (`autoSyncMs`). A file changed on both sides is a
 | `ctx.files.sync(projectId)` / `conflicts(projectId)` / `resolve(projectId, path, choice)` | Save, take theirs, push; what waits; settle one |
 | `ctx.files.bind(projectId, backendId, config)` / `unbind(projectId)` | Share through a backend's remote (and sync at once); stop sharing, keeping everything |
 | `ctx.files.attach(projectId, itemId, { path, role })` | Pin the file's latest version to a ticket as material or an output |
+| `ctx.files.attachMany(projectId, itemId, { paths, role })` | Pin several latest file versions to a ticket in one write |
 
 Agent tools: `list_files`, `read_file`, `write_file` — the last returns the
 pair `add_delivery_resource` takes. Events: `files/registered`,
