@@ -208,7 +208,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port and the
 cloud Hub off, since the harness never signs in — over a throwaway database
 seeded with the prototype's sample project (`apps/desktop/scripts/seed.mjs`).
-It asserts 287 behaviours and writes a screenshot per screen and per theme into
+It asserts 295 behaviours and writes a screenshot per screen and per theme into
 `apps/desktop/scripts/shots/`. It needs the dev server up (`pnpm dev:ui`) *and*
 a built backend — it loads `apps/desktop/dist` and every plugin's `dist`, so a
 new channel is invisible to it until `pnpm build:backend` has run.
