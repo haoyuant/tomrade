@@ -48,6 +48,8 @@ packages/storage      ctx.storage      the project folder as the truth: text art
 packages/storage-git  —                any git URL as a remote for a project's own repository
 packages/storage-github —              GitHub: repository discovery and creation on top of storage-git
 packages/repos        ctx.repos        the code repositories workstreams stand for; this machine's checkouts; agent worktrees
+packages/files        ctx.files        the project's files beside its backlog: a versioned folder tree, backends, sync and conflicts, the versions tickets pin
+packages/files-github —                GitHub as where a project's files are shared
 packages/agent        ctx.agent        the platform: threads, runs, ledger, cards, workflows, run undo, registries
 packages/engine-loop  —                the hybrid conversational conductor
 packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu

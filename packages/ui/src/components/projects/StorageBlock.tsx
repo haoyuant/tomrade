@@ -184,7 +184,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
         </p>
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary stg-sync" disabled={busy || !dir} onClick={syncNow}>
-            <Icon name="i-undo" size={13} />
+            <Icon name="i-sync" size={13} />
             {sync.isPending ? t("storageBlock.syncing") : t("storageBlock.syncNow")}
           </button>
           {!confirmRebuild ? (
