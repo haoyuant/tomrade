@@ -9,6 +9,8 @@ import { invoke } from "./api";
 declare module "@tomrade/ipc" {
   interface Channels {
     "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
+    /** Native picker for several files, or for folders. Null when the user cancels. */
+    "shell.pickFiles": (title?: string, buttonLabel?: string, kind?: "files" | "folders") => string[] | null;
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
   }
@@ -21,6 +23,9 @@ declare module "@tomrade/ipc" {
  */
 export const pickDirectory = (title?: string, buttonLabel?: string): Promise<string | null> =>
   invoke("shell.pickDirectory", title, buttonLabel).catch(() => null);
+
+export const pickFiles = (title?: string, buttonLabel?: string, kind: "files" | "folders" = "files"): Promise<string[] | null> =>
+  invoke("shell.pickFiles", title, buttonLabel, kind).catch(() => null);
 
 export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(() => {});
 

@@ -86,6 +86,9 @@ export interface WorkspaceValue {
   virtual: boolean;
   /** The workstream whose page this is, when `virtual`. */
   workstream: Board | null;
+  /** On the Files screen: the open path, "" for the root. Null anywhere else. */
+  filePath: string | null;
+  openFile: (path: string) => void;
 
   /** A field's options in its display order: statuses, priorities urgent-first, epics, workstreams, custom options, the checkbox's one tick. Labels list the project's vocabulary. */
   optionsOf: (fieldId: string) => FieldOptionView[];
@@ -151,12 +154,14 @@ export function WorkspaceProvider({
   projectId,
   viewId,
   boardId,
+  filePath,
   children
 }: {
   projectId: string;
-  /** One of the two names the place: a saved view, or a workstream. */
+  /** One of the three names the place: a saved view, a workstream, or a path in the project's files. */
   viewId?: string;
   boardId?: string;
+  filePath?: string;
   children: (value: WorkspaceValue) => ReactNode;
 }) {
   const navigate = useNavigate();
@@ -179,9 +184,11 @@ export function WorkspaceProvider({
   const project = projects.data?.find((p) => p.id === projectId);
   const workstream = boardId ? (boards.data?.find((b) => b.id === boardId) ?? null) : null;
   const virtual = !!boardId;
-  const savedView = views.data?.find((v) => v.id === viewId);
+  const inFiles = filePath !== undefined;
+  // The Files screen shows no view, but the sidebar still counts them; it borrows the first.
+  const savedView = views.data?.find((v) => v.id === viewId) ?? (inFiles ? [...(views.data ?? [])].sort((a, b) => a.rank - b.rank)[0] : undefined);
   const view = useMemo(() => (virtual ? (workstream ? workstreamView(workstream) : undefined) : savedView), [virtual, workstream, savedView]);
-  const placeKey = viewId ?? `ws:${boardId}`;
+  const placeKey = inFiles ? "files" : (viewId ?? `ws:${boardId}`);
 
   const saved = useMemo(() => (view ? draftOf(view) : null), [view]);
   const savedCanon = saved ? canon(saved) : null;
@@ -278,6 +285,7 @@ export function WorkspaceProvider({
     (nextBoardId: string) => void navigate({ to: "/p/$projectId/w/$boardId", params: { projectId, boardId: nextBoardId } }),
     [navigate, projectId]
   );
+  const openFile = useCallback((path: string) => void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: path } }), [navigate, projectId]);
 
   const value = useMemo<WorkspaceValue | null>(() => {
     if (!project || !view || !saved || !live) return null;
@@ -330,6 +338,8 @@ export function WorkspaceProvider({
       openWorkstream,
       virtual,
       workstream,
+      filePath: inFiles ? filePath : null,
+      openFile,
       filterCount: live.query.filter.length,
       visible,
       ranks: rankMap,
@@ -364,8 +374,11 @@ export function WorkspaceProvider({
     selectedId,
     openView,
     openWorkstream,
+    openFile,
     virtual,
     workstream,
+    inFiles,
+    filePath,
     optionsOf,
     groupSpace,
     groupLabel,

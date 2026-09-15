@@ -102,7 +102,7 @@ export function HubPane() {
           )}
           <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
             <button type="button" className="btn btn-secondary hub-sync" disabled={busy} onClick={syncNow}>
-              <Icon name="i-undo" size={13} />
+              <Icon name="i-sync" size={13} />
               {sync.isPending ? t("hubPane.syncing") : t("hubPane.syncNow")}
             </button>
           </div>

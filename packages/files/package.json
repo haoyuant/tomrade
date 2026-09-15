@@ -1,0 +1,37 @@
+{
+  "name": "@tomrade/files",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.files — the files a project keeps beside its backlog: a folder tree with versions, the backend registry, sync and conflicts, and the versioned references tickets pin as artifacts. Ships the git-backed store every remote backend builds on.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/agent": "workspace:*",
+    "@tomrade/contributions": "workspace:*",
+    "@tomrade/db": "workspace:*",
+    "@tomrade/domain": "workspace:*",
+    "@tomrade/hub": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/items": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "@tomrade/storage": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

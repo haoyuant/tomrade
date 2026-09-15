@@ -28,7 +28,7 @@ export function TitleBar({
   projectMenuOpen: boolean;
   setProjectMenuOpen: (open: boolean) => void;
 }) {
-  const { project, projects, view, views, items } = useWorkspace();
+  const { project, projects, view, views, items, filePath } = useWorkspace();
   const navigate = useNavigate();
   const { t } = useI18n();
   const open = items.filter((i) => i.kind !== "epic" && i.status !== "done" && i.status !== "cancelled").length;
@@ -76,7 +76,7 @@ export function TitleBar({
         </Menu>
       </div>
       <span className="crumb-sep">/</span>
-      <span className="crumb-title">{view.name}</span>
+      <span className="crumb-title">{filePath !== null ? (filePath ? filePath.slice(filePath.lastIndexOf("/") + 1) : t("files.home")) : view.name}</span>
       <Spacer />
       <button type="button" className="btn btn-ghost no-drag" onClick={onOpenPalette} title={t("titleBar.commandPaletteTitle")}>
         <Icon name="i-search" size={14} />

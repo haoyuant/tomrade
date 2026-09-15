@@ -7,6 +7,7 @@ import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
 import { confirmationMatches } from "~/lib/confirmation";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
+import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
 import { StorageBlock } from "./StorageBlock";
 import { useToast } from "~/lib/toast";
@@ -132,7 +133,7 @@ export function ProjectSettingsDialog({
   );
 }
 
-type ProjectSettingsPane = "overview" | "storage" | "repositories" | "lifecycle";
+type ProjectSettingsPane = "overview" | "storage" | "repositories" | "files" | "lifecycle";
 
 interface ProjectPane {
   id: ProjectSettingsPane;
@@ -220,6 +221,12 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
       label: t("projectSettingsDialog.repositoriesLabel"),
       icon: "i-branch",
       render: () => <><SectionHead title={t("projectSettingsDialog.repositoriesLabel")}>{t("projectSettingsDialog.repositoriesLede")}</SectionHead><RepositoriesBlock projectId={project.id} /></>
+    },
+    {
+      id: "files",
+      label: t("projectSettingsDialog.filesLabel"),
+      icon: "i-folder",
+      render: () => <><SectionHead title={t("projectSettingsDialog.filesLabel")}>{t("projectSettingsDialog.filesLede")}</SectionHead><FilesBlock projectId={project.id} /></>
     },
     {
       id: "lifecycle",

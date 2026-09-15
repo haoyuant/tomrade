@@ -15,6 +15,7 @@ import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useCreateView, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
+import { FilesRegion } from "~/components/files/FilesRegion";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
@@ -67,8 +68,8 @@ export function Workspace() {
     setFieldsFocus(fieldId ?? null);
     setFieldsOpen(true);
   }, []);
-  /** false: closed; true: the sheet; "repositories": the sheet scrolled to its Repositories block. */
-  const [projectSettings, setProjectSettings] = useState<boolean | "repositories">(false);
+  /** false: closed; true: the sheet; a name: the sheet scrolled to that block. */
+  const [projectSettings, setProjectSettings] = useState<boolean | "repositories" | "files">(false);
   const [projectMenu, setProjectMenu] = useState(false);
   /** The issue the confirmation is open on, held by id so it can go stale. */
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -84,13 +85,15 @@ export function Workspace() {
       openSettings: () => setSettings("assistant"),
       focus: [
         ...(selected ? [{ kind: "item", id: selected.id, key: selected.key, title: selected.title }] : []),
-        { kind: "view", id: ws.view.id, title: ws.view.name }
+        ws.filePath !== null
+          ? { kind: "file", id: ws.filePath || "/", title: ws.filePath ? ws.filePath.slice(ws.filePath.lastIndexOf("/") + 1) : t("files.home") }
+          : { kind: "view", id: ws.view.id, title: ws.view.name }
       ],
       boardId: ws.workstream?.id ?? null,
       onOpenRepositories: () => setProjectSettings("repositories")
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id]
+    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id, ws.filePath]
   );
   useScreenBinding(binding);
 
@@ -200,12 +203,16 @@ export function Workspace() {
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
         <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenProjectSettings={openProjectSettings} />
-        <section className="board-region" data-layout={ws.layout}>
-          <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
-          <QueryBar />
-          {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
-          {ws.layout === "graph" ? <GraphView /> : ws.layout === "table" ? <Table onConflict={setConflict} /> : <Board onConflict={setConflict} />}
-        </section>
+        {ws.filePath !== null ? (
+          <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
+        ) : (
+          <section className="board-region" data-layout={ws.layout}>
+            <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
+            <QueryBar />
+            {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
+            {ws.layout === "graph" ? <GraphView /> : ws.layout === "table" ? <Table onConflict={setConflict} /> : <Board onConflict={setConflict} />}
+          </section>
+        )}
 
         {selected && (
           <DetailPane
@@ -258,7 +265,7 @@ export function Workspace() {
       <ProjectSettingsDialog
         project={projectSettings ? ws.project : null}
         projects={ws.projects}
-        section={projectSettings === "repositories" ? "repositories" : undefined}
+        section={typeof projectSettings === "string" ? projectSettings : undefined}
         onOpenChange={setProjectSettings}
         // The route names the project that no longer exists, so leave before the
         // caches it was rendered from are dropped.

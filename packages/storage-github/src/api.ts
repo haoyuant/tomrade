@@ -80,9 +80,9 @@ export class GitHub {
   }
 
   /** Private by default: a backlog is not public unless someone says so. */
-  async create(owner: string, repo: string, opts: { private?: boolean } = {}): Promise<Repo> {
+  async create(owner: string, repo: string, opts: { private?: boolean; autoInit?: boolean; description?: string } = {}): Promise<Repo> {
     const me = await this.login();
-    const body = { name: repo, private: opts.private ?? true, auto_init: true, description: "Tomrade backlog" };
+    const body = { name: repo, private: opts.private ?? true, auto_init: opts.autoInit ?? true, description: opts.description ?? "Tomrade backlog" };
     return owner.toLowerCase() === me.login.toLowerCase()
       ? this.call<Repo>("POST", "/user/repos", body)
       : this.call<Repo>("POST", `/orgs/${owner}/repos`, body);

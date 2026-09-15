@@ -37,7 +37,7 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(__dirname, "../tomrade.yml"),
     vars: { userData: WORK },
-    patches: [[{ id: "mcp", config: { port: 0 } }]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]]
   });
   // A fresh userData has no Hub folder; the app would open on the setup screen.
   // Choosing one here is what a first run does, so every project gets a folder.

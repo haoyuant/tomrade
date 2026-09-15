@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { StorageProviderView } from "@tomrade/storage";
+import type { ConnectionState, StorageProviderView } from "@tomrade/storage";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import {
@@ -14,17 +14,41 @@ import { useToast } from "~/lib/toast";
 
 export const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+/** What the panels below need of a remote's description; storage providers and files backends both have it. */
+export type RemoteProviderView = Pick<StorageProviderView, "id" | "title" | "connection" | "browsable" | "creatable">;
+
+/**
+ * The hooks behind a remote's account and candidates. Storage and Files each
+ * have their own channels, so the panels take theirs from here rather than
+ * knowing which registry they are drawing for.
+ */
+export interface RemoteApi {
+  useConnection: (providerId: string | undefined) => { data?: ConnectionState };
+  useConnect: () => { isPending: boolean; mutate: (args: { providerId: string; secret: string }, opts?: { onSuccess?: (next: ConnectionState) => void; onError?: (error: Error) => void }) => void };
+  useDisconnect: () => { isPending: boolean; mutate: (providerId: string, opts?: { onSuccess?: () => void }) => void };
+  useBrowse: () => { isPending: boolean; data?: unknown; mutate: (providerId: string, opts?: { onError?: (error: Error) => void }) => void };
+  useDraft: () => { isPending: boolean; mutate: (args: { providerId: string; name: string }, opts?: { onSuccess?: (config: unknown) => void; onError?: (error: Error) => void }) => void };
+}
+
+export const storageRemoteApi: RemoteApi = {
+  useConnection: useStorageConnection,
+  useConnect: useConnectStorage,
+  useDisconnect: useDisconnectStorage,
+  useBrowse: useBrowseStorage,
+  useDraft: useDraftStorage
+};
+
 /**
  * The account a destination needs, asked for where it is needed. One account
  * serves every project, so the provider keeps it per machine — but a settings
  * card of its own would make you leave to come back, and leave you guessing
  * whether it took.
  */
-export function ConnectionPanel({ provider }: { provider: StorageProviderView }) {
+export function ConnectionPanel({ provider, api = storageRemoteApi }: { provider: RemoteProviderView; api?: RemoteApi }) {
   const { t, tx } = useI18n();
-  const state = useStorageConnection(provider.id);
-  const connect = useConnectStorage();
-  const disconnect = useDisconnectStorage();
+  const state = api.useConnection(provider.id);
+  const connect = api.useConnect();
+  const disconnect = api.useDisconnect();
   const toast = useToast();
   const [secret, setSecret] = useState("");
   const prompt = provider.connection;
@@ -111,10 +135,10 @@ const hostOf = (url: string): string => {
  * Nothing typed by hand: a provider that can list what an account already has
  * lists it, and one that can make a destination from a name offers that too.
  */
-export function DestinationPicker({ provider, onPick }: { provider: StorageProviderView; onPick: (config: Record<string, unknown>) => void }) {
+export function DestinationPicker({ provider, onPick, api = storageRemoteApi }: { provider: RemoteProviderView; onPick: (config: Record<string, unknown>) => void; api?: RemoteApi }) {
   const { t } = useI18n();
-  const browse = useBrowseStorage();
-  const draft = useDraftStorage();
+  const browse = api.useBrowse();
+  const draft = api.useDraft();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");

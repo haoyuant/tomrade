@@ -14,7 +14,8 @@
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "dump-config": "electron . --dump-config",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "test:files": "electron scripts/files-check.mjs"
   },
   "dependencies": {
     "@tomrade/agent": "workspace:*",
@@ -30,6 +31,8 @@
     "@tomrade/engine-loop": "workspace:*",
     "@tomrade/engine-scripted": "workspace:*",
     "@tomrade/fields": "workspace:*",
+    "@tomrade/files": "workspace:*",
+    "@tomrade/files-github": "workspace:*",
     "@tomrade/hub": "workspace:*",
     "@tomrade/hub-cloud": "workspace:*",
     "@tomrade/ipc": "workspace:*",
