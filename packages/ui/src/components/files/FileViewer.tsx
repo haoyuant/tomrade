@@ -7,8 +7,8 @@ import { formatSize } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { openExternal } from "~/lib/shell";
 
-/** A document's own scripts never run and its network is images and styles only; the frame is also sandboxed. */
-const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https:; font-src data: https:">`;
+/** Its network is images and styles only; scripts run inside the sandboxed, origin-isolated frame, same policy as AgentMedia. */
+const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; img-src data: https:; style-src 'unsafe-inline' https:; font-src data: https:">`;
 
 const framed = (html: string): string => (/<head[\s>]/i.test(html) ? html.replace(/<head([^>]*)>/i, `<head$1>${CSP}`) : `${CSP}${html}`);
 
@@ -42,7 +42,7 @@ export function FileViewer({ content }: { content: FileContent }) {
     if (content.encoding === "utf8") {
       if (renderable && !source) {
         if (content.mime === "text/markdown") return <Markdown text={content.body} />;
-        if (content.mime === "text/html") return <iframe className="html-view" sandbox="" srcDoc={framed(content.body)} title={content.name} />;
+        if (content.mime === "text/html") return <iframe className="html-view" sandbox="allow-scripts" srcDoc={framed(content.body)} title={content.name} />;
         return <img className="image-view" src={`data:image/svg+xml;utf8,${encodeURIComponent(content.body)}`} alt={content.name} />;
       }
       return <pre className="text-view">{content.body}</pre>;
