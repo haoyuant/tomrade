@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Project } from "@tomrade/domain";
-import { Icon } from "~/components/icons";
+import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
-import { Eyebrow, Num, Tag } from "~/components/ui/atoms";
+import { Eyebrow, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
 import { confirmationMatches } from "~/lib/confirmation";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -78,7 +78,7 @@ export function ProjectSettingsDialog({
   /** Ran after the delete lands: leave the project, or render a dead route. */
   onDeleted?: (project: Project) => void;
   /** Opens scrolled to one block — the assistant sends you to Repositories when a workstream has no checkout here. */
-  section?: "repositories";
+  section?: ProjectSettingsPane;
 }) {
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
@@ -104,7 +104,7 @@ export function ProjectSettingsDialog({
             : t("projectSettingsDialog.dialogLabelSettings", { name: project.name })
           : t("projectSettingsDialog.dialogLabelFallback")
       }
-      className="sheet-board"
+      className="sheet-project-settings"
     >
       {project &&
         (confirming ? (
@@ -132,11 +132,18 @@ export function ProjectSettingsDialog({
   );
 }
 
-function SettingsFace({ project, onClose, onRequestDelete, section }: { project: Project; onClose: () => void; onRequestDelete: () => void; section?: "repositories" }) {
+type ProjectSettingsPane = "overview" | "storage" | "repositories" | "lifecycle";
+
+interface ProjectPane {
+  id: ProjectSettingsPane;
+  label: string;
+  icon: IconId;
+  render: () => ReactNode;
+}
+
+function SettingsFace({ project, onClose, onRequestDelete, section }: { project: Project; onClose: () => void; onRequestDelete: () => void; section?: ProjectSettingsPane }) {
   const { t, tx } = useI18n();
-  useEffect(() => {
-    if (section === "repositories") requestAnimationFrame(() => document.getElementById("psRepos")?.scrollIntoView({ block: "start" }));
-  }, [section]);
+  const [active, setActive] = useState<ProjectSettingsPane>(section ?? "overview");
   const update = useUpdateProject();
   const toast = useToast();
   const facts = useFacts(project.id);
@@ -152,95 +159,107 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
     toast({ body: <>{tx("projectSettingsDialog.savedToast", { name: <span className="num">{trimmed}</span> })}</> });
   };
 
+  useEffect(() => {
+    if (section) setActive(section);
+  }, [section]);
+
+  const panes: ProjectPane[] = [
+    {
+      id: "overview",
+      label: t("projectSettingsDialog.overviewLabel"),
+      icon: "i-panel",
+      render: () => (
+        <>
+          <SectionHead title={t("projectSettingsDialog.overviewLabel")}>
+            {t("projectSettingsDialog.overviewLede")}
+          </SectionHead>
+          <div className="project-settings-fields">
+            <div className="field">
+              <label htmlFor="psName">{t("projectSettingsDialog.projectNameLabel")}</label>
+              <input id="psName" autoFocus className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="psDesc">{t("projectSettingsDialog.descriptionLabel")}</label>
+              <input id="psDesc" className="input" placeholder={t("projectSettingsDialog.descriptionPlaceholder")} value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor="psPrefix">{t("projectSettingsDialog.issueKeyPrefixLabel")}</label>
+                <input id="psPrefix" className="input num" readOnly value={project.keyPrefix} />
+                <span className="meta-txt">{t(facts.issues === 1 ? "projectSettingsDialog.keyPrefixNoteOne" : "projectSettingsDialog.keyPrefixNoteMany", { n: facts.issues })}</span>
+              </div>
+              <div className="field">
+                <label htmlFor="psId">{t("projectSettingsDialog.projectIdLabel")}</label>
+                <input id="psId" className="input num" readOnly value={project.id} />
+                <span className="meta-txt">{tx("projectSettingsDialog.projectIdNote", { cmd: <Num>list_items projectId</Num> })}</span>
+              </div>
+            </div>
+          </div>
+          <div className="project-settings-section project-settings-facts">
+            <Eyebrow>{t("projectSettingsDialog.whatProjectHolds")}</Eyebrow>
+            <p className="meta-txt dense">
+              {tx("projectSettingsDialog.holdsSummary", {
+                workstreams: <Num>{facts.workstreams}</Num>, views: <Num>{facts.views}</Num>, issues: <Num>{facts.issues}</Num>, open: <Num>{facts.open}</Num>,
+                epicsClause: facts.epics > 0 ? tx("projectSettingsDialog.epicsClause", { n: <Num>{facts.epics}</Num> }) : "",
+                labels: <Num>{facts.labels}</Num>, lastWriteClause: facts.lastWrite ? tx("projectSettingsDialog.lastWriteClause", { when: <Num>{agoLabel(facts.lastWrite)}</Num> }) : ""
+              })}
+            </p>
+            <p className="meta-txt dense">{t("projectSettingsDialog.boardNote")}</p>
+          </div>
+        </>
+      )
+    },
+    {
+      id: "storage",
+      label: t("projectSettingsDialog.storageLabel"),
+      icon: "i-folder",
+      render: () => <><SectionHead title={t("projectSettingsDialog.storageLabel")}>{t("projectSettingsDialog.storageLede")}</SectionHead><StorageBlock projectId={project.id} /></>
+    },
+    {
+      id: "repositories",
+      label: t("projectSettingsDialog.repositoriesLabel"),
+      icon: "i-branch",
+      render: () => <><SectionHead title={t("projectSettingsDialog.repositoriesLabel")}>{t("projectSettingsDialog.repositoriesLede")}</SectionHead><RepositoriesBlock projectId={project.id} /></>
+    },
+    {
+      id: "lifecycle",
+      label: t("projectSettingsDialog.lifecycleLabel"),
+      icon: "i-archive",
+      render: () => (
+        <>
+          <SectionHead title={t("projectSettingsDialog.lifecycleLabel")}>{t("projectSettingsDialog.lifecycleLede")}</SectionHead>
+          <div className="project-settings-section project-settings-copy">
+            <Eyebrow>{t("projectSettingsDialog.archiveLabel")}</Eyebrow>
+            <div className="cfg-row">
+              <Icon name={archived ? "i-archive" : "i-stack"} size={15} style={{ color: archived ? "var(--meta)" : "var(--accent)" }} />
+              <span className="cfg-name">{archived ? t("projectSettingsDialog.archived") : t("projectSettingsDialog.active")}</span>
+              <button type="button" className="switch" role="switch" aria-checked={archived} aria-label={t("projectSettingsDialog.archiveAria")} onClick={() => setArchived((v) => !v)} />
+            </div>
+            <p className="meta-txt dense">{t("projectSettingsDialog.archiveNote")}</p>
+          </div>
+          <div className="project-settings-section project-settings-copy">
+            <Eyebrow style={{ color: "var(--danger)" }}>{t("projectSettingsDialog.deleteThisProject")}</Eyebrow>
+            <p className="meta-txt dense">{tx("projectSettingsDialog.deleteWarning", { cmdz: <Num>⌘Z</Num> })}</p>
+            <button type="button" className="btn btn-danger del-proj" aria-haspopup="dialog" onClick={onRequestDelete}><Icon name="i-trash" size={13} />{t("projectSettingsDialog.deleteButton")}</button>
+          </div>
+        </>
+      )
+    }
+  ];
+  const current = panes.find((pane) => pane.id === active) ?? panes[0];
+
   return (
     <>
       <DialogHead title={t("projectSettingsDialog.headTitle")} aside={<Tag tone="neutral">{name.trim() || project.name}</Tag>} />
-      <DialogBody className="project-settings-body">
-        <div className="project-settings-fields">
-          <div className="field">
-            <label htmlFor="psName">{t("projectSettingsDialog.projectNameLabel")}</label>
-            <input id="psName" autoFocus className="input" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="dlg-split project-settings-split">
+        <nav className="dlg-nav" aria-label={t("projectSettingsDialog.navAriaLabel")}>
+          <div className="side-group">
+            <Eyebrow className="side-label">{t("projectSettingsDialog.groupProject")}</Eyebrow>
+            {panes.map((pane) => <button key={pane.id} type="button" className="side-row" aria-current={pane.id === current.id} onClick={() => setActive(pane.id)}><Icon className="ico" name={pane.icon} size={14} /><span className="side-name">{pane.label}</span></button>)}
           </div>
-          <div className="field">
-            <label htmlFor="psDesc">{t("projectSettingsDialog.descriptionLabel")}</label>
-            <input
-              id="psDesc"
-              className="input"
-              placeholder={t("projectSettingsDialog.descriptionPlaceholder")}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          <div className="grid-2">
-            <div className="field">
-              <label htmlFor="psPrefix">{t("projectSettingsDialog.issueKeyPrefixLabel")}</label>
-              <input id="psPrefix" className="input num" readOnly value={project.keyPrefix} />
-              <span className="meta-txt">
-                {t(facts.issues === 1 ? "projectSettingsDialog.keyPrefixNoteOne" : "projectSettingsDialog.keyPrefixNoteMany", { n: facts.issues })}
-              </span>
-            </div>
-            <div className="field">
-              <label htmlFor="psId">{t("projectSettingsDialog.projectIdLabel")}</label>
-              <input id="psId" className="input num" readOnly value={project.id} />
-              <span className="meta-txt">{tx("projectSettingsDialog.projectIdNote", { cmd: <Num>list_items projectId</Num> })}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="project-settings-section project-settings-facts">
-          <Eyebrow>{t("projectSettingsDialog.whatProjectHolds")}</Eyebrow>
-          <p className="meta-txt dense">
-            {tx("projectSettingsDialog.holdsSummary", {
-              workstreams: <Num>{facts.workstreams}</Num>,
-              views: <Num>{facts.views}</Num>,
-              issues: <Num>{facts.issues}</Num>,
-              open: <Num>{facts.open}</Num>,
-              epicsClause: facts.epics > 0 ? tx("projectSettingsDialog.epicsClause", { n: <Num>{facts.epics}</Num> }) : "",
-              labels: <Num>{facts.labels}</Num>,
-              lastWriteClause: facts.lastWrite ? tx("projectSettingsDialog.lastWriteClause", { when: <Num>{agoLabel(facts.lastWrite)}</Num> }) : ""
-            })}
-          </p>
-          <p className="meta-txt dense">{t("projectSettingsDialog.boardNote")}</p>
-        </div>
-
-        <div className="project-settings-section">
-          <StorageBlock projectId={project.id} />
-        </div>
-
-        <div className="project-settings-section">
-          <RepositoriesBlock projectId={project.id} />
-        </div>
-
-        <div className="project-settings-section project-settings-copy">
-          <Eyebrow>{t("projectSettingsDialog.archiveLabel")}</Eyebrow>
-          <div className="cfg-row">
-            <Icon name={archived ? "i-archive" : "i-stack"} size={15} style={{ color: archived ? "var(--meta)" : "var(--accent)" }} />
-            <span className="cfg-name">{archived ? t("projectSettingsDialog.archived") : t("projectSettingsDialog.active")}</span>
-            <button
-              type="button"
-              className="switch"
-              role="switch"
-              aria-checked={archived}
-              aria-label={t("projectSettingsDialog.archiveAria")}
-              onClick={() => setArchived((v) => !v)}
-            />
-          </div>
-          <p className="meta-txt dense">{t("projectSettingsDialog.archiveNote")}</p>
-        </div>
-
-        <div className="project-settings-section project-settings-copy">
-          <Eyebrow style={{ color: "var(--danger)" }}>{t("projectSettingsDialog.deleteThisProject")}</Eyebrow>
-          <p className="meta-txt dense">
-            {tx("projectSettingsDialog.deleteWarning", { cmdz: <Num>⌘Z</Num> })}
-          </p>
-          {/* The name is not in the label: a project name has no length limit,
-              and the confirmation names it twice over. */}
-          <button type="button" className="btn btn-danger del-proj" aria-haspopup="dialog" onClick={onRequestDelete}>
-            <Icon name="i-trash" size={13} />
-            {t("projectSettingsDialog.deleteButton")}
-          </button>
-        </div>
-      </DialogBody>
+        </nav>
+        <DialogBody className="project-settings-body">{current.render()}</DialogBody>
+      </div>
       <DialogFoot>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           {t("projectSettingsDialog.cancel")}
