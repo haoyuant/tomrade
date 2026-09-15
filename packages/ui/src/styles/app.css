@@ -1246,6 +1246,10 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   width: min(964px, calc(100vw - 64px));
   height: min(var(--overlay-max-h), 760px);
 }
+.palette.sheet-project-settings {
+  width: min(900px, calc(100vw - 64px));
+  height: min(var(--overlay-max-h), 700px);
+}
 .dlg-split { display: flex; flex: 1; min-height: 0; }
 .dlg-nav {
   width: 204px; flex-shrink: 0; overflow-y: auto;

@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:ui": "electron scripts/ui-regression.mjs",
     "test:plugins": "electron scripts/plugins-check.mjs",
-    "dev": "pnpm -w run build:backend && concurrently -k \"pnpm -F @tomrade/ui exec vite\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\" || true",
+    "dev": "pnpm -w run build:backend && node scripts/dev.mjs",
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "dump-config": "electron . --dump-config",
