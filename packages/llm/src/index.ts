@@ -2,6 +2,8 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { SettingsSection } from "@tomrade/settings";
 import { AnthropicModel } from "./anthropic.js";
+import { ImagesModel } from "./images.js";
+export { ImagesModel } from "./images.js";
 import { LlmError } from "./errors.js";
 import { collect, userMessage, type ChatModel, type ChatRequest, type LlmRole } from "./model.js";
 import { OpenAiCompatible } from "./openai.js";
@@ -54,12 +56,14 @@ declare module "cordis" {
 export const modelProfileSchema = z.object({
   id: z.string().min(1),
   title: z.string().default(""),
-  provider: z.enum(["openai-compatible", "anthropic"]),
+  provider: z.enum(["openai-compatible", "anthropic", "openai-images"]),
   baseURL: z.string().optional(),
   apiKey: z.string().default(""),
   model: z.string().min(1),
   /** Render tools into the prompt for a model without native tool calling. Degraded. */
-  promptTools: z.boolean().optional()
+  promptTools: z.boolean().optional(),
+  inputModalities: z.array(z.enum(["image", "audio", "video", "pdf"])).optional(),
+  outputModalities: z.array(z.enum(["image", "audio"])).max(1).optional()
 });
 export type ModelProfile = z.infer<typeof modelProfileSchema>;
 
@@ -137,10 +141,12 @@ export class Llm extends Service implements LlmService {
     const cached = this.cache.get(key);
     if (cached) return cached;
     const base: ChatModel =
-      profile.provider === "anthropic"
-        ? new AnthropicModel({ apiKey: profile.apiKey, model: profile.model, baseURL: profile.baseURL })
-        : new OpenAiCompatible({ baseURL: profile.baseURL ?? "https://api.deepseek.com", apiKey: profile.apiKey, model: profile.model });
-    const model = profile.promptTools ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
+      profile.provider === "openai-images"
+        ? new ImagesModel({ baseURL: profile.baseURL ?? "https://api.openai.com/v1", apiKey: profile.apiKey, model: profile.model })
+        : profile.provider === "anthropic"
+        ? new AnthropicModel({ apiKey: profile.apiKey, model: profile.model, baseURL: profile.baseURL, inputModalities: profile.inputModalities })
+        : new OpenAiCompatible({ baseURL: profile.baseURL ?? "https://api.deepseek.com", apiKey: profile.apiKey, model: profile.model, inputModalities: profile.inputModalities, outputModalities: profile.outputModalities });
+    const model = profile.promptTools && profile.provider !== "openai-images" ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
     this.cache.set(key, model);
     return model;
   }

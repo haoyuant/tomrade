@@ -1,15 +1,17 @@
-import type { ChatEvent, ChatModel, ChatRequest, StopReason } from "./model.js";
+import { inputMimes, type InputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
 import { LlmError } from "./errors.js";
 
 export interface OpenAiConfig {
   baseURL: string;
   apiKey: string;
   model: string;
+  inputModalities?: InputModality[];
+  outputModalities?: ("image" | "audio")[];
 }
 
 interface OpenAiMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | null | Record<string, unknown>[];
   tool_call_id?: string;
   tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
 }
@@ -23,7 +25,18 @@ function toMessages(request: ChatRequest): OpenAiMessage[] {
         if (block.type === "tool_result") out.push({ role: "tool", tool_call_id: block.id, content: block.content });
       }
       const text = message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-      if (text) out.push({ role: "user", content: text });
+      const media = message.content.filter(b => b.type === "media");
+      if (media.length) out.push({ role: "user", content: [
+        ...(text ? [{ type: "text", text }] : []),
+        ...media.map(({ media: m }) => {
+          const url = `data:${m.mime};base64,${m.base64}`;
+          if (m.mime.startsWith("image/")) return { type: "image_url", image_url: { url } };
+          if (m.mime.startsWith("audio/")) return { type: "input_audio", input_audio: { data: m.base64, format: m.mime === "audio/mpeg" ? "mp3" : "wav" } };
+          if (m.mime.startsWith("video/")) return { type: "video_url", video_url: { url } };
+          return { type: "file", file: { filename: m.name, file_data: url } };
+        })
+      ] });
+      else if (text) out.push({ role: "user", content: text });
     } else {
       const text = message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
       const calls = message.content.filter((b) => b.type === "tool_call");
@@ -61,23 +74,28 @@ interface StreamChunk {
   usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
   choices?: {
     finish_reason?: string | null;
-    delta?: { content?: string | null; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] };
+    delta?: { content?: string | { type: string; text?: string; image_url?: { url: string } }[] | null; images?: { image_url: { url: string }; index?: number }[]; audio?: { data?: string; transcript?: string }; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] };
   }[];
 }
 
 /** Any chat/completions endpoint: DeepSeek, OpenAI, Kimi, OpenRouter, Ollama, vLLM, LM Studio… */
 export class OpenAiCompatible implements ChatModel {
-  capabilities = { tools: true, streaming: true, json: true };
+  get capabilities() { return { tools: true, streaming: true, json: true, mediaInput: inputMimes(this.config.inputModalities ?? []), mediaOutput: this.config.outputModalities ?? [] }; }
 
   constructor(private readonly config: OpenAiConfig) {}
 
   async *chat(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
+    for (const message of request.messages) for (const block of message.content) {
+      if (block.type === "media" && !this.capabilities.mediaInput.includes(block.media.mime)) throw new LlmError(`This model profile does not accept ${block.media.mime}`);
+    }
     const body: Record<string, unknown> = {
       model: this.config.model,
       stream: true,
       stream_options: { include_usage: true },
       messages: toMessages(request)
     };
+    if (this.config.outputModalities?.length) body.modalities = ["text", ...this.config.outputModalities];
+    if (this.config.outputModalities?.includes("audio")) body.audio = { voice: "alloy", format: "pcm16" };
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
     if (request.effort) body.reasoning_effort = request.effort;
@@ -98,6 +116,13 @@ export class OpenAiCompatible implements ChatModel {
     if (!res.body) throw new LlmError("LLM response had no body");
 
     const calls = new Map<number, { id: string; name: string; args: string }>();
+    const images = new Set<string>();
+    const audio: Buffer[] = [];
+    const image = (url: string): MediaData => {
+      const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(url);
+      if (!match) throw new LlmError("Model returned an image without inline bytes; configure base64 image output");
+      return { name: `image-${images.size}.${match[1].split("/")[1].replace("+xml", "")}`, mime: match[1], base64: match[2] };
+    };
     let stop: StopReason = "end";
     for await (const data of sseData(res.body)) {
       if (data === "[DONE]") break;
@@ -111,7 +136,14 @@ export class OpenAiCompatible implements ChatModel {
       const choice = chunk.choices?.[0];
       if (!choice) continue;
       const delta = choice.delta ?? {};
-      if (delta.content) yield { type: "text", delta: delta.content };
+      if (typeof delta.content === "string" && delta.content) yield { type: "text", delta: delta.content };
+      const parts = Array.isArray(delta.content) ? delta.content : [];
+      for (const part of parts) if (part.type === "text" && part.text) yield { type: "text", delta: part.text };
+      for (const url of [...(delta.images ?? []).map(i => i.image_url.url), ...parts.filter(p => p.type === "image_url" && p.image_url).map(p => p.image_url!.url)]) {
+        if (!images.has(url)) { images.add(url); yield { type: "media", media: image(url) }; }
+      }
+      if (delta.audio?.data) audio.push(Buffer.from(delta.audio.data, "base64"));
+      if (delta.audio?.transcript) yield { type: "text", delta: delta.audio.transcript };
       for (const tc of delta.tool_calls ?? []) {
         const slot = calls.get(tc.index) ?? { id: "", name: "", args: "" };
         if (tc.id) slot.id = tc.id;
@@ -129,6 +161,15 @@ export class OpenAiCompatible implements ChatModel {
       n += 1;
     }
     if (n > 0) stop = "tool_use";
+    if (audio.length) {
+      const pcm = Buffer.concat(audio);
+      const header = Buffer.alloc(44);
+      header.write("RIFF"); header.writeUInt32LE(36 + pcm.length, 4); header.write("WAVEfmt ", 8);
+      header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+      header.writeUInt32LE(24000, 24); header.writeUInt32LE(48000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+      header.write("data", 36); header.writeUInt32LE(pcm.length, 40);
+      yield { type: "media", media: { name: "response.wav", mime: "audio/wav", base64: Buffer.concat([header, pcm]).toString("base64") } };
+    }
     yield { type: "stop", reason: stop };
   }
 }

@@ -37,6 +37,12 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  */
 export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean } = {}): string[] {
   const parts: string[] = [];
+  const media = input.messages.filter(m => m.block.type === "media").slice(-8);
+  if (media.length) parts.push("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
+    if (m.block.type !== "media") return "";
+    return `${m.block.media.name}: ${m.block.media.id}${m.block.media.source ? `; source JSON ID: ${m.block.media.source.id}` : ""}`;
+  }).join("\n"));
+  if (input.purpose !== "backlog") parts.push("Use display_media to show generated images, HTML, audio, video or PDF from your working directory directly in the conversation. A filesystem path in prose does not display media.");
   if (opts.playbooks !== false) {
     const index = io.playbooks.index();
     if (index.length) {

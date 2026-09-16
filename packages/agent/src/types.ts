@@ -19,7 +19,8 @@ export interface FocusRef {
 
 /** Everything the panel knows how to draw. Engines emit these; the UI has no engine-specific code. */
 export type Block =
-  | { type: "text"; text: string; focus?: FocusRef[] }
+  | { type: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[] }
+  | { type: "media"; media: import("./media.js").MediaRef; caption?: string }
   | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number }
   | { type: "question"; id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean }
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
@@ -93,7 +94,7 @@ export interface CardView {
 }
 
 export type UserInput =
-  | { kind: "text"; text: string; focus?: FocusRef[] }
+  | { kind: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[] }
   | { kind: "answer"; questionId: string; value: string | string[] };
 
 export interface PendingView {
@@ -189,6 +190,11 @@ export interface TurnInput {
 }
 
 export interface TurnIO {
+  media?: {
+    read(id: string): import("./media.js").MediaContent;
+    path(id: string): string;
+    publish(upload: import("./media.js").MediaUpload, caption?: string): import("./media.js").MediaRef;
+  };
   permissionMode?(mode: string): void;
   /** Pause this live run for a human response. Null means cancelled, never approval. */
   requestPermission?(text: string, options: string[], signal?: AbortSignal): Promise<string | null>;
@@ -231,6 +237,8 @@ export type EngineCapability = "backlog" | "code" | "general";
 
 /** Anything that can take one turn on a thread. The conductor seam. */
 export interface Engine {
+  /** Actual formats supported by the selected transport/model; absent means text only. */
+  media?(options: unknown): { input: string[]; output: string[] };
   id: string;
   title: string;
   author: Author;

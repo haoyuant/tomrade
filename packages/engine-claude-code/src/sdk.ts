@@ -3,6 +3,7 @@ import path from "node:path";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomrade/agent";
+import { claudeMediaInput } from "@tomrade/agent";
 import { ClaudeCodeOptions } from "./legacy.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
 import { staticSystem, turnPrompt } from "./system.js";
@@ -168,7 +169,10 @@ export class ClaudeRuntime implements Runtime {
         void this.consume();
       }
       metrics.readyMs ??= warm ? 0 : undefined;
-      this.queue.push({ type: "user", message: { role: "user", content: turnPrompt(input, io) }, parent_tool_use_id: null, session_id: this.session ?? "" });
+      const content = input.input.kind === "text" && input.input.attachments?.length
+        ? claudeMediaInput(input, io, turnPrompt(input, io)) as SDKUserMessage["message"]["content"]
+        : turnPrompt(input, io);
+      this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "" });
       const result = await done;
       // The SDK's maxBudgetUsd is query-wide. Reopen budgeted sessions on the
       // next turn to preserve Tomrade's existing per-run budget exactly.

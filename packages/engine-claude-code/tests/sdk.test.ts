@@ -24,8 +24,12 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
   try {
+    const ref = { id: "image", name: "input.png", mime: "image/png", size: 3 };
+    io.media = { read: () => ({ ...ref, base64: "YWJj" }), path: () => "unused", publish: () => ref };
+    input.input = { kind: "text", text: "hello", attachments: [ref] };
     const one = await engine.turn(input, io);
     expect(one.stop, one.error).toBe("end"); io.resume = one.resume;
+    input.input = { kind: "text", text: "hello" };
     input.brief = "brief v2";
     const two = await engine.turn(input, io);
     expect(two.metrics?.runtime).toBe("warm");
@@ -43,6 +47,7 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
     const requests = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
     expect(requests.filter((r) => r.spawn)).toHaveLength(1);
     const users = requests.filter((r) => r.type === "user");
+    expect(users[0].message.content).toContainEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "YWJj" } });
     expect(users).toHaveLength(4);
     expect(users[1].message.content).toContain("brief v2");
     expect(requests.some((r) => r.request?.subtype === "interrupt")).toBe(true);

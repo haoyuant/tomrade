@@ -23,13 +23,13 @@ const IDENTITY =
 
 const HISTORY_LIMIT = 48;
 
-const flat = (value: unknown): string => {
+const flat = (value: unknown, limit = 3500): string => {
   const text = JSON.stringify(value);
-  return text.length > 3500 ? text.slice(0, 3500) + "… (truncated — fetch details with a narrower tool call)" : text;
+  return text.length > limit ? text.slice(0, limit) + "… (truncated — fetch details with a narrower tool call)" : text;
 };
 
 /** Prior turns re-read as plain text; the current turn keeps native tool blocks. */
-function historyMessages(messages: ThreadMessage[]): Message[] {
+export function historyMessages(messages: ThreadMessage[], io?: TurnIO, accepted: string[] = []): Message[] {
   const out: Message[] = [];
   const push = (role: "user" | "assistant", text: string) => {
     const last = out[out.length - 1];
@@ -41,7 +41,17 @@ function historyMessages(messages: ThreadMessage[]): Message[] {
   };
   for (const m of messages) {
     const b = m.block;
-    if (m.role === "user" && b.type === "text") push("user", b.text + focusSuffix(b.focus));
+    if (m.role === "user" && b.type === "text") {
+      push("user", b.text + focusSuffix(b.focus));
+      for (const ref of b.attachments ?? []) {
+        if (accepted.includes(ref.mime) && io?.media) out[out.length - 1].content.push({ type: "media", media: io.media.read(ref.id) });
+        else push("user", `(attachment ${ref.name}, ${ref.id}: ${ref.mime} is not supported by this model)`);
+      }
+    }
+    else if (b.type === "media") {
+      push("assistant", `(displayed ${b.media.name}, media ID ${b.media.id}${b.caption ? ": " + b.caption : ""})`);
+      if (accepted.includes(b.media.mime) && io?.media) out.push({ role: "user", content: [{ type: "media", media: io.media.read(b.media.id) }] });
+    }
     else if (b.type === "text") push("assistant", b.text);
     else if (b.type === "question") push("assistant", `(asked the user: ${b.text}${b.options ? " — options: " + b.options.join(" / ") : ""})`);
     else if (b.type === "trace") push("assistant", `(${b.ok ? "did" : "failed"} ${b.tool} → ${b.summary})`);
@@ -63,6 +73,14 @@ export function createLoopEngine(ctx: Context): Engine {
   return {
     id: "loop",
     title: "Tomrade loop",
+    media: options => {
+      const parsed = LoopOptions.parse(options ?? {});
+      const llm = ctx.get("llm");
+      const profile = parsed.profile ?? llm?.profiles()[0]?.id;
+      if (!llm || !profile) return { input: [], output: [] };
+      const caps = llm.forProfile(profile).capabilities;
+      return { input: caps.mediaInput ?? [], output: caps.mediaOutput ?? [] };
+    },
     author: "ai:agent",
     // Talks to the backlog through tools; it has no file or shell tools and never implements a ticket.
     capabilities: ["backlog"],
@@ -86,11 +104,11 @@ export function createLoopEngine(ctx: Context): Engine {
       const profileId = options.profile ?? io.llm.profiles()[0]?.id;
       if (!profileId) return { stop: "error", error: "no language model profile configured" };
       const model = io.llm.forProfile(profileId);
-      const tools: ToolSpec[] = io.tools
+      const tools: ToolSpec[] = model.capabilities.tools ? io.tools
         .describe()
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
-      const messages = historyMessages(input.messages);
+        .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
+      const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
       const usage = { inputTokens: 0, outputTokens: 0 };
       let invalidStreak = 0;
 
@@ -113,6 +131,10 @@ export function createLoopEngine(ctx: Context): Engine {
         usage.outputTokens += collected.usage.outputTokens;
         io.progress(usage);
         if (collected.text.trim()) io.emit({ type: "text", text: collected.text.trim() });
+        for (const media of collected.media ?? []) {
+          if (!io.media) throw new Error("This runtime cannot publish media");
+          io.media.publish(media);
+        }
         if (collected.stop === "refusal") return { stop: "error", error: "the model declined to answer", usage };
         if (!collected.toolCalls.length) return { stop: "end", usage };
 
@@ -121,7 +143,7 @@ export function createLoopEngine(ctx: Context): Engine {
           collected.toolCalls.map(async (call) => {
             try {
               const result = await io.tools.execute(call.name, call.args);
-              return { id: call.id, suspended: isSuspended(result), content: isSuspended(result) ? result.note : flat(result), invalid: false };
+              return { id: call.id, suspended: isSuspended(result), content: isSuspended(result) ? result.note : flat(result, call.name === "diagram_schema" || call.name === "open_playbook" ? 100_000 : 3500), invalid: false };
             } catch (err) {
               const invalid = err instanceof ToolInputError;
               return { id: call.id, suspended: false, content: `ERROR: ${err instanceof Error ? err.message : String(err)}`, isError: true, invalid };

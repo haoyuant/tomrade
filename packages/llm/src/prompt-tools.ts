@@ -43,6 +43,7 @@ export function withPromptTools(model: ChatModel): ChatModel {
       const match = FENCE.exec(inner.text);
       const before = match ? inner.text.slice(0, match.index).trim() : inner.text;
       if (before) yield { type: "text", delta: before };
+      for (const media of inner.media ?? []) yield { type: "media", media };
       yield { type: "usage", inputTokens: inner.usage.inputTokens, outputTokens: inner.usage.outputTokens };
       if (match) {
         try {

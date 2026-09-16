@@ -30,6 +30,10 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     const last = { inputTokens: 10, outputTokens: 3, cachedInputTokens: 7, cacheWriteInputTokens: 1 };
     send({ method: 'thread/tokenUsage/updated', params: { threadId: 'fake-session', turnId: id, tokenUsage: { last, total: Object.fromEntries(Object.entries(last).map(([k,v])=>[k,v*n])) } } });
     send({ method: 'item/completed', params: { threadId: 'fake-session', turnId: id, item: { id: 'msg-'+id, type: 'agentMessage', text: 'hello' } } });
+    if (m.params.input.some(part => part.type === 'image')) {
+      const image = { method: 'item/completed', params: { threadId: 'fake-session', turnId: id, item: { id: 'image-'+id, type: 'imageGeneration', status: 'completed', result: 'YWJj', revisedPrompt: null, failure: null } } };
+      send(image); send(image);
+    }
     send({ method: 'turn/completed', params: { threadId: 'fake-session', turn: { id, status: 'completed' } } });
   }
   if (m.method === 'turn/interrupt') {

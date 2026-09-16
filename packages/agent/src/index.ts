@@ -1,4 +1,6 @@
 import type {} from "cordis";
+export { attachedMedia, claudeMediaInput, codexMediaInput, publishNativeImage } from "./native-media.js";
+export { AgentMediaStore, MAX_MEDIA_BYTES, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 
 export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type NewThreadOptions, type ThreadDetail, type WorkdirStatus } from "./service.js";
 export { Agent as default } from "./service.js";

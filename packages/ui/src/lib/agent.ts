@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentEvent, AgentSettings, FocusRef, PlaybookSource, ThreadDetail } from "@tomrade/agent";
+import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookSource, ThreadDetail } from "@tomrade/agent";
 import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
 import { useI18n } from "./i18n";
@@ -134,7 +134,7 @@ export function useSetPermissionMode(projectId: string) {
 }
 
 export const useSend = (projectId: string) =>
-  useMutation({ mutationFn: (args: { threadId: string; text: string; focus?: FocusRef[] }) => invoke("agent.send", projectId, args.threadId, args.text, args.focus) });
+  useMutation({ mutationFn: (args: { threadId: string; text: string; focus?: FocusRef[]; attachments?: MediaRef[] }) => invoke("agent.send", projectId, args.threadId, args.text, args.focus, args.attachments) });
 export const useAnswer = (projectId: string) =>
   useMutation({ mutationFn: (args: { threadId: string; questionId: string; value: string | string[] }) => invoke("agent.answer", projectId, args.threadId, args.questionId, args.value) });
 export const useCancelRun = () => useMutation({ mutationFn: (runId: string) => invoke("agent.cancel", runId) });

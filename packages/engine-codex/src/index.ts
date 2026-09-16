@@ -10,6 +10,7 @@ export function createCodexEngine(ctx: Context): Engine {
   ctx.effect(() => () => pool.close());
   return {
     ...baseline,
+    media: options => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", ...(CodexOptions.parse(options ?? {}).transport === "app-server" ? ["audio/mpeg", "audio/wav"] : [])], output: ["image"] }),
     permissionModes: { default: "full-access", choices: [
       { value: "full-access", label: "Full access" }, { value: "workspace", label: "Workspace" },
       { value: "read-only", label: "Read only" }, { value: "local", label: "Local rules" }

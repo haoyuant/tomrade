@@ -8,6 +8,7 @@ import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult 
 import type {} from "@tomrade/mcp";
 import { binaryOk, runJsonl } from "./cli.js";
 import { buildSystem, promptOf } from "./system.js";
+import { claudeMediaInput } from "@tomrade/agent";
 
 export const ClaudeCodeOptions = z.object({
   transport: z.enum(["sdk", "cli"]).default("sdk"),
@@ -96,9 +97,10 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       // dontAsk denies anything not allowlisted on backlog turns, while code
       // turns work in their own worktree and accept edits.
       const code = input.purpose !== "backlog";
+      const withMedia = input.input.kind === "text" && !!input.input.attachments?.length;
       const args = [
         "-p",
-        promptOf(input),
+        ...(withMedia ? ["--input-format", "stream-json"] : [promptOf(input)]),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -129,6 +131,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
 
       try {
         const run = runJsonl(options.command, args, {
+          stdin: withMedia ? JSON.stringify({ type: "user", message: { role: "user", content: claudeMediaInput(input, io, promptOf(input)) } }) + "\n" : undefined,
           cwd: input.cwd ?? tmp,
           env: { ...process.env, ...input.env },
           signal: io.signal,

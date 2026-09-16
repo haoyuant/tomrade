@@ -5,6 +5,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
+import { publishNativeImage } from "@tomrade/agent";
 import { binaryOk, buildSystem, promptOf, runJsonl } from "@tomrade/engine-claude-code";
 import type {} from "@tomrade/mcp";
 import type {} from "@tomrade/settings";
@@ -21,7 +22,7 @@ export type CodexOptions = z.infer<typeof CodexOptions>;
 interface CodexLine {
   type?: string;
   thread_id?: string;
-  item?: { type?: string; text?: string };
+  item?: { type?: string; text?: string; result?: string; status?: string };
   usage?: { input_tokens?: number; output_tokens?: number };
   message?: string;
 }
@@ -116,6 +117,10 @@ export function createCodexCliEngine(ctx: Context): Engine {
       const args = io.resume
         ? ["exec", "resume", ...shared, io.resume, prompt]
         : ["exec", ...shared, "-s", input.purpose !== "backlog" ? sandbox : "read-only", "-C", input.cwd ?? tmp, prompt];
+      if (input.input.kind === "text") for (const ref of input.input.attachments ?? []) {
+        if (!io.media) throw new Error("Media input is unavailable");
+        args.splice(args.length - 1, 0, "--image", io.media.path(ref.id));
+      }
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       const metrics: import("@tomrade/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
@@ -129,6 +134,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
           signal: io.signal,
           onLine: (raw) => {
             const line = raw as CodexLine;
+            if (line.type === "item.completed" && line.item) publishNativeImage(line.item, io);
             if (line.type === "thread.started") session = line.thread_id;
             else if (line.type === "item.completed" && line.item?.type === "agent_message" && line.item.text?.trim()) io.emit({ type: "text", text: line.item.text.trim() });
             else if (line.type === "turn.completed") {

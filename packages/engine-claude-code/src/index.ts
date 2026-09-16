@@ -10,6 +10,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
   ctx.effect(() => () => pool.close());
   return {
     ...baseline,
+    media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "auto", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },
       { value: "acceptEdits", label: "Accept edits" }, { value: "default", label: "Ask permissions" },

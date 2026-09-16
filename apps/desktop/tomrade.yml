@@ -75,6 +75,10 @@ modules:
     title: Pet
 
 plugins:
+  - id: archify
+    name: "@tomrade/archify"
+    config:
+      cacheDirectory: "${userData}/runtimes/archify"
   # Caches only: every file under here can be rebuilt from a project's folder.
   - id: db
     name: "@tomrade/db"
@@ -139,6 +143,7 @@ plugins:
     name: "@tomrade/agent"
     config:
       playbooksDir: "${userData}/playbooks"
+      mediaDir: "${userData}/agent-media"
   # Engines are conductors; several can be installed, a thread picks one.
   - id: engine-loop
     name: "@tomrade/engine-loop"
