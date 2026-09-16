@@ -87,8 +87,8 @@ export function FilesTree() {
   const state = stateOf(t)[stateKey];
   const unavailable = stateKey === "unavailable";
 
-  const addFiles = async (kind: "files" | "folders" = "files", targetDir?: string) => {
-    const dir = targetDir !== undefined ? targetDir : currentDir;
+  const addFiles = async (kind: "files" | "folders" = "files") => {
+    const dir = currentDir;
     const chosen = await pickFiles(t(kind === "folders" ? "files.pickFolderTitle" : "files.pickFilesTitle"), t("files.pickFilesButton"), kind);
     if (!chosen?.length) return;
     importFiles.mutate(
@@ -245,38 +245,6 @@ export function FilesTree() {
                 <SyncMark sync={entry.sync} />
                 {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
               </button>
-              {dir && (
-                <div className="side-file-actions">
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-icon-xs"
-                    data-tip={t("files.addFiles")}
-                    aria-label={t("files.addFiles")}
-                    disabled={unavailable}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await addFiles("files", entry.path);
-                      show(entry.path);
-                    }}
-                  >
-                    <Icon name="i-file" size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-icon-xs"
-                    data-tip={t("files.addFolder")}
-                    aria-label={t("files.addFolder")}
-                    disabled={unavailable}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await addFiles("folders", entry.path);
-                      show(entry.path);
-                    }}
-                  >
-                    <Icon name="i-folder" size={12} />
-                  </button>
-                </div>
-              )}
             </div>
           }
         >
