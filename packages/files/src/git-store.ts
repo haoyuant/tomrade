@@ -665,21 +665,28 @@ export class GitFileStore implements FileStore {
 
   sync(): Promise<FilesStatus> {
     if (this.syncQueue) return this.syncQueue;
-    this.syncQueue = this.locked(async () => {
+    this.syncQueue = (async () => {
       if (!this.closed) await this.doSync();
       return this.status();
-    }).finally(() => {
+    })().finally(() => {
       this.syncQueue = null;
     });
     return this.syncQueue;
   }
 
-  /** Save, then — with a remote — probe, fetch, merge, push. Leaves `problem` for `status()` to report. */
+  /**
+   * Save, then — with a remote — probe, fetch, merge, push. Leaves `problem`
+   * for `status()` to report. Only the steps that touch the index and working
+   * copy hold the store's lock: the network calls have no timeout, and a save,
+   * a delete or an undo waiting behind an unreachable remote would read as the
+   * app not responding. Fetch writes refs and objects only, and push reads
+   * them, so a local commit landing beside either is safe.
+   */
   private async doSync(): Promise<void> {
     this.syncing = true;
     this.opts.onChange();
     try {
-      await this.commitAll("Saved");
+      await this.locked(() => this.commitAll("Saved"));
       if (!this.opts.remote) return;
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
@@ -702,22 +709,8 @@ export class GitFileStore implements FileStore {
         this.problem = { state: "offline", detail: "Could not fetch from the remote" };
         return;
       }
-      // A merge still waiting on a person is not retried over.
-      if ((await this.unmergedPaths()).length) return;
-      const before = await this.g.aheadBehind(this.branch);
-      if (before && before.behind > 0) {
-        this.quiet(5_000);
-        const merged = await this.git(["merge", "-q", "--no-edit", "--allow-unrelated-histories", `origin/${this.branch}`], { ok: true });
-        if (merged.code !== 0) {
-          if ((await this.unmergedPaths()).length) {
-            this.problem = null;
-            return;
-          }
-          await this.git(["merge", "--abort"], { ok: true });
-          this.problem = { state: "error", detail: `Merge failed: ${merged.stderr?.trim().split("\n").pop() ?? "unknown"}` };
-          return;
-        }
-      }
+      const merged = await this.locked(() => this.mergeFetched());
+      if (merged !== "merged") return;
       const after = await this.g.aheadBehind(this.branch);
       if (after && after.ahead > 0 && !(await this.g.push(this.branch))) {
         this.problem = { state: "error", detail: "The remote moved on; will retry" };
@@ -731,6 +724,27 @@ export class GitFileStore implements FileStore {
       this.syncing = false;
       this.opts.onChange();
     }
+  }
+
+  /** The local half of a sync, under the lock: bring what was fetched into the working copy. */
+  private async mergeFetched(): Promise<"merged" | "waiting" | "failed"> {
+    // A merge still waiting on a person is not retried over.
+    if ((await this.unmergedPaths()).length) return "waiting";
+    const before = await this.g.aheadBehind(this.branch);
+    if (before && before.behind > 0) {
+      this.quiet(5_000);
+      const merged = await this.git(["merge", "-q", "--no-edit", "--allow-unrelated-histories", `origin/${this.branch}`], { ok: true });
+      if (merged.code !== 0) {
+        if ((await this.unmergedPaths()).length) {
+          this.problem = null;
+          return "waiting";
+        }
+        await this.git(["merge", "--abort"], { ok: true });
+        this.problem = { state: "error", detail: `Merge failed: ${merged.stderr?.trim().split("\n").pop() ?? "unknown"}` };
+        return "failed";
+      }
+    }
+    return "merged";
   }
 
   // ── conflicts ───────────────────────────────────────────────────────────────

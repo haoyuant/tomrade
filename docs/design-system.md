@@ -215,4 +215,4 @@ new channel is invisible to it until `pnpm build:backend` has run.
 `test:files` (`scripts/files-check.mjs`) drives the Files screen the same way:
 the tree, the viewer and its versions, a clash with a second machine over a
 local bare remote, importing a folder whole, pinning multiple files to a ticket, and
-undoing a delete from its toast, ⇧⌘Z, ⌘Z and the History window — 56 checks.
+undoing a delete from its toast, ⇧⌘Z, ⌘Z and the History window (title bar, beside Settings) — 57 checks.

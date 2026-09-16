@@ -86,6 +86,11 @@ export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: st
       />
       <DialogBody>
         <p className="hist-lede">{t("history.lede")}</p>
+        {busy && (
+          <p className="meta-txt hist-busy" role="status">
+            <Icon name="i-sync" size={12} className="is-spinning" /> {t("history.working")}
+          </p>
+        )}
         {timeline.isLoading && <p className="meta-txt">{t("history.loading")}</p>}
         {!timeline.isLoading && records.length === 0 && <p className="meta-txt">{t("history.empty")}</p>}
         <div className="hist-list" data-testid="history-list">

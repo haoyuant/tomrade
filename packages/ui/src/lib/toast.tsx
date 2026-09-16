@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 
@@ -9,13 +9,16 @@ export interface ToastSpec {
   onUndo?: () => void;
   /** Choices the toast offers; picking one runs it and dismisses. The X remains a no-op dismiss. */
   actions?: { label: string; run: () => void }[];
+  /** Stays until dismissed by its id — for work in progress, not news. */
+  sticky?: boolean;
 }
 
 interface Toast extends ToastSpec {
   id: number;
 }
 
-const Ctx = createContext<(t: ToastSpec) => void>(() => {});
+type Push = (t: ToastSpec) => number;
+const Ctx = createContext<{ push: Push; dismiss: (id: number) => void }>({ push: () => 0, dismiss: () => {} });
 
 const LIFETIME = 6000;
 
@@ -23,15 +26,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seq = useRef(0);
 
-  const push = useCallback((spec: ToastSpec) => {
+  const push = useCallback<Push>((spec) => {
     const id = (seq.current += 1);
     setToasts((all) => [...all, { ...spec, id }]);
+    return id;
   }, []);
 
   const dismiss = useCallback((id: number) => setToasts((all) => all.filter((t) => t.id !== id)), []);
+  const value = useMemo(() => ({ push, dismiss }), [push, dismiss]);
 
   return (
-    <Ctx.Provider value={push}>
+    <Ctx.Provider value={value}>
       {children}
       <div className="toast-stack" role="status" aria-live="polite" aria-atomic="false">
         {toasts.map((t) => (
@@ -53,14 +58,14 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
   dismiss.current = onDismiss;
 
   useEffect(() => {
-    if (held) return;
+    if (held || toast.sticky) return;
     const timer = window.setTimeout(() => dismiss.current(), LIFETIME);
     return () => window.clearTimeout(timer);
-  }, [held]);
+  }, [held, toast.sticky]);
 
   return (
     <div
-      className="toast"
+      className={toast.sticky ? "toast is-sticky" : "toast"}
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocus={() => setHeld(true)}
@@ -109,4 +114,7 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
   );
 }
 
-export const useToast = () => useContext(Ctx);
+export const useToast = (): Push => useContext(Ctx).push;
+
+/** For a toast that reports work in progress: put it up, take it down when the work is done. */
+export const useToastDismiss = () => useContext(Ctx).dismiss;

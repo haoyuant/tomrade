@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
@@ -15,7 +15,7 @@ import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useCreateView, useRedo, useUndo } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { useToast, useToastDismiss } from "~/lib/toast";
 import { FilesRegion } from "~/components/files/FilesRegion";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
@@ -51,6 +51,7 @@ export function Workspace() {
   const redo = useRedo(ws.project.id);
   const createView = useCreateView(ws.project.id);
   const toast = useToast();
+  const dismissToast = useToastDismiss();
   const navigate = useNavigate();
 
   const { setAiOpen } = useAgentDock();
@@ -108,19 +109,40 @@ export function Workspace() {
     if (deleting && !deleteTarget) setDeleting(null);
   }, [deleting, deleteTarget]);
 
-  const runUndo = useCallback(() => {
-    undo.mutate(undefined, {
-      onSuccess: (result) => toast({ body: result ? result.summary : t("workspace.nothingToUndo") }),
-      onError: (error) => toast({ body: error.message })
-    });
-  }, [undo, toast, t]);
-
-  const runRedo = useCallback(() => {
-    redo.mutate(undefined, {
-      onSuccess: (result) => toast({ body: result ? result.summary : t("workspace.nothingToRedo") }),
-      onError: (error) => toast({ body: error.message })
-    });
-  }, [redo, toast, t]);
+  // One step at a time. A step that restores files can wait on the store — a
+  // save, a sync — so the second ⌘Z of an impatient hand must not queue a
+  // second undo behind the first; and once it drags on, the wait is announced.
+  const stepping = useRef(false);
+  const [busy, setBusy] = useState<"undo" | "redo" | null>(null);
+  const runStep = useCallback(
+    (direction: "undo" | "redo") => {
+      if (stepping.current) return;
+      stepping.current = true;
+      setBusy(direction);
+      let notice: number | null = null;
+      const soon = window.setTimeout(() => {
+        notice = toast({ body: t(direction === "undo" ? "workspace.undoing" : "workspace.redoing"), sticky: true });
+      }, 400);
+      const long = window.setTimeout(() => {
+        if (notice !== null) dismissToast(notice);
+        notice = toast({ body: t(direction === "undo" ? "workspace.undoingLong" : "workspace.redoingLong"), sticky: true });
+      }, 4000);
+      (direction === "undo" ? undo : redo).mutate(undefined, {
+        onSuccess: (result) => toast({ body: result ? result.summary : t(direction === "undo" ? "workspace.nothingToUndo" : "workspace.nothingToRedo") }),
+        onError: (error) => toast({ body: error.message }),
+        onSettled: () => {
+          window.clearTimeout(soon);
+          window.clearTimeout(long);
+          if (notice !== null) dismissToast(notice);
+          stepping.current = false;
+          setBusy(null);
+        }
+      });
+    },
+    [undo, redo, toast, dismissToast, t]
+  );
+  const runUndo = useCallback(() => runStep("undo"), [runStep]);
+  const runRedo = useCallback(() => runStep("redo"), [runStep]);
 
   // Opening the detail below the three-pane floor rails the assistant, so
   // every pane stays in normal flow and nothing ever overlaps.
@@ -212,6 +234,8 @@ export function Workspace() {
         onOpenPalette={() => setPalette(true)}
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
+        onOpenHistory={() => setHistory(true)}
+        historyBusy={busy !== null}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />
@@ -244,7 +268,7 @@ export function Workspace() {
         )}
       </div>
 
-      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} />
+      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} />
 
       <CommandPalette
         open={palette}
