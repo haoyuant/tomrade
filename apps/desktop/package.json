@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:ui": "electron scripts/ui-regression.mjs",
     "test:plugins": "electron scripts/plugins-check.mjs",
+    "test:media": "electron scripts/media-check.mjs",
     "dev": "pnpm -w run build:backend && node scripts/dev.mjs",
     "dev:ui": "pnpm --filter @tomrade/ui dev",
     "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
@@ -18,6 +19,7 @@
     "test:files": "electron scripts/files-check.mjs"
   },
   "dependencies": {
+    "@tomrade/archify": "workspace:*",
     "@tomrade/agent": "workspace:*",
     "@tomrade/agent-backlog": "workspace:*",
     "@tomrade/boards": "workspace:*",

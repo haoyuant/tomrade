@@ -1,9 +1,16 @@
 import type { z } from "zod";
 
 export type LlmRole = "worker";
+export type InputModality = "image" | "audio" | "video" | "pdf";
+export interface MediaData { mime: string; base64: string; name: string }
+export const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+export function inputMimes(modalities: readonly InputModality[]): string[] {
+  return modalities.flatMap(mode => mode === "image" ? IMAGE_MIMES : mode === "audio" ? ["audio/wav", "audio/mpeg"] : mode === "video" ? ["video/mp4", "video/webm"] : ["application/pdf"]);
+}
 
 export type ContentBlock =
   | { type: "text"; text: string }
+  | { type: "media"; media: MediaData }
   | { type: "tool_call"; id: string; name: string; args: unknown }
   | { type: "tool_result"; id: string; content: string; isError?: boolean };
 
@@ -36,11 +43,14 @@ export type StopReason = "end" | "tool_use" | "max_tokens" | "refusal";
 
 export type ChatEvent =
   | { type: "text"; delta: string }
+  | { type: "media"; media: MediaData }
   | { type: "tool_call"; id: string; name: string; args: unknown }
   | { type: "usage"; inputTokens?: number; outputTokens?: number }
   | { type: "stop"; reason: StopReason };
 
 export interface ChatCapabilities {
+  mediaInput?: string[];
+  mediaOutput?: string[];
   tools: boolean;
   streaming: boolean;
   json: boolean;
@@ -56,6 +66,7 @@ export const text = (t: string): ContentBlock => ({ type: "text", text: t });
 export const userMessage = (t: string): Message => ({ role: "user", content: [text(t)] });
 
 export interface Collected {
+  media?: MediaData[];
   text: string;
   toolCalls: { id: string; name: string; args: unknown }[];
   stop: StopReason;
@@ -69,6 +80,8 @@ export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta:
     if (event.type === "text") {
       out.text += event.delta;
       onText?.(event.delta);
+    } else if (event.type === "media") {
+      (out.media ??= []).push(event.media);
     } else if (event.type === "tool_call") {
       out.toolCalls.push({ id: event.id, name: event.name, args: event.args });
     } else if (event.type === "usage") {

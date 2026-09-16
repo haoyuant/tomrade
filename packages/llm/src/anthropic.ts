@@ -1,14 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatEvent, ChatModel, ChatRequest, StopReason } from "./model.js";
+import { inputMimes, type InputModality, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
+import { LlmError } from "./errors.js";
 
 export interface AnthropicConfig {
   apiKey: string;
   model: string;
   baseURL?: string;
+  inputModalities?: InputModality[];
 }
 
 type AnthropicContent =
   | { type: "text"; text: string }
+  | { type: "image" | "document"; source: { type: "base64"; media_type: string; data: string } }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
 
@@ -18,6 +21,7 @@ function toMessages(request: ChatRequest): { role: "user" | "assistant"; content
       role: message.role,
       content: message.content.map((block): AnthropicContent => {
         if (block.type === "text") return { type: "text", text: block.text };
+        if (block.type === "media") return { type: block.media.mime === "application/pdf" ? "document" : "image", source: { type: "base64", media_type: block.media.mime, data: block.media.base64 } };
         if (block.type === "tool_call") return { type: "tool_use", id: block.id, name: block.name, input: block.args ?? {} };
         return { type: "tool_result", tool_use_id: block.id, content: block.content, is_error: block.isError };
       })
@@ -30,7 +34,7 @@ const stopOf = (reason: string | null | undefined): StopReason =>
 
 /** Claude over the Messages API. No sampling params — current models refuse them; effort/thinking stay at their defaults. */
 export class AnthropicModel implements ChatModel {
-  capabilities = { tools: true, streaming: true, json: false };
+  get capabilities() { return { tools: true, streaming: true, json: false, mediaInput: inputMimes(this.config.inputModalities ?? ["image", "pdf"]).filter(mime => mime.startsWith("image/") || mime === "application/pdf") }; }
 
   private readonly client: Anthropic;
 
@@ -39,6 +43,9 @@ export class AnthropicModel implements ChatModel {
   }
 
   async *chat(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
+    for (const message of request.messages) for (const block of message.content) {
+      if (block.type === "media" && !this.capabilities.mediaInput.includes(block.media.mime)) throw new LlmError(`This model profile does not accept ${block.media.mime}`);
+    }
     const choice = request.toolChoice;
     const stream = await this.client.messages.create(
       {

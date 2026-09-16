@@ -3,6 +3,10 @@ import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, 
 import type { Item } from "@tomrade/domain";
 import { Icon } from "~/components/icons";
 import { PetStage } from "./PetStage";
+import { AgentMedia } from "./AgentMedia";
+import { AgentAttachment, readAttachment } from "./AgentAttachment";
+import { useQuery } from "@tanstack/react-query";
+import { invoke } from "~/lib/api";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
@@ -199,7 +203,7 @@ function RunMetrics({ run }: { run: RunView | undefined }) {
   return <p className="meta-txt num" style={{ margin: "8px 0 0 22px" }}>{elapsed}{usage ? ` · ${usage}` : ""}{timings ? ` · ${timings}` : ""}</p>;
 }
 
-function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }: { m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
+function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -207,6 +211,7 @@ function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }:
       <div className="turn turn-user">
         <span className="turn-rule" />
         <p>{b.type === "text" ? b.text : ""}</p>
+        {b.type === "text" && b.attachments?.map(media => <AgentMedia key={media.id} projectId={projectId} threadId={m.threadId} media={media} />)}
         {!!focus?.length && (
           <span className="turn-ctx num" title={focus.map((r) => r.title).join(" · ")}>
             {focus.map((r) => r.key ?? r.title).join(" · ")}
@@ -222,6 +227,8 @@ function Row({ m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }:
         {b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue)}</p>)}
         {m.role === "agent" && m.runId && (runs.get(m.runId)?.changes ?? 0) === 0 && <RunMetrics run={runs.get(m.runId)} />}
       </>
+    ) : b.type === "media" ? (
+      <AgentMedia projectId={projectId} threadId={m.threadId} media={b.media} caption={b.caption} />
     ) : b.type === "trace" ? (
       <Trace block={b} />
     ) : b.type === "question" ? (
@@ -302,6 +309,11 @@ export function AgentPanel({
   const workdirProblem = threadBoardId ? (workdir.data?.problem ?? null) : null;
 
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const sending = useRef(false);
   // What rides along as "(viewing: …)": follow tracks the screen, pinned holds
   // a snapshot across navigation, off sends nothing. Session state on purpose —
   // the panel never unmounts inside a project, so it survives navigation.
@@ -322,7 +334,7 @@ export function AgentPanel({
   useAgentEvents(projectId, threadId, onDelta, onProgress);
 
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
-  const busy = !!runningRun || send.isPending || answer.isPending;
+  const busy = !!runningRun || send.isPending || answer.isPending || uploading;
   const blocked = !!workdirProblem;
   const pending = detail.data?.pending ?? null;
   const runs = new Map((detail.data?.runs ?? []).map((r) => [r.id, r]));
@@ -342,6 +354,20 @@ export function AgentPanel({
   // Quick picks ride on the engine's global options — the same knobs settings edits.
   const saveSettings = useSaveSettings();
   const engineOptions = (agentSettings?.engines?.[currentEngineId] ?? {}) as Record<string, unknown>;
+  const mediaCapabilities = useQuery({
+    queryKey: ["agent-media-capabilities", currentEngineId, engineOptions, settings.data?.models],
+    queryFn: () => invoke("agent.mediaCapabilities", currentEngineId, engineOptions),
+    retry: false
+  });
+  const acceptedMedia = mediaCapabilities.data?.input ?? [];
+  const addAttachments = (files: File[]) => {
+    if (busy) return;
+    if (attachments.length + files.length > 8) { setAttachmentError(t("agentPanel.tooManyAttachments")); return; }
+    if (files.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return; }
+    if (files.some(file => !file.size || file.size > 32 * 1024 * 1024)) { setAttachmentError(t("agentPanel.attachmentSize")); return; }
+    setAttachmentError(null);
+    setAttachments(previous => [...previous, ...files]);
+  };
   const picks = engine?.picks ?? [];
   const pickValue = (key: string) => (typeof engineOptions[key] === "string" && engineOptions[key] ? (engineOptions[key] as string) : null);
   const setPick = (key: string, value: string | null) => {
@@ -392,11 +418,14 @@ export function AgentPanel({
   }, []);
 
   const pickThread = (id: string) => {
+    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); }
     setChosenThread(id);
     localStorage.setItem(STORE.thread(projectId), id);
   };
   useEffect(() => {
     if (!requestedThread) return;
+    setAttachments([]);
+    setAttachmentError(null);
     setChosenThread(requestedThread.id);
     localStorage.setItem(STORE.thread(projectId), requestedThread.id);
   }, [requestedThread, projectId]);
@@ -406,12 +435,20 @@ export function AgentPanel({
 
   const doSend = async () => {
     const text = draft.trim();
-    if (!text || busy || blocked) return;
-    setDraft("");
-    let target = threadId;
-    if (!target) target = (await newThread.mutateAsync({ boardId })).id;
-    pickThread(target);
-    send.mutate({ threadId: target, text, focus: sendFocus.length ? sendFocus : undefined });
+    if ((!text && !attachments.length) || busy || blocked || sending.current) return;
+    if (attachments.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return; }
+    sending.current = true; setUploading(true); setAttachmentError(null);
+    try {
+      let target = threadId;
+      if (!target) target = (await newThread.mutateAsync({ boardId })).id;
+      pickThread(target);
+      const refs = await Promise.all(attachments.map(async file => invoke("agent.media.upload", projectId, target!, {
+        name: file.name, mime: file.type, base64: await readAttachment(file)
+      })));
+      await send.mutateAsync({ threadId: target, text, focus: sendFocus.length ? sendFocus : undefined, attachments: refs.length ? refs : undefined });
+      setDraft(""); setAttachments([]);
+    } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
+    finally { sending.current = false; setUploading(false); }
   };
 
   const doAnswer = (questionId: string, value: string | string[]) => {
@@ -518,7 +555,7 @@ export function AgentPanel({
           </div>
         )}
         {(detail.data?.messages ?? []).map((m) => (
-          <Row key={m.id} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} />
+          <Row key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} />
         ))}
         {live?.text && (
           <div className="turn turn-ai">
@@ -533,11 +570,17 @@ export function AgentPanel({
         {runningRun && <WorkingLine startedAt={runningRun.startedAt} progress={progress} streaming={!!live} />}
       </div>
 
-      <div className="ai-foot">
+      <div className="ai-foot" onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => {
+        if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); }
+      }}>
         {(accessories.data ?? []).map((accessory) => (
           <PetStage key={accessory.id} accessory={accessory} threadId={threadId} />
         ))}
         <div className="ai-composer">
+          <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
+            addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
+          }} />
+          <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
           <input
             ref={composer}
             className="ai-input"
@@ -546,8 +589,9 @@ export function AgentPanel({
             value={draft}
             disabled={busy}
             onChange={(e) => setDraft(e.target.value)}
+            onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void doSend();
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) void doSend();
             }}
           />
           {runningRun ? (
@@ -560,13 +604,17 @@ export function AgentPanel({
               className="btn btn-icon ai-send"
               title={workdirProblem ?? t("agentPanel.send")}
               aria-label={t("agentPanel.send")}
-              disabled={busy || blocked || !draft.trim()}
+              disabled={busy || blocked || (!draft.trim() && !attachments.length)}
               onClick={() => void doSend()}
             >
               <Icon name="i-send" size={14} />
             </button>
           )}
         </div>
+        {!!attachments.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          {attachments.map((file, index) => <AgentAttachment key={`${file.name}-${index}`} file={file} disabled={busy} remove={() => setAttachments(previous => previous.filter((_, i) => i !== index))} />)}
+        </div>}
+        {attachmentError && <p className="ai-error" role="alert">{attachmentError}</p>}
         {threadBoardId && (
           <p className={workdirProblem ? "ai-workdir is-problem meta-txt dense" : "ai-workdir meta-txt dense num"} style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             {workdirProblem ? (

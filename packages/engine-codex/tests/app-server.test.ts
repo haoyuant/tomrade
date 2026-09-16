@@ -24,8 +24,14 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:codex", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
   try {
+    const published: string[] = [];
+    const ref = { id: "image", name: "input.png", mime: "image/png", size: 3 };
+    io.media = { read: () => ({ ...ref, base64: "YWJj" }), path: () => "unused", publish: data => { published.push(data.base64); return ref; } };
+    input.input = { kind: "text", text: "hello", attachments: [ref] };
     const one = await engine.turn(input, io);
     expect(one.stop).toBe("end");
+    expect(published).toEqual(["YWJj"]);
+    input.input = { kind: "text", text: "hello" };
     io.resume = one.resume;
     const two = await engine.turn(input, io);
     expect(two.metrics?.runtime).toBe("warm");
@@ -42,6 +48,7 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
     io.signal = new AbortController().signal; input.input = { kind: "text", text: "again" };
     expect((await engine.turn(input, io)).stop).toBe("end");
     const requests = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+    expect(requests.find(r => r.method === "turn/start").params.input).toContainEqual({ type: "image", url: "data:image/png;base64,YWJj" });
     expect(requests.filter((r) => r.spawn)).toHaveLength(1);
     expect(requests.filter((r) => r.method === "thread/start")).toHaveLength(1);
     expect(requests.filter((r) => r.method === "turn/start")).toHaveLength(4);

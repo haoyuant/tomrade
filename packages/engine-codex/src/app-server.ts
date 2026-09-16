@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomrade/agent";
+import { codexMediaInput, publishNativeImage } from "@tomrade/agent";
 import { bindTurn, runtimeDirectory, staticSystem, turnPrompt, type Runtime } from "@tomrade/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
 
@@ -146,6 +147,7 @@ export class CodexRuntime implements Runtime {
         const item = params.item;
         if (seen.has(item.id)) return;
         seen.add(item.id);
+        publishNativeImage(item, io);
         if (item.type === "agentMessage" && item.text?.trim()) io.emit({ type: "text", text: item.text.trim() });
         if (item.type === "contextCompaction") metrics.compactions!++;
         if (["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall"].includes(item.type)) metrics.toolCalls!++;
@@ -189,7 +191,7 @@ export class CodexRuntime implements Runtime {
       metrics.readyMs = performance.now() - start;
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       const response = await this.request("turn/start", { threadId: this.session, model: codexModel(options.model), effort: options.effort,
-        input: [{ type: "text", text: turnPrompt(input, io) }] });
+        input: codexMediaInput(input, io, turnPrompt(input, io)) });
       turnId ??= response.turn.id;
       if (cancelled) abort();
       const result = await done;

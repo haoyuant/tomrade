@@ -15,6 +15,7 @@ import type { SettingsSection } from "@tomrade/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomrade/tools";
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
+import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 import {
   isSuspended,
   type AgentEvent,
@@ -115,7 +116,10 @@ declare module "@tomrade/ipc" {
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
-    "agent.send": (projectId: string, threadId: string, text: string, focus?: FocusRef[]) => { runId: string };
+    "agent.send": (projectId: string, threadId: string, text: string, focus?: FocusRef[], attachments?: MediaRef[]) => { runId: string };
+    "agent.media.upload": (projectId: string, threadId: string, upload: MediaUpload) => MediaRef;
+    "agent.media.read": (projectId: string, threadId: string, id: string) => MediaContent;
+    "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
@@ -132,6 +136,7 @@ declare module "@tomrade/ipc" {
 export const AgentConfig = z.preprocess(
   (value) => value ?? {},
   z.object({
+    mediaDir: z.string().optional(),
     /** Folder of user playbooks: one SKILL.md per subdirectory. */
     playbooksDir: z.string().optional(),
     /** Hard wall-clock ceiling per run, for a thread that talks to the backlog. */
@@ -213,6 +218,7 @@ export class Agent extends Service {
   private permissionQueues = new Map<string, Promise<unknown>>();
   private activeByThread = new Map<string, RunCtx>();
   private activeById = new Map<string, RunCtx>();
+  private mediaStore?: AgentMediaStore;
 
   constructor(
     ctx: Context,
@@ -251,7 +257,10 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
-      ctx.ipc.handle("agent.send", (projectId, threadId, text, focus) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus }));
+      ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
+      ctx.ipc.handle("agent.media.upload", (projectId, threadId, upload) => ctx.agent.uploadMedia(projectId, threadId, upload));
+      ctx.ipc.handle("agent.media.read", (projectId, threadId, id) => ctx.agent.readMedia(projectId, threadId, id));
+      ctx.ipc.handle("agent.mediaCapabilities", (engineId, options) => ctx.agent.engines.get(engineId)?.media?.(options ?? ctx.agent.settingsOf().engines[engineId]) ?? { input: [], output: [] });
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
@@ -578,6 +587,7 @@ export class Agent extends Service {
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
     if (!this.store.thread(projectId, threadId)) return false;
     this.store.deleteThread(projectId, threadId);
+    this.media().removeThread(projectId, threadId);
     return true;
   }
 
@@ -634,6 +644,39 @@ export class Agent extends Service {
 
   // ── the turn ───────────────────────────────────────────────────────────────
 
+  private media(): AgentMediaStore {
+    this.mediaStore ??= new AgentMediaStore(this.config.mediaDir ?? (this.ctx.db.config.dir === ":memory:"
+      ? fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-media-"))
+      : path.join(path.dirname(this.ctx.db.config.dir), "agent-media")));
+    return this.mediaStore;
+  }
+
+  uploadMedia(projectId: string, threadId: string, upload: MediaUpload): MediaRef {
+    if (!this.store.thread(projectId, threadId)) throw new Error("Unknown thread");
+    return this.media().add(projectId, threadId, upload);
+  }
+
+  readMedia(projectId: string, threadId: string, id: string): MediaContent {
+    if (!this.store.thread(projectId, threadId)) throw new Error("Unknown thread");
+    return this.media().read(projectId, threadId, id);
+  }
+
+  /** Providers publish through the platform so MCP and the in-app loop share output. */
+  runSignal(runId: string): AbortSignal {
+    const rc = this.activeById.get(runId);
+    if (!rc) throw new Error("No active run");
+    return rc.abort.signal;
+  }
+
+  publishMedia(runId: string, upload: MediaUpload, caption?: string, source?: MediaRef): MediaRef {
+    const rc = this.activeById.get(runId);
+    if (!rc || rc.abort.signal.aborted) throw new Error("No active run");
+    const media = this.uploadMedia(rc.projectId, rc.threadId, upload);
+    if (source) media.source = this.media().reference(rc.projectId, rc.threadId, source.id);
+    this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "media", media, caption }, runId);
+    return media;
+  }
+
   send(projectId: string, threadId: string, input: UserInput): { runId: string } {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
@@ -653,7 +696,12 @@ export class Agent extends Service {
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
-    this.appendAndBroadcast(projectId, threadId, "user", focus ? { type: "text", text, focus } : { type: "text", text }, null);
+    if (input.kind === "text" && (input.attachments?.length ?? 0) > 8) throw new Error("Attach at most eight files per message");
+    const attachments = input.kind === "text" ? input.attachments?.map(ref => this.media().reference(projectId, threadId, ref.id)) : undefined;
+    const accepted = engine.media?.(this.settingsOf().engines[engine.id])?.input ?? [];
+    for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
+    if (input.kind === "text") input = { ...input, attachments };
+    this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
     if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
 
     const run = this.store.beginRun(projectId, threadId, engine.id);
@@ -759,6 +807,11 @@ export class Agent extends Service {
     };
     const llm = (this.ctx.get("llm") as LlmService | undefined) ?? null;
     const io: TurnIO = {
+      media: {
+        read: id => this.readMedia(thread.projectId, thread.id, id),
+        path: id => this.media().localPath(thread.projectId, thread.id, id),
+        publish: (upload, caption) => this.publishMedia(run.id, upload, caption)
+      },
       emit,
       permissionMode: (mode) => { handle.scratch.set("permissionMode", mode); this.broadcast(thread.id, { type: "permission-mode", mode }); },
       requestPermission: (text, options, signal) => {
@@ -873,6 +926,7 @@ export class Agent extends Service {
         ...(where.remote && where.branch ? { workdir: { remote: where.remote, branch: where.branch, worktree: where.worktree } } : {})
       };
       await this.ctx.parallel("agent/prepare-turn", turnInput);
+      if (turnInput.cwd && turnInput.purpose !== "backlog") rc.io.run.scratch.set("mediaWorkdir", turnInput.cwd);
       result = await rc.engine.turn(turnInput, rc.io);
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);
       // Engines may return normally while handling an interrupt. Cancellation
@@ -994,6 +1048,35 @@ export class Agent extends Service {
   // ── platform tools ─────────────────────────────────────────────────────────
 
   private registerPlatformTools(): void {
+    this.ctx.tools.register(defineTool({
+      name: "read_media_source", title: "Read a diagram source",
+      description: "Read a conversation's JSON diagram source by media ID. Returns a bounded text page with nextOffset; concatenate pages for the complete JSON before editing.",
+      input: z.object({ id: z.string(), offset: z.number().int().nonnegative().default(0) }),
+      execute: ({ id, offset }, inv) => {
+        if (!inv.run) throw new Error("Requires an active conversation");
+        const content = this.readMedia(inv.run.projectId, inv.run.threadId, id);
+        if (content.mime !== "application/json") throw new Error("This media is not a diagram source");
+        const text = Buffer.from(content.base64, "base64").toString("utf8");
+        return { id, text: text.slice(offset, offset + 1800), nextOffset: offset + 1800 < text.length ? offset + 1800 : null };
+      }
+    }));
+    this.ctx.tools.register(defineTool({
+      name: "display_media", title: "Display generated media",
+      description: "Display an image, HTML diagram, audio, video or PDF generated in this local agent's working directory. The user can preview, download or save it to Files. Only files within the current execution directory are accepted.",
+      input: z.object({ path: z.string(), mime: z.string(), caption: z.string().optional() }),
+      execute: ({ path: filename, mime, caption }, inv) => {
+        const rc = inv.run && this.activeById.get(inv.run.id);
+        const directory = rc?.io.run.scratch.get("mediaWorkdir");
+        if (!rc || typeof directory !== "string") throw new Error("This engine has no local media working directory; use a rendering tool instead");
+        const root = fs.realpathSync(directory);
+        const file = fs.realpathSync(path.resolve(root, filename));
+        const relative = path.relative(root, file);
+        if (!relative || relative.startsWith(".." + path.sep) || relative === ".." || path.isAbsolute(relative)) throw new Error("Media must be inside the execution directory");
+        const stat = fs.statSync(file);
+        if (!stat.isFile() || stat.size > 32 * 1024 * 1024) throw new Error("Not a supported media file or larger than 32 MiB");
+        return this.publishMedia(rc.run.id, { name: path.basename(file), mime, base64: fs.readFileSync(file).toString("base64") }, caption);
+      }
+    }));
     this.ctx.tools.register(
       defineTool({
         name: "ask_user",

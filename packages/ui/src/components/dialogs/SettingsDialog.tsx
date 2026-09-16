@@ -831,11 +831,12 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           <select id="pfProvider" className="input" value={draft.provider} onChange={(e) => set({ provider: e.target.value as ModelProfile["provider"] })}>
             <option value="openai-compatible">{t("settingsDialog.providerOpenaiCompatible")}</option>
             <option value="anthropic">{t("settingsDialog.providerAnthropic")}</option>
+            <option value="openai-images">{t("agentPanel.imageApi")}</option>
           </select>
         </div>
       </div>
       <div className="grid-2">
-        {draft.provider === "openai-compatible" && (
+        {draft.provider !== "anthropic" && (
           <div className="field">
             <label htmlFor="pfBase">{t("settingsDialog.baseUrlLabel")}</label>
             <input id="pfBase" className="input num" value={draft.baseURL ?? ""} onChange={(e) => set({ baseURL: e.target.value })} />
@@ -859,6 +860,19 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           {t("common.cancel")}
         </button>
       </div>
+      {draft.provider !== "openai-images" && <fieldset className="field">
+        <legend>{t("agentPanel.modelMediaInput")}</legend>
+        <p className="meta-txt">{t("agentPanel.modelMediaHelp")}</p>
+        {(["image", "pdf", ...(draft.provider === "openai-compatible" ? ["audio", "video"] : [])] as NonNullable<ModelProfile["inputModalities"]>).map(mode => {
+          const selected = draft.inputModalities ?? (draft.provider === "anthropic" ? ["image", "pdf"] : []);
+          return <label key={mode}><input type="checkbox" checked={selected.includes(mode)} onChange={event => set({ inputModalities: event.target.checked ? [...selected, mode] : selected.filter(value => value !== mode) })} /> {mode}</label>;
+        })}
+      </fieldset>}
+      {draft.provider === "openai-compatible" && <fieldset className="field">
+        <legend>{t("agentPanel.modelMediaOutput")}</legend>
+        <p className="meta-txt">{t("agentPanel.modelMediaOutputHelp")}</p>
+        {(["image", "audio"] as const).map(mode => <label key={mode}><input type="checkbox" checked={draft.outputModalities?.includes(mode) ?? false} onChange={event => set({ outputModalities: event.target.checked ? [mode] : [] })} /> {mode}</label>)}
+      </fieldset>}
     </div>
   );
 }
