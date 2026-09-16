@@ -1726,9 +1726,9 @@ button.kref { cursor: pointer; }
 .side-label-btn .side-label { padding: 0; }
 .side-label-btn:hover .side-label,
 .side-label-btn[aria-current="true"] .side-label { color: var(--fg); }
-.side-file-row-container { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
+.side-file-row-container { position: relative; display: flex; align-items: center; border-radius: var(--radius-sm); }
 .side-file-row-container .side-row { flex: 1; }
-.side-file-row-container .side-file-actions { display: flex; gap: 2px; opacity: 0; transition: opacity var(--motion-base); }
+.side-file-row-container .side-file-actions { position: absolute; right: 0; display: flex; gap: 2px; opacity: 0; transition: opacity var(--motion-base); }
 .side-file-row-container:hover .side-file-actions { opacity: 1; }
 .side-file-row-container.is-drag-over { background: var(--tag-bg-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .btn-icon-xs { padding: 3px; }

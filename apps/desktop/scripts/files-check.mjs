@@ -131,6 +131,7 @@ const run = async () => {
   await wait(() => has('[data-testid="files-region"][data-path="docs/brief.md"]'), "file screen");
   check("opening a file takes the board's place and marks the row current", (await $(`document.querySelector('.side-row.is-file[data-file="docs/brief.md"]')?.getAttribute('aria-current')`)) === "true");
   check("no view row reads as current while a file is open", (await count('.side-row.is-view[aria-current="true"]')) === 0);
+  check("the current file row has the same highlight bounds as a view", await $(`(() => { const file = document.querySelector('.side-row.is-file[aria-current="true"]'); const view = document.querySelector('.side-row.is-view'); if (!file || !view) return false; const a = file.getBoundingClientRect(); const b = view.getBoundingClientRect(); return Math.abs(a.left - b.left) < 1 && Math.abs(a.right - b.right) < 1; })()`));
   check("the head is the path", (await $(`[...document.querySelectorAll('.files-crumbs .crumb')].map(n => n.textContent).join('/')`)) === "Files/docs/brief.md");
   await wait(() => has(".md-view h1"), "rendered markdown");
   check("markdown renders as prose", (await text(".md-view h1")) === "The brief" && (await count(".md-view li")) === 2);
