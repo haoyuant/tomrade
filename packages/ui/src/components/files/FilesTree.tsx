@@ -11,6 +11,7 @@ import { useRevert } from "~/lib/queries";
 import { pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
+import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
 
 const expandedKey = (projectId: string) => `tomrade.files.expanded.${projectId}`;
 
@@ -58,6 +59,7 @@ export function FilesTree() {
   const { project, filePath, openFile } = useWorkspace();
   const toast = useToast();
   const tree = useFilesTree(project.id);
+  const syncActions = useSyncActions(project.id);
   const status = useFilesStatus(project.id);
   const mkdir = useMakeFolder(project.id);
   const importFiles = useImportFiles(project.id);
@@ -85,8 +87,8 @@ export function FilesTree() {
   const state = stateOf(t)[stateKey];
   const unavailable = stateKey === "unavailable";
 
-  const addFiles = async (kind: "files" | "folders" = "files", targetDir?: string) => {
-    const dir = targetDir !== undefined ? targetDir : currentDir;
+  const addFiles = async (kind: "files" | "folders" = "files") => {
+    const dir = currentDir;
     const chosen = await pickFiles(t(kind === "folders" ? "files.pickFolderTitle" : "files.pickFilesTitle"), t("files.pickFilesButton"), kind);
     if (!chosen?.length) return;
     importFiles.mutate(
@@ -240,46 +242,16 @@ export function FilesTree() {
                   <Icon className="ico" name="i-file" size={14} />
                 )}
                 <span className="side-name">{entry.name}</span>
+                <SyncMark sync={entry.sync} />
                 {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
               </button>
-              {dir && (
-                <div className="side-file-actions">
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-icon-xs"
-                    data-tip={t("files.addFiles")}
-                    aria-label={t("files.addFiles")}
-                    disabled={unavailable}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await addFiles("files", entry.path);
-                      show(entry.path);
-                    }}
-                  >
-                    <Icon name="i-file" size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-icon-xs"
-                    data-tip={t("files.addFolder")}
-                    aria-label={t("files.addFolder")}
-                    disabled={unavailable}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await addFiles("folders", entry.path);
-                      show(entry.path);
-                    }}
-                  >
-                    <Icon name="i-folder" size={12} />
-                  </button>
-                </div>
-              )}
             </div>
           }
         >
           <ContextMenuActionItem icon={<Icon name="i-cut" size={13} />} name={t("files.cut")} onSelect={() => clipboard.cut([entry.path])} />
           <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => clipboard.copy([entry.path])} />
           {dir && clipboard.entry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => runPaste(entry.path)} />}
+          <SyncContextActions actions={syncActions} paths={[entry.path]} entry={entry} />
           <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => deleteEntry(entry)} />
         </ContextMenu>,
         ...(expanded ? rows(entry.path, depth + 1) : [])
@@ -289,6 +261,7 @@ export function FilesTree() {
   return (
     <>
       <div className="side-label-row">
+        {syncActions.confirmation}
         <button type="button" className="side-label-btn side-files-home" aria-current={filePath === ""} onClick={() => openFile("")}>
           <Eyebrow className="side-label">{t("files.eyebrow")}</Eyebrow>
         </button>
@@ -299,10 +272,11 @@ export function FilesTree() {
           align="end"
           trigger={
             <button type="button" className="btn btn-icon side-files-add" data-tip={t("files.addMenu")} data-tip-side="bottom" aria-label={t("files.addMenu")} disabled={unavailable || importFiles.isPending}>
-              <Icon name="i-upload" size={13} />
+              <Icon name="i-plus" size={13} />
             </button>
           }
         >
+          <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setCreating(true)} />
           <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
           <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
         </Menu>
@@ -311,9 +285,6 @@ export function FilesTree() {
             <Icon name="i-paste" size={13} />
           </button>
         )}
-        <button type="button" className="btn btn-icon side-files-newfolder" data-tip={t("files.newFolder")} data-tip-side="bottom" aria-label={t("files.newFolder")} disabled={unavailable} onClick={() => setCreating(true)}>
-          <Icon name="i-plus" size={13} />
-        </button>
       </div>
       <div
         className={`side-list side-files-list${dragOver === "" ? " is-drag-over" : ""}`}

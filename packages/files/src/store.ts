@@ -37,7 +37,8 @@ export const MIGRATIONS: Migration[] = [
       head       TEXT NOT NULL,
       undone_at  INTEGER
     )`
-  }
+  },
+  { version: 3, up: "ALTER TABLE plugin_files_ops ADD COLUMN scope_id TEXT NOT NULL DEFAULT 'base'" }
 ];
 
 export const TABLES = {
@@ -49,6 +50,7 @@ export type FileOpKind = "write" | "mkdir" | "move" | "copy" | "remove" | "impor
 
 /** One operation on a project's files, undoable while its paths stay as it left them. */
 export interface FileOpRow {
+  scopeId: string;
   seq: number;
   projectId: string;
   at: number;
@@ -68,6 +70,7 @@ export interface FileOpRow {
 }
 
 interface RawOp {
+  scope_id: string;
   seq: number;
   project_id: string;
   at: number;
@@ -83,6 +86,7 @@ interface RawOp {
 }
 
 const opOf = (r: RawOp): FileOpRow => ({
+  scopeId: r.scope_id,
   seq: r.seq,
   projectId: r.project_id,
   at: r.at,
@@ -103,8 +107,8 @@ export class OpsStore {
   record(op: Omit<FileOpRow, "seq" | "undoneAt">): FileOpRow {
     const info = this.pool
       .for(op.projectId)
-      .prepare("INSERT INTO plugin_files_ops (project_id, at, by, run_id, kind, path, target, paths_json, base, head, undone_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")
-      .run(op.projectId, op.at, op.by, op.runId, op.kind, op.path, op.target, JSON.stringify(op.paths), op.base, op.head);
+      .prepare("INSERT INTO plugin_files_ops (project_id, at, by, run_id, kind, path, target, paths_json, base, head, scope_id, undone_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")
+      .run(op.projectId, op.at, op.by, op.runId, op.kind, op.path, op.target, JSON.stringify(op.paths), op.base, op.head, op.scopeId);
     return { ...op, seq: Number(info.lastInsertRowid), undoneAt: null };
   }
 
@@ -130,6 +134,14 @@ export class OpsStore {
 
 export class RemoteStore {
   constructor(private readonly pool: Db) {}
+
+  restore(projectId: string, row: RemoteRow | null): void {
+    if (!row) return this.clear(projectId);
+    this.pool.for(projectId).prepare(
+      `INSERT INTO plugin_files_remotes (project_id, backend, config_json, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(project_id) DO UPDATE SET backend = excluded.backend, config_json = excluded.config_json, updated_at = excluded.updated_at`
+    ).run(projectId, row.backend, JSON.stringify(row.config), row.updatedAt);
+  }
 
   get(projectId: string): RemoteRow | null {
     const row = this.pool.for(projectId).prepare("SELECT project_id, backend, config_json, updated_at FROM plugin_files_remotes WHERE project_id = ?").get(projectId) as

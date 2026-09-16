@@ -11,7 +11,9 @@ import { GitHub, GitHubError } from "@tomrade/storage-github";
 const RepoConfig = z.object({
   owner: z.string().min(1).meta({ title: "Owner" }).describe("GitHub user or organisation"),
   repo: z.string().min(1).meta({ title: "Repository" }).describe("Created for you if it does not exist yet"),
-  branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the files are kept on")
+  branch: z.string().min(1).default("main").meta({ title: "Branch" }).describe("The branch the files are kept on"),
+  directory: z.string().default("").refine((value) => value === "" || (!value.startsWith("/") && !value.includes("\\") && value.split("/").every((part) => !!part && part !== "." && part !== ".." && !part.startsWith("."))), "Use a relative folder such as project-files, without hidden or parent directories")
+    .meta({ title: "Files directory" }).describe("Only this folder appears in Files. Use project-files for a monorepo; leave empty only for a repository dedicated to Files.")
 });
 type RepoConfig = z.infer<typeof RepoConfig>;
 
@@ -65,12 +67,12 @@ export const filesGithub = {
       createGitBackend<RepoConfig>({
         id: "github",
         title: "A GitHub repository",
-        description: "The project's files in a repository of their own on GitHub. Private by default; every machine on the project clones it beside the project's folder.",
+        description: "Share files through a GitHub repository or a folder inside a monorepo. Files only manages the selected folder.",
         configSchema: RepoConfig,
-        defaults: { owner: "", repo: "", branch: "main" },
+        defaults: { owner: "", repo: "", branch: "main", directory: "" },
         settingsSection: SECTION,
         connection,
-        describe: (c) => `github.com/${c.owner}/${c.repo} · ${c.branch}`,
+        describe: (c) => `github.com/${c.owner}/${c.repo} · ${c.branch}${c.directory ? ` · ${c.directory}/` : " · repository root"}`,
 
         /** "files" or "acme/files" — the account fills in the rest. */
         async draft(name) {
@@ -78,7 +80,7 @@ export const filesGithub = {
           const [first, second] = trimmed.split("/");
           const owner = second ? first! : await api.whoami();
           const repo = (second ?? first ?? "files").replace(/[^A-Za-z0-9._-]/g, "-") || "files";
-          return { owner, repo, branch: "main" };
+          return { owner, repo, branch: "main", directory: "project-files" };
         },
 
         // A token, when there is one, authenticates the push; without one the
@@ -86,7 +88,7 @@ export const filesGithub = {
         remote: (c) => {
           const secret = token();
           const host = secret ? `x-access-token:${secret}@github.com` : "github.com";
-          return { url: `https://${host}/${c.owner}/${c.repo}.git`, branch: c.branch };
+          return { url: `https://${host}/${c.owner}/${c.repo}.git`, branch: c.branch, directory: c.directory };
         },
 
         async ensureRemote(c) {
@@ -100,7 +102,7 @@ export const filesGithub = {
           const repos = await api.mine();
           return repos.map((r) => ({
             label: `${r.full_name}${r.private ? " (private)" : ""}`,
-            config: { owner: r.owner.login, repo: r.name, branch: r.default_branch || "main" }
+            config: { owner: r.owner.login, repo: r.name, branch: r.default_branch || "main", directory: "project-files" }
           }));
         }
       })

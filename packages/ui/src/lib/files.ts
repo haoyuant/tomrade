@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {} from "@tomrade/files";
-import type { ConflictChoice } from "@tomrade/files";
+import type { ConflictChoice, SyncMode } from "@tomrade/files";
 import type { FileReference } from "@tomrade/domain";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
@@ -14,6 +14,7 @@ export const filesKeys = {
   tree: (projectId: string) => ["files", projectId, "tree"] as const,
   status: (projectId: string) => ["files", projectId, "status"] as const,
   info: (projectId: string) => ["files", projectId, "info"] as const,
+  syncPolicy: (projectId: string) => ["files", projectId, "syncPolicy"] as const,
   content: (projectId: string, path: string) => ["files", projectId, "read", path] as const,
   version: (projectId: string, fileId: string, versionId: string) => ["files", projectId, "version", fileId, versionId] as const,
   location: (projectId: string, fileId: string) => ["files", projectId, "locate", fileId] as const,
@@ -32,6 +33,20 @@ export const useFilesTree = (projectId: string) => useQuery({ queryKey: filesKey
 export const useFilesStatus = (projectId: string) => useQuery({ queryKey: filesKeys.status(projectId), queryFn: () => invoke("files.status", projectId), retry: false, staleTime: 10_000 });
 
 export const useFilesInfo = (projectId: string) => useQuery({ queryKey: filesKeys.info(projectId), queryFn: () => invoke("files.info", projectId), retry: false });
+
+export const useFilesSyncPolicy = (projectId: string) => useQuery({ queryKey: filesKeys.syncPolicy(projectId), queryFn: () => invoke("files.syncPolicy", projectId), retry: false, staleTime: 10_000 });
+
+export function useSetSyncRules(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["files", projectId, "setSyncRules"],
+    mutationFn: ({ paths, mode }: { paths: string[]; mode: SyncMode | "inherit" }) => invoke("files.setSyncRules", projectId, paths, mode),
+    onSuccess: (policy) => {
+      qc.setQueryData(filesKeys.syncPolicy(projectId), policy);
+      invalidateFiles(qc, projectId);
+    }
+  });
+}
 
 export const useFileContent = (projectId: string, path: string | null) =>
   useQuery({ queryKey: filesKeys.content(projectId, path ?? ""), queryFn: () => invoke("files.read", projectId, path!), enabled: path !== null && path !== "", retry: false });

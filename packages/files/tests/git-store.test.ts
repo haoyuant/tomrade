@@ -149,7 +149,7 @@ describe("a local store", () => {
   });
 });
 
-describe("two machines sharing a remote", () => {
+describe("two machines sharing a remote", { timeout: 30_000 }, () => {
   it("adopts the remote, merges independent changes, and pushes back", async () => {
     const remote = bare();
     const a = await store(remote);

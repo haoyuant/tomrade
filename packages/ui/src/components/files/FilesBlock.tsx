@@ -10,6 +10,7 @@ import { useI18n } from "~/lib/i18n";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
+import { SyncPolicySettings, SyncScopeSummary } from "./SyncPolicy";
 
 const filesRemoteApi: RemoteApi = {
   useConnection: useFilesConnection,
@@ -60,6 +61,7 @@ export function FilesBlock({ projectId }: { projectId: string }) {
         </p>
       </div>
 
+      {dir && <SyncPolicySettings projectId={projectId} />}
       {dir && <RemoteSection projectId={projectId} bound={info.data?.remote ?? null} location={status.data?.location ?? null} disabled={sync.isPending} />}
 
       <div>
@@ -107,7 +109,7 @@ function RemoteSection({ projectId, bound, location, disabled }: { projectId: st
 
   const choose = (id: string) => {
     const next = remotes.find((b) => b.id === id);
-    setEdit({ backend: id, config: id === boundId ? { ...boundConfig } : defaultsOf((next?.schema ?? {}) as JsonSchema) });
+    setEdit({ backend: id, config: id === boundId ? { ...boundConfig } : { ...defaultsOf((next?.schema ?? {}) as JsonSchema), ...(id === "github" ? { directory: "project-files" } : {}) } });
   };
 
   const save = () => {
@@ -173,8 +175,9 @@ function RemoteSection({ projectId, bound, location, disabled }: { projectId: st
 
           {backend && ready && (
             <>
-              {backend.browsable && <DestinationPicker provider={backend} api={filesRemoteApi} onPick={(picked) => setEdit({ backend: selected, config: picked })} />}
+              {backend.browsable && <DestinationPicker provider={backend} api={filesRemoteApi} onPick={(picked) => setEdit({ backend: selected, config: { ...config, ...picked, ...(selected === boundId && selected === "github" ? { directory: config.directory ?? "" } : {}) } })} />}
               <div className="panel stack-3" style={{ marginTop: "var(--space-3)" }}>
+                {bound && selected === boundId && (config.directory ?? "") !== (boundConfig.directory ?? "") && <p className="meta-txt dense" role="status">{t("files.syncScopeChange", { from: String(boundConfig.directory || t("files.remoteRoot")), to: String(config.directory || t("files.remoteRoot")) })}</p>}
                 {(fieldsOf(backend.schema as JsonSchema) ?? []).map(([name, field]) => (
                   <SchemaField key={name} id="files" name={name} schema={field} disabled={busy} value={config[name]} onChange={(value) => setEdit({ backend: selected, config: { ...config, [name]: value } })} />
                 ))}
@@ -184,6 +187,7 @@ function RemoteSection({ projectId, bound, location, disabled }: { projectId: st
           )}
 
           <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
+            {!bound && selected && <SyncScopeSummary projectId={projectId} binding />}
             <button type="button" className="btn btn-secondary files-bind" disabled={!dirty || busy || !ready || !selected} onClick={save}>
               {bind.isPending ? t("files.sharingBusy") : t("files.shareHere")}
             </button>

@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useState, type DragEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomrade/domain";
 import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomrade/files";
 import { Icon } from "~/components/icons";
+import { SyncContextActions, SyncLine, SyncMark, SyncScopeSummary, SyncSelect, useSyncActions, type SyncActions } from "./SyncPolicy";
 import { Eyebrow, Spacer, Tag } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
 import { useWorkspace } from "~/components/workspace/context";
@@ -86,7 +87,7 @@ function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCa
 }
 
 /** Where the files are shared and how they stand, on the root page; the block in project settings has the controls. */
-function SharingCard({ status, state, onOpenSharing }: { status: FilesStatus | undefined; state: StateView; onOpenSharing: () => void }) {
+function SharingCard({ projectId, status, state, onOpenSharing }: { projectId: string; status: FilesStatus | undefined; state: StateView; onOpenSharing: () => void }) {
   const { t } = useI18n();
   return (
     <div className="panel files-sharing-card" data-testid="files-sharing">
@@ -104,6 +105,7 @@ function SharingCard({ status, state, onOpenSharing }: { status: FilesStatus | u
       <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
         {status?.detail ? t("files.hintWithDetail", { hint: state.hint, detail: status.detail }) : state.hint}
       </p>
+      <SyncScopeSummary projectId={projectId} />
     </div>
   );
 }
@@ -145,11 +147,12 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
 }
 
 /** The bar that replaces the plain toolbar while rows are checked: a count, and the actions that take the whole set. */
-function SelectionBar({ count, onCut, onCopy, onDelete, onClear }: { count: number; onCut: () => void; onCopy: () => void; onDelete: () => void; onClear: () => void }) {
+function SelectionBar({ count, sync, onCut, onCopy, onDelete, onClear }: { count: number; sync: ReactNode; onCut: () => void; onCopy: () => void; onDelete: () => void; onClear: () => void }) {
   const { t } = useI18n();
   return (
     <div className="lockbar files-selection-bar" role="toolbar" data-testid="files-selection-bar">
       <span className="selection-count">{t("files.selectionCount", { n: count })}</span>
+      {sync}
       <button type="button" className="btn btn-ghost sel-cut" onClick={onCut}>
         <Icon name="i-cut" size={13} />
         {t("files.cut")}
@@ -186,7 +189,8 @@ function FolderView({
   onDeleteMany,
   onMoveInto,
   dragOver,
-  onDragOverChange
+  onDragOverChange,
+  syncActions
 }: {
   projectId: string;
   path: string;
@@ -205,6 +209,7 @@ function FolderView({
   onMoveInto: (paths: string[], dir: string) => void;
   dragOver: boolean;
   onDragOverChange: (over: boolean) => void;
+  syncActions: SyncActions;
 }) {
   const { t } = useI18n();
   const { openFile } = useWorkspace();
@@ -242,10 +247,11 @@ function FolderView({
       }}
     >
       {path === "" && conflicts.length > 0 && <ConflictList projectId={projectId} conflicts={conflicts} />}
-      {path === "" && <SharingCard status={status} state={state} onOpenSharing={onOpenSharing} />}
+      {path === "" && <SharingCard projectId={projectId} status={status} state={state} onOpenSharing={onOpenSharing} />}
       {selected.size > 0 && (
         <SelectionBar
           count={selected.size}
+          sync={<SyncSelect actions={syncActions} paths={[...selected]} value="" label={t("files.syncFor", { name: t("files.selectionCount", { n: selected.size }) })} />}
           onCut={() => onCut([...selected])}
           onCopy={() => onCopy([...selected])}
           onDelete={() => onDeleteMany([...selected])}
@@ -322,6 +328,7 @@ function FolderView({
                       >
                         <Icon name={e.kind === "dir" ? "i-folder" : "i-file"} size={14} />
                         <span>{e.name}</span>
+                        <SyncMark sync={e.sync} />
                         {e.change && <span className={`side-mark is-${e.change}`} title={e.change} />}
                       </button>
                     </td>
@@ -333,6 +340,7 @@ function FolderView({
                 <ContextMenuActionItem icon={<Icon name="i-cut" size={13} />} name={t("files.cut")} onSelect={() => onCut(targetsFor(e.path))} />
                 <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => onCopy(targetsFor(e.path))} />
                 {e.kind === "dir" && clipboardEntry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => onPasteInto(e.path)} />}
+                <SyncContextActions actions={syncActions} paths={targetsFor(e.path)} entry={e} />
                 <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => onDeleteMany(targetsFor(e.path))} />
               </ContextMenu>
             ))}
@@ -468,6 +476,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const pinned = search.id && search.v ? { fileId: search.id, versionId: search.v } : null;
   const tree = useFilesTree(projectId);
   const status = useFilesStatus(projectId);
+  const syncActions = useSyncActions(projectId);
   const info = useFilesInfo(projectId);
   const sync = useSyncFiles(projectId);
   const remove = useRemoveFile(projectId);
@@ -678,22 +687,18 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         <div className="files-dir-actions" style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
           {isDir && (
             <Menu
-              label={t("files.addFiles")}
+              label={t("files.addMenu")}
               align="end"
               trigger={
-                <button type="button" className="btn btn-icon" data-tip={t("files.addFiles")} data-tip-side="bottom" aria-label={t("files.addFiles")}>
-                  <Icon name="i-upload" size={14} />
+                <button type="button" className="btn btn-icon files-add" data-tip={t("files.addMenu")} data-tip-side="bottom" aria-label={t("files.addMenu")}>
+                  <Icon name="i-plus" size={14} />
                 </button>
               }
             >
+              <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setNewFolder(true)} />
               <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
               <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
             </Menu>
-          )}
-          {isDir && (
-            <button type="button" className="btn btn-icon" data-tip={t("files.newFolder")} data-tip-side="bottom" aria-label={t("files.newFolder")} onClick={() => setNewFolder(true)}>
-              <Icon name="i-plus" size={14} />
-            </button>
           )}
           {isDir && clipboard.entry && (
             <button type="button" className="btn btn-icon files-paste" data-tip={t("files.paste")} data-tip-side="bottom" aria-label={t("files.pasteAria")} onClick={() => runPaste(dir)}>
@@ -754,6 +759,8 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         </div>
       )}
 
+      {syncActions.confirmation}
+      {!pinned && stateKey !== "unavailable" && path !== "" && entry && <SyncLine actions={syncActions} entry={entry} />}
       <div className="files-body">
         {stateKey === "unavailable" ? (
           <div className="files-main">
@@ -787,6 +794,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             onMoveInto={moveInto}
             dragOver={dragOver}
             onDragOverChange={setDragOver}
+            syncActions={syncActions}
           />
         ) : (
           <FileView projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />

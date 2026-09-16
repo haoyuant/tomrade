@@ -200,7 +200,7 @@ export function serializeState(state: ProjectState, opts: { mcpUrl?: string | nu
   files.set(path.join(ARTIFACT_DIR, MANIFEST), JSON.stringify(state.manifest, null, 2) + "\n");
   files.set(
     path.join(ARTIFACT_DIR, GITIGNORE),
-    ["# The cache never belongs in a folder — only this text does; the files keep a repository of their own.", "*.db", "*.db-wal", "*.db-shm", "*.db-journal", "*.tmp", "files/", ""].join("\n")
+    ["# The cache never belongs in a folder — only this text does; the files keep a repository of their own.", "*.db", "*.db-wal", "*.db-shm", "*.db-journal", "*.tmp", "files/", "files-archive/", ""].join("\n")
   );
   files.set(
     path.join(ARTIFACT_DIR, GITATTRIBUTES),

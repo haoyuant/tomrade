@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type {} from "@tomrade/ipc";
 import type { FileReference, Item } from "@tomrade/domain";
-import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesBackendView, FilesInfo, FilesStatus } from "./types.js";
+import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, SyncMode } from "./types.js";
 
 declare module "@tomrade/ipc" {
   interface Channels {
@@ -27,6 +27,8 @@ declare module "@tomrade/ipc" {
     "files.copy": (projectId: string, from: string, to: string) => string | null;
     "files.remove": (projectId: string, path: string) => string | null;
     "files.sync": (projectId: string) => FilesStatus;
+    "files.syncPolicy": (projectId: string) => FilesSyncPolicy;
+    "files.setSyncRules": (projectId: string, paths: string[], mode: SyncMode | "inherit") => FilesSyncPolicy;
     "files.conflicts": (projectId: string) => FileConflict[];
     "files.resolve": (projectId: string, path: string, choice: ConflictChoice) => FilesStatus;
     "files.resolveAll": (projectId: string, choice: ConflictChoice) => FilesStatus;

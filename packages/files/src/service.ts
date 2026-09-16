@@ -18,7 +18,10 @@ import { writeContext } from "@tomrade/write";
 import type { UndoRecord } from "@tomrade/domain";
 import type {} from "./channels.js";
 import { createGitBackend } from "./git-backend.js";
-import { normalizeRel } from "./git-store.js";
+import { GitFileStore, normalizeRel } from "./git-store.js";
+import { remoteDirectory } from "./git-sync.js";
+import { gitRunner } from "@tomrade/storage";
+import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 import { registerTools } from "./tools.js";
 import {
@@ -36,6 +39,8 @@ import {
   type FilesInfo,
   type FilesStatus,
   type FilesSyncState,
+  type FilesSyncPolicy,
+  type SyncMode,
   type WriteOptions
 } from "./types.js";
 
@@ -98,6 +103,19 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
  * saves and syncs them, and the versioned references tickets pin as artifacts.
  * How files are versioned and moved is the backend's; `local` is always there.
  */
+const EARLIER_STORE = "That operation belongs to an earlier Files store, kept under .tomrade/files-archive";
+
+function ensureIgnoreLine(file: string, line: string, comment?: string): void {
+  let body = "";
+  try {
+    body = fs.readFileSync(file, "utf8");
+  } catch {
+    // none yet
+  }
+  if (body.split("\n").some((l) => l.trim() === line)) return;
+  fs.writeFileSync(file, `${body}${body && !body.endsWith("\n") ? "\n" : ""}${comment ? `${comment}\n` : ""}${line}\n`, "utf8");
+}
+
 export class Files extends Service {
   static provide = "files";
   static inject = ["db", "hub", "storage", "items", "oplog"];
@@ -108,7 +126,7 @@ export class Files extends Service {
 
   private readonly home: Context;
   private readonly registry = new Map<string, FilesBackend>();
-  private readonly open = new Map<string, { backend: string; store: FileStore }>();
+  private readonly open = new Map<string, { backend: string; store: FileStore; configKey: string }>();
   private readonly opening = new Map<string, Promise<FileStore>>();
   private readonly lastState = new Map<string, FilesSyncState>();
   private remotes!: RemoteStore;
@@ -182,6 +200,8 @@ export class Files extends Service {
       ctx.ipc.handle("files.copy", (projectId, from, to) => this.copy(projectId, from, to));
       ctx.ipc.handle("files.remove", (projectId, p) => this.remove(projectId, p));
       ctx.ipc.handle("files.sync", (projectId) => this.sync(projectId));
+      ctx.ipc.handle("files.syncPolicy", (projectId) => this.syncPolicy(projectId));
+      ctx.ipc.handle("files.setSyncRules", (projectId, paths, mode) => this.setSyncRules(projectId, paths, mode));
       ctx.ipc.handle("files.conflicts", (projectId) => this.conflicts(projectId));
       ctx.ipc.handle("files.resolve", (projectId, p, choice) => this.resolve(projectId, p, choice));
       ctx.ipc.handle("files.resolveAll", (projectId, choice) => this.resolveAll(projectId, choice));
@@ -303,22 +323,13 @@ export class Files extends Service {
   private ensureIgnored(projectId: string): void {
     const entry = this.ctx.storage.entry(projectId);
     if (!entry?.dir || entry.git !== "dedicated") return;
-    const file = path.join(entry.dir, ".gitignore");
-    const line = `/${this.config.folder}/`;
-    let body = "";
-    try {
-      body = fs.readFileSync(file, "utf8");
-    } catch {
-      // none yet
-    }
-    if (body.split("\n").some((l) => l.trim() === line)) return;
-    fs.writeFileSync(file, `${body}${body && !body.endsWith("\n") ? "\n" : ""}# The project's files keep a repository of their own.\n${line}\n`, "utf8");
+    ensureIgnoreLine(path.join(entry.dir, ".gitignore"), `/${this.config.folder}/`, "# The project's files keep a repository of their own.");
   }
 
   store(projectId: string): Promise<FileStore> {
     const current = this.open.get(projectId);
-    // The project's folder moved under us: the store follows it.
-    if (current && current.store.dir !== this.dirFor(projectId)) this.close(projectId);
+    // The project's folder moved under us, or its remote changed: the store follows.
+    if (current && (current.store.dir !== this.dirFor(projectId) || current.configKey !== this.remoteKey(projectId))) this.close(projectId);
     else if (current) return Promise.resolve(current.store);
     const pending = this.opening.get(projectId);
     if (pending) return pending;
@@ -327,9 +338,15 @@ export class Files extends Service {
     return task;
   }
 
+  private remoteKey(projectId: string): string {
+    const remote = this.remoteOf(projectId);
+    return JSON.stringify(remote ? [remote.backend, remote.config] : null);
+  }
+
   private async openStore(projectId: string): Promise<FileStore> {
     const dir = this.dirFor(projectId);
     if (!dir) throw new FilesUnavailableError(projectId, "the project has no folder yet");
+    const configKey = this.remoteKey(projectId);
     const remote = this.remoteOf(projectId);
     let backend = remote ? this.registry.get(remote.backend) : undefined;
     let config: unknown = null;
@@ -344,21 +361,48 @@ export class Files extends Service {
     }
     const chosen = backend ?? this.get(LOCAL_BACKEND);
     this.ensureIgnored(projectId);
-    const store = await chosen.open({
-      projectId,
-      dir,
-      remote: backend ? config : null,
-      warn: (m) => this.warn(projectId, m),
-      onChange: () => this.notify(projectId),
-      env: { gitBinary: this.config.gitBinary, watch: this.config.watch, settleMs: this.config.settleMs, pushMs: this.config.pushMs }
-    });
+    // A repository root and a folder in it are different enough that each keeps a store of its own.
+    const directory = backend ? remoteDirectory((config as { directory?: string }).directory) : null;
+    const undo = directory !== null && FilesArchive.rotates(boundDirectory(dir), directory) ? this.park(projectId, dir, directory) : null;
+    let store: FileStore;
+    try {
+      store = await chosen.open({
+        projectId,
+        dir,
+        remote: backend ? config : null,
+        warn: (m) => this.warn(projectId, m),
+        onChange: () => this.notify(projectId),
+        env: { gitBinary: this.config.gitBinary, watch: this.config.watch, settleMs: this.config.settleMs, pushMs: this.config.pushMs }
+      });
+    } catch (error) {
+      undo?.();
+      throw error;
+    }
     const raced = this.open.get(projectId);
     if (raced) {
       store.close();
       return raced.store;
     }
-    this.open.set(projectId, { backend: chosen.id, store });
+    this.open.set(projectId, { backend: chosen.id, store, configKey });
+    if (configKey !== this.remoteKey(projectId)) {
+      this.close(projectId);
+      return this.openStore(projectId);
+    }
     return store;
+  }
+
+  private archiveOf(projectId: string): FilesArchive {
+    return new FilesArchive(path.join(this.ctx.storage.entry(projectId)!.dir!, ".tomrade", "files-archive"));
+  }
+
+  /** Put the live store aside for a scope it should not feed, and say where it went. */
+  private park(projectId: string, dir: string, directory: string): () => void {
+    const archive = this.archiveOf(projectId);
+    // Stores parked here must not be committed as embedded repositories; storage's template lists them too.
+    ensureIgnoreLine(path.join(path.dirname(archive.root), ".gitignore"), "files-archive/");
+    const undo = archive.rotate(dir, directory);
+    this.warn(projectId, `Files now show ${directory ? `${directory}/` : "the repository root"}; the previous files and their history are kept under ${archive.root}`);
+    return undo;
   }
 
   close(projectId: string): void {
@@ -410,7 +454,22 @@ export class Files extends Service {
   }
 
   async readVersion(projectId: string, ref: FileReference): Promise<FileContent | null> {
-    return (await this.store(projectId)).readVersion(ref);
+    const current = await (await this.store(projectId)).readVersion(ref);
+    if (current) return current;
+    for (const archive of this.archiveStores(projectId)) {
+      const content = await archive.readVersion(ref);
+      if (content) return content;
+    }
+    return null;
+  }
+
+  /** Stores parked by an earlier scope, read but never opened: open() would scaffold and sync them. */
+  private archiveStores(projectId: string): GitFileStore[] {
+    if (!this.dirFor(projectId)) return [];
+    return this.archiveOf(projectId).dirs().map((dir) => new GitFileStore({
+      dir, git: gitRunner(this.config.gitBinary), gitBinary: this.config.gitBinary,
+      remote: null, location: null, watch: false, warn: (m) => this.warn(projectId, m), onChange: () => {}
+    }));
   }
 
   async locate(projectId: string, fileId: string): Promise<string | null> {
@@ -425,7 +484,13 @@ export class Files extends Service {
   async resolveVersion(projectId: string, ref: FileReference): Promise<FileReference | null> {
     if (!this.dirFor(projectId)) return null;
     try {
-      return await (await this.store(projectId)).resolveVersion(ref);
+      const current = await (await this.store(projectId)).resolveVersion(ref);
+      if (current) return current;
+      for (const archive of this.archiveStores(projectId)) {
+        const resolved = await archive.resolveVersion(ref);
+        if (resolved) return resolved;
+      }
+      return null;
     } catch (error) {
       this.warn(projectId, error);
       return null;
@@ -453,6 +518,7 @@ export class Files extends Service {
     if (!base || !head || base === head) return { result, ref: null };
     const scope = writeContext.getStore();
     const row = this.ops.record({
+      scopeId: storeId(store.dir),
       projectId,
       at: Date.now(),
       by: scope?.author ?? "human",
@@ -469,6 +535,7 @@ export class Files extends Service {
   }
 
   private recordOf(op: FileOpRow): UndoRecord {
+    const dir = this.dirFor(op.projectId);
     return {
       ref: `${Files.PROVIDER}:${op.seq}`,
       provider: Files.PROVIDER,
@@ -482,7 +549,7 @@ export class Files extends Service {
       at: op.at,
       runId: op.runId,
       device: this.ctx.hub.deviceId,
-      undoable: true,
+      undoable: dir !== null && op.scopeId === storeId(dir),
       undoneAt: op.undoneAt
     };
   }
@@ -513,6 +580,7 @@ export class Files extends Service {
       if (!op) throw new Error("That file operation is no longer in the history");
       if (op.undoneAt !== null) throw new Error("That file operation is already undone");
       const store = await this.store(projectId);
+      if (op.scopeId !== storeId(store.dir)) throw new Error(EARLIER_STORE);
       if (!store.restore) throw new Error("This files backend cannot restore versions");
       await store.restore(op.paths, op.head, op.base, `Undid: ${this.describeOp(op)}`);
       this.ops.markUndone(projectId, op.seq, Date.now());
@@ -524,6 +592,7 @@ export class Files extends Service {
       if (!op) throw new Error("That file operation is no longer in the history");
       if (op.undoneAt === null) throw new Error("That file operation is not undone");
       const store = await this.store(projectId);
+      if (op.scopeId !== storeId(store.dir)) throw new Error(EARLIER_STORE);
       if (!store.restore) throw new Error("This files backend cannot restore versions");
       await store.restore(op.paths, op.base, op.head, `Redid: ${this.describeOp(op)}`);
       this.ops.markUndone(projectId, op.seq, null);
@@ -625,6 +694,22 @@ export class Files extends Service {
 
   // ── sync and conflicts ──────────────────────────────────────────────────────
 
+  async syncPolicy(projectId: string): Promise<FilesSyncPolicy> {
+    const store = await this.store(projectId);
+    if (!store.syncPolicy) throw new Error("This Files backend does not support selective sharing");
+    return store.syncPolicy();
+  }
+
+  async setSyncRules(projectId: string, paths: string[], mode: SyncMode | "inherit"): Promise<FilesSyncPolicy> {
+    const validMode = z.enum(["shared", "local", "inherit"]).parse(mode);
+    const normalized = [...new Set(z.array(z.string()).min(1).parse(paths).map(normalizeRel))];
+    const store = await this.store(projectId);
+    if (!store.setSyncRules) throw new Error("This Files backend does not support selective sharing");
+    const policy = await store.setSyncRules(normalized, validMode);
+    this.notify(projectId);
+    return policy;
+  }
+
   async sync(projectId: string): Promise<FilesStatus> {
     const status = await (await this.store(projectId)).sync();
     this.lastState.set(projectId, status.state);
@@ -668,8 +753,24 @@ export class Files extends Service {
     const backend = this.get(backendId);
     const config = backend.configSchema.parse({ ...(backend.defaults as object), ...((rawConfig as object) ?? {}) }) as Record<string, unknown>;
     if (!this.dirFor(projectId)) throw new FilesUnavailableError(projectId, "the project has no folder yet");
+    const previous = this.remoteOf(projectId);
     this.remotes.set(projectId, backendId, config);
-    await this.reopen(projectId, true);
+    const attempted = this.remoteKey(projectId);
+    try {
+      await this.reopen(projectId, true);
+    } catch (error) {
+      // Do not overwrite a newer binding imported while the backend was opening.
+      if (this.remoteKey(projectId) === attempted) {
+        this.close(projectId);
+        this.remotes.restore(projectId, previous);
+        try {
+          await this.store(projectId);
+        } catch (recovery) {
+          this.warn(projectId, `The previous Files store could not reopen: ${message(recovery)}`);
+        }
+      }
+      throw error;
+    }
     // The row travels in the project's folder; write it now rather than at the next backlog change.
     void this.ctx.storage.publish(projectId, "files").catch((error) => this.warn(projectId, error));
     return this.sync(projectId);
