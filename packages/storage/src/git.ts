@@ -49,17 +49,30 @@ export interface Git {
   (args: string[], opts?: { cwd?: string; ok?: boolean; stdin?: string }): Promise<{ stdout: string; stderr?: string; code: number }>;
 }
 
+/** git itself takes this lock for a moment even on a "read" like `status`, to opportunistically refresh its index cache. */
+const isIndexLockContention = (stderr: string): boolean => /Unable to create '.*index\.lock': File exists/.test(stderr);
+
 export function gitRunner(binary: string, defaultCwd?: string): Git {
   return async (args, opts = {}) => {
-    try {
-      const { stdout, stderr } = await exec(binary, args, { cwd: opts.cwd ?? defaultCwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
-      return { stdout: stdout.toString(), stderr: stderr.toString(), code: 0 };
-    } catch (error) {
-      const e = error as { code?: number | string; stderr?: string | Buffer; stdout?: string | Buffer };
-      if (e.code === "ENOENT") throw new GitMissingError(binary);
-      // `ok` means a non-zero exit is an answer, not a failure — `diff --quiet`, say.
-      if (opts.ok) return { stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? ""), code: typeof e.code === "number" ? e.code : 1 };
-      throw new GitError(args, String(e.stderr ?? ""));
+    const cwd = opts.cwd ?? defaultCwd;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { stdout, stderr } = await exec(binary, args, { cwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
+        return { stdout: stdout.toString(), stderr: stderr.toString(), code: 0 };
+      } catch (error) {
+        const e = error as { code?: number | string; stderr?: string | Buffer; stdout?: string | Buffer };
+        if (e.code === "ENOENT") throw new GitMissingError(binary);
+        const stderrText = String(e.stderr ?? "");
+        // Nothing ran yet when index.lock collides, so a retry is never a
+        // double-apply — just outwait whichever process briefly held it.
+        if (attempt < 5 && isIndexLockContention(stderrText)) {
+          await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+          continue;
+        }
+        // `ok` means a non-zero exit is an answer, not a failure — `diff --quiet`, say.
+        if (opts.ok) return { stdout: String(e.stdout ?? ""), stderr: stderrText, code: typeof e.code === "number" ? e.code : 1 };
+        throw new GitError(args, stderrText);
+      }
     }
   };
 }

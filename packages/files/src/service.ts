@@ -170,6 +170,7 @@ export class Files extends Service {
       ctx.ipc.handle("files.import", (projectId, dir, sources) => this.importFiles(projectId, dir, sources));
       ctx.ipc.handle("files.mkdir", (projectId, p) => this.mkdir(projectId, p));
       ctx.ipc.handle("files.move", (projectId, from, to) => this.move(projectId, from, to));
+      ctx.ipc.handle("files.copy", (projectId, from, to) => this.copy(projectId, from, to));
       ctx.ipc.handle("files.remove", (projectId, p) => this.remove(projectId, p));
       ctx.ipc.handle("files.sync", (projectId) => this.sync(projectId));
       ctx.ipc.handle("files.conflicts", (projectId) => this.conflicts(projectId));
@@ -471,6 +472,11 @@ export class Files extends Service {
 
   async move(projectId: string, from: string, to: string): Promise<void> {
     await (await this.store(projectId)).move(from, to);
+    this.notify(projectId);
+  }
+
+  async copy(projectId: string, from: string, to: string): Promise<void> {
+    await (await this.store(projectId)).copy(from, to);
     this.notify(projectId);
   }
 

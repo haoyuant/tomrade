@@ -553,6 +553,21 @@ export class GitFileStore implements FileStore {
     });
   }
 
+  copy(from: string, to: string, opts: WriteOptions = {}): Promise<void> {
+    return this.locked(async () => {
+      const src = normalizeRel(from);
+      const dst = normalizeRel(to);
+      if (!src || !dst) throw new InvalidPathError(src ? to : from);
+      if (dst === src || dst.startsWith(`${src}/`)) throw new Error(`Cannot copy ${src} into itself`);
+      if (!fs.existsSync(this.abs(src))) throw new Error(`${src} does not exist`);
+      if (fs.existsSync(this.abs(dst))) throw new Error(`${dst} already exists`);
+      this.quiet();
+      fs.mkdirSync(path.dirname(this.abs(dst)), { recursive: true });
+      fs.cpSync(this.abs(src), this.abs(dst), { recursive: true });
+      if (await this.commitAll(opts.message ?? `Copied ${src} to ${dst}`)) this.afterChange();
+    });
+  }
+
   remove(p: string, opts: WriteOptions = {}): Promise<void> {
     return this.locked(async () => {
       const rel = normalizeRel(p);

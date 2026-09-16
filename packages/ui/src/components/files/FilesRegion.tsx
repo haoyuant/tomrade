@@ -1,20 +1,23 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type DragEvent } from "react";
 import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomrade/domain";
 import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomrade/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer, Tag } from "~/components/ui/atoms";
-import { Menu, MenuActionItem } from "~/components/ui/menu";
+import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
 import { useWorkspace } from "~/components/workspace/context";
 import { agoLabel } from "~/lib/domain";
 import {
+  FILES_DRAG_MIME,
   formatSize,
   nameOf,
   parentOf,
+  useCopyFile,
   useFileConflicts,
   useFileContent,
   useFileHistory,
   useFileLocation,
+  useFilesClipboard,
   useFileVersion,
   useFilesInfo,
   useFilesStatus,
@@ -22,10 +25,12 @@ import {
   useImportFiles,
   useMakeFolder,
   useMoveFile,
+  usePasteFiles,
   useRemoveFile,
   useResolveAllConflicts,
   useResolveConflict,
-  useSyncFiles
+  useSyncFiles,
+  type FilesClipboardEntry
 } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { pickFiles, reveal } from "~/lib/shell";
@@ -138,6 +143,31 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
   );
 }
 
+/** The bar that replaces the plain toolbar while rows are checked: a count, and the actions that take the whole set. */
+function SelectionBar({ count, onCut, onCopy, onDelete, onClear }: { count: number; onCut: () => void; onCopy: () => void; onDelete: () => void; onClear: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="lockbar files-selection-bar" role="toolbar" data-testid="files-selection-bar">
+      <span className="selection-count">{t("files.selectionCount", { n: count })}</span>
+      <button type="button" className="btn btn-ghost sel-cut" onClick={onCut}>
+        <Icon name="i-cut" size={13} />
+        {t("files.cut")}
+      </button>
+      <button type="button" className="btn btn-ghost sel-copy" onClick={onCopy}>
+        <Icon name="i-copy" size={13} />
+        {t("files.copy")}
+      </button>
+      <button type="button" className="btn btn-ghost sel-delete" onClick={onDelete}>
+        <Icon name="i-trash" size={13} />
+        {t("files.delete")}
+      </button>
+      <button type="button" className="btn btn-icon sel-clear" data-tip={t("files.clearSelection")} aria-label={t("files.clearSelection")} onClick={onClear}>
+        <Icon name="i-close" size={12} />
+      </button>
+    </div>
+  );
+}
+
 function FolderView({
   projectId,
   path,
@@ -145,9 +175,15 @@ function FolderView({
   conflicts,
   status,
   state,
+  clipboardEntry,
   onOpenSharing,
   onAddFiles,
   onDropFiles,
+  onCut,
+  onCopy,
+  onPasteInto,
+  onDeleteMany,
+  onMoveInto,
   dragOver,
   onDragOverChange
 }: {
@@ -157,24 +193,48 @@ function FolderView({
   conflicts: FileConflict[];
   status: FilesStatus | undefined;
   state: StateView;
+  clipboardEntry: FilesClipboardEntry | null;
   onOpenSharing: () => void;
   onAddFiles: () => void;
   onDropFiles: (dataTransfer: DataTransfer) => void;
+  onCut: (paths: string[]) => void;
+  onCopy: (paths: string[]) => void;
+  onPasteInto: (dir: string) => void;
+  onDeleteMany: (paths: string[]) => void;
+  onMoveInto: (paths: string[], dir: string) => void;
   dragOver: boolean;
   onDragOverChange: (over: boolean) => void;
 }) {
   const { t } = useI18n();
   const { openFile } = useWorkspace();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const kids = entries.filter((e) => parentOf(e.path) === path);
+  const cutPaths = clipboardEntry?.mode === "cut" ? new Set(clipboardEntry.paths) : null;
+  const toggleSelect = (p: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  const selectOnly = (p: string) => setSelected((prev) => (prev.has(p) ? prev : new Set([p])));
+  const targetsFor = (p: string) => (selected.has(p) ? [...selected] : [p]);
+  const startDrag = (p: string) => (e: DragEvent) => {
+    e.dataTransfer.setData(FILES_DRAG_MIME, JSON.stringify(targetsFor(p)));
+    e.dataTransfer.effectAllowed = "move";
+  };
   return (
     <div
       className={`files-main stack-4${dragOver ? " is-drag-over" : ""}`}
       onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(FILES_DRAG_MIME)) return;
         e.preventDefault();
         onDragOverChange(true);
       }}
       onDragLeave={() => onDragOverChange(false)}
       onDrop={(e) => {
+        if (e.dataTransfer.types.includes(FILES_DRAG_MIME)) return;
         e.preventDefault();
         onDragOverChange(false);
         onDropFiles(e.dataTransfer);
@@ -182,10 +242,20 @@ function FolderView({
     >
       {path === "" && conflicts.length > 0 && <ConflictList projectId={projectId} conflicts={conflicts} />}
       {path === "" && <SharingCard status={status} state={state} onOpenSharing={onOpenSharing} />}
+      {selected.size > 0 && (
+        <SelectionBar
+          count={selected.size}
+          onCut={() => onCut([...selected])}
+          onCopy={() => onCopy([...selected])}
+          onDelete={() => onDeleteMany([...selected])}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
       {kids.length > 0 ? (
         <table className="file-table" data-testid="file-table">
           <thead>
             <tr>
+              <th className="file-select-col" aria-hidden="true" />
               <th>{t("files.nameCol")}</th>
               <th className="num">{t("files.sizeCol")}</th>
               <th>{t("files.modifiedCol")}</th>
@@ -193,27 +263,95 @@ function FolderView({
           </thead>
           <tbody>
             {kids.map((e) => (
-              <tr key={e.path} className="file-row" data-file={e.path}>
-                <td>
-                  <button type="button" className="file-link" onClick={() => openFile(e.path)}>
-                    <Icon name={e.kind === "dir" ? "i-folder" : "i-file"} size={14} />
-                    <span>{e.name}</span>
-                    {e.change && <span className={`side-mark is-${e.change}`} title={e.change} />}
-                  </button>
-                </td>
-                <td className="num meta-txt">{e.kind === "dir" ? "—" : formatSize(e.size)}</td>
-                <td className="meta-txt">{agoLabel(e.modifiedAt)}</td>
-              </tr>
+              <ContextMenu
+                key={e.path}
+                label={e.name}
+                trigger={
+                  <tr
+                    className={`file-row${selected.has(e.path) ? " is-selected" : ""}${cutPaths?.has(e.path) ? " is-cut" : ""}${dropTarget === e.path ? " is-drag-over" : ""}`}
+                    data-file={e.path}
+                    draggable
+                    onDragStart={startDrag(e.path)}
+                    onMouseDown={(ev) => {
+                      if (ev.button === 2) selectOnly(e.path);
+                    }}
+                    onDragOver={
+                      e.kind === "dir"
+                        ? (ev) => {
+                            if (!ev.dataTransfer.types.includes(FILES_DRAG_MIME)) return;
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            setDropTarget(e.path);
+                          }
+                        : undefined
+                    }
+                    onDragLeave={e.kind === "dir" ? () => setDropTarget((cur) => (cur === e.path ? null : cur)) : undefined}
+                    onDrop={
+                      e.kind === "dir"
+                        ? (ev) => {
+                            const data = ev.dataTransfer.getData(FILES_DRAG_MIME);
+                            if (!data) return;
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            setDropTarget(null);
+                            try {
+                              onMoveInto(JSON.parse(data) as string[], e.path);
+                            } catch {
+                              // not a path payload
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    <td className="file-select-col">
+                      <input type="checkbox" aria-label={t("files.selectRow", { name: e.name })} checked={selected.has(e.path)} onChange={() => toggleSelect(e.path)} />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="file-link"
+                        onClick={(ev) => {
+                          if (ev.metaKey || ev.ctrlKey) {
+                            ev.preventDefault();
+                            toggleSelect(e.path);
+                            return;
+                          }
+                          openFile(e.path);
+                        }}
+                      >
+                        <Icon name={e.kind === "dir" ? "i-folder" : "i-file"} size={14} />
+                        <span>{e.name}</span>
+                        {e.change && <span className={`side-mark is-${e.change}`} title={e.change} />}
+                      </button>
+                    </td>
+                    <td className="num meta-txt">{e.kind === "dir" ? "—" : formatSize(e.size)}</td>
+                    <td className="meta-txt">{agoLabel(e.modifiedAt)}</td>
+                  </tr>
+                }
+              >
+                <ContextMenuActionItem icon={<Icon name="i-cut" size={13} />} name={t("files.cut")} onSelect={() => onCut(targetsFor(e.path))} />
+                <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => onCopy(targetsFor(e.path))} />
+                {e.kind === "dir" && clipboardEntry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => onPasteInto(e.path)} />}
+                <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => onDeleteMany(targetsFor(e.path))} />
+              </ContextMenu>
             ))}
           </tbody>
         </table>
       ) : (
         <div className="files-empty">
           <p className="meta-txt">{t("files.folderEmpty")}</p>
-          <button type="button" className="btn btn-secondary" onClick={onAddFiles}>
-            <Icon name="i-upload" size={13} />
-            {t("files.addFiles")}
-          </button>
+          <div className="row">
+            <button type="button" className="btn btn-secondary" onClick={onAddFiles}>
+              <Icon name="i-upload" size={13} />
+              {t("files.addFiles")}
+            </button>
+            {clipboardEntry && (
+              <button type="button" className="btn btn-secondary" onClick={() => onPasteInto(path)}>
+                <Icon name="i-paste" size={13} />
+                {t("files.paste")}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -333,16 +471,20 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const sync = useSyncFiles(projectId);
   const remove = useRemoveFile(projectId);
   const move = useMoveFile(projectId);
+  const copy = useCopyFile(projectId);
   const mkdir = useMakeFolder(projectId);
   const importFiles = useImportFiles(projectId);
+  const clipboard = useFilesClipboard(projectId);
+  const pasteFiles = usePasteFiles(projectId);
   const [renaming, setRenaming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const [newFolder, setNewFolder] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   useEffect(() => {
     setRenaming(false);
-    setDeleting(false);
+    setDeleteTargets(null);
     setNewFolder(false);
     setAttaching(false);
     setDragOver(false);
@@ -358,7 +500,8 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const conflicts = useFileConflicts(projectId, conflictCount > 0);
   const segments = path ? path.split("/") : [];
   const absPath = info.data?.dir ? `${info.data.dir}/${path}`.replace(/\/$/, "") : null;
-  const busy = remove.isPending || move.isPending || mkdir.isPending;
+  const busy = deletingBusy || move.isPending || mkdir.isPending || copy.isPending;
+  const existing = useMemo(() => new Set(entries.map((e) => e.path)), [entries]);
 
   const syncNow = () =>
     sync.mutate(undefined, {
@@ -418,15 +561,43 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
       onError: (error) => toast({ body: error.message })
     });
   };
-  const del = () =>
-    remove.mutate(path, {
-      onSuccess: () => {
-        setDeleting(false);
-        ws.openFile(parentOf(path));
-        toast({ body: t("files.deletedToast", { name: nameOf(path) }) });
-      },
-      onError: (error) => toast({ body: error.message })
-    });
+  const del = async () => {
+    if (!deleteTargets) return;
+    setDeletingBusy(true);
+    try {
+      for (const target of deleteTargets) await remove.mutateAsync(target);
+      const n = deleteTargets.length;
+      const name = n === 1 ? nameOf(deleteTargets[0]!) : "";
+      const wasOpen = deleteTargets.includes(path);
+      setDeleteTargets(null);
+      if (wasOpen) ws.openFile(parentOf(path));
+      toast({ body: n === 1 ? t("files.deletedToast", { name }) : t("files.deletedManyToast", { n }) });
+    } catch (error) {
+      toast({ body: (error as Error).message });
+    } finally {
+      setDeletingBusy(false);
+    }
+  };
+  const runPaste = (target: string) => {
+    const clip = clipboard.entry;
+    if (!clip) return;
+    pasteFiles(clip, target, existing)
+      .then(({ count, name }) => {
+        // Nothing moved because it was already there — a no-op, not a paste to announce.
+        if (!count) return;
+        if (clip.mode === "cut") clipboard.clear();
+        toast({ body: count === 1 ? t("files.pastedOneToast", { name }) : t("files.pastedManyToast", { n: count }) });
+      })
+      .catch((error) => toast({ body: error.message }));
+  };
+  const moveInto = (paths: string[], target: string) => {
+    pasteFiles({ projectId, mode: "cut", paths }, target, existing)
+      .then(({ count, name }) => {
+        if (!count) return;
+        toast({ body: count === 1 ? t("files.movedOneToast", { name }) : t("files.movedManyToast", { n: count }) });
+      })
+      .catch((error) => toast({ body: error.message }));
+  };
 
   return (
     <section className="board-region files-region" data-testid="files-region" data-path={path}>
@@ -510,10 +681,23 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
               <Icon name="i-plus" size={14} />
             </button>
           )}
-          {!isDir && (
-            <button type="button" className="btn btn-icon" data-tip={t("files.attachToTicket")} data-tip-side="bottom" aria-label={t("files.attachToTicket")} onClick={() => setAttaching(true)}>
-              <Icon name="i-tag" size={14} />
+          {isDir && clipboard.entry && (
+            <button type="button" className="btn btn-icon files-paste" data-tip={t("files.paste")} data-tip-side="bottom" aria-label={t("files.pasteAria")} onClick={() => runPaste(dir)}>
+              <Icon name="i-paste" size={14} />
             </button>
+          )}
+          {!isDir && (
+            <>
+              <button type="button" className="btn btn-icon files-cut" data-tip={t("files.cut")} data-tip-side="bottom" aria-label={t("files.cut")} onClick={() => clipboard.cut([path])}>
+                <Icon name="i-cut" size={14} />
+              </button>
+              <button type="button" className="btn btn-icon files-copy" data-tip={t("files.copy")} data-tip-side="bottom" aria-label={t("files.copy")} onClick={() => clipboard.copy([path])}>
+                <Icon name="i-copy" size={14} />
+              </button>
+              <button type="button" className="btn btn-icon" data-tip={t("files.attachToTicket")} data-tip-side="bottom" aria-label={t("files.attachToTicket")} onClick={() => setAttaching(true)}>
+                <Icon name="i-tag" size={14} />
+              </button>
+            </>
           )}
           {absPath && (
             <button type="button" className="btn btn-icon" data-tip={t("files.reveal")} data-tip-side="bottom" aria-label={t("files.reveal")} onClick={() => reveal(absPath)}>
@@ -524,7 +708,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             <Icon name="i-plug" size={14} />
           </button>
           {path && (
-            <button type="button" className="btn btn-icon" data-tip={t("files.delete")} data-tip-side="bottom" aria-label={t("files.delete")} onClick={() => setDeleting(true)}>
+            <button type="button" className="btn btn-icon" data-tip={t("files.delete")} data-tip-side="bottom" aria-label={t("files.delete")} onClick={() => setDeleteTargets([path])}>
               <Icon name="i-trash" size={14} />
             </button>
           )}
@@ -541,14 +725,16 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         </div>
       )}
       {newFolder && <NamePrompt ariaLabel={t("files.newFolderNameAria")} placeholder={t("files.folderNamePlaceholder")} busy={busy} onCommit={createFolder} onCancel={() => setNewFolder(false)} />}
-      {deleting && (
+      {deleteTargets && (
         <div className="dangerbar files-delete" role="alertdialog">
           <Icon className="b-mark" name="i-warn" size={15} />
-          <p style={{ flex: 1, fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>{t("files.deleteConfirm", { name: nameOf(path) })}</p>
-          <button type="button" className="btn btn-danger" disabled={busy} onClick={del}>
+          <p style={{ flex: 1, fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
+            {deleteTargets.length === 1 ? t("files.deleteConfirm", { name: nameOf(deleteTargets[0]!) }) : t("files.deleteConfirmMany", { n: deleteTargets.length })}
+          </p>
+          <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void del()}>
             {t("files.deleteYes")}
           </button>
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setDeleting(false)}>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setDeleteTargets(null)}>
             {t("files.cancel")}
           </button>
         </div>
@@ -569,15 +755,22 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           <PinnedVersion projectId={projectId} ref={pinned} />
         ) : isDir ? (
           <FolderView
+            key={path}
             projectId={projectId}
             path={path}
             entries={entries}
             conflicts={conflicts.data ?? []}
             status={status.data}
             state={state}
+            clipboardEntry={clipboard.entry}
             onOpenSharing={onOpenSharing}
             onAddFiles={() => void addFiles()}
             onDropFiles={dropFiles}
+            onCut={(paths) => clipboard.cut(paths)}
+            onCopy={(paths) => clipboard.copy(paths)}
+            onPasteInto={runPaste}
+            onDeleteMany={setDeleteTargets}
+            onMoveInto={moveInto}
             dragOver={dragOver}
             onDragOverChange={setDragOver}
           />

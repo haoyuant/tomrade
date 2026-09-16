@@ -107,6 +107,27 @@ describe("a local store", () => {
     s.close();
   });
 
+  it("copies a file or folder as a version of its own, minting a fresh id", async () => {
+    const s = await store();
+    const saved = await s.write("a.txt", text("alpha"));
+    await s.copy("a.txt", "notes/b.txt");
+    expect((await s.read("a.txt"))?.fileId).toBe(saved.fileId);
+    const copied = await s.read("notes/b.txt");
+    expect(copied?.body).toBe("alpha");
+    expect(copied?.fileId).not.toBe(saved.fileId);
+
+    await s.mkdir("assets");
+    await s.write("assets/logo.txt", text("logo"));
+    await s.copy("assets", "assets-2");
+    expect((await s.read("assets-2/logo.txt"))?.body).toBe("logo");
+    expect((await s.read("assets/logo.txt"))?.body).toBe("logo");
+
+    await expect(s.copy("assets", "assets/inside")).rejects.toThrow(/into itself/);
+    await expect(s.copy("assets", "assets-2")).rejects.toThrow(/already exists/);
+    await expect(s.copy("nope.txt", "x.txt")).rejects.toThrow(/does not exist/);
+    s.close();
+  });
+
   it("lists folders made empty, and saves outside edits as versions with ids", async () => {
     const s = await store();
     await s.mkdir("assets/img");

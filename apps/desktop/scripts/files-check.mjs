@@ -78,6 +78,25 @@ const run = async () => {
     return false;
   };
   const shot = async (name) => fs.writeFileSync(path.join(shots, `${name}.png`), (await win.webContents.capturePage()).toPNG());
+  const rightClick = (selector) =>
+    $(`(() => { const n = document.querySelector(${JSON.stringify(selector)}); if (!n) return false; const r = n.getBoundingClientRect(); n.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.x + 4, clientY: r.y + 4 })); return true; })()`);
+  const clickMenuItem = (name) =>
+    $(`(() => { const row = [...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(name)}); if (!row) return false; row.click(); return true; })()`);
+  const dragMove = (fromSelector, toSelector) =>
+    $(`(() => {
+      const from = document.querySelector(${JSON.stringify(fromSelector)});
+      const to = document.querySelector(${JSON.stringify(toSelector)});
+      if (!from || !to) return false;
+      const dt = new DataTransfer();
+      from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      to.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      to.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      from.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      return true;
+    })()`);
+  const menuItemNames = () => $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map((n) => n.textContent).join('|')`);
+  // Toasts append to the end of the stack, so the newest one is the last ".toast" in the DOM.
+  const lastToast = () => $(`[...document.querySelectorAll('.toast')].at(-1)?.textContent ?? null`);
 
   // ── the tree in the sidebar ──────────────────────────────────────────
   await wait(() => has(".proj"), "projects home");
@@ -138,7 +157,7 @@ const run = async () => {
 
   await $(`location.hash = '#/p/${project.id}/f/site/index.html'; true`);
   await wait(() => has(".html-view"), "html frame");
-  check("html is shown in a frame with no script or origin", (await $(`document.querySelector('.html-view')?.getAttribute('sandbox')`)) === "" && (await $(`document.title`)) !== "x");
+  check("html is shown in an origin-isolated frame with scripts allowed", (await $(`document.querySelector('.html-view')?.getAttribute('sandbox')`)) === "allow-scripts" && (await $(`document.title`)) !== "x");
   await shot("files-02-html");
   await $(`location.hash = '#/p/${project.id}/f/docs/notes.txt'; true`);
   await wait(() => has(".text-view"), "text view");
@@ -149,6 +168,116 @@ const run = async () => {
   await wait(() => has('[data-testid="files-sharing"]'), "root");
   check("the root lists folders and says how the files are shared", (await count('[data-testid="file-table"] .file-row')) === 3 && (await text('[data-testid="files-sharing"] .tag')) === "This machine");
   await shot("files-03-root");
+
+  // ── multiselect, cut, copy, paste and bulk delete ────────────────────
+  const checkbox = (p) => `[data-testid="file-table"] .file-row[data-file="${p}"] .file-select-col input`;
+  await click(checkbox("docs"));
+  await click(checkbox("site"));
+  await wait(() => has('[data-testid="files-selection-bar"]'), "selection bar");
+  check("checking two rows shows a selection bar with the count", (await text(".files-selection-bar .selection-count")) === "2 selected");
+  await sleep(300);
+  await shot("files-03a-selection");
+  await click(".files-selection-bar .sel-copy");
+  await click(".files-selection-bar .sel-clear");
+  await wait(async () => !(await has(".files-selection-bar")), "selection cleared");
+  check("clearing the selection drops the bar but keeps the clipboard", !(await has(".files-selection-bar")));
+
+  await click('[data-testid="file-table"] .file-row[data-file="incoming"] .file-link');
+  await wait(() => has('[data-testid="files-region"][data-path="incoming"]'), "incoming folder");
+  await click(".files-paste");
+  await wait(() => has('[data-testid="file-table"] .file-row[data-file="incoming/docs"]'), "pasted docs");
+  await wait(() => has('[data-testid="file-table"] .file-row[data-file="incoming/site"]'), "pasted site");
+  await wait(async () => (await lastToast()) === "Pasted 2 items", "paste toast");
+  check("pasting a copy toasts the count", (await lastToast()) === "Pasted 2 items");
+  const rootDocsId = (await ctx.files.read(project.id, "docs/brief.md"))?.fileId;
+  const copiedDocsId = (await ctx.files.read(project.id, "incoming/docs/brief.md"))?.fileId;
+  check("a paste from copy leaves the source alone and mints fresh ids for the copy", rootDocsId && copiedDocsId && rootDocsId !== copiedDocsId && (await ctx.files.read(project.id, "incoming/docs/brief.md"))?.body === (await ctx.files.read(project.id, "docs/brief.md"))?.body);
+
+  const topId = (await ctx.files.read(project.id, "incoming/top.md"))?.fileId;
+  await rightClick('[data-testid="file-table"] .file-row[data-file="incoming/top.md"]');
+  await wait(() => has(".menu.is-floating"), "row context menu");
+  check("a file row's menu offers cut, copy and delete but no paste", (await menuItemNames()) === "Cut|Copy|Delete…");
+  await sleep(300);
+  await shot("files-03b-context-menu");
+  await clickMenuItem("Cut");
+  await $(`location.hash = '#/p/${project.id}/f/'; true`);
+  await wait(() => has('[data-testid="files-sharing"]'), "back at root");
+  await click(".files-paste");
+  await wait(() => has('[data-testid="file-table"] .file-row[data-file="top.md"]'), "moved top.md");
+  check("cut then paste moves the file and keeps its id", (await count('[data-testid="file-table"] .file-row')) === 4 && (await ctx.files.read(project.id, "top.md"))?.fileId === topId);
+  check("the file is gone from where it was cut", (await ctx.files.read(project.id, "incoming/top.md")) === null);
+
+  await click('[data-testid="file-table"] .file-row[data-file="incoming"] .file-link');
+  await wait(() => has('[data-testid="files-region"][data-path="incoming"]'), "incoming folder again");
+  await click(checkbox("incoming/docs"));
+  await click(checkbox("incoming/site"));
+  await wait(() => has('[data-testid="files-selection-bar"]'), "selection bar for delete");
+  await click(".files-selection-bar .sel-delete");
+  await wait(() => has(".files-delete"), "bulk delete confirm");
+  check("deleting a selection asks about all of it by count", (await text(".files-delete p")) === "Delete 2 items? Their versions stay in the history.");
+  await click(".files-delete .btn-danger");
+  await wait(async () => !(await has('[data-testid="file-table"] .file-row[data-file="incoming/docs"]')), "bulk delete done");
+  await wait(async () => (await lastToast()) === "Deleted 2 items", "delete toast");
+  check("bulk delete removes every checked row and toasts the count", !(await has('[data-testid="file-table"] .file-row[data-file="incoming/site"]')) && (await lastToast()) === "Deleted 2 items");
+
+  // ── dragging a row onto a folder moves it ────────────────────────────
+  await $(`location.hash = '#/p/${project.id}/f/'; true`);
+  await wait(() => has('[data-testid="files-sharing"]'), "root before dragging");
+  const topIdAtRoot = (await ctx.files.read(project.id, "top.md"))?.fileId;
+  await dragMove('[data-testid="file-table"] .file-row[data-file="top.md"]', '[data-testid="file-table"] .file-row[data-file="site"]');
+  // top.md is nested under site once moved, so it never shows as a row at root — watch it vanish from here instead.
+  await wait(async () => !(await has('[data-testid="file-table"] .file-row[data-file="top.md"]')), "top.md moved out of root");
+  check("dragging a file onto a folder row moves it there and keeps its id", (await ctx.files.read(project.id, "site/top.md"))?.fileId === topIdAtRoot);
+  await wait(async () => (await lastToast()) === "Moved top.md", "move toast");
+  check("a drag move toasts as a move, not a paste", (await lastToast()) === "Moved top.md");
+
+  await click('[data-testid="file-table"] .file-row[data-file="site"] .file-link');
+  await wait(() => has('[data-testid="files-region"][data-path="site"]'), "site folder");
+  // "incoming" itself is left behind, empty — the later sidebar section still needs it there to right-click.
+  await dragMove('.side-file-row-container[data-file="incoming/sub"]', '.side-file-row-container[data-file="site"]');
+  await wait(() => has('.side-row.is-file[data-file="site/sub"]'), "dragged a folder in the tree");
+  check("dragging a folder in the sidebar tree moves the whole thing", (await ctx.files.read(project.id, "site/sub/deep.txt"))?.body === "deep");
+
+  // ── the same three from the sidebar tree ─────────────────────────────
+  await $(`location.hash = '#/p/${project.id}/f/'; true`);
+  await wait(() => has('[data-testid="files-sharing"]'), "root again");
+  await rightClick('.side-file-row-container[data-file="docs"]');
+  await wait(() => has(".menu.is-floating"), "tree context menu");
+  check("a tree folder's menu offers cut, copy and delete, and paste only once something is copied", (await menuItemNames()) === "Cut|Copy|Delete…");
+  await clickMenuItem("Copy");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(200);
+  await rightClick('.side-file-row-container[data-file="incoming"]');
+  await wait(() => has(".menu.is-floating"), "tree context menu with paste");
+  check("once something is copied, a folder's menu offers to paste it", (await menuItemNames()) === "Cut|Copy|Paste|Delete…");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(200);
+  await wait(() => has(".side-files-paste"), "tree paste button appears");
+  await click(".side-files-paste");
+  await wait(() => has('.side-row.is-file[data-file="docs (copy)"]'), "pasted from the tree");
+  check("copying from the tree and pasting from its toolbar makes a sibling copy", (await ctx.files.read(project.id, "docs (copy)/brief.md"))?.body === (await ctx.files.read(project.id, "docs/brief.md"))?.body);
+  await sleep(300);
+  await shot("files-03c-tree-paste");
+
+  // ── a move that lands exactly where the file already is does nothing ─
+  await $(`location.hash = '#/p/${project.id}/f/site'; true`);
+  await wait(() => has('[data-testid="files-region"][data-path="site"]'), "site folder for the no-op check");
+  const indexId = (await ctx.files.read(project.id, "site/index.html"))?.fileId;
+  const countBeforeNoop = await count('[data-testid="file-table"] .file-row');
+  const toastsBeforeNoop = JSON.stringify(await $(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`));
+  await rightClick('[data-testid="file-table"] .file-row[data-file="site/index.html"]');
+  await wait(() => has(".menu.is-floating"), "context menu for no-op cut");
+  await clickMenuItem("Cut");
+  await click(".files-paste");
+  await sleep(500);
+  check(
+    "cutting a file and pasting it back where it already was is a no-op, not a rename",
+    toastsBeforeNoop === JSON.stringify(await $(`[...document.querySelectorAll('.toast')].map(n=>n.textContent)`)) &&
+      (await count('[data-testid="file-table"] .file-row')) === countBeforeNoop &&
+      (await ctx.files.read(project.id, "site/index.html"))?.fileId === indexId
+  );
+  await $(`location.hash = '#/p/${project.id}/f/'; true`);
+  await wait(() => has('[data-testid="files-sharing"]'), "root before the remote section");
 
   // ── a remote, and a clash with another machine ───────────────────────
   const bound = await ctx.files.bind(project.id, "folder", { path: remote });
@@ -179,7 +308,7 @@ const run = async () => {
   await wait(() => has(".delivery-add-output"), "delivery panel");
   await press(".delivery-add-output");
   await wait(() => has('[data-testid="file-picker-filter"]'), "file picker");
-  check("the picker offers the project's files", (await count(".file-picker-list .menu-row")) === 5);
+  check("the picker offers the project's files", (await count(".file-picker-list .menu-row")) === 7);
   await click('.file-picker-list .menu-row[data-file="docs/brief.md"]');
   await click('.file-picker-list .menu-row[data-file="docs/notes.txt"]');
   check("the picker keeps more than one file selected", (await count('.file-picker-list .menu-row[aria-checked="true"]')) === 2);

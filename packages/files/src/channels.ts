@@ -22,6 +22,8 @@ declare module "@tomrade/ipc" {
     "files.import": (projectId: string, dir: string, sources: string[]) => FileEntry[];
     "files.mkdir": (projectId: string, path: string) => void;
     "files.move": (projectId: string, from: string, to: string) => void;
+    /** Copy a file or folder to a new path, as a version of its own with a fresh fileId. */
+    "files.copy": (projectId: string, from: string, to: string) => void;
     "files.remove": (projectId: string, path: string) => void;
     "files.sync": (projectId: string) => FilesStatus;
     "files.conflicts": (projectId: string) => FileConflict[];

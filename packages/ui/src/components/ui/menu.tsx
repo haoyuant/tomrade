@@ -1,4 +1,5 @@
 import * as RadixMenu from "@radix-ui/react-dropdown-menu";
+import * as RadixContextMenu from "@radix-ui/react-context-menu";
 import type { ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { cn } from "~/lib/utils";
@@ -144,5 +145,28 @@ export function MenuLinkItem({ icon, name, onSelect }: { icon: ReactNode; name: 
       <span className="m-name">{name}</span>
       <span className="m-go">→</span>
     </RadixMenu.Item>
+  );
+}
+
+/** Right-click, same shape as `Menu`: whatever is wrapped opens this at the cursor instead of the OS menu. */
+export function ContextMenu({ trigger, label, children }: { trigger: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <RadixContextMenu.Root>
+      <RadixContextMenu.Trigger asChild>{trigger}</RadixContextMenu.Trigger>
+      <RadixContextMenu.Portal>
+        <RadixContextMenu.Content className="menu is-floating" aria-label={label}>
+          {children}
+        </RadixContextMenu.Content>
+      </RadixContextMenu.Portal>
+    </RadixContextMenu.Root>
+  );
+}
+
+export function ContextMenuActionItem({ icon, name, onSelect, disabled }: { icon: ReactNode; name: string; onSelect: () => void; disabled?: boolean }) {
+  return (
+    <RadixContextMenu.Item className="menu-row m-link" disabled={disabled} onSelect={onSelect}>
+      <span className="m-mark">{icon}</span>
+      <span className="m-name">{name}</span>
+    </RadixContextMenu.Item>
   );
 }
