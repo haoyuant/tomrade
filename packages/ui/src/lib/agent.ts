@@ -122,6 +122,18 @@ export function useSetEngine(projectId: string) {
   });
 }
 
+/** Engine knobs for one thread — model, effort — layered over the engine's settings; null clears them. */
+export function useSetOptions(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { threadId: string; options: Record<string, unknown> | null }) => invoke("agent.setOptions", projectId, args.threadId, args.options),
+    onSuccess: (_thread, args) => {
+      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+    }
+  });
+}
+
 export function useSetPermissionMode(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -7,8 +7,8 @@ import { z } from "zod";
 export const TerminalSettings = z.object({
   /** Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows; "none" only prepares the command for copying. */
   terminal: z.string().default("Terminal"),
-  claudeCommand: z.string().default('claude --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
-  codexCommand: z.string().default('codex {resume} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"'),
+  claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
+  codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"'),
   /** Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in. */
   otherCommand: z.string().default("")
 });
@@ -26,6 +26,30 @@ export interface LaunchInput {
 /** Fill a command template. Unknown placeholders are left as they are, so a typo is visible in the terminal. */
 export function fillTemplate(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (whole, key: string) => (key in values ? values[key]! : whole)).replace(/\s{2,}/g, " ").trim();
+}
+
+const bare = (value: string): string => (/^[\w.:@/-]+$/.test(value) ? value : shellQuote(value));
+
+/** The model and effort a thread was started with, as the CLI's own flags; nothing for a knob left on its default. */
+export function optionFlags(engine: string, options: unknown): string {
+  const o = options && typeof options === "object" ? (options as Record<string, unknown>) : {};
+  const model = typeof o.model === "string" && o.model.trim() ? o.model.trim() : null;
+  const effort = typeof o.effort === "string" && o.effort.trim() ? o.effort.trim() : null;
+  const flags: string[] = [];
+  if (engine === "claude-code") {
+    if (model) flags.push(`--model ${bare(model)}`);
+    if (effort) flags.push(`--effort ${bare(effort)}`);
+  } else if (engine === "codex") {
+    if (model) flags.push(`-m ${bare(model)}`);
+    if (effort) flags.push(`-c model_reasoning_effort=${bare(effort)}`);
+  }
+  return flags.join(" ");
+}
+
+/** A template without an `{options}` slot (one saved before the slot existed) gets the flags right after the command. */
+export function withOptions(template: string, flags: string): string {
+  if (template.includes("{options}")) return template.replace("{options}", flags);
+  return flags ? template.replace(/^(\s*\S+)/, `$1 ${flags}`) : template;
 }
 
 /**

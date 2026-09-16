@@ -11,7 +11,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
 const MIN_W = 352;
@@ -351,9 +351,13 @@ export function AgentPanel({
   const permissionLabel = (value?: string) => permissionModes?.choices.find((choice) => choice.value === value)?.label ?? value;
   const noEngineReady = engines.data ? !engines.data.some((e) => e.ok) : false;
 
-  // Quick picks ride on the engine's global options — the same knobs settings edits.
+  // Quick picks: with a thread they are that thread's overrides (what Start chose), layered over the engine's
+  // global options — the same knobs settings edits; without one they edit the global options a new thread would get.
   const saveSettings = useSaveSettings();
-  const engineOptions = (agentSettings?.engines?.[currentEngineId] ?? {}) as Record<string, unknown>;
+  const setOptions = useSetOptions(projectId);
+  const globalOptions = (agentSettings?.engines?.[currentEngineId] ?? {}) as Record<string, unknown>;
+  const threadOptions = (detail.data?.thread.engine === currentEngineId ? detail.data.thread.options : null) ?? {};
+  const engineOptions = { ...globalOptions, ...threadOptions };
   const mediaCapabilities = useQuery({
     queryKey: ["agent-media-capabilities", currentEngineId, engineOptions, settings.data?.models],
     queryFn: () => invoke("agent.mediaCapabilities", currentEngineId, engineOptions),
@@ -371,8 +375,15 @@ export function AgentPanel({
   const picks = engine?.picks ?? [];
   const pickValue = (key: string) => (typeof engineOptions[key] === "string" && engineOptions[key] ? (engineOptions[key] as string) : null);
   const setPick = (key: string, value: string | null) => {
+    if (threadId) {
+      const next = { ...threadOptions } as Record<string, unknown>;
+      if (value) next[key] = value;
+      else delete next[key];
+      setOptions.mutate({ threadId, options: Object.keys(next).length ? next : null });
+      return;
+    }
     if (!settings.data || !agentSettings) return;
-    const next = { ...engineOptions };
+    const next = { ...globalOptions };
     if (value) next[key] = value;
     else delete next[key];
     saveSettings.mutate({ ...settings.data, agent: { ...agentSettings, engines: { ...agentSettings.engines, [currentEngineId]: next } } });

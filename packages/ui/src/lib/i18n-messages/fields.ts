@@ -1,7 +1,5 @@
 export const fields = {
   en: {
-    executionEngine: "Agent",
-    defaultEngine: "Default / current agent",
     humanTakeover: "Take over",
     takeoverReady: "Agent execution has stopped. You can continue this delivery manually.",
     takeoverNoRun: "No agent execution is active. You can continue this delivery manually.",
@@ -28,11 +26,8 @@ export const fields = {
     changesRequested: "Changes requested",
     submitted: "Submitted",
     noSubmission: "No submission is awaiting review",
-    executionMethod: "Execution method",
     aiRecommendation: "AI recommendation",
     requiresCapability: "requires",
-    defaultMethod: "Default / continue current method",
-    startGeneral: "Run task",
     workType: "Work type",
     coding: "Coding",
     general: "General",
@@ -91,8 +86,6 @@ export const fields = {
     missingOption: "(removed option)"
   },
   zh: {
-    executionEngine: "执行 Agent",
-    defaultEngine: "默认 / 当前 Agent",
     humanTakeover: "人工接手",
     takeoverReady: "Agent 已停止，可以继续人工处理本次交付。",
     takeoverNoRun: "当前没有运行中的 Agent，可以继续人工处理本次交付。",
@@ -119,11 +112,8 @@ export const fields = {
     changesRequested: "需修改",
     submitted: "已提交",
     noSubmission: "当前没有待验收的提交",
-    executionMethod: "执行方法",
     aiRecommendation: "AI 推荐",
     requiresCapability: "需要能力",
-    defaultMethod: "默认 / 沿用当前方法",
-    startGeneral: "交给 Agent",
     workType: "工作类型",
     coding: "代码",
     general: "通用",

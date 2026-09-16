@@ -264,9 +264,19 @@ method, including `task.assist`, `document.write`, `design.create` and
 advertises `files.read`, `files.write` and `document.preview`; media generation
 providers are intentionally not implemented in core.
 
-`agent.startGeneral(projectId, itemId, { engine?, playbook? })` preflights the
+`agent.startGeneral(projectId, itemId, { engine?, playbook?, options? })` preflights the
 engine, ticket/dependencies and required capabilities. A run uses a temporary
-execution directory, not durable artifact storage. Resuming the active delivery
+execution directory, not durable artifact storage. `agent.prepareGeneral` does
+everything but send the first message — it binds the thread to the delivery and
+the playbook and returns the brief a CLI agent starts from — which is how
+`@tomrade/code-link` opens a General ticket in the user's own terminal. The
+ticket's Start button is one dialog for both work types: `codeLink.start(projectId,
+itemId, { mode: "run" | "terminal", engine?, playbook?, options?, permissionMode? })`
+settles where the work runs, which agent, and the model/effort knobs; `options`
+are stored on the thread (`ThreadSummary.options`, `agent.setOptions`) and merged
+over the engine's settings for every turn, so two tickets can run on different
+models at once. A terminal template's `{options}` slot receives the same knobs as
+the CLI's own flags. Resuming the active delivery
 preserves its method snapshot; `agent.takeoverGeneral` cancels and waits for
 execution to stop without marking the ticket complete. Runs expose `execution`
 and `playbooks` snapshots (source, content hash and body), including methods
@@ -275,8 +285,8 @@ explicitly loaded through `open_playbook` on Coding runs.
 Ticket creation can call `agent.recommendPlaybook(projectId, { title, body,
 workType? })` before persisting. The worker model receives only the ticket brief
 and applicable Playbook metadata, and returns a suggested work type, method,
-confidence and reason. The renderer may preselect that method; it must remain an
-advisory choice. A human selection wins and stops later recommendations from
+confidence and reason. The renderer preselects that method in the New Ticket dialog and again in the
+ticket's Start dialog; it must remain an advisory choice. A human selection wins and stops later recommendations from
 overwriting it. If no model is configured or the response is invalid, the Agent
 uses a deterministic keyword/metadata fallback. Recommendation never starts a
 run and never bypasses capability checks.

@@ -17,7 +17,7 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
-import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
+import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
@@ -302,7 +302,7 @@ function DetailBody({
         <span className="card-id" style={{ whiteSpace: "nowrap" }}>{item.key}</span>
         {owner && <span className="tag neutral">{owner.name}</span>}
         <Spacer />
-        <StartTicketMenu projectId={project.id} item={item} onOpenIssue={openIssue} onOpenRepositories={onOpenRepositories} />
+        <StartTicket projectId={project.id} item={item} onOpenIssue={openIssue} onOpenRepositories={onOpenRepositories} />
         <LockButton item={item} write={write} />
         {/* Sits away from Close, and carries its own class rather than another
             bare `.btn-icon` — the head is addressed by position in places. */}

@@ -1,4 +1,4 @@
-import type { FocusRef, TurnInput, TurnIO } from "./types.js";
+import type { FocusRef, GeneralExecution, TurnInput, TurnIO } from "./types.js";
 
 /**
  * The house rules every model-driven engine puts in its system prompt. One
@@ -28,6 +28,38 @@ export const HOUSE_RULES = [
 export const focusSuffix = (refs?: FocusRef[]): string =>
   refs?.length ? `\n(viewing: ${refs.map((r) => `${r.kind} ${r.key ? `${r.key} ` : ""}"${r.title}"${r.key ? "" : ` [${r.id}]`}`).join(", ")})` : "";
 
+/** What every General delivery is told, whichever engine runs it: the outcome, the protocol, the place. */
+export function generalBrief(ticket: { key: string; title: string; body?: string | null }, cwd: string | undefined): string {
+  return `You are delivering ${ticket.key} — ${ticket.title}.\n${ticket.body ?? ""}\n` +
+    "Work only toward this ticket's outcome and acceptance criteria. Report progress and missing inputs. Human activities require a human completion report; do not claim to have performed offline actions.\n" +
+    "A successful agent turn does not complete a ticket. Submit results for human review. Files must enter the Files plugin before becoming delivery artifacts; temporary paths and external links are not delivered files. If file storage is unavailable, report the draft as not delivered.\n" +
+    "Call get_item to read current input materials and previous outputs. Use add_delivery_resource to link an existing Files version, then submit_delivery with a report and selected output artifact IDs. Human review is a separate action.\n" +
+    `Working directory: ${cwd ?? "none"}. This work has no Git or pull-request requirement.`;
+}
+
+/** The one line that starts (or resumes) a General delivery. */
+export const generalOpener = (ticket: { key: string; title: string }, continued: boolean): string =>
+  `${continued ? "Continue" : "Work on"} ${ticket.key}: ${ticket.title}. Follow the selected delivery playbook and submit results for review.`;
+
+export const playbookSection = (playbook: GeneralExecution["playbook"]): string => `Selected playbook ${playbook.id} (${playbook.source}, ${playbook.digest}):\n${playbook.body}`;
+
+/**
+ * The whole brief for a CLI agent the user runs in a terminal: it gets no
+ * system prompt from Tomrade, only this file and the MCP tools, so the ticket,
+ * the protocol and the playbook all travel in it.
+ */
+export function generalPrompt(input: { ticket: { key: string; title: string; body?: string | null }; cwd: string; playbook: GeneralExecution["playbook"]; continued: boolean }): string {
+  return [
+    generalOpener(input.ticket, input.continued),
+    "",
+    generalBrief(input.ticket, input.cwd),
+    "",
+    playbookSection(input.playbook),
+    "",
+    "Tomrade's tools reach you over MCP (server `tomrade`); the tools named above are there."
+  ].join("\n");
+}
+
 const clip = (text: string, max: number): string => (text.length > max ? text.slice(0, max) + "… (truncated — fetch details with a narrower tool call)" : text);
 
 /**
@@ -53,12 +85,8 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
     }
   }
   if (input.ticket && input.purpose === "general") {
-    parts.push(`You are delivering ${input.ticket.key} — ${input.ticket.title}.\n${input.ticket.body ?? ""}\n` +
-      "Work only toward this ticket's outcome and acceptance criteria. Report progress and missing inputs. Human activities require a human completion report; do not claim to have performed offline actions.\n" +
-      "A successful agent turn does not complete a ticket. Submit results for human review. Files must enter the Files plugin before becoming delivery artifacts; temporary paths and external links are not delivered files. If file storage is unavailable, report the draft as not delivered.\n" +
-      "Call get_item to read current input materials and previous outputs. Use add_delivery_resource to link an existing Files version, then submit_delivery with a report and selected output artifact IDs. Human review is a separate action.\n" +
-      `Working directory: ${input.cwd ?? "none"}. This work has no Git or pull-request requirement.`);
-    if (input.execution) parts.push(`Selected playbook ${input.execution.playbook.id} (${input.execution.playbook.source}, ${input.execution.playbook.digest}):\n${input.execution.playbook.body}`);
+    parts.push(generalBrief(input.ticket, input.cwd));
+    if (input.execution) parts.push(playbookSection(input.execution.playbook));
   }
   if (input.ticket && input.purpose === "code") {
     const t = input.ticket;

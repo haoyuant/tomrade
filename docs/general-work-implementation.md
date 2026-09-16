@@ -97,10 +97,10 @@ This document records implementation boundaries and verification evidence.
 | Source precedence, capability metadata, method provenance | `agent/tests/playbooks.test.ts`, run snapshot assertion in `agent/tests/general.test.ts` |
 | Mixed code/artifact acceptance and cross-repository policy | `code-link/tests/code-link.test.ts`; existing Coding start/connect/scanner regressions retained |
 | Generic intake and mixed planning | `agent-backlog/tests/backlog.test.ts`, backlog playbooks and plan prompt |
-| Creation, revision, acceptance, history, reopen, both ticket surfaces, method/engine menu | `apps/desktop/scripts/general-work-check.mjs` running real Electron + IPC + plugins, with isolated local data and cloud disabled |
+| Creation, revision, acceptance, history, reopen, both ticket surfaces, the Start dialog (where / agent / recommended method, coding and General) | `apps/desktop/scripts/general-work-check.mjs` running real Electron + IPC + plugins, with isolated local data and cloud disabled |
 | LLM method recommendation, invalid-answer fallback, and inferred work type | `agent/tests/playbooks.test.ts`; `agent.recommendPlaybook` IPC and New Ticket dialog |
 
-The Electron regression passed its 11 UI checks and screenshots were inspected.
+The Electron regression passed its 17 UI checks and screenshots were inspected.
 The in-app Browser skill could not initialize (missing classic-level.mjs), so
 the repository's native Electron regression approach was used instead.
 
@@ -121,7 +121,7 @@ the repository's native Electron regression approach was used instead.
 
 Final unit/integration suite: 403 passed, 2 configured live-service skips across
 59 test files. Typecheck and production build pass. Native Electron regression
-passes all 11 checks on both standalone and docked ticket surfaces. Screenshots
+passes all 17 checks on both standalone and docked ticket surfaces. Screenshots
 were retained in the isolated harness temp directories for visual inspection.
 
 - `pnpm typecheck`

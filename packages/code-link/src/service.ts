@@ -26,7 +26,7 @@ import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
-import { Starter, type StartMode, type StartResult } from "./start.js";
+import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { TerminalSettings, commandOk, exec, launchTerminal } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -102,7 +102,7 @@ declare module "@tomrade/ipc" {
     "codeLink.useGithubCredential": (projectId: string, repoId: string) => RepoStateView;
     "codeLink.setRepoPolicy": (projectId: string, repoId: string, patch: RepoPolicyPatch) => RepoStateView;
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
-    "codeLink.start": (projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }) => StartResult;
+    "codeLink.start": (projectId: string, itemId: string, opts: StartOptions) => StartResult;
     "codeLink.sessions": (projectId: string, itemId?: string) => SessionView[];
     /** Push the ticket's branch from its worktree and open a pull request (gh), or hand back the compare page. */
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
@@ -170,7 +170,7 @@ export function compareUrl(remote: string, defaultBranch: string, branch: string
 const SETTINGS_SECTION = {
   id: "codeLink",
   title: "Code link",
-  description: "Which terminal opens a ticket, and how Claude Code or Codex is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {resume} and {cwd} are filled in.",
+  description: "Which terminal opens a ticket, and how Claude Code or Codex is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
   schema: TerminalSettings,
   defaults: TerminalSettings.parse({}),
   order: 30
@@ -528,8 +528,8 @@ export class CodeLink extends Service {
     return state;
   }
 
-  /** Start or continue a ticket with a local coding agent. See `Starter` for the gates. */
-  start(projectId: string, itemId: string, opts: { mode: StartMode; engine?: string }): Promise<StartResult> {
+  /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
+  start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
     return this.starter.start(projectId, itemId, opts);
   }
 
@@ -1105,8 +1105,9 @@ export class CodeLink extends Service {
       const result = await this.start(scope.projectId, scope.itemId, { mode });
       if (!result.ok) return { toast: result.message };
       const warning = result.warnings?.join("\n");
-      if (result.mode === "terminal") return { toast: `${result.launched ? `${result.continued ? "Continuing" : "Started"} in ${result.branch} — your terminal has it` : `Run this in a terminal:\n${result.command}`}${warning ? `\n${warning}` : ""}` };
-      return { toast: `${result.continued ? "Continuing" : "Started"} on ${result.branch}${warning ? `\n${warning}` : ""}` };
+      const where = result.branch ? ` on ${result.branch}` : "";
+      if (result.mode === "terminal") return { toast: `${result.launched ? `${result.continued ? "Continuing" : "Started"}${where} — your terminal has it` : `Run this in a terminal:\n${result.command}`}${warning ? `\n${warning}` : ""}` };
+      return { toast: `${result.continued ? "Continuing" : "Started"}${where}${warning ? `\n${warning}` : ""}` };
     };
     ctx.contributions.command({ id: "code-link.start-run", title: "Start ticket here", group: "Code", run: startCommand("run") });
     ctx.contributions.command({ id: "code-link.start-terminal", title: "Open ticket in terminal", group: "Code", run: startCommand("terminal") });
