@@ -216,7 +216,7 @@ new channel is invisible to it until `pnpm build:backend` has run.
 the tree, the viewer and its versions, a clash with a second machine over a
 local bare remote, importing a folder whole, pinning multiple files to a ticket,
 undoing a delete from its toast, ⇧⌘Z, ⌘Z and the History window (title bar, beside Settings),
-and selective sharing — the project default in Sharing, list tags and their
-sources, the bulk chooser, context menus that offer only what would change,
+and selective sharing — the project default in Sharing, the cloud, monitor and
+half-cloud marks after names and their sources, the bulk chooser, context menus that offer only what would change,
 the keep-local review, and a scoped remote that receives one shared exception
 with its version record while its siblings stay untouched — 86 checks.

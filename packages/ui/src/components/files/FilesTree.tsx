@@ -11,7 +11,7 @@ import { useRevert } from "~/lib/queries";
 import { pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
-import { SyncContextActions, useSyncActions } from "./SyncPolicy";
+import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
 
 const expandedKey = (projectId: string) => `tomrade.files.expanded.${projectId}`;
 
@@ -242,7 +242,7 @@ export function FilesTree() {
                   <Icon className="ico" name="i-file" size={14} />
                 )}
                 <span className="side-name">{entry.name}</span>
-                {entry.sync && (entry.sync.mixed || entry.sync.mode === "local") && <span className="meta-txt side-sync">{t(entry.sync.mixed ? "files.syncMixed" : "files.syncLocal")}</span>}
+                <SyncMark sync={entry.sync} />
                 {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
               </button>
               {dir && (

@@ -3,7 +3,7 @@ import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomrade/domain";
 import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomrade/files";
 import { Icon } from "~/components/icons";
-import { SyncContextActions, SyncLine, SyncScopeSummary, SyncSelect, SyncTag, useSyncActions, type SyncActions } from "./SyncPolicy";
+import { SyncContextActions, SyncLine, SyncMark, SyncScopeSummary, SyncSelect, useSyncActions, type SyncActions } from "./SyncPolicy";
 import { Eyebrow, Spacer, Tag } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
 import { useWorkspace } from "~/components/workspace/context";
@@ -264,7 +264,6 @@ function FolderView({
             <tr>
               <th className="file-select-col" aria-hidden="true" />
               <th>{t("files.nameCol")}</th>
-              <th>{t("files.syncCol")}</th>
               <th className="num">{t("files.sizeCol")}</th>
               <th>{t("files.modifiedCol")}</th>
             </tr>
@@ -329,11 +328,9 @@ function FolderView({
                       >
                         <Icon name={e.kind === "dir" ? "i-folder" : "i-file"} size={14} />
                         <span>{e.name}</span>
+                        <SyncMark sync={e.sync} />
                         {e.change && <span className={`side-mark is-${e.change}`} title={e.change} />}
                       </button>
-                    </td>
-                    <td>
-                      <SyncTag sync={e.sync} />
                     </td>
                     <td className="num meta-txt">{e.kind === "dir" ? "—" : formatSize(e.size)}</td>
                     <td className="meta-txt">{agoLabel(e.modifiedAt)}</td>

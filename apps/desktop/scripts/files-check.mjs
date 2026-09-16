@@ -383,8 +383,9 @@ const run = async () => {
   await ctx.files.write(selective.id, "private/untouched.txt", "never selected\n");
   const region = '[data-testid="files-region"]';
   const row = (p) => `[data-testid="file-table"] .file-row[data-file=${JSON.stringify(p)}]`;
-  const rowTag = (p) => `${row(p)} .tag`;
+  const rowMark = (p) => `${row(p)} .sync-mark`;
   const titleOf = (selector) => $(`document.querySelector(${JSON.stringify(selector)})?.title ?? null`);
+  const markOf = (selector) => $(`document.querySelector(${JSON.stringify(selector)})?.dataset.sync ?? null`);
   const navigateSync = async (p) => {
     await $(`location.hash = ${JSON.stringify(`#/p/${selective.id}/f/${p}`)}; true`);
     if (!(await wait(() => has(`${region}[data-path=${JSON.stringify(p)}]`), `sync folder ${p}`))) throw new Error(`Missing sync folder: ${p}`);
@@ -421,7 +422,7 @@ const run = async () => {
     await navigateSync("");
     await expectSync("private", "local", "default");
     check("the sharing card counts what stays here", await wait(async () => (await text('[data-testid="files-sharing"] .files-sync-summary'))?.includes("0 shared files · 3 local-only files"), "scope counts"));
-    check("a local folder is tagged in the list and in the tree", await wait(async () => (await text(rowTag("private"))) === "Keep local" && (await titleOf(rowTag("private"))) === "Keep local · Project default" && (await text('.side-file-row-container[data-file="private"] .side-sync')) === "Keep local", "local tags"));
+    check("a local folder wears the monitor in the list and in the tree", await wait(async () => (await markOf(rowMark("private"))) === "local" && (await titleOf(rowMark("private"))) === "Keep local · Project default" && (await markOf('.side-file-row-container[data-file="private"] .sync-mark')) === "local", "local marks"));
 
     await navigateSync("private");
     await click(checkbox("private/draft.txt"));
@@ -431,7 +432,7 @@ const run = async () => {
     await expectSync("private/public.txt", "shared", "explicit");
     await expectSync("private/untouched.txt", "local", "default");
     check("bulk sharing creates rules only for the selected rows", JSON.stringify((await ctx.files.syncPolicy(selective.id)).rules.map((rule) => rule.path).sort()) === JSON.stringify(["private/draft.txt", "private/public.txt"]));
-    check("an exception is tagged as one", await wait(async () => (await text(rowTag("private/draft.txt"))) === "Shared" && (await titleOf(rowTag("private/draft.txt"))) === "Shared · Explicit setting", "exception tag"));
+    check("a shared exception wears the cloud and says so", await wait(async () => (await markOf(rowMark("private/draft.txt"))) === "shared" && (await titleOf(rowMark("private/draft.txt"))) === "Shared · Explicit setting", "exception mark"));
     await click(".files-selection-bar .sel-clear");
     await rightClick(row("private/draft.txt"));
     await wait(() => has(".menu.is-floating"), "exception row menu");
@@ -453,10 +454,10 @@ const run = async () => {
     await expectSync("private/draft.txt", "local", "inherited");
     await expectSync("private/public.txt", "shared", "explicit");
     await navigateSync("");
-    check("a local folder with a shared child reads as Mixed", await wait(async () => (await text(rowTag("private"))) === "Mixed" && (await entrySync("private"))?.mixed, "mixed folder tag"));
+    check("a local folder with a shared child wears the half cloud", await wait(async () => (await markOf(rowMark("private"))) === "mixed" && (await entrySync("private"))?.mixed && (await markOf('.side-file-row-container[data-file="private"] .sync-mark')) === "mixed", "mixed folder mark"));
     await navigateSync("private");
     check("the folder's own line says where it stands", await wait(async () => (await text(`${region} .files-sync-line .meta-txt`)) === "Keep local · Explicit setting · Mixed", "folder sync line"));
-    check("a child's tag names the parent it inherits from", await wait(async () => (await titleOf(rowTag("private/draft.txt"))) === "Keep local · Inherited from private", "inherited tag"));
+    check("a child's mark names the parent it inherits from", await wait(async () => (await titleOf(rowMark("private/draft.txt"))) === "Keep local · Inherited from private", "inherited mark"));
     check("only the changes that take something off the remote asked first", reviews === 2);
     await shot("files-10-sync-folder");
 

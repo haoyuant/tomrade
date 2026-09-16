@@ -2,7 +2,6 @@ import { useIsMutating } from "@tanstack/react-query";
 import { useState } from "react";
 import type { FileEntry, FileSyncPreference, SyncMode } from "@tomrade/files";
 import { Icon } from "~/components/icons";
-import { Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { ContextMenuActionItem } from "~/components/ui/menu";
 import { useFilesSyncPolicy, useFilesTree, useSetSyncRules } from "~/lib/files";
@@ -13,8 +12,8 @@ import { useToast } from "~/lib/toast";
 type Choice = SyncMode | "inherit";
 type Translate = ReturnType<typeof useI18n>["t"];
 
-const CHOICES: { mode: Choice; label: "files.syncShared" | "files.syncLocal" | "files.syncInherit"; icon: "i-globe" | "i-monitor" | "i-undo" }[] = [
-  { mode: "shared", label: "files.syncShared", icon: "i-globe" },
+const CHOICES: { mode: Choice; label: "files.syncShared" | "files.syncLocal" | "files.syncInherit"; icon: "i-cloud" | "i-monitor" | "i-undo" }[] = [
+  { mode: "shared", label: "files.syncShared", icon: "i-cloud" },
   { mode: "local", label: "files.syncLocal", icon: "i-monitor" },
   { mode: "inherit", label: "files.syncInherit", icon: "i-undo" }
 ];
@@ -90,15 +89,17 @@ export function describeSync(t: Translate, sync: FileSyncPreference): string {
   return `${t(sync.mode === "local" ? "files.syncLocal" : "files.syncShared")} · ${source}${sync.mixed ? ` · ${t("files.syncMixed")}` : ""}`;
 }
 
-/** In a list, only what departs from plain sharing is worth a word; the rest reads as silence. */
-export function SyncTag({ sync }: { sync?: FileSyncPreference }) {
+/** After every name, one of three marks: a cloud for what shares, a monitor for what stays here, a half cloud for a folder holding both. */
+export function SyncMark({ sync }: { sync?: FileSyncPreference }) {
   const { t } = useI18n();
   if (!sync) return null;
+  const kind = sync.mixed ? "mixed" : sync.mode;
   const title = describeSync(t, sync);
-  if (sync.mixed) return <Tag tone="neutral" title={title}>{t("files.syncMixed")}</Tag>;
-  if (sync.mode === "local") return <Tag tone="strong" title={title}>{t("files.syncLocal")}</Tag>;
-  if (sync.source === "explicit") return <Tag tone="faint" title={title}>{t("files.syncShared")}</Tag>;
-  return null;
+  return (
+    <span className="sync-mark" data-sync={kind} role="img" aria-label={title} title={title}>
+      <Icon name={kind === "mixed" ? "i-cloud-half" : kind === "local" ? "i-monitor" : "i-cloud"} size={12} />
+    </span>
+  );
 }
 
 /** A compact chooser for one path, a selection or, with `root`, the project default. With an empty `value` it acts as a menu. */
@@ -131,7 +132,7 @@ export function SyncLine({ actions, entry }: { actions: SyncActions; entry: File
   if (!entry.sync) return null;
   return (
     <div className="row files-sync-line" style={{ gap: "var(--space-2)", alignItems: "center", padding: "0 var(--space-3) var(--space-2)" }}>
-      <Icon name={entry.sync.mode === "local" ? "i-monitor" : "i-globe"} size={13} style={{ color: "var(--meta)" }} />
+      <SyncMark sync={entry.sync} />
       <span className="meta-txt">{describeSync(t, entry.sync)}</span>
       <SyncSelect actions={actions} paths={[entry.path]} value={entry.sync.source === "explicit" ? entry.sync.mode : "inherit"} label={t("files.syncFor", { name: entry.name })} />
     </div>
