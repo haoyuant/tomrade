@@ -49,7 +49,7 @@ const run = async () => {
   ctx.plugin({
     name: "folder-backend",
     inject: ["files"],
-    apply: (c) => void c.files.register(createGitBackend({ id: "folder", title: "A folder", configSchema: z.object({ path: z.string() }), defaults: { path: "" }, describe: (cfg) => cfg.path, remote: (cfg) => ({ url: cfg.path, branch: "main" }) }))
+    apply: (c) => void c.files.register(createGitBackend({ id: "folder", title: "A folder", configSchema: z.object({ path: z.string(), directory: z.string().default("") }), defaults: { path: "", directory: "" }, describe: (cfg) => cfg.path, remote: (cfg) => ({ url: cfg.path, branch: "main", directory: cfg.directory }) }))
   });
   await sleep(50);
 
@@ -197,7 +197,7 @@ const run = async () => {
   const topId = (await ctx.files.read(project.id, "incoming/top.md"))?.fileId;
   await rightClick('[data-testid="file-table"] .file-row[data-file="incoming/top.md"]');
   await wait(() => has(".menu.is-floating"), "row context menu");
-  check("a file row's menu offers cut, copy and delete but no paste", (await menuItemNames()) === "Cut|Copy|Delete…");
+  check("a file row's menu offers cut, copy, keep local and delete but no paste", (await menuItemNames()) === "Cut|Copy|Keep local|Delete…");
   await sleep(300);
   await shot("files-03b-context-menu");
   await clickMenuItem("Cut");
@@ -244,13 +244,13 @@ const run = async () => {
   await wait(() => has('[data-testid="files-sharing"]'), "root again");
   await rightClick('.side-file-row-container[data-file="docs"]');
   await wait(() => has(".menu.is-floating"), "tree context menu");
-  check("a tree folder's menu offers cut, copy and delete, and paste only once something is copied", (await menuItemNames()) === "Cut|Copy|Delete…");
+  check("a tree folder's menu offers cut, copy, keep local and delete, and paste only once something is copied", (await menuItemNames()) === "Cut|Copy|Keep local|Delete…");
   await clickMenuItem("Copy");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(200);
   await rightClick('.side-file-row-container[data-file="incoming"]');
   await wait(() => has(".menu.is-floating"), "tree context menu with paste");
-  check("once something is copied, a folder's menu offers to paste it", (await menuItemNames()) === "Cut|Copy|Paste|Delete…");
+  check("once something is copied, a folder's menu offers to paste it", (await menuItemNames()) === "Cut|Copy|Paste|Keep local|Delete…");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(200);
   await wait(() => has(".side-files-paste"), "tree paste button appears");
@@ -372,6 +372,120 @@ const run = async () => {
   check("⌘Z undoes a file operation when it is the newest thing done", (await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')) && (await lastToast()) === "Restored docs (copy)");
 
   other.close();
+
+  // ── selective sharing: real UI controls, local history, scoped remote ─
+  // A separate project keeps the existing picker counts and undo history intact.
+  const selective = ctx.projects.create({ name: "Selective Files regression", keyPrefix: "SYN" });
+  await ctx.storage.ready;
+  const localFirst = await ctx.files.write(selective.id, "private/draft.txt", "local first draft\n");
+  const localLatest = await ctx.files.write(selective.id, "private/draft.txt", "local second draft\n");
+  await ctx.files.write(selective.id, "private/public.txt", "shared exception\n");
+  await ctx.files.write(selective.id, "private/untouched.txt", "never selected\n");
+  const region = '[data-testid="files-region"]';
+  const row = (p) => `[data-testid="file-table"] .file-row[data-file=${JSON.stringify(p)}]`;
+  const rowTag = (p) => `${row(p)} .tag`;
+  const titleOf = (selector) => $(`document.querySelector(${JSON.stringify(selector)})?.title ?? null`);
+  const navigateSync = async (p) => {
+    await $(`location.hash = ${JSON.stringify(`#/p/${selective.id}/f/${p}`)}; true`);
+    if (!(await wait(() => has(`${region}[data-path=${JSON.stringify(p)}]`), `sync folder ${p}`))) throw new Error(`Missing sync folder: ${p}`);
+  };
+  const choose = async (selector, mode) => {
+    if (!(await wait(() => $(`(() => { const n = document.querySelector(${JSON.stringify(selector)}); return !!n && !n.disabled; })()`), `enabled ${selector}`))) throw new Error(`Missing sync control: ${selector}`);
+    await $(`(() => { const n = document.querySelector(${JSON.stringify(selector)}); n.value = ${JSON.stringify(mode)}; n.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  };
+  const entrySync = async (p) => (await ctx.files.tree(selective.id)).find((entry) => entry.path === p)?.sync;
+  const expectSync = async (p, mode, source) => {
+    check(`${p} is ${mode} (${source})`, await wait(async () => {
+      const sync = await entrySync(p);
+      return sync?.mode === mode && sync.source === source;
+    }, `${p}: ${source} ${mode}`));
+  };
+  // A change that would take a shared file off the remote asks first; accept it and count the asks.
+  const review = ".files-sync-review";
+  let reviews = 0;
+  const acceptReview = async () => {
+    if (!(await wait(() => has(`${review} .btn-danger`), "sync review dialog"))) throw new Error("Missing sync review dialog");
+    reviews++;
+    await click(`${review} .btn-danger`);
+    await wait(async () => !(await has(review)), "sync review closes");
+  };
+  try {
+    // The project default lives in Sharing.
+    await navigateSync("");
+    await click(".files-open-sharing");
+    await choose('.files-sync-settings select[aria-label="Default sync setting"]', "local");
+    await acceptReview();
+    check("the default setting is saved through Sharing", await wait(async () => (await ctx.files.syncPolicy(selective.id)).default === "local", "local project default"));
+    await shot("files-09-sharing-default");
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+    await navigateSync("");
+    await expectSync("private", "local", "default");
+    check("the sharing card counts what stays here", await wait(async () => (await text('[data-testid="files-sharing"] .files-sync-summary'))?.includes("0 shared files · 3 local-only files"), "scope counts"));
+    check("a local folder is tagged in the list and in the tree", await wait(async () => (await text(rowTag("private"))) === "Keep local" && (await titleOf(rowTag("private"))) === "Keep local · Project default" && (await text('.side-file-row-container[data-file="private"] .side-sync')) === "Keep local", "local tags"));
+
+    await navigateSync("private");
+    await click(checkbox("private/draft.txt"));
+    await click(checkbox("private/public.txt"));
+    await choose(`.files-selection-bar select[aria-label="Sync setting for 2 selected"]`, "shared");
+    await expectSync("private/draft.txt", "shared", "explicit");
+    await expectSync("private/public.txt", "shared", "explicit");
+    await expectSync("private/untouched.txt", "local", "default");
+    check("bulk sharing creates rules only for the selected rows", JSON.stringify((await ctx.files.syncPolicy(selective.id)).rules.map((rule) => rule.path).sort()) === JSON.stringify(["private/draft.txt", "private/public.txt"]));
+    check("an exception is tagged as one", await wait(async () => (await text(rowTag("private/draft.txt"))) === "Shared" && (await titleOf(rowTag("private/draft.txt"))) === "Shared · Explicit setting", "exception tag"));
+    await click(".files-selection-bar .sel-clear");
+    await rightClick(row("private/draft.txt"));
+    await wait(() => has(".menu.is-floating"), "exception row menu");
+    check("an exception's menu offers only what would change it", (await menuItemNames()) === "Cut|Copy|Keep local|Inherit from parent|Delete…");
+    await clickMenuItem("Inherit from parent");
+    await acceptReview();
+    await expectSync("private/draft.txt", "local", "default");
+
+    // A folder already local by default offers nothing to change in its menu; its own line can still pin the rule.
+    await navigateSync("");
+    await rightClick(row("private"));
+    await wait(() => has(".menu.is-floating"), "sync folder context menu");
+    check("a folder's menu offers only what would change it", (await menuItemNames()) === "Cut|Copy|Shared|Delete…");
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+    await navigateSync("private");
+    // Nothing shared leaves the remote here, so nothing asks.
+    await choose(`${region} .files-sync-line select`, "local");
+    await expectSync("private", "local", "explicit");
+    await expectSync("private/draft.txt", "local", "inherited");
+    await expectSync("private/public.txt", "shared", "explicit");
+    await navigateSync("");
+    check("a local folder with a shared child reads as Mixed", await wait(async () => (await text(rowTag("private"))) === "Mixed" && (await entrySync("private"))?.mixed, "mixed folder tag"));
+    await navigateSync("private");
+    check("the folder's own line says where it stands", await wait(async () => (await text(`${region} .files-sync-line .meta-txt`)) === "Keep local · Explicit setting · Mixed", "folder sync line"));
+    check("a child's tag names the parent it inherits from", await wait(async () => (await titleOf(rowTag("private/draft.txt"))) === "Keep local · Inherited from private", "inherited tag"));
+    check("only the changes that take something off the remote asked first", reviews === 2);
+    await shot("files-10-sync-folder");
+
+    // Publish into a subdirectory of the existing remote. Compare tree objects
+    // outside it as well as scoped names, so unintended sibling edits fail.
+    const remoteTree = () => execFileSync("git", ["--git-dir", remote, "ls-tree", "-r", "main"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+    const outsideBefore = remoteTree();
+    const scoped = await ctx.files.bind(selective.id, "folder", { path: remote, directory: "selected-files" });
+    check("selected sharing syncs into the configured remote directory", scoped.state === "synced");
+    const published = remoteTree().map((line) => line.split("\t")[1]);
+    const scopedFiles = published.filter((p) => p.startsWith("selected-files/") && !p.startsWith("selected-files/.tomrade-files/"));
+    check("the scoped remote holds only the shared child exception", JSON.stringify(scopedFiles) === JSON.stringify(["selected-files/private/public.txt"]));
+    const publicFile = await ctx.files.read(selective.id, "private/public.txt");
+    check("the shared file's version travels as its own blob and a record", published.includes(`selected-files/.tomrade-files/versions/${publicFile.fileId}/${publicFile.versionId}`) && published.includes(`selected-files/.tomrade-files/versions/${publicFile.fileId}/${publicFile.versionId}.json`) && !published.some((p) => p.includes("draft.txt") || p.includes("untouched.txt")));
+    check("scoped sharing preserves every remote sibling and its content", JSON.stringify(remoteTree().filter((line) => !line.split("\t")[1].startsWith("selected-files/"))) === JSON.stringify(outsideBefore));
+    check("the shared exception publishes the selected content", execFileSync("git", ["--git-dir", remote, "show", "main:selected-files/private/public.txt"], { encoding: "utf8" }) === "shared exception\n");
+    check("local-only content and identity survive scoped sync", (await ctx.files.read(selective.id, "private/draft.txt"))?.body === "local second draft\n" && (await ctx.files.read(selective.id, "private/draft.txt"))?.fileId === localFirst.fileId);
+
+    await navigateSync("private/draft.txt");
+    check("local-only files retain both versions in the viewer", await wait(async () => (await count(`${region} .version-row`)) === 2 && (await has(`${region} .version-row[data-version="${localFirst.versionId}"]`)) && (await has(`${region} .version-row[data-version="${localLatest.versionId}"]`)), "retained local versions"));
+    await click(`${region} .version-row[data-version="${localFirst.versionId}"]`);
+    check("a retained local-only version opens its original body", await wait(async () => (await text(`${region} .text-view`)) === "local first draft\n" && (await has(`${region} .files-version-banner`)), "local first version"));
+    await click(`${region} .files-version-banner .btn`);
+    check("returning to latest keeps the local-only second draft", await wait(async () => (await text(`${region} .text-view`)) === "local second draft\n", "local latest version"));
+    await shot("files-11-local-versions");
+  } finally {
+    // A dialog left open by a failed step must not swallow the checks after it.
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  }
   return results;
 };
 

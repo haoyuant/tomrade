@@ -25,6 +25,9 @@ export {
   type FilesInfo,
   type FilesStatus,
   type FilesSyncState,
+  type FilesSyncPolicy,
+  type FileSyncPreference,
+  type SyncMode,
   type OpenStoreOptions,
   type StoreEnv,
   type WriteOptions

@@ -11,6 +11,7 @@ import { useRevert } from "~/lib/queries";
 import { pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
+import { SyncContextActions, useSyncActions } from "./SyncPolicy";
 
 const expandedKey = (projectId: string) => `tomrade.files.expanded.${projectId}`;
 
@@ -58,6 +59,7 @@ export function FilesTree() {
   const { project, filePath, openFile } = useWorkspace();
   const toast = useToast();
   const tree = useFilesTree(project.id);
+  const syncActions = useSyncActions(project.id);
   const status = useFilesStatus(project.id);
   const mkdir = useMakeFolder(project.id);
   const importFiles = useImportFiles(project.id);
@@ -240,6 +242,7 @@ export function FilesTree() {
                   <Icon className="ico" name="i-file" size={14} />
                 )}
                 <span className="side-name">{entry.name}</span>
+                {entry.sync && (entry.sync.mixed || entry.sync.mode === "local") && <span className="meta-txt side-sync">{t(entry.sync.mixed ? "files.syncMixed" : "files.syncLocal")}</span>}
                 {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
               </button>
               {dir && (
@@ -280,6 +283,7 @@ export function FilesTree() {
           <ContextMenuActionItem icon={<Icon name="i-cut" size={13} />} name={t("files.cut")} onSelect={() => clipboard.cut([entry.path])} />
           <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => clipboard.copy([entry.path])} />
           {dir && clipboard.entry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => runPaste(entry.path)} />}
+          <SyncContextActions actions={syncActions} paths={[entry.path]} entry={entry} />
           <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => deleteEntry(entry)} />
         </ContextMenu>,
         ...(expanded ? rows(entry.path, depth + 1) : [])
@@ -289,6 +293,7 @@ export function FilesTree() {
   return (
     <>
       <div className="side-label-row">
+        {syncActions.confirmation}
         <button type="button" className="side-label-btn side-files-home" aria-current={filePath === ""} onClick={() => openFile("")}>
           <Eyebrow className="side-label">{t("files.eyebrow")}</Eyebrow>
         </button>

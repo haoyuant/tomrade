@@ -307,6 +307,39 @@ gone or the plugin is off. The Delivery panel adds materials and outputs through
 that picker; a multi-selection is validated completely and added in one Ticket
 write.
 
+Files selective sharing is a backend-independent contract. `files.syncPolicy`
+returns `{ default: "shared" | "local", rules: [{ path, mode }] }`;
+`files.setSyncRules(projectId, paths, mode)` changes a batch atomically. `inherit`
+removes an explicit exception, and the empty path sets the root default.
+The closest ancestor rule wins. Changing a folder preserves its explicit child
+exceptions. `FileEntry.sync` reports the effective mode, its source and whether a
+folder is mixed; it expresses intent, not a successful transfer. Backends
+without these optional methods offer no selective-sharing controls.
+
+Local-only files keep their versions, stable ids and undo. The policy travels
+with the remote so every machine applies the same rules, which means the names
+of local-only paths are visible there while their content and history never
+are. Making a shared file local removes its current copy from the remote; the
+versions already published stay, so `{ fileId, versionId }` pins keep resolving
+on every machine. The Git backend never pushes its local commits: it builds each
+remote commit on the remote's own tip through a separate projection, publishing
+the shared files, one record per shared version (the bytes at
+`.tomrade-files/versions/<fileId>/<versionId>`, the path in a `.json` beside
+them — the same blob as the file, so a current version costs nothing extra) and
+the policy. Only the remote's tip is fetched.
+
+Git remote destinations can specify a `directory` relative to the repository
+root. Files presents paths relative to it and changes nothing outside it: in a
+monorepo `project-files/brief.md` appears as `brief.md`, while `src/` and
+`package.json` belong to Code. GitHub repository picks and drafts use
+`project-files`; configurations without a directory keep their repository-root
+meaning. Moving a project's Files between a repository root and a folder
+switches to a separate local store — the root shows the repository, code and
+all, which a folder must not republish and a root must not receive twice — and
+the previous store is parked whole under `.tomrade/files-archive/`, where its
+pinned versions stay readable and its operations stop being undoable. Moving
+between folders keeps the store and its files.
+
 Shared Delivery rows travel with snapshots. Item evidence and delivery status
 participate in undo. Independent evidence additions merge; incompatible active
 deliveries, duplicate reviews, and broken submitted references fail sync with a

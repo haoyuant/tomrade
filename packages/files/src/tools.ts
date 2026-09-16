@@ -17,7 +17,7 @@ export function registerTools(ctx: Context, files: Files): void {
       execute: async (args, inv) => {
         const projectId = requireProjectId("list_files", args.projectId, inv);
         const entries = await files.list(projectId, args.dir ?? "");
-        return entries.map((e) => ({ path: e.path, kind: e.kind, size: e.size, fileId: e.fileId, modifiedAt: e.modifiedAt }));
+        return entries.map((e) => ({ path: e.path, kind: e.kind, size: e.size, fileId: e.fileId, modifiedAt: e.modifiedAt, ...(e.sync ? { sync: e.sync } : {}) }));
       }
     })
   );

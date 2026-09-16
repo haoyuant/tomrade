@@ -19,6 +19,23 @@ export interface FilesStatus {
 
 export type FileChange = "added" | "modified" | "deleted" | "renamed" | "conflicted";
 
+/** Sharing intent, independent of whether a remote is connected or reachable. */
+export type SyncMode = "shared" | "local";
+
+/** Closest ancestor wins; an exact rule overrides the parent. Paths are Files-relative. */
+export interface FilesSyncPolicy {
+  default: SyncMode;
+  rules: Array<{ path: string; mode: SyncMode }>;
+}
+
+export interface FileSyncPreference {
+  mode: SyncMode;
+  source: "explicit" | "inherited" | "default";
+  sourcePath: string | null;
+  /** A folder contains descendants with a different effective setting. */
+  mixed: boolean;
+}
+
 export interface FileEntry {
   /** Relative to the store root, forward slashes, no leading slash. */
   path: string;
@@ -30,6 +47,8 @@ export interface FileEntry {
   fileId: string | null;
   /** Pending against the latest version, when anything is. */
   change?: FileChange;
+  /** Absent for backends that do not implement selective sharing. */
+  sync?: FileSyncPreference;
 }
 
 export interface FileContent {
@@ -112,6 +131,13 @@ export interface FileStore {
    */
   restore?(paths: string[], from: string, to: string, message: string): Promise<string | null>;
   status(): Promise<FilesStatus>;
+  /** Local-only files retain the same local version and undo guarantees. */
+  syncPolicy?(): Promise<FilesSyncPolicy>;
+  /** Atomic batch. Empty path changes the root default; inherit removes an exception.
+   * Changing a folder rule preserves explicit descendant exceptions.
+   * This controls future sharing, not erasure of already published history.
+   */
+  setSyncRules?(paths: string[], mode: SyncMode | "inherit"): Promise<FilesSyncPolicy>;
   /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. */
   sync(): Promise<FilesStatus>;
   conflicts(): Promise<FileConflict[]>;

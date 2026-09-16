@@ -5,6 +5,8 @@ import path from "node:path";
 import type { FileReference } from "@tomrade/domain";
 import { GIT_ENV, GitFolder, type Git } from "@tomrade/storage";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
+import { GitProjection, blobId, contains, emptySyncState, loadJson, policyAt, remoteDirectory, saveJson, type SyncState, type VersionRecord } from "./git-sync.js";
+import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
 import {
   FileMovedOnError,
   InvalidPathError,
@@ -16,6 +18,8 @@ import {
   type FileStore,
   type FileVersion,
   type FilesStatus,
+  type FilesSyncPolicy,
+  type SyncMode,
   type WriteOptions
 } from "./types.js";
 
@@ -26,10 +30,12 @@ const TEXT_LIMIT = 2 * 1024 * 1024;
 const BINARY_LIMIT = 8 * 1024 * 1024;
 const TREE_LIMIT = 20_000;
 const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+const DIRECTORY_CHANGED = "Remote directory changed: open a new local store and retain this store for version references";
 
 export interface GitRemoteTarget {
   url: string;
   branch: string;
+  directory?: string;
 }
 
 export interface GitStoreOptions {
@@ -140,6 +146,13 @@ export class GitFileStore implements FileStore {
   private ensured = false;
   private closed = false;
   private chain: Promise<unknown> = Promise.resolve();
+  private policy: FilesSyncPolicy = { default: "shared", rules: [] };
+  private syncState: SyncState = emptySyncState();
+  /** The version each path last changed in, so publishing never has to ask git per file. */
+  private latest: Record<string, string> = {};
+  private stateKey = "";
+  private syncedHead: string | null = null;
+  private policyDirty = false;
 
   constructor(private readonly opts: GitStoreOptions) {
     this.dir = opts.dir;
@@ -170,22 +183,163 @@ export class GitFileStore implements FileStore {
   async open(): Promise<this> {
     fs.mkdirSync(this.dir, { recursive: true });
     const remote = this.opts.remote ? await this.opts.remote() : null;
+    const directory = remote ? remoteDirectory(remote.directory) : null;
+    const previous = boundDirectory(this.dir);
+    if (directory !== null && separateWorlds(previous, directory)) throw new Error(DIRECTORY_CHANGED);
     if (remote) this.branch = remote.branch || "main";
-    if (!fs.existsSync(path.join(this.dir, ".git"))) await this.git(["init", "-q", "-b", this.branch]);
+    const created = !fs.existsSync(path.join(this.dir, ".git"));
+    if (created) await this.git(["init", "-q", "-b", this.branch]);
     await this.g.ensureIdentity();
-    if (remote) {
-      await this.g.setRemote(remote.url);
-      // A fresh copy adopts what the remote has, so two machines never start unrelated histories over the same files.
-      if (!(await this.head())) {
-        const probe = await this.g.probe(this.branch);
-        if (probe === "exists" && (await this.g.fetch(this.branch))) await this.git(["reset", "-q", "--hard", `origin/${this.branch}`], { ok: true });
-        else if (probe === "offline") this.problem = { state: "offline", detail: "Could not reach the remote" };
-      }
-    } else await this.g.removeRemote();
+    ensureStoreId(this.dir, created);
+    // Where the store has been bound is remembered even while it is not: a root's content is not a folder's.
+    const bound = directory ?? previous;
+    if (bound !== null) saveJson(path.join(this.dir, ".git", "files-target.json"), { directory: bound });
+    // The remote lives with the projection; an origin left here would push the whole history.
+    await this.g.removeRemote();
+    this.policy = loadJson(this.meta("policy.json"), this.policy);
+    this.latest = loadJson(this.meta("latest.json"), {});
+    if (remote) this.loadSyncState(new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote).key);
     this.scaffold();
-    if (!(await this.head())) await this.commitAll("Files store created");
+    const fresh = !(await this.head());
+    if (fresh) await this.commitAll("Files store created");
+    // A first copy waits for the remote's files; an existing one shows what it has and catches up behind.
+    if (remote && fresh) await this.doSync();
+    else if (remote) void this.sync().catch((error) => this.opts.warn(`sync failed: ${message(error)}`));
     this.watch();
     return this;
+  }
+
+  private meta(name: string): string { return path.join(this.dir, ".git", "files-sync", name); }
+
+  async syncPolicy(): Promise<FilesSyncPolicy> { return structuredClone(this.policy); }
+
+  setSyncRules(paths: string[], mode: SyncMode | "inherit"): Promise<FilesSyncPolicy> {
+    return this.locked(async () => {
+      if (!["shared", "local", "inherit"].includes(mode)) throw new Error("Invalid sync mode");
+      const rels = [...new Set(paths.map(normalizeRel))];
+      // Save under the old policy so a newly shared path cannot publish private drafts.
+      await this.commitAll("Saved before sync policy change");
+      for (const rel of rels) {
+        if (!rel) this.policy.default = mode === "inherit" ? "shared" : mode;
+        else {
+          this.policy.rules = this.policy.rules.filter((r) => r.path !== rel);
+          if (mode !== "inherit") this.policy.rules.push({ path: rel, mode });
+        }
+      }
+      saveJson(this.meta("policy.json"), this.policy);
+      this.policyDirty = true;
+      this.afterChange();
+      return this.syncPolicy();
+    });
+  }
+
+  private loadSyncState(key: string): void {
+    if (this.stateKey === key) return;
+    this.stateKey = key;
+    const loaded = loadJson<Partial<SyncState> | null>(this.meta(`targets/${key}.json`), null);
+    // An earlier draft kept other digests; starting over only means the first exchange compares both sides afresh.
+    this.syncState = loaded?.v === 2 ? (loaded as SyncState) : emptySyncState();
+    this.syncedHead = this.syncState.head ?? null;
+    this.policyDirty = !!this.syncState.policy && JSON.stringify(this.policy) !== JSON.stringify(this.syncState.policy);
+  }
+
+  private saveSyncState(): void {
+    if (this.stateKey) saveJson(this.meta(`targets/${this.stateKey}.json`), this.syncState);
+  }
+
+  /** "versions/<fileId>/<versionId>", or null for a pair that could never have been one of ours. */
+  private recordPath(ref: FileReference): string | null {
+    return /^[a-zA-Z0-9-]+$/.test(ref.fileId) && /^[0-9a-f]{40}$/.test(ref.versionId) ? `versions/${ref.fileId}/${ref.versionId}` : null;
+  }
+
+  /** The portable record of a version, when this store has one. */
+  private record(ref: FileReference): VersionRecord | null {
+    const rel = this.recordPath(ref);
+    if (!rel) return null;
+    const loaded = loadJson<{ path?: unknown; body?: unknown } | null>(this.meta(`${rel}.json`), null);
+    if (!loaded || typeof loaded.path !== "string") return null;
+    const record = { fileId: ref.fileId, versionId: ref.versionId, path: loaded.path };
+    if (typeof loaded.body === "string") {
+      // An early draft kept the bytes inside the record; move them beside it once.
+      if (!fs.existsSync(this.meta(rel))) fs.writeFileSync(this.meta(rel), Buffer.from(loaded.body, "base64"));
+      saveJson(this.meta(`${rel}.json`), record);
+    }
+    return record;
+  }
+
+  private records(): VersionRecord[] {
+    const root = this.meta("versions");
+    const out: VersionRecord[] = [];
+    if (!fs.existsSync(root)) return out;
+    for (const fileId of fs.readdirSync(root)) {
+      for (const name of fs.readdirSync(path.join(root, fileId))) {
+        if (!name.endsWith(".json")) continue;
+        const record = this.record({ fileId, versionId: name.slice(0, -5) });
+        if (record) out.push(record);
+      }
+    }
+    return out;
+  }
+
+  /** Remember a version portably. Bytes are kept only for versions that are not commits of this store. */
+  private async archive(record: VersionRecord, bytes: Buffer | null): Promise<void> {
+    const rel = this.recordPath(record);
+    if (!rel || !record.path || normalizeRel(record.path) !== record.path) throw new Error("Invalid version record");
+    const existing = this.record(record);
+    if (existing && existing.path !== record.path) throw new Error(`Version ${record.versionId} of ${record.fileId} is recorded at two paths`);
+    if (bytes && !fs.existsSync(this.meta(rel)) && !(await this.commitOf(record.versionId))) {
+      fs.mkdirSync(path.dirname(this.meta(rel)), { recursive: true });
+      fs.writeFileSync(this.meta(rel), bytes);
+    }
+    if (!existing) saveJson(this.meta(`${rel}.json`), { fileId: record.fileId, versionId: record.versionId, path: record.path });
+  }
+
+  /** A recorded version's bytes: from beside the record, else from this store's own history. */
+  private async versionBytes(record: VersionRecord): Promise<Buffer | null> {
+    const rel = this.recordPath(record)!;
+    if (fs.existsSync(this.meta(rel))) return fs.readFileSync(this.meta(rel));
+    return this.showBuffer(`${record.versionId}:${record.path}`);
+  }
+
+  /** Take the remote's version records; each is immutable and kept whatever the selection says now. */
+  private async importRecords(projection: GitProjection): Promise<void> {
+    const base = `${IDS_DIR}/versions/`;
+    for (const p of projection.paths()) {
+      if (!p.startsWith(base) || !p.endsWith(".json")) continue;
+      const [fileId = "", name = ""] = p.slice(base.length).split("/");
+      const ref = { fileId, versionId: name.slice(0, -5) };
+      const rel = this.recordPath(ref);
+      if (!rel || `${IDS_DIR}/${rel}.json` !== p) throw new Error(`Invalid remote version record: ${p}`);
+      const known = this.record(ref);
+      if (known && projection.oid(p) === blobId(Buffer.from(JSON.stringify(known)))) continue;
+      const incoming = JSON.parse((await projection.read(p))!.toString("utf8")) as { fileId?: unknown; versionId?: unknown; path?: unknown; body?: unknown };
+      if (incoming.fileId !== fileId || incoming.versionId !== ref.versionId || typeof incoming.path !== "string") throw new Error(`Invalid remote version record: ${p}`);
+      if (typeof incoming.body === "string") {
+        // An early draft published the bytes inside the record; take them, and let the export publish it properly.
+        await this.archive({ ...ref, path: incoming.path }, Buffer.from(incoming.body, "base64"));
+        await projection.write(p, null);
+        continue;
+      }
+      const bytes = await projection.read(`${IDS_DIR}/${rel}`);
+      if (!bytes) throw new Error(`Remote version record without its bytes: ${p}`);
+      await this.archive({ ...ref, path: incoming.path }, bytes);
+    }
+  }
+
+  /** Publish records of shared versions the remote lacks. Private paths, and versions from before a path was shared, stay here. */
+  private async exportRecords(projection: GitProjection, selected: (p: string) => boolean): Promise<void> {
+    for (const record of this.records()) {
+      if (!selected(record.path)) continue;
+      const rel = `${IDS_DIR}/${this.recordPath(record)!}`;
+      if (projection.has(`${rel}.json`)) continue;
+      const bytes = await this.versionBytes(record);
+      if (!bytes) {
+        this.opts.warn(`version ${record.versionId} of ${record.path} could not be read to publish`);
+        continue;
+      }
+      await projection.write(rel, bytes);
+      await projection.write(`${rel}.json`, Buffer.from(JSON.stringify(record)));
+    }
   }
 
   private scaffold(): void {
@@ -291,6 +445,7 @@ export class GitFileStore implements FileStore {
       const change = changeOf(xy);
       if (change) out.set(p, change);
     }
+    for (const p of Object.keys(this.syncState.conflicts)) out.set(p, "conflicted");
     return out;
   }
 
@@ -330,7 +485,7 @@ export class GitFileStore implements FileStore {
    */
   private async recordIds(changes: StagedChange[], carry: Map<string, string> = new Map()): Promise<void> {
     const ledger = this.readLedger();
-    const at = Date.now();
+    const at = Math.max(Date.now(), ...[...ledger.byId.values()].map((v) => v.at + 1));
     const lines: LedgerLine[] = [];
     const claimed = new Set<string>();
     const carriedIds = new Set(carry.values());
@@ -357,7 +512,7 @@ export class GitFileStore implements FileStore {
   /** Stage everything but files still in conflict, and commit when there is anything to commit. */
   private async commitAll(msg: string, carry?: Map<string, string>): Promise<boolean> {
     const pending = await this.statusMap();
-    const conflicted = [...pending].filter(([, change]) => change === "conflicted").map(([p]) => p);
+    const conflicted = [...pending].filter(([p, change]) => change === "conflicted" && !this.syncState.conflicts[p]).map(([p]) => p);
     if (conflicted.length) {
       // `add -A .` would mark the clashes resolved, markers and all, and an
       // exclude pathspec does not stop it: name the other paths one by one.
@@ -367,18 +522,40 @@ export class GitFileStore implements FileStore {
     }
     await this.git(["add", "-A"]);
     const changes = await this.stagedChanges();
-    if (!changes.length && !this.merging()) return false;
-    await this.recordIds(changes, carry);
+    const identityChanges: StagedChange[] = [...(carry ?? [])].filter(([p, id]) => this.readLedger().byPath.get(p) !== id && !changes.some((c) => c.path === p)).map(([p]) => ({ status: "M", path: p }));
+    if (!changes.length && !identityChanges.length && !this.merging()) return false;
+    for (const change of changes) if (change.status === "R" && change.from) {
+      for (const rule of this.policy.rules) if (contains(change.from, rule.path)) rule.path = change.path + rule.path.slice(change.from.length);
+    }
+    saveJson(this.meta("policy.json"), this.policy);
+    await this.recordIds([...changes, ...identityChanges], carry);
     await this.g.ensureIdentity();
     this.quiet();
     await this.git(["commit", "-q", "--no-edit", "-m", msg]);
+    const versionId = (await this.head())!;
+    const ledger = this.readLedger();
+    for (const change of changes) {
+      if (change.status === "R" && change.from) delete this.latest[change.from];
+      if (change.status === "D") delete this.latest[change.path];
+      else this.latest[change.path] = versionId;
+      const fileId = ledger.byPath.get(change.path);
+      if (!fileId || change.status === "D" || policyAt(this.policy, change.path).mode !== "shared") continue;
+      await this.archive({ fileId, versionId, path: change.path }, null);
+    }
+    saveJson(this.meta("latest.json"), this.latest);
     return true;
   }
 
-  private async lastVersionOf(rel: string): Promise<string | null> {
-    const r = await this.git(["log", "-1", "--format=%H", "--", rel], { ok: true });
-    const sha = r.stdout.trim();
-    return r.code === 0 && sha ? sha : null;
+  /** The version a path last changed in; asked of git once for files from before this was kept. */
+  private async versionOf(rel: string): Promise<string | null> {
+    if (!this.latest[rel]) {
+      const r = await this.git(["log", "-1", "--format=%H", "--", rel], { ok: true });
+      const sha = r.stdout.trim();
+      if (r.code !== 0 || !sha) return null;
+      this.latest[rel] = sha;
+      saveJson(this.meta("latest.json"), this.latest);
+    }
+    return this.latest[rel]!;
   }
 
   private showBuffer(spec: string): Promise<Buffer | null> {
@@ -408,6 +585,7 @@ export class GitFileStore implements FileStore {
       size: isDir ? 0 : stat.size,
       modifiedAt: Math.round(stat.mtimeMs),
       fileId: isDir ? null : (ledger.byPath.get(rel) ?? null),
+      sync: policyAt(this.policy, rel, isDir),
       ...(change ? { change } : {})
     };
   }
@@ -464,7 +642,7 @@ export class GitFileStore implements FileStore {
       return null;
     }
     const pending = (await this.statusMap()).get(rel);
-    return this.contentOf(rel, bytes, this.readLedger().byPath.get(rel) ?? null, pending ? null : await this.lastVersionOf(rel));
+    return this.contentOf(rel, bytes, this.readLedger().byPath.get(rel) ?? null, pending ? null : await this.versionOf(rel));
   }
 
   private async commitOf(versionId: string): Promise<string | null> {
@@ -485,6 +663,11 @@ export class GitFileStore implements FileStore {
   }
 
   async readVersion(ref: FileReference): Promise<FileContent | null> {
+    const record = this.record(ref);
+    if (record) {
+      const bytes = await this.versionBytes(record);
+      return bytes ? this.contentOf(record.path, bytes, ref.fileId, ref.versionId) : null;
+    }
     const p = await this.pathAt(ref);
     if (!p) return null;
     const bytes = await this.showBuffer(`${ref.versionId}:${p}`);
@@ -492,7 +675,7 @@ export class GitFileStore implements FileStore {
   }
 
   async resolveVersion(ref: FileReference): Promise<FileReference | null> {
-    return (await this.pathAt(ref)) ? { fileId: ref.fileId, versionId: ref.versionId } : null;
+    return (this.record(ref) || await this.pathAt(ref)) ? { fileId: ref.fileId, versionId: ref.versionId } : null;
   }
 
   async locate(fileId: string): Promise<string | null> {
@@ -564,6 +747,8 @@ export class GitFileStore implements FileStore {
       this.quiet();
       fs.mkdirSync(path.dirname(this.abs(dst)), { recursive: true });
       fs.renameSync(this.abs(src), this.abs(dst));
+      for (const rule of this.policy.rules) if (contains(src, rule.path)) rule.path = dst + rule.path.slice(src.length);
+      saveJson(this.meta("policy.json"), this.policy);
       if (await this.commitAll(opts.message ?? `Moved ${src} to ${dst}`)) this.afterChange();
     });
   }
@@ -656,11 +841,9 @@ export class GitFileStore implements FileStore {
     if (this.syncing) return { ...base, state: "syncing" };
     if (conflicts) return { ...base, state: "conflicted", detail: conflicts === 1 ? "1 file needs a decision" : `${conflicts} files need a decision` };
     if (!this.opts.remote) return { ...base, state: "local" };
-    const ab = await this.g.aheadBehind(this.branch);
-    if (this.problem) return { ...base, ...(ab ?? {}), state: this.problem.state, detail: this.problem.detail };
-    if (!ab) return { ...base, state: "ahead", detail: "Not pushed yet" };
-    const state = ab.ahead && ab.behind ? "diverged" : ab.ahead ? "ahead" : ab.behind ? "behind" : "synced";
-    return { ...base, ...ab, state };
+    if (this.problem) return { ...base, state: this.problem.state, detail: this.problem.detail };
+    const ahead = this.policyDirty || head !== this.syncedHead;
+    return { ...base, ahead: ahead ? 1 : 0, state: ahead ? "ahead" : "synced" };
   }
 
   sync(): Promise<FilesStatus> {
@@ -690,32 +873,30 @@ export class GitFileStore implements FileStore {
       if (!this.opts.remote) return;
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
-      await this.g.setRemote(remote.url);
+      if (separateWorlds(boundDirectory(this.dir), remoteDirectory(remote.directory))) throw new Error(DIRECTORY_CHANGED);
       if (this.opts.ensureRemote && !this.ensured) {
         await this.opts.ensureRemote();
         this.ensured = true;
       }
-      const probe = await this.g.probe(this.branch);
-      if (probe === "offline") {
+      const projection = new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote);
+      if (!(await projection.fetch())) {
         this.problem = { state: "offline", detail: "Could not reach the remote" };
         return;
       }
-      if (probe === "absent") {
-        this.problem = (await this.g.push(this.branch)) ? null : { state: "error", detail: "The remote refused the push" };
-        if (!this.problem) this.lastSyncAt = Date.now();
-        return;
-      }
-      if (!(await this.g.fetch(this.branch))) {
-        this.problem = { state: "offline", detail: "Could not fetch from the remote" };
-        return;
-      }
-      const merged = await this.locked(() => this.mergeFetched());
-      if (merged !== "merged") return;
-      const after = await this.g.aheadBehind(this.branch);
-      if (after && after.ahead > 0 && !(await this.g.push(this.branch))) {
+      const snapshot = await this.locked(() => this.reconcile(projection));
+      if (!snapshot) return;
+      if (!(await projection.push())) {
         this.problem = { state: "error", detail: "The remote moved on; will retry" };
         return;
       }
+      await this.locked(async () => {
+        this.syncState.baseline = snapshot.baseline;
+        this.syncState.policy = snapshot.policy;
+        this.syncState.head = snapshot.head;
+        this.saveSyncState();
+        this.syncedHead = snapshot.head;
+        this.policyDirty = JSON.stringify(this.policy) !== JSON.stringify(snapshot.policy);
+      });
       this.problem = null;
       this.lastSyncAt = Date.now();
     } catch (error) {
@@ -726,25 +907,129 @@ export class GitFileStore implements FileStore {
     }
   }
 
-  /** The local half of a sync, under the lock: bring what was fetched into the working copy. */
-  private async mergeFetched(): Promise<"merged" | "waiting" | "failed"> {
-    // A merge still waiting on a person is not retried over.
-    if ((await this.unmergedPaths()).length) return "waiting";
-    const before = await this.g.aheadBehind(this.branch);
-    if (before && before.behind > 0) {
-      this.quiet(5_000);
-      const merged = await this.git(["merge", "-q", "--no-edit", "--allow-unrelated-histories", `origin/${this.branch}`], { ok: true });
-      if (merged.code !== 0) {
-        if ((await this.unmergedPaths()).length) {
-          this.problem = null;
-          return "waiting";
+  /** Merge policy before looking at bytes. Concurrent edits to the same rule fail closed. */
+  private mergePolicy(incoming: FilesSyncPolicy | null): void {
+    if (!incoming) return;
+    if (!["shared", "local"].includes(incoming.default) || !Array.isArray(incoming.rules)) throw new Error("Invalid remote sync policy");
+    const map = (p: FilesSyncPolicy) => new Map([["", p.default], ...p.rules.map((r): [string, SyncMode] => {
+      if (!r.path || normalizeRel(r.path) !== r.path || !["shared", "local"].includes(r.mode)) throw new Error("Invalid remote sync rule");
+      return [r.path, r.mode];
+    })]);
+    const base = map(this.syncState.policy ?? { default: "shared", rules: [] });
+    const ours = map(this.policy);
+    const theirs = map(incoming);
+    const result = new Map<string, SyncMode>();
+    for (const p of new Set([...base.keys(), ...ours.keys(), ...theirs.keys()])) {
+      const b = base.get(p), o = ours.get(p), t = theirs.get(p);
+      if (o !== b && t !== b && o !== t) throw new Error(`Sync policy conflict at ${p || "root"}; restore the last synchronized rule before retrying`);
+      const chosen = o !== b ? o : t;
+      if (chosen) result.set(p, chosen);
+    }
+    this.policy = { default: result.get("")!, rules: [...result].filter(([p]) => p).map(([p, mode]) => ({ path: p, mode })) };
+    saveJson(this.meta("policy.json"), this.policy);
+  }
+
+  private async reconcile(projection: GitProjection): Promise<{ baseline: Record<string, string>; policy: FilesSyncPolicy; head: string } | null> {
+    this.loadSyncState(projection.key);
+    await this.commitAll("Saved");
+    const policyBytes = await projection.read(`${IDS_DIR}/policy.json`);
+    const incomingPolicy = policyBytes ? (JSON.parse(policyBytes.toString("utf8")) as FilesSyncPolicy) : null;
+    this.mergePolicy(incomingPolicy);
+    await this.importRecords(projection);
+    // A clash waiting on a person is not synced over.
+    if (Object.keys(this.syncState.conflicts).length) {
+      this.problem = null;
+      return null;
+    }
+    const visible = (p: string) => !hidden(p) || (p.endsWith(`/${KEEP}`) && !hidden(p.slice(0, -KEEP.length - 1)));
+    const userPath = (p: string) => (p.endsWith(`/${KEEP}`) ? p.slice(0, -KEEP.length - 1) : p);
+    const remoteOids = new Map<string, string>();
+    for (const [p, entry] of projection.listing()) {
+      if (!visible(p)) continue;
+      if (normalizeRel(userPath(p)) !== userPath(p)) throw new Error(`Invalid remote file path: ${p}`);
+      remoteOids.set(p, entry.oid);
+    }
+    // Everything was just committed, so the index names what every local file is without reading it.
+    const localOids = new Map<string, string>();
+    const listing = await this.git(["ls-files", "--stage", "-z"]);
+    for (const item of listing.stdout.split("\0").filter(Boolean)) {
+      const tab = item.indexOf("\t");
+      const [mode, oid, stage] = item.slice(0, tab).split(" ");
+      const p = item.slice(tab + 1);
+      if (stage !== "0" || !visible(p)) continue;
+      if (mode === "120000") throw new Error(`Cannot synchronize symbolic link: ${p}`);
+      localOids.set(p, oid!);
+    }
+    const idsBytes = await projection.read(IDS_FILE);
+    const remoteIds = parseLedger(idsBytes?.toString("utf8") ?? "");
+    const carry = new Map<string, string>();
+    const outgoing = new Map<string, string>();
+    const incomingBaseline: Record<string, string> = {};
+    const selected = (p: string) => policyAt(this.policy, userPath(p)).mode === "shared";
+    for (const p of new Set([...Object.keys(this.syncState.baseline), ...remoteOids.keys(), ...localOids.keys()])) {
+      const o = localOids.get(p);
+      const t = remoteOids.get(p);
+      const b = this.syncState.baseline[p];
+      if (!selected(p)) {
+        // Deselecting removes the current shared copy, never the versions already published.
+        if (t) await projection.write(p, null);
+        continue;
+      }
+      if (t) incomingBaseline[p] = t;
+      if (o !== b && t !== b && o !== t) {
+        const ours = o ? fs.readFileSync(this.abs(p)) : null;
+        const theirs = t ? await projection.read(p) : null;
+        this.syncState.conflicts[p] = { ours: ours?.toString("base64") ?? null, theirs: theirs?.toString("base64") ?? null, base: b ?? null };
+        continue;
+      }
+      const useRemote = o === b;
+      if (useRemote && o !== t) {
+        this.quiet(5_000);
+        if (t) {
+          // Refuse a file where a folder should be, or a symlink ancestor, before writing.
+          for (let parent = path.dirname(this.abs(p)); parent !== this.dir; parent = path.dirname(parent)) {
+            if (fs.existsSync(parent) && (!fs.lstatSync(parent).isDirectory() || fs.lstatSync(parent).isSymbolicLink())) throw new Error(`Local path obstructs remote file: ${p}`);
+          }
+          fs.mkdirSync(path.dirname(this.abs(p)), { recursive: true });
+          fs.writeFileSync(this.abs(p), (await projection.read(p))!);
+        } else {
+          fs.rmSync(this.abs(p), { force: true });
+          this.pruneEmptyParents(p);
         }
-        await this.git(["merge", "--abort"], { ok: true });
-        this.problem = { state: "error", detail: `Merge failed: ${merged.stderr?.trim().split("\n").pop() ?? "unknown"}` };
-        return "failed";
+      }
+      const chosen = useRemote ? t : o;
+      if (chosen) {
+        outgoing.set(p, chosen);
+        if ((useRemote || o === t) && remoteIds.byPath.has(p)) carry.set(p, remoteIds.byPath.get(p)!);
       }
     }
-    return "merged";
+    // The baseline is the fetched remote until the push succeeds; a refused push is retried from here.
+    this.syncState.baseline = incomingBaseline;
+    if (incomingPolicy) this.syncState.policy = incomingPolicy;
+    this.saveSyncState();
+    await this.commitAll("Received shared files", carry);
+    if (Object.keys(this.syncState.conflicts).length) {
+      this.problem = null;
+      return null;
+    }
+    const ledger = this.readLedger();
+    const lines: LedgerLine[] = [];
+    const baseline: Record<string, string> = {};
+    for (const [p, oid] of outgoing) {
+      // Only what the remote lacks is read; an outside edit since the commit is simply what gets published.
+      if (projection.oid(p) !== oid) await projection.write(p, fs.readFileSync(this.abs(p)));
+      baseline[p] = projection.oid(p)!;
+      const fileId = ledger.byPath.get(p);
+      if (!fileId) continue;
+      lines.push({ id: fileId, path: p, at: ledger.byId.get(fileId)!.at });
+      const versionId = await this.versionOf(p);
+      if (versionId && !this.record({ fileId, versionId })) await this.archive({ fileId, versionId, path: p }, null);
+    }
+    for (const p of remoteOids.keys()) if (!outgoing.has(p)) await projection.write(p, null);
+    await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
+    await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify(this.policy)));
+    await this.exportRecords(projection, selected);
+    return { baseline, policy: structuredClone(this.policy), head: (await this.head())! };
   }
 
   // ── conflicts ───────────────────────────────────────────────────────────────
@@ -758,7 +1043,12 @@ export class GitFileStore implements FileStore {
     const r = await this.git(["status", "--porcelain=v1", "-z"], { ok: true });
     if (r.code !== 0) return [];
     const ledger = this.readLedger();
-    const out: FileConflict[] = [];
+    const out: FileConflict[] = Object.entries(this.syncState.conflicts).map(([rel, conflict]) => {
+      const ours = conflict.ours === null ? null : Buffer.from(conflict.ours, "base64");
+      const theirs = conflict.theirs === null ? null : Buffer.from(conflict.theirs, "base64");
+      const binary = !!((ours && looksBinary(ours)) || (theirs && looksBinary(theirs)) || !isTextMime(mimeOf(rel)));
+      return { path: rel, fileId: ledger.byPath.get(rel) ?? null, kind: !ours ? "delete-modify" : !theirs ? "modify-delete" : conflict.base === null ? "add-add" : "content", binary, ours: binary ? null : ours?.toString("utf8") ?? null, theirs: binary ? null : theirs?.toString("utf8") ?? null };
+    });
     const tokens = r.stdout.split("\0");
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!;
@@ -780,6 +1070,25 @@ export class GitFileStore implements FileStore {
     return this.locked(async () => {
       const rel = normalizeRel(p);
       if (!rel) throw new InvalidPathError(p);
+      const conflict = this.syncState.conflicts[rel];
+      if (conflict) {
+        const ours = fs.existsSync(this.abs(rel)) ? fs.readFileSync(this.abs(rel)) : null;
+        const theirs = conflict.theirs === null ? null : Buffer.from(conflict.theirs, "base64");
+        const keep = (bytes: Buffer | null, at: string) => {
+          if (bytes) { fs.mkdirSync(path.dirname(this.abs(at)), { recursive: true }); fs.writeFileSync(this.abs(at), bytes); }
+          else { fs.rmSync(this.abs(at), { force: true }); this.pruneEmptyParents(at); }
+        };
+        this.quiet(5_000);
+        if (choice === "ours") keep(ours, rel);
+        else if (choice === "theirs") keep(theirs, rel);
+        else if (ours && theirs) { keep(ours, rel); keep(theirs, this.sibling(rel, "theirs")); }
+        else keep(ours ?? theirs, rel);
+        delete this.syncState.conflicts[rel];
+        this.saveSyncState();
+        await this.commitAll("Resolved shared file conflict");
+        this.afterChange();
+        return;
+      }
       if (!(await this.unmergedPaths()).includes(rel)) throw new Error(`${rel} is not in conflict`);
       const ours = await this.stage(2, rel);
       const theirs = await this.stage(3, rel);
