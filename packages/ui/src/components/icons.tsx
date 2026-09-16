@@ -17,6 +17,7 @@ export const ICON_IDS = [
   "i-plus",
   "i-gear",
   "i-undo",
+  "i-redo",
   "i-sync",
   "i-search",
   "i-chev",
@@ -81,6 +82,7 @@ export function IconSprite() {
         <symbol id="i-plus" viewBox="0 0 14 14"><path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></symbol>
         <symbol id="i-gear" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round"><circle cx="7" cy="7" r="4.15"/><circle cx="7" cy="7" r="1.8"/><path d="M11.15 7H12.75M7 2.85V1.25M2.85 7H1.25M7 11.15V12.75M9.94 4.06 11.07 2.93M4.06 4.06 2.93 2.93M4.06 9.94 2.93 11.07M9.94 9.94 11.07 11.07"/></g></symbol>
         <symbol id="i-undo" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.4 5.4h6.2a3.4 3.4 0 1 1 0 6.8H5.2"/><path d="M4.8 2.9 2.3 5.4l2.5 2.5"/></g></symbol>
+        <symbol id="i-redo" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11.6 5.4H5.4a3.4 3.4 0 1 0 0 6.8h3.4"/><path d="M9.2 2.9l2.5 2.5-2.5 2.5"/></g></symbol>
         <symbol id="i-sync" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.3 7.2a4.7 4.7 0 0 1 7.9-3.5"/><path d="M10.1 1.9v2.3H7.8"/><path d="M11.7 6.8a4.7 4.7 0 0 1-7.9 3.5"/><path d="M3.9 12.1V9.8h2.3"/></g></symbol>
         <symbol id="i-search" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="6.2" cy="6.2" r="3.9"/><path d="M9.2 9.2 12 12"/></g></symbol>
         <symbol id="i-send" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 3.2v3a1.8 1.8 0 0 1-1.8 1.8H3.4"/><path d="M5.8 5.6 3.4 8l2.4 2.4"/></g></symbol>

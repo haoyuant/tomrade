@@ -1,5 +1,10 @@
 import type { Author, OplogEntity, OplogEntry, OplogOp } from "@tomrade/domain";
 
+/** A row ⌘Z took back, parked in `oplog_undone` until ⇧⌘Z puts it back or a new write drops it. */
+export interface UndoneRow extends OplogRow {
+  undone_at: number;
+}
+
 export interface OplogRow {
   seq: number;
   entity: string;

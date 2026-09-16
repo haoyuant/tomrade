@@ -140,6 +140,8 @@ export class Storage extends Service {
 
   [Service.init]() {
     this.home.on("write/committed", (intent) => this.onCommitted(intent.projectId));
+    // An undo or redo moves rows without a write; the folder is stale all the same.
+    this.home.on("oplog/reverted", (projectId) => this.onCommitted(projectId));
     this.home.on("projects/created", (project) => void this.materialize(project.id).catch((e) => this.warn(project.id, e)));
     this.home.on("projects/removed", (projectId) => {
       this.forget(projectId);

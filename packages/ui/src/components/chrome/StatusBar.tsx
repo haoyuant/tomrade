@@ -32,7 +32,22 @@ function Ribbon({ entry }: { entry: OplogEntry }) {
   );
 }
 
-export function StatusBar({ projectId, onUndo, children }: { projectId?: string; onUndo?: () => void; children?: React.ReactNode }) {
+export function StatusBar({
+  projectId,
+  onUndo,
+  onRedo,
+  onHistory,
+  busy = null,
+  children
+}: {
+  projectId?: string;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onHistory?: () => void;
+  /** Which step is running; both controls wait for it, and the running one says so. */
+  busy?: "undo" | "redo" | null;
+  children?: React.ReactNode;
+}) {
   const { t } = useI18n();
   const mcp = useMcpUrl(projectId);
   // Per project: on the home screen nothing is "recent" across projects.
@@ -52,8 +67,18 @@ export function StatusBar({ projectId, onUndo, children }: { projectId?: string;
         </span>
       ))}
       {onUndo && (
-        <button type="button" className="btn btn-ghost" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} title={t("statusBar.undoTitle")}>
-          <Icon name="i-undo" size={13} /> {t("toast.undo")}
+        <button type="button" className="btn btn-ghost status-undo" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} disabled={busy !== null} aria-busy={busy === "undo"} title={t("statusBar.undoTitle")}>
+          <Icon name={busy === "undo" ? "i-sync" : "i-undo"} size={13} className={busy === "undo" ? "is-spinning" : undefined} /> {busy === "undo" ? t("workspace.undoing") : t("toast.undo")}
+        </button>
+      )}
+      {onRedo && (
+        <button type="button" className="btn btn-ghost status-redo" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onRedo} disabled={busy !== null} aria-busy={busy === "redo"} title={t("statusBar.redoTitle")}>
+          <Icon name={busy === "redo" ? "i-sync" : "i-redo"} size={13} className={busy === "redo" ? "is-spinning" : undefined} /> {busy === "redo" ? t("workspace.redoing") : t("toast.redo")}
+        </button>
+      )}
+      {onHistory && (
+        <button type="button" className="btn btn-ghost status-history" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onHistory} title={t("statusBar.historyTitle")}>
+          <Icon name="i-clock" size={13} /> {t("statusBar.history")}
         </button>
       )}
       <Spacer />

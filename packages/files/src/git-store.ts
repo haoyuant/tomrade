@@ -6,6 +6,7 @@ import type { FileReference } from "@tomrade/domain";
 import { GIT_ENV, GitFolder, type Git } from "@tomrade/storage";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
 import {
+  FileMovedOnError,
   InvalidPathError,
   type ConflictChoice,
   type FileChange,
@@ -252,8 +253,14 @@ export class GitFileStore implements FileStore {
 
   // ── git plumbing ────────────────────────────────────────────────────────────
 
-  private async head(): Promise<string | null> {
+  async head(): Promise<string | null> {
     const r = await this.git(["rev-parse", "--verify", "-q", "HEAD"], { ok: true });
+    return r.code === 0 ? r.stdout.trim() : null;
+  }
+
+  /** The blob or tree a path names at a version, or null when it is not there. Same id, same content. */
+  private async objectAt(rev: string, rel: string): Promise<string | null> {
+    const r = await this.git(["rev-parse", "--verify", "-q", `${rev}:${rel}`], { ok: true });
     return r.code === 0 ? r.stdout.trim() : null;
   }
 
@@ -316,22 +323,30 @@ export class GitFileStore implements FileStore {
     return changes;
   }
 
-  /** Give every saved file an id, carry ids across renames, and close the ids of deleted files. */
-  private async recordIds(changes: StagedChange[]): Promise<void> {
+  /**
+   * Give every saved file an id, carry ids across renames, and close the ids of
+   * deleted files. `carry` names the id a path had at the version being
+   * restored, so a file that comes back is the same file, not a new one.
+   */
+  private async recordIds(changes: StagedChange[], carry: Map<string, string> = new Map()): Promise<void> {
     const ledger = this.readLedger();
     const at = Date.now();
     const lines: LedgerLine[] = [];
     const claimed = new Set<string>();
+    const carriedIds = new Set(carry.values());
     for (const change of changes) {
       if (hidden(change.path) || change.path.endsWith(`/${KEEP}`) || change.path === KEEP) continue;
       if (change.status === "D") {
         const id = ledger.byPath.get(change.path);
-        if (id) lines.push({ id, path: null, at });
+        // An id about to be claimed again elsewhere — a move being put back — is not closed.
+        if (id && !carriedIds.has(id)) lines.push({ id, path: null, at });
         continue;
       }
-      if (ledger.byPath.get(change.path) || claimed.has(change.path)) continue;
+      const wanted = carry.get(change.path);
+      if (wanted && ledger.byPath.get(change.path) === wanted) continue;
+      if ((ledger.byPath.get(change.path) && !wanted) || claimed.has(change.path)) continue;
       const carried = change.status === "R" && change.from ? ledger.byPath.get(change.from) : undefined;
-      lines.push({ id: carried ?? randomUUID(), path: change.path, at });
+      lines.push({ id: wanted ?? carried ?? randomUUID(), path: change.path, at });
       claimed.add(change.path);
     }
     if (!lines.length) return;
@@ -340,7 +355,7 @@ export class GitFileStore implements FileStore {
   }
 
   /** Stage everything but files still in conflict, and commit when there is anything to commit. */
-  private async commitAll(msg: string): Promise<boolean> {
+  private async commitAll(msg: string, carry?: Map<string, string>): Promise<boolean> {
     const pending = await this.statusMap();
     const conflicted = [...pending].filter(([, change]) => change === "conflicted").map(([p]) => p);
     if (conflicted.length) {
@@ -353,7 +368,7 @@ export class GitFileStore implements FileStore {
     await this.git(["add", "-A"]);
     const changes = await this.stagedChanges();
     if (!changes.length && !this.merging()) return false;
-    await this.recordIds(changes);
+    await this.recordIds(changes, carry);
     await this.g.ensureIdentity();
     this.quiet();
     await this.git(["commit", "-q", "--no-edit", "-m", msg]);
@@ -579,8 +594,56 @@ export class GitFileStore implements FileStore {
     });
   }
 
+  /** git keeps no folders, so one that a removed path leaves empty would linger on disk as a phantom entry. */
+  private pruneEmptyParents(rel: string): void {
+    for (let dir = path.posix.dirname(rel); dir && dir !== "."; dir = path.posix.dirname(dir)) {
+      const abs = this.abs(dir);
+      try {
+        if (fs.readdirSync(abs).length) return;
+        fs.rmdirSync(abs);
+      } catch {
+        return;
+      }
+    }
+  }
+
   settle(msg = "Saved"): Promise<boolean> {
     return this.locked(() => this.commitAll(msg));
+  }
+
+  /**
+   * Undo and redo, one operation's paths at a time. Outside edits are saved
+   * first so the comparison sees the working copy; a path that is not as
+   * version `from` left it has moved on and refuses the whole restore. Ids
+   * come back with their files: a path gets the id it had at `to`.
+   */
+  restore(paths: string[], from: string, to: string, message: string): Promise<string | null> {
+    return this.locked(async () => {
+      const rels = [...new Set(paths.map(normalizeRel).filter(Boolean))];
+      if (!rels.length) return null;
+      await this.commitAll("Edited outside Tomrade");
+      if ((await this.unmergedPaths()).length) throw new Error("Settle the files in conflict first");
+      for (const rel of rels) {
+        if ((await this.objectAt("HEAD", rel)) !== (await this.objectAt(from, rel))) throw new FileMovedOnError(rel);
+      }
+      const ledgerAtTo = await this.g.show(to, IDS_FILE);
+      const wanted = ledgerAtTo === null ? new Map<string, string>() : parseLedger(ledgerAtTo).byPath;
+      const carry = new Map<string, string>();
+      this.quiet(5_000);
+      for (const rel of rels) {
+        // The path becomes exactly what it was at `to`: a folder is emptied first so nothing added since lingers.
+        fs.rmSync(this.abs(rel), { recursive: true, force: true });
+        if ((await this.objectAt(to, rel)) === null) {
+          this.pruneEmptyParents(rel);
+          continue;
+        }
+        await this.git(["checkout", to, "--", rel]);
+        for (const [p, id] of wanted) if (p === rel || p.startsWith(`${rel}/`)) carry.set(p, id);
+      }
+      if (!(await this.commitAll(message, carry))) return null;
+      this.afterChange();
+      return this.head();
+    });
   }
 
   // ── sync ────────────────────────────────────────────────────────────────────
@@ -602,21 +665,28 @@ export class GitFileStore implements FileStore {
 
   sync(): Promise<FilesStatus> {
     if (this.syncQueue) return this.syncQueue;
-    this.syncQueue = this.locked(async () => {
+    this.syncQueue = (async () => {
       if (!this.closed) await this.doSync();
       return this.status();
-    }).finally(() => {
+    })().finally(() => {
       this.syncQueue = null;
     });
     return this.syncQueue;
   }
 
-  /** Save, then — with a remote — probe, fetch, merge, push. Leaves `problem` for `status()` to report. */
+  /**
+   * Save, then — with a remote — probe, fetch, merge, push. Leaves `problem`
+   * for `status()` to report. Only the steps that touch the index and working
+   * copy hold the store's lock: the network calls have no timeout, and a save,
+   * a delete or an undo waiting behind an unreachable remote would read as the
+   * app not responding. Fetch writes refs and objects only, and push reads
+   * them, so a local commit landing beside either is safe.
+   */
   private async doSync(): Promise<void> {
     this.syncing = true;
     this.opts.onChange();
     try {
-      await this.commitAll("Saved");
+      await this.locked(() => this.commitAll("Saved"));
       if (!this.opts.remote) return;
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
@@ -639,22 +709,8 @@ export class GitFileStore implements FileStore {
         this.problem = { state: "offline", detail: "Could not fetch from the remote" };
         return;
       }
-      // A merge still waiting on a person is not retried over.
-      if ((await this.unmergedPaths()).length) return;
-      const before = await this.g.aheadBehind(this.branch);
-      if (before && before.behind > 0) {
-        this.quiet(5_000);
-        const merged = await this.git(["merge", "-q", "--no-edit", "--allow-unrelated-histories", `origin/${this.branch}`], { ok: true });
-        if (merged.code !== 0) {
-          if ((await this.unmergedPaths()).length) {
-            this.problem = null;
-            return;
-          }
-          await this.git(["merge", "--abort"], { ok: true });
-          this.problem = { state: "error", detail: `Merge failed: ${merged.stderr?.trim().split("\n").pop() ?? "unknown"}` };
-          return;
-        }
-      }
+      const merged = await this.locked(() => this.mergeFetched());
+      if (merged !== "merged") return;
       const after = await this.g.aheadBehind(this.branch);
       if (after && after.ahead > 0 && !(await this.g.push(this.branch))) {
         this.problem = { state: "error", detail: "The remote moved on; will retry" };
@@ -668,6 +724,27 @@ export class GitFileStore implements FileStore {
       this.syncing = false;
       this.opts.onChange();
     }
+  }
+
+  /** The local half of a sync, under the lock: bring what was fetched into the working copy. */
+  private async mergeFetched(): Promise<"merged" | "waiting" | "failed"> {
+    // A merge still waiting on a person is not retried over.
+    if ((await this.unmergedPaths()).length) return "waiting";
+    const before = await this.g.aheadBehind(this.branch);
+    if (before && before.behind > 0) {
+      this.quiet(5_000);
+      const merged = await this.git(["merge", "-q", "--no-edit", "--allow-unrelated-histories", `origin/${this.branch}`], { ok: true });
+      if (merged.code !== 0) {
+        if ((await this.unmergedPaths()).length) {
+          this.problem = null;
+          return "waiting";
+        }
+        await this.git(["merge", "--abort"], { ok: true });
+        this.problem = { state: "error", detail: `Merge failed: ${merged.stderr?.trim().split("\n").pop() ?? "unknown"}` };
+        return "failed";
+      }
+    }
+    return "merged";
   }
 
   // ── conflicts ───────────────────────────────────────────────────────────────

@@ -81,7 +81,7 @@ export function registerTools(ctx: Context, files: Files): void {
     defineTool({
       name: "delete_file",
       title: "Delete a project file",
-      description: "Delete a file or folder from the project's Files store. Its versions stay in the history — deleting is not undone here, but nothing already saved is lost.",
+      description: "Delete a file or folder from the project's Files store. Its versions stay in the history, and the person can undo the delete (⌘Z or the History window), so nothing already saved is lost.",
       input: z.object({
         projectId: z.string().optional(),
         path: z.string().describe("Path to delete, relative to the store root")

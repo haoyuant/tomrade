@@ -1,7 +1,9 @@
 import type { DeliveryView, ProjectDb } from "@tomrade/db";
 import { InUseError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomrade/domain";
 import { emptyEvidence } from "@tomrade/domain";
-import { rowToEntry, type OplogRow } from "./rows.js";
+import { rowToEntry, type OplogRow, type UndoneRow } from "./rows.js";
+
+const UNDONE_COLUMNS = "seq, entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json";
 
 interface ViewSnapshot extends View {
   ranks?: { item_id: string; rank: number }[];
@@ -130,35 +132,44 @@ function restoreBoard(db: ProjectDb, board: Board): void {
   });
 }
 
+function removeItemRows(db: ProjectDb, id: string): void {
+  db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(id);
+  db.prepare("DELETE FROM item_values WHERE item_id = ?").run(id);
+  db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(id, id);
+  db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(id);
+  db.prepare("DELETE FROM deliveries WHERE item_id = ?").run(id);
+  db.prepare("DELETE FROM items WHERE id = ?").run(id);
+}
+
+function removeBoard(db: ProjectDb, id: string): void {
+  const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(id) as { n: number }).n;
+  if (owned > 0) throw new InUseError(id, `That workstream now holds ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
+  db.prepare("DELETE FROM boards WHERE id = ?").run(id);
+}
+
+function setRank(db: ProjectDb, viewId: string, itemId: string, rank: number | null | undefined): void {
+  if (rank == null) db.prepare("DELETE FROM view_item_rank WHERE view_id = ? AND item_id = ?").run(viewId, itemId);
+  else db.prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank").run(viewId, itemId, rank);
+}
+
 /** Apply the inverse of one entry. Throws InUseError when a created board now owns issues. */
-function revertEntry(db: ProjectDb, entry: OplogEntry): void {
+export function revertEntry(db: ProjectDb, entry: OplogEntry): void {
   if (entry.entity === "item") {
     if (entry.op === "create") {
-      db.prepare("DELETE FROM item_labels WHERE item_id = ?").run(entry.entityId);
-      db.prepare("DELETE FROM item_values WHERE item_id = ?").run(entry.entityId);
-      db.prepare("DELETE FROM item_relations WHERE from_item_id = ? OR to_item_id = ?").run(entry.entityId, entry.entityId);
-      db.prepare("DELETE FROM view_item_rank WHERE item_id = ?").run(entry.entityId);
-      db.prepare("DELETE FROM deliveries WHERE item_id = ?").run(entry.entityId);
-      db.prepare("DELETE FROM items WHERE id = ?").run(entry.entityId);
+      removeItemRows(db, entry.entityId);
     } else if (entry.before) {
       restoreItem(db, entry.before as Item);
     }
   } else if (entry.entity === "board") {
     if (entry.op === "create") {
-      const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(entry.entityId) as { n: number }).n;
-      if (owned > 0) throw new InUseError(entry.entityId, `That workstream now holds ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
-      db.prepare("DELETE FROM boards WHERE id = ?").run(entry.entityId);
+      removeBoard(db, entry.entityId);
     } else if (entry.before) {
       restoreBoard(db, entry.before as Board);
     }
   } else if (entry.entity === "view") {
     if (entry.op === "rank") {
       const p = entry.patch as { itemId?: string } | null;
-      const prior = (entry.before as { rank?: number | null } | null)?.rank;
-      if (p?.itemId) {
-        if (prior == null) db.prepare("DELETE FROM view_item_rank WHERE view_id = ? AND item_id = ?").run(entry.entityId, p.itemId);
-        else db.prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank").run(entry.entityId, p.itemId, prior);
-      }
+      if (p?.itemId) setRank(db, entry.entityId, p.itemId, (entry.before as { rank?: number | null } | null)?.rank);
     } else if (entry.op === "create") {
       db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
@@ -168,7 +179,48 @@ function revertEntry(db: ProjectDb, entry: OplogEntry): void {
   }
 }
 
-const labelOf = (entry: OplogEntry): string => {
+/** Apply one entry again — the mirror of revertEntry, for redo. */
+export function applyEntry(db: ProjectDb, entry: OplogEntry): void {
+  if (entry.entity === "item") {
+    if (entry.op === "delete") removeItemRows(db, entry.entityId);
+    else if (entry.after) restoreItem(db, entry.after as Item);
+  } else if (entry.entity === "board") {
+    if (entry.op === "delete") removeBoard(db, entry.entityId);
+    else if (entry.after) restoreBoard(db, entry.after as Board);
+  } else if (entry.entity === "view") {
+    if (entry.op === "rank") {
+      const p = entry.patch as { itemId?: string } | null;
+      if (p?.itemId) setRank(db, entry.entityId, p.itemId, (entry.after as { rank?: number | null } | null)?.rank);
+    } else if (entry.op === "delete") {
+      db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
+      db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
+    } else if (entry.after) {
+      restoreView(db, entry.after as ViewSnapshot);
+    }
+  }
+}
+
+/** Park a row in the redo stack. */
+export function retire(db: ProjectDb, seq: number, at: number): void {
+  db.prepare(`INSERT INTO oplog_undone (${UNDONE_COLUMNS}, undone_at) SELECT ${UNDONE_COLUMNS}, ? FROM oplog WHERE seq = ?`).run(at, seq);
+  db.prepare("DELETE FROM oplog WHERE seq = ?").run(seq);
+}
+
+export const undoneRows = (db: ProjectDb, limit: number): UndoneRow[] => db.prepare("SELECT * FROM oplog_undone ORDER BY at DESC, seq DESC LIMIT ?").all(limit) as UndoneRow[];
+
+export const undoneRow = (db: ProjectDb, seq: number): UndoneRow | undefined => db.prepare("SELECT * FROM oplog_undone WHERE seq = ?").get(seq) as UndoneRow | undefined;
+
+export const undoSummary = (entry: OplogEntry): string => {
+  const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : entry.op === "rank" ? "Moved back" : "Reverted";
+  return `${verb} ${labelOf(entry)}`;
+};
+
+export const redoSummary = (entry: OplogEntry): string => {
+  const verb = entry.op === "create" ? "Re-created" : entry.op === "delete" ? "Deleted again" : entry.op === "rank" ? "Moved again" : "Re-applied";
+  return `${verb} ${labelOf(entry)}`;
+};
+
+export const labelOf = (entry: OplogEntry): string => {
   const named = (entry.before ?? entry.after) as { key?: string; name?: string } | null;
   return named?.key ?? named?.name ?? entry.entityId;
 };
@@ -183,20 +235,22 @@ const labelOf = (entry: OplogEntry): string => {
  * another machine's log carries a patch but no snapshot, and taking it back is
  * a new write of ours, not a revert of theirs.
  */
-export function undoLast(db: ProjectDb, device: string, entityId?: string): UndoResult | null {
+export function undoLast(db: ProjectDb, device: string, entityId?: string, at = Date.now()): UndoResult | null {
   const row = entityId
     ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op NOT IN ('purge', 'merge') AND device = ? ORDER BY seq DESC LIMIT 1").get(entityId, device) as OplogRow | undefined)
     : (db.prepare("SELECT * FROM oplog WHERE op NOT IN ('purge', 'merge') AND device = ? ORDER BY seq DESC LIMIT 1").get(device) as OplogRow | undefined);
   if (!row) return null;
+  return undoRow(db, row, at);
+}
 
+/** Revert one row of ours and park it for redo. */
+export function undoRow(db: ProjectDb, row: OplogRow, at = Date.now()): UndoResult {
   const entry: OplogEntry = rowToEntry(row);
   db.transaction(() => {
     revertEntry(db, entry);
-    db.prepare("DELETE FROM oplog WHERE seq = ?").run(row.seq);
+    retire(db, row.seq, at);
   });
-
-  const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : entry.op === "rank" ? "Moved back" : "Reverted";
-  return { entry, summary: `${verb} ${labelOf(entry)}` };
+  return { entry, summary: undoSummary(entry) };
 }
 
 /** What stands at `id` right now, for deciding whether a snapshot is still current. */

@@ -47,7 +47,11 @@ if (window.tomrade) {
   });
   // A scan found new branches, pull requests or merges: the Code section, the badges and any moved status.
   // A save, a sync or an outside edit moved a project's files or their state.
-  subscribe("files.changed", (projectId) => void queryClient.invalidateQueries({ queryKey: ["files", projectId] }));
+  subscribe("files.changed", (projectId) => {
+    void queryClient.invalidateQueries({ queryKey: ["files", projectId] });
+    // A file operation is a record in the history window too.
+    void queryClient.invalidateQueries({ queryKey: ["timeline", projectId] });
+  });
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: ["codeLink", projectId] });
     void queryClient.invalidateQueries({ queryKey: ["contributions"] });

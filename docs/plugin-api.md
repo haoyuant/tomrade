@@ -112,7 +112,7 @@ consumer follows.
 |---|---|---|---|
 | `ctx.db` | spine | `@tomrade/db` | The pool of SQLite caches — one per project plus the Hub's — the core schema, `migrate()` |
 | `ctx.hub` | spine | `@tomrade/hub` | This machine: its device id, the Hub folder, the catalog of projects and repository checkouts it knows |
-| `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast` |
+| `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast`; the timeline across providers: `undo`, `redo`, `timeline`, `rollback`, `revert`, `provide` |
 | `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
 | `ctx.fields` | spine | `@tomrade/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
 | `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams (the options of the built-in Workstream field) and the project's saved views |
@@ -383,6 +383,42 @@ project folder's log carries. Undo reaches only this machine's own rows; a row
 that arrived from another machine's log is history and evidence, and taking it
 back is a new write of ours.
 
+### Undo, redo and the timeline
+
+⌘Z is `oplog.undo(projectId)`: the newest thing this machine did, wherever it
+did it. A reverted row is not deleted but parked in `oplog_undone`, so ⇧⌘Z —
+`oplog.redo` — can put it back; a redo lands as a new row with a fresh
+`deviceSeq`, at its old place in time. Any write anywhere empties the redo
+stack, in the oplog and in every provider. `oplog.timeline(projectId)` is the
+history window's list — every record, newest first, undone ones with
+`undoneAt` set — and `oplog.rollback(projectId, ref)` moves the cursor to a
+record: everything newer than a live record is undone, newest first; an undone
+record is redone together with whatever was undone after it. `oplog.revert`
+takes back one named record out of order, which is what a toast's Undo does.
+`undoLast(projectId, entityId)` still reverts one entity's latest backlog
+write; `undoRun` still consumes a run's rows outright.
+
+A plugin whose operations are not oplog rows joins the same ⌘Z with an
+**undo provider**:
+
+```ts
+ctx.oplog.provide({
+  id: "files",
+  timeline: (projectId, limit) => ops.list(projectId, limit).map(toRecord),   // UndoRecord[], newest first
+  undo: (projectId, id) => restore(id, "before"),                              // returns the toast line; throw to refuse
+  redo: (projectId, id) => restore(id, "after"),
+  forget: (projectId) => ops.forget(projectId)                                 // a write landed: drop the undone ones
+});
+```
+
+`provide` is an effect. A record's `ref` is `provider:id`; `undoable` is false
+for what the timeline shows but cannot take back — purges, sync notes, other
+machines' rows. `@tomrade/files` is the first provider: each write, folder,
+move, copy, delete and import is remembered as the versions before and after
+it, and undo restores exactly its paths, refusing with `FileMovedOnError` when
+one has changed since. The renderer reaches all of this through `oplog.undo`,
+`oplog.redo`, `oplog.timeline`, `oplog.rollback` and `oplog.revert`.
+
 ## Tools
 
 ```ts
@@ -623,7 +659,8 @@ clones the files beside it. Credentials belong in a settings section named in
 is the git-backed store every remote backend builds on; a backend that keeps
 files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 `readVersion`, `resolveVersion`, `locate`, `history`, `write`, `mkdir`, `move`,
-`remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`). `@tomrade/files-github`
+`remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`, and — to be
+undoable — `head` and `restore`). `@tomrade/files-github`
 registers `github`, sharing the `github` token section with `@tomrade/storage-github`.
 
 Sync never forces. A save is pushed a few seconds after it lands, outside edits
@@ -640,6 +677,7 @@ merged and pushed on a sweep (`autoSyncMs`). A file changed on both sides is a
 | `ctx.files.tree(projectId)` / `list(projectId, dir)` / `read(projectId, path)` | The entries and a working copy, with each file's stable id and last version |
 | `ctx.files.readVersion(projectId, { fileId, versionId })` | An immutable version, or null |
 | `ctx.files.write(projectId, path, body, { message })` | A new version, returned with its `fileId` and `versionId` |
+| `ctx.files.mkdir` / `move` / `copy` / `remove(projectId, …)` | Each returns the history record it made (`files:<seq>`, for `oplog.revert`) or null when nothing changed; all undoable through `oplog.undo` |
 | `ctx.files.sync(projectId)` / `conflicts(projectId)` / `resolve(projectId, path, choice)` | Save, take theirs, push; what waits; settle one |
 | `ctx.files.bind(projectId, backendId, config)` / `unbind(projectId)` | Share through a backend's remote (and sync at once); stop sharing, keeping everything |
 | `ctx.files.attach(projectId, itemId, { path, role })` | Pin the file's latest version to a ticket as material or an output |

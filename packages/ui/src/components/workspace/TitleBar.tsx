@@ -19,12 +19,17 @@ export function TitleBar({
   onOpenPalette,
   onNewIssue,
   onOpenSettings,
+  onOpenHistory,
+  historyBusy = false,
   projectMenuOpen,
   setProjectMenuOpen
 }: {
   onOpenPalette: () => void;
   onNewIssue: () => void;
   onOpenSettings: () => void;
+  onOpenHistory: () => void;
+  /** An undo, redo or rollback is running: the history control spins so a slow one never reads as nothing happening. */
+  historyBusy?: boolean;
   projectMenuOpen: boolean;
   setProjectMenuOpen: (open: boolean) => void;
 }) {
@@ -86,6 +91,16 @@ export function TitleBar({
       <button type="button" className="btn btn-primary no-drag" onClick={onNewIssue} title={t("titleBar.newIssueTitle")}>
         <Icon name="i-plus" size={14} />
         {t("titleBar.newButton")}
+      </button>
+      <button
+        type="button"
+        className={`btn btn-icon no-drag title-history${historyBusy ? " is-busy" : ""}`}
+        onClick={onOpenHistory}
+        title={historyBusy ? t("titleBar.historyBusyTitle") : t("titleBar.historyTitle")}
+        aria-label={t("titleBar.historyAria")}
+        aria-busy={historyBusy}
+      >
+        <Icon name={historyBusy ? "i-sync" : "i-clock"} size={17} className={historyBusy ? "is-spinning" : undefined} />
       </button>
       <button type="button" className="btn btn-icon no-drag" onClick={onOpenSettings} title={t("titleBar.settingsTitle")} aria-label={t("titleBar.settingsAria")}>
         <Icon name="i-gear" size={17} />

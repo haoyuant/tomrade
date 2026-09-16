@@ -13,10 +13,13 @@ import type {} from "@tomrade/storage";
 import type {} from "@tomrade/agent";
 import type {} from "@tomrade/contributions";
 import type {} from "@tomrade/tools";
+import type { UndoProvider } from "@tomrade/oplog";
+import { writeContext } from "@tomrade/write";
+import type { UndoRecord } from "@tomrade/domain";
 import type {} from "./channels.js";
 import { createGitBackend } from "./git-backend.js";
 import { normalizeRel } from "./git-store.js";
-import { MIGRATIONS, RemoteStore, TABLES, type RemoteRow } from "./store.js";
+import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 import { registerTools } from "./tools.js";
 import {
   FilesUnavailableError,
@@ -97,8 +100,11 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
  */
 export class Files extends Service {
   static provide = "files";
-  static inject = ["db", "hub", "storage", "items"];
+  static inject = ["db", "hub", "storage", "items", "oplog"];
   static Config = FilesConfig;
+
+  /** How file records name themselves in the timeline: `files:<seq>`. */
+  static readonly PROVIDER = "files";
 
   private readonly home: Context;
   private readonly registry = new Map<string, FilesBackend>();
@@ -106,6 +112,7 @@ export class Files extends Service {
   private readonly opening = new Map<string, Promise<FileStore>>();
   private readonly lastState = new Map<string, FilesSyncState>();
   private remotes!: RemoteStore;
+  private ops!: OpsStore;
 
   constructor(
     ctx: Context,
@@ -118,6 +125,8 @@ export class Files extends Service {
   [Service.init]() {
     this.ctx.db.migrate("files", MIGRATIONS, { tables: TABLES });
     this.remotes = new RemoteStore(this.ctx.db);
+    this.ops = new OpsStore(this.ctx.db);
+    this.ctx.oplog.provide(this.provider);
     this.register(
       createGitBackend({
         id: LOCAL_BACKEND,
@@ -425,11 +434,129 @@ export class Files extends Service {
 
   // ── writes ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Run one operation and remember it as the versions before and after, so ⌘Z
+   * can put its paths back. A store without `head`/`restore` is not undoable,
+   * and an op that changed nothing leaves no record. Any record is a write:
+   * the redo stack, here and in the backlog, is void.
+   */
+  private async recordOp<T>(
+    projectId: string,
+    store: FileStore,
+    op: { kind: FileOpKind; path: string; target?: string | null; paths: string[] },
+    run: () => Promise<T>
+  ): Promise<{ result: T; ref: string | null }> {
+    if (!store.head || !store.restore) return { result: await run(), ref: null };
+    const base = await store.head();
+    const result = await run();
+    const head = await store.head();
+    if (!base || !head || base === head) return { result, ref: null };
+    const scope = writeContext.getStore();
+    const row = this.ops.record({
+      projectId,
+      at: Date.now(),
+      by: scope?.author ?? "human",
+      runId: scope?.runId ?? null,
+      kind: op.kind,
+      path: normalizeRel(op.path),
+      target: op.target ? normalizeRel(op.target) : null,
+      paths: [...new Set(op.paths.map(normalizeRel).filter(Boolean))],
+      base,
+      head
+    });
+    this.ctx.oplog.forgetUndone(projectId);
+    return { result, ref: `${Files.PROVIDER}:${row.seq}` };
+  }
+
+  private recordOf(op: FileOpRow): UndoRecord {
+    return {
+      ref: `${Files.PROVIDER}:${op.seq}`,
+      provider: Files.PROVIDER,
+      id: String(op.seq),
+      entity: "file",
+      entityId: op.path,
+      op: op.kind,
+      label: op.kind === "import" ? (op.paths.length <= 3 ? op.paths.join(", ") : `${op.paths.length} items`) : op.path,
+      target: op.target,
+      by: op.by,
+      at: op.at,
+      runId: op.runId,
+      device: this.ctx.hub.deviceId,
+      undoable: true,
+      undoneAt: op.undoneAt
+    };
+  }
+
+  private describeOp(op: FileOpRow): string {
+    switch (op.kind) {
+      case "write":
+        return `Saved ${op.path}`;
+      case "mkdir":
+        return `Created folder ${op.path}`;
+      case "move":
+        return `Moved ${op.path} to ${op.target}`;
+      case "copy":
+        return `Copied ${op.path} to ${op.target}`;
+      case "remove":
+        return `Deleted ${op.path}`;
+      case "import":
+        return op.paths.length === 1 ? `Imported ${op.paths[0]}` : `Imported ${op.paths.length} items`;
+    }
+  }
+
+  /** The files' place in ⌘Z and the history window: each op is put back or done again by restoring its paths. */
+  private readonly provider: UndoProvider = {
+    id: Files.PROVIDER,
+    timeline: (projectId, limit) => (this.dirFor(projectId) ? this.ops.list(projectId, limit).map((op) => this.recordOf(op)) : []),
+    undo: async (projectId, id) => {
+      const op = this.ops.get(projectId, Number(id));
+      if (!op) throw new Error("That file operation is no longer in the history");
+      if (op.undoneAt !== null) throw new Error("That file operation is already undone");
+      const store = await this.store(projectId);
+      if (!store.restore) throw new Error("This files backend cannot restore versions");
+      await store.restore(op.paths, op.head, op.base, `Undid: ${this.describeOp(op)}`);
+      this.ops.markUndone(projectId, op.seq, Date.now());
+      this.notify(projectId);
+      return this.undoneSummary(op);
+    },
+    redo: async (projectId, id) => {
+      const op = this.ops.get(projectId, Number(id));
+      if (!op) throw new Error("That file operation is no longer in the history");
+      if (op.undoneAt === null) throw new Error("That file operation is not undone");
+      const store = await this.store(projectId);
+      if (!store.restore) throw new Error("This files backend cannot restore versions");
+      await store.restore(op.paths, op.base, op.head, `Redid: ${this.describeOp(op)}`);
+      this.ops.markUndone(projectId, op.seq, null);
+      this.notify(projectId);
+      return `${this.describeOp(op)} again`;
+    },
+    forget: (projectId) => {
+      if (this.dirFor(projectId)) this.ops.forget(projectId);
+    }
+  };
+
+  private undoneSummary(op: FileOpRow): string {
+    switch (op.kind) {
+      case "write":
+        return `Reverted ${op.path}`;
+      case "mkdir":
+        return `Removed folder ${op.path}`;
+      case "move":
+        return `Moved ${op.target} back to ${op.path}`;
+      case "copy":
+        return `Removed the copy at ${op.target}`;
+      case "remove":
+        return `Restored ${op.path}`;
+      case "import":
+        return op.paths.length === 1 ? `Removed ${op.paths[0]}` : `Removed ${op.paths.length} imported items`;
+    }
+  }
+
   async write(projectId: string, p: string, body: Buffer | string, opts: WriteOptions = {}): Promise<FileContent> {
     const store = await this.store(projectId);
-    const saved = await store.write(p, Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8"), opts);
+    const { result } = await this.recordOp(projectId, store, { kind: "write", path: p, paths: [p] }, () => store.write(p, Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8"), opts));
     this.notify(projectId);
-    return saved;
+    return result;
   }
 
   /**
@@ -441,7 +568,7 @@ export class Files extends Service {
     const store = await this.store(projectId);
     const target = normalizeRel(dir);
     const names = new Set<string>();
-    const folders: string[] = [];
+    const folders: { src: string; rel: string }[] = [];
     const files: { src: string; rel: string }[] = [];
     for (const src of sources) {
       const name = path.basename(src);
@@ -450,39 +577,50 @@ export class Files extends Service {
       const stat = fs.statSync(src);
       if (stat.isDirectory()) {
         if (fs.existsSync(path.join(store.dir, ...rel.split("/")))) throw new Error(`${rel} already exists`);
-        folders.push(rel);
-        copyTree(src, path.join(store.dir, ...rel.split("/")));
+        folders.push({ src, rel });
         names.add(name);
       } else if (stat.isFile()) {
         files.push({ src, rel });
         names.add(name);
       }
     }
-    // Folders are saved before any file write stages them under the file's message.
-    if (folders.length) await store.settle(folders.length === 1 ? `Imported folder ${folders[0]}` : `Imported ${folders.length} folders`);
-    for (const file of files) await store.write(file.rel, fs.readFileSync(file.src), { message: `Imported ${file.rel}` });
+    await this.recordOp(projectId, store, { kind: "import", path: target, paths: [...folders, ...files].map((f) => f.rel) }, async () => {
+      for (const folder of folders) copyTree(folder.src, path.join(store.dir, ...folder.rel.split("/")));
+      // Folders are saved before any file write stages them under the file's message.
+      if (folders.length) await store.settle(folders.length === 1 ? `Imported folder ${folders[0]!.rel}` : `Imported ${folders.length} folders`);
+      for (const file of files) await store.write(file.rel, fs.readFileSync(file.src), { message: `Imported ${file.rel}` });
+    });
     this.notify(projectId);
     return (await store.list(target)).filter((e) => names.has(e.name));
   }
 
-  async mkdir(projectId: string, p: string): Promise<void> {
-    await (await this.store(projectId)).mkdir(p);
+  /** Each write returns the history record it made — `files:<seq>`, for `oplog.revert` — or null when nothing changed. */
+  async mkdir(projectId: string, p: string): Promise<string | null> {
+    const store = await this.store(projectId);
+    const { ref } = await this.recordOp(projectId, store, { kind: "mkdir", path: p, paths: [p] }, () => store.mkdir(p));
     this.notify(projectId);
+    return ref;
   }
 
-  async move(projectId: string, from: string, to: string): Promise<void> {
-    await (await this.store(projectId)).move(from, to);
+  async move(projectId: string, from: string, to: string): Promise<string | null> {
+    const store = await this.store(projectId);
+    const { ref } = await this.recordOp(projectId, store, { kind: "move", path: from, target: to, paths: [from, to] }, () => store.move(from, to));
     this.notify(projectId);
+    return ref;
   }
 
-  async copy(projectId: string, from: string, to: string): Promise<void> {
-    await (await this.store(projectId)).copy(from, to);
+  async copy(projectId: string, from: string, to: string): Promise<string | null> {
+    const store = await this.store(projectId);
+    const { ref } = await this.recordOp(projectId, store, { kind: "copy", path: from, target: to, paths: [to] }, () => store.copy(from, to));
     this.notify(projectId);
+    return ref;
   }
 
-  async remove(projectId: string, p: string): Promise<void> {
-    await (await this.store(projectId)).remove(p);
+  async remove(projectId: string, p: string): Promise<string | null> {
+    const store = await this.store(projectId);
+    const { ref } = await this.recordOp(projectId, store, { kind: "remove", path: p, paths: [p] }, () => store.remove(p));
     this.notify(projectId);
+    return ref;
   }
 
   // ── sync and conflicts ──────────────────────────────────────────────────────

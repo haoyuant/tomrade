@@ -95,8 +95,8 @@ const run = async () => {
       return true;
     })()`);
   const menuItemNames = () => $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map((n) => n.textContent).join('|')`);
-  // Toasts append to the end of the stack, so the newest one is the last ".toast" in the DOM.
-  const lastToast = () => $(`[...document.querySelectorAll('.toast')].at(-1)?.textContent ?? null`);
+  // Toasts append to the end of the stack, so the newest one is the last ".toast" in the DOM; its body leaves out any Undo button.
+  const lastToast = () => $(`[...document.querySelectorAll('.toast .toast-body')].at(-1)?.textContent ?? null`);
 
   // ── the tree in the sidebar ──────────────────────────────────────────
   await wait(() => has(".proj"), "projects home");
@@ -323,6 +323,52 @@ const run = async () => {
   check("the artifact opens the version it pinned, not the head", (await $(`document.querySelector('.md-view')?.textContent ?? ''`)).includes("Second draft"));
   check("and offers the current file", (await has('[data-testid="pinned-banner"] .btn')) === true);
   await shot("files-07-pinned");
+
+  // ── undo, redo and the history window ────────────────────────────────
+  await $(`location.hash = '#/p/${project.id}/f/'; true`);
+  await wait(() => has('[data-testid="files-sharing"]'), "root before the undo checks");
+  const copyId = (await ctx.files.read(project.id, "docs (copy)/brief.md"))?.fileId;
+  await rightClick('[data-testid="file-table"] .file-row[data-file="docs (copy)"]');
+  await wait(() => has(".menu.is-floating"), "context menu for the undo checks");
+  await clickMenuItem("Delete…");
+  await wait(() => has(".files-delete"), "delete confirm for the undo checks");
+  await click(".files-delete .btn-danger");
+  await wait(async () => !(await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')), "folder deleted");
+  await wait(async () => (await lastToast())?.startsWith("Deleted docs (copy)"), "delete toast with undo");
+  const toastUndo = () => $(`[...document.querySelectorAll('.toast')].at(-1)?.querySelector('.btn-ghost')?.textContent ?? ''`);
+  check("deleting a file or folder toasts with an Undo", (await toastUndo()).includes("Undo"));
+  await $(`[...document.querySelectorAll('.toast')].at(-1).querySelector('.btn-ghost').click(); true`);
+  await wait(() => has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]'), "folder restored by the toast");
+  await wait(async () => (await lastToast()) === "Restored docs (copy)", "restore toast");
+  check("the toast's Undo brings the folder back, its files keeping their ids", (await ctx.files.read(project.id, "docs (copy)/brief.md"))?.fileId === copyId && (await lastToast()) === "Restored docs (copy)");
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,shiftKey:true,bubbles:true}));true`);
+  await wait(async () => !(await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')), "redo deleted the folder again");
+  await wait(async () => (await lastToast()) === "Deleted docs (copy) again", "redo toast");
+  check("⇧⌘Z redoes the delete", !(await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')) && (await lastToast()) === "Deleted docs (copy) again");
+
+  check("the title bar offers History right beside Settings", (await $(`(() => { const h = document.querySelector('.titlebar .title-history'); return !!h && h.nextElementSibling?.querySelector('use')?.getAttribute('href') === '#i-gear'; })()`)) === true);
+  await click(".titlebar .title-history");
+  await wait(() => has('[data-testid="history-list"] .hist-row'), "history window");
+  const histRows = () => $(`[...document.querySelectorAll('[data-testid="history-list"] .hist-row')].map((r) => r.dataset.ref.split(':')[0] + '|' + r.dataset.undone + '|' + r.querySelector('.hist-text').textContent)`);
+  let rows = await histRows();
+  check("the history lists file operations and backlog writes together, newest first, nothing undone", rows[0] === "files|false|deleted docs (copy)" && rows.some((r) => r.startsWith("oplog|")) && rows.every((r) => !r.includes("|true|")));
+  check("the newest record reads as the latest and offers no rollback", (await $(`document.querySelector('[data-testid="history-list"] .hist-row[data-latest="true"] .hist-state')?.textContent`)) === "Latest" && !(await has('[data-testid="history-list"] .hist-row[data-latest="true"] .hist-act')));
+  await shot("files-08-history");
+  await $(`document.querySelectorAll('[data-testid="history-list"] .hist-row')[1].querySelector('.hist-act').click(); true`);
+  await wait(() => has('[data-testid="history-list"] .hist-row[data-undone="true"]'), "rolled back one step");
+  rows = await histRows();
+  check("rolling back to the record below undoes the delete and greys it", rows[0] === "files|true|deleted docs (copy)" && (await ctx.files.read(project.id, "docs (copy)/brief.md"))?.fileId === copyId);
+  await $(`document.querySelector('[data-testid="history-list"] .hist-row[data-undone="true"] .hist-act').click(); true`);
+  await wait(async () => !(await has('[data-testid="history-list"] .hist-row[data-undone="true"]')), "redone from the window");
+  check("redoing to the greyed record deletes it again", (await ctx.files.read(project.id, "docs (copy)/brief.md")) === null && (await $(`document.querySelectorAll('[data-testid="history-list"] .hist-row')[0]?.dataset.latest`)) === "true");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await wait(async () => !(await has('[data-testid="history-list"]')), "history closed");
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,bubbles:true}));true`);
+  await wait(() => has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]'), "⌘Z restored the folder");
+  await wait(async () => (await lastToast()) === "Restored docs (copy)", "⌘Z toast");
+  check("⌘Z undoes a file operation when it is the newest thing done", (await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')) && (await lastToast()) === "Restored docs (copy)");
 
   other.close();
   return results;

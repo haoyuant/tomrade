@@ -5,8 +5,9 @@ export { Files, FilesConfig, LOCAL_BACKEND } from "./service.js";
 export { GitFileStore, IDS_DIR, IDS_FILE, normalizeRel, parseLedger, type GitRemoteTarget, type GitStoreOptions, type Ledger } from "./git-store.js";
 export { createGitBackend, type GitBackendOptions } from "./git-backend.js";
 export { isTextMime, looksBinary, mimeOf } from "./mime.js";
-export { MIGRATIONS, RemoteStore, TABLES, type RemoteRow } from "./store.js";
+export { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 export {
+  FileMovedOnError,
   FilesUnavailableError,
   InvalidPathError,
   UnknownBackendError,

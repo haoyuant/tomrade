@@ -20,11 +20,12 @@ declare module "@tomrade/ipc" {
     "files.write": (projectId: string, path: string, body: string, opts?: { encoding?: "utf8" | "base64"; message?: string }) => FileContent;
     /** Copy files or folders from this machine into a folder of the store. */
     "files.import": (projectId: string, dir: string, sources: string[]) => FileEntry[];
-    "files.mkdir": (projectId: string, path: string) => void;
-    "files.move": (projectId: string, from: string, to: string) => void;
+    /** Each returns the history record it made (`files:<id>`, for `oplog.revert`), or null when nothing changed. */
+    "files.mkdir": (projectId: string, path: string) => string | null;
+    "files.move": (projectId: string, from: string, to: string) => string | null;
     /** Copy a file or folder to a new path, as a version of its own with a fresh fileId. */
-    "files.copy": (projectId: string, from: string, to: string) => void;
-    "files.remove": (projectId: string, path: string) => void;
+    "files.copy": (projectId: string, from: string, to: string) => string | null;
+    "files.remove": (projectId: string, path: string) => string | null;
     "files.sync": (projectId: string) => FilesStatus;
     "files.conflicts": (projectId: string) => FileConflict[];
     "files.resolve": (projectId: string, path: string, choice: ConflictChoice) => FilesStatus;
