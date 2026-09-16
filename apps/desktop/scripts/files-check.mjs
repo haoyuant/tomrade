@@ -122,7 +122,7 @@ const run = async () => {
   check("a folder is imported whole, with its subfolders", (await has('.side-row.is-file[data-file="incoming/top.md"]')) && (await ctx.files.read(project.id, "incoming/sub/deep.txt"))?.body === "deep");
   await press(".side-files-add");
   await wait(() => $(`document.querySelectorAll('.menu.is-floating .menu-row').length === 2`), "add menu");
-  check("the add button offers files and folders", (await $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map(n => n.textContent).join('|')`)) === "Add files…|Add folder…");
+  check("the add button offers a new folder, files and folders", (await $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map(n => n.textContent).join('|')`)) === "New folder|Add files…|Add folder…");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(300);
 

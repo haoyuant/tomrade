@@ -272,10 +272,11 @@ export function FilesTree() {
           align="end"
           trigger={
             <button type="button" className="btn btn-icon side-files-add" data-tip={t("files.addMenu")} data-tip-side="bottom" aria-label={t("files.addMenu")} disabled={unavailable || importFiles.isPending}>
-              <Icon name="i-upload" size={13} />
+              <Icon name="i-plus" size={13} />
             </button>
           }
         >
+          <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setCreating(true)} />
           <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
           <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
         </Menu>
@@ -284,9 +285,6 @@ export function FilesTree() {
             <Icon name="i-paste" size={13} />
           </button>
         )}
-        <button type="button" className="btn btn-icon side-files-newfolder" data-tip={t("files.newFolder")} data-tip-side="bottom" aria-label={t("files.newFolder")} disabled={unavailable} onClick={() => setCreating(true)}>
-          <Icon name="i-plus" size={13} />
-        </button>
       </div>
       <div
         className={`side-list side-files-list${dragOver === "" ? " is-drag-over" : ""}`}

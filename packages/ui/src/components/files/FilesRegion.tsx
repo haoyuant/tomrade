@@ -687,22 +687,18 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         <div className="files-dir-actions" style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
           {isDir && (
             <Menu
-              label={t("files.addFiles")}
+              label={t("files.addMenu")}
               align="end"
               trigger={
-                <button type="button" className="btn btn-icon" data-tip={t("files.addFiles")} data-tip-side="bottom" aria-label={t("files.addFiles")}>
-                  <Icon name="i-upload" size={14} />
+                <button type="button" className="btn btn-icon files-add" data-tip={t("files.addMenu")} data-tip-side="bottom" aria-label={t("files.addMenu")}>
+                  <Icon name="i-plus" size={14} />
                 </button>
               }
             >
+              <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setNewFolder(true)} />
               <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
               <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
             </Menu>
-          )}
-          {isDir && (
-            <button type="button" className="btn btn-icon" data-tip={t("files.newFolder")} data-tip-side="bottom" aria-label={t("files.newFolder")} onClick={() => setNewFolder(true)}>
-              <Icon name="i-plus" size={14} />
-            </button>
           )}
           {isDir && clipboard.entry && (
             <button type="button" className="btn btn-icon files-paste" data-tip={t("files.paste")} data-tip-side="bottom" aria-label={t("files.pasteAria")} onClick={() => runPaste(dir)}>
