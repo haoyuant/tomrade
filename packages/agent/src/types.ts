@@ -56,6 +56,8 @@ export interface ThreadSummary {
   /** Which product surface owns the thread. Code sessions use Agent's worktree machinery without becoming Assistant conversations. */
   surface: ThreadSurface;
   permissionMode?: string | null;
+  /** Engine option overrides chosen for this thread (model, effort…); merged over the engine's settings. */
+  options?: Record<string, unknown> | null;
   archived: boolean;
   createdAt: number;
   updatedAt: number;

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomrade/code-link";
-import type { StartMode } from "@tomrade/code-link";
+import type { StartOptions } from "@tomrade/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 
@@ -50,11 +50,11 @@ export const useProposals = (projectId: string, itemId?: string) =>
 
 export const useUnlinkedBranches = (projectId: string) => useQuery({ queryKey: codeLinkKeys.unlinked(projectId), queryFn: () => invoke("codeLink.unlinked", projectId) });
 
-/** Start or continue a ticket with a local coding agent. The result carries either a gate to clear or the thread to show. */
+/** Start or continue a ticket with a local agent, coding or General. The result carries either a gate to clear or the thread to show. */
 export function useStartTicket(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { itemId: string; mode: StartMode; engine?: string }) => invoke("codeLink.start", projectId, args.itemId, { mode: args.mode, engine: args.engine }),
+    mutationFn: ({ itemId, ...opts }: StartOptions & { itemId: string }) => invoke("codeLink.start", projectId, itemId, opts),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
       void qc.invalidateQueries({ queryKey: ["agent", "threads", projectId] });

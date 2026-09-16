@@ -58,11 +58,11 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
     id: "fake-code",
     title: "Fake coding agent",
     author: "ai:fake-code",
-    capabilities: ["backlog", "code"],
+    capabilities: ["backlog", "code", "general"],
     available: async () => ({ ok: true }),
     async turn(input, io) {
       turns.push(input);
-      if (input.cwd) {
+      if (input.cwd && input.purpose === "code") {
         fs.writeFileSync(path.join(input.cwd, `work-${turns.length}.ts`), "export {};\n");
         git(["add", "-A"], input.cwd);
         git(["commit", "-q", "-m", `${input.ticket?.key ?? "TOM-0"}: work`], input.cwd);
@@ -572,5 +572,72 @@ describe("starting a ticket", () => {
     codeLink.sessions.sweep(project.id);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: again.sessionId, state: "ended" });
     expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
+  });
+
+  it("carries the knobs picked at Start onto the ticket's thread, where the turn and the panel read them", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, project, agent } = world;
+    await world.ctx.repos.setCheckout(world.repo!.remote, world.checkout!);
+    const item = world.ticket("Pick a model");
+    const result = await codeLink.start(project.id, item.id, { mode: "run", options: { model: "opus", effort: "high" } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.runId).toBeTruthy();
+    await untilRunsSettle(agent);
+    expect(agent.store.thread(project.id, result.threadId)?.options).toEqual({ model: "opus", effort: "high" });
+    expect(world.turns.at(-1)?.options).toEqual({ model: "opus", effort: "high" });
+    // Continue without knobs keeps them; an explicit empty set clears them and the engine's settings apply again.
+    const again = await codeLink.start(project.id, item.id, { mode: "run" });
+    await untilRunsSettle(agent);
+    expect(again.ok && again.continued).toBe(true);
+    expect(world.turns.at(-1)?.options).toEqual({ model: "opus", effort: "high" });
+    await codeLink.start(project.id, item.id, { mode: "run", options: {} });
+    await untilRunsSettle(agent);
+    expect(agent.store.thread(project.id, result.threadId)?.options).toBeNull();
+    expect(world.turns.at(-1)?.options).toBeUndefined();
+  });
+});
+
+describe("starting a General ticket", () => {
+  it("runs it here without a repository, then in a terminal over MCP, following it as a session either way", async () => {
+    const world = await machine(null);
+    const { ctx, codeLink, project, board, agent } = world;
+    const item = world.items.create({ projectId: project.id, boardId: board.id, title: "Prepare the workshop", body: "A checklist", workType: "general", status: "todo", by: "human" });
+
+    const run = await codeLink.start(project.id, item.id, { mode: "run", playbook: "task.assist", options: { model: "opus" } });
+    expect(run).toMatchObject({ ok: true, continued: false, mode: "run", branch: "", worktree: null, launched: true });
+    if (!run.ok) return;
+    expect(run.runId).toBeTruthy();
+    await untilRunsSettle(agent);
+    expect(world.turns.at(-1)).toMatchObject({ purpose: "general", options: { model: "opus" }, execution: { playbook: { id: "task.assist" } } });
+    expect(world.turns.at(-1)?.cwd).toBe(run.cwd);
+    expect(ctx.items.get(project.id, item.id)).toMatchObject({ status: "doing", playbookId: "task.assist" });
+    expect(codeLink.sessionsOf(project.id, item.id)).toMatchObject([{ id: run.sessionId, mode: "headless", repoId: "", branch: "", threadId: run.threadId, agent: "fake-code", state: "idle" }]);
+    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")?.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("run by Tomrade") });
+
+    // The terminal path binds the same thread and delivery; the CLI gets the whole brief in its prompt file.
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    expect(await codeLink.start(project.id, item.id, { mode: "terminal" })).toMatchObject({ ok: false, gate: "mcp" });
+    const { Mcp } = await import("@tomrade/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    // A method whose capability no plugin provides is refused before anything is created.
+    await expect(codeLink.start(project.id, item.id, { mode: "terminal", playbook: "document.write" })).rejects.toThrow("files.write");
+    const dispose = agent.capability("files.write");
+    const opened = await codeLink.start(project.id, item.id, { mode: "terminal", playbook: "document.write" });
+    expect(opened).toMatchObject({ ok: true, continued: true, mode: "terminal", threadId: run.threadId, launched: false });
+    if (!opened.ok) return;
+    // The headless run taught the thread the CLI's session id; the terminal continues it.
+    expect(opened.command).toMatch(/^claude --mcp-config ".*mcp\.json" --settings ".*settings\.json" --resume fake-session-1 "\$\(cat ".*prompt\.md"\)"$/);
+    const prompt = fs.readFileSync(path.join(codeLink.sessionDir(opened.sessionId), "prompt.md"), "utf8");
+    expect(prompt).toContain(`Continue ${item.key}: Prepare the workshop`);
+    expect(prompt).toContain("You are delivering");
+    expect(prompt).toContain("Selected playbook document.write");
+    expect(prompt).toContain(`Working directory: ${opened.cwd}`);
+    expect(agent.store.thread(project.id, run.threadId)).toMatchObject({ surface: "code", execution: { playbook: { id: "document.write" } } });
+    expect(ctx.items.get(project.id, item.id)?.playbookId).toBe("document.write");
+    const sessions = codeLink.sessionsOf(project.id, item.id);
+    expect(sessions.find((s) => s.id === opened.sessionId)).toMatchObject({ mode: "terminal", state: "running", threadId: run.threadId });
+    dispose();
   });
 });

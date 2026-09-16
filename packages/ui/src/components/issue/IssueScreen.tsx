@@ -8,7 +8,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
-import { StartTicketMenu } from "~/components/issue/StartTicketMenu";
+import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
@@ -111,7 +111,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
         >
           <Icon name="i-trash" size={15} />
         </button>
-        <StartTicketMenu projectId={projectId} item={item} onOpenIssue={openIssue} onOpenRepositories={() => setSettingsOpen(true)} className="no-drag" />
+        <StartTicket projectId={projectId} item={item} onOpenIssue={openIssue} onOpenRepositories={() => setSettingsOpen(true)} className="no-drag" />
         {next && !startable && (
           <button type="button" className="btn btn-primary no-drag" onClick={advance}>
             {t("issueScreen.moveToButton", { status: STATUS[next].label })}

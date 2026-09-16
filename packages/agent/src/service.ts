@@ -16,6 +16,7 @@ import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
+import { generalOpener, generalPrompt } from "./prompt.js";
 import {
   isSuspended,
   type AgentEvent,
@@ -25,6 +26,7 @@ import {
   type Engine,
   type EngineView,
   type FocusRef,
+  type GeneralExecution,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
@@ -76,6 +78,31 @@ export interface ThreadDetail {
   activePermissionMode?: string;
 }
 
+/** How a General ticket is to be run: which engine, which method, and the engine knobs for this delivery. */
+export interface GeneralStartOptions {
+  engine?: string;
+  playbook?: string;
+  /** Engine option overrides for the thread (model, effort…); replaces earlier overrides when given. */
+  options?: Record<string, unknown>;
+  /** The UI that owns the thread; a terminal session is a `code` surface thread the panel does not list. */
+  surface?: "assistant" | "code";
+  /** The engine is a CLI the user runs themselves: no engine plugin is checked and none is required. */
+  external?: boolean;
+}
+
+/** A General delivery ready to run: the thread is bound to the delivery and the playbook, nothing has been sent yet. */
+export interface GeneralPreparation {
+  threadId: string;
+  continued: boolean;
+  engine: string;
+  cwd: string;
+  playbook: GeneralExecution["playbook"];
+  /** The first user message of a headless run; the engine's system prompt carries the rest. */
+  opener: string;
+  /** The whole brief for a CLI agent the user runs in a terminal, which gets no system prompt from Tomrade. */
+  prompt: string;
+}
+
 /** What a new thread may be about beyond its workstream: the ticket it implements and the branch it works on. */
 export interface NewThreadOptions {
   itemId?: string | null;
@@ -105,7 +132,7 @@ declare module "cordis" {
 declare module "@tomrade/ipc" {
   interface Channels {
     "agent.recommendPlaybook": (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }) => PlaybookRecommendation;
-    "agent.startGeneral": (projectId: string, itemId: string, opts?: { engine?: string; playbook?: string }) => { threadId: string; runId: string; continued: boolean };
+    "agent.startGeneral": (projectId: string, itemId: string, opts?: GeneralStartOptions) => { threadId: string; runId: string; continued: boolean };
     "agent.takeoverGeneral": (projectId: string, itemId: string) => { stopped: number };
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
@@ -126,6 +153,8 @@ declare module "@tomrade/ipc" {
     "agent.engines": () => EngineView[];
     "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
     "agent.setEngine": (projectId: string, threadId: string, engineId: string) => ThreadSummary;
+    /** Engine option overrides for one thread; null clears them so the engine's settings apply again. */
+    "agent.setOptions": (projectId: string, threadId: string, options: Record<string, unknown> | null) => ThreadSummary;
     "agent.playbooks": (projectId?: string) => PlaybookIndexEntry[];
   }
   interface Broadcasts {
@@ -267,6 +296,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
       ctx.ipc.handle("agent.engines", () => ctx.agent.engineViews());
       ctx.ipc.handle("agent.setEngine", (projectId, threadId, engineId) => ctx.agent.setEngine(projectId, threadId, engineId));
+      ctx.ipc.handle("agent.setOptions", (projectId, threadId, options) => ctx.agent.setOptions(projectId, threadId, options));
       ctx.ipc.handle("agent.playbooks", async (projectId) => {
         if (projectId) await ctx.agent.refreshProjectPlaybooks(projectId);
         return ctx.agent.playbookIndex(projectId);
@@ -415,7 +445,7 @@ export class Agent extends Service {
       const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
       const preferred = workType === "coding"
         ? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "code.implement" : null)
-        : (text.match(/design|visual|ui|ux|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
+        : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
       const playbookId = preferred && candidateIds.has(preferred) ? preferred : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
       const selected = candidates.find((entry) => entry.id === playbookId);
       return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: "Selected from the task type and available playbook metadata.", source: "fallback", requires: selected?.requires ?? [] };
@@ -522,47 +552,83 @@ export class Agent extends Service {
     };
   }
 
-  async startGeneral(projectId: string, itemId: string, opts: { engine?: string; playbook?: string } = {}): Promise<{ threadId: string; runId: string; continued: boolean }> {
+  private async withGeneralLock<T>(projectId: string, itemId: string, work: () => Promise<T>): Promise<T> {
     const key = `${projectId}:${itemId}`;
     if (this.generalStarts.has(key)) throw new Error("This ticket is already starting");
     this.generalStarts.add(key);
     try {
-      const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null; update(projectId: string, id: string, patch: Patch, by: "human"): Item } | undefined;
-      const item = items?.get(projectId, itemId);
-      if (!item || item.kind !== "ticket" || item.workType !== "general") throw new Error("Choose a General ticket");
-      if (item.humanLocked) throw new Error("Unlock the ticket before starting an agent");
-      if (item.status === "done" || item.status === "cancelled") throw new Error("Reopen the ticket before starting another delivery");
-      if (item.blockedBy.some(id => { const blocker = items!.get(projectId, id); return blocker && blocker.status !== "done" && blocker.status !== "cancelled"; })) throw new Error("Complete this ticket's dependencies first");
-      const deliveries = new DeliveryStore(this.ctx.db);
-      const active = deliveries.active(projectId, itemId);
-      let thread = active ? this.store.threadsForItem(projectId, itemId).find(t => !t.archived && t.execution?.deliveryId === active.id) : undefined;
-      if (thread && this.activeByThread.has(thread.id)) throw new Error("An agent is already working on this ticket");
+      return await work();
+    } finally {
+      this.generalStarts.delete(key);
+    }
+  }
+
+  /** Everything Start does for a General ticket short of sending the first message — what a terminal session needs before the user's own CLI takes over. */
+  prepareGeneral(projectId: string, itemId: string, opts: GeneralStartOptions = {}): Promise<GeneralPreparation> {
+    return this.withGeneralLock(projectId, itemId, async () => (await this.prepare(projectId, itemId, opts)).preparation);
+  }
+
+  async startGeneral(projectId: string, itemId: string, opts: GeneralStartOptions = {}): Promise<{ threadId: string; runId: string; continued: boolean }> {
+    return this.withGeneralLock(projectId, itemId, async () => {
+      const { preparation, item } = await this.prepare(projectId, itemId, { ...opts, external: false });
+      const { runId } = this.send(projectId, preparation.threadId, { kind: "text", text: preparation.opener });
+      return { threadId: preparation.threadId, runId, continued: preparation.continued };
+    });
+  }
+
+  private async prepare(projectId: string, itemId: string, opts: GeneralStartOptions): Promise<{ preparation: GeneralPreparation; item: Item }> {
+    const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null; update(projectId: string, id: string, patch: Patch, by: "human"): Item } | undefined;
+    const item = items?.get(projectId, itemId);
+    if (!item || item.kind !== "ticket" || item.workType !== "general") throw new Error("Choose a General ticket");
+    if (item.humanLocked) throw new Error("Unlock the ticket before starting an agent");
+    if (item.status === "done" || item.status === "cancelled") throw new Error("Reopen the ticket before starting another delivery");
+    if (item.blockedBy.some(id => { const blocker = items!.get(projectId, id); return blocker && blocker.status !== "done" && blocker.status !== "cancelled"; })) throw new Error("Complete this ticket's dependencies first");
+    const deliveries = new DeliveryStore(this.ctx.db);
+    const active = deliveries.active(projectId, itemId);
+    let thread = active ? this.store.threadsForItem(projectId, itemId).find(t => !t.archived && t.execution?.deliveryId === active.id) : undefined;
+    if (thread && this.activeByThread.has(thread.id)) throw new Error("An agent is already working on this ticket");
+    // A CLI the user runs themselves needs no engine plugin here; the thread keeps whatever engine it has.
+    let engineId = opts.engine && this.engines.has(opts.engine) ? opts.engine : thread?.engine ?? this.settingsOf().defaultEngine;
+    if (!opts.external) {
       const engine = opts.engine ? this.engines.get(opts.engine) : (thread ? this.engines.get(thread.engine) : [...this.engines.values()].find(e => e.capabilities?.includes("general")));
       if (!engine?.capabilities?.includes("general")) throw new Error("No compatible General execution engine is available");
       const available = await engine.available();
       if (!available.ok) throw new Error(available.reason ?? "The selected engine is unavailable");
-      await this.refreshProjectPlaybooks(projectId);
-      let selected = thread?.execution?.playbook;
-      if (!selected || (opts.playbook && opts.playbook !== selected.id)) {
-        const id = opts.playbook ?? item.playbookId ?? "task.assist";
-        const source = resolvePlaybook({ ...this.playbooks.get(id), project: this.projectPlaybooks.get(projectId)?.get(id) }, this.settingsOf().playbookChoices[id]);
-        if (!source) throw new Error(`Unknown playbook ${id}`);
-        selected = { id, source: source.entry.source, digest: createHash("sha256").update(JSON.stringify(source.winner)).digest("hex"), body: source.winner.body, requires: source.winner.requires ?? [] };
-      }
-      const missing = missingPlaybookCapabilities(selected, [...this.executionCapabilities.keys()]);
-      if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
-      // Re-read after asynchronous preflight; a human may have closed or changed it.
-      const latest = items!.get(projectId, itemId);
-      if (!latest || latest.version !== item.version) throw new Error("The ticket changed while preparing execution; start again");
-      const delivery = deliveries.ensure(projectId, itemId);
-      const continued = !!thread;
-      if (!thread) thread = this.newThread(projectId, engine.id, item.boardId, { itemId, title: `${item.key} ${item.title}` });
-      else if (thread.engine !== engine.id) this.setEngine(projectId, thread.id, engine.id);
-      this.store.setExecution(projectId, thread.id, { deliveryId: delivery.id, playbook: selected });
-      if (item.status === "backlog" || item.status === "todo") items!.update(projectId, itemId, { status: "doing" }, "human");
-      const { runId } = this.send(projectId, thread.id, { kind: "text", text: `${continued ? "Continue" : "Work on"} ${item.key}: ${item.title}. Follow the selected delivery playbook and submit results for review.` });
-      return { threadId: thread.id, runId, continued };
-    } finally { this.generalStarts.delete(key); }
+      engineId = engine.id;
+    }
+    await this.refreshProjectPlaybooks(projectId);
+    let selected = thread?.execution?.playbook;
+    if (!selected || (opts.playbook && opts.playbook !== selected.id)) {
+      const id = opts.playbook ?? item.playbookId ?? "task.assist";
+      const source = resolvePlaybook({ ...this.playbooks.get(id), project: this.projectPlaybooks.get(projectId)?.get(id) }, this.settingsOf().playbookChoices[id]);
+      if (!source) throw new Error(`Unknown playbook ${id}`);
+      selected = { id, source: source.entry.source, digest: createHash("sha256").update(JSON.stringify(source.winner)).digest("hex"), body: source.winner.body, requires: source.winner.requires ?? [] };
+    }
+    const missing = missingPlaybookCapabilities(selected, [...this.executionCapabilities.keys()]);
+    if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
+    // Re-read after asynchronous preflight; a human may have closed or changed it.
+    const latest = items!.get(projectId, itemId);
+    if (!latest || latest.version !== item.version) throw new Error("The ticket changed while preparing execution; start again");
+    const delivery = deliveries.ensure(projectId, itemId);
+    const continued = !!thread;
+    const surface = opts.surface ?? "assistant";
+    if (!thread) thread = this.newThread(projectId, engineId, item.boardId, { itemId, title: `${item.key} ${item.title}`, surface });
+    else {
+      if (!opts.external && thread.engine !== engineId) this.setEngine(projectId, thread.id, engineId);
+      if (thread.surface !== surface) this.store.touchThread(projectId, thread.id, { surface });
+    }
+    if (opts.options !== undefined) this.store.touchThread(projectId, thread.id, { options: opts.options });
+    this.store.setExecution(projectId, thread.id, { deliveryId: delivery.id, playbook: selected });
+    const patch: Patch = {};
+    if (item.status === "backlog" || item.status === "todo") patch.status = "doing";
+    // The ticket's Method field says what actually runs.
+    if (item.playbookId !== selected.id) patch.playbookId = selected.id;
+    if (Object.keys(patch).length) items!.update(projectId, itemId, patch, "human");
+    const where = await this.workdir(projectId, thread.id);
+    if (!where.cwd) throw new Error(where.problem ?? "no working folder for this delivery");
+    const ticket = { key: item.key, title: item.title, body: item.body };
+    const prompt = generalPrompt({ ticket, cwd: where.cwd, playbook: selected, continued });
+    return { preparation: { threadId: thread.id, continued, engine: engineId, cwd: where.cwd, playbook: selected, opener: generalOpener(ticket, continued), prompt }, item };
   }
 
   /** Runs in flight right now, across projects — what a quit would interrupt. */
@@ -636,10 +702,29 @@ export class Agent extends Service {
       this.broadcast(threadId, { type: "pending", pending: null });
       this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: "Cancelled the waiting question — the engine changed." }, null);
     }
-    this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null });
+    // Overrides belong to the engine they were picked for.
+    this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null, options: null });
     const thread = this.store.thread(projectId, threadId)!;
     this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: `Engine switched to ${this.engines.get(engineId)?.title ?? engineId}.` }, null);
     return thread;
+  }
+
+  /** Engine knobs for this thread alone — what the Start dialog and the panel's quick picks write. Null puts the engine's settings back in charge. */
+  setOptions(projectId: string, threadId: string, options: Record<string, unknown> | null): ThreadSummary {
+    const thread = this.store.thread(projectId, threadId);
+    if (!thread) throw new Error(`unknown thread ${threadId}`);
+    const engine = this.engines.get(thread.engine);
+    if (engine?.options && options) engine.options.parse(this.optionsOf({ ...thread, options }, engine.id));
+    this.store.touchThread(projectId, threadId, { options });
+    return this.store.thread(projectId, threadId)!;
+  }
+
+  /** The engine's settings with the thread's overrides on top — what a turn runs with. */
+  optionsOf(thread: Pick<ThreadSummary, "options">, engineId: string): unknown {
+    const base = this.settingsOf().engines[engineId];
+    const overrides = thread.options;
+    if (!overrides || !Object.keys(overrides).length) return base;
+    return { ...(base && typeof base === "object" ? (base as Record<string, unknown>) : {}), ...overrides };
   }
 
   // ── the turn ───────────────────────────────────────────────────────────────
@@ -698,7 +783,7 @@ export class Agent extends Service {
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
     if (input.kind === "text" && (input.attachments?.length ?? 0) > 8) throw new Error("Attach at most eight files per message");
     const attachments = input.kind === "text" ? input.attachments?.map(ref => this.media().reference(projectId, threadId, ref.id)) : undefined;
-    const accepted = engine.media?.(this.settingsOf().engines[engine.id])?.input ?? [];
+    const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
     for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
     if (input.kind === "text") input = { ...input, attachments };
     this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
@@ -899,8 +984,7 @@ export class Agent extends Service {
         const missing = missingPlaybookCapabilities(rc.thread.execution.playbook, [...this.executionCapabilities.keys()]);
         if (missing.length) throw new Error(`Missing capabilities: ${missing.join(", ")}`);
       }
-      const settings = this.settingsOf();
-      const engineOptions = settings.engines[rc.engine.id];
+      const engineOptions = this.optionsOf(rc.thread, rc.engine.id);
       const pending = this.store.pending(rc.projectId, rc.threadId);
       // A thread on a workstream runs where that workstream's code is; a missing checkout stops the run before the engine starts.
       const where = await this.workdir(rc.projectId, rc.threadId);

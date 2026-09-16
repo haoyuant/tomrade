@@ -55,8 +55,9 @@ export function registerTools(ctx: Context, host: ToolHost): void {
     }
 
     const board = ctx.boards.get(projectId, item.boardId);
-    const repoId = s?.repoId ?? board?.repoId ?? null;
-    const branch = s?.branch ?? thread?.branch ?? null;
+    // A General session stands on no repository: its ids are empty, and the workstream's repository (if any) applies.
+    const repoId = s?.repoId || board?.repoId || null;
+    const branch = s?.branch || thread?.branch || null;
     return { item, repoId, branch, session: s };
   };
 

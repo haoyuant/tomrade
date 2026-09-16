@@ -41,6 +41,42 @@ it("honors the ticket method and serializes human takeover against restart", asy
   }
 });
 
+it("prepares a delivery for a terminal agent, and puts the knobs picked at Start on the thread", async () => {
+  const { ctx, items, project, board } = await fresh({ plugins: [Tools, [Settings, { path: path.join(os.tmpdir(), `general-settings-${crypto.randomUUID()}.json`) }], Agent] });
+  await settle();
+  const turns: TurnInput[] = [];
+  ctx.agent.engine({ id: "knobs-test", title: "Knobs test", author: "ai:test", capabilities: ["general"], available: async () => ({ ok: true }), async turn(input) {
+    turns.push(input);
+    return { stop: "end" };
+  } });
+  try {
+    ctx.settings.set({ ...ctx.settings.get(), agent: { defaultEngine: "knobs-test", confirmWritesOver: 0, engines: { "knobs-test": { model: "sonnet", effort: "low" } }, playbookChoices: {} } });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Prepare the offline workshop", workType: "general", by: "human" });
+    const prepared = await ctx.agent.prepareGeneral(project.id, item.id, { options: { effort: "high" }, surface: "code" });
+    expect(prepared).toMatchObject({ continued: false, engine: "knobs-test", playbook: { id: "task.assist", source: "plugin" } });
+    expect(prepared.opener).toBe(`Work on ${item.key}: Prepare the offline workshop. Follow the selected delivery playbook and submit results for review.`);
+    expect(prepared.prompt).toContain(prepared.opener);
+    expect(prepared.prompt).toContain("You are delivering");
+    expect(prepared.prompt).toContain(`Working directory: ${prepared.cwd}`);
+    expect(prepared.prompt).toContain("Selected playbook task.assist");
+    expect(ctx.agent.store.thread(project.id, prepared.threadId)).toMatchObject({ surface: "code", options: { effort: "high" }, execution: { playbook: { id: "task.assist" } } });
+    // Nothing ran: the terminal agent is the user's own process.
+    expect(ctx.agent.store.messages(project.id, prepared.threadId)).toEqual([]);
+    expect(items.get(project.id, item.id)).toMatchObject({ status: "doing", playbookId: "task.assist" });
+
+    // Starting headless on the same delivery continues the thread; the turn sees settings with the overrides on top.
+    const started = await ctx.agent.startGeneral(project.id, item.id, { options: { model: "opus" } });
+    expect(started).toMatchObject({ continued: true, threadId: prepared.threadId });
+    await expect.poll(() => ctx.agent.store.run(project.id, started.runId)?.status).not.toBe("running");
+    expect(turns[0]?.options).toEqual({ model: "opus", effort: "low" });
+    expect(ctx.agent.store.thread(project.id, prepared.threadId)?.surface).toBe("assistant");
+    expect(ctx.agent.setOptions(project.id, prepared.threadId, null).options).toBeNull();
+    expect(ctx.agent.optionsOf(ctx.agent.store.thread(project.id, prepared.threadId)!, "knobs-test")).toEqual({ model: "sonnet", effort: "low" });
+  } finally {
+    await ctx.fiber.dispose();
+  }
+});
+
 it("executes and resumes general work without Git, preserves its method, and does not equate engine success with acceptance", async () => {
   const world = await fresh({ plugins: [Tools, [Settings, { path: path.join(os.tmpdir(), `general-settings-${crypto.randomUUID()}.json`) }], Agent] });
   await settle();

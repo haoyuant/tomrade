@@ -105,11 +105,13 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   { version: 7, up: "ALTER TABLE plugin_agent_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0" },
   { version: 8, up: "ALTER TABLE plugin_agent_threads ADD COLUMN execution_json TEXT" },
   { version: 9, up: "ALTER TABLE plugin_agent_runs ADD COLUMN execution_json TEXT" },
-  { version: 10, up: "ALTER TABLE plugin_agent_runs ADD COLUMN playbooks_json TEXT NOT NULL DEFAULT '[]'" }
+  { version: 10, up: "ALTER TABLE plugin_agent_runs ADD COLUMN playbooks_json TEXT NOT NULL DEFAULT '[]'" },
+  { version: 11, up: "ALTER TABLE plugin_agent_threads ADD COLUMN options_json TEXT" }
 ];
 
 interface ThreadRow {
   execution_json: string | null;
+  options_json: string | null;
   id: string;
   project_id: string;
   board_id: string | null;
@@ -175,6 +177,7 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   engine: r.engine,
   surface: r.surface === "code" ? "code" : "assistant",
   permissionMode: r.permission_mode,
+  options: r.options_json ? JSON.parse(r.options_json) : null,
   archived: r.archived === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at
@@ -271,7 +274,7 @@ export class AgentStore {
     return this.thread(projectId, id)!;
   }
 
-  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null; itemId?: string | null; branch?: string | null; surface?: ThreadSurface; permissionMode?: string | null } = {}): void {
+  touchThread(projectId: string, id: string, fields: { title?: string; engine?: string; boardId?: string | null; itemId?: string | null; branch?: string | null; surface?: ThreadSurface; permissionMode?: string | null; options?: Record<string, unknown> | null } = {}): void {
     const db = this.db(projectId);
     if (fields.title !== undefined) db.prepare("UPDATE plugin_agent_threads SET title = ? WHERE id = ?").run(fields.title, id);
     if (fields.engine !== undefined) db.prepare("UPDATE plugin_agent_threads SET engine = ? WHERE id = ?").run(fields.engine, id);
@@ -280,6 +283,7 @@ export class AgentStore {
     if (fields.branch !== undefined) db.prepare("UPDATE plugin_agent_threads SET branch = ? WHERE id = ?").run(fields.branch, id);
     if (fields.permissionMode !== undefined) db.prepare("UPDATE plugin_agent_threads SET permission_mode = ? WHERE id = ?").run(fields.permissionMode, id);
     if (fields.surface !== undefined) db.prepare("UPDATE plugin_agent_threads SET surface = ? WHERE id = ?").run(fields.surface, id);
+    if (fields.options !== undefined) db.prepare("UPDATE plugin_agent_threads SET options_json = ? WHERE id = ?").run(fields.options && Object.keys(fields.options).length ? JSON.stringify(fields.options) : null, id);
     db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
   }
 
