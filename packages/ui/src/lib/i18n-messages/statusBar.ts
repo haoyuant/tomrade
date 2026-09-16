@@ -10,7 +10,10 @@ export const statusBar = {
     ribbon: "{{author}} {{verb}} {{key}} · {{time}}",
     mcpLabel: "MCP",
     offline: "offline",
-    undoTitle: "Undo — ⌘Z"
+    undoTitle: "Undo — ⌘Z",
+    redoTitle: "Redo — ⇧⌘Z",
+    historyTitle: "History — what was done, and where to roll back to",
+    history: "History"
   },
   zh: {
     verbCreated: "创建了",
@@ -23,6 +26,9 @@ export const statusBar = {
     ribbon: "{{author}} {{verb}} {{key}} · {{time}}",
     mcpLabel: "MCP",
     offline: "离线",
-    undoTitle: "撤销 — ⌘Z"
+    undoTitle: "撤销 — ⌘Z",
+    redoTitle: "重做 — ⇧⌘Z",
+    historyTitle: "操作历史 — 查看做过什么，并回滚到任一记录",
+    history: "历史"
   }
 };

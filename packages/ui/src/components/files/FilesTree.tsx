@@ -7,6 +7,7 @@ import { InlineNameRow } from "~/components/workspace/InlineNameRow";
 import { useWorkspace } from "~/components/workspace/context";
 import { FILES_DRAG_MIME, parentOf, useFilesClipboard, useFilesStatus, useFilesTree, useImportFiles, useMakeFolder, usePasteFiles, useRemoveFile } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
+import { useRevert } from "~/lib/queries";
 import { pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
@@ -61,6 +62,7 @@ export function FilesTree() {
   const mkdir = useMakeFolder(project.id);
   const importFiles = useImportFiles(project.id);
   const remove = useRemoveFile(project.id);
+  const revert = useRevert(project.id);
   const clipboard = useFilesClipboard(project.id);
   const pasteFiles = usePasteFiles(project.id);
   const { open, toggle, show } = useExpanded(project.id, filePath);
@@ -163,10 +165,17 @@ export function FilesTree() {
       .catch((error) => toast({ body: error.message }));
   };
 
+  // The record the delete made is what its Undo takes back — not whatever happens to be newest by then.
   const deleteEntry = (entry: FileEntry) => {
     if (!window.confirm(t("files.deleteConfirm", { name: entry.name }))) return;
     remove.mutate(entry.path, {
-      onSuccess: () => toast({ body: t("files.deletedToast", { name: entry.name }) }),
+      onSuccess: (ref) =>
+        toast({
+          body: t("files.deletedToast", { name: entry.name }),
+          onUndo: ref
+            ? () => revert.mutate(ref, { onSuccess: () => toast({ body: t("files.restoredToast", { name: entry.name }) }), onError: (error) => toast({ body: error.message }) })
+            : undefined
+        }),
       onError: (error) => toast({ body: error.message })
     });
   };

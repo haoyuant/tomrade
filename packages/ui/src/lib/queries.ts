@@ -34,6 +34,8 @@ export const keys = {
   history: (projectId: string, itemId: string) => ["history", projectId, itemId] as const,
   /** Per project: with one file per project there is no cross-project "recent". */
   oplog: (projectId: string) => ["oplog", projectId] as const,
+  /** The history window's list: every provider's records, undone ones included. */
+  timeline: (projectId: string) => ["timeline", projectId] as const,
   settings: ["settings"] as const,
   settingsSections: ["settings", "sections"] as const,
   mcp: (projectId?: string) => ["mcp", projectId ?? ""] as const,
@@ -62,6 +64,7 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
   void qc.invalidateQueries({ queryKey: keys.items(projectId) });
   void qc.invalidateQueries({ queryKey: keys.labels(projectId) });
   void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+  void qc.invalidateQueries({ queryKey: keys.timeline(projectId) });
   void qc.invalidateQueries({ queryKey: ["history", projectId] });
   void qc.invalidateQueries({ queryKey: keys.contributions });
 }
@@ -180,15 +183,52 @@ export function usePurgeItem(projectId: string) {
   });
 }
 
+/** An undo, redo or rollback can have touched anything: every board, view, rank and file, as well as the items. */
+function afterTimelineMove(qc: QueryClient, projectId: string): void {
+  invalidateWorkspace(qc, projectId);
+  void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
+  void qc.invalidateQueries({ queryKey: keys.views(projectId) });
+  void qc.invalidateQueries({ queryKey: ["ranks"] });
+  void qc.invalidateQueries({ queryKey: ["files", projectId] });
+}
+
+/** ⌘Z. With an entity id, that entity's latest backlog write; without, the newest record anywhere — files included. */
 export function useUndo(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (entityId?: string) => invoke("oplog.undo", projectId, entityId),
-    onSuccess: () => {
-      invalidateWorkspace(qc, projectId);
-      void qc.invalidateQueries({ queryKey: keys.boards(projectId) });
-      void qc.invalidateQueries({ queryKey: keys.views(projectId) });
-    }
+    onSettled: () => afterTimelineMove(qc, projectId)
+  });
+}
+
+/** ⇧⌘Z: the record undone most recently. */
+export function useRedo(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("oplog.redo", projectId),
+    onSettled: () => afterTimelineMove(qc, projectId)
+  });
+}
+
+/** The project's history, newest first, undone records included. Fetched when the window opens and after every move. */
+export const useTimeline = (projectId: string, enabled: boolean, limit = 200) =>
+  useQuery({ queryKey: keys.timeline(projectId), queryFn: () => invoke("oplog.timeline", projectId, limit), enabled });
+
+/** Move the history's cursor: undo everything newer than a live record, or redo up to an undone one. */
+export function useRollback(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: string) => invoke("oplog.rollback", projectId, ref),
+    onSettled: () => afterTimelineMove(qc, projectId)
+  });
+}
+
+/** Take back one named record — what a toast's Undo does for a file operation. */
+export function useRevert(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ref: string) => invoke("oplog.revert", projectId, ref),
+    onSettled: () => afterTimelineMove(qc, projectId)
   });
 }
 

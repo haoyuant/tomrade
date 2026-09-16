@@ -33,6 +33,7 @@ import {
   type FilesClipboardEntry
 } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useRevert } from "~/lib/queries";
 import { pickFiles, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
@@ -470,6 +471,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const info = useFilesInfo(projectId);
   const sync = useSyncFiles(projectId);
   const remove = useRemoveFile(projectId);
+  const revert = useRevert(projectId);
   const move = useMoveFile(projectId);
   const copy = useCopyFile(projectId);
   const mkdir = useMakeFolder(projectId);
@@ -565,13 +567,25 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
     if (!deleteTargets) return;
     setDeletingBusy(true);
     try {
-      for (const target of deleteTargets) await remove.mutateAsync(target);
+      const refs: string[] = [];
+      for (const target of deleteTargets) {
+        const ref = await remove.mutateAsync(target);
+        if (ref) refs.push(ref);
+      }
       const n = deleteTargets.length;
       const name = n === 1 ? nameOf(deleteTargets[0]!) : "";
       const wasOpen = deleteTargets.includes(path);
       setDeleteTargets(null);
       if (wasOpen) ws.openFile(parentOf(path));
-      toast({ body: n === 1 ? t("files.deletedToast", { name }) : t("files.deletedManyToast", { n }) });
+      // Undo takes back exactly these records, newest first, whatever else has happened since.
+      const undoAll = async () => {
+        for (const ref of [...refs].reverse()) await revert.mutateAsync(ref);
+        toast({ body: n === 1 ? t("files.restoredToast", { name }) : t("files.restoredManyToast", { n }) });
+      };
+      toast({
+        body: n === 1 ? t("files.deletedToast", { name }) : t("files.deletedManyToast", { n }),
+        onUndo: refs.length ? () => void undoAll().catch((error: Error) => toast({ body: error.message })) : undefined
+      });
     } catch (error) {
       toast({ body: (error as Error).message });
     } finally {

@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
+import { HistoryDialog } from "~/components/dialogs/HistoryDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { ViewSettingsDialog } from "~/components/dialogs/ViewSettingsDialog";
@@ -13,7 +14,7 @@ import { useScreenBinding, useAgentDock, type ScreenBinding } from "~/components
 import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
-import { useCreateView, useUndo } from "~/lib/queries";
+import { useCreateView, useRedo, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { FilesRegion } from "~/components/files/FilesRegion";
 import { Board } from "./Board";
@@ -47,6 +48,7 @@ export function Workspace() {
   usePlaybookConflictNotice(ws.project.id);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
+  const redo = useRedo(ws.project.id);
   const createView = useCreateView(ws.project.id);
   const toast = useToast();
   const navigate = useNavigate();
@@ -62,6 +64,7 @@ export function Workspace() {
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [codeInbox, setCodeInbox] = useState(false);
+  const [history, setHistory] = useState(false);
   /** Which field the Fields sheet lands on; null for the list. */
   const [fieldsFocus, setFieldsFocus] = useState<string | null>(null);
   const openFields = useCallback((fieldId?: string) => {
@@ -107,9 +110,17 @@ export function Workspace() {
 
   const runUndo = useCallback(() => {
     undo.mutate(undefined, {
-      onSuccess: (result) => toast({ body: result ? result.summary : t("workspace.nothingToUndo") })
+      onSuccess: (result) => toast({ body: result ? result.summary : t("workspace.nothingToUndo") }),
+      onError: (error) => toast({ body: error.message })
     });
   }, [undo, toast, t]);
+
+  const runRedo = useCallback(() => {
+    redo.mutate(undefined, {
+      onSuccess: (result) => toast({ body: result ? result.summary : t("workspace.nothingToRedo") }),
+      onError: (error) => toast({ body: error.message })
+    });
+  }, [redo, toast, t]);
 
   // Opening the detail below the three-pane floor rails the assistant, so
   // every pane stays in normal flow and nothing ever overlaps.
@@ -119,7 +130,7 @@ export function Workspace() {
     if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [ws.selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || history || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -176,6 +187,10 @@ export function Workspace() {
         if (typing) return;
         e.preventDefault();
         runUndo();
+      } else if (meta && ((key === "z" && e.shiftKey) || key === "y")) {
+        if (typing) return;
+        e.preventDefault();
+        runRedo();
       } else if (e.key === "Escape" && !anyOverlay && !e.defaultPrevented) {
         // Radix and the inline composers consume Escape first; defaultPrevented
         // is how an inner layer says it already handled it
@@ -189,7 +204,7 @@ export function Workspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [anyOverlay, expanded, runUndo, ws]);
+  }, [anyOverlay, expanded, runUndo, runRedo, ws]);
 
   return (
     <div className="app">
@@ -229,7 +244,7 @@ export function Workspace() {
         )}
       </div>
 
-      <StatusBar projectId={ws.project.id} onUndo={runUndo} />
+      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} />
 
       <CommandPalette
         open={palette}
@@ -240,6 +255,8 @@ export function Workspace() {
           toggleAssistant: () => setAiOpen((v) => !v),
           toggleSidebar: () => setSideOpen((v) => !v),
           undo: runUndo,
+          redo: runRedo,
+          openHistory: () => setHistory(true),
           openSettings: () => setSettings(""),
           openPlugins: () => setSettings("plugins"),
           openViewSettings: () => setViewSettings(true),
@@ -259,6 +276,7 @@ export function Workspace() {
           ws.select(id);
         }}
       />
+      <HistoryDialog projectId={ws.project.id} open={history} onOpenChange={setHistory} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
       <ViewSettingsDialog open={viewSettings} onOpenChange={setViewSettings} />

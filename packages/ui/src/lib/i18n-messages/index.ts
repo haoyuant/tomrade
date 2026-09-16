@@ -31,6 +31,7 @@ import { toast } from "./toast";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
 import { graphView } from "./graphView";
+import { history } from "./history";
 import { hubSetup } from "./hubSetup";
 import { hubPane } from "./hubPane";
 import { repositories } from "./repositories";
@@ -77,7 +78,8 @@ export const en = {
   fields: fields.en,
   agentPanel: agentPanel.en,
   codeLink: codeLink.en,
-  files: files.en
+  files: files.en,
+  history: history.en
 };
 
 export const zh: typeof en = {
@@ -121,5 +123,6 @@ export const zh: typeof en = {
   fields: fields.zh,
   agentPanel: agentPanel.zh,
   codeLink: codeLink.zh,
-  files: files.zh
+  files: files.zh,
+  history: history.zh
 };

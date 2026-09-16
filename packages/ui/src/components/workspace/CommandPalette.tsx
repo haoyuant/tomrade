@@ -18,6 +18,8 @@ export interface PaletteActions {
   toggleAssistant: () => void;
   toggleSidebar: () => void;
   undo: () => void;
+  redo: () => void;
+  openHistory: () => void;
   openSettings: () => void;
   openPlugins: () => void;
   openViewSettings: () => void;
@@ -65,6 +67,8 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     { label: t("commandPalette.toggleAssistant"), kb: "⌘J", run: actions.toggleAssistant },
     { label: t("commandPalette.toggleSidebar"), kb: "⌘B", run: actions.toggleSidebar },
     { label: t("commandPalette.undoLastWrite"), kb: "⌘Z", run: actions.undo },
+    { label: t("commandPalette.redoLastUndo"), kb: "⇧⌘Z", run: actions.redo },
+    { label: t("commandPalette.history"), kb: undefined, run: actions.openHistory },
     ...LAYOUTS.map((l) => ({ label: t("commandPalette.layoutAction", { layout: LAYOUT_LABEL[l].label }), kb: undefined, run: () => ws.setLayout(l) })),
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },

@@ -98,6 +98,19 @@ export interface FileStore {
   remove(path: string, opts?: WriteOptions): Promise<void>;
   /** Save whatever changed outside the store — an editor, Finder — as a version. True when something was. */
   settle(message?: string): Promise<boolean>;
+  /**
+   * The current version, or null before the first save. With `restore`, what
+   * makes an operation undoable: the service notes the version before and
+   * after it, and puts the touched paths back later.
+   */
+  head?(): Promise<string | null>;
+  /**
+   * Put `paths` back as they were at version `to`, as a new version. Refused
+   * with `FileMovedOnError` when any of them differs from how version `from`
+   * left it — someone changed it since, and that change is not ours to lose.
+   * Returns the new version, or null when nothing needed to change.
+   */
+  restore?(paths: string[], from: string, to: string, message: string): Promise<string | null>;
   status(): Promise<FilesStatus>;
   /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. */
   sync(): Promise<FilesStatus>;
@@ -197,6 +210,14 @@ export class InvalidPathError extends Error {
   constructor(public readonly path: string) {
     super(`Not a file path inside the store: ${JSON.stringify(path)}`);
     this.name = "InvalidPathError";
+  }
+}
+
+/** A path has changed since the operation being undone or redone; the restore is refused, not forced. */
+export class FileMovedOnError extends Error {
+  constructor(public readonly path: string) {
+    super(`${path} has changed since — undo it by hand if you still want to`);
+    this.name = "FileMovedOnError";
   }
 }
 

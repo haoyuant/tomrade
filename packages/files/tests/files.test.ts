@@ -243,3 +243,102 @@ describe("importing", () => {
     }
   });
 });
+
+describe("files in the undo timeline", () => {
+  it("restores a deleted file with its id through ⌘Z, and deletes it again through ⇧⌘Z", async () => {
+    const { ctx, project } = await machine();
+    try {
+      const saved = await ctx.files.write(project.id, "docs/brief.md", "# Brief\n");
+      const ref = await ctx.files.remove(project.id, "docs/brief.md");
+      expect(ref).toMatch(/^files:\d+$/);
+      expect(await ctx.files.read(project.id, "docs/brief.md")).toBeNull();
+
+      const step = await ctx.oplog.undo(project.id);
+      expect(step?.record).toMatchObject({ ref, provider: "files", entity: "file", op: "remove", label: "docs/brief.md" });
+      expect(step?.summary).toBe("Restored docs/brief.md");
+      const back = await ctx.files.read(project.id, "docs/brief.md");
+      expect(back?.body).toBe("# Brief\n");
+      expect(back?.fileId).toBe(saved.fileId);
+      expect((await ctx.files.history(project.id, "docs/brief.md"))[0]?.message).toBe("Undid: Deleted docs/brief.md");
+
+      const redo = await ctx.oplog.redo(project.id);
+      expect(redo?.record.ref).toBe(ref);
+      expect(await ctx.files.read(project.id, "docs/brief.md")).toBeNull();
+      // Deleting nothing records nothing.
+      expect(await ctx.files.remove(project.id, "docs/brief.md")).toBeNull();
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("puts a moved file back where it was, id and all, and refuses once the path has moved on", async () => {
+    const { ctx, project } = await machine();
+    try {
+      const saved = await ctx.files.write(project.id, "a.md", "A");
+      await ctx.files.move(project.id, "a.md", "b.md");
+      expect((await ctx.oplog.undo(project.id))?.summary).toBe("Moved b.md back to a.md");
+      expect((await ctx.files.read(project.id, "a.md"))?.fileId).toBe(saved.fileId);
+      expect(await ctx.files.read(project.id, "b.md")).toBeNull();
+      expect((await ctx.oplog.redo(project.id))?.summary).toBe("Moved a.md to b.md again");
+      expect((await ctx.files.read(project.id, "b.md"))?.fileId).toBe(saved.fileId);
+
+      const moveRef = (await ctx.oplog.timeline(project.id)).find((r) => r.op === "move")!.ref;
+      await ctx.files.write(project.id, "b.md", "B, edited since");
+      await expect(ctx.oplog.revert(project.id, moveRef)).rejects.toThrow(/has changed since/);
+      expect((await ctx.files.read(project.id, "b.md"))?.body).toBe("B, edited since");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("undoes a folder and an import whole", async () => {
+    const { ctx, project } = await machine();
+    try {
+      await ctx.files.mkdir(project.id, "empty");
+      expect((await ctx.files.tree(project.id)).map((e) => e.path)).toEqual(["empty"]);
+      expect((await ctx.oplog.undo(project.id))?.summary).toBe("Removed folder empty");
+      expect(await ctx.files.tree(project.id)).toEqual([]);
+
+      const src = path.join(root, `undo-import-${n++}`);
+      fs.mkdirSync(path.join(src, "deep"), { recursive: true });
+      fs.writeFileSync(path.join(src, "deep", "x.txt"), "x");
+      const loose = path.join(root, `undo-loose-${n++}.txt`);
+      fs.writeFileSync(loose, "loose");
+      await ctx.files.importFiles(project.id, "in", [src, loose]);
+      const record = (await ctx.oplog.timeline(project.id))[0]!;
+      expect(record).toMatchObject({ op: "import", label: `in/${path.basename(src)}, in/${path.basename(loose)}` });
+      expect((await ctx.oplog.undo(project.id))?.summary).toBe("Removed 2 imported items");
+      expect((await ctx.files.tree(project.id)).map((e) => e.path)).toEqual([]);
+      await ctx.oplog.redo(project.id);
+      expect((await ctx.files.read(project.id, `in/${path.basename(src)}/deep/x.txt`))?.body).toBe("x");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("shares one timeline with the backlog: ⌘Z takes the newest of either, and a backlog write empties the files' redo stack", async () => {
+    const { ctx, items, project, board } = await machine();
+    try {
+      const a = items.create({ projectId: project.id, boardId: board.id, title: "A", by: "human" });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await ctx.files.write(project.id, "x.md", "x");
+      const timeline = await ctx.oplog.timeline(project.id);
+      expect(timeline.slice(0, 2).map((r) => r.provider)).toEqual(["files", "oplog"]);
+      expect(timeline[1]!.label).toBe(a.key);
+
+      expect((await ctx.oplog.undo(project.id))?.summary).toBe("Reverted x.md");
+      expect(await ctx.files.read(project.id, "x.md")).toBeNull();
+      expect((await ctx.oplog.undo(project.id))?.summary).toBe(`Removed ${a.key}`);
+      expect((await ctx.oplog.redo(project.id))?.summary).toBe(`Re-created ${a.key}`);
+      expect((await ctx.oplog.redo(project.id))?.summary).toBe("Saved x.md again");
+      expect((await ctx.files.read(project.id, "x.md"))?.body).toBe("x");
+
+      await ctx.oplog.undo(project.id);
+      items.create({ projectId: project.id, boardId: board.id, title: "B", by: "human" });
+      expect(await ctx.oplog.redo(project.id)).toBeNull();
+      expect((await ctx.oplog.timeline(project.id)).some((r) => r.undoneAt !== null)).toBe(false);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+});

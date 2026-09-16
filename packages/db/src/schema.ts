@@ -171,6 +171,25 @@ CREATE TABLE IF NOT EXISTS oplog (
   patch_json    TEXT
 );
 
+-- Rows ⌘Z took back, kept whole so ⇧⌘Z can put them back: the redo stack.
+-- Any new write empties it. seq is the row's original oplog seq.
+CREATE TABLE IF NOT EXISTS oplog_undone (
+  seq           INTEGER PRIMARY KEY,
+  entity        TEXT NOT NULL,
+  entity_id     TEXT NOT NULL,
+  op            TEXT NOT NULL,
+  base_version  INTEGER,
+  before_json   TEXT,
+  after_json    TEXT,
+  by            TEXT NOT NULL,
+  at            INTEGER NOT NULL,
+  run_id        TEXT,
+  device        TEXT NOT NULL DEFAULT '',
+  device_seq    INTEGER,
+  patch_json    TEXT,
+  undone_at     INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS plugin_migrations (
   namespace     TEXT PRIMARY KEY,
   version       INTEGER NOT NULL

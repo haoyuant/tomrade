@@ -107,6 +107,47 @@ export interface UndoRunResult {
   kept: { entity: OplogEntity; entityId: string; label: string; reason: string }[];
 }
 
+/**
+ * One record of the project's history as the timeline shows it: a backlog
+ * write, a file operation, or anything a plugin logs through its own undo
+ * provider. `ref` (`provider:id`) names it to `oplog.revert` and `oplog.rollback`.
+ */
+export interface UndoRecord {
+  ref: string;
+  provider: string;
+  id: string;
+  /** What kind of thing it touched: `item`, `board`, `view`, `file`, or a plugin's own. */
+  entity: string;
+  entityId: string;
+  /** What happened to it: an oplog op, or a file op (`write`, `mkdir`, `move`, `copy`, `remove`, `import`). */
+  op: string;
+  /** The entity's name for a sentence: an issue key, a view name, a file path. */
+  label: string;
+  /** A second name when the op has one — where a file moved or was copied to. */
+  target: string | null;
+  by: Author;
+  at: number;
+  runId: string | null;
+  /** The machine that made it; a record from another machine is history, never undoable here. */
+  device: string;
+  /** False for purges, merge notes and other machines' writes. */
+  undoable: boolean;
+  /** Set while the record sits in the redo stack; a new write anywhere clears that stack. */
+  undoneAt: number | null;
+}
+
+/** One step the timeline took: the record it acted on and a line for the toast. */
+export interface UndoStep {
+  record: UndoRecord;
+  summary: string;
+}
+
+/** Moving the timeline's cursor to a record: the steps taken, and why it stopped short when it did. */
+export interface RollbackResult {
+  steps: UndoStep[];
+  stopped: string | null;
+}
+
 export interface CreateItemInput {
   projectId?: string;
   boardId: string;

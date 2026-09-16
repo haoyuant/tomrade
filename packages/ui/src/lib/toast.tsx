@@ -67,7 +67,7 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
       onBlur={() => setHeld(false)}
     >
       <span className="ribbon-tick" />
-      <span style={{ flex: 1, lineHeight: "var(--leading-dense)" }}>{toast.body}</span>
+      <span className="toast-body" style={{ flex: 1, lineHeight: "var(--leading-dense)" }}>{toast.body}</span>
       {toast.onUndo && (
         <button
           type="button"
