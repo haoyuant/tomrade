@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
@@ -212,6 +212,31 @@ export function Sidebar({
 }) {
   const { t } = useI18n();
   const { boards } = useWorkspace();
+  const sidebar = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(() => {
+    const stored = localStorage.getItem(sidebarWidthKey);
+    const saved = stored === null ? NaN : Number(stored);
+    return Number.isFinite(saved) ? Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, saved)) : SIDEBAR_DEFAULT_W;
+  });
+
+  const startResize = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startW = sidebar.current?.offsetWidth ?? width;
+    document.body.style.userSelect = "none";
+    const onMove = (e: MouseEvent) => {
+      const next = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, startW + e.clientX - startX));
+      setWidth(next);
+      localStorage.setItem(sidebarWidthKey, String(next));
+    };
+    const onUp = () => {
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [width]);
 
   if (!open) {
     return (
@@ -219,13 +244,24 @@ export function Sidebar({
         <button type="button" className="btn btn-icon" title={t("sidebar.expandSidebar")} aria-label={t("sidebar.expandSidebar")} onClick={() => onToggle(true)}>
           <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
         </button>
-        <span className="rail-label">{t("sidebar.viewsRailLabel")}</span>
+        <span className="rail-label">{t("sidebar.projectRailLabel")}</span>
       </div>
     );
   }
 
   return (
-    <nav className="sidebar">
+    <nav ref={sidebar} className="sidebar" style={{ width: `${width}px` }}>
+      <div
+        className="sidebar-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("sidebar.resizeSidebar")}
+        aria-valuemin={SIDEBAR_MIN_W}
+        aria-valuemax={SIDEBAR_MAX_W}
+        aria-valuenow={Math.round(width)}
+        title={t("sidebar.resizeSidebar")}
+        onMouseDown={startResize}
+      />
       <div className="side-head">
         <Spacer />
         <button type="button" className="btn btn-icon" title={t("sidebar.collapseSidebar")} aria-label={t("sidebar.collapseSidebar")} onClick={() => onToggle(false)}>
@@ -272,3 +308,7 @@ export function Sidebar({
 }
 
 export const sidebarOpenKey = "tomrade.sidebar.open";
+const sidebarWidthKey = "tomrade.sidebar.width";
+const SIDEBAR_DEFAULT_W = 264;
+const SIDEBAR_MIN_W = 220;
+const SIDEBAR_MAX_W = 420;
