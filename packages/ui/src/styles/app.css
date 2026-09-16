@@ -361,13 +361,20 @@ strong { font-weight: var(--font-weight-medium); }
 
 /* ─── sidebar ────────────────────────────────────────────────────────── */
 .sidebar {
+  position: relative;
   width: var(--sidebar-w); flex-shrink: 0;
   display: flex; flex-direction: column;
   background: var(--bg);
   border-right: 1px solid var(--border);
   overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
   padding: 0 var(--space-3) var(--space-3);
 }
+.sidebar-resize {
+  position: absolute; top: 0; right: -3px; bottom: 0; width: 6px;
+  z-index: 2; cursor: col-resize;
+}
+.sidebar-resize:hover { background: var(--accent); opacity: 0.28; }
 /* the same 52px head row the board and the assistant have */
 .side-head { display: flex; align-items: center; gap: var(--space-2); height: 52px; flex-shrink: 0; padding: 0 var(--space-2); }
 .side-group + .side-group { margin-top: var(--space-6); }
@@ -1732,9 +1739,9 @@ button.kref { cursor: pointer; }
 .files-prompt .input { flex: 1; min-width: 0; }
 .dangerbar.files-delete { margin: var(--space-3) var(--space-4) 0; align-items: center; }
 .files-body { flex: 1; min-height: 0; display: flex; }
-.files-main { flex: 1; min-width: 0; overflow: auto; padding: var(--space-5) var(--space-6) var(--space-12); scrollbar-width: thin; }
+.files-main { flex: 1; min-width: 0; overflow: auto; padding: var(--space-5) var(--space-6) var(--space-12); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .files-main.is-drag-over { box-shadow: inset 0 0 0 2px var(--accent); background: var(--tag-bg-faint); border-radius: var(--radius-md); }
-.files-rail { width: 248px; flex-shrink: 0; overflow-y: auto; padding: var(--space-5) var(--space-4); border-left: 1px solid var(--border); scrollbar-width: thin; }
+.files-rail { width: 248px; flex-shrink: 0; overflow-y: auto; padding: var(--space-5) var(--space-4); border-left: 1px solid var(--border); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .files-rail .eyebrow { margin-bottom: var(--space-3); }
 .version-list { display: flex; flex-direction: column; gap: 1px; }
 .version-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-left: 2px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--fg-2); font-size: var(--text-sm); cursor: pointer; }
