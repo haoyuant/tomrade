@@ -20,6 +20,7 @@ export const filesKeys = {
   location: (projectId: string, fileId: string) => ["files", projectId, "locate", fileId] as const,
   history: (projectId: string, path: string) => ["files", projectId, "history", path] as const,
   conflicts: (projectId: string) => ["files", projectId, "conflicts"] as const,
+  folder: (projectId: string, itemId: string) => ["files", projectId, "folderFor", itemId] as const,
   backends: ["files", "backends"] as const,
   connection: (backendId: string) => ["files", "connection", backendId] as const
 };
@@ -206,6 +207,22 @@ export function useAttachFiles(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { itemId: string; paths: string[]; role: "input" | "output" }) => invoke("files.attachMany", projectId, args.itemId, { paths: args.paths, role: args.role }),
+    onSettled: () => {
+      invalidateFiles(qc, projectId);
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
+/** The top-level folder a ticket's new files land in: its workstream's name. */
+export const useTicketFolder = (projectId: string, itemId: string | null) =>
+  useQuery({ queryKey: filesKeys.folder(projectId, itemId ?? ""), queryFn: () => invoke("files.folderFor", projectId, itemId!), enabled: !!itemId, retry: false, staleTime: 10_000 });
+
+/** Files from this machine into the ticket's workstream folder, pinned at once. */
+export function useImportForTicket(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { itemId: string; sources: string[]; role: "input" | "output" }) => invoke("files.importFor", projectId, args.itemId, { sources: args.sources, role: args.role }),
     onSettled: () => {
       invalidateFiles(qc, projectId);
       invalidateWorkspace(qc, projectId);

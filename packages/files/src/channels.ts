@@ -44,6 +44,10 @@ declare module "@tomrade/ipc" {
     "files.attach": (projectId: string, itemId: string, input: { path: string; role: "input" | "output"; name?: string }) => Item;
     /** Pin several latest file versions to a ticket in one item write. */
     "files.attachMany": (projectId: string, itemId: string, input: { paths: string[]; role: "input" | "output" }) => Item;
+    /** The top-level folder a ticket's files land in: its workstream's name. */
+    "files.folderFor": (projectId: string, itemId: string) => string;
+    /** Copy files from this machine into the ticket's workstream folder and pin them. */
+    "files.importFor": (projectId: string, itemId: string, input: { sources: string[]; role: "input" | "output" }) => Item;
   }
   interface Broadcasts {
     /** This project's files or their sync state moved; refetch everything keyed by it. */

@@ -99,16 +99,18 @@ export function registerTools(ctx: Context, files: Files): void {
       name: "write_file",
       title: "Write a project file",
       description:
-        "Save text into the project's Files store as a new version, creating folders as needed. Returns the file's stable fileId and the immutable versionId of what was saved — pass both to add_delivery_resource to make it a ticket's material or output artifact. Paths are relative and no segment may start with a dot.",
+        "Save text into the project's Files store as a new version, creating folders as needed. Returns the file's stable fileId and the immutable versionId of what was saved — pass both to add_delivery_resource to make it a ticket's material or output artifact. Give itemId for a ticket's own files: the path is then placed in the ticket's workstream folder, where its artifacts belong. Paths are relative and no segment may start with a dot.",
       input: z.object({
         projectId: z.string().optional(),
-        path: z.string().describe("Where to save, e.g. docs/brief.md"),
+        itemId: z.string().optional().describe("The ticket the file is for; its workstream folder becomes the path's root"),
+        path: z.string().describe("Where to save, e.g. docs/brief.md — or brief.md inside the ticket's workstream folder when itemId is given"),
         content: z.string(),
         message: z.string().optional().describe("What changed, shown in the file's history")
       }),
       execute: async (args, inv) => {
         const projectId = requireProjectId("write_file", args.projectId, inv);
-        const saved = await files.write(projectId, args.path, args.content, args.message ? { message: args.message } : {});
+        const path = args.itemId ? files.pathFor(projectId, args.itemId, args.path) : args.path;
+        const saved = await files.write(projectId, path, args.content, args.message ? { message: args.message } : {});
         return { path: saved.path, fileId: saved.fileId, versionId: saved.versionId, size: saved.size };
       }
     })

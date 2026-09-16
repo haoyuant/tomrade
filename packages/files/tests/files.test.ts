@@ -112,6 +112,37 @@ describe("ctx.files", () => {
     }
   });
 
+  it("lands a ticket's files in a folder named after its workstream", async () => {
+    const { ctx, items, boards, project, board } = await machine();
+    try {
+      const web = boards.create({ projectId: project.id, name: " Web / App " });
+      const ticket = items.create({ projectId: project.id, boardId: web.id, title: "Write the brief", workType: "general", by: "human" });
+      expect(ctx.files.folderFor(project.id, ticket.id)).toBe("Web - App");
+      expect(ctx.files.pathFor(project.id, ticket.id, "docs/brief.md")).toBe("Web - App/docs/brief.md");
+      expect(() => ctx.files.pathFor(project.id, ticket.id, "")).toThrow(/Not a file path/);
+      expect(() => ctx.files.folderFor(project.id, "nope")).toThrow(/nope/);
+      expect(ctx.files.folderFor(project.id, items.create({ projectId: project.id, boardId: board.id, title: "Elsewhere", workType: "general", by: "human" }).id)).toBe(board.name);
+
+      const inv = { by: "ai:test" as const, projectId: project.id };
+      const written = (await ctx.tools.execute("write_file", { itemId: ticket.id, path: "brief.md", content: "# Brief" }, inv)) as { path: string };
+      expect(written.path).toBe("Web - App/brief.md");
+      const elsewhere = (await ctx.tools.execute("write_file", { path: "notes/loose.md", content: "loose" }, inv)) as { path: string };
+      expect(elsewhere.path).toBe("notes/loose.md");
+
+      const src = path.join(root, `import-${n++}`);
+      fs.mkdirSync(src, { recursive: true });
+      fs.writeFileSync(path.join(src, "spec.md"), "# Spec");
+      fs.writeFileSync(path.join(src, "mock.txt"), "mock");
+      const pinned = await ctx.files.importFor(project.id, ticket.id, { sources: [path.join(src, "spec.md"), path.join(src, "mock.txt")], role: "input" });
+      expect(pinned.evidence.resources.map((r) => [r.name, r.role]).sort()).toEqual([["mock.txt", "input"], ["spec.md", "input"]]);
+      expect((await ctx.files.read(project.id, "Web - App/spec.md"))?.body).toBe("# Spec");
+      expect((await ctx.files.tree(project.id)).filter((e) => e.kind === "dir").map((e) => e.path).sort()).toEqual(["Web - App", "notes"]);
+      await expect(ctx.files.importFor(project.id, ticket.id, { sources: [], role: "input" })).rejects.toThrow(/at least one/);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("gives the agent list, read and write, each write a version to hand to add_delivery_resource", async () => {
     const { ctx, items, project, board } = await machine();
     try {

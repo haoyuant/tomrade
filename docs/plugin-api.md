@@ -706,6 +706,16 @@ files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 undoable — `head` and `restore`). `@tomrade/files-github`
 registers `github`, sharing the `github` token section with `@tomrade/storage-github`.
 
+A ticket's files land in a top-level folder named after its workstream:
+`ctx.files.folderFor(projectId, itemId)` is that name (separators become `-`),
+`importFor(projectId, itemId, { sources, role })` copies files from this machine
+into it and pins them, and `write_file` with an `itemId` places its path under
+it. This is the Files side of "which workstream, which folder" in a monorepo:
+the code lives in the workstream's `repoPath` of its repository, the documents
+about it in `<workstream>/` of the project's Files. It is a default and a name,
+not a binding — renaming a workstream starts a new folder and moves nothing,
+and any explicit path is honoured as given.
+
 Sync never forces. A save is pushed a few seconds after it lands, outside edits
 are saved as versions when they settle, and every open project is fetched,
 merged and pushed on a sweep (`autoSyncMs`). A file changed on both sides is a
