@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { FileEntry } from "@tomrade/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
-import { Menu, MenuActionItem } from "~/components/ui/menu";
+import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
 import { InlineNameRow } from "~/components/workspace/InlineNameRow";
 import { useWorkspace } from "~/components/workspace/context";
-import { parentOf, useFilesStatus, useFilesTree, useImportFiles, useMakeFolder } from "~/lib/files";
+import { FILES_DRAG_MIME, parentOf, useFilesClipboard, useFilesStatus, useFilesTree, useImportFiles, useMakeFolder, usePasteFiles, useRemoveFile } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
@@ -60,11 +60,15 @@ export function FilesTree() {
   const status = useFilesStatus(project.id);
   const mkdir = useMakeFolder(project.id);
   const importFiles = useImportFiles(project.id);
+  const remove = useRemoveFile(project.id);
+  const clipboard = useFilesClipboard(project.id);
+  const pasteFiles = usePasteFiles(project.id);
   const { open, toggle, show } = useExpanded(project.id, filePath);
   const [creating, setCreating] = useState(false);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
   const entries = tree.data ?? [];
+  const existing = useMemo(() => new Set(entries.map((e) => e.path)), [entries]);
   const children = useMemo(() => {
     const map = new Map<string, FileEntry[]>();
     for (const entry of entries) {
@@ -110,7 +114,27 @@ export function FilesTree() {
     });
   };
 
+  const moveInto = (paths: string[], target: string) => {
+    pasteFiles({ projectId: project.id, mode: "cut", paths }, target, existing)
+      .then(({ count, name }) => {
+        // Nothing moved because it was already there — a no-op, not a move to announce.
+        if (!count) return;
+        show(target);
+        toast({ body: count === 1 ? t("files.movedOneToast", { name }) : t("files.movedManyToast", { n: count }) });
+      })
+      .catch((error) => toast({ body: error.message }));
+  };
+
   const dropFiles = (dir: string, dataTransfer: DataTransfer) => {
+    const internal = dataTransfer.getData(FILES_DRAG_MIME);
+    if (internal) {
+      try {
+        moveInto(JSON.parse(internal) as string[], dir);
+      } catch {
+        // not a path payload
+      }
+      return;
+    }
     const sources = [...dataTransfer.files].map((f) => (f as File & { path?: string }).path).filter((p): p is string => !!p);
     if (!sources.length) return;
     importFiles.mutate(
@@ -126,92 +150,129 @@ export function FilesTree() {
     );
   };
 
+  const runPaste = (target: string) => {
+    const clip = clipboard.entry;
+    if (!clip) return;
+    pasteFiles(clip, target, existing)
+      .then(({ count, name }) => {
+        if (!count) return;
+        if (clip.mode === "cut") clipboard.clear();
+        show(target);
+        toast({ body: count === 1 ? t("files.pastedOneToast", { name }) : t("files.pastedManyToast", { n: count }) });
+      })
+      .catch((error) => toast({ body: error.message }));
+  };
+
+  const deleteEntry = (entry: FileEntry) => {
+    if (!window.confirm(t("files.deleteConfirm", { name: entry.name }))) return;
+    remove.mutate(entry.path, {
+      onSuccess: () => toast({ body: t("files.deletedToast", { name: entry.name }) }),
+      onError: (error) => toast({ body: error.message })
+    });
+  };
+
   const rows = (parent: string, depth: number): ReactNode[] =>
     (children.get(parent) ?? []).flatMap((entry) => {
       const dir = entry.kind === "dir";
       const expanded = dir && open.has(entry.path);
       const current = filePath === entry.path;
       return [
-        <div
+        <ContextMenu
           key={entry.path}
-          className={`side-file-row-container${dir && dragOver === entry.path ? " is-drag-over" : ""}`}
-          data-file={entry.path}
-          onDragOver={dir ? (e) => { e.preventDefault(); setDragOver(entry.path); } : undefined}
-          onDragLeave={dir ? () => setDragOver((cur) => (cur === entry.path ? null : cur)) : undefined}
-          onDrop={
-            dir
-              ? (e) => {
-                  e.preventDefault();
-                  setDragOver(null);
-                  dropFiles(entry.path, e.dataTransfer);
-                }
-              : undefined
+          label={entry.name}
+          trigger={
+            <div
+              className={`side-file-row-container${dir && dragOver === entry.path ? " is-drag-over" : ""}`}
+              data-file={entry.path}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(FILES_DRAG_MIME, JSON.stringify([entry.path]));
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={dir ? (e) => { if (!e.dataTransfer.types.includes(FILES_DRAG_MIME) && !e.dataTransfer.types.includes("Files")) return; e.preventDefault(); e.stopPropagation(); setDragOver(entry.path); } : undefined}
+              onDragLeave={dir ? () => setDragOver((cur) => (cur === entry.path ? null : cur)) : undefined}
+              onDrop={
+                dir
+                  ? (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOver(null);
+                      dropFiles(entry.path, e.dataTransfer);
+                    }
+                  : undefined
+              }
+            >
+              <button
+                type="button"
+                className={`side-row is-file${dir ? " is-dir" : ""}`}
+                data-file={entry.path}
+                data-depth={depth}
+                style={{ ["--depth" as string]: depth }}
+                aria-current={current}
+                aria-expanded={dir ? expanded : undefined}
+                title={entry.path}
+                onClick={() => {
+                  if (dir) show(entry.path);
+                  if (!current) openFile(entry.path);
+                }}
+              >
+                {dir ? (
+                  <span
+                    className="ico chev"
+                    role="presentation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggle(entry.path);
+                    }}
+                  >
+                    <Icon name={expanded ? "i-chevdown" : "i-chev"} size={12} />
+                  </span>
+                ) : (
+                  <Icon className="ico" name="i-file" size={14} />
+                )}
+                <span className="side-name">{entry.name}</span>
+                {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
+              </button>
+              {dir && (
+                <div className="side-file-actions">
+                  <button
+                    type="button"
+                    className="btn btn-icon btn-icon-xs"
+                    data-tip={t("files.addFiles")}
+                    aria-label={t("files.addFiles")}
+                    disabled={unavailable}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await addFiles("files", entry.path);
+                      show(entry.path);
+                    }}
+                  >
+                    <Icon name="i-file" size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-icon btn-icon-xs"
+                    data-tip={t("files.addFolder")}
+                    aria-label={t("files.addFolder")}
+                    disabled={unavailable}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await addFiles("folders", entry.path);
+                      show(entry.path);
+                    }}
+                  >
+                    <Icon name="i-folder" size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
           }
         >
-          <button
-            type="button"
-            className={`side-row is-file${dir ? " is-dir" : ""}`}
-            data-file={entry.path}
-            data-depth={depth}
-            style={{ ["--depth" as string]: depth }}
-            aria-current={current}
-            aria-expanded={dir ? expanded : undefined}
-            title={entry.path}
-            onClick={() => {
-              if (dir) show(entry.path);
-              if (!current) openFile(entry.path);
-            }}
-          >
-            {dir ? (
-              <span
-                className="ico chev"
-                role="presentation"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggle(entry.path);
-                }}
-              >
-                <Icon name={expanded ? "i-chevdown" : "i-chev"} size={12} />
-              </span>
-            ) : (
-              <Icon className="ico" name="i-file" size={14} />
-            )}
-            <span className="side-name">{entry.name}</span>
-            {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
-          </button>
-          {dir && (
-            <div className="side-file-actions">
-              <button
-                type="button"
-                className="btn btn-icon btn-icon-xs"
-                data-tip={t("files.addFiles")}
-                aria-label={t("files.addFiles")}
-                disabled={unavailable}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  await addFiles("files", entry.path);
-                  show(entry.path);
-                }}
-              >
-                <Icon name="i-file" size={12} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-icon btn-icon-xs"
-                data-tip={t("files.addFolder")}
-                aria-label={t("files.addFolder")}
-                disabled={unavailable}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  await addFiles("folders", entry.path);
-                  show(entry.path);
-                }}
-              >
-                <Icon name="i-folder" size={12} />
-              </button>
-            </div>
-          )}
-        </div>,
+          <ContextMenuActionItem icon={<Icon name="i-cut" size={13} />} name={t("files.cut")} onSelect={() => clipboard.cut([entry.path])} />
+          <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => clipboard.copy([entry.path])} />
+          {dir && clipboard.entry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => runPaste(entry.path)} />}
+          <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => deleteEntry(entry)} />
+        </ContextMenu>,
         ...(expanded ? rows(entry.path, depth + 1) : [])
       ];
     });
@@ -236,6 +297,11 @@ export function FilesTree() {
           <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
           <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
         </Menu>
+        {!unavailable && clipboard.entry && (
+          <button type="button" className="btn btn-icon side-files-paste" data-tip={t("files.paste")} data-tip-side="bottom" aria-label={t("files.pasteAria")} onClick={() => runPaste(currentDir)}>
+            <Icon name="i-paste" size={13} />
+          </button>
+        )}
         <button type="button" className="btn btn-icon side-files-newfolder" data-tip={t("files.newFolder")} data-tip-side="bottom" aria-label={t("files.newFolder")} disabled={unavailable} onClick={() => setCreating(true)}>
           <Icon name="i-plus" size={13} />
         </button>

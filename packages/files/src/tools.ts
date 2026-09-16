@@ -43,6 +43,59 @@ export function registerTools(ctx: Context, files: Files): void {
 
   ctx.tools.register(
     defineTool({
+      name: "move_file",
+      title: "Move or rename a project file",
+      description: "Move a file or folder to a new path within the project's Files store, renaming it when the last segment changes. Fails if the destination already exists.",
+      input: z.object({
+        projectId: z.string().optional(),
+        from: z.string().describe("Current path, relative to the store root"),
+        to: z.string().describe("New path, relative to the store root")
+      }),
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("move_file", args.projectId, inv);
+        await files.move(projectId, args.from, args.to);
+        return { from: args.from, to: args.to };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "copy_file",
+      title: "Copy a project file",
+      description: "Copy a file or folder to a new path within the project's Files store, as a version of its own with a fresh fileId. Fails if the destination already exists.",
+      input: z.object({
+        projectId: z.string().optional(),
+        from: z.string().describe("Path to copy, relative to the store root"),
+        to: z.string().describe("Destination path, relative to the store root")
+      }),
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("copy_file", args.projectId, inv);
+        await files.copy(projectId, args.from, args.to);
+        return { from: args.from, to: args.to };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "delete_file",
+      title: "Delete a project file",
+      description: "Delete a file or folder from the project's Files store. Its versions stay in the history — deleting is not undone here, but nothing already saved is lost.",
+      input: z.object({
+        projectId: z.string().optional(),
+        path: z.string().describe("Path to delete, relative to the store root")
+      }),
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("delete_file", args.projectId, inv);
+        await files.remove(projectId, args.path);
+        return { path: args.path };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
       name: "write_file",
       title: "Write a project file",
       description:

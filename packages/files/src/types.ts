@@ -93,6 +93,8 @@ export interface FileStore {
   write(path: string, body: Buffer, opts?: WriteOptions): Promise<FileContent>;
   mkdir(path: string): Promise<void>;
   move(from: string, to: string, opts?: WriteOptions): Promise<void>;
+  /** Copy a file or folder to a new path, minted as a fresh id — never the source's. Refuses an existing destination. */
+  copy(from: string, to: string, opts?: WriteOptions): Promise<void>;
   remove(path: string, opts?: WriteOptions): Promise<void>;
   /** Save whatever changed outside the store — an editor, Finder — as a version. True when something was. */
   settle(message?: string): Promise<boolean>;

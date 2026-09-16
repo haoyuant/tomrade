@@ -134,6 +134,30 @@ describe("ctx.files", () => {
     }
   });
 
+  it("gives the agent move, copy and delete, each guarded the way the store guards them", async () => {
+    const { ctx, project } = await machine();
+    try {
+      const inv = { by: "ai:test" as const, projectId: project.id };
+      const written = (await ctx.tools.execute("write_file", { path: "draft.md", content: "hello" }, inv)) as { fileId: string };
+      const moved = (await ctx.tools.execute("move_file", { from: "draft.md", to: "docs/draft.md" }, inv)) as { from: string; to: string };
+      expect(moved).toEqual({ from: "draft.md", to: "docs/draft.md" });
+      expect((await ctx.files.read(project.id, "docs/draft.md"))?.fileId).toBe(written.fileId);
+
+      const copied = (await ctx.tools.execute("copy_file", { from: "docs/draft.md", to: "docs/draft (copy).md" }, inv)) as { from: string; to: string };
+      expect(copied).toEqual({ from: "docs/draft.md", to: "docs/draft (copy).md" });
+      const copy = await ctx.files.read(project.id, "docs/draft (copy).md");
+      expect(copy?.body).toBe("hello");
+      expect(copy?.fileId).not.toBe(written.fileId);
+      await expect(ctx.tools.execute("copy_file", { from: "docs/draft.md", to: "docs/draft (copy).md" }, inv)).rejects.toThrow(/already exists/);
+
+      await ctx.tools.execute("delete_file", { path: "docs/draft (copy).md" }, inv);
+      expect(await ctx.files.read(project.id, "docs/draft (copy).md")).toBeNull();
+      expect((await ctx.files.read(project.id, "docs/draft.md"))?.fileId).toBe(written.fileId);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("shares files through a registered backend: the row travels, another machine clones it, and both sync", async () => {
     const one = await machine();
     const two = await machine();
