@@ -27,6 +27,8 @@ declare global {
     tomrade: {
       invoke: Invoke;
       on: Subscribe;
+      /** The main process never sees the File — only the preload world can resolve its disk path. */
+      getPathForFile: (file: File) => string;
     };
   }
 }

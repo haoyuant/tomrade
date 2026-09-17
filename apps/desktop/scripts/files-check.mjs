@@ -94,6 +94,18 @@ const run = async () => {
       from.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
       return true;
     })()`);
+  // A File the OS never backed with a real path (as opposed to a Finder drag): webUtils.getPathForFile
+  // returns "" for it, which is the one shape of native drop this harness can fabricate without a real OS drag.
+  const dropExternal = (selector, name) =>
+    $(`(() => {
+      const to = document.querySelector(${JSON.stringify(selector)});
+      if (!to) return false;
+      const dt = new DataTransfer();
+      dt.items.add(new File(["hi"], ${JSON.stringify(name)}));
+      to.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      to.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      return true;
+    })()`);
   const menuItemNames = () => $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map((n) => n.textContent).join('|')`);
   // Toasts append to the end of the stack, so the newest one is the last ".toast" in the DOM; its body leaves out any Undo button.
   const lastToast = () => $(`[...document.querySelectorAll('.toast .toast-body')].at(-1)?.textContent ?? null`);
@@ -120,6 +132,9 @@ const run = async () => {
   await click('.side-row.is-file[data-file="incoming"] .chev');
   await wait(() => has('.side-row.is-file[data-file="incoming/sub"]'), "imported subfolder");
   check("a folder is imported whole, with its subfolders", (await has('.side-row.is-file[data-file="incoming/top.md"]')) && (await ctx.files.read(project.id, "incoming/sub/deep.txt"))?.body === "deep");
+  await dropExternal(".side-files-list", "external-unbacked.txt");
+  await sleep(300);
+  check("a native drop with no resolvable disk path is a quiet no-op, not a crash", (await has('.side-row.is-file[data-file="external-unbacked.txt"]')) === false);
   await press(".side-files-add");
   await wait(() => $(`document.querySelectorAll('.menu.is-floating .menu-row').length === 2`), "add menu");
   check("the add button offers a new folder, files and folders", (await $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map(n => n.textContent).join('|')`)) === "New folder|Add files…|Add folder…");
@@ -168,6 +183,9 @@ const run = async () => {
   await $(`location.hash = '#/p/${project.id}/f/'; true`);
   await wait(() => has('[data-testid="files-sharing"]'), "root");
   check("the root lists folders and says how the files are shared", (await count('[data-testid="file-table"] .file-row')) === 3 && (await text('[data-testid="files-sharing"] .tag')) === "This machine");
+  await dropExternal('[data-testid="files-sharing"]', "external-unbacked-2.txt");
+  await sleep(300);
+  check("the same drop onto the folder viewer is just as quiet", (await count('[data-testid="file-table"] .file-row')) === 3);
   await shot("files-03-root");
 
   // ── multiselect, cut, copy, paste and bulk delete ────────────────────

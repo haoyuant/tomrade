@@ -8,7 +8,7 @@ import { useWorkspace } from "~/components/workspace/context";
 import { FILES_DRAG_MIME, parentOf, useFilesClipboard, useFilesStatus, useFilesTree, useImportFiles, useMakeFolder, usePasteFiles, useRemoveFile } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
-import { pickFiles } from "~/lib/shell";
+import { pathForFile, pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
 import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
@@ -139,7 +139,7 @@ export function FilesTree() {
       }
       return;
     }
-    const sources = [...dataTransfer.files].map((f) => (f as File & { path?: string }).path).filter((p): p is string => !!p);
+    const sources = [...dataTransfer.files].map(pathForFile).filter((p): p is string => !!p);
     if (!sources.length) return;
     importFiles.mutate(
       { dir, sources },

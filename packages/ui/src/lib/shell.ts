@@ -30,3 +30,12 @@ export const pickFiles = (title?: string, buttonLabel?: string, kind: "files" | 
 export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(() => {});
 
 export const openExternal = (url: string): void => void invoke("shell.openExternal", url).catch(() => {});
+
+/** Null in a browser tab, or for a File the OS drag never backed with a real path. */
+export const pathForFile = (file: File): string | null => {
+  try {
+    return window.tomrade.getPathForFile(file) || null;
+  } catch {
+    return null;
+  }
+};
