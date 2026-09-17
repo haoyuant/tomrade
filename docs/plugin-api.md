@@ -588,6 +588,11 @@ declared** in `tables` — the registry refuses a namespace that does not say:
   table in the project's folder as `.tomrade/plugins/<ns>/<table>.jsonl`, so it
   travels with the project and merges (append-only tables by union, others by
   row); `false` means machine-local working state, gone when the cache is rebuilt.
+  The user ticks which namespaces travel under Storage → What travels; add
+  `always: true` for a table that is part of the project's identity rather
+  than data about it (a binding every machine needs, such as where the files
+  live) — it travels regardless, even inside a code checkout, and the
+  namespace is not offered as a choice.
 - `scope: "hub"` (on the call) for tables that belong to no project: they live in
   `hub.db`, need no `project`, and export to the Hub folder's `plugins/`.
 
@@ -696,8 +701,8 @@ ctx.files.register(createGitBackend({
 
 `register` is an effect and refuses a `format: "password"` field, as
 `ctx.storage` does: the config is per project and travels in the project's
-folder (`plugin_files_remotes`, exported), so a teammate who clones the project
-clones the files beside it. Credentials belong in a settings section named in
+folder (`plugin_files_remotes`, exported `always` — it is not a What-travels
+choice), so a teammate who clones the project clones the files beside it. Credentials belong in a settings section named in
 `settingsSection`, collected inline through `connection`. `createGitBackend`
 is the git-backed store every remote backend builds on; a backend that keeps
 files some other way implements `FileStore` itself (`list`, `tree`, `read`,

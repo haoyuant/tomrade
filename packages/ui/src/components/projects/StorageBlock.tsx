@@ -41,7 +41,9 @@ function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: str
 }
 
 /** Plugin namespaces the user would recognise by another name. */
-const NAMESPACE_LABEL: Partial<Record<string, MessageKey>> = { agent: "storageBlock.exportAgent" };
+const NAMESPACE_LABEL: Partial<Record<string, MessageKey>> = { agent: "storageBlock.exportAgent", code_link: "storageBlock.exportCodeLink" };
+/** A namespace nobody named yet still reads as words, not an identifier. */
+const humanize = (namespace: string) => namespace.replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
 /**
  * The project's folder is the truth; this block says where it is, who drives
@@ -158,7 +160,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
               return (
                 <label key={entry.namespace} className="cfg-row stg-export" style={{ cursor: busy ? "default" : "pointer" }} data-namespace={entry.namespace}>
                   <input type="checkbox" checked={on} disabled={busy} onChange={(e) => toggleExport(entry.namespace, e.target.checked)} />
-                  <span className="cfg-name">{key ? t(key) : entry.namespace}</span>
+                  <span className="cfg-name">{key ? t(key) : humanize(entry.namespace)}</span>
                   <span className="meta-txt num">{entry.tables.length}</span>
                 </label>
               );

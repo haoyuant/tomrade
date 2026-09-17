@@ -16,8 +16,12 @@ export interface PluginTableSpec {
    * Where the durable copy goes. An exported table lands in the project's
    * `.tomrade/plugins/<ns>/<table>.jsonl` (or the Hub's `plugins/`); `false`
    * means machine-local working state, gone when the cache is rebuilt.
+   * `always` is for rows that are part of the project's identity rather than
+   * data about it — a binding every machine needs before it can do anything —
+   * so they travel whether or not the user ticked the namespace, even inside
+   * a code checkout, and the namespace is not offered as a choice.
    */
-  export: { order: string; appendOnly?: boolean } | false;
+  export: { order: string; appendOnly?: boolean; always?: boolean } | false;
 }
 
 export type PluginScope = "project" | "hub";

@@ -42,7 +42,8 @@ export const MIGRATIONS: Migration[] = [
 ];
 
 export const TABLES = {
-  plugin_files_remotes: { project: "project_id", export: { order: "project_id" } },
+  // Where the files live is part of what the project is: without it a clone has an empty Files pane.
+  plugin_files_remotes: { project: "project_id", export: { order: "project_id", always: true } },
   plugin_files_ops: { project: "project_id", export: false }
 } as const;
 

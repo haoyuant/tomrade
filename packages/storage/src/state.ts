@@ -127,7 +127,7 @@ export function primaryKeyOf(db: Queryable, table: string): string[] {
 }
 
 export interface ExportOptions {
-  /** Plugin registrations whose tables may travel; filtered by `exports`. */
+  /** Plugin registrations whose tables may travel; filtered by `exports`, except tables declared `always`. */
   registrations?: PluginRegistration[];
   exports?: string[];
   repo?: "dedicated";
@@ -148,9 +148,10 @@ export function exportState(db: StateDb, projectId: string, opts: ExportOptions 
   const exports = [...(opts.exports ?? [])].sort();
   const plugins: ProjectState["plugins"] = {};
   for (const reg of opts.registrations ?? []) {
-    if (reg.scope !== "project" || !exports.includes(reg.namespace)) continue;
+    if (reg.scope !== "project") continue;
+    const chosen = exports.includes(reg.namespace);
     for (const [table, spec] of Object.entries(reg.tables).sort(([a], [b]) => a.localeCompare(b))) {
-      if (!spec.export) continue;
+      if (!spec.export || !(chosen || spec.export.always)) continue;
       let columns: string[];
       try {
         columns = columnsOf(db, table);
