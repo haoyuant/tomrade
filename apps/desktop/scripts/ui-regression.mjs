@@ -643,6 +643,7 @@ const run = async () => {
     (await $(`[...document.querySelectorAll('.fld-ws[data-board="${ui.id}"] select[aria-label^="Repository of"] option')].map(o => o.textContent).join('|')`)) === `No repository|${sampleRepo.name}`
   );
   check("and the path inside the one it stands for", (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-path')?.value`)) === "packages/ui");
+  check("and says where its agents start", (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-where')?.textContent ?? ''`)).includes(`${sampleRepo.name}`) && (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-where .num')?.textContent`)) === "packages/ui/");
   check("a workstream without a repository has no path to give", (await $(`document.querySelectorAll('.fld-ws:not([data-board="${ui.id}"]) .fld-ws-path').length`)) === 0);
   // blur is what commits, and blur only fires on an element that had focus
   await $(`(() => { const i = document.querySelector('.fld-ws[data-board="${ui.id}"] input'); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Interface'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);

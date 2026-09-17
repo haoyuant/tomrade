@@ -1219,8 +1219,18 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .fld-row[aria-expanded="true"] .fld-chev { transform: rotate(180deg); }
 .fld-editor { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
 .fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
-/* a workstream row adds a glyph and a count in front of the way out */
-.fld-ws { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+/* a workstream is a small card: the head names it, the code line picks the
+ * repository and folder its agents start in, and one sentence says what that
+ * means on this machine — the part a bare select and a path box never said */
+.fld-ws { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.fld-ws-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--space-2); align-items: center; }
+.fld-ws-code { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); }
+.fld-ws-code .select, .fld-ws-code .input { min-width: 0; }
+.fld-ws-where { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); }
+.fld-ws-where b { font-weight: 500; color: var(--fg-2); }
+.fld-ws-checkout { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fld-ws-move { gap: 6px; }
 .vs-fields, .vs-columns { display: flex; flex-direction: column; }
 .stack-1 { display: flex; flex-direction: column; gap: var(--space-1); }
 .wip-in { width: 68px; padding: 4px 7px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
