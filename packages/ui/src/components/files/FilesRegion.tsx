@@ -35,7 +35,7 @@ import {
 } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
-import { pickFiles, reveal } from "~/lib/shell";
+import { pathForFile, pickFiles, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
 import { ConflictPanel } from "./ConflictPanel";
@@ -534,7 +534,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
     );
   };
   const dropFiles = (dataTransfer: DataTransfer) => {
-    const sources = [...dataTransfer.files].map((f) => (f as File & { path?: string }).path).filter((p): p is string => !!p);
+    const sources = [...dataTransfer.files].map(pathForFile).filter((p): p is string => !!p);
     if (!sources.length) return;
     importFiles.mutate(
       { dir, sources },
