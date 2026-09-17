@@ -38,6 +38,19 @@ describe("pet state", () => {
     expect(moodForThread(model, "thread")).toBe("error");
   });
 
+  it("stays on working through the delta's own usage-only progress tick", () => {
+    let model = apply([{ type: "run", run: run("r1", "running") }]);
+    model = reducePetModel(model, "thread", { type: "delta", runId: "r1", text: "The " });
+    expect(moodForThread(model, "thread")).toBe("working");
+    // io.delta's follow-up progress call carries usage but no activity key.
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1", usage: { inputTokens: 0, outputTokens: 1 } });
+    expect(moodForThread(model, "thread")).toBe("working");
+    model = reducePetModel(model, "thread", { type: "delta", runId: "r1", text: "answer" });
+    expect(moodForThread(model, "thread")).toBe("working");
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1", usage: { inputTokens: 0, outputTokens: 2 } });
+    expect(moodForThread(model, "thread")).toBe("working");
+  });
+
   it("ignores stale progress and chooses a deterministic desktop state", () => {
     let model = apply([{ type: "run", run: run("current", "running") }]);
     const unchanged = reducePetModel(model, "thread", { type: "delta", runId: "old", text: "late" });

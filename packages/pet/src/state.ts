@@ -32,7 +32,10 @@ export function reducePetModel(model: PetModel, threadId: string, event: AgentEv
       break;
     case "progress":
       if (runId && event.runId !== runId) return model;
-      mood = event.activity ? "working" : "thinking";
+      // `activity` is absent on usage-only ticks (e.g. after each streamed delta) — those
+      // carry no signal about what the agent is doing, so leave mood as-is. Only an explicit
+      // null (a tool just finished) or a tool name should move the mood.
+      if (event.activity !== undefined) mood = event.activity ? "working" : "thinking";
       runId = event.runId;
       break;
     case "delta":
