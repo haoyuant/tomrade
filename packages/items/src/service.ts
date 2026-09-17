@@ -23,7 +23,7 @@ import {
 } from "@tomrade/domain";
 import type { Fields, StoredValue } from "@tomrade/fields";
 import { registerChannels } from "./channels.js";
-import { compileQuery } from "./query.js";
+import { compileQuery, compileSearch } from "./query.js";
 import { registerTools } from "./tools.js";
 
 declare module "cordis" {
@@ -104,6 +104,7 @@ export interface ItemQuery {
   projectId: string;
   filter?: FilterClause[];
   sortBy?: SortKey[];
+  search?: string;
 }
 
 export class Items extends Service {
@@ -226,29 +227,37 @@ export class Items extends Service {
       where.push("i.id IN (SELECT il.item_id FROM item_labels il JOIN labels l ON l.id = il.label_id WHERE l.name = ?)");
       params.push(filter.label);
     }
-    const sql = `${SELECT_ITEM} ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY i.rank ASC, i.updated_at DESC`;
+    const search = compileSearch(filter.search);
+    where.push(...search.where);
+    params.push(...search.whereParams);
+    const sql = `${SELECT_ITEM} ${search.joins.join(" ")} ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY ${[...search.orderBy, "i.rank ASC", "i.updated_at DESC"].join(", ")}`;
     const projectIds = filter.projectId !== undefined ? [filter.projectId] : this.ctx.db.openIds();
     return projectIds.flatMap((projectId) => {
       if (!this.ctx.db.has(projectId)) return [];
       const db = this.ctx.db.for(projectId);
-      return this.hydrate(db, db.prepare(sql).all(...params) as ItemRow[]);
+      return this.hydrate(db, db.prepare(sql).all(...search.joinParams, ...params) as ItemRow[]);
     });
   }
 
   /**
    * A view's query, run in SQL: filter clauses over any field, sort keys over
-   * any sortable field, empty values last, ties by rank then recency. What the
-   * renderer computes over its cached list for the live board, this computes
-   * for tools and for projects too large to hold in memory.
+   * any sortable field, empty values last, ties by relevance when there is a
+   * search, then rank, then recency. What the renderer computes over its cached
+   * list for the live board, this computes for tools and for projects too large
+   * to hold in memory.
    */
   query(q: ItemQuery): Item[] {
     const db = this.db(q.projectId);
     const defs = new Map(this.fields.list(q.projectId).map((f) => [f.id, f]));
     const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs);
-    const sql = `${SELECT_ITEM} ${compiled.joins.join(" ")} WHERE i.project_id = ?${compiled.where.length ? " AND " + compiled.where.join(" AND ") : ""} ORDER BY ${[...compiled.orderBy, "i.rank ASC", "i.updated_at DESC"].join(", ")}`;
+    const search = compileSearch(q.search);
+    const joins = [...compiled.joins, ...search.joins];
+    const where = [...compiled.where, ...search.where];
+    const orderBy = [...compiled.orderBy, ...search.orderBy, "i.rank ASC", "i.updated_at DESC"];
+    const sql = `${SELECT_ITEM} ${joins.join(" ")} WHERE i.project_id = ?${where.length ? " AND " + where.join(" AND ") : ""} ORDER BY ${orderBy.join(", ")}`;
     // The project id binds after the joins and before the clause params.
     const joinCount = compiled.joins.length;
-    const params = [...compiled.params.slice(0, joinCount), q.projectId, ...compiled.params.slice(joinCount)];
+    const params = [...compiled.params.slice(0, joinCount), ...search.joinParams, q.projectId, ...compiled.params.slice(joinCount), ...search.whereParams];
     return this.hydrate(db, db.prepare(sql).all(...params) as ItemRow[]);
   }
 

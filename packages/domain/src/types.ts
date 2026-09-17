@@ -174,6 +174,8 @@ export interface ListItemsFilter {
   priority?: Priority;
   parentId?: string | null;
   label?: string;
+  /** Words that must all appear in title or body, as substrings in any script; matches come most relevant first. */
+  search?: string;
 }
 
 export interface Project {

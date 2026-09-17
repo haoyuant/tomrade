@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 13;
+export const CORE_SCHEMA_VERSION = 14;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -81,6 +81,23 @@ CREATE TABLE IF NOT EXISTS items (
   version       INTEGER NOT NULL DEFAULT 1,
   human_locked  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Search index over title/body, an external-content FTS5 table joined to items
+-- on its rowid and kept in step by the triggers. Trigram tokens make a query a
+-- substring match in any script (unicode61 would take a whole CJK run as one
+-- word, so "认证" could never find "用户认证系统"). Nothing renumbers rowids: no
+-- VACUUM runs, and rebuilds go through Db.open.
+CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(title, body, content='items', tokenize='trigram');
+CREATE TRIGGER IF NOT EXISTS items_fts_ai AFTER INSERT ON items BEGIN
+  INSERT INTO items_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS items_fts_ad AFTER DELETE ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rowid, old.title, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS items_fts_au AFTER UPDATE OF title, body ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rowid, old.title, old.body);
+  INSERT INTO items_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
+END;
 
 CREATE TABLE IF NOT EXISTS labels (
   id            TEXT PRIMARY KEY,

@@ -540,7 +540,10 @@ renderer evaluates the same shapes over its cached list with the pure functions
 in `@tomrade/domain` (`matchesFilter`, `compareItems`), and a parity test in
 `packages/items` keeps the two implementations agreeing. Agents reach all of it
 through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
-`update_item` (`patch.fields`).
+`update_item` (`patch.fields`). Both `items.list` and `items.query` also take
+`search`: words that must all appear in title or body, matched as substrings in
+any script over an FTS5 trigram index (`items_fts`, kept in step by triggers)
+and returned most relevant first, after any explicit sort.
 
 ## Storage
 

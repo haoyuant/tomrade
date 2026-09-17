@@ -8,7 +8,7 @@ import { addResourceSchema, submitDeliverySchema } from "@tomrade/domain";
 const withVersion = z.object({ projectId: z.string().optional(), id: z.string(), baseVersion: z.number().optional() });
 
 type Simple = z.output<typeof listItemsFilterSchema>;
-const readInput = listItemsFilterSchema.extend({ search: z.string().optional(), filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() });
+const readInput = listItemsFilterSchema.extend({ filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() });
 type ReadInput = z.output<typeof readInput>;
 
 /** The legacy scalar filters, applied after a clause query so both styles compose. */
@@ -48,17 +48,16 @@ export function registerTools(ctx: Context): void {
     return existing.version;
   };
 
-  const find = (tool: string, { search, filter: clauses, sort, ...filter }: ReadInput, inv: { projectId?: string }): { projectId: string; items: Item[] } => {
+  const find = (tool: string, { filter: clauses, sort, ...filter }: ReadInput, inv: { projectId?: string }): { projectId: string; items: Item[] } => {
     const projectId = requireProjectId(tool, filter.projectId, inv);
     // A boardId that names no real workstream would otherwise match zero rows
     // silently — indistinguishable from a project that genuinely has none.
     if (filter.boardId !== undefined && !ctx.boards.list(projectId).some((b) => b.id === filter.boardId)) throw new NotFoundError(filter.boardId);
-    const rows =
+    const items =
       clauses?.length || sort?.length
-        ? ctx.items.query({ projectId, filter: clauses, sortBy: sort }).filter((i) => matchesSimple(i, filter))
+        ? ctx.items.query({ projectId, filter: clauses, sortBy: sort, search: filter.search }).filter((i) => matchesSimple(i, filter))
         : ctx.items.list({ ...filter, projectId });
-    const q = search?.trim().toLowerCase();
-    return { projectId, items: q ? rows.filter((i) => i.title.toLowerCase().includes(q) || (i.body ?? "").toLowerCase().includes(q)) : rows };
+    return { projectId, items };
   };
 
   ctx.tools.register(
@@ -66,7 +65,7 @@ export function registerTools(ctx: Context): void {
       name: "list_items",
       title: "List backlog items",
       description:
-        "List backlog item details. Use count_items instead for totals, counts, or breakdowns; do not fetch rows merely to count them. Supports simple filters (board, status, kind, priority, label, parent), search over title/body, filter clauses, and sort keys.",
+        "List backlog item details. Use count_items instead for totals, counts, or breakdowns; do not fetch rows merely to count them. Supports simple filters (board, status, kind, priority, label, parent), search over title/body (every word must appear, any script; most relevant first), filter clauses, and sort keys.",
       input: readInput,
       execute: (args, inv) => find("list_items", args, inv).items
     })

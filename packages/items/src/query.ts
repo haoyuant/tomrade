@@ -167,3 +167,32 @@ function sortExprOf(def: FieldDef, aliasOf: (fieldId: string) => string): string
     }
   }
 }
+
+export interface CompiledSearch {
+  joins: string[];
+  joinParams: unknown[];
+  where: string[];
+  whereParams: unknown[];
+  /** Relevance, present when the index took part. */
+  orderBy: string[];
+}
+
+/**
+ * A title/body search as SQL over `items i`. Every word must appear, in either
+ * column and any order. Words of three or more characters go through the
+ * trigram index as quoted phrases (so FTS operators in them are text) and rank
+ * by BM25; shorter words are below what a trigram can see and use instr().
+ */
+export function compileSearch(search: string | undefined): CompiledSearch {
+  const words = search?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const indexed = words.filter((w) => [...w].length >= 3);
+  const short = words.filter((w) => [...w].length < 3);
+  const match = indexed.map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
+  return {
+    joins: indexed.length ? ["JOIN (SELECT rowid, rank FROM items_fts WHERE items_fts MATCH ?) fts ON fts.rowid = i.rowid"] : [],
+    joinParams: indexed.length ? [match] : [],
+    where: short.map(() => "instr(lower(i.title || ' ' || coalesce(i.body, '')), ?) > 0"),
+    whereParams: short.map((w) => w.toLowerCase()),
+    orderBy: indexed.length ? ["fts.rank ASC"] : []
+  };
+}
