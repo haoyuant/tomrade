@@ -34,6 +34,7 @@ export const storageBlock = {
     travelsNote: "Plugin data in this list is written into the folder and merges with the project; unticked data stays only in this machine's cache.",
     travelsNoteShared: "Inside a code repository nothing travels by default — a long conversation can be megabytes your teammates would clone.",
     exportAgent: "Conversation history",
+    exportCodeLink: "Code links",
 
     stateLabel: "State",
     syncing: "Syncing…",
@@ -103,6 +104,7 @@ export const storageBlock = {
     travelsNote: "列表中勾选的插件数据会写进文件夹并随项目合并；未勾选的只留在本机缓存里。",
     travelsNoteShared: "在代码仓库里默认不带任何插件数据——一段很长的对话可能有几 MB，同事克隆代码时也会拉下来。",
     exportAgent: "对话历史",
+    exportCodeLink: "代码关联",
 
     stateLabel: "状态",
     syncing: "同步中…",

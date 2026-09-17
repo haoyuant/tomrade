@@ -310,16 +310,25 @@ const run = async () => {
   await press(".delivery-add-output");
   await wait(() => has('[data-testid="file-picker-filter"]'), "file picker");
   check("the picker offers the project's files", (await count(".file-picker-list .menu-row")) === 7);
+  await wait(() => has(".file-picker-landing"), "landing folder");
+  check("the picker says new files land in the ticket's workstream folder", (await text(".file-picker-landing .meta-txt")) === `New files land in ${board.name}/` && (await has(".file-picker-import")));
   await click('.file-picker-list .menu-row[data-file="docs/brief.md"]');
   await click('.file-picker-list .menu-row[data-file="docs/notes.txt"]');
   check("the picker keeps more than one file selected", (await count('.file-picker-list .menu-row[aria-checked="true"]')) === 2);
+  await shot("files-06-picker");
   await click(".file-picker-add");
   await wait(() => count(".file-ref").then(n => n === 2), "resource links");
   const pinnedItem = ctx.items.get(project.id, ticket.id);
   check("picking files pins all latest versions to the ticket", pinnedItem.evidence.resources.length === 2 && pinnedItem.evidence.resources[0]?.file.versionId === second.versionId && pinnedItem.evidence.resources[0]?.file.fileId === brief.fileId);
+  // The native picker cannot be driven; the import it feeds can.
+  const incomingSpec = path.join(work, "spec.md");
+  fs.writeFileSync(incomingSpec, "# Spec\n");
+  const landed = await ctx.files.importFor(project.id, ticket.id, { sources: [incomingSpec], role: "input" });
+  await wait(() => count(".file-ref").then((n) => n === 3), "imported resource link");
+  check("a file brought in for the ticket lands in its workstream folder and is pinned", landed.evidence.resources.some((r) => r.name === "spec.md" && r.role === "input") && (await ctx.files.read(project.id, `${board.name}/spec.md`))?.body === "# Spec\n");
   await shot("files-06-delivery");
   await ctx.files.write(project.id, "docs/brief.md", "# The brief\n\nThird draft.\n");
-  await click(".file-ref");
+  await click(`.file-ref[data-resource="${pinnedItem.evidence.resources[0].id}"]`);
   await wait(() => has('[data-testid="pinned-banner"]'), "pinned version");
   check("the artifact opens the version it pinned, not the head", (await $(`document.querySelector('.md-view')?.textContent ?? ''`)).includes("Second draft"));
   check("and offers the current file", (await has('[data-testid="pinned-banner"] .btn')) === true);
@@ -328,6 +337,7 @@ const run = async () => {
   // ── undo, redo and the history window ────────────────────────────────
   await $(`location.hash = '#/p/${project.id}/f/'; true`);
   await wait(() => has('[data-testid="files-sharing"]'), "root before the undo checks");
+  check("the workstream folder is a top-level folder of the project's files", await has(`[data-testid="file-table"] .file-row[data-file="${board.name}"]`));
   const copyId = (await ctx.files.read(project.id, "docs (copy)/brief.md"))?.fileId;
   await rightClick('[data-testid="file-table"] .file-row[data-file="docs (copy)"]');
   await wait(() => has(".menu.is-floating"), "context menu for the undo checks");

@@ -600,6 +600,11 @@ declared** in `tables` — the registry refuses a namespace that does not say:
   table in the project's folder as `.tomrade/plugins/<ns>/<table>.jsonl`, so it
   travels with the project and merges (append-only tables by union, others by
   row); `false` means machine-local working state, gone when the cache is rebuilt.
+  The user ticks which namespaces travel under Storage → What travels; add
+  `always: true` for a table that is part of the project's identity rather
+  than data about it (a binding every machine needs, such as where the files
+  live) — it travels regardless, even inside a code checkout, and the
+  namespace is not offered as a choice.
 - `scope: "hub"` (on the call) for tables that belong to no project: they live in
   `hub.db`, need no `project`, and export to the Hub folder's `plugins/`.
 
@@ -708,8 +713,8 @@ ctx.files.register(createGitBackend({
 
 `register` is an effect and refuses a `format: "password"` field, as
 `ctx.storage` does: the config is per project and travels in the project's
-folder (`plugin_files_remotes`, exported), so a teammate who clones the project
-clones the files beside it. Credentials belong in a settings section named in
+folder (`plugin_files_remotes`, exported `always` — it is not a What-travels
+choice), so a teammate who clones the project clones the files beside it. Credentials belong in a settings section named in
 `settingsSection`, collected inline through `connection`. `createGitBackend`
 is the git-backed store every remote backend builds on; a backend that keeps
 files some other way implements `FileStore` itself (`list`, `tree`, `read`,
@@ -717,6 +722,16 @@ files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 `remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`, and — to be
 undoable — `head` and `restore`). `@tomrade/files-github`
 registers `github`, sharing the `github` token section with `@tomrade/storage-github`.
+
+A ticket's files land in a top-level folder named after its workstream:
+`ctx.files.folderFor(projectId, itemId)` is that name (separators become `-`),
+`importFor(projectId, itemId, { sources, role })` copies files from this machine
+into it and pins them, and `write_file` with an `itemId` places its path under
+it. This is the Files side of "which workstream, which folder" in a monorepo:
+the code lives in the workstream's `repoPath` of its repository, the documents
+about it in `<workstream>/` of the project's Files. It is a default and a name,
+not a binding — renaming a workstream starts a new folder and moves nothing,
+and any explicit path is honoured as given.
 
 Sync never forces. A save is pushed a few seconds after it lands, outside edits
 are saved as versions when they settle, and every open project is fetched,

@@ -34,7 +34,7 @@ export function generalBrief(ticket: { key: string; title: string; body?: string
   return `You are delivering ${ticket.key} — ${ticket.title}.\n${ticket.body ?? ""}\n` +
     "Work only toward this ticket's outcome and acceptance criteria. Report progress and missing inputs. Human activities require a human completion report; do not claim to have performed offline actions.\n" +
     "A successful agent turn does not complete a ticket. Submit results for human review. Files must enter the Files plugin before becoming delivery artifacts; temporary paths and external links are not delivered files. If file storage is unavailable, report the draft as not delivered.\n" +
-    "Call get_item to read current input materials and previous outputs. Use add_delivery_resource to link an existing Files version, then submit_delivery with a report and selected output artifact IDs. Human review is a separate action.\n" +
+    "Call get_item to read current input materials and previous outputs. Save new files with write_file and this ticket's id so they land in its workstream's folder. Use add_delivery_resource to link an existing Files version, then submit_delivery with a report and selected output artifact IDs. Human review is a separate action.\n" +
     `Working directory: ${cwd ?? "none"}. This work has no Git or pull-request requirement.`;
 }
 

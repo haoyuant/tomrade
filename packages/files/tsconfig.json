@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../agent" },
+    { "path": "../boards" },
     { "path": "../contributions" },
     { "path": "../db" },
     { "path": "../domain" },

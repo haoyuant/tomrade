@@ -6,6 +6,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
 import { useGithubCredential, useGithubCredentialAccount, useRemoteIdentity, useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
+import { normalizeRemote } from "~/lib/remotes";
 import {
   useBoards,
   useClearCheckout,
@@ -55,9 +56,6 @@ function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { val
     />
   );
 }
-
-/** Two spellings of one repository read the same, so a checkout keyed by URL is found from any of them. */
-const normalizeRemote = (remote: string): string => remote.trim().replace(/\/\/[^@/]*@/, "//").replace(/\/+$/, "").replace(/\.git$/, "");
 
 /**
  * The code a project's workstreams stand for. The URL is a project row and

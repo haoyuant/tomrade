@@ -6,6 +6,7 @@ import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, FIELD_TYPE_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { normalizeRemote } from "~/lib/remotes";
 import {
   useAddFieldOption,
   useBoards,
@@ -17,6 +18,7 @@ import {
   useRemoveBoard,
   useRemoveField,
   useRemoveFieldOption,
+  useRepoCheckouts,
   useRepos,
   useUpdateBoard,
   useUpdateField,
@@ -33,18 +35,19 @@ const holders = (items: Item[], fieldId: string) => items.filter((i) => fieldId 
  * Save button. Enter commits directly rather than through blur, because an
  * unfocused window fires no focus events at all.
  */
-function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { value: string; ariaLabel: string; className?: string; placeholder?: string; onSave: (next: string) => void }) {
+function RenameInput({ id, value, ariaLabel, className, placeholder, allowEmpty, onSave }: { id?: string; value: string; ariaLabel: string; className?: string; placeholder?: string; /** An emptied field is a value too (a path back to the root), not a cancelled edit. */ allowEmpty?: boolean; onSave: (next: string) => void }) {
   const settled = useRef(false);
   const commit = (el: HTMLInputElement) => {
     if (settled.current) return;
     settled.current = true;
     const next = el.value.trim();
-    if (next && next !== value) onSave(next);
+    if (next !== value && (next || allowEmpty)) onSave(next);
     else el.value = value;
   };
   return (
     <input
       key={value}
+      id={id}
       className={className ?? "input"}
       aria-label={ariaLabel}
       placeholder={placeholder}
@@ -225,18 +228,33 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   );
 }
 
-/** One workstream: glyph, name, how many issues it holds, and the way out. */
-function WorkstreamRow({ board, count, others, projectId }: { board: Board; count: number; others: Board[]; projectId: string }) {
+/** A repository path as the backend reads it: no leading or trailing slashes, '' for the root. */
+const cleanRepoPath = (p: string) => p.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+
+/**
+ * One workstream as a small card: the head names it, the code line picks the
+ * repository and folder its coding agents start in, and one sentence spells
+ * out what that means on this machine.
+ */
+function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: { board: Board; count: number; others: Board[]; projectId: string; onOpenRepositories?: () => void }) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const update = useUpdateBoard(projectId);
   const repos = useRepos(projectId);
+  const checkouts = useRepoCheckouts();
   const remove = useRemoveBoard(projectId);
   const move = useMoveItemsToBoard(projectId);
   const items = useItems(projectId);
   const [removing, setRemoving] = useState(false);
   const [dest, setDest] = useState(others[0]?.id ?? "");
   const fail = (err: Error) => toast({ body: err.message });
+
+  const repo = (repos.data ?? []).find((r) => r.id === board.repoId) ?? null;
+  const checkout = repo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(repo.remote))?.checkout ?? null) : null;
+  const subdir = cleanRepoPath(board.repoPath);
+  const repoSelectId = `wsRepo-${board.id}`;
+  const pathId = `wsPath-${board.id}`;
+  const asking = removing && count > 0;
 
   const removeNow = () =>
     remove.mutate(board.id, { onSuccess: () => toast({ body: tx("fieldsDialog.removedWorkstreamToast", { name: <b>{board.name}</b> }) }), onError: fail });
@@ -257,39 +275,95 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
     );
   };
 
+  const repositoriesLink = onOpenRepositories && (
+    <button type="button" className="link-btn" onClick={onOpenRepositories}>
+      {t("fieldsDialog.openRepositories")}
+    </button>
+  );
+
   return (
-    <div className="fld-opt fld-ws" data-board={board.id}>
-      <IconPicker compact value={viewIcon(board.icon)} ariaLabel={t("fieldsDialog.workstreamIconAria")} onChange={(icon) => update.mutate({ id: board.id, patch: { icon } }, { onError: fail })} />
-      <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-opt-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
-      <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
-      {/* The repository the workstream stands for: where its agents run. */}
-      <span className="row fld-ws-repo" style={{ gap: 6, gridColumn: "1 / -1" }}>
-        <select
-          className="select"
-          style={{ flex: 1 }}
-          aria-label={t("fieldsDialog.workstreamRepoAria", { name: board.name })}
-          value={board.repoId ?? ""}
-          onChange={(e) => update.mutate({ id: board.id, patch: { repoId: e.target.value || null, repoPath: e.target.value ? board.repoPath : "" } }, { onError: fail })}
-        >
-          <option value="">{t("fieldsDialog.workstreamRepoNone")}</option>
-          {(repos.data ?? []).map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-        {board.repoId && (
-          <RenameInput
-            value={board.repoPath}
-            ariaLabel={t("fieldsDialog.workstreamRepoPathAria")}
-            className="input num fld-ws-path"
-            placeholder={t("fieldsDialog.workstreamRepoPathPlaceholder")}
-            onSave={(repoPath) => update.mutate({ id: board.id, patch: { repoPath } }, { onError: fail })}
-          />
+    <div className="fld-ws" data-board={board.id}>
+      <div className="fld-ws-head">
+        <IconPicker compact value={viewIcon(board.icon)} ariaLabel={t("fieldsDialog.workstreamIconAria")} onChange={(icon) => update.mutate({ id: board.id, patch: { icon } }, { onError: fail })} />
+        <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-ws-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
+        <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
+        {!asking && (
+          <button
+            type="button"
+            className="btn btn-icon"
+            title={t("fieldsDialog.removeWorkstreamTitle", { name: board.name })}
+            aria-label={t("fieldsDialog.removeWorkstreamAria", { name: board.name })}
+            disabled={others.length === 0}
+            onClick={() => (count > 0 ? setRemoving(true) : removeNow())}
+          >
+            <Icon name="i-close" size={13} />
+          </button>
         )}
-      </span>
-      {removing && count > 0 ? (
-        <span className="row" style={{ gap: 6, gridColumn: "1 / -1" }}>
+      </div>
+
+      <div className="fld-ws-code">
+        <div className="field">
+          <label htmlFor={repoSelectId}>{t("fieldsDialog.workstreamRepoLabel")}</label>
+          <select
+            id={repoSelectId}
+            className="select"
+            aria-label={t("fieldsDialog.workstreamRepoAria", { name: board.name })}
+            value={board.repoId ?? ""}
+            onChange={(e) => update.mutate({ id: board.id, patch: { repoId: e.target.value || null, repoPath: e.target.value ? board.repoPath : "" } }, { onError: fail })}
+          >
+            <option value="">{t("fieldsDialog.workstreamRepoNone")}</option>
+            {(repos.data ?? []).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {repo && (
+          <div className="field">
+            <label htmlFor={pathId}>{t("fieldsDialog.workstreamRepoPathLabel")}</label>
+            <RenameInput
+              id={pathId}
+              value={board.repoPath}
+              allowEmpty
+              ariaLabel={t("fieldsDialog.workstreamRepoPathAria")}
+              className="input num fld-ws-path"
+              placeholder={t("fieldsDialog.workstreamRepoPathPlaceholder")}
+              onSave={(repoPath) => update.mutate({ id: board.id, patch: { repoPath: cleanRepoPath(repoPath) } }, { onError: fail })}
+            />
+          </div>
+        )}
+      </div>
+
+      <p className="meta-txt dense fld-ws-where">
+        {!repo ? (
+          <>
+            <span>{t((repos.data ?? []).length ? "fieldsDialog.workstreamWhereNone" : "fieldsDialog.workstreamNoRepos")}</span>
+            {repositoriesLink}
+          </>
+        ) : (
+          <>
+            <span>
+              {subdir
+                ? tx("fieldsDialog.workstreamWherePath", { repo: <b>{repo.name}</b>, path: <span className="num">{subdir}/</span> })
+                : tx("fieldsDialog.workstreamWhereRoot", { repo: <b>{repo.name}</b> })}
+            </span>
+            {checkout ? (
+              <span className="num fld-ws-checkout" title={checkout}>
+                {t("fieldsDialog.workstreamCheckoutAt", { dir: checkout })}
+              </span>
+            ) : (
+              <>
+                <span>{t("fieldsDialog.workstreamCheckoutUnset")}</span>
+                {repositoriesLink}
+              </>
+            )}
+          </>
+        )}
+      </p>
+
+      {asking && (
+        <div className="row fld-ws-move">
           <span className="meta-txt">{t("fieldsDialog.moveIssuesTo", { n: count })}</span>
           <select className="select" style={{ flex: 1 }} aria-label={t("fieldsDialog.destinationAria")} value={dest} onChange={(e) => setDest(e.target.value)}>
             {others.map((b) => (
@@ -304,18 +378,7 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
           <button type="button" className="btn btn-ghost" onClick={() => setRemoving(false)}>
             {t("common.cancel")}
           </button>
-        </span>
-      ) : (
-        <button
-          type="button"
-          className="btn btn-icon"
-          title={t("fieldsDialog.removeWorkstreamTitle", { name: board.name })}
-          aria-label={t("fieldsDialog.removeWorkstreamAria", { name: board.name })}
-          disabled={others.length === 0}
-          onClick={() => (count > 0 ? setRemoving(true) : removeNow())}
-        >
-          <Icon name="i-close" size={13} />
-        </button>
+        </div>
       )}
     </div>
   );
@@ -326,7 +389,7 @@ function WorkstreamRow({ board, count, others, projectId }: { board: Board; coun
  * issue belongs to one, so a workstream that still holds issues asks where
  * they go before it leaves, and the last one never can.
  */
-function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item[] }) {
+function WorkstreamEditor({ projectId, items, onOpenRepositories }: { projectId: string; items: Item[]; onOpenRepositories?: () => void }) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const boards = useBoards(projectId);
@@ -346,12 +409,22 @@ function WorkstreamEditor({ projectId, items }: { projectId: string; items: Item
   return (
     <div className="fld-editor stack-3" data-editor="workstream">
       <p className="meta-txt dense">{t("fieldsDialog.workstreamNote")}</p>
-      <p className="meta-txt dense">{t("fieldsDialog.workstreamRepoNote")}</p>
+      <p className="meta-txt dense">
+        {t("fieldsDialog.workstreamRepoNote")}
+        {onOpenRepositories && (
+          <>
+            {" "}
+            <button type="button" className="link-btn" onClick={onOpenRepositories}>
+              {t("fieldsDialog.openRepositories")}
+            </button>
+          </>
+        )}
+      </p>
       <div>
         <Eyebrow>{t("fieldsDialog.workstreamsEyebrow")}</Eyebrow>
-        <div className="stack-1" style={{ marginTop: "var(--space-2)" }}>
+        <div className="stack-2" style={{ marginTop: "var(--space-2)" }}>
           {list.map((b) => (
-            <WorkstreamRow key={b.id} board={b} count={items.filter((i) => i.boardId === b.id).length} others={list.filter((o) => o.id !== b.id)} projectId={projectId} />
+            <WorkstreamRow key={b.id} board={b} count={items.filter((i) => i.boardId === b.id).length} others={list.filter((o) => o.id !== b.id)} projectId={projectId} onOpenRepositories={onOpenRepositories} />
           ))}
           <div className="row" style={{ gap: "var(--space-2)" }}>
             <input
@@ -385,7 +458,8 @@ export function FieldsDialog({
   projectName,
   open,
   onOpenChange,
-  initialFieldId = null
+  initialFieldId = null,
+  onOpenRepositories
 }: {
   projectId: string;
   projectName: string;
@@ -393,8 +467,16 @@ export function FieldsDialog({
   onOpenChange: (open: boolean) => void;
   /** The field to land on — "board" opens straight onto the workstream editor. */
   initialFieldId?: string | null;
+  /** Where "Repositories…" lands: the project's settings, after this sheet has closed. */
+  onOpenRepositories?: () => void;
 }) {
   const { t, tx } = useI18n();
+  const openRepositories = onOpenRepositories
+    ? () => {
+        onOpenChange(false);
+        onOpenRepositories();
+      }
+    : undefined;
   const toast = useToast();
   const fields = useFields(projectId);
   const items = useItems(projectId);
@@ -443,7 +525,7 @@ export function FieldsDialog({
               f.id === "board" ? (
                 <div key={f.id} className="fld-item">
                   <FieldRow def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
-                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} />}
+                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} onOpenRepositories={openRepositories} />}
                 </div>
               ) : (
                 <FieldRow key={f.id} def={f} count={null} />

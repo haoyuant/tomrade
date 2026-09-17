@@ -5,10 +5,11 @@ import { Context, Service } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import type { FileReference, Item } from "@tomrade/domain";
+import { NotFoundError, type FileReference, type Item } from "@tomrade/domain";
 import type {} from "@tomrade/db";
 import type {} from "@tomrade/hub";
 import type {} from "@tomrade/items";
+import type {} from "@tomrade/boards";
 import type {} from "@tomrade/storage";
 import type {} from "@tomrade/agent";
 import type {} from "@tomrade/contributions";
@@ -26,6 +27,7 @@ import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOp
 import { registerTools } from "./tools.js";
 import {
   FilesUnavailableError,
+  InvalidPathError,
   UnknownBackendError,
   type ConflictChoice,
   type ConnectionState,
@@ -93,6 +95,9 @@ function copyTree(src: string, dest: string): void {
   if (!kept) fs.writeFileSync(path.join(dest, ".keep"), "", "utf8");
 }
 
+/** A workstream's name as one folder name: separators and a leading dot would make it something else. */
+export const folderName = (name: string): string => name.replace(/[\\/\0]+/g, "-").trim().replace(/^\.+/, "").trim() || "Workstream";
+
 const unavailable = (detail: string): FilesStatus => ({ state: "unavailable", location: null, detail, lastSyncAt: null, conflicts: 0, ahead: 0, behind: 0, head: null });
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -118,7 +123,7 @@ function ensureIgnoreLine(file: string, line: string, comment?: string): void {
 
 export class Files extends Service {
   static provide = "files";
-  static inject = ["db", "hub", "storage", "items", "oplog"];
+  static inject = ["db", "hub", "storage", "items", "boards", "oplog"];
   static Config = FilesConfig;
 
   /** How file records name themselves in the timeline: `files:<seq>`. */
@@ -214,6 +219,8 @@ export class Files extends Service {
       ctx.ipc.handle("files.disconnect", (backendId) => this.disconnect(backendId));
       ctx.ipc.handle("files.attach", (projectId, itemId, input) => this.attach(projectId, itemId, input));
       ctx.ipc.handle("files.attachMany", (projectId, itemId, input) => this.attachMany(projectId, itemId, input));
+      ctx.ipc.handle("files.folderFor", (projectId, itemId) => this.folderFor(projectId, itemId));
+      ctx.ipc.handle("files.importFor", (projectId, itemId, input) => this.importFor(projectId, itemId, input));
     });
 
     const timer = this.config.autoSyncMs > 0 ? setInterval(() => void this.syncAll(), this.config.autoSyncMs) : null;
@@ -784,6 +791,34 @@ export class Files extends Service {
   }
 
   // ── tickets ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Where a ticket's files land unless a path says otherwise: a top-level
+   * folder named after its workstream. A name, not a binding — renaming the
+   * workstream starts a new folder and moves nothing.
+   */
+  folderFor(projectId: string, itemId: string): string {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new NotFoundError(itemId);
+    const board = this.ctx.boards.get(projectId, item.boardId);
+    if (!board) throw new NotFoundError(item.boardId);
+    return folderName(board.name);
+  }
+
+  /** `path` inside the ticket's workstream folder. */
+  pathFor(projectId: string, itemId: string, p: string): string {
+    const rel = normalizeRel(p);
+    if (!rel) throw new InvalidPathError(p);
+    return `${this.folderFor(projectId, itemId)}/${rel}`;
+  }
+
+  /** Bring files from this machine into the ticket's workstream folder and pin them in one go. */
+  async importFor(projectId: string, itemId: string, input: { sources: string[]; role: "input" | "output" }): Promise<Item> {
+    const folder = this.folderFor(projectId, itemId);
+    const added = (await this.importFiles(projectId, folder, input.sources)).filter((e) => e.kind === "file");
+    if (!added.length) throw new Error("Choose at least one file");
+    return this.attachMany(projectId, itemId, { paths: added.map((e) => e.path), role: input.role });
+  }
 
   /** Pin the file's latest version to a ticket. The working copy is saved first, so what is pinned is what is there. */
   async attach(projectId: string, itemId: string, input: { path: string; role: "input" | "output"; name?: string }): Promise<Item> {

@@ -5,7 +5,7 @@ import type { DeliveryResource, Item } from "@tomrade/domain";
 import { FilePickerDialog } from "~/components/files/FilePickerDialog";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
-import { useAttachFiles } from "~/lib/files";
+import { useAttachFiles, useImportForTicket, useTicketFolder } from "~/lib/files";
 import { invalidateWorkspace } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
@@ -30,6 +30,8 @@ export function DeliveryPanel({ item }: { item: Item }) {
   const [selected, setSelected] = useState<string[] | null>(null);
   const [picking, setPicking] = useState<"input" | "output" | null>(null);
   const attach = useAttachFiles(item.projectId);
+  const importFor = useImportForTicket(item.projectId);
+  const landing = useTicketFolder(item.projectId, picking ? item.id : null);
   const deliveries = useQuery({ queryKey: ["deliveries", item.projectId, item.id, item.version], queryFn: () => invoke("items.deliveries", item.projectId, item.id) });
   const current = deliveries.data?.find(d => d.state === "active") ?? deliveries.data?.at(-1);
   const evidence = item.evidence;
@@ -62,10 +64,16 @@ export function DeliveryPanel({ item }: { item: Item }) {
       <button className="btn btn-ghost delivery-add-input" type="button" disabled={attach.isPending} onClick={() => setPicking("input")}><Icon name="i-file" size={13} />{t("files.addMaterial")}</button>
       <button className="btn btn-ghost delivery-add-output" type="button" disabled={attach.isPending} onClick={() => setPicking("output")}><Icon name="i-file" size={13} />{t("files.addOutput")}</button>
     </div>}
-    {picking && <FilePickerDialog projectId={item.projectId} open={!!picking} onOpenChange={o => !o && setPicking(null)} title={t("files.pickTitle")} busy={attach.isPending} onPick={entries => {
+    {picking && <FilePickerDialog projectId={item.projectId} open={!!picking} onOpenChange={o => !o && setPicking(null)} title={t("files.pickTitle")} busy={attach.isPending || importFor.isPending} landing={landing.data ?? null} onPick={entries => {
       const role = picking;
       attach.mutate({ itemId: item.id, paths: entries.map(entry => entry.path), role }, {
         onSuccess: () => { setPicking(null); toast({ body: t("files.attachedManyToast", { n: entries.length, key: item.key }) }); },
+        onError: error => toast({ body: error.message })
+      });
+    }} onImport={sources => {
+      const role = picking;
+      importFor.mutate({ itemId: item.id, sources, role }, {
+        onSuccess: () => { setPicking(null); toast({ body: t("files.attachedManyToast", { n: sources.length, key: item.key }) }); },
         onError: error => toast({ body: error.message })
       });
     }} />}

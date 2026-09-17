@@ -121,18 +121,25 @@ describe("the artifact", () => {
     ctx.db.migrate("local", [{ version: 1, up: "CREATE TABLE plugin_local_sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
       tables: { plugin_local_sessions: { project: "project_id", export: false } }
     });
+    // A binding is identity, not data: it travels without being chosen.
+    ctx.db.migrate("pin", [{ version: 1, up: "CREATE TABLE plugin_pin_binding (project_id TEXT PRIMARY KEY, url TEXT NOT NULL)" }], {
+      tables: { plugin_pin_binding: { project: "project_id", export: { order: "project_id", always: true } } }
+    });
     db.prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'hi')").run(project.id);
     db.prepare("INSERT INTO plugin_local_sessions (id, project_id, body) VALUES ('s1', ?, 'running here')").run(project.id);
+    db.prepare("INSERT INTO plugin_pin_binding (project_id, url) VALUES (?, 'git@example.com:docs.git')").run(project.id);
     const state = exportState(db, project.id, { registrations: ctx.db.registrations("project"), exports: ["demo"] });
     expect(state.plugins.demo.plugin_demo_notes).toEqual([{ id: "n1", project_id: project.id, body: "hi" }]);
     expect(state.manifest.exports).toEqual(["demo"]);
     expect(state.plugins.local).toBeUndefined();
+    expect(state.plugins.pin.plugin_pin_binding).toEqual([{ project_id: project.id, url: "git@example.com:docs.git" }]);
     const dir = tmp("plug");
     writeArtifact(dir, state);
     expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo", "plugin_demo_notes.jsonl"))).toBe(true);
-    // Not exported: nothing written, and the digest changes with the choice.
+    // Not exported: nothing written, and the digest changes with the choice — but the binding still travels.
     const without = exportState(db, project.id, { registrations: ctx.db.registrations("project"), exports: [] });
-    expect(without.plugins).toEqual({});
+    expect(Object.keys(without.plugins)).toEqual(["pin"]);
+    expect(without.manifest.exports).toEqual([]);
     expect(digestState(without)).not.toBe(digestState(state));
     expect(hub.catalog.project(project.id)?.exports).toEqual([]);
 
@@ -336,13 +343,20 @@ describe("ctx.storage", () => {
     ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL)" }], {
       tables: { plugin_demo_notes: { project: "project_id", export: { order: "id" } } }
     });
+    ctx.db.migrate("pin", [{ version: 1, up: "CREATE TABLE plugin_pin_binding (project_id TEXT PRIMARY KEY, url TEXT NOT NULL)" }], {
+      tables: { plugin_pin_binding: { project: "project_id", export: { order: "project_id", always: true } } }
+    });
+    ctx.db.for(project.id).prepare("INSERT INTO plugin_pin_binding (project_id, url) VALUES (?, 'git@example.com:docs.git')").run(project.id);
     let info = await storage.info(project.id);
+    // The binding is not a choice, so it is not listed.
     expect(info.exportable).toEqual([{ namespace: "demo", tables: ["plugin_demo_notes"] }]);
-    info = await storage.setExports(project.id, ["demo", "unknown"]);
+    info = await storage.setExports(project.id, ["demo", "unknown", "pin"]);
     expect(info.exports).toEqual(["demo"]);
     expect(JSON.parse(read(dir, "project.json")).exports).toEqual(["demo"]);
     expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo", "plugin_demo_notes.jsonl"))).toBe(true);
     await storage.setExports(project.id, []);
     expect(fs.existsSync(path.join(dir, ARTIFACT_DIR, "plugins", "demo"))).toBe(false);
+    // …and travels with nothing ticked at all.
+    expect(read(dir, path.join("plugins", "pin", "plugin_pin_binding.jsonl"))).toContain("git@example.com:docs.git");
   });
 });

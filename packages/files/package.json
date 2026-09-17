@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@tomrade/agent": "workspace:*",
+    "@tomrade/boards": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/domain": "workspace:*",

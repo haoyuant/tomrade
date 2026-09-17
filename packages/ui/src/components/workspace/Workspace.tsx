@@ -290,7 +290,7 @@ export function Workspace() {
           openCodeInbox: () => setCodeInbox(true)
         }}
       />
-      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} />
+      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} onOpenRepositories={() => setProjectSettings("repositories")} />
       <CodeInboxDialog
         projectId={ws.project.id}
         open={codeInbox}

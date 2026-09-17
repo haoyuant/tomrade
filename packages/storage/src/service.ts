@@ -377,10 +377,11 @@ export class Storage extends Service {
     return this.exportable().map((e) => e.namespace);
   }
 
+  /** What the user can choose to carry. Tables declared `always` travel regardless, so they are not a choice. */
   private exportable(): { namespace: string; tables: string[] }[] {
     return (this.ctx.db as Db)
       .registrations("project")
-      .map((r) => ({ namespace: r.namespace, tables: Object.entries(r.tables).filter(([, s]) => s.export).map(([t]) => t) }))
+      .map((r) => ({ namespace: r.namespace, tables: Object.entries(r.tables).filter(([, s]) => s.export && !s.export.always).map(([t]) => t) }))
       .filter((e) => e.tables.length)
       .sort((a, b) => a.namespace.localeCompare(b.namespace));
   }

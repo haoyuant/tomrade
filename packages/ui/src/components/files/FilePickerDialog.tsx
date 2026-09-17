@@ -4,15 +4,28 @@ import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { useFilesTree } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
+import { pickFiles } from "~/lib/shell";
 
-/** Choose project files. What comes back are entries; the caller pins their latest versions together. */
-export function FilePickerDialog({ projectId, open, onOpenChange, title, busy, onPick }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void; title: string; busy?: boolean; onPick: (entries: FileEntry[]) => void }) {
+/**
+ * Choose project files. What comes back are entries; the caller pins their
+ * latest versions together. With a `landing` folder, the files already there
+ * come first and new ones can be brought in from this machine to land in it.
+ */
+export function FilePickerDialog({ projectId, open, onOpenChange, title, busy, onPick, landing, onImport }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void; title: string; busy?: boolean; onPick: (entries: FileEntry[]) => void; landing?: string | null; onImport?: (sources: string[]) => void }) {
   const { t } = useI18n();
   const tree = useFilesTree(projectId);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const needle = filter.trim().toLowerCase();
-  const files = (tree.data ?? []).filter((e) => e.kind === "file" && (!needle || e.path.toLowerCase().includes(needle))).slice(0, 60);
+  const lands = (entry: FileEntry) => !!landing && entry.path.startsWith(`${landing}/`);
+  const files = (tree.data ?? [])
+    .filter((e) => e.kind === "file" && (!needle || e.path.toLowerCase().includes(needle)))
+    .sort((a, b) => Number(lands(b)) - Number(lands(a)))
+    .slice(0, 60);
+  const importFromDisk = async () => {
+    const chosen = await pickFiles(t("files.pickFilesTitle"), t("files.pickFilesButton"), "files");
+    if (chosen?.length) onImport?.(chosen);
+  };
   const chosen = (tree.data ?? []).filter(entry => selected.has(entry.path));
   const toggle = (entry: FileEntry) => setSelected(current => {
     const next = new Set(current);
@@ -49,6 +62,15 @@ export function FilePickerDialog({ projectId, open, onOpenChange, title, busy, o
           ))}
           {!files.length && !tree.isLoading && <p className="meta-txt dense">{tree.error ? tree.error.message : t("files.pickEmpty")}</p>}
         </div>
+        {landing && onImport && (
+          <div className="row file-picker-landing" data-landing={landing}>
+            <span className="meta-txt dense" style={{ marginRight: "auto" }}>{t("files.pickLanding", { dir: landing })}</span>
+            <button type="button" className="btn btn-ghost file-picker-import" disabled={busy} onClick={() => void importFromDisk()}>
+              <Icon name="i-file" size={13} />
+              {t("files.pickFromDisk")}
+            </button>
+          </div>
+        )}
       </DialogBody>
       <DialogFoot>
         <span className="meta-txt" style={{ marginRight: "auto" }}>{t("files.pickSelected", { n: selected.size })}</span>

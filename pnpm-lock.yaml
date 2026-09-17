@@ -562,6 +562,9 @@ importers:
       '@tomrade/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomrade/boards':
+        specifier: workspace:*
+        version: link:../boards
       '@tomrade/contributions':
         specifier: workspace:*
         version: link:../contributions
