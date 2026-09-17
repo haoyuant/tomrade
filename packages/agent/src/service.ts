@@ -860,10 +860,19 @@ export class Agent extends Service {
     };
     const emit = (block: Block) => void this.appendAndBroadcast(thread.projectId, thread.id, block.type === "note" ? "system" : "agent", block, run.id);
     const startedAt = performance.now();
-    let streamedOutputChars = 0;
-    const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) =>
-      this.broadcast(thread.id, { type: "progress", runId: run.id, elapsedMs: Math.round(performance.now() - startedAt), ...p });
-    progress({ usage: { inputTokens: 0, outputTokens: 0 } });
+    // Engines report authoritative counters when they have them; between reports the streamed text is a
+    // conservative estimate of the reply, and every event carries the latest figure so the live line never blanks.
+    let reported = { inputTokens: 0, outputTokens: 0 };
+    let streamedSinceReport = 0;
+    const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) => {
+      if (p.usage) {
+        reported = p.usage;
+        streamedSinceReport = 0;
+      }
+      const usage = { inputTokens: reported.inputTokens, outputTokens: reported.outputTokens + Math.ceil(streamedSinceReport / 4) };
+      this.broadcast(thread.id, { type: "progress", runId: run.id, elapsedMs: Math.round(performance.now() - startedAt), ...p, usage });
+    };
+    progress({});
     const tools = {
       describe: () => this.ctx.tools.describe(),
       execute: async (name: string, args: unknown): Promise<unknown> => {
@@ -927,12 +936,9 @@ export class Agent extends Service {
         return request;
       },
       delta: (text) => {
-        streamedOutputChars += text.length;
+        streamedSinceReport += text.length;
         this.broadcast(thread.id, { type: "delta", runId: run.id, text });
-        // Providers only publish authoritative usage at turn completion. Keep
-        // the live line useful meanwhile with a conservative streamed-output
-        // estimate; the final run replaces it with provider counters.
-        progress({ usage: { inputTokens: 0, outputTokens: Math.ceil(streamedOutputChars / 4) } });
+        progress({});
       },
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
       tools,
