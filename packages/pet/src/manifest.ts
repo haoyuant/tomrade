@@ -14,7 +14,7 @@ interface AssetAnimation extends SpriteAnimation {
 
 export const PET_ANIMATIONS: Record<PetMood, AssetAnimation> = {
   idle: { file: "cat-idle-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 360 },
-  thinking: { file: "cat-thinking-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 210 },
+  thinking: { file: "cat-thinking-strip.png", source: "", frames: 12, frameWidth: 352, frameHeight: 280, frameMs: 200 },
   working: { file: "cat-working-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 150 },
   waiting: { file: "cat-waiting-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 420 },
   success: { file: "cat-success-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 190 },
