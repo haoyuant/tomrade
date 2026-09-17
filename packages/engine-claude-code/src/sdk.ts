@@ -7,6 +7,7 @@ import { claudeMediaInput } from "@tomrade/agent";
 import { ClaudeCodeOptions } from "./legacy.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
 import { staticSystem, turnPrompt } from "./system.js";
+import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
 
 function matchesTool(name: string, pattern: string): boolean {
   if (pattern === name) return true;
@@ -35,6 +36,8 @@ export class ClaudeRuntime implements Runtime {
   private onMessage?: (message: SDKMessage) => void;
   private onFailure?: (error: unknown) => void;
   private cost = 0;
+  /** Cumulative counters from the last result; the SDK reports running totals, so a turn is the difference. */
+  private tokens: Tokens | null = null;
   private activeIO?: TurnIO;
 
   constructor(private ctx: Context, input: TurnInput) {
@@ -62,6 +65,7 @@ export class ClaudeRuntime implements Runtime {
     let finish!: (result: TurnResult) => void;
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seenTools = new Set<string>();
+    const live = new LiveUsage();
     const abort = () => {
       cancelled = true;
       // A protocol interrupt is scoped to this turn. Kill only on timeout.
@@ -77,9 +81,12 @@ export class ClaudeRuntime implements Runtime {
           metrics.readyMs ??= performance.now() - start;
       } else if (message.type === "system" && message.subtype === "compact_boundary") {
         metrics.compactions!++;
-      } else if (message.type === "stream_event" && !message.parent_tool_use_id) {
+      } else if (message.type === "stream_event") {
+        // Subagent requests count too: the final figures include them.
+        const running = live.observe(message.event as Parameters<LiveUsage["observe"]>[0]);
+        if (running) io.progress(running);
         const event = message.event;
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        if (!message.parent_tool_use_id && event.type === "content_block_delta" && event.delta.type === "text_delta") {
           metrics.firstTokenMs ??= performance.now() - start;
           io.delta(event.delta.text);
         }
@@ -95,10 +102,14 @@ export class ClaudeRuntime implements Runtime {
         const costUsd = Math.max(0, message.total_cost_usd - this.cost);
         this.cost = message.total_cost_usd;
         this.session = message.session_id;
-        metrics.uncachedInputTokens = message.usage.input_tokens;
-        metrics.cacheReadTokens = message.usage.cache_read_input_tokens ?? 0;
-        metrics.cacheWriteTokens = message.usage.cache_creation_input_tokens ?? 0;
-        const usage = { inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens };
+        const { turn, cumulative } = turnTokens(message, this.tokens);
+        this.tokens = cumulative ?? this.tokens;
+        metrics.uncachedInputTokens = turn.input;
+        if (cacheKnown(message)) {
+          metrics.cacheReadTokens = turn.cacheRead;
+          metrics.cacheWriteTokens = turn.cacheWrite;
+        }
+        const usage = { inputTokens: promptTokens(turn), outputTokens: turn.output };
         io.progress(usage);
         const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
         finish({ stop: cancelled ? "cancelled" : budget ? "budget" : message.is_error ? "error" : binding.asked() ? "asked" : "end",

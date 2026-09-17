@@ -9,6 +9,7 @@ import type {} from "@tomrade/mcp";
 import { binaryOk, runJsonl } from "./cli.js";
 import { buildSystem, promptOf } from "./system.js";
 import { claudeMediaInput } from "@tomrade/agent";
+import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
 
 export const ClaudeCodeOptions = z.object({
   transport: z.enum(["sdk", "cli"]).default("sdk"),
@@ -28,16 +29,15 @@ export const ClaudeCodeOptions = z.object({
 });
 export type ClaudeCodeOptions = z.infer<typeof ClaudeCodeOptions>;
 
-interface StreamLine {
+interface StreamLine extends ResultCounters {
   type?: string;
   subtype?: string;
   session_id?: string;
-  message?: { content?: ({ type: string; text?: string; name?: string; input?: unknown } | Record<string, unknown>)[]; usage?: { input_tokens?: number; output_tokens?: number } };
-  event?: { type?: string; delta?: { type?: string; text?: string } };
+  message?: { content?: ({ type: string; text?: string; name?: string; input?: unknown } | Record<string, unknown>)[]; usage?: ApiUsage };
+  event?: { type?: string; delta?: { type?: string; text?: string }; message?: { usage?: ApiUsage }; usage?: ApiUsage };
   result?: unknown;
   is_error?: boolean;
   total_cost_usd?: number;
-  usage?: { input_tokens?: number; output_tokens?: number };
 }
 
 export function createClaudeCodeCliEngine(ctx: Context): Engine {
@@ -123,6 +123,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       if (io.resume) args.push("--resume", io.resume);
 
       const usage = { inputTokens: 0, outputTokens: 0 };
+      const live = new LiveUsage();
       const metrics: import("@tomrade/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
       const started = performance.now();
       let costUsd: number | undefined;
@@ -141,16 +142,14 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
               session = line.session_id;
               metrics.readyMs = performance.now() - started;
             } else if (line.type === "stream_event") {
+              const running = live.observe(line.event);
+              if (running) io.progress(running);
               if (line.event?.type === "content_block_delta" && line.event.delta?.type === "text_delta" && line.event.delta.text) {
                 metrics.firstTokenMs ??= performance.now() - started;
                 io.delta(line.event.delta.text);
               }
             } else if (line.type === "assistant") {
-              if (line.message?.usage) {
-                usage.inputTokens += line.message.usage.input_tokens ?? 0;
-                usage.outputTokens += line.message.usage.output_tokens ?? 0;
-                io.progress(usage);
-              }
+              // A streamed reply arrives as one assistant line per content block, each with a partial usage; the totals come with the result.
               for (const block of line.message?.content ?? []) {
                 if (block.type === "text" && typeof block.text === "string" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
                 else if (block.type === "tool_use" && typeof block.name === "string" && !block.name.startsWith("mcp__"))
@@ -159,15 +158,15 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
             } else if (line.type === "result") {
               session = line.session_id ?? session;
               costUsd = line.total_cost_usd;
-              // per-message usage was already streamed; the result's total wins over the running sum
-              if (line.usage) {
-                const counters = line.usage as typeof line.usage & { cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
-                metrics.cacheReadTokens = counters.cache_read_input_tokens;
-                metrics.cacheWriteTokens = counters.cache_creation_input_tokens;
-                metrics.uncachedInputTokens = counters.input_tokens;
-                usage.inputTokens = Math.max(usage.inputTokens, line.usage.input_tokens ?? 0);
-                usage.outputTokens = Math.max(usage.outputTokens, line.usage.output_tokens ?? 0);
+              // One process serves one turn, so the result's counters are this turn's.
+              const { turn } = turnTokens(line, null);
+              metrics.uncachedInputTokens = turn.input;
+              if (cacheKnown(line)) {
+                metrics.cacheReadTokens = turn.cacheRead;
+                metrics.cacheWriteTokens = turn.cacheWrite;
               }
+              usage.inputTokens = promptTokens(turn);
+              usage.outputTokens = turn.output;
               if (line.is_error) failure = typeof line.result === "string" ? line.result : (line.subtype ?? "Claude Code reported an error");
             }
           }

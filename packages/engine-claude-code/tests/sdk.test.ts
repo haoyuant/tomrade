@@ -20,7 +20,8 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
   const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "hello" }, messages: [], cards: [], brief: "brief v1", pending: null,
     options: { command: bin, model: "fixed-model", effort: "low" }, env: { TOMRADE_TEST_LOG: log } };
   const deltas: string[] = [];
-  const io: TurnIO = { emit() {}, delta: (text) => deltas.push(text), progress() {}, signal: new AbortController().signal,
+  const progressed: { inputTokens: number; outputTokens: number }[] = [];
+  const io: TurnIO = { emit() {}, delta: (text) => deltas.push(text), progress: (u) => progressed.push({ inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0 }), signal: new AbortController().signal,
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
   try {
@@ -29,13 +30,17 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
     input.input = { kind: "text", text: "hello", attachments: [ref] };
     const one = await engine.turn(input, io);
     expect(one.stop, one.error).toBe("end"); io.resume = one.resume;
+    // Live: the prompt (cache included) lands with message_start, the reply grows with message_delta.
+    expect(progressed[0]).toEqual({ inputTokens: 34, outputTokens: 0 });
+    expect(progressed).toContainEqual({ inputTokens: 34, outputTokens: 3 });
     input.input = { kind: "text", text: "hello" };
     input.brief = "brief v2";
     const two = await engine.turn(input, io);
     expect(two.metrics?.runtime).toBe("warm");
     expect(one.costUsd).toBeCloseTo(0.02); expect(two.costUsd).toBeCloseTo(0.02);
-    expect(two.usage).toEqual({ inputTokens: 10, outputTokens: 3 });
-    expect(two.metrics?.cacheReadTokens).toBe(20); expect(two.metrics?.cacheWriteTokens).toBe(4);
+    // Final: this turn's slice of the cumulative modelUsage, input counting cached tokens as read.
+    expect(two.usage).toEqual({ inputTokens: 34, outputTokens: 3 });
+    expect(two.metrics?.cacheReadTokens).toBe(20); expect(two.metrics?.cacheWriteTokens).toBe(4); expect(two.metrics?.uncachedInputTokens).toBe(10);
     const abort = new AbortController(); io.signal = abort.signal;
     input.input = { kind: "text", text: "WAIT_FOREVER" };
     const waiting = engine.turn(input, io);
