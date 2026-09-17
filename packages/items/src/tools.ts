@@ -1,7 +1,7 @@
 import type { Context } from "cordis";
 import { z } from "zod";
 import { ITEM_STATUSES, createItemSchema, filterClauseSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, sortKeySchema, NotFoundError, type Item, type Patch } from "@tomrade/domain";
-import { defineTool, requireProjectId } from "@tomrade/tools";
+import { ToolInputError, defineTool, requireProjectId } from "@tomrade/tools";
 import type {} from "@tomrade/boards";
 import { addResourceSchema, submitDeliverySchema } from "@tomrade/domain";
 
@@ -10,6 +10,10 @@ const withVersion = z.object({ projectId: z.string().optional(), id: z.string(),
 type Simple = z.output<typeof listItemsFilterSchema>;
 const readInput = listItemsFilterSchema.extend({ filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() });
 type ReadInput = z.output<typeof readInput>;
+// Only the listing tool takes a limit; a count is always over every match.
+const listInput = readInput.extend({ limit: z.number().int().positive().optional() });
+/** A page an agent can read; anything larger is asked for. count_items answers the quantity questions. */
+const DEFAULT_LIST_LIMIT = 50;
 
 /** The legacy scalar filters, applied after a clause query so both styles compose. */
 function matchesSimple(item: Item, f: Simple): boolean {
@@ -48,16 +52,21 @@ export function registerTools(ctx: Context): void {
     return existing.version;
   };
 
-  const find = (tool: string, { filter: clauses, sort, ...filter }: ReadInput, inv: { projectId?: string }): { projectId: string; items: Item[] } => {
+  const find = (tool: string, { filter: clauses, sort, ...filter }: ReadInput, inv: { projectId?: string }, opts: { limit?: number; widen?: boolean } = {}): { projectId: string; items: Item[] } => {
     const projectId = requireProjectId(tool, filter.projectId, inv);
-    // A boardId that names no real workstream would otherwise match zero rows
-    // silently — indistinguishable from a project that genuinely has none.
+    // A projectId or boardId that names nothing real would otherwise match zero
+    // rows silently — indistinguishable from a project that genuinely has none.
+    if (!ctx.db.has(projectId)) {
+      throw new ToolInputError(tool, [{ code: "custom", path: ["projectId"], message: `unknown project ${projectId} — omit projectId for the current project, or call list_projects`, input: projectId } as unknown as z.core.$ZodIssue]);
+    }
     if (filter.boardId !== undefined && !ctx.boards.list(projectId).some((b) => b.id === filter.boardId)) throw new NotFoundError(filter.boardId);
-    const items =
-      clauses?.length || sort?.length
-        ? ctx.items.query({ projectId, filter: clauses, sortBy: sort, search: filter.search }).filter((i) => matchesSimple(i, filter))
-        : ctx.items.list({ ...filter, projectId });
-    return { projectId, items };
+    const { limit, widen } = opts;
+    if (!clauses?.length && !sort?.length) return { projectId, items: ctx.items.list({ ...filter, projectId, limit, widen }) };
+    // The scalar filters run in JS after a clause query, so SQL may only cut when there are none.
+    const { projectId: _p, search, ...scalars } = filter;
+    const scalar = Object.values(scalars).some((v) => v !== undefined);
+    const items = ctx.items.query({ projectId, filter: clauses, sortBy: sort, search, widen, limit: scalar ? undefined : limit }).filter((i) => matchesSimple(i, filter));
+    return { projectId, items: limit !== undefined ? items.slice(0, limit) : items };
   };
 
   ctx.tools.register(
@@ -65,9 +74,9 @@ export function registerTools(ctx: Context): void {
       name: "list_items",
       title: "List backlog items",
       description:
-        "List backlog item details. Use count_items instead for totals, counts, or breakdowns; do not fetch rows merely to count them. Supports simple filters (board, status, kind, priority, label, parent), search over title/body (every word must appear, any script; most relevant first), filter clauses, and sort keys.",
-      input: readInput,
-      execute: (args, inv) => find("list_items", args, inv).items
+        `List backlog items, at most \`limit\` rows (default ${DEFAULT_LIST_LIMIT}; raise it for more). To find items about a topic, search with one or two distinctive words, then try synonyms (goal/target, sign-in/login): search matches title and body in any script, every word must appear, and when no item has them all the items with some of them come back instead, best matches first; a "quoted phrase" must appear contiguously. Filters (board, status, kind, priority, label, parent, filter clauses) narrow the set; sort keys only reorder it, so never repeat a search with another sort. Omit projectId to use the current project. Use count_items for totals and breakdowns; do not fetch rows merely to count them.`,
+      input: listInput,
+      execute: ({ limit = DEFAULT_LIST_LIMIT, ...args }, inv) => find("list_items", args, inv, { limit, widen: true }).items
     })
   );
 
@@ -76,7 +85,7 @@ export function registerTools(ctx: Context): void {
       name: "count_items",
       title: "Count backlog items",
       description:
-        "Answer backlog quantity questions in one call without listing rows. Returns the exact matched count plus breakdowns by kind, status, and workstream. In Tomrade, `ticket` and `epic` are distinct item kinds; for 'how many tickets', pass kind: ticket.",
+        "Answer backlog quantity questions in one call without listing rows. Returns the exact matched count plus breakdowns by kind, status, and workstream. Takes the same filters as list_items; a search here is strict (every word must appear). In Tomrade, `ticket` and `epic` are distinct item kinds; for 'how many tickets', pass kind: ticket.",
       input: readInput,
       execute(args, inv) {
         const { projectId, items } = find("count_items", args, inv);

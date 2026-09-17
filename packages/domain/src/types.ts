@@ -176,6 +176,10 @@ export interface ListItemsFilter {
   label?: string;
   /** Words that must all appear in title or body, as substrings in any script; matches come most relevant first. */
   search?: string;
+  /** At most this many rows, from the front of the order: the most relevant when searching. */
+  limit?: number;
+  /** When no item has every search term, fall back to items with some of them, best matches first. */
+  widen?: boolean;
 }
 
 export interface Project {

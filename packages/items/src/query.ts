@@ -173,26 +173,87 @@ export interface CompiledSearch {
   joinParams: unknown[];
   where: string[];
   whereParams: unknown[];
-  /** Relevance, present when the index took part. */
+  /** Relevance, present whenever there is a search; its params bind after the WHERE params. */
   orderBy: string[];
+  orderParams: unknown[];
+  /** How many terms the search has; widening to "any" only means something from two. */
+  terms: number;
+}
+
+/** "all": every term must appear (the default). "any": one is enough, and rows with more come first. */
+export type SearchMode = "all" | "any";
+
+/** BM25 column weights: a hit in the title says more about what a ticket is than one in its body. */
+export const SEARCH_TITLE_WEIGHT = 5;
+
+/**
+ * The terms of a search: whitespace-separated words, except that a run in
+ * double quotes ("login timeout", “登录 超时”) is one term matched as a whole,
+ * spaces included. A quote with no partner runs to the end of the string.
+ */
+export function searchTerms(search: string): string[] {
+  const out: string[] = [];
+  const closer: Record<string, string> = { '"': '"', "\u201c": "\u201d" };
+  let i = 0;
+  while (i < search.length) {
+    const c = search[i]!;
+    if (/\s/.test(c)) {
+      i++;
+      continue;
+    }
+    const close = closer[c];
+    if (close) {
+      const end = search.indexOf(close, i + 1);
+      const phrase = (end === -1 ? search.slice(i + 1) : search.slice(i + 1, end)).trim();
+      if (phrase) out.push(phrase);
+      i = end === -1 ? search.length : end + 1;
+      continue;
+    }
+    let j = i;
+    while (j < search.length && !/\s/.test(search[j]!)) j++;
+    out.push(search.slice(i, j));
+    i = j;
+  }
+  return out;
 }
 
 /**
- * A title/body search as SQL over `items i`. Every word must appear, in either
- * column and any order. Words of three or more characters go through the
- * trigram index as quoted phrases (so FTS operators in them are text) and rank
- * by BM25; shorter words are below what a trigram can see and use instr().
+ * A title/body search as SQL over `items i`. Every term must appear, in either
+ * column and any order; a quoted term is a contiguous match. Terms of three or
+ * more characters go through the trigram index as FTS phrases (so operators in
+ * them are text) and rank by title-weighted BM25; shorter terms are below what
+ * a trigram can see, use instr(), and rank by whether they hit the title.
  */
-export function compileSearch(search: string | undefined): CompiledSearch {
-  const words = search?.trim().split(/\s+/).filter(Boolean) ?? [];
-  const indexed = words.filter((w) => [...w].length >= 3);
-  const short = words.filter((w) => [...w].length < 3);
-  const match = indexed.map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
+export function compileSearch(search: string | undefined, mode: SearchMode = "all"): CompiledSearch {
+  const terms = search ? searchTerms(search) : [];
+  const indexed = terms.filter((t) => [...t].length >= 3);
+  const short = terms.filter((t) => [...t].length < 3);
+  const phrases = indexed.map((t) => `"${t.replace(/"/g, '""')}"`);
+  const lowered = short.map((t) => t.toLowerCase());
+  const sub = `(SELECT rowid, bm25(items_fts, ${SEARCH_TITLE_WEIGHT}, 1) AS rank FROM items_fts WHERE items_fts MATCH ?) fts ON fts.rowid = i.rowid`;
+  const inText = "instr(lower(i.title || ' ' || coalesce(i.body, '')), ?) > 0";
+  const titleHits = short.length ? `(${short.map(() => "(instr(lower(i.title), ?) > 0)").join(" + ")}) DESC` : null;
+  if (mode === "all") {
+    return {
+      joins: indexed.length ? [`JOIN ${sub}`] : [],
+      joinParams: indexed.length ? [phrases.join(" ")] : [],
+      where: short.map(() => inText),
+      whereParams: lowered,
+      orderBy: indexed.length ? ["fts.rank ASC"] : titleHits ? [titleHits] : [],
+      orderParams: indexed.length ? [] : lowered,
+      terms: terms.length
+    };
+  }
+  // Any term will do. Rows the index matched come first, BM25 rewarding more terms; rows only a
+  // short term reached follow, title hits first. The LEFT JOIN keeps the latter in the set.
+  const hit = [...(indexed.length ? ["fts.rowid IS NOT NULL"] : []), ...short.map(() => inText)];
   return {
-    joins: indexed.length ? ["JOIN (SELECT rowid, rank FROM items_fts WHERE items_fts MATCH ?) fts ON fts.rowid = i.rowid"] : [],
-    joinParams: indexed.length ? [match] : [],
-    where: short.map(() => "instr(lower(i.title || ' ' || coalesce(i.body, '')), ?) > 0"),
-    whereParams: short.map((w) => w.toLowerCase()),
-    orderBy: indexed.length ? ["fts.rank ASC"] : []
+    joins: indexed.length ? [`LEFT JOIN ${sub}`] : [],
+    joinParams: indexed.length ? [phrases.join(" OR ")] : [],
+    where: hit.length ? [`(${hit.join(" OR ")})`] : [],
+    whereParams: lowered,
+    orderBy: [...(indexed.length ? ["COALESCE(fts.rank, 0) ASC"] : []), ...(titleHits ? [titleHits] : [])],
+    orderParams: lowered,
+    terms: terms.length
   };
 }
