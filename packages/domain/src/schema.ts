@@ -13,7 +13,8 @@ export const listItemsFilterSchema = z.object({
   workType: workTypeSchema.optional(),
   priority: prioritySchema.optional(),
   label: z.string().optional(),
-  parentId: z.string().nullable().optional()
+  parentId: z.string().nullable().optional(),
+  search: z.string().optional()
 });
 
 export const fieldValueSchema = z.union([z.string(), z.number()]);

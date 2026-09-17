@@ -23,10 +23,48 @@ const IDENTITY =
 
 const HISTORY_LIMIT = 48;
 
-const flat = (value: unknown, limit = 3500): string => {
-  const text = JSON.stringify(value);
-  return text.length > limit ? text.slice(0, limit) + "… (truncated — fetch details with a narrower tool call)" : text;
-};
+/** Tools that only read; an identical call within one turn returns the same thing, so it is not run twice. */
+const READ_TOOL = /^(list|get|count|find|read|open)_|^diagram_schema$/;
+const RESULT_CAP = 6000;
+const LIST_CAP = 16000;
+const TEXT_CAP = 160;
+
+/** One row of a long list, shorn of what a listing does not need: empties, nested records, the tail of long text. */
+export function compactRow(row: unknown): unknown {
+  if (typeof row !== "object" || row === null || Array.isArray(row)) return row;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "string") out[k] = v.length > TEXT_CAP ? v.slice(0, TEXT_CAP) + "…" : v;
+    else if (Array.isArray(v)) {
+      if (v.length && v.every((x) => typeof x !== "object")) out[k] = v;
+    } else if (typeof v !== "object") out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * A tool result as the model reads it. A list that does not fit is not cut
+ * mid-record — that read as "there is more, query again" and sent weaker
+ * models re-slicing the same rows by status and sort — every row stays in a
+ * shortened form, and only past the list cap do rows drop, with the count first.
+ */
+export function render(result: unknown, cap = RESULT_CAP): string {
+  const full = JSON.stringify(result);
+  if (full.length <= cap) return full;
+  if (Array.isArray(result) && result.length && result.every((r) => typeof r === "object" && r !== null && !Array.isArray(r))) {
+    const rows = result.map(compactRow);
+    let kept = rows.length;
+    let body = JSON.stringify(rows);
+    while (body.length > LIST_CAP && kept > 1) {
+      kept = Math.min(kept - 1, Math.floor((kept * LIST_CAP) / body.length));
+      body = JSON.stringify(rows.slice(0, kept));
+    }
+    const head = kept < rows.length ? `(${rows.length} items; showing the first ${kept} — narrow the search or use count_items) ` : `(all ${rows.length} items; long text shortened and nested detail dropped — get_item for one item's full record) `;
+    return head + body;
+  }
+  return full.slice(0, cap) + "… (truncated — fetch details with a narrower tool call)";
+}
 
 /** Prior turns re-read as plain text; the current turn keeps native tool blocks. */
 export function historyMessages(messages: ThreadMessage[], io?: TurnIO, accepted: string[] = []): Message[] {
@@ -111,6 +149,8 @@ export function createLoopEngine(ctx: Context): Engine {
       const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
       const usage = { inputTokens: 0, outputTokens: 0 };
       let invalidStreak = 0;
+      // What each read call answered this turn; a write clears it, since the answer may have changed.
+      const memo = new Map<string, string>();
 
       for (let step = 1; step <= options.maxSteps; step += 1) {
         const collected = await collect(
@@ -141,15 +181,20 @@ export function createLoopEngine(ctx: Context): Engine {
         messages.push(assistantMessage(collected));
         const results = await Promise.all(
           collected.toolCalls.map(async (call) => {
+            const key = READ_TOOL.test(call.name) ? `${call.name} ${JSON.stringify(call.args)}` : null;
+            if (key && memo.has(key)) return { id: call.id, suspended: false, content: "(identical to an earlier call this turn — nothing has changed since; use the result you already have)", invalid: false };
             try {
               const result = await io.tools.execute(call.name, call.args);
-              return { id: call.id, suspended: isSuspended(result), content: isSuspended(result) ? result.note : flat(result, call.name === "diagram_schema" || call.name === "open_playbook" ? 100_000 : 3500), invalid: false };
+              const content = isSuspended(result) ? result.note : render(result, call.name === "diagram_schema" || call.name === "open_playbook" ? 100_000 : RESULT_CAP);
+              if (key) memo.set(key, content);
+              return { id: call.id, suspended: isSuspended(result), content, invalid: false };
             } catch (err) {
               const invalid = err instanceof ToolInputError;
               return { id: call.id, suspended: false, content: `ERROR: ${err instanceof Error ? err.message : String(err)}`, isError: true, invalid };
             }
           })
         );
+        if (collected.toolCalls.some((call) => !READ_TOOL.test(call.name))) memo.clear();
         invalidStreak = results.some((r) => r.invalid) ? invalidStreak + 1 : 0;
         messages.push(toolResultsMessage(results));
         if (results.some((r) => r.suspended)) return { stop: "asked", usage };

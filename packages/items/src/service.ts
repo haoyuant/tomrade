@@ -23,7 +23,7 @@ import {
 } from "@tomrade/domain";
 import type { Fields, StoredValue } from "@tomrade/fields";
 import { registerChannels } from "./channels.js";
-import { compileQuery } from "./query.js";
+import { compileQuery, compileSearch, type SearchMode } from "./query.js";
 import { registerTools } from "./tools.js";
 
 declare module "cordis" {
@@ -104,6 +104,11 @@ export interface ItemQuery {
   projectId: string;
   filter?: FilterClause[];
   sortBy?: SortKey[];
+  search?: string;
+  /** At most this many rows, from the front of the order. */
+  limit?: number;
+  /** When no item has every search term, fall back to items with some of them. */
+  widen?: boolean;
 }
 
 export class Items extends Service {
@@ -226,30 +231,48 @@ export class Items extends Service {
       where.push("i.id IN (SELECT il.item_id FROM item_labels il JOIN labels l ON l.id = il.label_id WHERE l.name = ?)");
       params.push(filter.label);
     }
-    const sql = `${SELECT_ITEM} ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY i.rank ASC, i.updated_at DESC`;
     const projectIds = filter.projectId !== undefined ? [filter.projectId] : this.ctx.db.openIds();
-    return projectIds.flatMap((projectId) => {
-      if (!this.ctx.db.has(projectId)) return [];
-      const db = this.ctx.db.for(projectId);
-      return this.hydrate(db, db.prepare(sql).all(...params) as ItemRow[]);
-    });
+    const run = (mode: SearchMode) => {
+      const search = compileSearch(filter.search, mode);
+      const all = [...where, ...search.where];
+      const bound = [...params, ...search.whereParams, ...search.orderParams, ...(filter.limit !== undefined ? [filter.limit] : [])];
+      const sql = `${SELECT_ITEM} ${search.joins.join(" ")} ${all.length ? "WHERE " + all.join(" AND ") : ""} ORDER BY ${[...search.orderBy, "i.rank ASC", "i.updated_at DESC"].join(", ")}${filter.limit !== undefined ? " LIMIT ?" : ""}`;
+      const rows = projectIds.flatMap((projectId) => {
+        if (!this.ctx.db.has(projectId)) return [];
+        const db = this.ctx.db.for(projectId);
+        return this.hydrate(db, db.prepare(sql).all(...search.joinParams, ...bound) as ItemRow[]);
+      });
+      // The limit applied per project; across several it still caps the whole list.
+      return { rows: filter.limit !== undefined ? rows.slice(0, filter.limit) : rows, terms: search.terms };
+    };
+    const strict = run("all");
+    return !strict.rows.length && filter.widen && strict.terms >= 2 ? run("any").rows : strict.rows;
   }
 
   /**
    * A view's query, run in SQL: filter clauses over any field, sort keys over
-   * any sortable field, empty values last, ties by rank then recency. What the
-   * renderer computes over its cached list for the live board, this computes
-   * for tools and for projects too large to hold in memory.
+   * any sortable field, empty values last, ties by relevance when there is a
+   * search, then rank, then recency. What the renderer computes over its cached
+   * list for the live board, this computes for tools and for projects too large
+   * to hold in memory.
    */
   query(q: ItemQuery): Item[] {
     const db = this.db(q.projectId);
     const defs = new Map(this.fields.list(q.projectId).map((f) => [f.id, f]));
     const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs);
-    const sql = `${SELECT_ITEM} ${compiled.joins.join(" ")} WHERE i.project_id = ?${compiled.where.length ? " AND " + compiled.where.join(" AND ") : ""} ORDER BY ${[...compiled.orderBy, "i.rank ASC", "i.updated_at DESC"].join(", ")}`;
-    // The project id binds after the joins and before the clause params.
-    const joinCount = compiled.joins.length;
-    const params = [...compiled.params.slice(0, joinCount), q.projectId, ...compiled.params.slice(joinCount)];
-    return this.hydrate(db, db.prepare(sql).all(...params) as ItemRow[]);
+    const run = (mode: SearchMode) => {
+      const search = compileSearch(q.search, mode);
+      const joins = [...compiled.joins, ...search.joins];
+      const where = [...compiled.where, ...search.where];
+      const orderBy = [...compiled.orderBy, ...search.orderBy, "i.rank ASC", "i.updated_at DESC"];
+      const sql = `${SELECT_ITEM} ${joins.join(" ")} WHERE i.project_id = ?${where.length ? " AND " + where.join(" AND ") : ""} ORDER BY ${orderBy.join(", ")}${q.limit !== undefined ? " LIMIT ?" : ""}`;
+      // The project id binds after the joins and before the clause params.
+      const joinCount = compiled.joins.length;
+      const params = [...compiled.params.slice(0, joinCount), ...search.joinParams, q.projectId, ...compiled.params.slice(joinCount), ...search.whereParams, ...search.orderParams, ...(q.limit !== undefined ? [q.limit] : [])];
+      return { rows: this.hydrate(db, db.prepare(sql).all(...params) as ItemRow[]), terms: search.terms };
+    };
+    const strict = run("all");
+    return !strict.rows.length && q.widen && strict.terms >= 2 ? run("any").rows : strict.rows;
   }
 
   get(projectId: string, id: string): Item | null {

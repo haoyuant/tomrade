@@ -540,7 +540,19 @@ renderer evaluates the same shapes over its cached list with the pure functions
 in `@tomrade/domain` (`matchesFilter`, `compareItems`), and a parity test in
 `packages/items` keeps the two implementations agreeing. Agents reach all of it
 through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
-`update_item` (`patch.fields`).
+`update_item` (`patch.fields`). Both `items.list` and `items.query` also take
+`search`: terms that must all appear in title or body, matched as substrings in
+any script over an FTS5 trigram index (`items_fts`, kept in step by triggers)
+and returned most relevant first, after any explicit sort. A term is a word, or
+a double-quoted run (`"login timeout"`, `“登录 超时”`) that must appear
+contiguously. Relevance is BM25 with the title weighted 5:1 over the body;
+terms under three characters are below a trigram, filter with `instr()` and
+rank by whether they hit the title. With `widen`, a search that matched
+nothing is retried with any term sufficing (rows matching more terms first);
+`list_items` widens, `count_items` never does. Both also take `limit`, the
+first N rows of that order; `list_items` exposes it and defaults to 50,
+`count_items` has none. A `projectId` that names no open project is a
+`ToolInputError`, like a `boardId` that names no workstream.
 
 ## Storage
 

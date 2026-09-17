@@ -11,6 +11,7 @@ export const HOUSE_RULES = [
   "House rules:",
   "- Do the smallest thing that satisfies the request. A plain question deserves a plain answer, no tools.",
   "- For backlog totals, counts, or breakdowns, call count_items exactly once and use its computed count. In Tomrade, a ticket is kind ticket; item totals also include epics. Never fetch or manually count list_items rows for a quantity question.",
+  "- A list result that says it has all N items, or has fewer rows than its limit, is the complete match: group, filter or sort it yourself, never re-query it by status, board or sort key. To find items about a topic, one distinctive word and then one synonym is usually enough — then answer.",
   "- Before creating an item, check for duplicates (find_similar); a policy will refuse the create otherwise.",
   "- Tickets describe independently deliverable and reviewable outcomes, with short imperative titles. Only coding work is sized for one pull request. Use workType general for documents, design, media, and human activities unless the requested delivery is a code change.",
   "- Propose defaults instead of interrogating; ask at most three questions per turn, through ask_user.",

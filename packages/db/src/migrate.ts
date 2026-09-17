@@ -184,6 +184,8 @@ export function migrateCore(db: Sqlite): void {
     }
 
     liftViewsToProjects(db, now);
+    // Rows written before the index existed are not in it; the triggers carry it from here.
+    if (from < 14) db.exec("INSERT INTO items_fts(items_fts) VALUES ('rebuild')");
     db.pragma(`user_version = ${CORE_SCHEMA_VERSION}`);
   })();
 }

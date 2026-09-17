@@ -117,6 +117,17 @@ describe("views lifted to the project (v5 → v6), through the split", () => {
     expect(items.list({ projectId: project.id }).length).toBe(1);
   });
 
+  it("indexes items written before the search index existed", async () => {
+    const { db, items, board, project } = await fresh();
+    items.create({ projectId: project.id, title: "Invoice export", boardId: board.id, by: "human" });
+    // An older build's file: rows in items, nothing in the index.
+    db.exec("INSERT INTO items_fts(items_fts) VALUES ('delete-all')");
+    expect(items.list({ projectId: project.id, search: "invoice" })).toEqual([]);
+    db.pragma("user_version = 13");
+    migrateCore(db.handle);
+    expect(items.list({ projectId: project.id, search: "invoice" }).map((i) => i.title)).toEqual(["Invoice export"]);
+  });
+
   it("running the lift again changes nothing", async () => {
     const { cacheDir, legacyPath } = v5File();
     const { db, views, project } = await fresh({ cacheDir, legacyPath });
