@@ -36,6 +36,8 @@ export const ICON_IDS = [
   "i-globe",
   "i-cloud",
   "i-cloud-half",
+  "i-eye",
+  "i-eye-off",
   "i-check",
   "i-tag",
   "i-pen",
@@ -103,6 +105,8 @@ export function IconSprite() {
         <symbol id="i-plug" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M5.2 1.8v3M8.8 1.8v3M3.4 4.8h7.2v2.1a3.6 3.6 0 0 1-3.6 3.6 3.6 3.6 0 0 1-3.6-3.6Z"/><path d="M7 10.5v1.7"/></g></symbol>
         <symbol id="i-monitor" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><rect x="1.6" y="2.4" width="10.8" height="7.4" rx="1.2"/><path d="M5 12.2h4"/></g></symbol>
         <symbol id="i-cloud" viewBox="0 0 14 14"><path d="M10.2 11.1H5.3a4.1 4.1 0 1 1 3.9-5.3h1a2.65 2.65 0 1 1 0 5.3Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
+        <symbol id="i-eye" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M1 7s2.3-3.9 6-3.9S13 7 13 7s-2.3 3.9-6 3.9S1 7 1 7Z"/><circle cx="7" cy="7" r="1.7"/></g></symbol>
+        <symbol id="i-eye-off" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"><path d="M1 7s2.3-3.9 6-3.9S13 7 13 7s-2.3 3.9-6 3.9S1 7 1 7Z"/><circle cx="7" cy="7" r="1.7"/><path d="M2.2 11.8 11.8 2.2"/></g></symbol>
         <symbol id="i-cloud-half" viewBox="0 0 14 14"><clipPath id="i-cloud-half-clip"><rect x="0" y="0" width="7" height="14"/></clipPath><path d="M10.2 11.1H5.3a4.1 4.1 0 1 1 3.9-5.3h1a2.65 2.65 0 1 1 0 5.3Z" fill="currentColor" clipPath="url(#i-cloud-half-clip)"/><path d="M10.2 11.1H5.3a4.1 4.1 0 1 1 3.9-5.3h1a2.65 2.65 0 1 1 0 5.3Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
         <symbol id="i-globe" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.1"><circle cx="7" cy="7" r="5.2"/><ellipse cx="7" cy="7" rx="2.3" ry="5.2"/><path d="M1.9 7h10.2M2.6 4.1h8.8M2.6 9.9h8.8"/></g></symbol>
         <symbol id="i-check" viewBox="0 0 14 14"><path d="M2.9 7.4 5.7 10.2 11.1 4.2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></symbol>

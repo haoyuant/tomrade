@@ -3,7 +3,8 @@ import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomrade/domain";
 import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomrade/files";
 import { Icon } from "~/components/icons";
-import { SyncContextActions, SyncLine, SyncMark, SyncScopeSummary, SyncSelect, useSyncActions, type SyncActions } from "./SyncPolicy";
+import { SyncContextActions, SyncMark, SyncScopeSummary, SyncSelect, describeSync, useSyncActions, type SyncActions } from "./SyncPolicy";
+import { AgentContextActions, AgentMark, AgentSelect, describeListing, useAgentActions, type AgentActions } from "./AgentPolicy";
 import { Eyebrow, Spacer, Tag } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
 import { useWorkspace } from "~/components/workspace/context";
@@ -147,12 +148,46 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
 }
 
 /** The bar that replaces the plain toolbar while rows are checked: a count, and the actions that take the whole set. */
-function SelectionBar({ count, sync, onCut, onCopy, onDelete, onClear }: { count: number; sync: ReactNode; onCut: () => void; onCopy: () => void; onDelete: () => void; onClear: () => void }) {
+/**
+ * Both settings for what is open, on one line: where the bytes go, and whether
+ * an agent is told this exists. They are different questions, so they sit side
+ * by side rather than in one control.
+ */
+function EntryPolicyLine({ syncActions, agentActions, entry }: { syncActions: SyncActions; agentActions: AgentActions; entry: FileEntry }) {
+  const { t } = useI18n();
+  if (!entry.sync && !entry.listing) return null;
+  return (
+    <div className="row files-sync-line" style={{ gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", padding: "0 var(--space-3) var(--space-2)" }}>
+      {entry.sync && (
+        <span className="row files-sync-part" style={{ gap: "var(--space-2)", alignItems: "center" }}>
+          <SyncMark sync={entry.sync} />
+          <span className="meta-txt">{describeSync(t, entry.sync)}</span>
+          <SyncSelect actions={syncActions} paths={[entry.path]} value={entry.sync.source === "explicit" ? entry.sync.mode : "inherit"} label={t("files.syncFor", { name: entry.name })} />
+        </span>
+      )}
+      {entry.listing && (
+        <span className="row files-agent-part" style={{ gap: "var(--space-2)", alignItems: "center" }}>
+          <Icon name={entry.listing.mode === "unlisted" || entry.listing.mixed ? "i-eye-off" : "i-eye"} size={12} style={{ color: "var(--meta)" }} />
+          <span className="meta-txt">{describeListing(t, entry.listing)}</span>
+          <AgentSelect
+            actions={agentActions}
+            paths={[entry.path]}
+            value={entry.listing.source === "explicit" ? entry.listing.mode : "inherit"}
+            label={t("files.agentFor", { name: entry.name })}
+          />
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SelectionBar({ count, sync, listing, onCut, onCopy, onDelete, onClear }: { count: number; sync: ReactNode; listing: ReactNode; onCut: () => void; onCopy: () => void; onDelete: () => void; onClear: () => void }) {
   const { t } = useI18n();
   return (
     <div className="lockbar files-selection-bar" role="toolbar" data-testid="files-selection-bar">
       <span className="selection-count">{t("files.selectionCount", { n: count })}</span>
       {sync}
+      {listing}
       <button type="button" className="btn btn-ghost sel-cut" onClick={onCut}>
         <Icon name="i-cut" size={13} />
         {t("files.cut")}
@@ -190,7 +225,8 @@ function FolderView({
   onMoveInto,
   dragOver,
   onDragOverChange,
-  syncActions
+  syncActions,
+  agentActions
 }: {
   projectId: string;
   path: string;
@@ -210,6 +246,7 @@ function FolderView({
   dragOver: boolean;
   onDragOverChange: (over: boolean) => void;
   syncActions: SyncActions;
+  agentActions: AgentActions;
 }) {
   const { t } = useI18n();
   const { openFile } = useWorkspace();
@@ -252,6 +289,7 @@ function FolderView({
         <SelectionBar
           count={selected.size}
           sync={<SyncSelect actions={syncActions} paths={[...selected]} value="" label={t("files.syncFor", { name: t("files.selectionCount", { n: selected.size }) })} />}
+          listing={<AgentSelect actions={agentActions} paths={[...selected]} value="" label={t("files.agentFor", { name: t("files.selectionCount", { n: selected.size }) })} />}
           onCut={() => onCut([...selected])}
           onCopy={() => onCopy([...selected])}
           onDelete={() => onDeleteMany([...selected])}
@@ -329,6 +367,7 @@ function FolderView({
                         <Icon name={e.kind === "dir" ? "i-folder" : "i-file"} size={14} />
                         <span>{e.name}</span>
                         <SyncMark sync={e.sync} />
+                        <AgentMark listing={e.listing} />
                         {e.change && <span className={`side-mark is-${e.change}`} title={e.change} />}
                       </button>
                     </td>
@@ -341,6 +380,7 @@ function FolderView({
                 <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => onCopy(targetsFor(e.path))} />
                 {e.kind === "dir" && clipboardEntry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => onPasteInto(e.path)} />}
                 <SyncContextActions actions={syncActions} paths={targetsFor(e.path)} entry={e} />
+                <AgentContextActions actions={agentActions} paths={targetsFor(e.path)} entry={e} />
                 <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => onDeleteMany(targetsFor(e.path))} />
               </ContextMenu>
             ))}
@@ -477,6 +517,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const tree = useFilesTree(projectId);
   const status = useFilesStatus(projectId);
   const syncActions = useSyncActions(projectId);
+  const agentActions = useAgentActions(projectId);
   const info = useFilesInfo(projectId);
   const sync = useSyncFiles(projectId);
   const remove = useRemoveFile(projectId);
@@ -760,7 +801,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
       )}
 
       {syncActions.confirmation}
-      {!pinned && stateKey !== "unavailable" && path !== "" && entry && <SyncLine actions={syncActions} entry={entry} />}
+      {!pinned && stateKey !== "unavailable" && path !== "" && entry && <EntryPolicyLine syncActions={syncActions} agentActions={agentActions} entry={entry} />}
       <div className="files-body">
         {stateKey === "unavailable" ? (
           <div className="files-main">
@@ -795,6 +836,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             dragOver={dragOver}
             onDragOverChange={setDragOver}
             syncActions={syncActions}
+            agentActions={agentActions}
           />
         ) : (
           <FileView projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />

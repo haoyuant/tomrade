@@ -291,6 +291,19 @@ overwriting it. If no model is configured or the response is invalid, the Agent
 uses a deterministic keyword/metadata fallback. Recommendation never starts a
 run and never bypasses capability checks.
 
+`TurnInput.filesIndex` carries `{ markdown, digest }`: what this project's Files
+hold, filled in by a plugin on `agent/prepare-turn` — `@tomrade/files` is the one
+that does. It is discovery, not permission: it says what is there to look up and
+nothing about what may be read. `promptSections(input, io, { filesIndex: false })`
+leaves it out of the per-turn text, which is what an engine asks for when its
+session prompt already carries it, a user message being paid for again every turn
+while a system prompt is cached. `sessionSystem(input, agentName)`, exported from
+`@tomrade/engine-claude-code`, is that prompt for Claude Code and Codex; `digest`
+is how a long-running session notices the index it opened with has gone stale. A
+CLI agent gets no system prompt from Tomrade at all, so `agent/prepare-brief`
+(`{ projectId, itemId, filesIndex? }`) is where the same context enters the brief
+`agent.prepareGeneral` hands over.
+
 A Files provider registers `ctx.items.files({ getVersion(projectId, reference) })`
 and retains the returned disposer; `@tomrade/files` is the one shipped. The
 resolver must check project access and return the exact `{ fileId, versionId }`,
@@ -474,7 +487,10 @@ Names are global and unique. `execute` receives validated `args` and
 run) for the ledger and run-scoped state. A registered tool appears on every
 surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
-There is no per-surface code to write.
+There is no per-surface code to write. A tool may return a string as well as a
+value: the MCP server passes a string through as the result text and serialises
+anything else as compact JSON, so a tool whose answer is already prose spends no
+context on quoting and indentation.
 
 ## Views
 
@@ -720,8 +736,10 @@ is the git-backed store every remote backend builds on; a backend that keeps
 files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 `readVersion`, `resolveVersion`, `locate`, `history`, `write`, `mkdir`, `move`,
 `remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`, and — to be
-undoable — `head` and `restore`). `@tomrade/files-github`
-registers `github`, sharing the `github` token section with `@tomrade/storage-github`.
+undoable — `head` and `restore`). `agentPolicy`, `setAgentRules` and `search`
+are optional too: a backend without them lists everything and cannot search.
+`@tomrade/files-github` registers `github`, sharing the `github` token section
+with `@tomrade/storage-github`.
 
 A ticket's files land in a top-level folder named after its workstream:
 `ctx.files.folderFor(projectId, itemId)` is that name (separators become `-`),
@@ -740,21 +758,56 @@ merged and pushed on a sweep (`autoSyncMs`). A file changed on both sides is a
 `conflicted`, the other files keep syncing, and `resolve(path, "ours" | "theirs"
 | "both")` settles it — `both` keeps theirs beside ours as `name (theirs).ext`.
 
+A project's files introduce themselves. Every turn carries an **index** of what
+the store holds — paths, sizes, dates and the title a document gives itself, the
+biggest folders folded to a token budget and left saying how much they hold.
+`ctx.files.agentIndex(projectId, { budget, focus, native })` builds it, and
+`ctx.files.indexFor(projectId, native, itemId?)` is the same thing as a prompt
+wants it: the person's budget applied, the ticket's own workstream folder kept
+open whatever that budget is, and with `native` this machine's folder named for
+an engine that has file tools of its own. Without an index an agent has to go
+looking, and mostly answers from memory instead.
+
+Listing governs what Tomrade volunteers, never what an agent may do.
+`ctx.files.agentPolicy(projectId)` returns `{ default: "listed" | "unlisted",
+rules: [{ path, mode }] }` and `ctx.files.setAgentRules(projectId, paths, mode)`
+changes a batch atomically, in the same shape as the sharing rules: `inherit`
+drops an exception, the empty path sets the root default, the closest ancestor
+wins, and `FileEntry.listing` reports the effective mode beside `sync`. An
+unlisted path is left out of the index, out of `list_files` and out of a
+`search_files` call that named no path; it reads and writes exactly as a listed
+one, and a path the person names in conversation or pins to a ticket always
+resolves. `ctx.files.search(projectId, input)` is the search behind that tool —
+literal strings or regular expressions over the working copy, several queries in
+one call — and it withholds unlisted hits only when the caller named no path.
+
+Both dimensions share one policy file, `{ v: 2, sync, agents }`; a version-1 file
+is the bare sync policy and is read as one, then rewritten. The Git backend
+publishes it to `.tomrade-files/policy.json` beside the shared files and merges
+it three-way per dimension against the last synchronized copy. Sharing fails
+closed when two machines changed the same rule, because bytes are at stake;
+listing settles on `unlisted` instead, a disagreement about what to volunteer
+being no reason to stop an exchange.
+
 | Call | Does |
 |---|---|
 | `ctx.files.dirFor(projectId)` | This machine's copy, or null until the project has a folder |
 | `ctx.files.info(projectId)` / `status(projectId)` | Folder, remote, `local` / `synced` / `ahead` / `behind` / `diverged` / `conflicted` / `syncing` / `offline` / `error` / `unavailable` |
 | `ctx.files.tree(projectId)` / `list(projectId, dir)` / `read(projectId, path)` | The entries and a working copy, with each file's stable id and last version |
 | `ctx.files.readVersion(projectId, { fileId, versionId })` | An immutable version, or null |
+| `ctx.files.search(projectId, input)` | Literal or regular-expression hits over the working copy, several queries at once; unlisted paths are withheld unless the caller named one |
 | `ctx.files.write(projectId, path, body, { message })` | A new version, returned with its `fileId` and `versionId` |
 | `ctx.files.mkdir` / `move` / `copy` / `remove(projectId, …)` | Each returns the history record it made (`files:<seq>`, for `oplog.revert`) or null when nothing changed; all undoable through `oplog.undo` |
 | `ctx.files.sync(projectId)` / `conflicts(projectId)` / `resolve(projectId, path, choice)` | Save, take theirs, push; what waits; settle one |
+| `ctx.files.agentPolicy(projectId)` / `setAgentRules(projectId, paths, mode)` | What the index and the browsing tools mention unasked: `listed`, `unlisted`, `inherit` |
+| `ctx.files.agentIndex(projectId, opts)` / `indexFor(projectId, native, itemId?)` | The index and its digest; `indexFor` applies the settings budget and keeps a ticket's folder open |
 | `ctx.files.bind(projectId, backendId, config)` / `unbind(projectId)` | Share through a backend's remote (and sync at once); stop sharing, keeping everything |
 | `ctx.files.attach(projectId, itemId, { path, role })` | Pin the file's latest version to a ticket as material or an output |
 | `ctx.files.attachMany(projectId, itemId, { paths, role })` | Pin several latest file versions to a ticket in one write |
 
-Agent tools: `list_files`, `read_file`, `write_file` — the last returns the
-pair `add_delivery_resource` takes. Events: `files/registered`,
+Agent tools: `list_files`, `search_files`, `read_file`, `write_file` and
+`manage_file`, which moves, copies or deletes in one call; `write_file` returns
+the pair `add_delivery_resource` takes. Events: `files/registered`,
 `files/unregistered`, `files/changed`, `files/synced`; the renderer hears
 `files.changed(projectId)`. The renderer draws the tree above the views in the
 sidebar, the viewer (markdown rendered and sanitized, HTML in a sandboxed
@@ -793,6 +846,10 @@ person: it is also written to `<Hub>/settings.json` with a timestamp per
 section, travels with the Hub, and a clash between two machines is settled by
 the later stamp. A section whose schema holds a password is `machine` whatever
 it declares.
+
+First-party plugins register sections the same way: `@tomrade/files` contributes
+`files`, whose `agentIndexTokens` (1500) is how much of an agent's prompt the
+index of a project's files may take, and zero turns the index off.
 
 ## Contributions
 

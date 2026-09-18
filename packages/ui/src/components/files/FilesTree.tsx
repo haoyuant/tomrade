@@ -12,6 +12,7 @@ import { pathForFile, pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
 import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
+import { AgentContextActions, AgentMark, useAgentActions } from "./AgentPolicy";
 
 const expandedKey = (projectId: string) => `tomrade.files.expanded.${projectId}`;
 
@@ -60,6 +61,7 @@ export function FilesTree() {
   const toast = useToast();
   const tree = useFilesTree(project.id);
   const syncActions = useSyncActions(project.id);
+  const agentActions = useAgentActions(project.id);
   const status = useFilesStatus(project.id);
   const mkdir = useMakeFolder(project.id);
   const importFiles = useImportFiles(project.id);
@@ -243,6 +245,7 @@ export function FilesTree() {
                 )}
                 <span className="side-name">{entry.name}</span>
                 <SyncMark sync={entry.sync} />
+                <AgentMark listing={entry.listing} />
                 {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
               </button>
             </div>
@@ -252,6 +255,7 @@ export function FilesTree() {
           <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => clipboard.copy([entry.path])} />
           {dir && clipboard.entry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => runPaste(entry.path)} />}
           <SyncContextActions actions={syncActions} paths={[entry.path]} entry={entry} />
+          <AgentContextActions actions={agentActions} paths={[entry.path]} entry={entry} />
           <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => deleteEntry(entry)} />
         </ContextMenu>,
         ...(expanded ? rows(entry.path, depth + 1) : [])

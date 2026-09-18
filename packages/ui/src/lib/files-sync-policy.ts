@@ -1,6 +1,7 @@
-import type { FileEntry, FilesSyncPolicy, SyncMode } from "@tomrade/files";
+import type { FileEntry, FilesSyncPolicy, PathPolicy, SyncMode } from "@tomrade/files";
 
-export function effectiveSyncMode(policy: FilesSyncPolicy, path: string): SyncMode {
+/** The same closest-ancestor rule the backend applies, for every path dimension. */
+export function effectiveMode<M extends string>(policy: PathPolicy<M>, path: string): M {
   let mode = policy.default;
   let depth = -1;
   for (const rule of policy.rules) {
@@ -11,6 +12,8 @@ export function effectiveSyncMode(policy: FilesSyncPolicy, path: string): SyncMo
   }
   return mode;
 }
+
+export const effectiveSyncMode = (policy: FilesSyncPolicy, path: string): SyncMode => effectiveMode(policy, path);
 
 /** Preview the entire batch together: parent resets preserve child exceptions. */
 export function makesPathsLocal(policy: FilesSyncPolicy, paths: string[], mode: SyncMode | "inherit"): boolean {
