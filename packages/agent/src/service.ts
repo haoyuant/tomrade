@@ -627,7 +627,11 @@ export class Agent extends Service {
     const where = await this.workdir(projectId, thread.id);
     if (!where.cwd) throw new Error(where.problem ?? "no working folder for this delivery");
     const ticket = { key: item.key, title: item.title, body: item.body };
-    const prompt = generalPrompt({ ticket, cwd: where.cwd, playbook: selected, continued });
+    // A terminal agent gets no system prompt from Tomrade, so whatever an
+    // in-app turn would be told has to travel in the brief itself.
+    const context: { projectId: string; itemId: string; filesIndex?: string } = { projectId, itemId };
+    await this.ctx.parallel("agent/prepare-brief", context);
+    const prompt = generalPrompt({ ticket, cwd: where.cwd, playbook: selected, continued, ...(context.filesIndex ? { filesIndex: context.filesIndex } : {}) });
     return { preparation: { threadId: thread.id, continued, engine: engineId, cwd: where.cwd, playbook: selected, opener: generalOpener(ticket, continued), prompt }, item };
   }
 

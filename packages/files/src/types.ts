@@ -22,19 +22,32 @@ export type FileChange = "added" | "modified" | "deleted" | "renamed" | "conflic
 /** Sharing intent, independent of whether a remote is connected or reachable. */
 export type SyncMode = "shared" | "local";
 
+/** Whether Tomrade mentions a path to agents unasked. Never a permission: an unlisted path still reads and writes. */
+export type ListMode = "listed" | "unlisted";
+
 /** Closest ancestor wins; an exact rule overrides the parent. Paths are Files-relative. */
-export interface FilesSyncPolicy {
-  default: SyncMode;
-  rules: Array<{ path: string; mode: SyncMode }>;
+export interface PathPolicy<M extends string> {
+  default: M;
+  rules: Array<{ path: string; mode: M }>;
 }
 
-export interface FileSyncPreference {
-  mode: SyncMode;
+export interface PathPreference<M extends string> {
+  mode: M;
   source: "explicit" | "inherited" | "default";
   sourcePath: string | null;
   /** A folder contains descendants with a different effective setting. */
   mixed: boolean;
 }
+
+export type FilesSyncPolicy = PathPolicy<SyncMode>;
+export type FileSyncPreference = PathPreference<SyncMode>;
+/**
+ * What the agent index and the browsing tools mention on their own. It governs
+ * disclosure, not access: reads and writes by path are never refused, and a
+ * path the person names in conversation or pins to a ticket always works.
+ */
+export type FilesAgentPolicy = PathPolicy<ListMode>;
+export type FileListPreference = PathPreference<ListMode>;
 
 export interface FileEntry {
   /** Relative to the store root, forward slashes, no leading slash. */
@@ -49,6 +62,8 @@ export interface FileEntry {
   change?: FileChange;
   /** Absent for backends that do not implement selective sharing. */
   sync?: FileSyncPreference;
+  /** Absent for backends that do not implement the agent index. */
+  listing?: FileListPreference;
 }
 
 export interface FileContent {
@@ -138,11 +153,45 @@ export interface FileStore {
    * This controls future sharing, not erasure of already published history.
    */
   setSyncRules?(paths: string[], mode: SyncMode | "inherit"): Promise<FilesSyncPolicy>;
+  /** Which paths Tomrade names to agents unasked. Disclosure only; reads are never refused. */
+  agentPolicy?(): Promise<FilesAgentPolicy>;
+  /** Atomic batch, same shape as `setSyncRules`: empty path sets the root default, `inherit` drops an exception. */
+  setAgentRules?(paths: string[], mode: ListMode | "inherit"): Promise<FilesAgentPolicy>;
+  /** Literal or regular-expression search over the working copy. Absent when a backend cannot search. */
+  search?(input: FileSearchInput): Promise<FileSearchResult>;
   /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. */
   sync(): Promise<FilesStatus>;
   conflicts(): Promise<FileConflict[]>;
   resolve(path: string, choice: ConflictChoice): Promise<void>;
   close(): void;
+}
+
+export interface FileSearchInput {
+  /** Searched independently; each hit says which one it answered. */
+  queries: string[];
+  /** Limit to this folder (or file) of the store. */
+  path?: string;
+  /** Glob over the path's last segment, e.g. `*.md`. */
+  glob?: string;
+  /** Hits per query, across all files. */
+  max: number;
+  /** Treat each query as a regular expression instead of a literal string. */
+  regex?: boolean;
+  caseSensitive?: boolean;
+}
+
+export interface FileSearchHit {
+  query: string;
+  path: string;
+  line: number;
+  /** The matching line, clipped. */
+  text: string;
+}
+
+export interface FileSearchResult {
+  hits: FileSearchHit[];
+  /** Queries whose hits were cut off at `max`. */
+  truncated: string[];
 }
 
 export interface ConnectionState {

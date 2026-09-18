@@ -5,7 +5,7 @@ import path from "node:path";
 import type { FileReference } from "@tomrade/domain";
 import { GIT_ENV, GitFolder, type Git } from "@tomrade/storage";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
-import { GitProjection, blobId, contains, emptySyncState, loadJson, policyAt, remoteDirectory, saveJson, type SyncState, type VersionRecord } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
 import {
   FileMovedOnError,
@@ -17,8 +17,14 @@ import {
   type FileEntry,
   type FileStore,
   type FileVersion,
+  type FileSearchInput,
+  type FileSearchHit,
+  type FileSearchResult,
+  type FilesAgentPolicy,
   type FilesStatus,
   type FilesSyncPolicy,
+  type ListMode,
+  type PathPolicy,
   type SyncMode,
   type WriteOptions
 } from "./types.js";
@@ -69,6 +75,8 @@ export function normalizeRel(input: string): string {
 }
 
 const hidden = (rel: string): boolean => rel.split("/").some((part) => part.startsWith("."));
+
+const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}…` : text);
 
 interface LedgerLine {
   id: string;
@@ -146,13 +154,15 @@ export class GitFileStore implements FileStore {
   private ensured = false;
   private closed = false;
   private chain: Promise<unknown> = Promise.resolve();
-  private policy: FilesSyncPolicy = { default: "shared", rules: [] };
+  private policy: FilesSyncPolicy = { ...DEFAULT_SYNC_POLICY };
+  private agents: FilesAgentPolicy = { ...DEFAULT_AGENT_POLICY };
   private syncState: SyncState = emptySyncState();
   /** The version each path last changed in, so publishing never has to ask git per file. */
   private latest: Record<string, string> = {};
   private stateKey = "";
   private syncedHead: string | null = null;
   private policyDirty = false;
+  private agentsDirty = false;
 
   constructor(private readonly opts: GitStoreOptions) {
     this.dir = opts.dir;
@@ -196,7 +206,9 @@ export class GitFileStore implements FileStore {
     if (bound !== null) saveJson(path.join(this.dir, ".git", "files-target.json"), { directory: bound });
     // The remote lives with the projection; an origin left here would push the whole history.
     await this.g.removeRemote();
-    this.policy = loadJson(this.meta("policy.json"), this.policy);
+    const stored = readStoredPolicy(loadJson<unknown>(this.meta("policy.json"), null)) ?? emptyStoredPolicy();
+    this.policy = stored.sync;
+    this.agents = stored.agents;
     this.latest = loadJson(this.meta("latest.json"), {});
     if (remote) this.loadSyncState(new GitProjection(this.opts.git, this.opts.gitBinary, this.dir, remote).key);
     this.scaffold();
@@ -211,7 +223,31 @@ export class GitFileStore implements FileStore {
 
   private meta(name: string): string { return path.join(this.dir, ".git", "files-sync", name); }
 
+  /** Both dimensions live in one file; writing one always writes the pair. */
+  private savePolicy(): void {
+    saveJson(this.meta("policy.json"), { v: 2, sync: this.policy, agents: this.agents } satisfies StoredPolicy);
+  }
+
   async syncPolicy(): Promise<FilesSyncPolicy> { return structuredClone(this.policy); }
+
+  async agentPolicy(): Promise<FilesAgentPolicy> { return structuredClone(this.agents); }
+
+  setAgentRules(paths: string[], mode: ListMode | "inherit"): Promise<FilesAgentPolicy> {
+    return this.locked(async () => {
+      if (!["listed", "unlisted", "inherit"].includes(mode)) throw new Error("Invalid listing mode");
+      for (const rel of [...new Set(paths.map(normalizeRel))]) {
+        if (!rel) this.agents.default = mode === "inherit" ? "listed" : mode;
+        else {
+          this.agents.rules = this.agents.rules.filter((r) => r.path !== rel);
+          if (mode !== "inherit") this.agents.rules.push({ path: rel, mode });
+        }
+      }
+      this.savePolicy();
+      this.agentsDirty = true;
+      this.afterChange();
+      return this.agentPolicy();
+    });
+  }
 
   setSyncRules(paths: string[], mode: SyncMode | "inherit"): Promise<FilesSyncPolicy> {
     return this.locked(async () => {
@@ -226,7 +262,7 @@ export class GitFileStore implements FileStore {
           if (mode !== "inherit") this.policy.rules.push({ path: rel, mode });
         }
       }
-      saveJson(this.meta("policy.json"), this.policy);
+      this.savePolicy();
       this.policyDirty = true;
       this.afterChange();
       return this.syncPolicy();
@@ -241,6 +277,7 @@ export class GitFileStore implements FileStore {
     this.syncState = loaded?.v === 2 ? (loaded as SyncState) : emptySyncState();
     this.syncedHead = this.syncState.head ?? null;
     this.policyDirty = !!this.syncState.policy && JSON.stringify(this.policy) !== JSON.stringify(this.syncState.policy);
+    this.agentsDirty = !!this.syncState.agents && JSON.stringify(this.agents) !== JSON.stringify(this.syncState.agents);
   }
 
   private saveSyncState(): void {
@@ -525,9 +562,11 @@ export class GitFileStore implements FileStore {
     const identityChanges: StagedChange[] = [...(carry ?? [])].filter(([p, id]) => this.readLedger().byPath.get(p) !== id && !changes.some((c) => c.path === p)).map(([p]) => ({ status: "M", path: p }));
     if (!changes.length && !identityChanges.length && !this.merging()) return false;
     for (const change of changes) if (change.status === "R" && change.from) {
-      for (const rule of this.policy.rules) if (contains(change.from, rule.path)) rule.path = change.path + rule.path.slice(change.from.length);
+      for (const rules of [this.policy.rules, this.agents.rules]) {
+        for (const rule of rules) if (contains(change.from, rule.path)) rule.path = change.path + rule.path.slice(change.from.length);
+      }
     }
-    saveJson(this.meta("policy.json"), this.policy);
+    this.savePolicy();
     await this.recordIds([...changes, ...identityChanges], carry);
     await this.g.ensureIdentity();
     this.quiet();
@@ -586,6 +625,7 @@ export class GitFileStore implements FileStore {
       modifiedAt: Math.round(stat.mtimeMs),
       fileId: isDir ? null : (ledger.byPath.get(rel) ?? null),
       sync: policyAt(this.policy, rel, isDir),
+      listing: policyAt(this.agents, rel, isDir),
       ...(change ? { change } : {})
     };
   }
@@ -629,6 +669,55 @@ export class GitFileStore implements FileStore {
     };
     await walk("");
     return out;
+  }
+
+  /**
+   * `git grep` over the working copy: the tracked files plus anything saved but
+   * not yet committed, which is exactly the set the store shows. Literal by
+   * default, because the queries are written by a model and a pathological
+   * expression must not be able to hold the store open.
+   */
+  async search(input: FileSearchInput): Promise<FileSearchResult> {
+    const scope = input.path ? normalizeRel(input.path) : "";
+    const pathspec = [
+      ...(scope ? [`:(literal)${scope}`, `:(literal)${scope}/`] : []),
+      ...(input.glob ? [scope ? `:(glob)${scope}/**/${input.glob}` : `:(glob)**/${input.glob}`] : [])
+    ];
+    const hits: FileSearchHit[] = [];
+    const truncated: string[] = [];
+    for (const query of input.queries) {
+      if (!query.trim()) continue;
+      const args = [
+        "grep", "--no-color", "-I", "-n", "-z", "--untracked",
+        input.regex ? "-E" : "-F",
+        ...(input.caseSensitive ? [] : ["-i"]),
+        "-e", query,
+        ...(pathspec.length ? ["--", ...pathspec] : [])
+      ];
+      const out = await this.grep(args);
+      let found = 0;
+      for (const line of out.split("\n")) {
+        if (!line) continue;
+        const parts = line.split("\0");
+        if (parts.length < 3) continue;
+        const [rel, lineNo] = parts as [string, string, string];
+        const text = parts.slice(2).join("\0");
+        // The store's own bookkeeping is not somebody's document.
+        if (hidden(rel)) continue;
+        if (found >= input.max) { if (!truncated.includes(query)) truncated.push(query); break; }
+        found++;
+        hits.push({ query, path: rel, line: Number(lineNo) || 0, text: clip(text.trim(), 200) });
+      }
+    }
+    return { hits, truncated };
+  }
+
+  /** Exit 1 is "no match", not a failure; anything slower than this is a query not worth waiting for. */
+  private grep(args: string[]): Promise<string> {
+    return new Promise((resolve) => {
+      execFile(this.opts.gitBinary, args, { cwd: this.dir, encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout: 10_000, env: { ...process.env, ...GIT_ENV } },
+        (error, stdout) => resolve(error && !stdout ? "" : stdout));
+    });
   }
 
   async read(p: string): Promise<FileContent | null> {
@@ -747,8 +836,10 @@ export class GitFileStore implements FileStore {
       this.quiet();
       fs.mkdirSync(path.dirname(this.abs(dst)), { recursive: true });
       fs.renameSync(this.abs(src), this.abs(dst));
-      for (const rule of this.policy.rules) if (contains(src, rule.path)) rule.path = dst + rule.path.slice(src.length);
-      saveJson(this.meta("policy.json"), this.policy);
+      for (const rules of [this.policy.rules, this.agents.rules]) {
+        for (const rule of rules) if (contains(src, rule.path)) rule.path = dst + rule.path.slice(src.length);
+      }
+      this.savePolicy();
       if (await this.commitAll(opts.message ?? `Moved ${src} to ${dst}`)) this.afterChange();
     });
   }
@@ -842,7 +933,7 @@ export class GitFileStore implements FileStore {
     if (conflicts) return { ...base, state: "conflicted", detail: conflicts === 1 ? "1 file needs a decision" : `${conflicts} files need a decision` };
     if (!this.opts.remote) return { ...base, state: "local" };
     if (this.problem) return { ...base, state: this.problem.state, detail: this.problem.detail };
-    const ahead = this.policyDirty || head !== this.syncedHead;
+    const ahead = this.policyDirty || this.agentsDirty || head !== this.syncedHead;
     return { ...base, ahead: ahead ? 1 : 0, state: ahead ? "ahead" : "synced" };
   }
 
@@ -892,10 +983,12 @@ export class GitFileStore implements FileStore {
       await this.locked(async () => {
         this.syncState.baseline = snapshot.baseline;
         this.syncState.policy = snapshot.policy;
+        this.syncState.agents = snapshot.agents;
         this.syncState.head = snapshot.head;
         this.saveSyncState();
         this.syncedHead = snapshot.head;
         this.policyDirty = JSON.stringify(this.policy) !== JSON.stringify(snapshot.policy);
+        this.agentsDirty = JSON.stringify(this.agents) !== JSON.stringify(snapshot.agents);
       });
       this.problem = null;
       this.lastSyncAt = Date.now();
@@ -907,33 +1000,45 @@ export class GitFileStore implements FileStore {
     }
   }
 
-  /** Merge policy before looking at bytes. Concurrent edits to the same rule fail closed. */
-  private mergePolicy(incoming: FilesSyncPolicy | null): void {
+  /**
+   * Merge both policy dimensions before looking at bytes. Sharing fails closed
+   * on a concurrent edit to the same rule — bytes are at stake. Listing is only
+   * about what Tomrade volunteers, so a clash settles on the quieter side
+   * instead of stopping the exchange.
+   */
+  private mergePolicy(incoming: StoredPolicy | null): void {
     if (!incoming) return;
-    if (!["shared", "local"].includes(incoming.default) || !Array.isArray(incoming.rules)) throw new Error("Invalid remote sync policy");
-    const map = (p: FilesSyncPolicy) => new Map([["", p.default], ...p.rules.map((r): [string, SyncMode] => {
-      if (!r.path || normalizeRel(r.path) !== r.path || !["shared", "local"].includes(r.mode)) throw new Error("Invalid remote sync rule");
-      return [r.path, r.mode];
-    })]);
-    const base = map(this.syncState.policy ?? { default: "shared", rules: [] });
-    const ours = map(this.policy);
-    const theirs = map(incoming);
-    const result = new Map<string, SyncMode>();
-    for (const p of new Set([...base.keys(), ...ours.keys(), ...theirs.keys()])) {
-      const b = base.get(p), o = ours.get(p), t = theirs.get(p);
-      if (o !== b && t !== b && o !== t) throw new Error(`Sync policy conflict at ${p || "root"}; restore the last synchronized rule before retrying`);
-      const chosen = o !== b ? o : t;
-      if (chosen) result.set(p, chosen);
-    }
-    this.policy = { default: result.get("")!, rules: [...result].filter(([p]) => p).map(([p, mode]) => ({ path: p, mode })) };
-    saveJson(this.meta("policy.json"), this.policy);
+    this.policy = this.mergeDimension(this.syncState.policy ?? DEFAULT_SYNC_POLICY, this.policy, incoming.sync, (path) => {
+      throw new Error(`Sync policy conflict at ${path || "root"}; restore the last synchronized rule before retrying`);
+    });
+    this.agents = this.mergeDimension(this.syncState.agents ?? DEFAULT_AGENT_POLICY, this.agents, incoming.agents, () => "unlisted");
+    this.savePolicy();
   }
 
-  private async reconcile(projection: GitProjection): Promise<{ baseline: Record<string, string>; policy: FilesSyncPolicy; head: string } | null> {
+  private mergeDimension<M extends string>(base: PathPolicy<M>, ours: PathPolicy<M>, theirs: PathPolicy<M>, settle: (path: string) => M): PathPolicy<M> {
+    const map = (p: PathPolicy<M>) => new Map<string, M>([["", p.default], ...p.rules.map((r): [string, M] => {
+      if (!r.path || normalizeRel(r.path) !== r.path) throw new Error("Invalid remote policy rule");
+      return [r.path, r.mode];
+    })]);
+    const b = map(base), o = map(ours), t = map(theirs);
+    const result = new Map<string, M>();
+    for (const path of new Set([...b.keys(), ...o.keys(), ...t.keys()])) {
+      const was = b.get(path), mine = o.get(path), yours = t.get(path);
+      const chosen = mine !== was && yours !== was && mine !== yours ? settle(path) : mine !== was ? mine : yours;
+      if (chosen) result.set(path, chosen);
+    }
+    return { default: result.get("") ?? ours.default, rules: [...result].filter(([path]) => path).map(([path, mode]) => ({ path, mode })) };
+  }
+
+  private async reconcile(projection: GitProjection): Promise<{ baseline: Record<string, string>; policy: FilesSyncPolicy; agents: FilesAgentPolicy; head: string } | null> {
     this.loadSyncState(projection.key);
     await this.commitAll("Saved");
     const policyBytes = await projection.read(`${IDS_DIR}/policy.json`);
-    const incomingPolicy = policyBytes ? (JSON.parse(policyBytes.toString("utf8")) as FilesSyncPolicy) : null;
+    let incomingPolicy: StoredPolicy | null = null;
+    if (policyBytes) {
+      incomingPolicy = readStoredPolicy(JSON.parse(policyBytes.toString("utf8")) as unknown);
+      if (!incomingPolicy) throw new Error("Invalid remote sync policy");
+    }
     this.mergePolicy(incomingPolicy);
     await this.importRecords(projection);
     // A clash waiting on a person is not synced over.
@@ -1005,7 +1110,10 @@ export class GitFileStore implements FileStore {
     }
     // The baseline is the fetched remote until the push succeeds; a refused push is retried from here.
     this.syncState.baseline = incomingBaseline;
-    if (incomingPolicy) this.syncState.policy = incomingPolicy;
+    if (incomingPolicy) {
+      this.syncState.policy = incomingPolicy.sync;
+      this.syncState.agents = incomingPolicy.agents;
+    }
     this.saveSyncState();
     await this.commitAll("Received shared files", carry);
     if (Object.keys(this.syncState.conflicts).length) {
@@ -1027,9 +1135,9 @@ export class GitFileStore implements FileStore {
     }
     for (const p of remoteOids.keys()) if (!outgoing.has(p)) await projection.write(p, null);
     await projection.write(IDS_FILE, Buffer.from(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"));
-    await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify(this.policy)));
+    await projection.write(`${IDS_DIR}/policy.json`, Buffer.from(JSON.stringify({ v: 2, sync: this.policy, agents: this.agents } satisfies StoredPolicy)));
     await this.exportRecords(projection, selected);
-    return { baseline, policy: structuredClone(this.policy), head: (await this.head())! };
+    return { baseline, policy: structuredClone(this.policy), agents: structuredClone(this.agents), head: (await this.head())! };
   }
 
   // ── conflicts ───────────────────────────────────────────────────────────────

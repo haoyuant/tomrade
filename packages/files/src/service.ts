@@ -12,6 +12,7 @@ import type {} from "@tomrade/items";
 import type {} from "@tomrade/boards";
 import type {} from "@tomrade/storage";
 import type {} from "@tomrade/agent";
+import type { SettingsSection } from "@tomrade/settings";
 import type {} from "@tomrade/contributions";
 import type {} from "@tomrade/tools";
 import type { UndoProvider } from "@tomrade/oplog";
@@ -20,7 +21,8 @@ import type { UndoRecord } from "@tomrade/domain";
 import type {} from "./channels.js";
 import { createGitBackend } from "./git-backend.js";
 import { GitFileStore, normalizeRel } from "./git-store.js";
-import { remoteDirectory } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, policyAt, remoteDirectory } from "./git-sync.js";
+import { buildAgentIndex, type AgentIndex } from "./agent-index.js";
 import { gitRunner } from "@tomrade/storage";
 import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
@@ -42,6 +44,10 @@ import {
   type FilesStatus,
   type FilesSyncState,
   type FilesSyncPolicy,
+  type FilesAgentPolicy,
+  type FileSearchInput,
+  type FileSearchResult,
+  type ListMode,
   type SyncMode,
   type WriteOptions
 } from "./types.js";
@@ -78,6 +84,25 @@ export type FilesConfig = z.infer<typeof FilesConfig>;
 
 /** The backend every project starts on: versions here, shared nowhere. */
 export const LOCAL_BACKEND = "local";
+
+export interface FilesSettings {
+  agentIndexTokens: number;
+}
+
+/**
+ * How much of an agent's context the file index may take. It buys discovery:
+ * without it an agent has to go looking, and mostly does not.
+ */
+export const FILES_SECTION: SettingsSection<FilesSettings> = {
+  id: "files",
+  title: "Files",
+  description: "How much room the list of this project's files takes in an agent's prompt. Zero leaves agents to browse for themselves.",
+  schema: z.object({
+    agentIndexTokens: z.number().int().min(0).max(20_000).default(1_500).meta({ title: "Index size in tokens" })
+  }),
+  defaults: { agentIndexTokens: 1_500 },
+  order: 13
+};
 
 /** A folder, minus hidden names; a folder left empty gets a marker so git carries it. */
 function copyTree(src: string, dest: string): void {
@@ -121,6 +146,47 @@ function ensureIgnoreLine(file: string, line: string, comment?: string): void {
   fs.writeFileSync(file, `${body}${body && !body.endsWith("\n") ? "\n" : ""}${comment ? `${comment}\n` : ""}${line}\n`, "utf8");
 }
 
+/** Only a document has a title worth quoting; a spreadsheet's first bytes are not one. */
+const TITLED = /\.(md|markdown|txt|mdx|rst|org)$/i;
+const TITLE_BYTES = 4096;
+const TITLE_MAX = 60;
+
+/** Front matter first, then the first ATX heading. Whatever comes back is one clipped line. */
+export function readTitle(abs: string): string | null {
+  let head: string;
+  try {
+    const fd = fs.openSync(abs, "r");
+    try {
+      const buffer = Buffer.alloc(TITLE_BYTES);
+      head = buffer.subarray(0, fs.readSync(fd, buffer, 0, TITLE_BYTES, 0)).toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  const lines = head.split(/\r?\n/);
+  if (lines[0]?.trim() === "---") {
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.trim() === "---") break;
+      const match = /^(title|description)\s*:\s*(.+)$/i.exec(line);
+      if (match) return clipTitle(match[2]!.trim().replace(/^["']|["']$/g, ""));
+    }
+  }
+  for (const line of lines) {
+    const match = /^#{1,3}\s+(.+?)\s*#*$/.exec(line);
+    if (match) return clipTitle(match[1]!.trim());
+  }
+  return null;
+}
+
+const clipTitle = (text: string): string | null => {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  return clean.length > TITLE_MAX ? `${clean.slice(0, TITLE_MAX)}…` : clean;
+};
+
 export class Files extends Service {
   static provide = "files";
   static inject = ["db", "hub", "storage", "items", "boards", "oplog"];
@@ -134,6 +200,8 @@ export class Files extends Service {
   private readonly open = new Map<string, { backend: string; store: FileStore; configKey: string }>();
   private readonly opening = new Map<string, Promise<FileStore>>();
   private readonly lastState = new Map<string, FilesSyncState>();
+  /** Titles cost a read each; a file that has not changed has not retitled itself. */
+  private readonly titles = new Map<string, { stamp: string; title: string | null }>();
   private remotes!: RemoteStore;
   private ops!: OpsStore;
 
@@ -166,8 +234,28 @@ export class Files extends Service {
     this.ctx.on("storage/imported", (projectId) => void this.reopen(projectId).catch((error) => this.warn(projectId, error)));
 
     this.home.inject(["tools"], (ctx) => registerTools(ctx, this));
+    this.home.inject(["settings"], (ctx) => ctx.settings.register(FILES_SECTION));
     this.home.inject(["agent"], (ctx) => {
       for (const name of ["files.read", "files.write", "document.preview"]) ctx.effect(() => ctx.agent.capability(name), `agent.capability(${name})`);
+      // Every turn is told what this project holds. It never says what may be
+      // read: the index is discovery, and a path left out of it still reads.
+      ctx.on("agent/prepare-turn", async (input) => {
+        try {
+          const index = await this.indexFor(input.projectId, input.purpose !== "backlog", input.ticket?.id);
+          if (index) input.filesIndex = { markdown: index.markdown, digest: index.digest };
+        } catch (error) {
+          this.warn(input.projectId, error);
+        }
+      });
+      // A terminal agent is handed the same index inside its brief.
+      ctx.on("agent/prepare-brief", async (brief) => {
+        try {
+          const index = await this.indexFor(brief.projectId, true, brief.itemId);
+          if (index) brief.filesIndex = index.markdown;
+        } catch (error) {
+          this.warn(brief.projectId, error);
+        }
+      });
     });
     this.home.inject(["contributions"], (ctx) => {
       ctx.contributions.statusItem({
@@ -207,6 +295,9 @@ export class Files extends Service {
       ctx.ipc.handle("files.sync", (projectId) => this.sync(projectId));
       ctx.ipc.handle("files.syncPolicy", (projectId) => this.syncPolicy(projectId));
       ctx.ipc.handle("files.setSyncRules", (projectId, paths, mode) => this.setSyncRules(projectId, paths, mode));
+      ctx.ipc.handle("files.agentPolicy", (projectId) => this.agentPolicy(projectId));
+      ctx.ipc.handle("files.setAgentRules", (projectId, paths, mode) => this.setAgentRules(projectId, paths, mode));
+      ctx.ipc.handle("files.agentIndex", (projectId, opts) => this.agentIndex(projectId, opts ?? {}));
       ctx.ipc.handle("files.conflicts", (projectId) => this.conflicts(projectId));
       ctx.ipc.handle("files.resolve", (projectId, p, choice) => this.resolve(projectId, p, choice));
       ctx.ipc.handle("files.resolveAll", (projectId, choice) => this.resolveAll(projectId, choice));
@@ -715,6 +806,95 @@ export class Files extends Service {
     const policy = await store.setSyncRules(normalized, validMode);
     this.notify(projectId);
     return policy;
+  }
+
+  async agentPolicy(projectId: string): Promise<FilesAgentPolicy> {
+    const store = await this.store(projectId);
+    return store.agentPolicy ? store.agentPolicy() : { ...DEFAULT_AGENT_POLICY };
+  }
+
+  async setAgentRules(projectId: string, paths: string[], mode: ListMode | "inherit"): Promise<FilesAgentPolicy> {
+    const validMode = z.enum(["listed", "unlisted", "inherit"]).parse(mode);
+    const normalized = [...new Set(z.array(z.string()).min(1).parse(paths).map(normalizeRel))];
+    const store = await this.store(projectId);
+    if (!store.setAgentRules) throw new Error("This Files backend does not keep an agent index");
+    const policy = await store.setAgentRules(normalized, validMode);
+    this.notify(projectId);
+    return policy;
+  }
+
+  /** Text across the project's files. A backend that cannot search says so rather than pretending to find nothing. */
+  async search(projectId: string, input: FileSearchInput): Promise<FileSearchResult> {
+    const store = await this.store(projectId);
+    if (!store.search) throw new Error("This Files backend does not support search");
+    const policy = await this.agentPolicy(projectId);
+    const result = await store.search(input);
+    // A path the caller named is answered as asked; an open search volunteers only what the index would.
+    if (input.path) return result;
+    return { ...result, hits: result.hits.filter((hit) => policyAt(policy, hit.path).mode === "listed") };
+  }
+
+  /**
+   * What an agent is told this project holds. Discovery only: everything here
+   * is also reachable without it, and what is left out is reachable too.
+   */
+  async agentIndex(projectId: string, opts: { budget?: number; focus?: string[]; native?: boolean } = {}): Promise<AgentIndex | null> {
+    if (!this.dirFor(projectId)) return null;
+    const [entries, policy] = await Promise.all([this.tree(projectId), this.agentPolicy(projectId)]);
+    if (!entries.length) return null;
+    const store = await this.store(projectId);
+    return buildAgentIndex({
+      entries,
+      policy,
+      titleOf: (entry) => this.titleOf(store.dir, entry),
+      budget: opts.budget,
+      focus: opts.focus,
+      native: opts.native,
+      root: store.dir
+    });
+  }
+
+  /**
+   * The heading a document gives itself: front matter first, then the first
+   * heading, and for a folder its README's. Only the head of a file is read,
+   * and only once per version of it — an index is rebuilt on every turn.
+   */
+  private titleOf(dir: string, entry: FileEntry): string | null {
+    const rel = entry.kind === "dir" ? `${entry.path}/README.md` : entry.path;
+    if (entry.kind === "file" && !TITLED.test(entry.name)) return null;
+    const abs = path.join(dir, ...rel.split("/"));
+    let stamp: string;
+    try {
+      const stat = fs.statSync(abs);
+      if (!stat.isFile()) return null;
+      stamp = `${stat.size}:${Math.round(stat.mtimeMs)}`;
+    } catch {
+      return null;
+    }
+    const cached = this.titles.get(rel);
+    if (cached?.stamp === stamp) return cached.title;
+    const title = readTitle(abs);
+    if (this.titles.size > 5_000) this.titles.clear();
+    this.titles.set(rel, { stamp, title });
+    return title;
+  }
+
+  /**
+   * The index as a prompt wants it: the person's budget, and the ticket's own
+   * folder kept open whatever that budget is.
+   */
+  async indexFor(projectId: string, native: boolean, itemId?: string): Promise<AgentIndex | null> {
+    const budget = (this.home.get("settings")?.get().files as FilesSettings | undefined)?.agentIndexTokens ?? FILES_SECTION.defaults.agentIndexTokens;
+    if (budget <= 0) return null;
+    let focus: string[] = [];
+    if (itemId) {
+      try {
+        focus = [this.folderFor(projectId, itemId)];
+      } catch {
+        // a ticket without a workstream simply has no folder to keep open
+      }
+    }
+    return this.agentIndex(projectId, { budget, focus, native });
   }
 
   async sync(projectId: string): Promise<FilesStatus> {

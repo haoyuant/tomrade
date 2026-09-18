@@ -184,6 +184,43 @@ describe("selective Git projection", { timeout: 30000 }, () => {
     expect((await b.syncPolicy()).rules).not.toContainEqual({ path: "a", mode: "shared" });
   });
 
+  it("travels listing rules with the remote, settles a clash on the quieter side, and reads a version-1 policy file", async () => {
+    const remote = bare(); const a = await open(target(remote)); const b = await open(target(remote));
+    await a.write("Private/pay.md", text("bands"));
+    await a.setAgentRules(["Private"], "unlisted");
+    await a.sync(); expect((await b.sync()).state).toBe("synced");
+    // The rule reaches the other machine, so "do not bring this up" holds everywhere.
+    expect((await b.agentPolicy()).rules).toEqual([{ path: "Private", mode: "unlisted" }]);
+    expect(JSON.parse(run(remote, "show", "main:.tomrade-files/policy.json"))).toMatchObject({ v: 2, agents: { default: "listed" }, sync: { default: "shared" } });
+
+    // Both edit the same rule: listing settles quietly instead of stopping the exchange, unlike sharing.
+    await a.setAgentRules(["Private"], "listed"); await b.setAgentRules(["Private"], "inherit");
+    await a.sync(); expect((await b.sync()).state).toBe("synced");
+    expect((await b.agentPolicy()).rules).toEqual([{ path: "Private", mode: "unlisted" }]);
+
+    // A store written before the listing dimension existed keeps its sharing rules and lists everything.
+    const legacy = path.join(root, `legacy-${serial++}`);
+    const first = await open(null, legacy);
+    await first.setSyncRules(["drafts"], "local");
+    first.close();
+    const policyFile = path.join(legacy, ".git", "files-sync", "policy.json");
+    fs.writeFileSync(policyFile, JSON.stringify({ default: "shared", rules: [{ path: "drafts", mode: "local" }] }));
+    const reopened = await open(null, legacy);
+    expect((await reopened.syncPolicy()).rules).toEqual([{ path: "drafts", mode: "local" }]);
+    expect(await reopened.agentPolicy()).toEqual({ default: "listed", rules: [] });
+    await reopened.setAgentRules([""], "unlisted");
+    expect(JSON.parse(fs.readFileSync(policyFile, "utf8"))).toMatchObject({ v: 2, sync: { rules: [{ path: "drafts", mode: "local" }] }, agents: { default: "unlisted" } });
+  });
+
+  it("renames listing rules with the folder they name", async () => {
+    const store = await open(null);
+    await store.write("Notes/one.md", text("x"));
+    await store.setAgentRules(["Notes"], "unlisted");
+    await store.move("Notes", "Archive");
+    expect((await store.agentPolicy()).rules).toEqual([{ path: "Archive", mode: "unlisted" }]);
+    expect((await store.list("Archive"))[0]?.listing).toMatchObject({ mode: "unlisted", source: "inherited", sourcePath: "Archive" });
+  });
+
   it("adopts remote identity for identical independently created content", async () => {
     const remote = bare(); const a = await open(target(remote)); const b = await open(target(remote));
     const original = await a.write("same.txt", text("same")); await b.write("same.txt", text("same"));
