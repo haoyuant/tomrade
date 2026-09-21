@@ -204,6 +204,33 @@ describe("crash recovery", () => {
   });
 });
 
+describe("the knobs a thread opens on", () => {
+  it("keeps the options a new thread was opened with instead of resetting to the engine's defaults", async () => {
+    const { agent, project } = await boot([]);
+    const thread = agent.newThread(project.id, "loop", null, { options: { effort: "high" } });
+
+    expect(thread.options).toEqual({ effort: "high" });
+    expect(agent.store.thread(project.id, thread.id)!.options).toEqual({ effort: "high" });
+    expect(agent.optionsOf(agent.store.thread(project.id, thread.id)!, "loop")).toEqual({ effort: "high" });
+  });
+
+  it("does not carry knobs onto the engine that takes over when the one asked for is gone", async () => {
+    const { agent, project } = await boot([]);
+    const thread = agent.newThread(project.id, "unplugged", null, { options: { effort: "high" } });
+
+    expect(thread.engine).toBe("loop"); // the first registered engine answers
+    expect(thread.options).toBeNull();
+  });
+
+  it("drops options the engine rejects rather than leaving a thread that cannot run", async () => {
+    const { agent, project } = await boot([]);
+    const thread = agent.newThread(project.id, "loop", null, { options: { effort: 42 } });
+
+    expect(thread.engine).toBe("loop");
+    expect(thread.options).toBeNull();
+  });
+});
+
 describe("the scripted engine", () => {
   it("walks the intake wizard deterministically and stores the dossier card", async () => {
     const { ctx, agent, project } = await boot([]);

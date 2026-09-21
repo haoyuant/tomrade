@@ -110,6 +110,8 @@ export interface NewThreadOptions {
   title?: string;
   /** The UI that owns this thread. Defaults to the Assistant panel. */
   surface?: "assistant" | "code";
+  /** The engine knobs the thread opens with — what the thread it was opened from was using. */
+  options?: Record<string, unknown> | null;
 }
 
 /** Current in-memory work plus durable questions, for main-process observers that load mid-run. */
@@ -505,7 +507,21 @@ export class Agent extends Service {
 
   newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
     const chosen = engine ?? this.settingsOf().defaultEngine;
-    return this.store.createThread(projectId, this.engines.has(chosen) ? chosen : ([...this.engines.keys()][0] ?? chosen), opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
+    const known = this.engines.has(chosen);
+    const engineId = known ? chosen : ([...this.engines.keys()][0] ?? chosen);
+    const thread = this.store.createThread(projectId, engineId, opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
+    // The knobs the thread was opened from — a thread keeps the engine and effort it was started with
+    // instead of falling back to the engine's defaults. Only when the engine asked for is the one that
+    // answered: knobs picked for a plugin that is gone mean nothing to the engine that took its place.
+    if (known && opts.options && Object.keys(opts.options).length) this.store.touchThread(projectId, thread.id, { options: this.acceptedOptions(engineId, opts.options) });
+    return this.store.thread(projectId, thread.id)!;
+  }
+
+  /** Options the engine's own schema accepts; ones it rejects are dropped rather than leaving a thread that cannot run. */
+  private acceptedOptions(engineId: string, options: Record<string, unknown>): Record<string, unknown> | null {
+    const schema = this.engines.get(engineId)?.options;
+    if (!schema) return options;
+    return schema.safeParse(this.optionsOf({ options }, engineId)).success ? options : null;
   }
 
   /** The engines that may take a code turn — a local coding agent, never the in-app model. */

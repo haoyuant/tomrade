@@ -72,7 +72,8 @@ export function usePlaybookConflictNotice(projectId: string): void {
 export function useNewThread(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { engine?: string; boardId?: string | null } = {}) => invoke("agent.newThread", projectId, args.engine, args.boardId ?? null),
+    mutationFn: (args: { engine?: string; boardId?: string | null; options?: Record<string, unknown> | null } = {}) =>
+      invoke("agent.newThread", projectId, args.engine, args.boardId ?? null, { options: args.options }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) })
   });
 }

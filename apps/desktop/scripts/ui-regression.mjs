@@ -852,6 +852,26 @@ const run = async () => {
   await sleep(900);
   check("back on the whole project the message may go", (await $(`!document.querySelector('.ai-workdir') && document.querySelector('.ai-send')?.disabled === false`)) === true);
   await typeInto(".ai-input", "");
+  // A new thread opens on the engine and knobs the panel is showing, not the settings
+  // default. The default is pointed at another engine first, so "kept the thread's
+  // engine" and "fell back to the default" are told apart.
+  const showing = ctx.agent.store.threads(project.id)[0];
+  const elsewhere = (await ctx.agent.engineViews()).find((e) => e.id !== showing.engine)?.id;
+  const settingsBefore = ctx.settings.get();
+  ctx.settings.set({ ...settingsBefore, agent: { ...settingsBefore.agent, defaultEngine: elsewhere } });
+  await press(`[...document.querySelectorAll('.ai-knobs .chip-btn')].find(b => b.title === 'Effort')`);
+  await sleep(500);
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'high')`);
+  await sleep(1000);
+  check("the effort pick lands on the chip", (await $(`[...document.querySelectorAll('.ai-knobs .chip-btn')].find(b => b.title === 'Effort')?.textContent ?? ''`)).includes("high"));
+  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
+  await sleep(500);
+  await press(`document.querySelector('button[aria-label="New thread"]')`);
+  await sleep(1400);
+  const nextThread = ctx.agent.store.threads(project.id)[0];
+  check("a new thread opens on the engine and effort the panel was showing", nextThread.id !== showing.id && nextThread.engine === showing.engine && nextThread.options?.effort === "high");
+  check("and the panel is showing it, on the same chips", (await $(`[...document.querySelectorAll('.ai-knobs .chip-btn')].find(b => b.title === 'Effort')?.textContent ?? ''`)).includes("high"));
+  ctx.settings.set(settingsBefore);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'j',metaKey:true,bubbles:true}));true`);
   await sleep(600);
   check("⌘J collapses the assistant to its rail", (await $(`!!document.querySelector('.ai-rail')`)) === true);

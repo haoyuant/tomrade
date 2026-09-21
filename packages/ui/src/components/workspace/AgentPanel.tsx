@@ -300,11 +300,6 @@ export function AgentPanel({
   const threadBoardId = detail.data?.thread.boardId ?? null;
   const pickedBoardId = threadBoardId ?? (threadId ? null : (boardId ?? null));
   const pickedBoard = pickedBoardId ? (boardsQ.data ?? []).find((b) => b.id === pickedBoardId) : undefined;
-  const chooseBoard = (next: string | null) => {
-    if (busy || next === pickedBoardId) return;
-    if (threadId) setWorkstream.mutate({ threadId, boardId: next });
-    else void newThread.mutateAsync({ boardId: next }).then((th) => pickThread(th.id));
-  };
   const workdir = useWorkdir(projectId, threadId, !!threadBoardId);
   const workdirProblem = threadBoardId ? (workdir.data?.problem ?? null) : null;
 
@@ -358,6 +353,17 @@ export function AgentPanel({
   const globalOptions = (agentSettings?.engines?.[currentEngineId] ?? {}) as Record<string, unknown>;
   const threadOptions = (detail.data?.thread.engine === currentEngineId ? detail.data.thread.options : null) ?? {};
   const engineOptions = { ...globalOptions, ...threadOptions };
+
+  // A thread opens on what the panel is showing — the same engine, the same knobs — rather than
+  // resetting to the settings default. With no thread there is nothing to carry, so the chips' own
+  // value (the default engine) is what the thread gets.
+  const openThread = (args: { engine?: string; boardId?: string | null } = {}) =>
+    newThread.mutateAsync({ engine: args.engine ?? currentEngineId, boardId: args.boardId === undefined ? boardId : args.boardId, options: threadOptions });
+  const chooseBoard = (next: string | null) => {
+    if (busy || next === pickedBoardId) return;
+    if (threadId) setWorkstream.mutate({ threadId, boardId: next });
+    else void openThread({ boardId: next }).then((th) => pickThread(th.id));
+  };
   const mediaCapabilities = useQuery({
     queryKey: ["agent-media-capabilities", currentEngineId, engineOptions, settings.data?.models],
     queryFn: () => invoke("agent.mediaCapabilities", currentEngineId, engineOptions),
@@ -451,7 +457,7 @@ export function AgentPanel({
     sending.current = true; setUploading(true); setAttachmentError(null);
     try {
       let target = threadId;
-      if (!target) target = (await newThread.mutateAsync({ boardId })).id;
+      if (!target) target = (await openThread({ boardId })).id;
       pickThread(target);
       const refs = await Promise.all(attachments.map(async file => invoke("agent.media.upload", projectId, target!, {
         name: file.name, mime: file.type, base64: await readAttachment(file)
@@ -510,7 +516,7 @@ export function AgentPanel({
                 className="btn btn-icon"
                 title={t("agentPanel.newThread")}
                 aria-label={t("agentPanel.newThread")}
-                onClick={() => void newThread.mutateAsync({ boardId }).then((th) => pickThread(th.id))}
+                onClick={() => void openThread({ boardId }).then((th) => pickThread(th.id))}
               >
                 <Icon name="i-plus" size={13} />
               </button>
@@ -726,7 +732,7 @@ export function AgentPanel({
                 onSelect={() => {
                   if (busy || e.id === currentEngineId) return;
                   if (threadId) setEngine.mutate({ threadId, engineId: e.id });
-                  else void newThread.mutateAsync({ engine: e.id, boardId }).then((th) => pickThread(th.id));
+                  else void openThread({ engine: e.id, boardId }).then((th) => pickThread(th.id));
                 }}
               />
             ))}
