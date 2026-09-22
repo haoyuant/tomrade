@@ -1,7 +1,8 @@
 import type {} from "cordis";
 import type {} from "@tomrade/ipc";
 import type { FileReference, Item } from "@tomrade/domain";
-import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, SyncMode } from "./types.js";
+import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SyncMode } from "./types.js";
+import type { AgentIndex } from "./agent-index.js";
 
 declare module "@tomrade/ipc" {
   interface Channels {
@@ -29,6 +30,11 @@ declare module "@tomrade/ipc" {
     "files.sync": (projectId: string) => FilesStatus;
     "files.syncPolicy": (projectId: string) => FilesSyncPolicy;
     "files.setSyncRules": (projectId: string, paths: string[], mode: SyncMode | "inherit") => FilesSyncPolicy;
+    /** Which paths Tomrade names to agents on its own. Disclosure, never access. */
+    "files.agentPolicy": (projectId: string) => FilesAgentPolicy;
+    "files.setAgentRules": (projectId: string, paths: string[], mode: ListMode | "inherit") => FilesAgentPolicy;
+    /** Exactly what an agent is told this project holds, for the person to read before an agent does. */
+    "files.agentIndex": (projectId: string, opts?: { budget?: number; focus?: string[]; native?: boolean }) => AgentIndex | null;
     "files.conflicts": (projectId: string) => FileConflict[];
     "files.resolve": (projectId: string, path: string, choice: ConflictChoice) => FilesStatus;
     "files.resolveAll": (projectId: string, choice: ConflictChoice) => FilesStatus;

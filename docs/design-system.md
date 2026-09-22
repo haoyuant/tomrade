@@ -220,4 +220,8 @@ undoing a delete from its toast, ⇧⌘Z, ⌘Z and the History window (title bar
 and selective sharing — the project default in Sharing, the cloud, monitor and
 half-cloud marks after names and their sources, the bulk chooser, context menus that offer only what would change,
 the keep-local review, and a scoped remote that receives one shared exception
-with its version record while its siblings stay untouched — 89 checks.
+with its version record while its siblings stay untouched. It also covers the
+agent index: a crossed-out eye on the exception alone, the two settings side by
+side above a folder, a withheld path leaving the index while it still reads by
+path, and the preview in Sharing that shows the person the very text an agent
+receives — 101 checks.

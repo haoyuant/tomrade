@@ -186,6 +186,12 @@ export interface TurnInput {
   options: unknown;
   /** Where a code-running engine works: a worktree of the workstream's repository. Absent for a thread without one. */
   cwd?: string;
+  /**
+   * What this project's Files hold, as the Files plugin renders it for an
+   * agent. Discovery only: it tells the engine what is there to look up, and
+   * says nothing about what may be read — every path reads either way.
+   */
+  filesIndex?: { markdown: string; digest: string };
   /** Ephemeral subprocess credentials supplied by plugins; never persist or include in prompts. */
   env?: Record<string, string>;
   workdir?: { remote: string; branch: string; worktree: string | null };
@@ -326,6 +332,8 @@ export const isSuspended = (value: unknown): value is Suspended =>
 declare module "cordis" {
   interface Events {
     "agent/prepare-turn"(input: TurnInput): Promise<void> | void;
+    /** The brief a CLI agent starts a delivery from, before it is handed over. A plugin may add context an in-app turn would get from `agent/prepare-turn`. */
+    "agent/prepare-brief"(brief: { projectId: string; itemId: string; filesIndex?: string }): Promise<void> | void;
     /** A run began driving a thread. */
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */

@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {} from "@tomrade/files";
-import type { ConflictChoice, SyncMode } from "@tomrade/files";
+import type { ConflictChoice, ListMode, SyncMode } from "@tomrade/files";
 import type { FileReference } from "@tomrade/domain";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
@@ -21,6 +21,8 @@ export const filesKeys = {
   history: (projectId: string, path: string) => ["files", projectId, "history", path] as const,
   conflicts: (projectId: string) => ["files", projectId, "conflicts"] as const,
   folder: (projectId: string, itemId: string) => ["files", projectId, "folderFor", itemId] as const,
+  agentPolicy: (projectId: string) => ["files", projectId, "agentPolicy"] as const,
+  agentIndex: (projectId: string) => ["files", projectId, "agentIndex"] as const,
   backends: ["files", "backends"] as const,
   connection: (backendId: string) => ["files", "connection", backendId] as const
 };
@@ -36,6 +38,26 @@ export const useFilesStatus = (projectId: string) => useQuery({ queryKey: filesK
 export const useFilesInfo = (projectId: string) => useQuery({ queryKey: filesKeys.info(projectId), queryFn: () => invoke("files.info", projectId), retry: false });
 
 export const useFilesSyncPolicy = (projectId: string) => useQuery({ queryKey: filesKeys.syncPolicy(projectId), queryFn: () => invoke("files.syncPolicy", projectId), retry: false, staleTime: 10_000 });
+
+/** What the project's files tell an agent they hold, and which paths stay out of it. */
+export const useFilesAgentPolicy = (projectId: string) =>
+  useQuery({ queryKey: filesKeys.agentPolicy(projectId), queryFn: () => invoke("files.agentPolicy", projectId), retry: false, staleTime: 10_000 });
+
+/** Exactly what an agent is shown, so the person can read it before an agent does. */
+export const useFilesAgentIndex = (projectId: string, enabled: boolean) =>
+  useQuery({ queryKey: filesKeys.agentIndex(projectId), queryFn: () => invoke("files.agentIndex", projectId, {}), retry: false, enabled });
+
+export function useSetAgentRules(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["files", projectId, "setAgentRules"],
+    mutationFn: ({ paths, mode }: { paths: string[]; mode: ListMode | "inherit" }) => invoke("files.setAgentRules", projectId, paths, mode),
+    onSuccess: (policy) => {
+      qc.setQueryData(filesKeys.agentPolicy(projectId), policy);
+      invalidateFiles(qc, projectId);
+    }
+  });
+}
 
 export function useSetSyncRules(projectId: string) {
   const qc = useQueryClient();

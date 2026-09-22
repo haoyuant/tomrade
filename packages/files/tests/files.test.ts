@@ -150,10 +150,12 @@ describe("ctx.files", () => {
       const written = (await ctx.tools.execute("write_file", { path: "out/report.md", content: "# Report" }, inv)) as { path: string; fileId: string; versionId: string };
       expect(written).toMatchObject({ path: "out/report.md" });
       expect(written.versionId).toMatch(/^[0-9a-f]{40}$/);
-      const listed = (await ctx.tools.execute("list_files", { dir: "out" }, inv)) as { path: string; fileId: string }[];
-      expect(listed).toEqual([expect.objectContaining({ path: "out/report.md", fileId: written.fileId })]);
-      const read = (await ctx.tools.execute("read_file", { path: "out/report.md" }, inv)) as { text: string };
-      expect(read.text).toBe("# Report");
+      const listed = (await ctx.tools.execute("list_files", { dir: "out" }, inv)) as string;
+      expect(listed).toContain("out/report.md");
+      const read = (await ctx.tools.execute("read_file", { path: "out/report.md" }, inv)) as string;
+      expect(read).toContain("# Report");
+      // The head of a read is what a delivery pins, so it never needs a second call.
+      expect(read).toContain(`versionId ${written.versionId}`);
       await expect(ctx.tools.execute("write_file", { path: "../escape.md", content: "x" }, inv)).rejects.toThrow(/Not a file path/);
 
       const ticket = items.create({ projectId: project.id, boardId: board.id, title: "Report", workType: "general", by: "human" });
@@ -165,25 +167,86 @@ describe("ctx.files", () => {
     }
   });
 
-  it("gives the agent move, copy and delete, each guarded the way the store guards them", async () => {
+  it("gives the agent one tool for move, copy and delete, each guarded the way the store guards them", async () => {
     const { ctx, project } = await machine();
     try {
       const inv = { by: "ai:test" as const, projectId: project.id };
       const written = (await ctx.tools.execute("write_file", { path: "draft.md", content: "hello" }, inv)) as { fileId: string };
-      const moved = (await ctx.tools.execute("move_file", { from: "draft.md", to: "docs/draft.md" }, inv)) as { from: string; to: string };
-      expect(moved).toEqual({ from: "draft.md", to: "docs/draft.md" });
+      expect(await ctx.tools.execute("manage_file", { action: "move", path: "draft.md", to: "docs/draft.md" }, inv)).toBe("Moved draft.md to docs/draft.md");
       expect((await ctx.files.read(project.id, "docs/draft.md"))?.fileId).toBe(written.fileId);
 
-      const copied = (await ctx.tools.execute("copy_file", { from: "docs/draft.md", to: "docs/draft (copy).md" }, inv)) as { from: string; to: string };
-      expect(copied).toEqual({ from: "docs/draft.md", to: "docs/draft (copy).md" });
+      await ctx.tools.execute("manage_file", { action: "copy", path: "docs/draft.md", to: "docs/draft (copy).md" }, inv);
       const copy = await ctx.files.read(project.id, "docs/draft (copy).md");
       expect(copy?.body).toBe("hello");
       expect(copy?.fileId).not.toBe(written.fileId);
-      await expect(ctx.tools.execute("copy_file", { from: "docs/draft.md", to: "docs/draft (copy).md" }, inv)).rejects.toThrow(/already exists/);
+      await expect(ctx.tools.execute("manage_file", { action: "copy", path: "docs/draft.md", to: "docs/draft (copy).md" }, inv)).rejects.toThrow(/already exists/);
+      await expect(ctx.tools.execute("manage_file", { action: "move", path: "docs/draft.md" }, inv)).rejects.toThrow(/needs a destination/);
 
-      await ctx.tools.execute("delete_file", { path: "docs/draft (copy).md" }, inv);
+      await ctx.tools.execute("manage_file", { action: "delete", path: "docs/draft (copy).md" }, inv);
       expect(await ctx.files.read(project.id, "docs/draft (copy).md")).toBeNull();
       expect((await ctx.files.read(project.id, "docs/draft.md"))?.fileId).toBe(written.fileId);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("searches several queries in one call, and reads a long file by range", async () => {
+    const { ctx, project } = await machine();
+    try {
+      const inv = { by: "ai:test" as const, projectId: project.id };
+      await ctx.files.write(project.id, "notes/api.md", Buffer.from("# API\nRate limit is 120 per minute.\nAuth uses a bearer token.\n"));
+      await ctx.files.write(project.id, "notes/ops.md", Buffer.from("# Ops\nThe rate limit alarm pages on-call.\n"));
+      const found = (await ctx.tools.execute("search_files", { queries: ["rate limit", "bearer", "nowhere"] }, inv)) as string;
+      expect(found).toContain("notes/api.md:2");
+      expect(found).toContain("notes/ops.md:2");
+      expect(found).toContain("notes/api.md:3");
+      expect(found).toContain('"nowhere" — no matches.');
+
+      const long = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join("\n");
+      await ctx.files.write(project.id, "notes/long.md", Buffer.from(long));
+      const slice = (await ctx.tools.execute("read_file", { path: "notes/long.md", range: { start: 100, lines: 3 } }, inv)) as string;
+      expect(slice).toContain("lines 100–102 of 300");
+      expect(slice).toContain("line 100");
+      expect(slice).not.toContain("line 104");
+      expect(slice).toContain("read again from line 103");
+
+      // Several files in one call is one round trip, not three.
+      const both = (await ctx.tools.execute("read_file", { paths: ["notes/api.md", "notes/ops.md"] }, inv)) as string;
+      expect(both).toContain("Rate limit is 120");
+      expect(both).toContain("pages on-call");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("keeps unlisted paths out of the index, the listing and open searches, and reads them anyway", async () => {
+    const { ctx, project } = await machine();
+    try {
+      const inv = { by: "ai:test" as const, projectId: project.id };
+      await ctx.files.write(project.id, "Specs/brief.md", Buffer.from("# Product brief\nThe plan.\n"));
+      await ctx.files.write(project.id, "Private/salary.md", Buffer.from("# Salary bands\nsecret sauce\n"));
+      expect(await ctx.files.agentPolicy(project.id)).toEqual({ default: "listed", rules: [] });
+
+      const before = await ctx.files.agentIndex(project.id, {});
+      expect(before?.markdown).toContain("Private/salary.md");
+      expect(before?.markdown).toContain("Product brief");
+
+      await ctx.files.setAgentRules(project.id, ["Private"], "unlisted");
+      const after = await ctx.files.agentIndex(project.id, {});
+      expect(after?.markdown).not.toContain("Private");
+      expect(after?.markdown).toContain("Specs/brief.md");
+      expect(after?.markdown).toContain("Paths the person keeps out of this index");
+      expect(after?.listed).toBe(1);
+      expect(after?.total).toBe(2);
+
+      expect((await ctx.tools.execute("list_files", { depth: 3 }, inv)) as string).not.toContain("Private");
+      expect((await ctx.tools.execute("search_files", { queries: ["secret sauce"] }, inv)) as string).toContain("no matches");
+      // Disclosure only: naming the path, or searching inside it, still works.
+      expect((await ctx.tools.execute("read_file", { path: "Private/salary.md" }, inv)) as string).toContain("secret sauce");
+      expect((await ctx.tools.execute("search_files", { queries: ["secret sauce"], path: "Private" }, inv)) as string).toContain("Private/salary.md:2");
+
+      await ctx.files.setAgentRules(project.id, ["Private"], "inherit");
+      expect((await ctx.files.agentIndex(project.id, {}))?.markdown).toContain("Private/salary.md");
     } finally {
       await ctx.fiber.dispose();
     }

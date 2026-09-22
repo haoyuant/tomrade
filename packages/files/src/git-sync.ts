@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { GIT_ENV, GitFolder, type Git } from "@tomrade/storage";
-import type { FilesSyncPolicy } from "./types.js";
+import type { FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
 export interface VersionRecord {
@@ -24,6 +24,8 @@ export interface SyncState {
   baseline: Record<string, string>;
   conflicts: Record<string, SyncConflict>;
   policy?: FilesSyncPolicy;
+  /** Baseline for the listing dimension; absent on a state written before it existed. */
+  agents?: FilesAgentPolicy;
   head?: string;
 }
 
@@ -34,7 +36,8 @@ export const blobId = (bytes: Buffer): string => createHash("sha1").update(`blob
 
 export const contains = (parent: string, child: string): boolean => !parent || parent === child || child.startsWith(`${parent}/`);
 
-export function policyAt(policy: FilesSyncPolicy, rel: string, directory = false) {
+/** One resolver for every path dimension: sharing, listing, and whatever comes next. */
+export function policyAt<M extends string>(policy: PathPolicy<M>, rel: string, directory = false): PathPreference<M> {
   const rule = policy.rules.filter((r) => contains(r.path, rel)).sort((a, b) => b.path.length - a.path.length)[0];
   const mode = rule?.mode ?? policy.default;
   return {
@@ -43,6 +46,55 @@ export function policyAt(policy: FilesSyncPolicy, rel: string, directory = false
     sourcePath: rule?.path ?? null,
     mixed: directory && policy.rules.some((r) => contains(rel, r.path) && r.mode !== mode)
   };
+}
+
+export const DEFAULT_SYNC_POLICY: FilesSyncPolicy = { default: "shared", rules: [] };
+/** Files are a knowledge source by default; the person takes individual paths back out of the index. */
+export const DEFAULT_AGENT_POLICY: FilesAgentPolicy = { default: "listed", rules: [] };
+
+export const SYNC_MODES: SyncMode[] = ["shared", "local"];
+export const LIST_MODES: ListMode[] = ["listed", "unlisted"];
+
+/**
+ * What `policy.json` holds, locally and on the remote. Version 1 was the sync
+ * policy alone, at the top level; it is read as such and rewritten as v2.
+ */
+export interface StoredPolicy {
+  v: 2;
+  sync: FilesSyncPolicy;
+  agents: FilesAgentPolicy;
+}
+
+export const emptyStoredPolicy = (): StoredPolicy => ({ v: 2, sync: { ...DEFAULT_SYNC_POLICY }, agents: { ...DEFAULT_AGENT_POLICY } });
+
+/** Accepts either version and never throws: an unreadable policy is no policy, not a broken store. */
+export function readStoredPolicy(value: unknown): StoredPolicy | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.v === 2) {
+    return {
+      v: 2,
+      sync: validPolicy(raw.sync, SYNC_MODES) ?? { ...DEFAULT_SYNC_POLICY },
+      agents: validPolicy(raw.agents, LIST_MODES) ?? { ...DEFAULT_AGENT_POLICY }
+    };
+  }
+  const legacy = validPolicy(raw, SYNC_MODES);
+  return legacy ? { v: 2, sync: legacy, agents: { ...DEFAULT_AGENT_POLICY } } : null;
+}
+
+/** Null when the shape is not a policy over these modes. Rule paths must already be normalized. */
+export function validPolicy<M extends string>(value: unknown, modes: M[]): PathPolicy<M> | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as { default?: unknown; rules?: unknown };
+  if (!modes.includes(raw.default as M) || !Array.isArray(raw.rules)) return null;
+  const rules: Array<{ path: string; mode: M }> = [];
+  for (const rule of raw.rules) {
+    if (!rule || typeof rule !== "object") return null;
+    const { path: p, mode } = rule as { path?: unknown; mode?: unknown };
+    if (typeof p !== "string" || !p || !modes.includes(mode as M)) return null;
+    rules.push({ path: p, mode: mode as M });
+  }
+  return { default: raw.default as M, rules };
 }
 
 /** Atomic machine-local metadata, deliberately outside the versioned tree. */

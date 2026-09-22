@@ -35,7 +35,12 @@ export const McpConfig = z.object({
 });
 export type McpConfig = z.infer<typeof McpConfig>;
 
-const textResult = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] });
+/**
+ * A tool that already speaks prose is passed through as it is; anything else
+ * is compact JSON. Indenting a result costs the model roughly a third more
+ * context for nothing it reads.
+ */
+const textResult = (data: unknown) => ({ content: [{ type: "text" as const, text: typeof data === "string" ? data : JSON.stringify(data) }] });
 const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
 
 /**

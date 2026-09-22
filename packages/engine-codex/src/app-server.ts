@@ -3,7 +3,7 @@ import readline from "node:readline";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomrade/agent";
 import { codexMediaInput, publishNativeImage } from "@tomrade/agent";
-import { bindTurn, runtimeDirectory, staticSystem, turnPrompt, type Runtime } from "@tomrade/engine-claude-code";
+import { bindTurn, runtimeDirectory, sessionSystem, turnPrompt, type Runtime } from "@tomrade/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
 
 type Json = Record<string, any>;
@@ -17,6 +17,8 @@ export class CodexRuntime implements Runtime {
   alive = true;
   busy = false;
   session?: string;
+  /** The files index this session was opened with, so a later turn can notice it went stale. */
+  indexDigest: string | null = null;
   private child?: ChildProcessWithoutNullStreams;
   private seq = 0;
   private pending = new Map<number, { resolve(value: Json): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
@@ -183,15 +185,16 @@ export class CodexRuntime implements Runtime {
           ...(io.resume ? { threadId: io.resume } : {}),
           cwd: this.cwd, model: codexModel(options.model),
           ...(this.code ? { ...policy, approvalsReviewer: "user" } : { approvalPolicy: "never", sandbox: "read-only" }),
-          developerInstructions: staticSystem("Codex")
+          developerInstructions: sessionSystem(input, "Codex")
         });
         this.session = response.thread.id;
+        this.indexDigest = input.filesIndex?.digest ?? null;
         metrics.providerModel = response.model;
       }
       metrics.readyMs = performance.now() - start;
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       const response = await this.request("turn/start", { threadId: this.session, model: codexModel(options.model), effort: options.effort,
-        input: codexMediaInput(input, io, turnPrompt(input, io)) });
+        input: codexMediaInput(input, io, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest })) });
       turnId ??= response.turn.id;
       if (cancelled) abort();
       const result = await done;

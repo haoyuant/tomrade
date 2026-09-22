@@ -6,7 +6,7 @@ import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomrade/agent"
 import { claudeMediaInput } from "@tomrade/agent";
 import { ClaudeCodeOptions } from "./legacy.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
-import { staticSystem, turnPrompt } from "./system.js";
+import { sessionSystem, turnPrompt } from "./system.js";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
 
 function matchesTool(name: string, pattern: string): boolean {
@@ -31,6 +31,8 @@ export class ClaudeRuntime implements Runtime {
   alive = true;
   busy = false;
   session?: string;
+  /** The files index this session was opened with, so a later turn can notice it went stale. */
+  indexDigest: string | null = null;
   private queue = new MessageQueue<SDKUserMessage>();
   private query?: Query;
   private onMessage?: (message: SDKMessage) => void;
@@ -126,7 +128,7 @@ export class ClaudeRuntime implements Runtime {
           env: { ...process.env, ...input.env },
           model: options.model, effort: options.effort as Options["effort"],
           resume: io.resume, includePartialMessages: true,
-          systemPrompt: { type: "preset", preset: "claude_code", append: staticSystem("Claude Code") },
+          systemPrompt: { type: "preset", preset: "claude_code", append: sessionSystem(input, "Claude Code") },
           settingSources: ["user", "project", "local"],
           mcpServers: { tomrade: {
             type: "http", url: this.ctx.mcp.url!, headers: { "X-Tomrade-Run": this.token },
@@ -177,12 +179,15 @@ export class ClaudeRuntime implements Runtime {
           maxBudgetUsd: options.maxBudgetUsd
         };
         this.query = query({ prompt: this.queue, options: sdkOptions });
+        this.indexDigest = input.filesIndex?.digest ?? null;
         void this.consume();
       }
       metrics.readyMs ??= warm ? 0 : undefined;
+      const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
+      const prompt = turnPrompt(input, io, { staleIndex: stale });
       const content = input.input.kind === "text" && input.input.attachments?.length
-        ? claudeMediaInput(input, io, turnPrompt(input, io)) as SDKUserMessage["message"]["content"]
-        : turnPrompt(input, io);
+        ? claudeMediaInput(input, io, prompt) as SDKUserMessage["message"]["content"]
+        : prompt;
       this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "" });
       const result = await done;
       // The SDK's maxBudgetUsd is query-wide. Reopen budgeted sessions on the

@@ -11,6 +11,7 @@ import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
 import { SyncPolicySettings, SyncScopeSummary } from "./SyncPolicy";
+import { AgentPolicySettings } from "./AgentPolicy";
 
 const filesRemoteApi: RemoteApi = {
   useConnection: useFilesConnection,
@@ -62,6 +63,7 @@ export function FilesBlock({ projectId }: { projectId: string }) {
       </div>
 
       {dir && <SyncPolicySettings projectId={projectId} />}
+      {dir && <AgentPolicySettings projectId={projectId} />}
       {dir && <RemoteSection projectId={projectId} bound={info.data?.remote ?? null} location={status.data?.location ?? null} disabled={sync.isPending} />}
 
       <div>

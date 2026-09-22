@@ -215,7 +215,7 @@ const run = async () => {
   const topId = (await ctx.files.read(project.id, "incoming/top.md"))?.fileId;
   await rightClick('[data-testid="file-table"] .file-row[data-file="incoming/top.md"]');
   await wait(() => has(".menu.is-floating"), "row context menu");
-  check("a file row's menu offers cut, copy, keep local and delete but no paste", (await menuItemNames()) === "Cut|Copy|Keep local|Delete…");
+  check("a file row's menu offers cut, copy, both policy changes and delete but no paste", (await menuItemNames()) === "Cut|Copy|Keep local|Keep out of the index|Delete…");
   await sleep(300);
   await shot("files-03b-context-menu");
   await clickMenuItem("Cut");
@@ -262,13 +262,13 @@ const run = async () => {
   await wait(() => has('[data-testid="files-sharing"]'), "root again");
   await rightClick('.side-file-row-container[data-file="docs"]');
   await wait(() => has(".menu.is-floating"), "tree context menu");
-  check("a tree folder's menu offers cut, copy, keep local and delete, and paste only once something is copied", (await menuItemNames()) === "Cut|Copy|Keep local|Delete…");
+  check("a tree folder's menu offers cut, copy, both policy changes and delete, and paste only once something is copied", (await menuItemNames()) === "Cut|Copy|Keep local|Keep out of the index|Delete…");
   await clickMenuItem("Copy");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(200);
   await rightClick('.side-file-row-container[data-file="incoming"]');
   await wait(() => has(".menu.is-floating"), "tree context menu with paste");
-  check("once something is copied, a folder's menu offers to paste it", (await menuItemNames()) === "Cut|Copy|Paste|Keep local|Delete…");
+  check("once something is copied, a folder's menu offers to paste it", (await menuItemNames()) === "Cut|Copy|Paste|Keep local|Keep out of the index|Delete…");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(200);
   await wait(() => has(".side-files-paste"), "tree paste button appears");
@@ -464,7 +464,7 @@ const run = async () => {
     await click(".files-selection-bar .sel-clear");
     await rightClick(row("private/draft.txt"));
     await wait(() => has(".menu.is-floating"), "exception row menu");
-    check("an exception's menu offers only what would change it", (await menuItemNames()) === "Cut|Copy|Keep local|Inherit from parent|Delete…");
+    check("an exception's menu offers only what would change it", (await menuItemNames()) === "Cut|Copy|Keep local|Inherit from parent|Keep out of the index|Delete…");
     await clickMenuItem("Inherit from parent");
     await acceptReview();
     await expectSync("private/draft.txt", "local", "default");
@@ -473,7 +473,7 @@ const run = async () => {
     await navigateSync("");
     await rightClick(row("private"));
     await wait(() => has(".menu.is-floating"), "sync folder context menu");
-    check("a folder's menu offers only what would change it", (await menuItemNames()) === "Cut|Copy|Shared|Delete…");
+    check("a folder's menu offers only what would change it", (await menuItemNames()) === "Cut|Copy|Shared|Keep out of the index|Delete…");
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
     await navigateSync("private");
     // Nothing shared leaves the remote here, so nothing asks.
@@ -511,6 +511,44 @@ const run = async () => {
     await click(`${region} .files-version-banner .btn`);
     check("returning to latest keeps the local-only second draft", await wait(async () => (await text(`${region} .text-view`)) === "local second draft\n", "local latest version"));
     await shot("files-11-local-versions");
+
+    // ── what agents are told, and what is kept out of it ────────────────
+    const accessOf = (selector) => $(`document.querySelector(${JSON.stringify(selector)})?.dataset.access ?? null`);
+    const listingOf = async (p) => (await ctx.files.tree(selective.id)).find((entry) => entry.path === p)?.listing;
+    await navigateSync("");
+    // Listing is the default and the ordinary case, so only an exception is marked.
+    check("nothing is marked while every file is in the index", (await accessOf(`${row("private")} .sync-mark[data-access]`)) === null);
+    const indexBefore = await ctx.files.agentIndex(selective.id, {});
+    check("the index names the project's files before anything is withheld", indexBefore.markdown.includes("private/draft.txt") && indexBefore.listed === 3 && indexBefore.total === 3);
+
+    await rightClick(row("private"));
+    await wait(() => has(".menu.is-floating"), "listing context menu");
+    await clickMenuItem("Keep out of the index");
+    check("keeping a folder out of the index asks nothing and takes effect", await wait(async () => (await listingOf("private"))?.mode === "unlisted", "private unlisted"));
+    check("the withheld folder wears the only mark on the row", await wait(async () => (await accessOf(`${row("private")} .sync-mark[data-access]`)) === "unlisted", "unlisted mark"));
+    check("its children say which folder withheld them", await wait(async () => (await titleOf(`${row("private")} .sync-mark[data-access]`)) === "Keep out of the index · Explicit setting", "unlisted title"));
+
+    const indexAfter = await ctx.files.agentIndex(selective.id, {});
+    check("the index drops the withheld folder and says something is missing", !indexAfter.markdown.includes("private") && indexAfter.listed === 0 && indexAfter.total === 3 && indexAfter.markdown.includes("Paths the person keeps out of this index"));
+    // Disclosure only: the file still reads exactly as before.
+    check("a withheld file still reads by path", (await ctx.files.read(selective.id, "private/draft.txt"))?.body === "local second draft\n");
+
+    await navigateSync("private");
+    check("the folder's line carries both settings side by side", await wait(async () => (await text(`${region} .files-sync-line`)).includes("Keep out of the index"), "listing line"));
+    await choose(`${region} .files-agent-select`, "listed");
+    check("putting it back needs no confirmation either", await wait(async () => (await listingOf("private"))?.mode === "listed", "private listed again"));
+    await shot("files-12-agent-index");
+
+    await navigateSync("");
+    await click(".files-open-sharing");
+    const preview = ".files-agent-settings .files-agent-preview-toggle";
+    if (await wait(() => has(preview), "agent settings block")) {
+      await click(preview);
+      check("the settings preview shows the person exactly what an agent is told", await wait(async () => (await text(".files-agent-preview")).includes("private/draft.txt"), "index preview"));
+      await shot("files-13-agent-preview");
+    } else {
+      check("the settings preview shows the person exactly what an agent is told", false);
+    }
   } finally {
     // A dialog left open by a failed step must not swallow the checks after it.
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
