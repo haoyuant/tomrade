@@ -800,6 +800,76 @@ const run = async () => {
   await press(`${rowFor("stale")}.querySelector('.switch')`);
   await sleep(1200);
   check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "stale_list_items"));
+
+  // ── external MCP servers ─────────────────────────────────────────────
+  // Pasted the way a server's README prints it; Electron runs the stdio fixture as plain Node.
+  const mcpRow = (id) => `document.querySelector('${SHEET} [data-mcp-server="${id}"]')`;
+  const fillArea = (selector, text) =>
+    $(`(() => {
+      const a = document.querySelector('${selector}');
+      if (!a) return false;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(a, ${JSON.stringify(text)});
+      a.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`);
+  const fixture = path.join(__dirname, "../../../packages/mcp-client/tests/fixtures/stdio-server.mjs");
+  await press(settingsNav("MCP servers"));
+  await sleep(600);
+  check("MCP servers is a settings pane", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "MCP servers");
+  check("with nothing connected it says how to start", (await $(`!!document.querySelector('[data-testid="mcp-add"]') && !!document.querySelector('[data-testid="mcp-import-open"]')`)) === true);
+  await press(`document.querySelector('[data-testid="mcp-import-open"]')`);
+  await sleep(300);
+  await fillArea("#mcp-import-text", JSON.stringify({ mcpServers: { fx: { command: process.execPath, args: [fixture], env: { ELECTRON_RUN_AS_NODE: "1" } } } }));
+  await press(`document.querySelector('[data-testid="mcp-import"] .btn-secondary')`);
+  await sleep(900);
+  await ctx.mcpClient.settled();
+  await sleep(500);
+  check("pasting another client's mcpServers JSON saves the server", ctx.settings.get().mcpServers?.servers?.[0]?.id === "fx");
+  check("it connects and its tools join the registry", ctx.tools.has("fx__echo") && ctx.tools.has("fx__files_read"));
+  check("the row turns connected without a reload", (await $(`${mcpRow("fx")}?.dataset.state`)) === "connected");
+  await press(`${mcpRow("fx")}.querySelector('[aria-label="Tools"]')`);
+  await sleep(400);
+  check("the row opens onto the tools it registered", (await $(`document.querySelectorAll('${SHEET} [data-testid="mcp-tools"] tbody tr').length`)) === 8);
+  check("the MCP pane keeps the sheet's frame", (await $(sheetBox)) === boxOnAppearance);
+  await shot("18-mcp-servers");
+
+  await press(`${mcpRow("fx")}.querySelector('.switch')`);
+  await sleep(900);
+  check("switching a server off takes its tools away", !ctx.tools.has("fx__echo") && (await $(`${mcpRow("fx")}?.dataset.state`)) === "off");
+  await press(`${mcpRow("fx")}.querySelector('.switch')`);
+  await sleep(600);
+  await ctx.mcpClient.settled();
+  await sleep(300);
+  check("and back on reconnects it", ctx.tools.has("fx__echo") && (await $(`${mcpRow("fx")}?.dataset.state`)) === "connected");
+
+  await press(`${mcpRow("fx")}.querySelector('[aria-label="Edit"]')`);
+  await sleep(400);
+  check("editing fills the form from the saved server", (await $(`document.querySelector('#mcp-id')?.value + ' ' + document.querySelector('#mcp-command')?.value`)) === `fx ${process.execPath}`);
+  await press(`[...document.querySelectorAll('[data-testid="mcp-form"] .btn-ghost')].find(b => b.textContent === 'Test connection')`);
+  await sleep(2500);
+  check("testing a configuration lists what the server offers", (await $(`document.querySelector('[data-testid="mcp-test-ok"]')?.textContent ?? ''`)).includes("fixture 1.2.3"));
+  await shot("18-mcp-servers-form");
+  await typeInto("#mcp-id", "Not Valid");
+  await sleep(200);
+  check("a name that cannot prefix a tool is refused before saving", (await $(`document.querySelector('#mcp-id').getAttribute('aria-invalid') === 'true' && document.querySelector('[data-testid="mcp-form"] .btn-secondary').disabled`)) === true);
+  await press(`[...document.querySelectorAll('[data-testid="mcp-form"] .btn-ghost')].find(b => b.textContent === 'Cancel')`);
+  await sleep(300);
+
+  await press(`${mcpRow("fx")}.querySelector('[aria-label="Remove"]')`);
+  await sleep(200);
+  await press(`${mcpRow("fx")}.querySelector('.btn-danger')`);
+  await sleep(900);
+  check("removing a server forgets it and its tools", (ctx.settings.get().mcpServers?.servers?.length ?? 0) === 0 && !ctx.tools.list().some((t) => t.name.startsWith("fx__")));
+  ctx.settings.set({ ...ctx.settings.get(), mcpServers: { servers: [{ id: "broken", transport: { type: "stdio", command: process.execPath, args: [fixture], env: { ELECTRON_RUN_AS_NODE: "1", FIXTURE_CRASH: "1" } } }] } });
+  await ctx.mcpClient.settled();
+  await sleep(500);
+  check("a server that fails says why on its row", (await $(`${mcpRow("broken")}?.dataset.state === 'failed' && ${mcpRow("broken")}.textContent.includes('missing API key')`)) === true);
+  await shot("18-mcp-servers-failed");
+  ctx.settings.set({ ...ctx.settings.get(), mcpServers: { servers: [] } });
+  await sleep(400);
+  await press(settingsNav("Manage plugins"));
+  await sleep(600);
+
   await press(`${rowFor("pet")}.querySelector('.switch')`);
   await sleep(900);
   check("switching the pet off unloads its service and accessory", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);

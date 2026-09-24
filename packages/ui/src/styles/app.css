@@ -1194,6 +1194,11 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
+.mcp-oneline { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mcp-detail { margin: var(--space-2) 0 0 var(--space-3); }
+.mcp-detail tr.off td { color: var(--meta); }
+.mcp-error { margin: 0; padding: 8px 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--danger); background: var(--surface-warm); border-radius: 6px; }
 .repo-remote-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .repo-remote-copy .cfg-name { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-remote-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

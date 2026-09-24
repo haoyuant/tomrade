@@ -10,6 +10,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { HubPane } from "./HubPane";
+import { McpServersPane } from "./McpServersPane";
 import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
@@ -72,7 +73,7 @@ function ThemePreview({ customThemes }: { customThemes: CustomTheme[] }) {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["theme", "customThemes", "language", "models", "agent"]);
+const HAND_DRAWN = new Set(["theme", "customThemes", "language", "models", "agent", "mcpServers"]);
 
 /** Whether a section stays on this machine or follows the Hub folder — said on every card, so nobody has to guess. */
 function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
@@ -426,6 +427,10 @@ export function SettingsDialog({
         </>
       )
     },
+    // Drawn only while the plugin that owns the section is loaded.
+    ...(sections.data?.some((s) => s.id === "mcpServers")
+      ? [{ id: "mcpServers", label: t("mcpServers.label"), icon: "i-plug" as IconId, group: "app" as const, render: () => <McpServersPane /> }]
+      : []),
     {
       id: "hub",
       label: t("settingsDialog.hubLabel"),
