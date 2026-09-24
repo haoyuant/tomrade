@@ -37,13 +37,13 @@ export interface Badge {
 export interface BadgeProvider {
   id: string;
   /** Item id → badges. Computed in the main process on every board refresh. */
-  compute(items: Item[], scope: { projectId: string }): Record<string, Badge[]>;
+  compute(items: Item[], scope: { projectId: string }): Record<string, Badge[]> | Promise<Record<string, Badge[]>>;
 }
 
 export interface StatusItem {
   id: string;
   /** Null hides the item. */
-  text(scope: { projectId?: string }): string | null;
+  text(scope: { projectId?: string }): string | null | Promise<string | null>;
 }
 
 export interface GraphEdge {
@@ -65,7 +65,7 @@ export interface GraphSpec {
   icon?: string;
   /** "blocks" lets the canvas edit edges by writing Item.blocks patches. */
   edits?: "blocks";
-  compute(items: Item[], scope: { projectId: string }): GraphEdge[];
+  compute(items: Item[], scope: { projectId: string }): GraphEdge[] | Promise<GraphEdge[]>;
 }
 
 export type GraphInfo = Omit<GraphSpec, "compute">;
@@ -96,7 +96,12 @@ export interface Section {
   id: string;
   title: string;
   /** Null hides the section for this item. */
-  render(item: Item): { rows?: SectionRow[]; text?: string } | null;
+  render(item: Item): SectionContent | null | Promise<SectionContent | null>;
+}
+
+export interface SectionContent {
+  rows?: SectionRow[];
+  text?: string;
 }
 
 export interface SectionView {
@@ -222,23 +227,20 @@ export class Contributions extends Service {
     return (await command.run(scope)) ?? {};
   }
 
-  badgesFor(projectId: string): Record<string, Badge[]> {
+  async badgesFor(projectId: string): Promise<Record<string, Badge[]>> {
     if (!this.badgeMap.size) return {};
     const items = this.ctx.items.list({ projectId });
     const out: Record<string, Badge[]> = {};
-    for (const provider of this.badgeMap.values()) {
-      for (const [itemId, badges] of Object.entries(provider.compute(items, { projectId }))) {
-        (out[itemId] ??= []).push(...badges);
-      }
+    const computed = await Promise.all([...this.badgeMap.values()].map((provider) => this.isolated(`badge ${provider.id}`, () => provider.compute(items, { projectId }), {})));
+    for (const result of computed) {
+      for (const [itemId, badges] of Object.entries(result)) (out[itemId] ??= []).push(...badges);
     }
     return out;
   }
 
-  statusItems(scope: { projectId?: string }): { id: string; text: string }[] {
-    return [...this.statusMap.values()].flatMap((s) => {
-      const text = s.text(scope);
-      return text ? [{ id: s.id, text }] : [];
-    });
+  async statusItems(scope: { projectId?: string }): Promise<{ id: string; text: string }[]> {
+    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
+    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text }] : []));
   }
 
   graphs(): GraphInfo[] {
@@ -249,19 +251,31 @@ export class Contributions extends Service {
     return [...this.assistantAccessoryMap.values()];
   }
 
-  graphEdges(id: string, scope: { projectId: string }): GraphEdge[] {
+  async graphEdges(id: string, scope: { projectId: string }): Promise<GraphEdge[]> {
     const graph = this.graphMap.get(id);
     if (!graph) throw new Error(`Unknown graph: ${id}`);
     return graph.compute(this.ctx.items.list({ projectId: scope.projectId }), scope);
   }
 
-  sectionsFor(projectId: string, itemId: string): SectionView[] {
+  async sectionsFor(projectId: string, itemId: string): Promise<SectionView[]> {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) return [];
-    return [...this.sectionMap.values()].flatMap((s) => {
-      const rendered = s.render(item);
-      return rendered ? [{ id: s.id, title: s.title, rows: rendered.rows ?? [], text: rendered.text }] : [];
+    const sections = [...this.sectionMap.values()];
+    const rendered = await Promise.all(sections.map((s) => this.isolated(`section ${s.id}`, () => s.render(item), null)));
+    return sections.flatMap((s, i) => {
+      const r = rendered[i];
+      return r ? [{ id: s.id, title: s.title, rows: r.rows ?? [], text: r.text }] : [];
     });
+  }
+
+  /** One contribution that throws or stalls costs only itself, never the refresh it is part of. */
+  private async isolated<T>(label: string, fn: () => T | Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      this.ctx.logger("contributions").warn(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+      return fallback;
+    }
   }
 
   /** Reversible, and announced to every window so the renderer refetches. */

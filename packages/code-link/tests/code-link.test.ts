@@ -154,8 +154,8 @@ describe("code link", () => {
     expect(items.get(project.id, item.id)!.status).toBe("doing");
     expect(items.get(project.id, item.id)!.updatedBy).toBe("sync:git");
     expect(items.query({ projectId: project.id, filter: [{ field: "provenance", op: "in", values: ["sync"] }] }).map((i) => i.id)).toEqual([item.id]);
-    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "branch", label: "branch", tone: "neutral", title: branch }]);
-    const section = ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!;
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "branch", label: "branch", tone: "neutral", title: branch }]);
+    const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!;
     expect(section.rows.map((r) => r.label)).toEqual(["Branch", "Last commit"]);
     expect(section.rows[0].value).toContain(branch);
 
@@ -169,7 +169,7 @@ describe("code link", () => {
     expect(second.changed).toBe(1);
     expect(items.get(project.id, item.id)!.status).toBe("done");
     expect(codeLink.links(project.id, item.id)[0].mergedSha).toBeTruthy();
-    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "merged", label: "merged", tone: "faint" }]);
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "merged", label: "merged", tone: "faint" }]);
 
     // Nothing left to say: a third scan is quiet.
     expect((await codeLink.scan(project.id)).changed).toBe(0);
@@ -328,8 +328,8 @@ describe("code link", () => {
       ["flag", null],
       ["propose", "verifying"]
     ]);
-    expect(ctx.contributions.badgesFor(project.id)[item.id][0]).toMatchObject({ id: "mismatch", tone: "strong" });
-    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!.text).toContain("done, but the branch is not merged");
+    expect((await ctx.contributions.badgesFor(project.id))[item.id][0]).toMatchObject({ id: "mismatch", tone: "strong" });
+    expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.text).toContain("done, but the branch is not merged");
 
     // Asked again, nothing new is raised.
     expect((await codeLink.scan(project.id)).proposals).toBe(0);
@@ -373,7 +373,7 @@ describe("code link", () => {
 
     await codeLink.scan(project.id);
     expect(codeLink.unlinked(project.id)).toMatchObject([{ repoId: repo.id, branch: "tom-999/orphan", keyNum: 999 }]);
-    expect(ctx.contributions.statusItems({ projectId: project.id }).find((s) => s.id === "code-link")!.text).toMatch(/1 unlinked/);
+    expect((await ctx.contributions.statusItems({ projectId: project.id })).find((s) => s.id === "code-link")!.text).toMatch(/1 unlinked/);
     expect(codeLink.links(project.id, item.id)).toEqual([]);
 
     codeLink.linkBranch(project.id, item.id, repo.id, "hotfix/odd");

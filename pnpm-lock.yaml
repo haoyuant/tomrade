@@ -62,6 +62,9 @@ importers:
       '@tomrade/engine-scripted':
         specifier: workspace:*
         version: link:../../packages/engine-scripted
+      '@tomrade/extensions':
+        specifier: workspace:*
+        version: link:../../packages/extensions
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../../packages/fields
@@ -95,6 +98,12 @@ importers:
       '@tomrade/pet':
         specifier: workspace:*
         version: link:../../packages/pet
+      '@tomrade/plugin-kit':
+        specifier: workspace:*
+        version: link:../../packages/plugin-kit
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
       '@tomrade/plugins':
         specifier: workspace:*
         version: link:../../packages/plugins
@@ -128,6 +137,9 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@electron/rebuild':
         specifier: ^4.2.0
@@ -532,6 +544,64 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/extensions:
+    dependencies:
+      '@tomrade/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomrade/boards':
+        specifier: workspace:*
+        version: link:../boards
+      '@tomrade/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
+      '@tomrade/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomrade/fields':
+        specifier: workspace:*
+        version: link:../fields
+      '@tomrade/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomrade/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomrade/projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@tomrade/write':
+        specifier: workspace:*
+        version: link:../write
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/fields:
     dependencies:
       '@tomrade/db':
@@ -854,65 +924,36 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/plugin-kit:
+    dependencies:
+      '@babel/parser':
+        specifier: ^7.29.8
+        version: 7.29.8
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      tar:
+        specifier: ^7.5.22
+        version: 7.5.22
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/plugin-sdk:
     dependencies:
-      '@tomrade/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@tomrade/boards':
-        specifier: workspace:*
-        version: link:../boards
-      '@tomrade/contributions':
-        specifier: workspace:*
-        version: link:../contributions
-      '@tomrade/db':
-        specifier: workspace:*
-        version: link:../db
-      '@tomrade/desktop-surface':
-        specifier: workspace:*
-        version: link:../desktop-surface
       '@tomrade/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/fields':
-        specifier: workspace:*
-        version: link:../fields
-      '@tomrade/hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@tomrade/ipc':
-        specifier: workspace:*
-        version: link:../ipc
-      '@tomrade/items':
-        specifier: workspace:*
-        version: link:../items
-      '@tomrade/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@tomrade/mcp':
-        specifier: workspace:*
-        version: link:../mcp
-      '@tomrade/oplog':
-        specifier: workspace:*
-        version: link:../oplog
-      '@tomrade/projects':
-        specifier: workspace:*
-        version: link:../projects
-      '@tomrade/settings':
-        specifier: workspace:*
-        version: link:../settings
-      '@tomrade/storage':
-        specifier: workspace:*
-        version: link:../storage
-      '@tomrade/tools':
-        specifier: workspace:*
-        version: link:../tools
-      '@tomrade/write':
-        specifier: workspace:*
-        version: link:../write
-      cordis:
-        specifier: 4.0.0-rc.8
-        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -920,9 +961,18 @@ importers:
 
   packages/plugins:
     dependencies:
+      '@tomrade/extensions':
+        specifier: workspace:*
+        version: link:../extensions
       '@tomrade/ipc':
         specifier: workspace:*
         version: link:../ipc
+      '@tomrade/plugin-kit':
+        specifier: workspace:*
+        version: link:../plugin-kit
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
@@ -1128,6 +1178,9 @@ importers:
       '@tomrade/db':
         specifier: workspace:*
         version: link:../db
+      '@tomrade/extensions':
+        specifier: workspace:*
+        version: link:../extensions
       '@tomrade/fields':
         specifier: workspace:*
         version: link:../fields
@@ -1140,6 +1193,9 @@ importers:
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../oplog
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@tomrade/projects':
         specifier: workspace:*
         version: link:../projects

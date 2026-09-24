@@ -11,8 +11,12 @@
     "src"
   ],
   "references": [
-    { "path": "../../packages/archify" },
-    { "path": "../../packages/hub-cloud" },
+    {
+      "path": "../../packages/archify"
+    },
+    {
+      "path": "../../packages/hub-cloud"
+    },
     {
       "path": "../../packages/agent"
     },
@@ -96,6 +100,15 @@
     },
     {
       "path": "../../packages/write"
+    },
+    {
+      "path": "../../packages/plugin-kit"
+    },
+    {
+      "path": "../../packages/extensions"
+    },
+    {
+      "path": "../../packages/plugin-sdk"
     }
   ]
 }

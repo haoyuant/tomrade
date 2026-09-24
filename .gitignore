@@ -13,6 +13,9 @@ out/
 data/*.db
 data/*.db-*
 
+# Test scratch directories a run failed to clean up
+packages/*/tests/.tmp-*/
+
 # UI harness output
 apps/desktop/scripts/shots/
 artifacts/agent-eval/

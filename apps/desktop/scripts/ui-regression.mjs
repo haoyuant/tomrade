@@ -795,11 +795,11 @@ const run = async () => {
   await press(`${rowFor("stale")}.querySelector('.switch')`);
   await sleep(1200);
   check("the switch unloads the plugin in the main process", ctx.plugins.list().find((p) => p.id === "stale")?.state === "disabled");
-  check("its tool leaves the registry", !ctx.tools.list().some((t) => t.name === "list_stale_items"));
+  check("its tool leaves the registry", !ctx.tools.list().some((t) => t.name === "stale_list_items"));
   check("and the sheet redraws from what loaded", (await $(`${rowFor("stale")}.querySelector('.tag').textContent`)) === "off");
   await press(`${rowFor("stale")}.querySelector('.switch')`);
   await sleep(1200);
-  check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "list_stale_items"));
+  check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "stale_list_items"));
   await press(`${rowFor("pet")}.querySelector('.switch')`);
   await sleep(900);
   check("switching the pet off unloads its service and accessory", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);

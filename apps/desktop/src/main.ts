@@ -1,9 +1,12 @@
 import { app, BrowserWindow, dialog } from "electron";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {} from "@tomrade/agent";
 import type {} from "@tomrade/storage";
 import { boot } from "./boot.js";
+import { registerExtensionResolution } from "./extension-resolve.js";
+import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -15,16 +18,22 @@ const iconPath = path.join(here, "../assets/icon.png");
 // A second checkout can run beside the real one without sharing — or migrating — its database.
 if (process.env.TOMRADE_USER_DATA) app.setPath("userData", path.resolve(process.env.TOMRADE_USER_DATA));
 
+// Everything under the app's own roots resolves as usual; anything else is an extension.
+registerExtensionResolution([path.resolve(here, "../../.."), app.getAppPath()]);
+
 app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
 
   const userData = app.getPath("userData");
+  // A separate checkout keeps its own extensions, as it keeps its own database.
+  const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? (process.env.TOMRADE_USER_DATA ? path.join(userData, "plugins") : path.join(os.homedir(), "Tomrade", "plugins"));
   const { ctx, dump } = await boot({
     configFile: path.join(here, "../tomrade.yml"),
     patchFiles: [path.join(userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
-    vars: { userData }
+    vars: { userData, pluginsRoot },
+    extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
   });
 
   if (argv.includes("--dump-config")) {

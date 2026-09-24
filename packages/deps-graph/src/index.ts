@@ -26,10 +26,9 @@ function onCycle(from: string, to: string, blocksOf: Map<string, string[]>): boo
  * issues that are waiting on unfinished work.
  */
 export default definePlugin({
-  name: "deps-graph",
   inject: ["items", "contributions"],
-  apply(ctx) {
-    ctx.contributions.graph({
+  async apply(ctx) {
+    await ctx.contributions.graph({
       id: "deps",
       title: "Dependencies",
       icon: "i-graph",
@@ -50,7 +49,7 @@ export default definePlugin({
       }
     });
 
-    ctx.contributions.badge({
+    await ctx.contributions.badge({
       id: "deps",
       compute(items) {
         const byId = new Map(items.map((i) => [i.id, i]));

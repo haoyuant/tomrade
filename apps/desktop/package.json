@@ -16,22 +16,24 @@
     "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "dump-config": "electron . --dump-config",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "test:files": "electron scripts/files-check.mjs"
+    "test:files": "electron scripts/files-check.mjs",
+    "test:extensions": "electron scripts/extensions-check.mjs"
   },
   "dependencies": {
-    "@tomrade/archify": "workspace:*",
     "@tomrade/agent": "workspace:*",
     "@tomrade/agent-backlog": "workspace:*",
+    "@tomrade/archify": "workspace:*",
     "@tomrade/boards": "workspace:*",
     "@tomrade/code-link": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
-    "@tomrade/desktop-surface": "workspace:*",
     "@tomrade/deps-graph": "workspace:*",
+    "@tomrade/desktop-surface": "workspace:*",
     "@tomrade/engine-claude-code": "workspace:*",
     "@tomrade/engine-codex": "workspace:*",
     "@tomrade/engine-loop": "workspace:*",
     "@tomrade/engine-scripted": "workspace:*",
+    "@tomrade/extensions": "workspace:*",
     "@tomrade/fields": "workspace:*",
     "@tomrade/files": "workspace:*",
     "@tomrade/files-github": "workspace:*",
@@ -43,6 +45,8 @@
     "@tomrade/mcp": "workspace:*",
     "@tomrade/oplog": "workspace:*",
     "@tomrade/pet": "workspace:*",
+    "@tomrade/plugin-kit": "workspace:*",
+    "@tomrade/plugin-sdk": "workspace:*",
     "@tomrade/plugins": "workspace:*",
     "@tomrade/projects": "workspace:*",
     "@tomrade/repos": "workspace:*",
@@ -53,7 +57,8 @@
     "@tomrade/tools": "workspace:*",
     "@tomrade/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

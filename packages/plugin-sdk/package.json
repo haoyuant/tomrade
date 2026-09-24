@@ -1,9 +1,9 @@
 {
   "name": "@tomrade/plugin-sdk",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "The public plugin API: Context, Service, defineTool, definePlugin and every service's typings in one import",
+  "description": "The Tomrade plugin contract: definePlugin, the async PluginContext every extension receives, and the manifest schema",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -17,25 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/agent": "workspace:*",
-    "@tomrade/boards": "workspace:*",
-    "@tomrade/contributions": "workspace:*",
-    "@tomrade/db": "workspace:*",
-    "@tomrade/desktop-surface": "workspace:*",
     "@tomrade/domain": "workspace:*",
-    "@tomrade/fields": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/items": "workspace:*",
-    "@tomrade/llm": "workspace:*",
-    "@tomrade/mcp": "workspace:*",
-    "@tomrade/oplog": "workspace:*",
-    "@tomrade/projects": "workspace:*",
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/storage": "workspace:*",
-    "@tomrade/tools": "workspace:*",
-    "@tomrade/write": "workspace:*",
-    "cordis": "4.0.0-rc.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^6.0.0"

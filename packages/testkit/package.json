@@ -19,10 +19,12 @@
   "dependencies": {
     "@tomrade/boards": "workspace:*",
     "@tomrade/db": "workspace:*",
+    "@tomrade/extensions": "workspace:*",
     "@tomrade/fields": "workspace:*",
     "@tomrade/hub": "workspace:*",
     "@tomrade/items": "workspace:*",
     "@tomrade/oplog": "workspace:*",
+    "@tomrade/plugin-sdk": "workspace:*",
     "@tomrade/projects": "workspace:*",
     "@tomrade/write": "workspace:*",
     "cordis": "4.0.0-rc.8"

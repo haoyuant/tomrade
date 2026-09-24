@@ -9,58 +9,7 @@
   ],
   "references": [
     {
-      "path": "../agent"
-    },
-    {
-      "path": "../boards"
-    },
-    {
-      "path": "../contributions"
-    },
-    {
-      "path": "../db"
-    },
-    {
-      "path": "../desktop-surface"
-    },
-    {
       "path": "../domain"
-    },
-    {
-      "path": "../fields"
-    },
-    {
-      "path": "../hub"
-    },
-    {
-      "path": "../ipc"
-    },
-    {
-      "path": "../items"
-    },
-    {
-      "path": "../llm"
-    },
-    {
-      "path": "../mcp"
-    },
-    {
-      "path": "../oplog"
-    },
-    {
-      "path": "../projects"
-    },
-    {
-      "path": "../settings"
-    },
-    {
-      "path": "../storage"
-    },
-    {
-      "path": "../tools"
-    },
-    {
-      "path": "../write"
     }
   ]
 }

@@ -11,3 +11,4 @@ export {
   type PluginsConfig,
   type PluginsSnapshot
 } from "./types.js";
+export { ExtensionRefused, ExtensionStore, type ExtensionInfo, type ExtensionStoreConfig } from "./extensions.js";

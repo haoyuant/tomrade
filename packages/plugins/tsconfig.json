@@ -13,6 +13,15 @@
   "references": [
     {
       "path": "../ipc"
+    },
+    {
+      "path": "../plugin-kit"
+    },
+    {
+      "path": "../extensions"
+    },
+    {
+      "path": "../plugin-sdk"
     }
   ]
 }

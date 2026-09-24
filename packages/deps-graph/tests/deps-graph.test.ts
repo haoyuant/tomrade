@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { Contributions, type GraphEdge } from "@tomrade/contributions";
-import { fresh } from "@tomrade/testkit";
+import { fresh, sdk } from "@tomrade/testkit";
 import depsGraph from "@tomrade/deps-graph";
 
 async function boot() {
   const world = await fresh({ plugins: [Contributions] });
-  const fiber = await world.ctx.plugin(depsGraph);
+  const fiber = await world.ctx.plugin(sdk(depsGraph, { id: "deps-graph" }));
   return { ...world, fiber };
 }
 
@@ -17,12 +17,12 @@ describe("deps-graph plugin", () => {
     items.update(project.id, a.id, { blocks: [b.id] }, "human");
 
     expect(ctx.contributions.graphs()).toEqual([{ id: "deps", title: "Dependencies", icon: "i-graph", edits: "blocks" }]);
-    const edges = ctx.contributions.graphEdges("deps", { projectId: project.id });
+    const edges = await ctx.contributions.graphEdges("deps", { projectId: project.id });
     expect(edges).toEqual([{ from: a.id, to: b.id, tone: "strong", title: `${a.key} blocks ${b.key}` }]);
 
     await fiber.dispose();
     expect(ctx.contributions.graphs()).toEqual([]);
-    expect(() => ctx.contributions.graphEdges("deps", { projectId: project.id })).toThrow(/Unknown graph/);
+    await expect(ctx.contributions.graphEdges("deps", { projectId: project.id })).rejects.toThrow(/Unknown graph/);
   });
 
   it("tones edges: satisfied when the blocker is done, danger on a cycle", async () => {
@@ -37,7 +37,7 @@ describe("deps-graph plugin", () => {
     raw.prepare("INSERT INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(b.id, c.id);
     raw.prepare("INSERT INTO item_relations (from_item_id, to_item_id, kind) VALUES (?, ?, 'blocks')").run(c.id, b.id);
 
-    const tones = new Map((ctx.contributions.graphEdges("deps", { projectId: project.id }) as GraphEdge[]).map((e) => [`${e.from}->${e.to}`, e.tone]));
+    const tones = new Map((await ctx.contributions.graphEdges("deps", { projectId: project.id }) as GraphEdge[]).map((e) => [`${e.from}->${e.to}`, e.tone]));
     expect(tones.get(`${a.id}->${b.id}`)).toBe("faint");
     expect(tones.get(`${b.id}->${c.id}`)).toBe("danger");
     expect(tones.get(`${c.id}->${b.id}`)).toBe("danger");
@@ -50,11 +50,11 @@ describe("deps-graph plugin", () => {
     const done = items.create({ projectId: project.id, title: "Done", boardId: board.id, status: "done", by: "human" });
     items.update(project.id, blocker.id, { blocks: [waiting.id, done.id] }, "human");
 
-    const badges = ctx.contributions.badgesFor(project.id);
+    const badges = await ctx.contributions.badgesFor(project.id);
     expect(badges[waiting.id]).toEqual([{ id: "blocked", label: "blocked", tone: "strong", title: `Blocked by ${blocker.key}` }]);
     expect(badges[done.id]).toBeUndefined();
 
     items.update(project.id, blocker.id, { status: "done" }, "human");
-    expect(ctx.contributions.badgesFor(project.id)[waiting.id]).toBeUndefined();
+    expect((await ctx.contributions.badgesFor(project.id))[waiting.id]).toBeUndefined();
   });
 });
