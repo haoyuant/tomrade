@@ -104,6 +104,9 @@ importers:
       '@tomrade/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@tomrade/plugin-studio':
+        specifier: workspace:*
+        version: link:../../packages/plugin-studio
       '@tomrade/plugins':
         specifier: workspace:*
         version: link:../../packages/plugins
@@ -995,6 +998,46 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/plugin-studio:
+    dependencies:
+      '@tomrade/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomrade/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/plugin-cli':
+        specifier: workspace:*
+        version: link:../plugin-cli
+      '@tomrade/plugin-kit':
+        specifier: workspace:*
+        version: link:../plugin-kit
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomrade/plugins':
+        specifier: workspace:*
+        version: link:../plugins
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3

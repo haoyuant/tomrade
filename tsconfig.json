@@ -123,6 +123,9 @@
     },
     {
       "path": "./packages/plugin-cli"
+    },
+    {
+      "path": "./packages/plugin-studio"
     }
   ]
 }

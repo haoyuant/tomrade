@@ -47,6 +47,7 @@
     "@tomrade/pet": "workspace:*",
     "@tomrade/plugin-kit": "workspace:*",
     "@tomrade/plugin-sdk": "workspace:*",
+    "@tomrade/plugin-studio": "workspace:*",
     "@tomrade/plugins": "workspace:*",
     "@tomrade/projects": "workspace:*",
     "@tomrade/repos": "workspace:*",

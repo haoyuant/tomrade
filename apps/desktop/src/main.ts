@@ -28,11 +28,13 @@ app.whenReady().then(async () => {
 
   const userData = app.getPath("userData");
   // A separate checkout keeps its own extensions, as it keeps its own database.
-  const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? (process.env.TOMRADE_USER_DATA ? path.join(userData, "plugins") : path.join(os.homedir(), "Tomrade", "plugins"));
+  const tomradeDir = process.env.TOMRADE_USER_DATA ? userData : path.join(os.homedir(), "Tomrade");
+  const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? path.join(tomradeDir, "plugins");
+  const pluginsDevRoot = path.join(tomradeDir, "plugins-dev");
   const { ctx, dump } = await boot({
     configFile: path.join(here, "../tomrade.yml"),
     patchFiles: [path.join(userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
-    vars: { userData, pluginsRoot },
+    vars: { userData, pluginsRoot, pluginsDevRoot },
     extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
   });
 

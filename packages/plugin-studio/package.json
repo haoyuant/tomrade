@@ -1,0 +1,40 @@
+{
+  "name": "@tomrade/plugin-studio",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Plugin Studio: tools and a playbook for an agent to write, test and hand over a plugin, which loads only at a build a person confirmed",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomrade/agent": "workspace:*",
+    "@tomrade/db": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/plugin-cli": "workspace:*",
+    "@tomrade/plugin-kit": "workspace:*",
+    "@tomrade/plugin-sdk": "workspace:*",
+    "@tomrade/plugins": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "@types/node": "^26.2.0"
+  },
+  "files": [
+    "dist",
+    "playbooks",
+    "reference"
+  ]
+}

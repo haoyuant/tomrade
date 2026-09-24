@@ -193,6 +193,10 @@ plugins:
   # channels, listeners, timers and desktop surface together.
   - id: pet
     name: "@tomrade/pet"
+  - id: plugin-studio
+    name: "@tomrade/plugin-studio"
+    config:
+      devRoot: "${pluginsDevRoot}"
   # A third-party plugin: it edits nothing above, it is only listed here.
   - id: stale
     name: ../../examples/stale/dist/index.js

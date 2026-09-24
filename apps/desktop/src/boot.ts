@@ -45,13 +45,15 @@ export async function boot(opts: BootOptions): Promise<Booted> {
 
   const { rows: base, modules } = readConfig(opts.configFile);
   const fromFiles = (opts.patchFiles ?? []).filter((f) => fs.existsSync(f)).map(readRows);
-  const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), opts.vars);
   const baseDir = path.dirname(opts.configFile);
+  // A run that names no plugin folders keeps them beside its own data.
+  const vars = { pluginsRoot: path.join(opts.vars.userData ?? baseDir, "plugins"), pluginsDevRoot: path.join(opts.vars.userData ?? baseDir, "plugins-dev"), ...opts.vars };
+  const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), vars);
   // The user's own patch file, which is the first: a --patch passed on the
   // command line describes one run and is never written back.
   const patchFile = opts.patchFiles?.[0];
 
-  const extensionsRoot = opts.extensions?.root ?? path.join(baseDir, ".extensions");
+  const extensionsRoot = opts.extensions?.root ?? vars.pluginsRoot;
   const extensions = opts.extensions
     ? new ExtensionStore({ root: opts.extensions.root, lockFile: path.join(opts.extensions.root, LOCK_FILE), trustedKeys: opts.extensions.trustedKeys, importer: (url) => import(url) })
     : undefined;

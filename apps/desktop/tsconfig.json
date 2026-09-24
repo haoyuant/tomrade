@@ -109,6 +109,9 @@
     },
     {
       "path": "../../packages/plugin-sdk"
+    },
+    {
+      "path": "../../packages/plugin-studio"
     }
   ]
 }
