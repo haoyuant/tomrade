@@ -35,7 +35,7 @@ const common = {
   license: LICENSE,
   type: "module",
   author: "Tomrade",
-  homepage: "https://tomrade.com",
+  ...(process.env.TOMRADE_NPM_HOMEPAGE ? { homepage: process.env.TOMRADE_NPM_HOMEPAGE } : {}),
   engines: { node: ">=22" },
   publishConfig: { access: "public" }
 };
