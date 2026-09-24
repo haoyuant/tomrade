@@ -4,17 +4,26 @@ Tomrade is a [cordis](https://github.com/cordiverse/cordis) application. The
 desktop shell creates one `Context`, reads `apps/desktop/tomrade.yml`, and loads
 one plugin per row. Everything else — the database, the write path, the tool
 registry, the MCP server, the IPC channels the renderer calls — is a plugin
-that claims a key on that context. Third-party plugins use the same mechanism
-with the same rights.
+that claims a key on that context.
 
-This document is the contract. `packages/plugin-sdk` is the import; the example
-in `examples/stale` is the documentation that compiles.
+There are two kinds of plugin, and this document is the contract for both:
+
+- **Extensions** are written against `@tomrade/plugin-sdk`. Their `apply`
+  receives a `PluginContext`: an async, attributed, namespaced view of the app
+  that the host builds for them. Everything that comes from outside the app —
+  Community, a `.tomrade-plugin` file, a folder, Plugin Studio — must be one.
+  `examples/stale` is the documentation that compiles.
+- **Built-in rows** are the app's own cordis plugins, listed in `tomrade.yml`.
+  They take the raw `Context` and the services below it ([Services](#services)
+  onward). A built-in may also be written with the SDK — `@tomrade/deps-graph`
+  is — and is then loaded behind the same facade.
 
 ## Stability
 
-- `cordis` is pinned to `4.0.0-rc.8`. The framework is a release candidate and
-  says so; so does `@tomrade/plugin-sdk`, which is `0.x`. Expect breaking
-  changes between minor versions until both are `1.0`.
+- `cordis` is pinned to `4.0.0-rc.8`, and `@tomrade/plugin-sdk` is `0.2`. The
+  SDK's contract version is `SDK_CONTRACT`; a plugin states the range it needs
+  in `engines.sdk` and is refused, with the reason, by a Tomrade outside it.
+  Until `1.0` a minor version may break.
 - What this file describes is what we promise. Anything reachable but not
   written here — table shapes, private methods, event argument internals — may
   change without notice.
@@ -25,53 +34,190 @@ Plugins run in the main process with the same rights as Tomrade itself:
 `better-sqlite3`, the filesystem, the network, and the user's API key. **This is
 not a sandbox.** What the system does guarantee:
 
-- A plugin sees only the services it names in `inject`; `ctx.foo` without
-  `foo` in `inject` throws.
-- Every write a plugin makes is attributed. Pass `by: "ai:<plugin-id>"` and it
-  is recorded in the oplog, refused on human-locked fields, and undoable like
-  any agent write. Only `"human"` may purge.
-- Every tool call passes `tools/pre-execute`, where a policy plugin can refuse it.
+- An extension reaches the app only through its `PluginContext`: every call
+  returns a Promise and every value that crosses is plain data, so the same
+  plugin can later run behind a process boundary without changing.
+- A service not named in `inject` or `optional` is refused.
+- **The host says who wrote.** Writes through the facade take no author: they
+  are the person's when a person drove the call (a palette command, a surface
+  document's message), the agent run's when an agent's tool call made them, and
+  `ai:<namespace>` otherwise. Every one carries `via: <namespace>` in the
+  oplog, and `oplog.undoVia` takes back everything one extension wrote in a
+  project. An extension that claims `"human"` outside a person's call is
+  refused by the write policy, which also keeps purge out of its reach.
+- **Everything it registers carries its namespace**: tools, commands, badges,
+  status items, sections, graphs, settings sections, playbooks, surfaces, and
+  `plugin_<namespace>_*` tables. Two extensions cannot share one.
+- Every tool call passes `tools/pre-execute`, where a policy can refuse it.
+- A render callback (badge, section, status item, graph) that throws or takes
+  longer than two seconds costs only itself, never the refresh it is part of.
 - Every registration is an effect: unload the plugin and its tools, channels,
   listeners, badges and settings cards go with it.
+- `db` is the widest thing an extension can ask for: plain SQL over every table
+  in the project caches. It is not scoped to the plugin's own tables; writing
+  the app's tables goes around history and undo, and the store's review and
+  every install dialog say so.
 
-## A plugin
+## An extension
 
 ```ts
 import { z } from "zod";
-import { definePlugin, defineTool } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId } from "@tomrade/plugin-sdk";
 
 export default definePlugin({
-  name: "hello",
-  inject: ["items", "tools"],
-  apply(ctx) {
-    ctx.tools.register(
+  inject: ["items", "tools", "contributions"],
+  async apply(ctx) {
+    await ctx.tools.register(
       defineTool({
-        name: "count_items",
+        name: "hello_count",                      // starts with the namespace, "hello"
         title: "Count items",
         description: "How many issues the project holds.",
         input: z.object({ projectId: z.string().optional() }),
-        execute: ({ projectId }, inv) => ctx.items.list({ projectId: projectId ?? inv.projectId }).length
+        execute: async ({ projectId }, inv) => (await ctx.items.list({ projectId: requireProjectId("hello_count", projectId, inv) })).length
       })
     );
+    await ctx.contributions.statusItem({ id: "hello", text: async ({ projectId }) => (projectId ? `${(await ctx.items.list({ projectId })).length} issues` : null) });
   }
 });
 ```
 
-A plugin is a function `(ctx, config)`, a class whose constructor takes
+`optional` names services used when present: `ctx.has(name)` says whether one
+is, and `ctx.when(name, (inner) => …)` runs while it is — what the callback
+returns is disposed when the service goes.
+
+### The context
+
+| Member | What it offers |
+|---|---|
+| `items` | `list`, `query`, `get`, `getByKey`, `create`, `update`, `delete`, `addRelation`, `removeRelation`, `labels` |
+| `fields` / `boards` / `views` / `projects` | the project's fields (and `create`/`update`/`remove`/`addOption`), workstreams, saved views, projects — read |
+| `db` | `migrate(steps, { scope, tables })` for `plugin_<namespace>_*`; `all`, `get`, `run`, `batch` (one transaction) against a project id or `"hub"`; `isOpen` |
+| `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
+| `tools` | `register(defineTool(…))`, `list`, `call`, `gate(check)` (throw to refuse any tool call) |
+| `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
+| `agent` | `playbook({ id, title, when, body, tools })` |
+| `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page |
+| `oplog` | `recent`, `history` |
+| `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
+| `effect`, `interval` | cleanup and timers that end with the plugin |
+| `id`, `namespace`, `dataDir`, `logger` | who it is, its prefix, a directory only it writes, its log |
+
+## Packages
+
+A plugin is a folder with `tomrade-plugin.json` beside its source:
+
+```json
+{
+  "id": "alice/stale",
+  "version": "1.2.0",
+  "title": "Stale issues",
+  "description": "Flags open issues nobody has written to in a while.",
+  "license": "MIT",
+  "repository": "https://github.com/alice/tomrade-plugin-stale",
+  "engines": { "sdk": "^0.2.0" },
+  "permissions": { "network": [], "fs": "none", "exec": false }
+}
+```
+
+The namespace is `namespace`, or the name part of the id with dashes as
+underscores. `permissions` declares what the code does beyond the SDK — hosts
+it talks to (`*` for any), `fs` (`plugin`, `project`, `any`) and `exec`. It is
+not enforced; it is checked against the code. Starting programs, disk anywhere
+and any host are **high risk**: labelled everywhere a person decides, never
+refused for that alone.
+
+`tomrade-plugin build` bundles `src/index.ts` into one readable ESM file,
+`dist/index.js`, with every dependency inside it except the three the host
+provides — `cordis`, `@tomrade/plugin-sdk` and `zod` — which the app resolves
+to its own copies wherever the plugin lives. Documents for surfaces go in
+`static/` and are copied beside it. The build stamps `inject`, `optional` and
+`contributes` into the manifest from what the plugin was seen to do.
+
+A `.tomrade-plugin` file is the package: a tarball of the manifest, `dist/`,
+the README, the license and, from the store, `ATTESTATION.json` — the store's
+Ed25519 signature over the package's digest, its tier and its risk. Installed
+versions live in `~/Tomrade/plugins/<publisher>/<name>/<version>/`, each
+plugin's data in `…/<name>/data/`, and `plugins.lock.json` records what is
+installed, from where, at which digest.
+
+**Every load checks the files.** A package whose files changed since install
+still loads — it is on this person's machine — but it becomes their own copy:
+tier *local*, no automatic updates. An update keeps the version before it, so
+one that fails goes back.
+
+| Tier | How it gets there |
+|---|---|
+| 官方 · Official | published by Tomrade |
+| 官方审核 · Reviewed by Tomrade | a person at Tomrade read this version — or the last reviewed one, and the review judged the change small, low-risk and reaching no further |
+| AI 已审核 · AI-reviewed | built by the store from its public source and reviewed by the pipeline before listing |
+| 本地 · Local | a file without an attestation, or a package changed after install |
+| 开发中 · In development | a folder loaded as it stands, or Plugin Studio |
+
+## Writing one
+
+With the agent: **Plugin Studio** (Settings → Manage plugins → My plugins, or
+ask the assistant). `@tomrade/plugin-studio` gives every engine tools confined
+to one workspace in `~/Tomrade/plugins-dev/<name>/` — `plugin_create`,
+`plugin_reference`, `plugin_files`, `plugin_read`, `plugin_write`,
+`plugin_build`, `plugin_test`, `plugin_check`, `plugin_try`, `plugin_status`,
+`plugin_logs` — and the `studio.build-plugin` playbook. The agent's code runs
+only in the sandbox until a person confirms an exact build: `plugin_try` stages
+it, the app shows what changed since the last build they allowed and what it
+can reach, and only their confirmation loads it. A new build needs a new
+confirmation. The plugin's own tables are saved before each new build runs and
+can be put back.
+
+By hand: the `tomrade-plugin` CLI (`@tomrade/plugin-cli`).
+
+```sh
+tomrade-plugin init my-plugin --id alice/my-plugin   # a plugin that builds, tests and loads as it is
+tomrade-plugin dev                                    # rebuild on change; Settings → Load folder, once
+tomrade-plugin test                                   # src/test.ts against a throwaway project, sandboxed
+tomrade-plugin check                                  # what the store's review will see
+tomrade-plugin pack                                   # a .tomrade-plugin anyone can install
+```
+
+**The sandbox** that `test`, `check` and Plugin Studio run code in is a child
+process under Node's permission model: it reads only the plugin's folder and
+the app's runtime, writes only a temporary directory, and cannot start programs
+or workers. The Node that Electron 43 embeds does not close the network; the
+system Node 26 does.
+
+## The store
+
+**Community** (`@tomrade/community`, the registry in `supabase/migrations`)
+lists open-source plugins only. A publisher is a Tomrade account with a linked
+GitHub identity; a plugin id starts with that login and its repository belongs
+to it. Publishing renames a local plugin to the publisher (its namespace
+stays), runs the same check the store will, then commits, tags and pushes the
+source to the public repository and submits that one commit.
+
+The review worker (`apps/review`) builds exactly that commit, installs
+production dependencies with their scripts off, tests it in the sandbox, reads
+the bundle with the static analyzer and the source — for an update, the diff
+too — with Claude, and applies the rules: only clearly malicious code is
+refused; high risk is labelled and listed; what the model cannot clear waits
+for a person. What is listed is signed and uploaded.
+
+Installing checks the package's digest against the signed attestation before
+anything is placed. An update lands by itself only when the person switched
+that on, it reaches no further than what is installed, it is no riskier, and —
+for a plugin Tomrade reviewed — it is still reviewed by Tomrade. Revocations
+switch a plugin off at the next check while online.
+
+## Built-in rows
+
+A built-in is a function `(ctx, config)`, a class whose constructor takes
 `(ctx, config)`, or an object with `apply(ctx, config)`. `inject` lists the
 services it needs; it loads when all of them are active and unloads when one
 goes away. `Config` may be a zod schema; the row's `config` is validated
-against it before `apply` runs.
-
-Optional dependencies are nested contexts:
+against it before `apply` runs. Optional dependencies are nested contexts:
 
 ```ts
 ctx.inject(["contributions"], (ctx) => {
   ctx.contributions.statusItem({ id: "hello", text: () => "hello" });
 });
 ```
-
-The callback runs when `contributions` appears and is unwound when it disappears.
 
 ### Loading it
 
@@ -81,7 +227,7 @@ merged by `id` and can add rows the app does not ship:
 ```yaml
 plugins:
   - id: hello
-    name: /absolute/path/to/hello/dist/index.js
+    name: "@tomrade/hello"
     config: {}
 ```
 
@@ -98,7 +244,7 @@ the top of a barrel or a channels file is the cheap insurance.
 its state — `active`, `failed` with the error, `pending` with the services it is
 still waiting for, or `disabled` — alongside what it provides and needs.
 
-The same list is the Plugins sheet in the app (⌘K → Plugins, or Settings →
+The same list is the Plugins pane in the app (⌘K → Plugins, or Settings →
 Manage plugins), where a row can be switched on or off without a restart. See
 [Modules](#modules) for the one switch it will not throw.
 
@@ -140,7 +286,8 @@ see below.)
 ### Providing a seam
 
 ```ts
-import { Service, type Context, type LLMProvider } from "@tomrade/plugin-sdk";
+import { Context, Service } from "cordis";
+import type { LLMProvider } from "@tomrade/llm";
 
 class Anthropic extends Service implements LLMProvider {
   static provide = "llm";
@@ -866,6 +1013,10 @@ ctx.contributions.graph({ id: "hello", title: "Hello", icon: "i-graph", compute:
 ctx.contributions.assistantAccessory({ id: "hello.sprite", kind: "sprite-pet", title: "Helper", stateChannel: "hello.sprite.state", changedChannel: "hello.sprite.changed", width: 96, height: 72, animations: { idle: { source: "data:image/png;base64,…", frames: 4, frameWidth: 320, frameHeight: 240, frameMs: 200 } } });
 ```
 
+Every callback may return a Promise; the renderer's refresh waits for it. One
+that throws is left out of that refresh and logged, and for an extension one
+that takes longer than two seconds is left out too — commands get a minute.
+
 Commands appear in the palette under their group and run in the main process
 with the current `{ projectId, boardId, viewId, itemId }`. Badges are computed
 on every board refresh over the project's items. Status items render in the
@@ -946,4 +1097,5 @@ well as CSS animation.
 - No code evaluation in configuration. `tomrade.yml` is static YAML with
   `${userData}`-style substitution and nothing more.
 - No profile or bundle layering. One file, one patch file, merged by id.
-- No renderer plugin bundles. Contributions are data.
+- No renderer plugin bundles. Contributions are data; the only documents a
+  plugin ships are surfaces, opened from inside its own package.
