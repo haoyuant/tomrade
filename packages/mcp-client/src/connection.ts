@@ -148,8 +148,8 @@ export class Connection {
   }
 
   /** A string when the server answered in text, its structured content when that is all it sent; an error result throws. */
-  async call(name: string, args: unknown): Promise<unknown> {
-    const result = await this.live().callTool({ name, arguments: args as Record<string, unknown> }, undefined, { timeout: this.config.timeoutMs });
+  async call(name: string, args: unknown, signal?: AbortSignal): Promise<unknown> {
+    const result = await this.live().callTool({ name, arguments: args as Record<string, unknown> }, undefined, { timeout: this.config.timeoutMs, signal });
     const text = textOf(result.content as Content[] | undefined);
     if (result.isError) throw new Error(text || `${name} reported an error`);
     if (!text && result.structuredContent !== undefined) return result.structuredContent;

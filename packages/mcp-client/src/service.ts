@@ -1,4 +1,5 @@
 import { Context, Service } from "cordis";
+import { z } from "zod";
 import { defineTool } from "@tomrade/tools";
 import type {} from "@tomrade/ipc";
 import type {} from "@tomrade/settings";
@@ -6,6 +7,17 @@ import { MCP_SERVERS_SECTION, McpClientSettings, McpServerConfig, targetOf, tool
 import { Connection, type RemoteTool, type ServerInfo } from "./connection.js";
 import { parseClientConfig } from "./import.js";
 import { inputSchemaOf } from "./schema.js";
+
+export const McpClientConfig = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    /** The wait before each automatic reconnect; once they run out, a server stays failed until reconnected by hand. */
+    retryDelaysMs: z.array(z.number().int().min(0)).default([1_000, 5_000, 30_000]),
+    /** A connection that lasted this long before it dropped earns a fresh set of retries; a server that keeps dying sooner runs out. */
+    stableMs: z.number().int().min(0).default(60_000)
+  })
+);
+export type McpClientConfig = z.output<typeof McpClientConfig>;
 
 export type McpServerState = "off" | "connecting" | "connected" | "failed";
 
@@ -31,6 +43,8 @@ export interface McpServerView {
   error?: string;
   server?: ServerInfo;
   tools: McpToolView[];
+  /** An automatic reconnect is scheduled or under way: which attempt, of how many. */
+  retry?: { attempt: number; of: number };
 }
 
 export type McpTestResult = { ok: true; server?: ServerInfo; tools: string[] } | { ok: false; error: string };
@@ -66,6 +80,10 @@ interface Link {
   unregister: (() => void)[];
   /** Set once the link is replaced or removed; late results from its connection are thrown away. */
   retired: boolean;
+  attempts: number;
+  retry?: { attempt: number; of: number };
+  timer?: ReturnType<typeof setTimeout>;
+  connectedAt?: number;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -84,6 +102,7 @@ function describe(serverId: string, tool: RemoteTool, exact: boolean): string {
 export class McpClient extends Service {
   static provide = "mcpClient";
   static inject = ["tools", "settings"];
+  static Config = McpClientConfig;
 
   private links = new Map<string, Link>();
   private pending: Promise<void> = Promise.resolve();
@@ -92,7 +111,10 @@ export class McpClient extends Service {
   /** Registrations and listeners belong to this plugin, whoever calls in. */
   private readonly home: Context;
 
-  constructor(ctx: Context) {
+  constructor(
+    ctx: Context,
+    public readonly config: McpClientConfig
+  ) {
     super(ctx, "mcpClient");
     this.home = ctx;
   }
@@ -138,7 +160,8 @@ export class McpClient extends Service {
         state: link.state,
         error: link.error,
         server: link.server,
-        tools: link.tools
+        tools: link.tools,
+        retry: link.retry
       }));
   }
 
@@ -187,7 +210,7 @@ export class McpClient extends Service {
       const existing = this.links.get(config.id);
       if (existing?.signature === signature) continue;
       if (existing) this.retire(existing);
-      const link: Link = { config, signature, state: config.enabled ? "connecting" : "off", tools: [], unregister: [], retired: false };
+      const link: Link = { config, signature, state: config.enabled ? "connecting" : "off", tools: [], unregister: [], retired: false, attempts: 0 };
       this.links.set(config.id, link);
       if (config.enabled) started.push(this.connect(link));
     }
@@ -197,13 +220,14 @@ export class McpClient extends Service {
   }
 
   private async connect(link: Link): Promise<void> {
+    link.state = "connecting";
+    this.notify();
     const connection = new Connection(link.config, {
       onClose: (reason) => {
         if (link.retired || link.connection !== connection) return;
         this.unregister(link);
         link.connection = undefined;
-        link.state = "failed";
-        link.error = reason;
+        this.fail(link, reason);
         this.notify();
       },
       onToolsChanged: () => {
@@ -218,14 +242,36 @@ export class McpClient extends Service {
       await this.register(link, connection);
       if (link.retired) return;
       link.state = "connected";
+      link.error = undefined;
+      link.retry = undefined;
+      link.connectedAt = Date.now();
     } catch (e) {
       await connection.close();
       if (link.retired) return;
       link.connection = undefined;
-      link.state = "failed";
-      link.error = message(e);
+      this.unregister(link);
+      this.fail(link, message(e));
     }
     this.notify();
+  }
+
+  /** Marks the link failed and, while retries remain, schedules the next attempt. */
+  private fail(link: Link, reason: string): void {
+    link.state = "failed";
+    link.error = reason;
+    if (link.connectedAt !== undefined && Date.now() - link.connectedAt >= this.config.stableMs) link.attempts = 0;
+    link.connectedAt = undefined;
+    const delay = this.config.retryDelaysMs[link.attempts];
+    if (delay === undefined || this.disposed) {
+      link.retry = undefined;
+      return;
+    }
+    link.attempts += 1;
+    link.retry = { attempt: link.attempts, of: this.config.retryDelaysMs.length };
+    link.timer = setTimeout(() => {
+      link.timer = undefined;
+      if (!link.retired) void this.connect(link);
+    }, delay);
   }
 
   /** (Re)lists the server's tools and registers them; a name taken by anyone else is skipped, never thrown. */
@@ -253,7 +299,7 @@ export class McpClient extends Service {
             title: tool.title ?? tool.name,
             description: describe(link.config.id, tool, exact),
             input: schema,
-            execute: (args) => connection.call(tool.name, args)
+            execute: (args, invocation) => connection.call(tool.name, args, invocation.signal)
           })
         )
       );
@@ -270,6 +316,7 @@ export class McpClient extends Service {
 
   private retire(link: Link): void {
     link.retired = true;
+    clearTimeout(link.timer);
     this.unregister(link);
     const connection = link.connection;
     link.connection = undefined;

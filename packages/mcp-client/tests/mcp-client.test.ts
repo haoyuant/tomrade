@@ -29,10 +29,11 @@ afterEach(async () => {
   for (const fiber of open.splice(0).reverse()) await fiber.dispose();
 });
 
-async function boot(extra: unknown[] = []) {
+/** Retries are off unless a test asks for them, so a failure stays put while it is looked at. */
+async function boot(extra: unknown[] = [], config: Record<string, unknown> = { retryDelaysMs: [] }) {
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, `settings-${n++}.json`) }], ...(extra as never[])] });
   open.push(ctx.fiber);
-  const plugin = await ctx.plugin(McpClient);
+  const plugin = await ctx.plugin(McpClient, config);
   const configure = async (servers: unknown[]) => {
     ctx.settings.set({ ...ctx.settings.get(), mcpServers: { servers } } as never);
     await ctx.mcpClient.settled();
@@ -107,7 +108,7 @@ describe("a stdio server", () => {
     const fx = view("fx")!;
     expect(fx.state).toBe("connected");
     expect(fx.server).toEqual({ name: "fixture", version: "1.2.3" });
-    expect(fx.tools.map((t) => t.name)).toEqual(["fx__echo", "fx__add", "fx__fail", "fx__files_read", "fx__env", "fx__pid", "fx__grow", "fx__exit"]);
+    expect(fx.tools.map((t) => t.name)).toEqual(["fx__echo", "fx__add", "fx__fail", "fx__files_read", "fx__env", "fx__pid", "fx__grow", "fx__exit", "fx__sleep"]);
     expect(fx.tools.every((t) => !t.skipped && !t.approximate)).toBe(true);
 
     expect(await call("fx__echo", { text: "hi" })).toBe("hi");
@@ -171,11 +172,58 @@ describe("a stdio server", () => {
     await call("fx__exit");
     await until(() => view("fx")!.state === "failed");
     expect(view("fx")!.error).toMatch(/exited[\s\S]*fixture: bye/);
+    expect(view("fx")!.retry).toBeUndefined();
     expect(ctx.tools.has("fx__echo")).toBe(false);
 
     await ctx.mcpClient.reconnect("fx");
     expect(view("fx")!.state).toBe("connected");
     expect(await call("fx__echo", { text: "back" })).toBe("back");
+  });
+
+  it("reconnects on its own after the server exits", async () => {
+    const { ctx, configure, view, call } = await boot([], { retryDelaysMs: [50] });
+    await configure([stdio("fx")]);
+    const pid = await call("fx__pid");
+    await call("fx__exit");
+    await until(() => view("fx")!.state !== "connected");
+    expect(view("fx")!.retry).toEqual({ attempt: 1, of: 1 });
+    await until(() => view("fx")!.state === "connected");
+    expect(view("fx")!.retry).toBeUndefined();
+    expect(await call("fx__pid")).not.toBe(pid);
+    expect(ctx.tools.has("fx__echo")).toBe(true);
+  });
+
+  it("gives up on a server that keeps dying, after the configured attempts", async () => {
+    const log = path.join(dir, `log-${n}.txt`);
+    const { configure, view } = await boot([], { retryDelaysMs: [20, 20] });
+    await configure([stdio("fx", {}, { FIXTURE_EXIT_AFTER_MS: "80", FIXTURE_LOG: log })]);
+    const starts = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter((l) => l === "start").length : 0);
+    await until(() => view("fx")!.state === "failed" && !view("fx")!.retry && starts() === 3);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(starts()).toBe(3);
+    expect(view("fx")!.state).toBe("failed");
+  });
+
+  it("gives a connection that stayed up a fresh set of retries", async () => {
+    const log = path.join(dir, `log-${n}.txt`);
+    const { configure } = await boot([], { retryDelaysMs: [20], stableMs: 0 });
+    await configure([stdio("fx", {}, { FIXTURE_EXIT_AFTER_MS: "60", FIXTURE_LOG: log })]);
+    const starts = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter((l) => l === "start").length : 0);
+    await until(() => starts() >= 4);
+    await configure([]);
+  });
+
+  it("cancels a call on the server when the caller stops waiting", async () => {
+    const log = path.join(dir, `log-${n}.txt`);
+    const { ctx, configure } = await boot();
+    await configure([stdio("fx", {}, { FIXTURE_LOG: log })]);
+    const abort = new AbortController();
+    const started = Date.now();
+    const call = ctx.tools.execute("fx__sleep", { ms: 10_000 }, { by: "ai:test", signal: abort.signal });
+    setTimeout(() => abort.abort(), 100);
+    await expect(call).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    await until(() => fs.readFileSync(log, "utf8").includes("cancelled"));
   });
 
   it("keeps a failing server from holding up the others", async () => {

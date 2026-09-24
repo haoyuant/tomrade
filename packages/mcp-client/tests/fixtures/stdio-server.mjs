@@ -1,8 +1,13 @@
 // A stdio MCP server for the tests: plain JSON Schemas (one dotted name, one draft-07 ref), an error result,
-// structured content, a tool that grows the list, and one that makes the process exit.
+// structured content, a tool that grows the list, one that makes the process exit, and one that waits to be cancelled.
+// FIXTURE_LOG names a file it appends "start" and "cancelled" to; FIXTURE_EXIT_AFTER_MS makes it die soon after it connects.
+import fs from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+
+const log = (line) => process.env.FIXTURE_LOG && fs.appendFileSync(process.env.FIXTURE_LOG, `${line}\n`);
+log("start");
 
 if (process.env.FIXTURE_CRASH) {
   process.stderr.write("fixture: missing API key\n");
@@ -18,12 +23,13 @@ const tools = [
   { name: "env", description: "Read an environment variable", inputSchema: object({ name: { type: "string" } }, ["name"]) },
   { name: "pid", description: "The server's process id", inputSchema: object() },
   { name: "grow", description: "Add a tool and announce it", inputSchema: object() },
-  { name: "exit", description: "Exit the process", inputSchema: object() }
+  { name: "exit", description: "Exit the process", inputSchema: object() },
+  { name: "sleep", description: "Wait, unless cancelled", inputSchema: object({ ms: { type: "number" } }, ["ms"]) }
 ];
 
 const server = new Server({ name: "fixture", version: "1.2.3" }, { capabilities: { tools: { listChanged: true } } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const { name, arguments: args = {} } = request.params;
   const text = (value) => ({ content: [{ type: "text", text: String(value) }] });
   switch (name) {
@@ -49,8 +55,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         process.exit(3);
       }, 20);
       return text("bye");
+    case "sleep":
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(text("slept")), args.ms);
+        extra.signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          log("cancelled");
+          resolve(text("cancelled"));
+        });
+      });
     default:
       return { ...text(`unknown tool ${name}`), isError: true };
   }
 });
 await server.connect(new StdioServerTransport());
+if (process.env.FIXTURE_EXIT_AFTER_MS) setTimeout(() => process.exit(4), Number(process.env.FIXTURE_EXIT_AFTER_MS));

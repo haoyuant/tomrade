@@ -3,7 +3,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Context } from "cordis";
 import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
+import { Tools, defineTool } from "@tomrade/tools";
+import { z } from "zod";
 import { Settings } from "@tomrade/settings";
 import { FakeChatModel, fakeChat, type ChatRequest, type FakeTurn } from "@tomrade/llm";
 import { Agent, type RunView } from "@tomrade/agent";
@@ -48,6 +49,47 @@ describe("the loop engine on the platform", () => {
     const errors = agent.store.messages(project.id, thread.id).filter((entry) => entry.block.type === "error");
     expect(errors).toHaveLength(1);
     expect(errors[0]?.block).toEqual({ type: "error", text: "The selected model is unavailable." });
+  });
+
+  it("hands a tool the run's signal, so cancelling the run stops the call", async () => {
+    const { ctx, agent, project } = await boot([]);
+    let started = false;
+    let stopped = false;
+    ctx.tools.register(
+      defineTool({
+        name: "wait_for_cancel",
+        title: "Wait",
+        description: "test",
+        input: z.object({}),
+        execute: (_args, inv) =>
+          new Promise((resolve) => {
+            started = true;
+            inv.signal?.addEventListener("abort", () => {
+              stopped = true;
+              resolve("stopped");
+            });
+          })
+      })
+    );
+    agent.engine({
+      id: "waiting",
+      title: "Waiting engine",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      turn: async (_input, io) => {
+        await io.tools.execute("wait_for_cancel", {});
+        return { stop: "end" };
+      }
+    });
+    const thread = agent.newThread(project.id, "waiting");
+    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "go" });
+    for (const t0 = Date.now(); !started; ) {
+      if (Date.now() - t0 > 4000) throw new Error("the tool never started");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(agent.cancel(runId)).toBe(true);
+    expect((await settled(ctx, project.id, runId)).status).toBe("cancelled");
+    expect(stopped).toBe(true);
   });
 
   it("answers chit-chat with no tools and no writes", async () => {

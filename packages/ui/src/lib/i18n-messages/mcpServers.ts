@@ -14,6 +14,9 @@ export const mcpServers = {
     stateOff: "off",
     detailConnected: "{{server}} · {{count}} tools",
     detailConnecting: "Connecting…",
+    detailReconnecting: "Reconnecting ({{attempt}} of {{of}})…",
+    stateRetrying: "retrying {{attempt}}/{{of}}",
+    retryingTitle: "Tomrade reconnects on its own, attempt {{attempt}} of {{of}}.",
     detailOff: "Switched off — its tools are not registered",
 
     reconnect: "Reconnect",
@@ -82,6 +85,9 @@ export const mcpServers = {
     stateOff: "已关闭",
     detailConnected: "{{server}} · {{count}} 个工具",
     detailConnecting: "正在连接…",
+    detailReconnecting: "正在重新连接（第 {{attempt}}/{{of}} 次）…",
+    stateRetrying: "重试 {{attempt}}/{{of}}",
+    retryingTitle: "Tomrade 会自动重新连接，第 {{attempt}}/{{of}} 次。",
     detailOff: "已关闭，它的工具不会注册",
 
     reconnect: "重新连接",

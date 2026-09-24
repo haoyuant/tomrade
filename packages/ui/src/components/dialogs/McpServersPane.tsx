@@ -247,14 +247,18 @@ function ServerRow({
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const registered = server.tools.filter((tool) => !tool.skipped).length;
+  const error = server.error?.split("\n").filter(Boolean).join(" · ") ?? "";
   const detail =
     server.state === "connected"
       ? t("mcpServers.detailConnected", { server: server.server ? `${server.server.name} ${server.server.version}` : server.id, count: registered })
       : server.state === "connecting"
-        ? t("mcpServers.detailConnecting")
+        ? server.retry
+          ? t("mcpServers.detailReconnecting", server.retry)
+          : t("mcpServers.detailConnecting")
         : server.state === "off"
           ? t("mcpServers.detailOff")
-          : (server.error?.split("\n").filter(Boolean).join(" · ") ?? "");
+          : error;
+  const retrying = server.state === "failed" && server.retry;
   return (
     <div className="mcp-server" data-mcp-server={server.id} data-state={server.state}>
       <div className={cn("cfg-row", !server.enabled && "off")}>
@@ -272,7 +276,9 @@ function ServerRow({
             {detail}
           </div>
         </div>
-        <Tag tone={server.state === "connected" ? "strong" : server.state === "off" ? "faint" : "neutral"}>{t(STATE_KEY[server.state])}</Tag>
+        <Tag tone={server.state === "connected" ? "strong" : server.state === "off" ? "faint" : "neutral"} title={retrying ? t("mcpServers.retryingTitle", retrying) : undefined}>
+          {retrying ? t("mcpServers.stateRetrying", retrying) : t(STATE_KEY[server.state])}
+        </Tag>
         {(server.state === "connected" || server.state === "failed") && (
           <button type="button" className="icon-btn" aria-expanded={open} aria-label={t("mcpServers.showTools")} title={t("mcpServers.showTools")} onClick={() => setOpen(!open)}>
             <Icon name={open ? "i-chevdown" : "i-chev"} size={14} />

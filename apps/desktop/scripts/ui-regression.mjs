@@ -829,7 +829,7 @@ const run = async () => {
   check("the row turns connected without a reload", (await $(`${mcpRow("fx")}?.dataset.state`)) === "connected");
   await press(`${mcpRow("fx")}.querySelector('[aria-label="Tools"]')`);
   await sleep(400);
-  check("the row opens onto the tools it registered", (await $(`document.querySelectorAll('${SHEET} [data-testid="mcp-tools"] tbody tr').length`)) === 8);
+  check("the row opens onto the tools it registered", (await $(`document.querySelectorAll('${SHEET} [data-testid="mcp-tools"] tbody tr').length`)) === 9);
   check("the MCP pane keeps the sheet's frame", (await $(sheetBox)) === boxOnAppearance);
   await shot("18-mcp-servers");
 
@@ -862,8 +862,9 @@ const run = async () => {
   check("removing a server forgets it and its tools", (ctx.settings.get().mcpServers?.servers?.length ?? 0) === 0 && !ctx.tools.list().some((t) => t.name.startsWith("fx__")));
   ctx.settings.set({ ...ctx.settings.get(), mcpServers: { servers: [{ id: "broken", transport: { type: "stdio", command: process.execPath, args: [fixture], env: { ELECTRON_RUN_AS_NODE: "1", FIXTURE_CRASH: "1" } } }] } });
   await ctx.mcpClient.settled();
-  await sleep(500);
-  check("a server that fails says why on its row", (await $(`${mcpRow("broken")}?.dataset.state === 'failed' && ${mcpRow("broken")}.textContent.includes('missing API key')`)) === true);
+  // The shipped composition retries after a second; look before it does.
+  await sleep(300);
+  check("a server that fails says why on its row, and that it will retry", (await $(`${mcpRow("broken")}?.dataset.state === 'failed' && ${mcpRow("broken")}.textContent.includes('missing API key') && ${mcpRow("broken")}.textContent.includes('retrying 1/3')`)) === true);
   await shot("18-mcp-servers-failed");
   ctx.settings.set({ ...ctx.settings.get(), mcpServers: { servers: [] } });
   await sleep(400);
