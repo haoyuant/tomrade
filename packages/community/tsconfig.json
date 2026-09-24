@@ -1,0 +1,36 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../hub-cloud"
+    },
+    {
+      "path": "../ipc"
+    },
+    {
+      "path": "../plugin-cli"
+    },
+    {
+      "path": "../plugin-kit"
+    },
+    {
+      "path": "../plugin-sdk"
+    },
+    {
+      "path": "../plugins"
+    },
+    {
+      "path": "../settings"
+    }
+  ]
+}

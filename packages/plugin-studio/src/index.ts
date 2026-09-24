@@ -155,7 +155,8 @@ export default {
       if (!NAME.test(name)) throw new Error(`"${name}" is not a workspace name: lowercase letters, digits and dashes`);
       const dir = path.join(config.devRoot, name);
       if (fs.existsSync(path.join(dir, MANIFEST_FILE))) return dir;
-      scaffold(dir, { id: `${config.publisher}/${name}`, title, description, authoredBy: "agent" });
+      const publisher = (ctx.get("community") as { publisherLogin?(): string | null } | undefined)?.publisherLogin?.() ?? config.publisher;
+      scaffold(dir, { id: `${publisher}/${name}`, title, description, authoredBy: "agent" });
       watched = known();
       notify();
       return dir;

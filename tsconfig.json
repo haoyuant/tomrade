@@ -126,6 +126,9 @@
     },
     {
       "path": "./packages/plugin-studio"
+    },
+    {
+      "path": "./packages/community"
     }
   ]
 }

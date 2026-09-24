@@ -25,6 +25,7 @@
     "@tomrade/archify": "workspace:*",
     "@tomrade/boards": "workspace:*",
     "@tomrade/code-link": "workspace:*",
+    "@tomrade/community": "workspace:*",
     "@tomrade/contributions": "workspace:*",
     "@tomrade/db": "workspace:*",
     "@tomrade/deps-graph": "workspace:*",

@@ -193,6 +193,8 @@ plugins:
   # channels, listeners, timers and desktop surface together.
   - id: pet
     name: "@tomrade/pet"
+  - id: community
+    name: "@tomrade/community"
   - id: plugin-studio
     name: "@tomrade/plugin-studio"
     config:

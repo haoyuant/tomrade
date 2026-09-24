@@ -17,3 +17,4 @@ export {
   type UnpackedPackage
 } from "./package.js";
 export { AttestationSchema, attest, generateSigningKey, keyIdOf, verifyAttestation, type Attestation, type AttestationClaims } from "./sign.js";
+export type { ReviewReport } from "./report.js";

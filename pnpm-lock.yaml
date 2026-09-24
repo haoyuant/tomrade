@@ -38,6 +38,9 @@ importers:
       '@tomrade/code-link':
         specifier: workspace:*
         version: link:../../packages/code-link
+      '@tomrade/community':
+        specifier: workspace:*
+        version: link:../../packages/community
       '@tomrade/contributions':
         specifier: workspace:*
         version: link:../../packages/contributions
@@ -372,6 +375,46 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/community:
+    dependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.116.0
+        version: 2.116.0
+      '@tomrade/hub-cloud':
+        specifier: workspace:*
+        version: link:../hub-cloud
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/plugin-cli':
+        specifier: workspace:*
+        version: link:../plugin-cli
+      '@tomrade/plugin-kit':
+        specifier: workspace:*
+        version: link:../plugin-kit
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomrade/plugins':
+        specifier: workspace:*
+        version: link:../plugins
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
