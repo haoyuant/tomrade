@@ -75,6 +75,5 @@
     "electron-builder": "^26.15.3",
     "typescript": "^6.0.0",
     "wait-on": "^8.0.1"
-  },
-  "productName": "Tomrade"
+  }
 }

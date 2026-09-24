@@ -2,6 +2,10 @@
 # backend and the renderer first (scripts/package.mjs).
 appId: com.tomrade.desktop
 productName: Tomrade
+# Electron names the data folder after productName. Only the installed app
+# carries it; a checkout keeps its data under @tomrade/desktop.
+extraMetadata:
+  productName: Tomrade
 copyright: Copyright © Tomrade
 directories:
   output: release
