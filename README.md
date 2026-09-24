@@ -9,7 +9,7 @@ Talk to the agent → it shapes the requirement with you → plans epics and **f
 1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. Configured cloud builds use Supabase for accounts and portable Hub metadata, with an offline outbox; project storage remains local-first. See [`docs/supabase-hub.md`](docs/supabase-hub.md).
 2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
 3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
-4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A third-party plugin uses the same mechanism with the same rights — see [`docs/plugin-api.md`](docs/plugin-api.md) and [`examples/stale`](examples/stale).
+4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A plugin from outside the app — Community, a file, a folder, or one an agent wrote in Plugin Studio — is written against `@tomrade/plugin-sdk` and loaded behind an async, attributed, namespaced facade — see [`docs/plugin-api.md`](docs/plugin-api.md) and [`examples/stale`](examples/stale).
 5. **One agent platform, pluggable conductors.** `ctx.agent` owns what every conductor needs — threads, runs, the per-run ledger, cards, suspended workflows, run-scoped undo — and holds no opinion about what to do next. **Engines** decide that, and are plugins: `engine-loop` (a conversation model over the tool registry, guided by playbooks), `engine-scripted` (menu-driven, no model, offline), `engine-claude-code` / `engine-codex` (the user's own CLI agents, tools over MCP). Deterministic multi-step jobs are **workflows** — typed, resumable step machines exposed as tools to every engine; invariants are **policies** on `tools/pre-execute` (an agent create without a duplicate check is refused, whoever conducts). `ctx.llm` stays the model seam: profiles (DeepSeek/Anthropic/OpenAI-compatible/local) with `conversation` and `worker` roles.
 6. **One tool registry, every surface.** A tool registered on `ctx.tools` appears in the in-app assistant's prompt and on the MCP server at once. There is no per-surface code.
 7. **MCP server is a first-class interface.** VS Code coding agents list/read/write/search tickets over MCP (`@modelcontextprotocol/sdk`, TS). This is the product's open API.
@@ -58,11 +58,17 @@ packages/agent-backlog —               the backlog method: playbooks, dossier,
 packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
 packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
 packages/contributions ctx.contributions  declarative UI contributions
-packages/plugins      ctx.plugins      loads the composition, and manages it: state per row, modules, the guard on switching one off
-packages/plugin-sdk   the public plugin API in one import
+packages/plugins      ctx.plugins      loads the composition, and manages it: state per row, modules, the guard on switching one off, installed extensions
+packages/plugin-sdk   the extension contract: definePlugin, the async PluginContext, the manifest
+packages/extensions   the host side of the contract: namespaces, attribution, callbacks held to time limits
+packages/plugin-kit   packages, digests, signed attestations, the lock file, the static analyzer
+packages/plugin-cli   tomrade-plugin: init, build, dev, test, check, pack — and the sandbox agent-written code runs in
+packages/plugin-studio ctx tools for an agent to write a plugin, which loads only at a build a person confirmed
+packages/community    ctx.community    the store: browse, install (attestation-checked), update, revoke, report, publish
 packages/testkit      boots a fresh in-memory context for tests
 packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
-examples/stale        a third-party plugin that edits no first-party file
+examples/stale        an extension that edits no first-party file
+apps/review           the store's review worker and admin tool
 design/               OpenDesign prototype — the visual authority for the UI
 docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants)
 ```
@@ -104,7 +110,7 @@ Run `pnpm dev`. The MCP server listens on `http://127.0.0.1:19090/mcp` (shown in
 }
 ```
 
-Every registered tool is exposed as `tomrade.<name>`: `list_boards`, `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `delete_item`, `extract_tickets`, `gap_analysis` — plus whatever plugins add (`list_stale_items` from the example). Views are deliberately invisible to MCP. `delete_item` is the *reversible* delete; there is no purge tool, and the refusal lives in the write policy, not in the absence of a tool.
+Every registered tool is exposed as `tomrade.<name>`: `list_boards`, `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `delete_item`, `extract_tickets`, `gap_analysis` — plus whatever plugins add (`stale_list_items` from the example). Views are deliberately invisible to MCP. `delete_item` is the *reversible* delete; there is no purge tool, and the refusal lives in the write policy, not in the absence of a tool.
 
 AI writes are recorded as `ai:mcp` (or `ai:agent`, `ai:claude-code`, `ai:<plugin>`) in the oplog, carry the `baseVersion` the caller read — a write tool that omits it asserts the version it reads itself — and are rejected when the item is human-locked or the version is stale.
 
@@ -118,6 +124,9 @@ pnpm dev                                 # builds the backend, then Vite + Elect
 pnpm dump-config                         # boots the app headlessly and prints every module and every row's state
 pnpm --filter @tomrade/desktop test:ui   # the UI harness (needs `pnpm dev:ui` up and the backend built)
 pnpm --filter @tomrade/desktop test:plugins  # switches real rows on and off, against the shipped composition
+pnpm --filter @tomrade/desktop test:extensions   # an extension from outside the app, installed and reloaded in the real shell
+pnpm --filter @tomrade/desktop test:plugins-ui   # the Plugins pane, Plugin Studio's review dialog, both languages (needs the dev server)
+pnpm --filter @tomrade/desktop package           # installers (DMG/ZIP, NSIS, AppImage); -- --dir for an unpacked app
 ```
 
 The backend is one TypeScript build graph: every emitting package is `composite` and lists its workspace dependencies as `references`, and the root `tsconfig.json` references them all, so `tsc -b` rebuilds only what changed. `pnpm dev` runs it before launching Electron; the runtime boot itself loads every plugin in well under a second.

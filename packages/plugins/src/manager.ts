@@ -20,6 +20,16 @@ declare module "@tomrade/ipc" {
   interface Channels {
     "plugins.list": () => PluginsSnapshot;
     "plugins.setEnabled": (id: string, enabled: boolean) => PluginsSnapshot;
+    /** A `.tomrade-plugin` file a person picked. */
+    "plugins.installFile": (file: string) => PluginsSnapshot;
+    /** A plugin's own folder, loaded as it stands and reloaded when its build changes. */
+    "plugins.addFolder": (dir: string) => PluginsSnapshot;
+    "plugins.uninstall": (id: string, removeData: boolean) => PluginsSnapshot;
+    "plugins.rollback": (id: string) => PluginsSnapshot;
+    "plugins.reload": (id: string) => PluginsSnapshot;
+    /** Allow a development build to load at exactly this digest. */
+    "plugins.confirm": (id: string, digest: string) => PluginsSnapshot;
+    "plugins.setAutoUpdate": (id: string, on: boolean) => PluginsSnapshot;
   }
   interface Broadcasts {
     "plugins.changed": () => void;
@@ -65,6 +75,16 @@ export class Plugins extends Service {
   ) {
     super(ctx, "plugins");
     this.home = ctx;
+    const store = config.extensions;
+    if (store) {
+      const taken = new Set(config.rows.map((r) => r.id));
+      for (const row of store.rows()) if (!taken.has(row.id)) config.rows.push({ ...row });
+      store.onChange = (id) => void this.reload(id).catch((error: unknown) => this.home.logger.warn(`${id}: ${messageOf(error)}`));
+    }
+  }
+
+  get extensions() {
+    return this.config.extensions;
   }
 
   async [Service.init]() {
@@ -80,9 +100,22 @@ export class Plugins extends Service {
       if (module.required && !module.providers.length) this.home.logger.warn(`nothing provides the required module "${module.id}"`);
     }
 
+    this.config.extensions?.watchAll();
+
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("plugins.list", () => ctx.plugins.snapshot());
       ctx.ipc.handle("plugins.setEnabled", (id, enabled) => ctx.plugins.setEnabled(id, enabled));
+      ctx.ipc.handle("plugins.installFile", (file) => ctx.plugins.installFile(file));
+      ctx.ipc.handle("plugins.addFolder", (dir) => ctx.plugins.addFolder(dir));
+      ctx.ipc.handle("plugins.uninstall", (id, removeData) => ctx.plugins.uninstall(id, { removeData }));
+      ctx.ipc.handle("plugins.rollback", (id) => ctx.plugins.rollback(id));
+      ctx.ipc.handle("plugins.reload", (id) => ctx.plugins.reload(id));
+      ctx.ipc.handle("plugins.confirm", (id, digest) => ctx.plugins.confirm(id, digest));
+      ctx.ipc.handle("plugins.setAutoUpdate", (id, on) => {
+        this.store().setAutoUpdate(id, on);
+        this.notify();
+        return ctx.plugins.snapshot();
+      });
       this.notify = () => ctx.ipc.send("plugins.changed");
       return () => {
         this.notify = () => {};
@@ -138,6 +171,100 @@ export class Plugins extends Service {
     return next;
   }
 
+  /** Serialised with the switches, for the same reason they are. */
+  private queued<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(work);
+    this.queue = next.then(
+      () => {},
+      () => {}
+    );
+    return next;
+  }
+
+  private store() {
+    const store = this.config.extensions;
+    if (!store) throw new Error("This build has no extension store");
+    return store;
+  }
+
+  /** A row that joins after boot: an extension installed, or a folder loaded. */
+  add(row: PluginRow): Promise<PluginsSnapshot> {
+    return this.queued(async () => {
+      if (this.config.rows.some((r) => r.id === row.id)) return this.restart(row.id);
+      this.config.rows.push({ ...row });
+      if (!row.disabled) {
+        await this.start(this.config.rows.at(-1)!);
+        await this.settle();
+      }
+      this.notify();
+      return this.snapshot();
+    });
+  }
+
+  /** Unload a row and forget it. Held modules are guarded as for a switch. */
+  remove(id: string): Promise<PluginsSnapshot> {
+    return this.queued(async () => {
+      const row = this.config.rows.find((r) => r.id === id);
+      if (!row) return this.snapshot();
+      if (!row.disabled) await this.disable(row);
+      this.config.rows = this.config.rows.filter((r) => r.id !== id);
+      this.notify();
+      return this.snapshot();
+    });
+  }
+
+  /** Load a row again from its current files; a switched-off row stays off. */
+  reload(id: string): Promise<PluginsSnapshot> {
+    return this.queued(() => this.restart(id));
+  }
+
+  private async restart(id: string): Promise<PluginsSnapshot> {
+    const row = this.config.rows.find((r) => r.id === id);
+    if (!row) throw new Error(`Unknown plugin “${id}”`);
+    const store = this.config.extensions;
+    if (store?.has(id)) row.disabled = store.rows().find((r) => r.id === id)!.disabled;
+    const fiber = this.fibers.get(id);
+    this.fibers.delete(id);
+    this.errors.delete(id);
+    if (fiber) await fiber.dispose();
+    await this.settle();
+    if (!row.disabled) {
+      await this.start(row);
+      await this.settle();
+    }
+    this.notify();
+    return this.snapshot();
+  }
+
+  async installFile(file: string, opts: { source?: "store" | "file"; attestation?: unknown } = {}): Promise<PluginsSnapshot> {
+    const entry = await this.store().installFile(file, opts);
+    return this.add({ id: entry.id, name: `ext:${entry.id}`, disabled: entry.disabled });
+  }
+
+  addFolder(dir: string, source: "folder" | "studio" = "folder"): Promise<PluginsSnapshot> {
+    const entry = this.store().addFolder(dir, source);
+    const row = this.store().rows().find((r) => r.id === entry.id)!;
+    return this.add(row);
+  }
+
+  async confirm(id: string, digest: string): Promise<PluginsSnapshot> {
+    this.store().confirm(id, digest);
+    return this.reload(id);
+  }
+
+  async rollback(id: string): Promise<PluginsSnapshot> {
+    this.store().rollback(id);
+    return this.reload(id);
+  }
+
+  async uninstall(id: string, opts: { removeData?: boolean } = {}): Promise<PluginsSnapshot> {
+    const snapshot = await this.remove(id);
+    if (this.config.rows.some((r) => r.id === id)) return snapshot;
+    this.store().uninstall(id, opts);
+    this.notify();
+    return this.snapshot();
+  }
+
   private async apply(id: string, enabled: boolean): Promise<PluginsSnapshot> {
     const row = this.config.rows.find((r) => r.id === id);
     if (!row) throw new Error(`Unknown plugin “${id}”`);
@@ -151,7 +278,8 @@ export class Plugins extends Service {
       await this.disable(row);
     }
 
-    await this.config.persist?.(id, !enabled);
+    if (this.config.extensions?.has(id)) this.config.extensions.setDisabled(id, !enabled);
+    else await this.config.persist?.(id, !enabled);
     this.notify();
     return this.snapshot();
   }
@@ -188,7 +316,9 @@ export class Plugins extends Service {
   private async start(row: PluginRow): Promise<void> {
     this.errors.delete(row.id);
     try {
-      this.fibers.set(row.id, this.home.plugin(await this.config.resolve(row.name), row.config));
+      const store = this.config.extensions;
+      const plugin = row.name.startsWith("ext:") && store ? await store.load(row.id) : await this.config.resolve(row);
+      this.fibers.set(row.id, this.home.plugin(plugin, row.config));
     } catch (error) {
       this.errors.set(row.id, error);
       this.home.logger.error(`${row.id}: ${messageOf(error)}`);
@@ -217,7 +347,15 @@ export class Plugins extends Service {
   private describe(row: PluginRow, provides: string[], holds: string[]): PluginView {
     const fiber = this.fibers.get(row.id);
     const error = this.errors.get(row.id);
-    const base = { id: row.id, name: row.name, config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds };
+    const base: Omit<PluginView, "state"> = { id: row.id, name: row.name, config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds };
+    const store = this.config.extensions;
+    if (store?.has(row.id)) {
+      try {
+        base.extension = store.info(row.id);
+      } catch (error) {
+        return { ...base, state: "failed", error: messageOf(error) };
+      }
+    }
     if (row.disabled) return { ...base, state: "disabled" };
     if (error || !fiber) return { ...base, state: "failed", error: messageOf(error ?? "not loaded") };
     const state = STATE[fiber.state] ?? "pending";

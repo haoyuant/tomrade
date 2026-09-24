@@ -1,0 +1,29 @@
+{
+  "name": "@tomrade/plugin-kit",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Plugin tooling without a context: the .tomrade-plugin package, content digests, signatures, the lock file and the static analyzer shared by the app, the CLI and the review pipeline",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.29.8",
+    "@tomrade/plugin-sdk": "workspace:*",
+    "tar": "^7.5.22",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "@types/node": "^26.2.0"
+  }
+}

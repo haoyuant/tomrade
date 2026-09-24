@@ -1,8 +1,12 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/archify" },
-    { "path": "./packages/hub-cloud" },
+    {
+      "path": "./packages/archify"
+    },
+    {
+      "path": "./packages/hub-cloud"
+    },
     {
       "path": "./apps/desktop"
     },
@@ -110,6 +114,24 @@
     },
     {
       "path": "./packages/write"
+    },
+    {
+      "path": "./packages/extensions"
+    },
+    {
+      "path": "./packages/plugin-kit"
+    },
+    {
+      "path": "./packages/plugin-cli"
+    },
+    {
+      "path": "./packages/plugin-studio"
+    },
+    {
+      "path": "./packages/community"
+    },
+    {
+      "path": "./apps/review"
     }
   ]
 }

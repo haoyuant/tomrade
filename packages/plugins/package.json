@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.plugins — what is installed, what each row actually provides, and the modules a composition may not be left without",
+  "description": "ctx.plugins \u2014 what is installed, what each row actually provides, and the modules a composition may not be left without",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -17,7 +17,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomrade/extensions": "workspace:*",
     "@tomrade/ipc": "workspace:*",
+    "@tomrade/plugin-kit": "workspace:*",
+    "@tomrade/plugin-sdk": "workspace:*",
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {

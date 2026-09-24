@@ -38,6 +38,11 @@ export function useAgentDock(): DockValue {
   return value;
 }
 
+/** The dock when a project is open; null on the projects screen, which has no assistant. */
+export function useOptionalAgentDock(): DockValue | null {
+  return useContext(Ctx);
+}
+
 /** Screens declare their panel wiring for as long as they are mounted. Memoize the binding — it re-binds by identity. */
 export function useScreenBinding(binding: ScreenBinding): void {
   const { bind } = useAgentDock();

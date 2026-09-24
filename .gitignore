@@ -13,6 +13,14 @@ out/
 data/*.db
 data/*.db-*
 
+# Test scratch directories a run failed to clean up
+packages/*/tests/.tmp-*/
+
+# Packaging: npm staging, the renderer copied into the app, and the installers
+build/npm/
+apps/desktop/ui/
+apps/desktop/release/
+
 # UI harness output
 apps/desktop/scripts/shots/
 artifacts/agent-eval/

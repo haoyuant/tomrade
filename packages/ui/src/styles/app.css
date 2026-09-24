@@ -1850,3 +1850,16 @@ button.kref { cursor: pointer; }
 .file-ref svg { color: var(--meta); }
 .file-ref:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 @container board (max-width: 760px) { .files-rail { display: none; } }
+
+/* Plugins: extensions, the store, and what each one may reach */
+.plug-tabs { display: inline-flex; }
+.plug-tabs .plug-count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--surface); color: var(--fg); font-size: var(--text-xs); }
+.plug-ext + .plug-ext { margin-top: var(--space-2); }
+.plug-ext-reach { padding: 4px var(--space-3) 0 calc(var(--space-3) + 27px); }
+.plug-reach li, .plug-findings li { font-size: 13px; color: var(--fg-2); }
+.plug-findings li[data-severity="critical"], .plug-findings li[data-severity="high"] { color: var(--danger); }
+.plug-listing { width: 100%; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.plug-listing:hover { border-color: var(--border); background: var(--surface); }
+.plug-facts { margin: 0; }
+.tag.risk-high { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); border-radius: var(--radius-sm); padding: 1px 7px; }
+.btn.btn-xs { padding: 2px 8px; font-size: var(--text-xs); min-height: 0; }

@@ -29,11 +29,11 @@ describe("contributions", () => {
     });
 
     expect(ctx.contributions.commands()).toEqual([{ id: "demo.ack", title: "Acknowledge" }]);
-    expect(ctx.contributions.badgesFor(project.id)).toEqual({ [item.id]: [{ id: "bug", label: "bug!" }] });
-    expect(ctx.contributions.statusItems({ projectId: project.id })).toEqual([]);
+    expect((await ctx.contributions.badgesFor(project.id))).toEqual({ [item.id]: [{ id: "bug", label: "bug!" }] });
+    expect((await ctx.contributions.statusItems({ projectId: project.id }))).toEqual([]);
     expect(await ctx.contributions.run("demo.ack", { projectId: project.id, itemId: item.id })).toEqual({ toast: "Acknowledged" });
-    expect(ctx.contributions.statusItems({ projectId: project.id })).toEqual([{ id: "demo", text: "1 acked" }]);
-    expect(ctx.contributions.sectionsFor(project.id, item.id)).toEqual([{ id: "demo", title: "Demo", rows: [{ label: "Severity", value: "high" }], text: undefined }]);
+    expect((await ctx.contributions.statusItems({ projectId: project.id }))).toEqual([{ id: "demo", text: "1 acked" }]);
+    expect((await ctx.contributions.sectionsFor(project.id, item.id))).toEqual([{ id: "demo", title: "Demo", rows: [{ label: "Severity", value: "high" }], text: undefined }]);
     expect(ctx.contributions.assistantAccessories()).toEqual([
       {
         id: "demo.pet",
@@ -49,7 +49,7 @@ describe("contributions", () => {
 
     await fiber.dispose();
     expect(ctx.contributions.commands()).toEqual([]);
-    expect(ctx.contributions.badgesFor(project.id)).toEqual({});
+    expect((await ctx.contributions.badgesFor(project.id))).toEqual({});
     expect(ctx.contributions.assistantAccessories()).toEqual([]);
     await expect(ctx.contributions.run("demo.ack", {})).rejects.toThrow(/Unknown command/);
   });

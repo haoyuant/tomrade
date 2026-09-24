@@ -57,12 +57,12 @@ const run = async () => {
   // A third-party row holds nothing up, so it goes.
   await ctx.plugins.setEnabled("stale", false);
   check("a third-party plugin switches off", view("stale")?.state === "disabled");
-  check("its tools go with it", !ctx.tools.list().some((t) => t.name === "list_stale_items"), ctx.tools.list().map((t) => t.name).join(","));
+  check("its tools go with it", !ctx.tools.list().some((t) => t.name === "stale_list_items"), ctx.tools.list().map((t) => t.name).join(","));
   check("the choice is written to the patch file", fs.existsSync(patchFile) && /disabled: true/.test(fs.readFileSync(patchFile, "utf8")));
 
   await ctx.plugins.setEnabled("stale", true);
   check("and switches back on", view("stale")?.state === "active");
-  check("its tools come back", ctx.tools.list().some((t) => t.name === "list_stale_items"));
+  check("its tools come back", ctx.tools.list().some((t) => t.name === "stale_list_items"));
 
   // An optional module: every engine injects the agent platform, so switching
   // it off takes all the conductors down together — and back.
@@ -80,7 +80,7 @@ const run = async () => {
   await ctx.plugins.setEnabled("storage-git", false);
   check("a destination provider switches off", !ctx.storage.has("git"), ctx.storage.describe().map((p) => p.id).join(","));
   check("the registry it registered into stays", module("storage")?.providers.join() === "storage");
-  check("and the destinations it did not own are untouched", ctx.storage.has("folder"));
+  check("and the destinations it did not own are untouched", ctx.storage.has("github"), ctx.storage.describe().map((p) => p.id).join(","));
   await ctx.plugins.setEnabled("storage-git", true);
   check("putting it back re-registers it", ctx.storage.has("git"));
 

@@ -259,7 +259,7 @@ describe("starting a ticket", () => {
 
     await codeLink.scan(project.id);
     expect(codeLink.repoState(project.id, repo!.id)).toMatchObject({ readiness: "unknown", remote: "unreachable", remoteDetail: expect.any(String), remoteAt: null, summary: expect.stringContaining("origin") });
-    expect(ctx.contributions.statusItems({ projectId: project.id }).find((s) => s.id === "code-link")!.text).toContain("1 unreachable");
+    expect((await ctx.contributions.statusItems({ projectId: project.id })).find((s) => s.id === "code-link")!.text).toContain("1 unreachable");
     const gated = await codeLink.start(project.id, item.id, { mode: "run" });
     expect(gated).toMatchObject({ ok: false, gate: "remote" });
     expect(ctx.items.list({ projectId: project.id }).some((i) => i.labels.includes(BOOTSTRAP_LABEL))).toBe(false);
@@ -392,11 +392,11 @@ describe("starting a ticket", () => {
     const reported = (await ctx.tools.execute("link_code", { key: item.key, prUrl: "https://github.com/acme/app/pull/12" }, { by: "ai:fake-code", projectId: project.id })) as { status: string };
     expect(reported.status).toBe("verifying");
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ prNumber: 12, prState: "open", prUrl: "https://github.com/acme/app/pull/12" });
-    const section = ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!;
+    const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!;
     expect(section.rows.find((r) => r.label === "Pull request")).toMatchObject({ value: "#12 · open", href: "https://github.com/acme/app/pull/12" });
     expect(section.rows.find((r) => r.label === "Session")?.value).toMatch(/^idle · run by Tomrade/);
     expect(section.rows.find((r) => r.label === "Worktree")).toMatchObject({ value: result.worktree, command: "code-link.open-terminal" });
-    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
   });
 
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
@@ -531,12 +531,12 @@ describe("starting a ticket", () => {
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "running", externalId: "cli-abc", mode: "terminal" });
     await post({ hook_event_name: "Stop", session_id: "cli-abc" });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");
-    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual(expect.arrayContaining([{ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" }]));
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([{ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" }]));
 
     // Each tool call says what the agent is doing; what it says when it stops stays with the Code session.
     await post({ hook_event_name: "PreToolUse", session_id: "cli-abc", tool_name: "Bash", tool_input: { command: "flutter create ." } });
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "running", activity: "Bash · flutter create ." });
-    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ state: "live", value: expect.stringContaining("Bash · flutter create .") });
+    expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ state: "live", value: expect.stringContaining("Bash · flutter create .") });
     await post({ hook_event_name: "PostToolUse", session_id: "cli-abc", tool_name: "Bash" });
     expect(codeLink.sessionsOf(project.id, item.id)[0].activity).toBeNull();
     await post({ hook_event_name: "Stop", session_id: "cli-abc", last_assistant_message: "Scaffold in place.\n\nNext: CI." });
@@ -546,7 +546,7 @@ describe("starting a ticket", () => {
     expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
     await post({ hook_event_name: "StopFailure", session_id: "cli-abc", error_type: "rate_limit", error_message: "retry after 20:00" });
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", summary: "stopped: rate_limit — retry after 20:00" });
-    expect(ctx.contributions.badgesFor(project.id)[item.id]).toEqual(expect.arrayContaining([{ id: "stuck", label: "stuck", tone: "strong", title: "stopped: rate_limit — retry after 20:00" }]));
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([{ id: "stuck", label: "stuck", tone: "strong", title: "stopped: rate_limit — retry after 20:00" }]));
     // Tomrade restarts: the binding is gone from memory, the token is still in the session's folder, and comes back.
     codeLink.sessions.release(result.sessionId);
     expect(await post({ hook_event_name: "PostToolUse" })).toBe(404);
@@ -556,7 +556,7 @@ describe("starting a ticket", () => {
 
     expect(await post({ hook_event_name: "SessionEnd" })).toBe(200);
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("ended");
-    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("ended") });
+    expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("ended") });
     expect(await post({ hook_event_name: "SessionStart" })).toBe(404);
 
     // Continuing resumes the CLI session it learned about.
@@ -613,7 +613,7 @@ describe("starting a General ticket", () => {
     expect(world.turns.at(-1)?.cwd).toBe(run.cwd);
     expect(ctx.items.get(project.id, item.id)).toMatchObject({ status: "doing", playbookId: "task.assist" });
     expect(codeLink.sessionsOf(project.id, item.id)).toMatchObject([{ id: run.sessionId, mode: "headless", repoId: "", branch: "", threadId: run.threadId, agent: "fake-code", state: "idle" }]);
-    expect(ctx.contributions.sectionsFor(project.id, item.id).find((s) => s.id === "code")?.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("run by Tomrade") });
+    expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")?.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("run by Tomrade") });
 
     // The terminal path binds the same thread and delivery; the CLI gets the whole brief in its prompt file.
     ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });

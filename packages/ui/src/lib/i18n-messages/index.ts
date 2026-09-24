@@ -16,6 +16,7 @@ import { newIssueDialog } from "./newIssueDialog";
 import { newProjectDialog } from "./newProjectDialog";
 import { openProjectDialog } from "./openProjectDialog";
 import { playbooks } from "./playbooks";
+import { plugins } from "./plugins";
 import { pluginsPanel } from "./pluginsPanel";
 import { projectSettingsDialog } from "./projectSettingsDialog";
 import { projectsScreen } from "./projectsScreen";
@@ -44,6 +45,7 @@ export const en = {
   settingsDialog: settingsDialog.en,
   playbooks: playbooks.en,
   pluginsPanel: pluginsPanel.en,
+  plugins: plugins.en,
   deleteIssueDialog: deleteIssueDialog.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
@@ -89,6 +91,7 @@ export const zh: typeof en = {
   settingsDialog: settingsDialog.zh,
   playbooks: playbooks.zh,
   pluginsPanel: pluginsPanel.zh,
+  plugins: plugins.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,

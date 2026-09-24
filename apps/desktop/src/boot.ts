@@ -2,7 +2,8 @@ import { Context, Logger } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
 import { stringify } from "yaml";
-import { Plugins, type PluginRow } from "@tomrade/plugins";
+import { ExtensionStore, Plugins, type PluginRow } from "@tomrade/plugins";
+import { LOCK_FILE } from "@tomrade/plugin-kit";
 import { applyPatches, interpolate, readConfig, readRows, resolvePlugin, writePatchRow, type PluginPatch } from "./loader.js";
 
 export interface BootOptions {
@@ -11,6 +12,8 @@ export interface BootOptions {
   patchFiles?: string[];
   patches?: PluginPatch[][];
   vars: Record<string, string>;
+  /** Where installed extensions live, and whose attestations to believe. Absent: no extension store. */
+  extensions?: { root: string; trustedKeys: Record<string, string> };
 }
 
 export interface Booted {
@@ -42,16 +45,24 @@ export async function boot(opts: BootOptions): Promise<Booted> {
 
   const { rows: base, modules } = readConfig(opts.configFile);
   const fromFiles = (opts.patchFiles ?? []).filter((f) => fs.existsSync(f)).map(readRows);
-  const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), opts.vars);
   const baseDir = path.dirname(opts.configFile);
+  // A run that names no plugin folders keeps them beside its own data.
+  const vars = { pluginsRoot: path.join(opts.vars.userData ?? baseDir, "plugins"), pluginsDevRoot: path.join(opts.vars.userData ?? baseDir, "plugins-dev"), ...opts.vars };
+  const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), vars);
   // The user's own patch file, which is the first: a --patch passed on the
   // command line describes one run and is never written back.
   const patchFile = opts.patchFiles?.[0];
 
+  const extensionsRoot = opts.extensions?.root ?? vars.pluginsRoot;
+  const extensions = opts.extensions
+    ? new ExtensionStore({ root: opts.extensions.root, lockFile: path.join(opts.extensions.root, LOCK_FILE), trustedKeys: opts.extensions.trustedKeys, importer: (url) => import(url) })
+    : undefined;
+
   await ctx.plugin(Plugins, {
     rows,
     modules,
-    resolve: (name) => resolvePlugin(name, baseDir),
+    extensions,
+    resolve: (row) => resolvePlugin(row, baseDir, extensionsRoot),
     persist: patchFile ? (id, disabled) => writePatchRow(patchFile, id, { disabled }) : undefined
   });
 

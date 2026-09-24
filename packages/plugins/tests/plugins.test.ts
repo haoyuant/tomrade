@@ -88,7 +88,7 @@ async function boot(rows: PluginRow[], modules: ModuleSpec[] = MODULES): Promise
   await ctx.plugin(Plugins, {
     rows,
     modules,
-    resolve: async (name) => {
+    resolve: async ({ name }) => {
       const plugin = CATALOGUE[name];
       if (!plugin) throw new Error(`Cannot find package '${name}'`);
       return plugin;

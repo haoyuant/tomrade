@@ -1,8 +1,11 @@
 import type { Plugin } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Document, isMap, isSeq, parse, parseDocument } from "yaml";
+import { adaptSdkPlugin, builtinIdentity, identityOf } from "@tomrade/extensions";
+import { dataDirFor } from "@tomrade/plugin-kit";
+import { MANIFEST_FILE, isSdkPlugin, parseManifest } from "@tomrade/plugin-sdk";
 import type { ModuleSpec, PluginRow } from "@tomrade/plugins";
 
 export type { PluginRow };
@@ -83,12 +86,40 @@ export function interpolate<T>(value: T, vars: Record<string, string>): T {
   return value;
 }
 
-/** A bare name is a package; anything path-like is resolved against the config file's directory. */
-export async function resolvePlugin(name: string, baseDir: string): Promise<Plugin> {
+/** The nearest directory above a module file that is a package: where its own files live. */
+function packageRootOf(file: string): string | null {
+  let dir = path.dirname(file);
+  while (true) {
+    if (fs.existsSync(path.join(dir, MANIFEST_FILE)) || fs.existsSync(path.join(dir, "package.json"))) return dir;
+    const up = path.dirname(dir);
+    if (up === dir) return null;
+    dir = up;
+  }
+}
+
+/**
+ * A bare name is a package; anything path-like is resolved against the config
+ * file's directory. A row written with the plugin SDK is loaded behind the
+ * extension host: as an extension when its package carries a manifest, as
+ * part of the app otherwise.
+ */
+export async function resolvePlugin(row: Pick<PluginRow, "id" | "name">, baseDir: string, pluginsRoot: string): Promise<Plugin> {
+  const name = row.name;
   const isPath = name.startsWith(".") || path.isAbsolute(name);
-  const specifier = isPath ? pathToFileURL(path.resolve(baseDir, name)).href : name;
-  const mod = (await import(specifier)) as Record<string, unknown>;
+  const file = isPath ? path.resolve(baseDir, name) : fileURLToPath(import.meta.resolve(name));
+  const mod = (await import(isPath ? pathToFileURL(file).href : name)) as Record<string, unknown>;
   const candidate: unknown = mod.default ?? mod;
+  if (isSdkPlugin(candidate)) {
+    const root = packageRootOf(file);
+    const manifestFile = root ? path.join(root, MANIFEST_FILE) : null;
+    if (root && manifestFile && fs.existsSync(manifestFile)) {
+      const manifest = parseManifest(JSON.parse(fs.readFileSync(manifestFile, "utf8")));
+      const dataDir = dataDirFor(pluginsRoot, manifest.id);
+      fs.mkdirSync(dataDir, { recursive: true });
+      return adaptSdkPlugin(candidate, identityOf(manifest, { root, dataDir }));
+    }
+    return adaptSdkPlugin(candidate, builtinIdentity(row.id, root));
+  }
   if (typeof candidate !== "function" && !(isRecord(candidate) && typeof candidate.apply === "function")) {
     throw new Error(`${name} does not export a plugin (a function, a class, or an object with apply())`);
   }

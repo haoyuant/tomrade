@@ -10,6 +10,7 @@ import { I18nProvider } from "~/lib/i18n";
 import { ThemeProvider } from "~/lib/theme";
 import { ToastProvider } from "~/lib/toast";
 import { AccountGate } from "~/components/dialogs/AccountPanel";
+import { PendingBuildWatcher } from "~/components/dialogs/plugins/ConfirmBuildDialog";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -18,6 +19,7 @@ const rootRoute = createRootRoute({
         <ToastProvider>
           <IconSprite />
           <AccountGate><Outlet /></AccountGate>
+          <PendingBuildWatcher />
         </ToastProvider>
       </ThemeProvider>
     </I18nProvider>

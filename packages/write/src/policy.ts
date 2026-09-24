@@ -1,5 +1,6 @@
 import type { Context } from "cordis";
-import { ConflictError, HumanLockedError, PurgeNotPermittedError, isAi, type Item } from "@tomrade/domain";
+import { ConflictError, ExtensionAuthorError, HumanLockedError, PurgeNotPermittedError, isAi, type Item } from "@tomrade/domain";
+import { extensionScope } from "./context.js";
 
 /** AI writers may never touch these fields on a human-locked item. */
 export const LOCKED_FIELDS = ["title", "body"] as const;
@@ -31,6 +32,20 @@ export const humanOnlyPurge = {
   }
 };
 
+/**
+ * An extension may write as a person only while a person is driving it; left
+ * to itself it is one more AI author, which also keeps purge out of its reach.
+ */
+export const extensionAuthorship = {
+  name: "write-policy:extension-authorship",
+  apply(ctx: Context) {
+    ctx.on("write/pre-commit", (intent, next) => {
+      if (intent.via && intent.by === "human" && !extensionScope.getStore()?.human) throw new ExtensionAuthorError(intent.via, intent.entity, intent.op);
+      return next();
+    });
+  }
+};
+
 /** A supplied baseVersion is enforced for every author — that is what makes a conflict visible. */
 export const optimisticVersion = {
   name: "write-policy:optimistic-version",
@@ -49,6 +64,7 @@ export const optimisticVersion = {
 export const policy = {
   name: "write-policy",
   async apply(ctx: Context) {
+    await ctx.plugin(extensionAuthorship);
     await ctx.plugin(humanLock);
     await ctx.plugin(humanOnlyPurge);
     await ctx.plugin(optimisticVersion);

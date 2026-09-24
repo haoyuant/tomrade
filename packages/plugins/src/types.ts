@@ -1,4 +1,5 @@
 import type { Plugin } from "cordis";
+import type { ExtensionInfo, ExtensionStore } from "./extensions.js";
 
 /** One row of the composition: exactly what a line of tomrade.yml carries. */
 export interface PluginRow {
@@ -36,6 +37,8 @@ export interface PluginView {
   injects: string[];
   /** Required modules it is the only provider of, which is why it cannot be switched off. */
   holds: string[];
+  /** Present when the row is an installed extension rather than part of the app. */
+  extension?: ExtensionInfo;
 }
 
 export interface ModuleView {
@@ -59,7 +62,9 @@ export interface PluginsConfig {
    * package specifier against the file that asks for it, and the application
    * is what depends on the plugins.
    */
-  resolve(name: string): Promise<Plugin>;
+  resolve(row: PluginRow): Promise<Plugin>;
+  /** Installed extensions; their rows join the composition's. */
+  extensions?: ExtensionStore;
   /** Called after a row is switched, so the choice survives a restart. */
   persist?(id: string, disabled: boolean): void | Promise<void>;
 }

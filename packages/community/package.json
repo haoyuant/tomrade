@@ -1,0 +1,35 @@
+{
+  "name": "@tomrade/community",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Community: browse, install, update and report store plugins \u2014 each checked against a signed attestation \u2014 and publish one from its GitHub repository",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "@tomrade/hub-cloud": "workspace:*",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/plugin-cli": "workspace:*",
+    "@tomrade/plugin-kit": "workspace:*",
+    "@tomrade/plugin-sdk": "workspace:*",
+    "@tomrade/plugins": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "@types/node": "^26.2.0"
+  }
+}

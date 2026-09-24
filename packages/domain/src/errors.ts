@@ -37,6 +37,18 @@ export class PurgeNotPermittedError extends Error {
   }
 }
 
+/** An extension claimed a human's authorship outside a human-initiated call. */
+export class ExtensionAuthorError extends Error {
+  constructor(
+    public readonly pluginId: string,
+    public readonly entity: string,
+    public readonly op: string
+  ) {
+    super(`Extension ${pluginId} may not write as a human (${entity} ${op}) unless a person asked for it`);
+    this.name = "ExtensionAuthorError";
+  }
+}
+
 /** A blocks edit refused because "blocked until done" only means something on a DAG. */
 export class DependencyCycleError extends Error {
   constructor(

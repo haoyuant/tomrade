@@ -7,12 +7,18 @@ import { Fields } from "@tomrade/fields";
 import { Items } from "@tomrade/items";
 import { boards } from "@tomrade/boards";
 import { Projects } from "@tomrade/projects";
+import { adaptSdkPlugin, builtinIdentity, type ExtensionIdentity } from "@tomrade/extensions";
+import { isSdkPlugin, type SdkPlugin } from "@tomrade/plugin-sdk";
+
+/** An SDK plugin as a loadable row. An `origin: "extension"` identity holds it to its namespace. */
+export const sdk = (plugin: SdkPlugin<unknown>, identity: Partial<ExtensionIdentity> & { id: string }): Plugin =>
+  adaptSdkPlugin(plugin, { ...builtinIdentity(identity.id), ...identity });
 
 export interface FreshOptions {
   /** Load the default write policy. Off, the guarantees it carries are gone — which is what the policy tests prove. */
   policy?: boolean;
   /** Extra plugins, loaded after the core in the order given; a tuple carries the plugin's config. */
-  plugins?: (Plugin | [Plugin, unknown])[];
+  plugins?: (Plugin | SdkPlugin<unknown> | [Plugin | SdkPlugin<unknown>, unknown])[];
   /** A cache directory on disk instead of memory, for tests that reopen files. */
   cacheDir?: string;
   /** The Hub folder for tests that touch it; memory-only otherwise. */
@@ -38,9 +44,9 @@ export async function fresh(opts: FreshOptions = {}) {
   await ctx.plugin(Items);
   await ctx.plugin(boards);
   await ctx.plugin(Projects, { legacyPath: opts.legacyPath, backupsDir: opts.cacheDir ? `${opts.cacheDir}/backups` : undefined });
-  for (const entry of opts.plugins ?? []) {
+  for (const [i, entry] of (opts.plugins ?? []).entries()) {
     const [plugin, config] = Array.isArray(entry) ? entry : [entry, undefined];
-    await ctx.plugin(plugin as Plugin<unknown>, config);
+    await ctx.plugin((isSdkPlugin(plugin) ? sdk(plugin, { id: `sdk-${i}` }) : plugin) as Plugin<unknown>, config);
   }
   await settle();
   if (failures.length) throw failures[0];

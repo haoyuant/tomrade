@@ -3,7 +3,7 @@
  * so a fresh database needs no migration; `migrateCore` brings a database
  * written by an older build up to the same shape.
  */
-export const CORE_SCHEMA_VERSION = 14;
+export const CORE_SCHEMA_VERSION = 15;
 
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -185,7 +185,8 @@ CREATE TABLE IF NOT EXISTS oplog (
   run_id        TEXT,
   device        TEXT NOT NULL DEFAULT '',
   device_seq    INTEGER,
-  patch_json    TEXT
+  patch_json    TEXT,
+  via           TEXT
 );
 
 -- Rows ⌘Z took back, kept whole so ⇧⌘Z can put them back: the redo stack.
@@ -204,6 +205,7 @@ CREATE TABLE IF NOT EXISTS oplog_undone (
   device        TEXT NOT NULL DEFAULT '',
   device_seq    INTEGER,
   patch_json    TEXT,
+  via           TEXT,
   undone_at     INTEGER NOT NULL
 );
 
@@ -232,5 +234,6 @@ CREATE INDEX IF NOT EXISTS idx_item_values_num ON item_values(field_id, num);
 CREATE INDEX IF NOT EXISTS idx_item_values_text ON item_values(field_id, text);
 CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge';
 CREATE INDEX IF NOT EXISTS idx_oplog_run ON oplog(run_id) WHERE run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_oplog_via ON oplog(via) WHERE via IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oplog_device ON oplog(device, device_seq) WHERE device_seq IS NOT NULL;
 `;

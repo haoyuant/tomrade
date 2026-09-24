@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import type { Author, OplogEntity, OplogOp } from "@tomrade/domain";
-import { writeContext } from "./context.js";
+import { extensionScope, writeContext } from "./context.js";
 
 /** What a repository is about to commit. Policy listeners read it and either throw or call next(). */
 export interface WriteIntent<T = unknown> {
@@ -18,6 +18,8 @@ export interface WriteIntent<T = unknown> {
   patch?: Record<string, unknown>;
   /** The agent run this write belongs to; stamped from the ambient WriteContext. */
   runId?: string;
+  /** The extension that made the write; stamped from the ambient extension scope. */
+  via?: string;
 }
 
 declare module "cordis" {
@@ -34,6 +36,7 @@ declare module "cordis" {
  */
 export function write<R>(ctx: Context, intent: WriteIntent, commit: () => R): R {
   if (intent.runId === undefined) intent.runId = writeContext.getStore()?.runId;
+  if (intent.via === undefined) intent.via = extensionScope.getStore()?.pluginId;
   let committed = false;
   const result = ctx.waterfall("write/pre-commit", intent, () => {
     committed = true;

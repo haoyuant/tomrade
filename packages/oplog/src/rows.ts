@@ -19,6 +19,7 @@ export interface OplogRow {
   device: string;
   device_seq: number | null;
   patch_json: string | null;
+  via: string | null;
 }
 
 const parse = (json: string | null): unknown => {
@@ -44,7 +45,8 @@ export function rowToEntry(r: OplogRow): OplogEntry {
     runId: r.run_id,
     device: r.device ?? "",
     deviceSeq: r.device_seq ?? null,
-    patch: (parse(r.patch_json) as Record<string, unknown> | null) ?? null
+    patch: (parse(r.patch_json) as Record<string, unknown> | null) ?? null,
+    via: r.via ?? null
   };
 }
 

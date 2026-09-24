@@ -208,7 +208,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port and the
 cloud Hub off, since the harness never signs in — over a throwaway database
 seeded with the prototype's sample project (`apps/desktop/scripts/seed.mjs`).
-It asserts 295 behaviours and writes a screenshot per screen and per theme into
+It asserts 299 behaviours and writes a screenshot per screen and per theme into
 `apps/desktop/scripts/shots/`. It needs the dev server up (`pnpm dev:ui`) *and*
 a built backend — it loads `apps/desktop/dist` and every plugin's `dist`, so a
 new channel is invisible to it until `pnpm build:backend` has run.
@@ -225,3 +225,9 @@ agent index: a crossed-out eye on the exception alone, the two settings side by
 side above a folder, a withheld path leaving the index while it still reads by
 path, and the preview in Sharing that shows the person the very text an agent
 receives — 101 checks.
+`test:plugins-ui` (`scripts/plugins-ui-check.mjs`) drives the Plugins pane: a
+store package and a local one with their tiers, risk and reach, an agent's
+build that loads only from the review dialog, My plugins and a new plugin from
+a description, Browse when the store is unreachable, and the pane in Chinese —
+19 checks. `test:extensions` (8) installs a plugin from outside the app and
+reloads a development folder in the real shell.
