@@ -924,6 +924,46 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/plugin-cli:
+    dependencies:
+      '@tomrade/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomrade/extensions':
+        specifier: workspace:*
+        version: link:../extensions
+      '@tomrade/plugin-kit':
+        specifier: workspace:*
+        version: link:../plugin-kit
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/plugin-kit:
     dependencies:
       '@babel/parser':

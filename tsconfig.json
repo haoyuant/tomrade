@@ -120,6 +120,9 @@
     },
     {
       "path": "./packages/plugin-kit"
+    },
+    {
+      "path": "./packages/plugin-cli"
     }
   ]
 }
