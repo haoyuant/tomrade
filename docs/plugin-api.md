@@ -639,6 +639,20 @@ value: the MCP server passes a string through as the result text and serialises
 anything else as compact JSON, so a tool whose answer is already prose spends no
 context on quoting and indentation.
 
+### Tools from external MCP servers
+
+`@tomrade/mcp-client` is the other direction of `@tomrade/mcp`: servers the
+person connects in Settings › MCP servers (a command run over stdio, or a
+Streamable HTTP URL with SSE as the fallback) have every tool they list
+registered here as `<server>__<tool>`, so engines and Tomrade's own MCP
+endpoint see them like any other tool and every call passes
+`tools/pre-execute`. The configuration is the machine-scope `mcpServers`
+settings section; the plugin keeps the registry in step with it and with the
+server's own `tools/list_changed`. A name already taken is skipped and reported,
+never thrown; a server that fails is marked failed with its reason and holds
+nothing else up. What a server writes outside Tomrade is not in the oplog and
+cannot be undone.
+
 ## Views
 
 A **view** is a saved way of looking at a project's backlog: a name, an icon,

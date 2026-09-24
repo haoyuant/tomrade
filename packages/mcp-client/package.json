@@ -1,0 +1,32 @@
+{
+  "name": "@tomrade/mcp-client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "External MCP servers as Tomrade tools: connect over stdio or HTTP, and every tool a server lists joins ctx.tools under a prefixed name",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@tomrade/ipc": "workspace:*",
+    "@tomrade/settings": "workspace:*",
+    "@tomrade/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tomrade/testkit": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

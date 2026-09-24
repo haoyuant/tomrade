@@ -84,6 +84,22 @@ const run = async () => {
   await ctx.plugins.setEnabled("storage-git", true);
   check("putting it back re-registers it", ctx.storage.has("git"));
 
+  // External MCP servers: a stdio server configured in Settings joins ctx.tools,
+  // and goes with the row. Electron runs the fixture as plain Node.
+  const fixture = path.join(__dirname, "../../../packages/mcp-client/tests/fixtures/stdio-server.mjs");
+  const server = { id: "fx", transport: { type: "stdio", command: process.execPath, args: [fixture], env: { ELECTRON_RUN_AS_NODE: "1" } } };
+  ctx.settings.set({ ...ctx.settings.get(), mcpServers: { servers: [server] } });
+  await ctx.mcpClient.settled();
+  check("a configured MCP server connects", ctx.mcpClient.servers()[0]?.state === "connected", JSON.stringify(ctx.mcpClient.servers()[0]));
+  check("its tools are registered under its prefix", ctx.tools.has("fx__echo") && ctx.tools.has("fx__files_read"));
+  check("and answer through the guarded path", (await ctx.tools.execute("fx__echo", { text: "hi" }, { by: "ai:check" })) === "hi");
+  await ctx.plugins.setEnabled("mcp-client", false);
+  check("the MCP client switches off and holds no module", view("mcp-client")?.state === "disabled" && module("mcpClient")?.providers.length === 0);
+  check("the server's tools go with it", !ctx.tools.list().some((t) => t.name.startsWith("fx__")));
+  await ctx.plugins.setEnabled("mcp-client", true);
+  await ctx.mcpClient.settled();
+  check("switching it back on reconnects from the saved settings", ctx.tools.has("fx__echo"));
+
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
   app.exit(failed.length ? 1 : 0);
