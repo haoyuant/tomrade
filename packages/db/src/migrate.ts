@@ -148,6 +148,8 @@ export function migrateCore(db: Sqlite): void {
     addColumn(db, "oplog", "device", "TEXT NOT NULL DEFAULT ''");
     addColumn(db, "oplog", "device_seq", "INTEGER");
     addColumn(db, "oplog", "patch_json", "TEXT");
+    addColumn(db, "oplog", "via", "TEXT");
+    addColumn(db, "oplog_undone", "via", "TEXT");
     addColumn(db, "boards", "repo_id", "TEXT");
     addColumn(db, "boards", "repo_path", "TEXT NOT NULL DEFAULT ''");
     // Superseded by repo_id/repo_path: a real repository reference beats a free-text hint.

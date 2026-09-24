@@ -3,7 +3,7 @@ import { InUseError, normalizeQuery, type Board, type Item, type OplogEntry, typ
 import { emptyEvidence } from "@tomrade/domain";
 import { rowToEntry, type OplogRow, type UndoneRow } from "./rows.js";
 
-const UNDONE_COLUMNS = "seq, entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json";
+const UNDONE_COLUMNS = "seq, entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json, via";
 
 interface ViewSnapshot extends View {
   ranks?: { item_id: string; rank: number }[];
@@ -276,7 +276,15 @@ const stampOf = (entity: string, snapshot: unknown): number | null => {
  * overwritten; the run's remaining oplog rows stay behind as the audit trail.
  */
 export function undoRun(db: ProjectDb, runId: string): UndoRunResult {
-  const rows = db.prepare("SELECT * FROM oplog WHERE run_id = ? ORDER BY seq DESC").all(runId) as OplogRow[];
+  return undoRows(db, db.prepare("SELECT * FROM oplog WHERE run_id = ? ORDER BY seq DESC").all(runId) as OplogRow[]);
+}
+
+/** Everything one extension wrote here, taken back on the same terms as a run. */
+export function undoVia(db: ProjectDb, pluginId: string, since = 0): UndoRunResult {
+  return undoRows(db, db.prepare("SELECT * FROM oplog WHERE via = ? AND at >= ? ORDER BY seq DESC").all(pluginId, since) as OplogRow[]);
+}
+
+function undoRows(db: ProjectDb, rows: OplogRow[]): UndoRunResult {
   const kept: UndoRunResult["kept"] = [];
   let reverted = 0;
 

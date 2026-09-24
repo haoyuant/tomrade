@@ -2,10 +2,10 @@ import { Context, Service } from "cordis";
 import type { Db, ProjectDb } from "@tomrade/db";
 import type {} from "@tomrade/hub";
 import type { OplogEntity, OplogEntry, OplogOp, RollbackResult, UndoRecord, UndoResult, UndoRunResult, UndoStep } from "@tomrade/domain";
-import { writeContext } from "@tomrade/write";
+import { extensionScope, writeContext } from "@tomrade/write";
 import type {} from "@tomrade/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
-import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoRun, undoneRow, undoneRows, wasPurged } from "./undo.js";
+import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
 
 declare module "cordis" {
   interface Context {
@@ -26,6 +26,7 @@ declare module "@tomrade/ipc" {
     /** ⌘Z. With an entity id: that entity's latest backlog write, out of order; without: the newest record anywhere. */
     "oplog.undo": (projectId: string, entityId?: string) => UndoStep | null;
     "oplog.undoRun": (projectId: string, runId: string) => UndoRunResult;
+    "oplog.undoVia": (projectId: string, pluginId: string) => UndoRunResult;
     /** ⇧⌘Z: the record undone most recently. */
     "oplog.redo": (projectId: string) => UndoStep | null;
     /** The project's history, newest first, undone records included. */
@@ -49,6 +50,7 @@ export interface OplogAppend {
   runId?: string | null;
   /** Given for ops whose diff is not before→after (a rank move); derived otherwise. */
   patch?: Record<string, unknown> | null;
+  via?: string | null;
 }
 
 /** An op as another machine's log carries it; imported with its own device id, never re-stamped. */
@@ -104,6 +106,7 @@ export class Oplog extends Service {
       ctx.ipc.handle("oplog.history", (projectId, entity, id, limit) => ctx.oplog.historyFor(projectId, entity, id, limit));
       ctx.ipc.handle("oplog.undo", (projectId, entityId) => (entityId ? ctx.oplog.undoEntity(projectId, entityId) : ctx.oplog.undo(projectId)));
       ctx.ipc.handle("oplog.undoRun", (projectId, runId) => ctx.oplog.undoRun(projectId, runId));
+      ctx.ipc.handle("oplog.undoVia", (projectId, pluginId) => ctx.oplog.undoVia(projectId, pluginId));
       ctx.ipc.handle("oplog.redo", (projectId) => ctx.oplog.redo(projectId));
       ctx.ipc.handle("oplog.timeline", (projectId, limit) => ctx.oplog.timeline(projectId, limit));
       ctx.ipc.handle("oplog.rollback", (projectId, ref) => ctx.oplog.rollback(projectId, ref));
@@ -141,6 +144,7 @@ export class Oplog extends Service {
   private insert(db: ProjectDb, entry: OplogAppend): OplogEntry {
     const patch = patchOf(entry.op, entry.before, entry.after, entry.patch);
     const runId = entry.runId !== undefined ? entry.runId : (writeContext.getStore()?.runId ?? null);
+    const via = entry.via !== undefined ? entry.via : (extensionScope.getStore()?.pluginId ?? null);
     // Rows parked for redo still hold their number; reusing it would give two ops one identity in the folder's log.
     const taken = db
       .prepare("SELECT MAX(m) AS m FROM (SELECT MAX(device_seq) AS m FROM oplog WHERE device = ? UNION ALL SELECT MAX(device_seq) AS m FROM oplog_undone WHERE device = ?)")
@@ -148,8 +152,8 @@ export class Oplog extends Service {
     const deviceSeq = (taken.m ?? 0) + 1;
     const info = db
       .prepare(
-        `INSERT INTO oplog (entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO oplog (entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json, via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         entry.entity,
@@ -163,7 +167,8 @@ export class Oplog extends Service {
         runId,
         this.device,
         deviceSeq,
-        patch ? JSON.stringify(patch) : null
+        patch ? JSON.stringify(patch) : null,
+        via
       );
     const seq = Number(info.lastInsertRowid);
     return rowToEntry(db.prepare("SELECT * FROM oplog WHERE seq = ?").get(seq) as OplogRow);
@@ -230,6 +235,13 @@ export class Oplog extends Service {
     return result;
   }
 
+  /** Take back what one extension wrote in a project, optionally only since a moment. */
+  undoVia(projectId: string, pluginId: string, since?: number): UndoRunResult {
+    const result = undoVia(this.db(projectId), pluginId, since);
+    if (result.reverted) this.home.emit("oplog/reverted", projectId);
+    return result;
+  }
+
   /** The toast's Undo: one entity's latest write, whatever landed since. */
   undoEntity(projectId: string, entityId: string): UndoStep | null {
     const result = this.undoLast(projectId, entityId);
@@ -282,7 +294,7 @@ export class Oplog extends Service {
       const stored = db.transaction(() => {
         applyEntry(db, entry);
         db.prepare("DELETE FROM oplog_undone WHERE seq = ?").run(row.seq);
-        return this.insert(db, { ...entry, runId: entry.runId });
+        return this.insert(db, { ...entry, runId: entry.runId, via: entry.via });
       });
       this.home.emit("oplog/appended", projectId, stored);
       this.home.emit("oplog/reverted", projectId);

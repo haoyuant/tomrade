@@ -93,6 +93,8 @@ export interface OplogEntry {
   deviceSeq: number | null;
   /** The fields the op changed (the whole entity for a create); what the folder's log carries. */
   patch: Record<string, unknown> | null;
+  /** The extension that made the write; null for the app itself. Local to this machine. */
+  via: string | null;
 }
 
 export interface UndoResult {
