@@ -16,7 +16,8 @@ data/*.db-*
 # Test scratch directories a run failed to clean up
 packages/*/tests/.tmp-*/
 
-# Packaging: the renderer copied into the app, and the installers
+# Packaging: npm staging, the renderer copied into the app, and the installers
+build/npm/
 apps/desktop/ui/
 apps/desktop/release/
 

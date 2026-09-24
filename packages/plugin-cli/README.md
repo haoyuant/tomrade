@@ -1,0 +1,13 @@
+# @tomrade/plugin-cli
+
+`tomrade-plugin` builds, tests and packs a Tomrade plugin.
+
+```sh
+tomrade-plugin init my-plugin --id you/my-plugin   # a plugin that builds, tests and loads as it is
+tomrade-plugin dev                                  # rebuild on every change; in Tomrade: Settings → Plugins → Load folder
+tomrade-plugin test                                 # src/test.ts against a throwaway project, in a sandbox
+tomrade-plugin check                                # what the store's review will see
+tomrade-plugin pack                                 # a .tomrade-plugin file anyone can install
+```
+
+`build` bundles `src/index.ts` into one readable file, `dist/index.js`, leaving `@tomrade/plugin-sdk` and `zod` to Tomrade. `test` and `check` run the plugin in a child process under Node's permission model: it reads only the plugin's folder and the CLI's own runtime, writes only a temporary directory, and cannot start programs.
