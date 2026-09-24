@@ -101,6 +101,9 @@ importers:
       '@tomrade/pet':
         specifier: workspace:*
         version: link:../../packages/pet
+      '@tomrade/plugin-cli':
+        specifier: workspace:*
+        version: link:../../packages/plugin-cli
       '@tomrade/plugin-kit':
         specifier: workspace:*
         version: link:../../packages/plugin-kit
@@ -1482,6 +1485,9 @@ importers:
       '@tomrade/code-link':
         specifier: workspace:*
         version: link:../code-link
+      '@tomrade/community':
+        specifier: workspace:*
+        version: link:../community
       '@tomrade/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -1506,6 +1512,15 @@ importers:
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../oplog
+      '@tomrade/plugin-kit':
+        specifier: workspace:*
+        version: link:../plugin-kit
+      '@tomrade/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomrade/plugin-studio':
+        specifier: workspace:*
+        version: link:../plugin-studio
       '@tomrade/plugins':
         specifier: workspace:*
         version: link:../plugins

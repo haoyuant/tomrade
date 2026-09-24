@@ -480,7 +480,7 @@ export function SettingsDialog({
         )
       })
     ),
-    { id: "plugins", label: t("settingsDialog.manageLabel"), icon: "i-plug", group: "plugins", render: () => <PluginsPanel /> }
+    { id: "plugins", label: t("settingsDialog.manageLabel"), icon: "i-plug", group: "plugins", render: () => <PluginsPanel onLeave={() => onOpenChange(false)} /> }
   ];
 
   // A plugin switched off takes its pane with it, so the menu falls back rather than emptying the body.

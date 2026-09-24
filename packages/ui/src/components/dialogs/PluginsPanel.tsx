@@ -1,10 +1,18 @@
 import { useState } from "react";
 import type { ModuleView, PluginView } from "@tomrade/plugins";
 import { Icon } from "~/components/icons";
-import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
+import { SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useAddFolder, useInstallFile, useUpdates } from "~/lib/plugins";
 import { usePlugins, useSetPluginEnabled } from "~/lib/queries";
+import { pickDirectory, pickFiles } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
+import { BrowseTab } from "./plugins/BrowseTab";
+import { ExtensionRow } from "./plugins/ExtensionRow";
+import { MineTab } from "./plugins/MineTab";
+import { UpdatesTab } from "./plugins/UpdatesTab";
+import { messageOf } from "./plugins/parts";
 
 const TONE: Record<PluginView["state"], "faint" | "neutral" | "strong"> = {
   active: "strong",
@@ -123,23 +131,58 @@ function PluginRow({
   );
 }
 
+type Tab = "installed" | "browse" | "updates" | "mine";
+
 /**
- * What is installed, what each row puts on the context, and the modules the app
- * may not be left without. Switching a row is live — cordis unloads it and
- * everything that injected it — so the only refusal is the one that would empty
- * a required module.
+ * Plugins: what is installed and what it may reach, the Community store, the
+ * updates waiting, and the plugins an agent is writing with the person.
  *
  * A pane of Settings rather than a sheet of its own: everything here is reached
  * from the same menu as the cards these plugins draw, so a second overlay on
  * top of the first bought nothing.
  */
-export function PluginsPanel() {
-  const { t, tx } = useI18n();
+export function PluginsPanel({ onLeave }: { onLeave?: () => void }) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<Tab>("installed");
+  const updates = useUpdates();
+  const pendingUpdates = updates.data?.length ?? 0;
+  const TABS: [Tab, MessageKey][] = [
+    ["installed", "plugins.tabInstalled"],
+    ["browse", "plugins.tabBrowse"],
+    ["updates", "plugins.tabUpdates"],
+    ["mine", "plugins.tabMine"]
+  ];
+  return (
+    <>
+      <div className="seg plug-tabs" role="tablist" aria-label={t("settingsDialog.manageLabel")} style={{ marginBottom: "var(--space-4)" }}>
+        {TABS.map(([id, key]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} aria-pressed={tab === id} onClick={() => setTab(id)} data-tab={id}>
+            {t(key)}
+            {id === "updates" && pendingUpdates > 0 && <span className="plug-count">{pendingUpdates}</span>}
+          </button>
+        ))}
+      </div>
+      {tab === "installed" && <InstalledTab />}
+      {tab === "browse" && <BrowseTab />}
+      {tab === "updates" && <UpdatesTab />}
+      {tab === "mine" && <MineTab onLeave={onLeave} />}
+    </>
+  );
+}
+
+function InstalledTab() {
+  const { t } = useI18n();
+  const toast = useToast();
   const plugins = usePlugins();
   const setEnabled = useSetPluginEnabled();
+  const installFile = useInstallFile();
+  const addFolder = useAddFolder();
   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
 
-  const rows = plugins.data?.plugins ?? [];
+  const all = plugins.data?.plugins ?? [];
+  const rows = all.filter((p) => !p.extension);
+  const extensions = all.filter((p) => p.extension);
   const modules = plugins.data?.modules ?? [];
   const running = rows.filter((p) => p.state === "active").length;
   const unfilled = modules.filter((m) => m.required && !m.providers.length);
@@ -149,8 +192,58 @@ export function PluginsPanel() {
     setEnabled.mutate({ id, enabled }, { onError: (e) => setRefused({ id, message: e.message }) });
   };
 
+  const fromFile = async () => {
+    setInstallError(null);
+    const [file] = (await pickFiles(t("plugins.pickFileTitle"), t("plugins.pickButton"))) ?? [];
+    if (!file) return;
+    installFile.mutate(file, {
+      onSuccess: (snapshot) => {
+        const added = snapshot.plugins.filter((p) => p.extension).sort((a, b) => (a.extension!.dir < b.extension!.dir ? 1 : -1))[0];
+        toast({ body: t("plugins.installedFromFile", { title: added?.extension?.title ?? file, version: added?.extension?.version ?? "" }) });
+      },
+      onError: (e) => setInstallError(messageOf(e))
+    });
+  };
+
+  const fromFolder = async () => {
+    setInstallError(null);
+    const dir = await pickDirectory(t("plugins.pickFolderTitle"), t("plugins.pickButton"));
+    if (!dir) return;
+    addFolder.mutate(dir, {
+      onSuccess: (snapshot) => {
+        const added = snapshot.plugins.find((p) => p.extension?.dir === dir);
+        toast({ body: t("plugins.folderLoaded", { title: added?.extension?.title ?? dir }) });
+      },
+      onError: (e) => setInstallError(messageOf(e))
+    });
+  };
+
   return (
     <>
+      <SectionHead
+        title={t("plugins.extensionsTitle")}
+        aside={
+          <div className="row" style={{ gap: "var(--space-2)" }}>
+            <button type="button" className="btn btn-secondary" onClick={() => void fromFile()} disabled={installFile.isPending} data-testid="install-file">
+              <Icon name="i-file" size={13} /> {t("plugins.installFile")}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => void fromFolder()} disabled={addFolder.isPending} data-testid="load-folder">
+              <Icon name="i-folder" size={13} /> {t("plugins.loadFolder")}
+            </button>
+          </div>
+        }
+      >
+        {t("plugins.extensionsLede")}
+      </SectionHead>
+      {installError && <p className="meta-txt" style={{ color: "var(--danger)", whiteSpace: "pre-wrap" }}>{installError}</p>}
+      <div className="stack-2" data-testid="extensions">
+        {extensions.map((plugin) => (
+          <ExtensionRow key={plugin.id} plugin={plugin} />
+        ))}
+      </div>
+      {!extensions.length && <p className="meta-txt">{t("plugins.noExtensions")}</p>}
+
+      <hr className="rule" />
       <SectionHead title={t("pluginsPanel.modulesTitle")}>{t("pluginsPanel.modulesLede")}</SectionHead>
       <ModuleTable modules={modules} />
       {unfilled.length > 0 && (
@@ -179,17 +272,6 @@ export function PluginsPanel() {
         ))}
       </div>
       {!rows.length && <p className="meta-txt">{t("pluginsPanel.emptyRows")}</p>}
-
-      <hr className="rule" />
-      <SectionHead title={t("pluginsPanel.addingTitle")} />
-      <div className="panel">
-        <Eyebrow>{t("pluginsPanel.notFromHereYet")}</Eyebrow>
-        <ul className="dash" style={{ marginTop: "var(--space-3)" }}>
-          <li>{tx("pluginsPanel.addingBullet1", { yml: <span className="mono">tomrade.yml</span>, patchYml: <span className="mono">tomrade.patch.yml</span> })}</li>
-          <li>{tx("pluginsPanel.addingBullet2", { name: <span className="mono">name</span> })}</li>
-          <li>{t("pluginsPanel.addingBullet3")}</li>
-        </ul>
-      </div>
     </>
   );
 }

@@ -47,9 +47,6 @@ modules:
   - id: desktopSurfaces
     title: Desktop surfaces
     required: true
-  - id: desktopSurfaces
-    title: Desktop surfaces
-    required: true
   # The registry, not the destinations. storage-git and storage-github register
   # providers into it and hold no module of their own, so either can go without
   # taking a project's own copy with it.

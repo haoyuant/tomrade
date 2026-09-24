@@ -49,6 +49,7 @@ export interface ExtensionInfo {
   authoredBy: Manifest["authoredBy"];
   dir: string;
   modified: boolean;
+  autoUpdate: boolean;
   previousVersion: string | null;
   /** A studio build nobody has confirmed yet: its digest and what the analyzer found in it. */
   pending: { digest: string; analysis: Analysis } | null;
@@ -147,6 +148,7 @@ export class ExtensionStore {
       authoredBy: manifest.authoredBy,
       dir: entry.dir,
       modified: entry.modified,
+      autoUpdate: entry.autoUpdate,
       previousVersion: entry.previous?.version ?? null,
       pending,
       attestation: entry.attestation

@@ -17,7 +17,8 @@
     "dump-config": "electron . --dump-config",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "test:files": "electron scripts/files-check.mjs",
-    "test:extensions": "electron scripts/extensions-check.mjs"
+    "test:extensions": "electron scripts/extensions-check.mjs",
+    "test:plugins-ui": "electron scripts/plugins-ui-check.mjs"
   },
   "dependencies": {
     "@tomrade/agent": "workspace:*",
@@ -46,6 +47,7 @@
     "@tomrade/mcp": "workspace:*",
     "@tomrade/oplog": "workspace:*",
     "@tomrade/pet": "workspace:*",
+    "@tomrade/plugin-cli": "workspace:*",
     "@tomrade/plugin-kit": "workspace:*",
     "@tomrade/plugin-sdk": "workspace:*",
     "@tomrade/plugin-studio": "workspace:*",
