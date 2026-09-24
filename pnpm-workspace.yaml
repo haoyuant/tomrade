@@ -6,6 +6,8 @@ packages:
 allowBuilds:
   better-sqlite3: true
   electron: true
+  # Squirrel.Windows only; the Windows build is NSIS.
+  electron-winstaller: false
   esbuild: true
 
 # @electron/rebuild transitively depends on @electron/node-gyp (git-hosted).

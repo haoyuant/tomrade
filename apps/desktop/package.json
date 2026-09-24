@@ -1,7 +1,7 @@
 {
   "name": "@tomrade/desktop",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Electron shell: boots the cordis context from tomrade.yml, supplies the IPC transport, opens the window",
   "main": "dist/main.js",
@@ -18,7 +18,8 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "test:files": "electron scripts/files-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
-    "test:plugins-ui": "electron scripts/plugins-ui-check.mjs"
+    "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
     "@tomrade/agent": "workspace:*",
@@ -35,6 +36,7 @@
     "@tomrade/engine-codex": "workspace:*",
     "@tomrade/engine-loop": "workspace:*",
     "@tomrade/engine-scripted": "workspace:*",
+    "@tomrade/example-stale": "workspace:*",
     "@tomrade/extensions": "workspace:*",
     "@tomrade/fields": "workspace:*",
     "@tomrade/files": "workspace:*",
@@ -70,7 +72,9 @@
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^6.0.0",
     "wait-on": "^8.0.1"
-  }
+  },
+  "productName": "Tomrade"
 }

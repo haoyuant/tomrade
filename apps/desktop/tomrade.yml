@@ -198,4 +198,4 @@ plugins:
       devRoot: "${pluginsDevRoot}"
   # A third-party plugin: it edits nothing above, it is only listed here.
   - id: stale
-    name: ../../examples/stale/dist/index.js
+    name: "@tomrade/example-stale"

@@ -16,6 +16,10 @@ data/*.db-*
 # Test scratch directories a run failed to clean up
 packages/*/tests/.tmp-*/
 
+# Packaging: the renderer copied into the app, and the installers
+apps/desktop/ui/
+apps/desktop/release/
+
 # UI harness output
 apps/desktop/scripts/shots/
 artifacts/agent-eval/

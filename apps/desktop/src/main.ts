@@ -80,7 +80,8 @@ app.whenReady().then(async () => {
   const open = () =>
     createWindow(ctx, {
       preload: path.join(here, "../preload.cjs"),
-      uiIndex: path.join(here, "../../../packages/ui/dist/index.html"),
+      // A packaged build carries the renderer beside dist/; a checkout builds it in packages/ui.
+      uiIndex: app.isPackaged ? path.join(here, "../ui/index.html") : path.join(here, "../../../packages/ui/dist/index.html"),
       icon: iconPath,
       devServerUrl: process.env.VITE_DEV_SERVER_URL
     });

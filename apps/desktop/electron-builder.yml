@@ -1,0 +1,39 @@
+# Tomrade's installers. `pnpm --filter @tomrade/desktop package` builds the
+# backend and the renderer first (scripts/package.mjs).
+appId: com.tomrade.desktop
+productName: Tomrade
+copyright: Copyright © Tomrade
+directories:
+  output: release
+  buildResources: assets
+# Off on purpose: Plugin Studio runs agent-written code in a Node child with the
+# permission model on, and that child — and esbuild's native binary — must be
+# real files it can be allowed to read.
+asar: false
+npmRebuild: false
+files:
+  - dist/**
+  - ui/**
+  - assets/**
+  - preload.cjs
+  - surface-preload.cjs
+  - tomrade.yml
+  - package.json
+  - "!**/*.map"
+  - "!**/*.tsbuildinfo"
+mac:
+  category: public.app-category.productivity
+  icon: assets/icon.png
+  target:
+    - target: dmg
+    - target: zip
+win:
+  icon: assets/icon.png
+  target: nsis
+linux:
+  icon: assets/icon.png
+  target: AppImage
+  category: Office
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
