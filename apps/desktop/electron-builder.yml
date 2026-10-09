@@ -1,5 +1,6 @@
 # Tomrade's installers. `pnpm --filter @tomrade/desktop package` builds the
-# backend and the renderer first (scripts/package.mjs).
+# backend and the renderer first (scripts/package.mjs). Signing and
+# notarizing: docs/releasing.md.
 appId: com.tomrade.desktop
 productName: Tomrade
 # Electron names the data folder after productName. Only the installed app
@@ -28,6 +29,14 @@ files:
 mac:
   category: public.app-category.productivity
   icon: assets/icon.png
+  # Signed only with a Developer ID Application certificate: without this,
+  # electron-builder falls back to any other certificate in the keychain,
+  # an Apple Development one included. No such certificate, no signature.
+  # Notarized when the APPLE_API_* variables are set; docs/releasing.md.
+  identity: Developer ID Application
+  hardenedRuntime: true
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
   target:
     - target: dmg
     - target: zip
