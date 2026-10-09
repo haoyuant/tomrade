@@ -157,26 +157,36 @@ function EntryPolicyLine({ syncActions, agentActions, entry }: { syncActions: Sy
   const { t } = useI18n();
   if (!entry.sync && !entry.listing) return null;
   return (
-    <div className="row files-sync-line" style={{ gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", padding: "0 var(--space-3) var(--space-2)" }}>
-      {entry.sync && (
-        <span className="row files-sync-part" style={{ gap: "var(--space-2)", alignItems: "center" }}>
-          <SyncMark sync={entry.sync} />
-          <span className="meta-txt">{describeSync(t, entry.sync)}</span>
-          <SyncSelect actions={syncActions} paths={[entry.path]} value={entry.sync.source === "explicit" ? entry.sync.mode : "inherit"} label={t("files.syncFor", { name: entry.name })} />
-        </span>
-      )}
-      {entry.listing && (
-        <span className="row files-agent-part" style={{ gap: "var(--space-2)", alignItems: "center" }}>
-          <Icon name={entry.listing.mode === "unlisted" || entry.listing.mixed ? "i-eye-off" : "i-eye"} size={12} style={{ color: "var(--meta)" }} />
-          <span className="meta-txt">{describeListing(t, entry.listing)}</span>
-          <AgentSelect
-            actions={agentActions}
-            paths={[entry.path]}
-            value={entry.listing.source === "explicit" ? entry.listing.mode : "inherit"}
-            label={t("files.agentFor", { name: entry.name })}
-          />
-        </span>
-      )}
+    <div className="files-entry-policy files-sync-line">
+      <div className="files-entry-policy-grid">
+        {entry.sync && (
+          <div className="files-policy-card">
+            <span className="files-policy-icon"><SyncMark sync={entry.sync} /></span>
+            <span className="files-policy-copy">
+              <span className="files-policy-label">{t("files.sync")}</span>
+              <span className="files-policy-value meta-txt">{describeSync(t, entry.sync)}</span>
+            </span>
+            <SyncSelect actions={syncActions} paths={[entry.path]} value={entry.sync.source === "explicit" ? entry.sync.mode : "inherit"} label={t("files.syncFor", { name: entry.name })} />
+          </div>
+        )}
+        {entry.listing && (
+          <div className="files-policy-card">
+            <span className="files-policy-icon">
+              <Icon name={entry.listing.mode === "unlisted" || entry.listing.mixed ? "i-eye-off" : "i-eye"} size={13} />
+            </span>
+            <span className="files-policy-copy">
+              <span className="files-policy-label">{t("files.agents")}</span>
+              <span className="files-policy-value meta-txt">{describeListing(t, entry.listing)}</span>
+            </span>
+            <AgentSelect
+              actions={agentActions}
+              paths={[entry.path]}
+              value={entry.listing.source === "explicit" ? entry.listing.mode : "inherit"}
+              label={t("files.agentFor", { name: entry.name })}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -725,7 +735,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           <Icon name="i-sync" size={13} />
           {sync.isPending || stateKey === "syncing" ? t("files.syncing") : t("files.sync")}
         </button>
-        <div className="files-dir-actions" style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
+        <div className="files-dir-actions">
           {isDir && (
             <Menu
               label={t("files.addMenu")}
