@@ -52,7 +52,8 @@ const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: 
 export interface RunBinding {
   author: Author;
   projectId?: string;
-  execute(name: string, args: unknown): Promise<unknown>;
+  /** `signal` aborts when the client cancels the call. */
+  execute(name: string, args: unknown, signal?: AbortSignal): Promise<unknown>;
   /** A lifecycle event posted to `/sessions/<token>/event` — a coding agent's hook reporting it started, stopped, or is waiting. */
   event?(payload: unknown): unknown | Promise<unknown>;
 }
@@ -221,14 +222,14 @@ export class Mcp extends Service {
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
     for (const tool of tools.list()) {
-      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args) => {
+      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args, extra) => {
         try {
           if (token) {
             const binding = this.bindings.get(token);
             if (!binding) throw new Error("No active run for this runtime");
-            return textResult(await binding.execute(tool.name, args));
+            return textResult(await binding.execute(tool.name, args, extra.signal));
           }
-          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId }));
+          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }));
         } catch (e) {
           return errorResult(e);
         }

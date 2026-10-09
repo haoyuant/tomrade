@@ -64,6 +64,8 @@ modules:
     title: Assistant
   - id: mcp
     title: MCP server
+  - id: mcpClient
+    title: External MCP servers
   - id: codeLink
     title: Code link
   - id: files
@@ -177,6 +179,10 @@ plugins:
     name: "@tomrade/mcp"
     config:
       port: 19090
+  # The other direction: MCP servers the person connects in Settings, their
+  # tools registered beside the built-in ones. Optional — nothing depends on it.
+  - id: mcp-client
+    name: "@tomrade/mcp-client"
   - id: ipc
     name: ./dist/ipc.js
   - id: shell

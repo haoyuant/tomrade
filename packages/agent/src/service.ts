@@ -899,7 +899,7 @@ export class Agent extends Service {
         const t0 = Date.now();
         progress({ activity: name });
         try {
-          const result = await this.ctx.tools.execute(name, args, { by: engine.author, projectId: thread.projectId, run: handle });
+          const result = await this.ctx.tools.execute(name, args, { by: engine.author, projectId: thread.projectId, run: handle, signal: abort.signal });
           const ms = Date.now() - t0;
           const suspended = isSuspended(result);
           const summary = suspended ? "waiting for the user" : summarize(result);

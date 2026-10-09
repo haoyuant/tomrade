@@ -77,6 +77,9 @@
       "path": "./packages/mcp"
     },
     {
+      "path": "./packages/mcp-client"
+    },
+    {
       "path": "./packages/oplog"
     },
     {

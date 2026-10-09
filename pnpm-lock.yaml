@@ -98,6 +98,9 @@ importers:
       '@tomrade/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
+      '@tomrade/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../../packages/oplog
@@ -948,6 +951,37 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/mcp-client:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@tomrade/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomrade/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomrade/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomrade/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/oplog:
     dependencies:
       '@tomrade/db':
@@ -1515,6 +1549,9 @@ importers:
       '@tomrade/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@tomrade/mcp-client':
+        specifier: workspace:*
+        version: link:../mcp-client
       '@tomrade/oplog':
         specifier: workspace:*
         version: link:../oplog

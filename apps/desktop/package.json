@@ -47,6 +47,7 @@
     "@tomrade/items": "workspace:*",
     "@tomrade/llm": "workspace:*",
     "@tomrade/mcp": "workspace:*",
+    "@tomrade/mcp-client": "workspace:*",
     "@tomrade/oplog": "workspace:*",
     "@tomrade/pet": "workspace:*",
     "@tomrade/plugin-cli": "workspace:*",

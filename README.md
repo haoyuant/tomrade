@@ -56,6 +56,7 @@ packages/engine-scripted —             the no-model conductor: runs registered
 packages/engine-claude-code —          Claude Code as conductor (headless, MCP run bindings); engine-codex likewise
 packages/agent-backlog —               the backlog method: playbooks, dossier, find_similar, plan_and_apply, dedup policy
 packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
+packages/mcp-client   ctx.mcpClient    external MCP servers (stdio or HTTP) whose tools join ctx.tools
 packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
 packages/contributions ctx.contributions  declarative UI contributions
 packages/plugins      ctx.plugins      loads the composition, and manages it: state per row, modules, the guard on switching one off, installed extensions

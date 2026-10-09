@@ -61,6 +61,45 @@ describe("the MCP surface", () => {
     await bound.close();
   });
 
+  it("passes a client's cancellation to the tool, bound or not", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const aborted: string[] = [];
+    ctx.tools.register(
+      defineTool({
+        name: "slow",
+        title: "Slow",
+        description: "test",
+        input: z.object({}),
+        execute: (_args, inv) => new Promise((resolve) => inv.signal?.addEventListener("abort", () => resolve(aborted.push("unbound"))))
+      })
+    );
+    ctx.mcp.bindRun("tok-c", {
+      author: "ai:test",
+      execute: (_name, _args, signal) => new Promise((resolve) => signal?.addEventListener("abort", () => resolve(aborted.push("bound"))))
+    });
+    let expected = 0;
+    const cancelled = async (headers: Record<string, string>) => {
+      expected += 1;
+      const client = new Client({ name: "c", version: "0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers } }));
+      const abort = new AbortController();
+      const call = client.callTool({ name: "slow", arguments: {} }, undefined, { signal: abort.signal });
+      setTimeout(() => abort.abort(), 100);
+      await call.catch(() => {});
+      // The cancellation is a notification sent after the call rejects; closing first would drop it.
+      for (const t0 = Date.now(); aborted.length < expected && Date.now() - t0 < 3000; ) await new Promise((r) => setTimeout(r, 10));
+      await client.close();
+    };
+    try {
+      await cancelled({});
+      await cancelled({ "X-Tomrade-Run": "tok-c" });
+      expect(aborted.sort()).toEqual(["bound", "unbound"]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("scopes a /mcp/<projectId> session to that project, and leaves the bare endpoint unscoped", async () => {
     const { ctx, project } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();

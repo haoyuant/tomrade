@@ -629,15 +629,34 @@ ctx.tools.register(defineTool({ name, title, description, input: z.object({...})
 ```
 
 Names are global and unique. `execute` receives validated `args` and
-`{ by, projectId, run? }`; use `inv.by` as the author of any write,
+`{ by, projectId, run?, signal? }`; use `inv.by` as the author of any write,
 `inv.projectId` as the default scope, and `inv.run` (present inside an agent
-run) for the ledger and run-scoped state. A registered tool appears on every
+run) for the ledger and run-scoped state. `inv.signal` aborts when the caller
+stops waiting — the run was cancelled, or an MCP client withdrew the call — and
+a tool that waits on a process or a network should stop with it. A registered tool appears on every
 surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
 There is no per-surface code to write. A tool may return a string as well as a
 value: the MCP server passes a string through as the result text and serialises
 anything else as compact JSON, so a tool whose answer is already prose spends no
 context on quoting and indentation.
+
+### Tools from external MCP servers
+
+`@tomrade/mcp-client` is the other direction of `@tomrade/mcp`: servers the
+person connects in Settings › MCP servers (a command run over stdio, or a
+Streamable HTTP URL with SSE as the fallback) have every tool they list
+registered here as `<server>__<tool>`, so engines and Tomrade's own MCP
+endpoint see them like any other tool and every call passes
+`tools/pre-execute`. The configuration is the machine-scope `mcpServers`
+settings section; the plugin keeps the registry in step with it and with the
+server's own `tools/list_changed`. A name already taken is skipped and reported,
+never thrown; a server that fails is marked failed with its reason and holds
+nothing else up. A dropped server is retried after `retryDelaysMs` (1 s, 5 s,
+30 s by default), and a connection has to last `stableMs` before it earns those
+retries again, so one that keeps dying stays failed. A cancelled call is
+cancelled on the server too. What a server writes outside Tomrade is not in the oplog and
+cannot be undone.
 
 ## Views
 

@@ -40,6 +40,8 @@ export interface ToolInvocation {
   projectId?: string;
   /** Present when the call belongs to an agent run; policies read its ledger. */
   run?: RunHandle;
+  /** Aborted when the caller stops waiting — a cancelled run, a client that withdrew the call. Work outside the process should stop with it. */
+  signal?: AbortSignal;
 }
 
 export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {

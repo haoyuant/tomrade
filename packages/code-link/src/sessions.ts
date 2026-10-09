@@ -151,12 +151,12 @@ export class Sessions {
     return {
       author,
       projectId: session.projectId,
-      execute: (name: string, args: unknown) => {
+      execute: (name: string, args: unknown, signal?: AbortSignal) => {
         if (OUT_OF_SCOPE_TOOLS.has(name)) {
           throw new Error(`${name}: a coding session cannot edit the backlog or another ticket — finish the current ticket, then use a separate planning or coding session`);
         }
         this.touch(session.projectId, session.id, { state: "running", tool: true });
-        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => tools.execute(name, args, { by: author, projectId: session.projectId }));
+        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => tools.execute(name, args, { by: author, projectId: session.projectId, signal }));
       },
       event: (payload: unknown) => this.event(session.projectId, session.id, payload)
     };
