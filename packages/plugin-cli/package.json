@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/plugin-cli",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "version": "0.0.0",
   "type": "module",
   "description": "tomrade-plugin: scaffold, build, inspect, test, check and pack a plugin; the same steps Plugin Studio runs for the agent",
