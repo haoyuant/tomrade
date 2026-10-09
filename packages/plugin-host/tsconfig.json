@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../contributions" },
+    { "path": "../settings" },
+    { "path": "../testkit" },
+    { "path": "../tools" }
+  ]
+}

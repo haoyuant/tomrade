@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/testkit",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "Boots a fresh in-memory Tomrade context for tests",

@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/plugin-kit",
   "private": true,
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Plugin tooling without a context: the .tomrade-plugin package, content digests, signatures, the lock file and the static analyzer shared by the app, the CLI and the review pipeline",

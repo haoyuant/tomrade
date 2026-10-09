@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/plugin-studio",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "Plugin Studio: tools and a playbook for an agent to write, test and hand over a plugin, which loads only at a build a person confirmed",

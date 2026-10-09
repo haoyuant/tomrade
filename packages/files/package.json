@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/files",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.files — the files a project keeps beside its backlog: a folder tree with versions, the backend registry, sync and conflicts, and the versioned references tickets pin as artifacts. Ships the git-backed store every remote backend builds on.",

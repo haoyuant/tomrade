@@ -12,25 +12,13 @@
   ],
   "references": [
     {
-      "path": "../contributions"
-    },
-    {
-      "path": "../extensions"
+      "path": "../plugin-host"
     },
     {
       "path": "../plugin-kit"
     },
     {
       "path": "../plugin-sdk"
-    },
-    {
-      "path": "../settings"
-    },
-    {
-      "path": "../testkit"
-    },
-    {
-      "path": "../tools"
     }
   ]
 }

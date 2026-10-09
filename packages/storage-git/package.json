@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/storage-git",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "A git repository as a destination: clone, fast-forward pull, commit, push — and the base the hosting providers build on",

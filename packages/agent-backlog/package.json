@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/agent-backlog",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "The backlog method: intake and planning playbooks, the dossier, find_similar/find_gaps, the plan-and-apply workflow, and the dedup-before-create policy",

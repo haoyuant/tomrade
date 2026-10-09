@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/repos",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.repos — the code repositories a project's workstreams stand for, where they are checked out here, and the worktrees agents run in",
