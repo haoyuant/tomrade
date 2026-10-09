@@ -88,6 +88,7 @@ plugins:
     config:
       catalogFile: "${userData}/catalog.json"
       deviceFile: "${userData}/device.json"
+      defaultDir: "${hubDir}"
   - id: oplog
     name: "@tomrade/oplog"
   - id: write-policy
