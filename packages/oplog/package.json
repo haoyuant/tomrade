@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/oplog",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.oplog \u2014 the append-only mutation log: append, read, undo",

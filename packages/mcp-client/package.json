@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/mcp-client",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "External MCP servers as Tomrade tools: connect over stdio or HTTP, and every tool a server lists joins ctx.tools under a prefixed name",

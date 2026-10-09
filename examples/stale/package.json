@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/example-stale",
   "private": true,
+  "license": "Apache-2.0",
   "version": "0.1.0",
   "type": "module",
   "description": "Example third-party plugin: flags issues nobody has written to in a while. Owns a table, a settings card, a tool, a badge, a command, a status item and a detail section \u2014 and edits no first-party file.",

@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/plugins",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.plugins \u2014 what is installed, what each row actually provides, and the modules a composition may not be left without",

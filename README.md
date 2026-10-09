@@ -64,6 +64,7 @@ packages/plugin-sdk   the extension contract: definePlugin, the async PluginCont
 packages/extensions   the host side of the contract: namespaces, attribution, callbacks held to time limits
 packages/plugin-kit   packages, digests, signed attestations, the lock file, the static analyzer
 packages/plugin-cli   tomrade-plugin: init, build, dev, test, check, pack — and the sandbox agent-written code runs in
+packages/plugin-host  the Tomrade a plugin is tested against, kept out of the CLI so the CLI carries no Tomrade code
 packages/plugin-studio ctx tools for an agent to write a plugin, which loads only at a build a person confirmed
 packages/community    ctx.community    the store: browse, install (attestation-checked), update, revoke, report, publish
 packages/testkit      boots a fresh in-memory context for tests
@@ -139,3 +140,17 @@ Packages compile with `moduleResolution: "Bundler"`: cordis 4's declaration file
 ## History
 
 Reboot of `tomrade` (legacy enterprise-style design: Supabase + FastAPI + TanStack Start; archived at tag `legacy-architecture-final`). The second reshaping moved the in-process backend from a barrel of classes onto a cordis context, so that the parts a third party would want to add — tools, tables, settings, channels, UI contributions — are added by plugins rather than by editing first-party files.
+
+## License
+
+Tomrade is source-available under the **Business Source License 1.1** ([`LICENSE`](LICENSE)), and each version becomes **Apache-2.0** two years after it is first published.
+
+- **You may** read, change and redistribute it, and use it in production — at work and inside your company included.
+- **You may not** offer it, or a work derived from it, to others as a commercial product or service that substitutes for Tomrade or does substantially the same thing — reselling a rebranded copy, for example — until that version's two years are up.
+- **Plugins are yours.** The plugin SDK and its tooling are Apache-2.0, and a plugin may use any license, commercial ones included. Packages with their own `LICENSE` file are not under the BSL:
+
+| Under Apache-2.0 | Under the BSL |
+|---|---|
+| `packages/domain`, `packages/plugin-sdk`, `packages/plugin-kit`, `packages/plugin-cli`, `examples/` | everything else, `packages/plugin-host` included |
+
+The license does not grant any right to the Tomrade name or logo.

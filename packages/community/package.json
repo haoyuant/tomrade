@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/community",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "Community: browse, install, update and report store plugins \u2014 each checked against a signed attestation \u2014 and publish one from its GitHub repository",

@@ -1,7 +1,8 @@
 /**
  * The packages plugin authors install from npm: @tomrade/domain (the types a
- * plugin sees), @tomrade/plugin-sdk (the contract) and @tomrade/plugin-cli
- * (one bundled file per entry; the host it tests against is inside it).
+ * plugin sees), @tomrade/plugin-sdk (the contract), @tomrade/plugin-cli (one
+ * bundled file per entry) and @tomrade/plugin-host (the Tomrade the CLI tests
+ * a plugin against, bundled, under the repository's Business Source License).
  * Staged under build/npm/, packed there, and published only with --publish.
  *
  *   node scripts/npm-release.mjs              stage and pack
@@ -40,10 +41,14 @@ const common = {
   publishConfig: { access: "public" }
 };
 
-// Each package carries its own license; the repository itself has none.
+// A package with its own LICENSE carries that; everything else is under the repository's root LICENSE.
+const licenseFile = (source) => (fs.existsSync(path.join(source, "LICENSE")) ? path.join(source, "LICENSE") : path.join(root, "LICENSE"));
 function licensed(source) {
   const { license } = json(path.join(source, "package.json"));
-  if (!license || !fs.existsSync(path.join(source, "LICENSE"))) throw new Error(`${source} needs a "license" field and a LICENSE file`);
+  if (!license) throw new Error(`${source} needs a "license" field`);
+  const own = fs.existsSync(path.join(source, "LICENSE"));
+  if (license === "BUSL-1.1" && own) throw new Error(`${source} is under the root LICENSE and must not carry its own`);
+  if (license !== "BUSL-1.1" && !own) throw new Error(`${source} needs a LICENSE file for ${license}`);
   return license;
 }
 
@@ -51,7 +56,7 @@ function stage(name, source, files, pkg) {
   const dir = path.join(out, name.replace("@tomrade/", ""));
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  for (const [from, to] of [...files, [path.join(source, "LICENSE"), "LICENSE"]]) fs.cpSync(from, path.join(dir, to), { recursive: true, filter: (src) => !src.endsWith(".map") && !src.endsWith(".tsbuildinfo") });
+  for (const [from, to] of [...files, [licenseFile(source), "LICENSE"]]) fs.cpSync(from, path.join(dir, to), { recursive: true, filter: (src) => !src.endsWith(".map") && !src.endsWith(".tsbuildinfo") });
   fs.writeFileSync(path.join(dir, "package.json"), `${JSON.stringify({ name, ...common, license: licensed(source), ...pkg }, null, 2)}\n`);
   return dir;
 }
@@ -94,8 +99,44 @@ const sdkDir = stage(
   }
 );
 
-// The CLI carries the host it tests against. What a plugin shares with the host,
-// and what is native, stays a dependency so there is one copy of each.
+// The host a plugin is tested against is Tomrade's own code, bundled. What a plugin
+// shares with it, and what is native, stays a dependency so there is one copy of each.
+const hostSource = path.join(root, "packages/plugin-host");
+const hostDir = path.join(out, "plugin-host");
+fs.mkdirSync(path.join(hostDir, "dist"), { recursive: true });
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: { index: "packages/plugin-host/src/index.ts" },
+  outdir: path.join(hostDir, "dist"),
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  external: ["cordis", "zod", "zod/*", "@tomrade/plugin-sdk", "@tomrade/domain", "better-sqlite3"],
+  banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
+  logLevel: "warning"
+});
+fs.copyFileSync(path.join(hostSource, "README.md"), path.join(hostDir, "README.md"));
+fs.copyFileSync(licenseFile(hostSource), path.join(hostDir, "LICENSE"));
+fs.writeFileSync(
+  path.join(hostDir, "package.json"),
+  `${JSON.stringify(
+    {
+      name: "@tomrade/plugin-host",
+      ...common,
+      license: licensed(hostSource),
+      description: json(path.join(hostSource, "package.json")).description,
+      main: "dist/index.js",
+      exports: { ".": "./dist/index.js" },
+      files: ["dist"],
+      dependencies: { "@tomrade/domain": VERSION, "@tomrade/plugin-sdk": VERSION, "better-sqlite3": sqlite, cordis, zod }
+    },
+    null,
+    2
+  )}\n`
+);
+
+// The CLI is the plugin author's tooling and carries no Tomrade code; the host is a dependency.
 const cliDir = path.join(out, "plugin-cli");
 fs.mkdirSync(path.join(cliDir, "dist"), { recursive: true });
 await esbuild.build({
@@ -111,7 +152,7 @@ await esbuild.build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["cordis", "zod", "zod/*", "@tomrade/plugin-sdk", "@tomrade/domain", "esbuild", "better-sqlite3", ...Object.keys(thirdParty)],
+  external: ["cordis", "zod", "zod/*", "@tomrade/plugin-sdk", "@tomrade/domain", "@tomrade/plugin-host", "esbuild", ...Object.keys(thirdParty)],
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
   logLevel: "warning"
 });
@@ -119,7 +160,7 @@ fs.writeFileSync(path.join(cliDir, "dist/cli.js"), `#!/usr/bin/env node\n${fs.re
 fs.chmodSync(path.join(cliDir, "dist/cli.js"), 0o755);
 const cliSource = path.join(root, "packages/plugin-cli");
 fs.copyFileSync(path.join(cliSource, "README.md"), path.join(cliDir, "README.md"));
-fs.copyFileSync(path.join(cliSource, "LICENSE"), path.join(cliDir, "LICENSE"));
+fs.copyFileSync(licenseFile(cliSource), path.join(cliDir, "LICENSE"));
 fs.writeFileSync(
   path.join(cliDir, "package.json"),
   `${JSON.stringify(
@@ -133,14 +174,14 @@ fs.writeFileSync(
       main: "dist/index.js",
       exports: { ".": "./dist/index.js" },
       files: ["dist"],
-      dependencies: { "@tomrade/domain": VERSION, "@tomrade/plugin-sdk": VERSION, "better-sqlite3": sqlite, cordis, esbuild: esbuildVersion, zod, ...thirdParty }
+      dependencies: { "@tomrade/domain": VERSION, "@tomrade/plugin-sdk": VERSION, "@tomrade/plugin-host": VERSION, cordis, esbuild: esbuildVersion, zod, ...thirdParty }
     },
     null,
     2
   )}\n`
 );
 
-for (const dir of [domain, sdkDir, cliDir]) {
+for (const dir of [domain, sdkDir, hostDir, cliDir]) {
   run("npm", ["pack", "--pack-destination", out], dir);
   if (publish) run("npm", ["publish", "--access", "public"], dir);
 }

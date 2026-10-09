@@ -76,80 +76,12 @@ async function inspect() {
   report({ ok: true, inject: p.inject ?? [], optional: p.optional ?? [], recording });
 }
 
+/** The Tomrade a plugin is tested against lives in @tomrade/plugin-host, so this package carries none of it. */
 async function test() {
-  const checks: { name: string; ok: boolean; detail?: string }[] = [];
-  const logs: string[] = [];
-  const check = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, ...(detail ? { detail } : {}) });
-  const { fresh, sdk, settle } = await import("@tomrade/testkit");
-  const { Tools } = await import("@tomrade/tools");
-  const { Settings } = await import("@tomrade/settings");
-  const { Contributions } = await import("@tomrade/contributions");
-
+  const { testPlugin } = await import("@tomrade/plugin-host");
   const p = await plugin();
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(payload.tmp, "settings.json") }], Contributions] });
-  w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
-  const samples = [
-    w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "A sample issue", by: "human" }),
-    w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "Another in progress", status: "doing", by: "human" }),
-    w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "One that is done", status: "done", by: "human" })
-  ];
-  const before = new Set(w.ctx.tools.list().map((t) => t.name));
-  const fiber = w.ctx.plugin(sdk(p as never, { id: payload.id, namespace: payload.namespace, origin: "extension", root: payload.dir, dataDir: payload.tmp }), configOf(p));
-  try {
-    await Promise.race([fiber, timeout(5_000, "loading the plugin")]);
-    await settle();
-  } catch (error) {
-    check("loads", false, messageOf(error));
-    return report({ ok: false, checks, logs });
-  }
-  check("loads", fiber.state === 2 && !logs.some((l) => l.startsWith("error")), logs.find((l) => l.startsWith("error")));
-
-  const scope = { projectId: w.project.id };
-  const guarded = async (name: string, fn: () => Promise<unknown>) => {
-    try {
-      await Promise.race([fn(), timeout(3_000, name)]);
-      check(name, true);
-    } catch (error) {
-      check(name, false, messageOf(error));
-    }
-  };
-  const before_ = logs.length;
-  await guarded("badges compute", () => w.ctx.contributions.badgesFor(w.project.id));
-  await guarded("status items compute", () => w.ctx.contributions.statusItems(scope));
-  await guarded("sections render", () => w.ctx.contributions.sectionsFor(w.project.id, samples[0]!.id));
-  for (const g of w.ctx.contributions.graphs()) await guarded(`graph ${g.id} computes`, () => w.ctx.contributions.graphEdges(g.id, scope));
-  const failures = logs.slice(before_).filter((l) => l.includes("contributions"));
-  if (failures.length) check("contributions run without errors", false, failures.join("\n"));
-  const added = w.ctx.tools.list().filter((t) => !before.has(t.name)).map((t) => t.name);
-  check("tools register", true, added.length ? added.join(", ") : "none");
-
-  if (payload.scenario) {
-    const mod = await load(payload.scenario);
-    const run = mod.default as ((t: unknown) => unknown) | undefined;
-    if (typeof run !== "function") check("scenario", false, "the scenario module has no default function");
-    else {
-      const api = {
-        projectId: w.project.id,
-        boardId: w.board.id,
-        createItem: (title: string, patch: Record<string, unknown> = {}) => w.items.create({ projectId: w.project.id, boardId: w.board.id, title, by: "human", ...patch }),
-        updateItem: (id: string, patch: Record<string, unknown>) => w.items.update(w.project.id, id, patch, "human"),
-        items: () => w.items.list({ projectId: w.project.id }),
-        tool: (name: string, args: unknown = {}) => w.ctx.tools.execute(name, args, { by: "human", projectId: w.project.id }),
-        command: (id: string, itemId?: string) => w.ctx.contributions.run(id, { projectId: w.project.id, itemId }),
-        badges: () => w.ctx.contributions.badgesFor(w.project.id),
-        statusItems: () => w.ctx.contributions.statusItems(scope),
-        sections: (itemId: string) => w.ctx.contributions.sectionsFor(w.project.id, itemId),
-        graph: (id: string) => w.ctx.contributions.graphEdges(id, scope),
-        check
-      };
-      try {
-        await Promise.race([Promise.resolve(run(api)), timeout(20_000, "the scenario")]);
-      } catch (error) {
-        check("scenario", false, messageOf(error));
-      }
-    }
-  }
-  report({ ok: checks.every((c) => c.ok), checks, logs });
+  const scenario = payload.scenario;
+  report(await testPlugin({ plugin: p, id: payload.id, namespace: payload.namespace, dir: payload.dir, tmp: payload.tmp, scenario: scenario ? () => load(scenario) : null }));
 }
 
 (payload.mode === "inspect" ? inspect() : test()).catch((error) =>

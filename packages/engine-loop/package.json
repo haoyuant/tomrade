@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/engine-loop",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "The hybrid loop engine: a conversation model reasons over the tool registry, guided by playbooks, bounded by budgets",

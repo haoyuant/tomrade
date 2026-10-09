@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/code-link",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.codeLink — a ticket's branches, worktrees, pull requests and coding sessions. Derives status from git, shows the code on the ticket, and starts a local coding agent on it. First-party, optional.",

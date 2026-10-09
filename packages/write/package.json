@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/write",
   "private": true,
+  "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
   "description": "The write protocol: the write/pre-commit waterfall every mutation passes, and the default policy plugins",
