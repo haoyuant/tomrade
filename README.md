@@ -71,7 +71,7 @@ packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); co
 examples/stale        an extension that edits no first-party file
 apps/review           the store's review worker and admin tool
 design/               OpenDesign prototype — the visual authority for the UI
-docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants)
+docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing)
 ```
 
 ### Data model
