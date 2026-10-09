@@ -1,6 +1,7 @@
 {
   "name": "@tomrade/domain",
   "private": true,
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Domain types, zod schemas and typed errors. No I/O, no context.",

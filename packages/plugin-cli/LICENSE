@@ -1,0 +1,24 @@
+@tomrade/plugin-cli
+Copyright (c) 2026 Haoyuan Tang. All rights reserved.
+
+You may install and use this package free of charge to create, build, test,
+check and pack plugins for Tomrade. You may not modify, sublicense or sell it,
+redistribute it other than as an unmodified dependency of a plugin project, or
+use the Tomrade code bundled in it for any other purpose.
+
+Plugins you make with it are yours: this license places no restriction on
+them, and they may use any license.
+
+This package will be released under an open-source license together with the
+source code of the Tomrade application.
+
+Its dependencies, including @tomrade/plugin-sdk and @tomrade/domain
+(Apache-2.0), are covered by their own licenses.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
