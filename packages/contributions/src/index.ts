@@ -111,23 +111,32 @@ export interface SectionView {
   text?: string;
 }
 
-export interface SpriteAnimation {
+export interface ImageBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One state of an accessory: a still or animated image, played with its own frame timings. */
+export interface AccessoryAnimation {
   /** Renderer-safe URL, normally a data URL supplied by the contributing plugin. */
   source: string;
-  frames: number;
-  frameWidth: number;
-  frameHeight: number;
-  frameMs: number;
-  loop?: boolean;
+  /** The image's MIME type, which the renderer's decoder needs. */
+  type: string;
+  /** The part worth showing, in image pixels; it is fitted to the stage, bottom-aligned. The whole image when absent. */
+  box?: ImageBox;
+  /** Nearest-neighbour scaling for pixel art; everything else scales smoothly. */
+  pixelated?: boolean;
 }
 
 /**
  * Declarative content for the assistant accessory slot. The renderer owns the
- * stage and sprite player; plugins provide only dimensions and animation data.
+ * stage and the player; plugins provide only dimensions and animation data.
  */
 export interface AssistantAccessory {
   id: string;
-  kind: "sprite-pet";
+  kind: "animated-pet";
   title: string;
   /** `(threadId: string | null) => { mood: string }`. */
   stateChannel: string;
@@ -135,7 +144,7 @@ export interface AssistantAccessory {
   changedChannel: string;
   width: number;
   height: number;
-  animations: Record<string, SpriteAnimation>;
+  animations: Record<string, AccessoryAnimation>;
 }
 
 declare module "cordis" {

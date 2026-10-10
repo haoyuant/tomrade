@@ -3,28 +3,38 @@ import { z } from "zod";
 import type { AgentEvent } from "@tomradex/agent";
 import type { DesktopSurface, DesktopSurfaceHost } from "@tomradex/desktop-surface";
 import type { SettingsSection } from "@tomradex/settings";
-import type {} from "@tomradex/contributions";
+import type { AccessoryAnimation } from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
-import { desktopAnimation, embeddedAccessory, PET_DESKTOP_URL } from "./manifest.js";
-import { desktopThreadState, emptyPetModel, moodForThread, reducePetModel, type PetModel, type PetMood, type TaskPetMood } from "./state.js";
+import { BUILT_IN_IMAGES, dataAnimation, embeddedAccessory, fileAnimation, PET_DESKTOP_URL } from "./manifest.js";
+import { PetProfiles, type PetImageUpload, type PetProfileView, type PetProfilesView, type ResolvedImage } from "./profiles.js";
+import { emptyPetModel, moodForThread, PET_MOODS, reducePetModel, type PetModel, type PetMood } from "./state.js";
 
 export * from "./state.js";
-export { PET_ANIMATIONS } from "./manifest.js";
+export { DEFAULT_PROFILE, MAX_IMAGE_BYTES, MAX_NAME_LENGTH, sniffImage, type PetImageUpload, type PetProfileView, type PetProfilesView } from "./profiles.js";
+
+export const PetConfig = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    /** This machine's folder for pets made from the user's own images; without one only the built-in pet exists. */
+    profilesDir: z.string().optional()
+  })
+);
+export type PetConfig = z.infer<typeof PetConfig>;
 
 export interface PetSettings {
   enabled: boolean;
   displayMode: "embedded" | "desktop";
-  roam: boolean;
-  roamSpeed: "slow" | "normal" | "quick";
   size: "small" | "medium" | "large";
   clickThrough: boolean;
   allWorkspaces: boolean;
 }
 
 export interface PetViewState {
-  mood: TaskPetMood;
+  mood: PetMood;
   threadId: string | null;
 }
+
+export type PetPreview = AccessoryAnimation & { custom: boolean };
 
 export const PET_SECTION: SettingsSection<PetSettings> = {
   id: "pet",
@@ -32,14 +42,12 @@ export const PET_SECTION: SettingsSection<PetSettings> = {
   description: "An orange-and-white companion that reflects assistant activity. Disable the plugin itself in Manage plugins to unload it completely.",
   schema: z.object({
     enabled: z.boolean().default(true).meta({ title: "Enabled" }).describe("Show the pet while this plugin is loaded."),
-    displayMode: z.enum(["embedded", "desktop"]).default("embedded").meta({ title: "Display mode" }).describe("Embed above the assistant composer, or use an independent desktop window."),
-    roam: z.boolean().default(true).meta({ title: "Roam on desktop" }).describe("Walk around the current display while no assistant needs attention."),
-    roamSpeed: z.enum(["slow", "normal", "quick"]).default("normal").meta({ title: "Roam speed" }),
+    displayMode: z.enum(["embedded", "desktop"]).default("embedded").meta({ title: "Display mode" }).describe("Embed above the assistant composer, or float in its own window you can drag anywhere."),
     size: z.enum(["small", "medium", "large"]).default("medium").meta({ title: "Desktop size" }),
     clickThrough: z.boolean().default(true).meta({ title: "Transparent click-through" }).describe("Pass clicks through transparent pixels; drag the opaque cat."),
     allWorkspaces: z.boolean().default(true).meta({ title: "All workspaces" }).describe("Keep the desktop pet visible when switching virtual desktops.")
   }),
-  defaults: { enabled: true, displayMode: "embedded", roam: true, roamSpeed: "normal", size: "medium", clickThrough: true, allWorkspaces: true },
+  defaults: { enabled: true, displayMode: "embedded", size: "medium", clickThrough: true, allWorkspaces: true },
   order: 20,
   scope: "machine"
 };
@@ -53,9 +61,18 @@ declare module "cordis" {
 declare module "@tomradex/ipc" {
   interface Channels {
     "pet.state": (threadId: string | null) => PetViewState;
+    "pet.profiles": () => PetProfilesView;
+    "pet.profilePreview": (profileId: string) => Record<PetMood, PetPreview>;
+    "pet.createProfile": (name: string) => PetProfileView;
+    "pet.updateProfile": (profileId: string, patch: { name?: string; pixelated?: boolean }) => PetProfileView;
+    "pet.deleteProfile": (profileId: string) => PetProfilesView;
+    "pet.activateProfile": (profileId: string) => PetProfilesView;
+    "pet.setImage": (profileId: string, mood: PetMood, upload: PetImageUpload) => PetProfileView;
+    "pet.clearImage": (profileId: string, mood: PetMood) => PetProfileView;
   }
   interface Broadcasts {
     "pet.changed": (threadId: string, state: PetViewState) => void;
+    "pet.profilesChanged": () => void;
   }
 }
 
@@ -65,42 +82,75 @@ const SIZE = {
   large: { width: 220, height: 175 }
 } as const;
 
-const SPEED = { slow: 55, normal: 90, quick: 140 } as const;
+const SETTLE_MS = 3_000;
 
-const isMotionMessage = (message: unknown): message is { type: "reduced-motion"; value: boolean } =>
-  typeof message === "object" && message !== null && (message as { type?: unknown }).type === "reduced-motion" && typeof (message as { value?: unknown }).value === "boolean";
+const isMoveMessage = (message: unknown): message is { type: "move"; x: number; y: number } =>
+  typeof message === "object" &&
+  message !== null &&
+  (message as { type?: unknown }).type === "move" &&
+  Number.isFinite((message as { x?: unknown }).x) &&
+  Number.isFinite((message as { y?: unknown }).y);
 
 /** The feature owner: state, settings, contribution, IPC, timers and surface lifecycle all terminate here. */
 export class Pet extends Service {
   static provide = "pet";
   static inject = ["agent", "settings", "contributions"];
+  static Config = PetConfig;
 
+  private readonly store: PetProfiles;
   private model: PetModel = emptyPetModel();
   private sendChanged: (threadId: string) => void = () => {};
+  private sendProfilesChanged: () => void = () => {};
   private accessoryDispose: (() => void) | null = null;
+  private accessoryKey = "";
+  private resolved: { revision: number; images: Record<PetMood, ResolvedImage> } | null = null;
   private surfaceHost: DesktopSurfaceHost | null = null;
   private surface: DesktopSurface | null = null;
   private surfaceSignature = "";
-  private successTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private roamTimer: ReturnType<typeof setTimeout> | null = null;
-  private moveTimer: ReturnType<typeof setInterval> | null = null;
-  private walking = false;
-  private reducedMotion = false;
+  private settleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The thread the assistant panel shows: the desktop pet follows it, as the embedded stage does. */
+  private followed: string | null = null;
+  /** Where the user last dragged the desktop pet; a reopened window (new size, setting change) returns there. */
+  private position: { x: number; y: number } | null = null;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: PetConfig) {
     super(ctx, "pet");
+    this.store = new PetProfiles(config?.profilesDir ?? null, BUILT_IN_IMAGES);
   }
 
   [Service.init]() {
     this.ctx.settings.register(PET_SECTION);
     this.bootstrapActivity();
+    this.followed = this.ctx.agent.showing();
     this.ctx.on("agent/event", (threadId, event) => this.consume(threadId, event));
+    this.ctx.on("agent/showing", (threadId) => {
+      this.followed = threadId;
+      this.pushSurfaceState();
+    });
     this.ctx.on("settings/changed", () => this.reconcile());
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("pet.state", (threadId) => this.state(threadId));
+      ctx.ipc.handle("pet.profiles", () => this.profiles());
+      ctx.ipc.handle("pet.profilePreview", (profileId) => this.preview(profileId));
+      ctx.ipc.handle("pet.createProfile", (name) => this.edit(() => this.store.create(name).id));
+      ctx.ipc.handle("pet.updateProfile", (profileId, patch) => this.edit(() => this.store.update(profileId, patch).id));
+      ctx.ipc.handle("pet.setImage", (profileId, mood, upload) => this.edit(() => this.store.setImage(profileId, mood, upload).id));
+      ctx.ipc.handle("pet.clearImage", (profileId, mood) => this.edit(() => this.store.clearImage(profileId, mood).id));
+      ctx.ipc.handle("pet.deleteProfile", (profileId) => {
+        this.store.remove(profileId);
+        this.profilesChanged();
+        return this.profiles();
+      });
+      ctx.ipc.handle("pet.activateProfile", (profileId) => {
+        this.store.activate(profileId);
+        this.profilesChanged();
+        return this.profiles();
+      });
       this.sendChanged = (threadId) => ctx.ipc.send("pet.changed", threadId, this.state(threadId));
+      this.sendProfilesChanged = () => ctx.ipc.send("pet.profilesChanged");
       return () => {
         this.sendChanged = () => {};
+        this.sendProfilesChanged = () => {};
       };
     });
     this.ctx.inject(["desktopSurfaces"], (ctx) => {
@@ -119,6 +169,33 @@ export class Pet extends Service {
     return { mood: moodForThread(this.model, threadId), threadId };
   }
 
+  profiles(): PetProfilesView {
+    return this.store.view();
+  }
+
+  /** Every mood of one profile as the renderer would draw it, for an editor's previews. */
+  preview(profileId: string): Record<PetMood, PetPreview> {
+    const images = this.store.resolve(profileId);
+    return Object.fromEntries(PET_MOODS.map((mood) => [mood, { ...dataAnimation(images[mood]), custom: images[mood].custom }])) as Record<PetMood, PetPreview>;
+  }
+
+  private edit(change: () => string): PetProfileView {
+    const id = change();
+    this.profilesChanged();
+    return this.store.view().profiles.find((p) => p.id === id)!;
+  }
+
+  /** The pet on screen redraws only if what the active profile shows actually changed. */
+  private profilesChanged(): void {
+    this.reconcile();
+    this.sendProfilesChanged();
+  }
+
+  private images(): Record<PetMood, ResolvedImage> {
+    if (this.resolved?.revision !== this.store.revision) this.resolved = { revision: this.store.revision, images: this.store.resolve(this.store.activeId()) };
+    return this.resolved.images;
+  }
+
   private settings(): PetSettings {
     return (this.ctx.settings.get().pet as PetSettings | undefined) ?? PET_SECTION.defaults;
   }
@@ -131,37 +208,35 @@ export class Pet extends Service {
   }
 
   private consume(threadId: string, event: AgentEvent): void {
-    this.model = reducePetModel(this.model, threadId, event);
+    const next = reducePetModel(this.model, threadId, event);
+    if (next === this.model) return;
+    this.model = next;
     const state = this.model.threads[threadId];
-    if (state.mood === "success") this.returnSuccessToIdle(threadId, state.sequence);
-    else this.clearSuccessTimer(threadId);
+    if (state.busy === null && (state.mood === "success" || state.mood === "error")) this.settleToIdle(threadId, state.sequence);
+    else this.clearSettleTimer(threadId);
     this.sendChanged(threadId);
-
-    const desktop = desktopThreadState(this.model);
-    if (desktop.mood !== "idle") this.stopRoaming(false);
-    this.pushSurfaceState();
-    this.syncRoaming();
+    if (threadId === this.followed) this.pushSurfaceState();
   }
 
-  private returnSuccessToIdle(threadId: string, sequence: number): void {
-    this.clearSuccessTimer(threadId);
+  /** A finished turn shows its outcome briefly; the pet reflects turns, not the whole thread. */
+  private settleToIdle(threadId: string, sequence: number): void {
+    this.clearSettleTimer(threadId);
     const timer = setTimeout(() => {
-      this.successTimers.delete(threadId);
+      this.settleTimers.delete(threadId);
       const before = this.model.threads[threadId];
-      if (!before || before.mood !== "success" || before.sequence !== sequence) return;
+      if (!before || before.sequence !== sequence) return;
       const nextSequence = this.model.sequence + 1;
-      this.model = { sequence: nextSequence, threads: { ...this.model.threads, [threadId]: { mood: "idle", runId: before.runId, sequence: nextSequence } } };
+      this.model = { sequence: nextSequence, threads: { ...this.model.threads, [threadId]: { ...before, mood: "idle", sequence: nextSequence } } };
       this.sendChanged(threadId);
-      this.pushSurfaceState();
-      this.syncRoaming();
-    }, 2_600);
-    this.successTimers.set(threadId, timer);
+      if (threadId === this.followed) this.pushSurfaceState();
+    }, SETTLE_MS);
+    this.settleTimers.set(threadId, timer);
   }
 
-  private clearSuccessTimer(threadId: string): void {
-    const timer = this.successTimers.get(threadId);
+  private clearSettleTimer(threadId: string): void {
+    const timer = this.settleTimers.get(threadId);
     if (timer) clearTimeout(timer);
-    this.successTimers.delete(threadId);
+    this.settleTimers.delete(threadId);
   }
 
   private reconcile(): void {
@@ -173,7 +248,7 @@ export class Pet extends Service {
     }
     if (settings.displayMode === "embedded") {
       this.closeSurface();
-      if (!this.accessoryDispose) this.accessoryDispose = this.ctx.contributions.assistantAccessory(embeddedAccessory());
+      this.showAccessory();
       return;
     }
 
@@ -182,7 +257,6 @@ export class Pet extends Service {
     const signature = JSON.stringify({ size: settings.size, clickThrough: settings.clickThrough, allWorkspaces: settings.allWorkspaces });
     if (this.surface && signature === this.surfaceSignature) {
       this.pushSurfaceState();
-      this.syncRoaming();
       return;
     }
     this.closeSurface();
@@ -199,112 +273,56 @@ export class Pet extends Service {
       clickThrough: settings.clickThrough,
       initialState: this.surfacePayload(),
       onMessage: (message) => {
-        if (!isMotionMessage(message)) return;
-        this.reducedMotion = message.value;
-        if (this.reducedMotion) this.stopRoaming();
-        else this.syncRoaming();
+        if (!isMoveMessage(message)) return;
+        this.position = { x: message.x, y: message.y };
+        this.surface?.setPosition(message.x, message.y);
       }
     });
+    if (this.position) this.surface.setPosition(this.position.x, this.position.y);
     this.pushSurfaceState();
-    this.syncRoaming();
+  }
+
+  private showAccessory(): void {
+    const images = this.images();
+    const key = JSON.stringify(images);
+    if (this.accessoryDispose && key === this.accessoryKey) return;
+    this.removeAccessory();
+    this.accessoryKey = key;
+    this.accessoryDispose = this.ctx.contributions.assistantAccessory(embeddedAccessory(images));
   }
 
   private removeAccessory(): void {
     this.accessoryDispose?.();
     this.accessoryDispose = null;
+    this.accessoryKey = "";
   }
 
   private closeSurface(): void {
-    this.stopRoaming(false);
     this.surface?.close();
     this.surface = null;
     this.surfaceSignature = "";
-    this.reducedMotion = false;
   }
 
-  private surfacePayload(forcedMood?: PetMood) {
-    const selected = desktopThreadState(this.model);
-    const mood = forcedMood ?? selected.mood;
+  private surfacePayload() {
+    const mood = moodForThread(this.model, this.followed);
     return {
       mood,
-      threadId: selected.threadId,
-      animation: desktopAnimation(mood),
-      roamingAvailable: Boolean(this.surface?.capabilities.programmaticPosition) && !this.reducedMotion
+      threadId: this.followed,
+      animation: fileAnimation(this.images()[mood]),
+      // Without programmatic placement (Wayland) the document falls back to the native drag region.
+      placeable: this.surface?.capabilities.programmaticPosition ?? true
     };
   }
 
   private pushSurfaceState(): void {
-    if (!this.surface) return;
-    this.surface.setState(this.surfacePayload(this.walking ? "walk" : undefined));
-  }
-
-  private syncRoaming(): void {
-    const settings = this.settings();
-    const canRoam =
-      settings.enabled &&
-      settings.displayMode === "desktop" &&
-      settings.roam &&
-      !this.reducedMotion &&
-      this.surface?.capabilities.programmaticPosition &&
-      desktopThreadState(this.model).mood === "idle";
-    if (!canRoam) {
-      this.stopRoaming();
-      return;
-    }
-    if (this.roamTimer || this.moveTimer) return;
-    this.roamTimer = setTimeout(() => {
-      this.roamTimer = null;
-      this.beginRoam();
-    }, 4_000 + Math.round(Math.random() * 4_000));
-  }
-
-  private beginRoam(): void {
-    const surface = this.surface;
-    if (!surface || desktopThreadState(this.model).mood !== "idle" || this.reducedMotion) return;
-    const from = surface.bounds();
-    const area = surface.workArea();
-    const target = {
-      x: area.x + Math.random() * Math.max(0, area.width - from.width),
-      y: area.y + Math.random() * Math.max(0, area.height - from.height)
-    };
-    const distance = Math.hypot(target.x - from.x, target.y - from.y);
-    if (distance < 20) {
-      this.syncRoaming();
-      return;
-    }
-    const duration = (distance / SPEED[this.settings().roamSpeed]) * 1_000;
-    const began = Date.now();
-    this.walking = true;
-    this.pushSurfaceState();
-    this.moveTimer = setInterval(() => {
-      if (!this.surface) return this.stopRoaming(false);
-      const t = Math.min(1, (Date.now() - began) / duration);
-      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      this.surface.setPosition(from.x + (target.x - from.x) * eased, from.y + (target.y - from.y) * eased);
-      if (t < 1) return;
-      if (this.moveTimer) clearInterval(this.moveTimer);
-      this.moveTimer = null;
-      this.walking = false;
-      this.pushSurfaceState();
-      this.syncRoaming();
-    }, 33);
-  }
-
-  private stopRoaming(resetVisual = true): void {
-    if (this.roamTimer) clearTimeout(this.roamTimer);
-    if (this.moveTimer) clearInterval(this.moveTimer);
-    this.roamTimer = null;
-    this.moveTimer = null;
-    const wasWalking = this.walking;
-    this.walking = false;
-    if (resetVisual && wasWalking) this.pushSurfaceState();
+    this.surface?.setState(this.surfacePayload());
   }
 
   private deactivate(): void {
     this.removeAccessory();
     this.closeSurface();
-    for (const timer of this.successTimers.values()) clearTimeout(timer);
-    this.successTimers.clear();
+    for (const timer of this.settleTimers.values()) clearTimeout(timer);
+    this.settleTimers.clear();
   }
 }
 

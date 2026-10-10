@@ -1553,6 +1553,9 @@ importers:
       '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
+      '@tomradex/pet':
+        specifier: workspace:*
+        version: link:../pet
       '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../plugin-kit

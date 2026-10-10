@@ -1,11 +1,14 @@
 import type { AgentEvent, RunStatus } from "@tomradex/agent";
 
-export type PetMood = "idle" | "thinking" | "working" | "waiting" | "success" | "error" | "walk";
-export type TaskPetMood = Exclude<PetMood, "walk">;
+/** Every state a pet can show, in the order a profile editor lists them. */
+export const PET_MOODS = ["idle", "thinking", "working", "waiting", "success", "error"] as const;
+export type PetMood = (typeof PET_MOODS)[number];
 
 export interface ThreadPetState {
-  mood: TaskPetMood;
+  mood: PetMood;
   runId: string | null;
+  /** The live run's pose between events: thinking until its first output, then working; null once it ends. */
+  busy: "thinking" | "working" | null;
   sequence: number;
 }
 
@@ -16,64 +19,60 @@ export interface PetModel {
 
 export const emptyPetModel = (): PetModel => ({ sequence: 0, threads: {} });
 
-const moodForRun = (status: RunStatus): TaskPetMood =>
+const moodForRun = (status: RunStatus): PetMood =>
   status === "running" ? "thinking" : status === "asked" ? "waiting" : status === "done" ? "success" : status === "error" ? "error" : "idle";
 
 /** Pure reducer shared by the service and focused tests. */
 export function reducePetModel(model: PetModel, threadId: string, event: AgentEvent): PetModel {
-  const before = model.threads[threadId] ?? { mood: "idle" as const, runId: null, sequence: 0 };
-  let mood = before.mood;
-  let runId = before.runId;
+  const before = model.threads[threadId] ?? { mood: "idle" as const, runId: null, busy: null, sequence: 0 };
+  let { mood, runId, busy } = before;
+  // Output from another run, or from this one after it ended (a cancelled tool's late tick), says nothing about now.
+  const stale = (id: string) => (runId !== null && id !== runId) || (id === runId && busy === null);
 
   switch (event.type) {
     case "run":
-      mood = moodForRun(event.run.status);
+      // Each turn is a new run and thinks until its first output; the same run resuming keeps its pose.
+      busy = event.run.status !== "running" ? null : event.run.id === runId && busy ? busy : "thinking";
+      mood = busy ?? moodForRun(event.run.status);
       runId = event.run.id;
       break;
     case "progress":
-      if (runId && event.runId !== runId) return model;
+      if (stale(event.runId)) return model;
       // `activity` is absent on usage-only ticks (e.g. after each streamed delta) — those
-      // carry no signal about what the agent is doing, so leave mood as-is. Only an explicit
-      // null (a tool just finished) or a tool name should move the mood.
-      if (event.activity !== undefined) mood = event.activity ? "working" : "thinking";
+      // carry no signal about what the agent is doing, so leave mood as-is. A tool name,
+      // or an explicit null (a tool just finished), means the turn has produced output.
+      if (event.activity !== undefined) mood = busy = "working";
       runId = event.runId;
       break;
     case "delta":
-      if (runId && event.runId !== runId) return model;
-      mood = "working";
+      if (stale(event.runId)) return model;
+      mood = busy = "working";
       runId = event.runId;
       break;
     case "message":
-      if (event.message.runId && (!runId || event.message.runId === runId) && event.message.role !== "user") {
+      if (event.message.runId && event.message.role !== "user" && !stale(event.message.runId)) {
+        busy = "working";
         mood = event.message.block.type === "error" ? "error" : "working";
         runId = event.message.runId;
       }
       break;
     case "card":
       mood = "working";
+      if (busy) busy = "working";
       break;
     case "pending":
-      mood = event.pending ? "waiting" : runId ? "thinking" : "idle";
+      mood = event.pending ? "waiting" : (busy ?? "idle");
       break;
     case "done":
+      busy = null;
       mood = moodForRun(event.run.status);
       runId = event.run.id;
       break;
   }
 
   const sequence = model.sequence + 1;
-  return { sequence, threads: { ...model.threads, [threadId]: { mood, runId, sequence } } };
+  return { sequence, threads: { ...model.threads, [threadId]: { mood, runId, busy, sequence } } };
 }
 
-export const moodForThread = (model: PetModel, threadId: string | null): TaskPetMood =>
+export const moodForThread = (model: PetModel, threadId: string | null): PetMood =>
   (threadId ? model.threads[threadId]?.mood : undefined) ?? "idle";
-
-const PRIORITY: Record<TaskPetMood, number> = { idle: 0, success: 1, thinking: 2, working: 3, waiting: 4, error: 5 };
-
-/** Highest urgency wins; ties use latest event then thread id, independent of map insertion order. */
-export function desktopThreadState(model: PetModel): { threadId: string | null; mood: TaskPetMood } {
-  const selected = Object.entries(model.threads).sort(
-    ([aId, a], [bId, b]) => PRIORITY[b.mood] - PRIORITY[a.mood] || b.sequence - a.sequence || aId.localeCompare(bId)
-  )[0];
-  return selected ? { threadId: selected[0], mood: selected[1].mood } : { threadId: null, mood: "idle" };
-}

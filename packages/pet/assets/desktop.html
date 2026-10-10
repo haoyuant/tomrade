@@ -12,72 +12,121 @@
       canvas {
         width: 100vw;
         height: 100vh;
-        image-rendering: pixelated;
         -webkit-user-drag: none;
-        -webkit-app-region: drag;
+        touch-action: none;
       }
     </style>
   </head>
   <body>
-    <canvas id="pet" width="352" height="280" aria-label="Tomrade pet"></canvas>
+    <canvas id="pet" aria-label="Tomrade pet"></canvas>
     <script>
       (() => {
         const canvas = document.getElementById("pet");
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        ctx.imageSmoothingEnabled = false;
-        const images = new Map();
+        canvas.width = Math.round(innerWidth * devicePixelRatio);
+        canvas.height = Math.round(innerHeight * devicePixelRatio);
         const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-        let state = { mood: "idle", animation: { source: "cat-idle-strip.png", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 360 } };
-        let startedAt = performance.now();
-        let frame = -1;
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        let state = { mood: "idle" };
 
-        const imageFor = (source) => {
-          if (images.has(source)) return images.get(source);
-          const image = new Image();
-          image.decoding = "async";
-          image.src = source;
-          image.onload = () => { frame = -1; draw(performance.now()); };
-          images.set(source, image);
-          return image;
+        // The image's content box fills 96% × 90% of the window, bottom-centred — the same fit as the embedded stage.
+        const fit = (box) => {
+          const scale = Math.min((canvas.width * 0.96) / box.width, (canvas.height * 0.9) / box.height);
+          const width = box.width * scale, height = box.height * scale;
+          return [(canvas.width - width) / 2, canvas.height - height, width, height];
         };
 
-        const draw = (now) => {
-          const animation = state.animation;
-          const image = imageFor(animation.source);
-          const next = reduced.matches ? 0 : Math.floor((now - startedAt) / animation.frameMs) % animation.frames;
-          if (image.complete && image.naturalWidth && next !== frame) {
-            frame = next;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(image, frame * animation.frameWidth, 0, animation.frameWidth, animation.frameHeight, 0, 0, canvas.width, canvas.height);
-          }
-          requestAnimationFrame(draw);
+        // One decoder at a time, each frame shown for its own duration; reduced motion holds the first frame.
+        let playing = null;
+        const play = (animation) => {
+          if (playing && playing.animation.source === animation.source && playing.animation.pixelated === animation.pixelated) return;
+          playing?.stop();
+          let stopped = false;
+          playing = { animation, stop: () => { stopped = true; } };
+          (async () => {
+            const data = await (await fetch(animation.source)).arrayBuffer();
+            if (stopped) return;
+            const decoder = new ImageDecoder({ data, type: animation.type });
+            try {
+              await decoder.tracks.ready;
+              const count = decoder.tracks.selectedTrack?.frameCount || 1;
+              let index = 0;
+              let due = performance.now();
+              while (!stopped) {
+                const { image } = await decoder.decode({ frameIndex: index });
+                if (stopped) { image.close(); break; }
+                const box = animation.box ?? { x: 0, y: 0, width: image.displayWidth, height: image.displayHeight };
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.imageSmoothingEnabled = !animation.pixelated;
+                ctx.drawImage(image, box.x, box.y, box.width, box.height, ...fit(box));
+                // Like browsers, a GIF delay of 10ms or less means 100ms.
+                const ms = image.duration > 10_000 ? image.duration / 1000 : 100;
+                image.close();
+                if (count === 1 || reduced.matches) break;
+                due += ms;
+                await sleep(Math.max(0, due - performance.now()));
+                index = (index + 1) % count;
+              }
+            } finally {
+              decoder.close();
+            }
+          })().catch(() => {});
+        };
+        const replay = () => {
+          const animation = playing?.animation;
+          playing?.stop();
+          playing = null;
+          if (animation) play(animation);
         };
 
         window.tomradeSurface.onState((next) => {
           if (!next || !next.animation) return;
           state = next;
+          play(next.animation);
           canvas.setAttribute("aria-label", `Tomrade pet: ${next.mood}`);
-          startedAt = performance.now();
-          frame = -1;
+          // Where the shell cannot place windows (Wayland), the compositor drags the native region instead.
+          canvas.style.setProperty("-webkit-app-region", next.placeable === false ? "drag" : "no-drag");
         });
 
-        const hit = (event) => {
+        const opaqueAt = (event) => {
           const box = canvas.getBoundingClientRect();
           const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(((event.clientX - box.left) / box.width) * canvas.width)));
           const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(((event.clientY - box.top) / box.height) * canvas.height)));
-          let opaque = false;
-          try { opaque = ctx.getImageData(x, y, 1, 1).data[3] > 24; } catch {}
+          try { return ctx.getImageData(x, y, 1, 1).data[3] > 24; } catch { return false; }
+        };
+
+        // Dragging the opaque cat moves the window: the grab point stays under the pointer.
+        let drag = null;
+        const hit = (event) => {
+          if (drag) return;
+          const opaque = opaqueAt(event);
+          canvas.style.cursor = opaque ? "grab" : "";
           window.tomradeSurface.setInteractive(opaque);
         };
-        addEventListener("mousemove", hit);
-        addEventListener("mouseleave", () => window.tomradeSurface.setInteractive(false));
-        const reportMotion = () => {
-          frame = -1;
-          window.tomradeSurface.send({ type: "reduced-motion", value: reduced.matches });
+        canvas.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0 || state.placeable === false || !opaqueAt(event)) return;
+          drag = { dx: event.clientX, dy: event.clientY };
+          canvas.setPointerCapture(event.pointerId);
+          canvas.style.cursor = "grabbing";
+        });
+        const endDrag = (event) => {
+          if (!drag) return;
+          drag = null;
+          hit(event);
         };
-        reduced.addEventListener("change", reportMotion);
-        reportMotion();
-        requestAnimationFrame(draw);
+        canvas.addEventListener("pointermove", (event) => {
+          if (!drag) return;
+          // A release we never saw (outside the window) must not leave the pet glued to the pointer.
+          if (event.buttons === 0) return endDrag(event);
+          window.tomradeSurface.send({ type: "move", x: Math.round(event.screenX - drag.dx), y: Math.round(event.screenY - drag.dy) });
+        });
+        canvas.addEventListener("pointerup", endDrag);
+        canvas.addEventListener("pointercancel", endDrag);
+        addEventListener("mousemove", hit);
+        addEventListener("mouseleave", () => {
+          if (!drag) window.tomradeSurface.setInteractive(false);
+        });
+        reduced.addEventListener("change", replay);
       })();
     </script>
   </body>

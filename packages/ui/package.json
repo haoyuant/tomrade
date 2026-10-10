@@ -54,6 +54,7 @@
     "@tomradex/mcp": "workspace:*",
     "@tomradex/mcp-client": "workspace:*",
     "@tomradex/oplog": "workspace:*",
+    "@tomradex/pet": "workspace:*",
     "@tomradex/plugin-kit": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",
     "@tomradex/plugin-studio": "workspace:*",

@@ -18,6 +18,7 @@ import { openProjectDialog } from "./openProjectDialog";
 import { playbooks } from "./playbooks";
 import { plugins } from "./plugins";
 import { mcpServers } from "./mcpServers";
+import { petProfiles } from "./petProfiles";
 import { pluginsPanel } from "./pluginsPanel";
 import { projectSettingsDialog } from "./projectSettingsDialog";
 import { projectsScreen } from "./projectsScreen";
@@ -48,6 +49,7 @@ export const en = {
   pluginsPanel: pluginsPanel.en,
   plugins: plugins.en,
   mcpServers: mcpServers.en,
+  petProfiles: petProfiles.en,
   deleteIssueDialog: deleteIssueDialog.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
@@ -95,6 +97,7 @@ export const zh: typeof en = {
   pluginsPanel: pluginsPanel.zh,
   plugins: plugins.zh,
   mcpServers: mcpServers.zh,
+  petProfiles: petProfiles.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,

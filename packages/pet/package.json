@@ -4,7 +4,7 @@
   "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.pet — switchable embedded or roaming desktop task-state companion",
+  "description": "ctx.pet — switchable embedded or draggable desktop task-state companion",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
