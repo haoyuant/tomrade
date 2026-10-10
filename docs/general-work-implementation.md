@@ -53,7 +53,9 @@ This document records implementation boundaries and verification evidence.
   submit_delivery are agent tools; human review is a separate IPC/UI action.
 - Both ticket surfaces show output selection, completion reports, acceptance,
   requests for changes, and submission history. Stale reviews fail. Report-only
-  human work needs no files. General agents cannot mark Done; human direct
+  human work needs no files. An agent cannot mark Done a General delivery that
+  has a submission or that an agent ran; one nobody delegated may be closed by
+  an agent on the person's word, with no evidence written. Human direct
   completion records acceptance. Coding with outputs no longer auto-completes
   on merge. General without code history no longer shows a Code section.
 
@@ -100,7 +102,7 @@ This document records implementation boundaries and verification evidence.
 | Creation, revision, acceptance, history, reopen, both ticket surfaces, the Start dialog (where / agent / recommended method, coding and General) | `apps/desktop/scripts/general-work-check.mjs` running real Electron + IPC + plugins, with isolated local data and cloud disabled |
 | LLM method recommendation, invalid-answer fallback, and inferred work type | `agent/tests/playbooks.test.ts`; `agent.recommendPlaybook` IPC and New Ticket dialog |
 
-The Electron regression passed its 17 UI checks and screenshots were inspected.
+The Electron regression passed its 20 UI checks and screenshots were inspected.
 The in-app Browser skill could not initialize (missing classic-level.mjs), so
 the repository's native Electron regression approach was used instead.
 
@@ -121,7 +123,7 @@ the repository's native Electron regression approach was used instead.
 
 Final unit/integration suite: 403 passed, 2 configured live-service skips across
 59 test files. Typecheck and production build pass. Native Electron regression
-passes all 17 checks on both standalone and docked ticket surfaces. Screenshots
+passes all 20 checks on both standalone and docked ticket surfaces. Screenshots
 were retained in the isolated harness temp directories for visual inspection.
 
 - `pnpm typecheck`

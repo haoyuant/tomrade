@@ -1,7 +1,7 @@
 ---
 name: document.write
 title: Write a document
-description: Produce or revise a document using the ticket's materials, audience and acceptance criteria
+description: Produce or revise a document — a ticket's deliverable, or a note, journal entry or record kept straight in Files
 workTypes: [general, coding]
 requires: [files.write]
 optionalCapabilities: [document.preview]
@@ -21,3 +21,8 @@ the resulting file ID and immutable version as an output artifact, then call
 submit_delivery with the artifact ID and a concise
 description of what was produced. Do not create an alternative attachment store,
 claim that a local path is a delivered artifact, or mark the ticket done yourself.
+
+Without a ticket — a journal entry, meeting notes, a personal record — there is
+nothing to submit. Follow the folders and file names the user already keeps
+(search_files shows them; ask once if there are none), save with write_file, and
+tell the user where the file is.

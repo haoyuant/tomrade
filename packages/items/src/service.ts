@@ -311,7 +311,7 @@ export class Items extends Service {
       title: input.title,
       body: input.body ?? null,
       kind: input.kind ?? "ticket",
-      workType: input.workType ?? "coding",
+      workType: input.workType ?? this.defaultWorkType(db, input.boardId),
       playbookId: input.playbookId ?? null,
       status: input.status ?? "backlog",
       priority: input.priority ?? 2,
@@ -326,7 +326,6 @@ export class Items extends Service {
       version: 1,
       humanLocked: false
     };
-    if (item.workType === "general" && item.status === "done" && input.by !== "human") throw new Error("General deliveries require human acceptance");
     return write(this.ctx, { projectId, entity: "item", op: "create", id: item.id, by: input.by, before: null, after: item }, () =>
       db.transaction(() => {
         db.prepare("UPDATE projects SET next_key_num = ? WHERE id = ?").run(item.keyNum + 1, projectId);
@@ -338,7 +337,7 @@ export class Items extends Service {
         this.writeValues(db, item.id, stored);
         if (item.workType === "general" && item.kind === "ticket" && !["backlog", "todo"].includes(item.status)) {
           const delivery = this.deliveries.ensure(projectId, item.id, now);
-          if (item.status === "done") {
+          if (item.status === "done" && input.by === "human") {
             const submissionId = randomUUID();
             item.evidence = {
               resources: [],
@@ -353,6 +352,12 @@ export class Items extends Service {
         return item;
       })
     );
+  }
+
+  /** Coding needs somewhere for the code to go: a workstream without a repository holds general work. */
+  private defaultWorkType(db: ProjectDb, boardId: string): Item["workType"] {
+    const board = db.prepare("SELECT repo_id FROM boards WHERE id = ?").get(boardId) as { repo_id: string | null } | undefined;
+    return board?.repo_id ? "coding" : "general";
   }
 
   /**
@@ -373,10 +378,13 @@ export class Items extends Service {
     const stored = patch.fields ? this.fields.normalize(projectId, patch.fields) : null;
     const { fields: fieldsPatch, ...rest } = patch;
     const next: Item = { ...existing, ...rest, evidence: evidence ?? existing.evidence, fields: mergeFields(existing.fields, fieldsPatch ?? {}, stored ?? new Map()), updatedAt: Date.now(), updatedBy: by, version: existing.version + 1 };
-    if (next.workType === "general" && next.status === "done" && existing.status !== "done" && by !== "human") throw new Error("General deliveries require human acceptance");
     const active = this.deliveries.active(projectId, id);
     if (active && (next.workType !== existing.workType || next.kind !== existing.kind)) throw new Error("Finish or cancel the active delivery before changing its work type or kind");
     const hasOutputs = existing.evidence.resources.some(r => r.role === "output" && r.deliveryId === active?.id);
+    // Work an agent submitted is accepted by a person. A delivery with nothing submitted may be closed on the person's
+    // word through an agent; the agent plugin refuses that to an agent that ran the delivery itself.
+    const submitted = existing.evidence.submissions.some(s => s.deliveryId === active?.id);
+    if (next.workType === "general" && next.status === "done" && existing.status !== "done" && by !== "human" && (hasOutputs || submitted)) throw new Error("General deliveries require human acceptance");
     if (next.status === "done" && existing.status !== "done" && hasOutputs && by !== "human") throw new Error("Artifact deliveries require human acceptance");
     if (next.status === "done" && existing.status !== "done" && by === "human" && !evidence && (next.workType === "general" || hasOutputs)) {
       const deliveryId = active?.id ?? `${id}:delivery:${(this.deliveries.current(projectId, id)?.sequence ?? 0) + 1}`;

@@ -19,3 +19,6 @@ against the requested criteria. Store the chosen files in the Files plugin.
 Call add_delivery_resource for their immutable versions and submit_delivery with
 the chosen artifact IDs. Describe any checks you could not perform. Do not mark
 the ticket complete merely because generation returned successfully.
+
+Without a ticket there is nothing to submit: save the chosen files with
+write_file and tell the user where they are.

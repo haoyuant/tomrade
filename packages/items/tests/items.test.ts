@@ -8,10 +8,33 @@ import { ConflictError, DependencyCycleError, HumanLockedError, NotFoundError, P
 import { fresh } from "@tomradex/testkit";
 
 describe("items (write path)", () => {
+  it("defaults a new ticket's work type to whether its workstream has a repository", async () => {
+    const { items, boards, board, project } = await fresh();
+    const code = boards.create({ projectId: project.id, name: "App", repoId: "repo-1" }, "human");
+    expect(items.create({ projectId: project.id, boardId: board.id, title: "Book the venue", by: "human" }).workType).toBe("general");
+    expect(items.create({ projectId: project.id, boardId: code.id, title: "Implement registration", by: "human" }).workType).toBe("coding");
+    expect(items.create({ projectId: project.id, boardId: code.id, title: "Print the flyers", workType: "general", by: "human" }).workType).toBe("general");
+  });
+
+  it("lets an agent close General work nobody submitted, on the person's word, and never work that was submitted", async () => {
+    const { items, board, project } = await fresh();
+    const errand = items.create({ projectId: project.id, boardId: board.id, title: "Renew the passport", workType: "general", status: "doing", by: "human" });
+    const closed = items.update(project.id, errand.id, { status: "done" }, "ai:loop");
+    expect(closed).toMatchObject({ status: "done", evidence: { submissions: [], reviews: [] } });
+    expect(items.deliveries.list(project.id, errand.id).map((d) => d.state)).toEqual(["completed"]);
+
+    const logged = items.create({ projectId: project.id, boardId: board.id, title: "Called the bank", workType: "general", status: "done", by: "ai:loop" });
+    expect(logged.evidence.submissions).toEqual([]);
+
+    const report = items.create({ projectId: project.id, boardId: board.id, title: "Confirm the booking", workType: "general", status: "doing", by: "human" });
+    items.submitDelivery(project.id, report.id, { report: "Booked for Friday", artifactIds: [] }, "ai:loop");
+    expect(() => items.update(project.id, report.id, { status: "done" }, "ai:loop")).toThrow("human acceptance");
+  });
+
   it("persists and queries work type independently of hierarchy", async () => {
     const { items, board, project } = await fresh();
     const general = items.create({ projectId: project.id, boardId: board.id, title: "Prepare event materials", workType: "general", by: "human" });
-    const coding = items.create({ projectId: project.id, boardId: board.id, title: "Implement registration", by: "human" });
+    const coding = items.create({ projectId: project.id, boardId: board.id, title: "Implement registration", workType: "coding", by: "human" });
     expect(coding.workType).toBe("coding");
     expect(items.get(project.id, general.id)?.workType).toBe("general");
     expect(items.list({ projectId: project.id, workType: "general" }).map(i => i.id)).toEqual([general.id]);

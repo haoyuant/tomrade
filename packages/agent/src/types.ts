@@ -165,13 +165,20 @@ export interface PlaybookIndexEntry extends PlaybookRequirements {
 /** What a turn is for. A `code` turn edits a repository and gets the engine's fuller powers; a `backlog` turn talks to the app through tools. */
 export type TurnPurpose = "backlog" | "code" | "general";
 
+/** A ticket the current one waits on that is neither done nor cancelled: context for the agent, never a lock on it. */
+export interface OpenDependency {
+  key: string;
+  title: string;
+  status: string;
+}
+
 export interface TurnInput {
   threadId: string;
   projectId: string;
   purpose: TurnPurpose;
   permissionMode?: string;
   /** The ticket a code thread implements — the branch it must stay on, the key its commits must name. */
-  ticket?: { id: string; key: string; title: string; branch: string | null; workType?: "coding" | "general"; body?: string | null; completionPolicy?: "merge" | "human" };
+  ticket?: { id: string; key: string; title: string; branch: string | null; workType?: "coding" | "general"; body?: string | null; completionPolicy?: "merge" | "human"; waitsOn?: OpenDependency[] };
   execution?: GeneralExecution;
   input: UserInput;
   /** Full persisted history, the triggering user message included. */

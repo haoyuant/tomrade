@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookSource, ThreadDetail } from "@tomradex/agent";
+import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookIndexEntry, PlaybookSource, ThreadDetail } from "@tomradex/agent";
+import type { WorkType } from "@tomradex/domain";
 import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
 import { useI18n } from "./i18n";
@@ -18,6 +19,16 @@ export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agent
 
 export const useAgentThread = (projectId: string, threadId: string | null) =>
   useQuery({ queryKey: agentKeys.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId });
+
+/**
+ * The playbooks a ticket of this work type can run as its method — the built-in
+ * ones and whatever the user or the project adds. Backlog and code playbooks are
+ * the assistant's own and the code-link's, never a ticket's method.
+ */
+export const ticketMethods = (playbooks: readonly PlaybookIndexEntry[] | undefined, workType: WorkType): PlaybookIndexEntry[] =>
+  (playbooks ?? [])
+    .filter((playbook) => !playbook.id.startsWith("backlog.") && !playbook.id.startsWith("code.") && (!playbook.workTypes?.length || playbook.workTypes.includes(workType)))
+    .sort((a, b) => Number(!!b.workTypes?.includes(workType)) - Number(!!a.workTypes?.includes(workType)) || a.title.localeCompare(b.title));
 
 export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
 

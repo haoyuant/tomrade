@@ -77,7 +77,7 @@ export function applyPlan(
           projectId: opts.projectId,
           boardId,
           kind: "ticket",
-          workType: feature.workType ?? "coding",
+          workType: feature.workType,
           title: feature.title,
           body: feature.body || null,
           priority: (feature.priority ?? 2) as Item["priority"],

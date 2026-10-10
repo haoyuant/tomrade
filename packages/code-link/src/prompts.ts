@@ -1,3 +1,4 @@
+import { waitsOnLine } from "@tomradex/agent";
 import type { Item, Repo } from "@tomradex/domain";
 import type { Decision } from "./decisions.js";
 import type { CodeLinkView, RepoStateView, SessionView } from "./store.js";
@@ -52,7 +53,7 @@ export function firstPrompt(input: FirstPromptInput): string {
       : state?.readiness === "scaffolded"
         ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the manifests"}, and add a short CLAUDE.md as part of this work.`
         : "The repository has no project in it yet.",
-    blockers.length ? `Blocked by (unfinished): ${blockers.map((b) => `${b.key} ${b.title}`).join("; ")}.` : "",
+    waitsOnLine(blockers.map((b) => ({ key: b.key, title: b.title, status: b.status }))),
     accepted.length
       ? `Decisions on record (list_decisions has the details): ${accepted.map((d) => `${d.id} ${d.title}${d.areas.length ? ` [${d.areas.join(", ")}]` : ""}`).join("; ")}. Anything cross-cutting outside these: ask, then record_decision.`
       : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",

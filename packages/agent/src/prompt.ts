@@ -1,4 +1,4 @@
-import type { FocusRef, GeneralExecution, TurnInput, TurnIO } from "./types.js";
+import type { FocusRef, GeneralExecution, OpenDependency, TurnInput, TurnIO } from "./types.js";
 
 /**
  * The house rules every model-driven engine puts in its system prompt. One
@@ -30,9 +30,17 @@ export const HOUSE_RULES = [
 export const focusSuffix = (refs?: FocusRef[]): string =>
   refs?.length ? `\n(viewing: ${refs.map((r) => `${r.kind} ${r.key ? `${r.key} ` : ""}"${r.title}"${r.key ? "" : ` [${r.id}]`}`).join(", ")})` : "";
 
+/** Tickets still open that this one waits on: the agent works ahead of them and says what has to wait. */
+export const waitsOnLine = (waitsOn: OpenDependency[] | undefined): string =>
+  waitsOn?.length
+    ? `Waits on (still open): ${waitsOn.map((d) => `${d.key} ${d.title} (${d.status})`).join("; ")}. Do what does not need them; where you need their results, say so in your report instead of guessing.`
+    : "";
+
 /** What every General delivery is told, whichever engine runs it: the outcome, the protocol, the place. */
-export function generalBrief(ticket: { key: string; title: string; body?: string | null }, cwd: string | undefined): string {
+export function generalBrief(ticket: { key: string; title: string; body?: string | null; waitsOn?: OpenDependency[] }, cwd: string | undefined): string {
+  const waiting = waitsOnLine(ticket.waitsOn);
   return `You are delivering ${ticket.key} — ${ticket.title}.\n${ticket.body ?? ""}\n` +
+    (waiting ? `${waiting}\n` : "") +
     "Work only toward this ticket's outcome and acceptance criteria. Report progress and missing inputs. Human activities require a human completion report; do not claim to have performed offline actions.\n" +
     "A successful agent turn does not complete a ticket. Submit results for human review. Files must enter the Files plugin before becoming delivery artifacts; temporary paths and external links are not delivered files. If file storage is unavailable, report the draft as not delivered.\n" +
     "Call get_item to read current input materials and previous outputs, and look up background in the project's Files. Save new files with write_file and this ticket's id so they land in its workstream's folder. Use add_delivery_resource to link an existing Files version, then submit_delivery with a report and selected output artifact IDs. Human review is a separate action.\n" +
@@ -50,7 +58,7 @@ export const playbookSection = (playbook: GeneralExecution["playbook"]): string 
  * system prompt from Tomrade, only this file and the MCP tools, so the ticket,
  * the protocol and the playbook all travel in it.
  */
-export function generalPrompt(input: { ticket: { key: string; title: string; body?: string | null }; cwd: string; playbook: GeneralExecution["playbook"]; continued: boolean; filesIndex?: string }): string {
+export function generalPrompt(input: { ticket: { key: string; title: string; body?: string | null; waitsOn?: OpenDependency[] }; cwd: string; playbook: GeneralExecution["playbook"]; continued: boolean; filesIndex?: string }): string {
   return [
     generalOpener(input.ticket, input.continued),
     "",
@@ -97,7 +105,8 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
       `You are implementing ticket ${t.key} — "${t.title}"${t.branch ? ` on branch ${t.branch}` : ""}${input.cwd ? ` in ${input.cwd}` : ""}.\n` +
         `Code conventions: stay on this branch and never commit to the default branch; every commit message names ${t.key}; ` +
         `read the repository's CLAUDE.md or AGENTS.md before writing; when you push and open a pull request, call link_code with its URL; ` +
-        `do not mark the ticket done yourself. Completion policy: ${t.completionPolicy === "merge" ? "all code links must merge; the platform then completes the delivery" : "human acceptance is required; merging alone does not complete the delivery"}. Report progress in one line with note_progress when you reach a milestone.`
+        `do not mark the ticket done yourself. Completion policy: ${t.completionPolicy === "merge" ? "all code links must merge; the platform then completes the delivery" : "human acceptance is required; merging alone does not complete the delivery"}. Report progress in one line with note_progress when you reach a milestone.` +
+        (t.waitsOn?.length ? `\n${waitsOnLine(t.waitsOn)}` : "")
     );
   }
   if (input.brief) parts.push("Project brief:\n" + input.brief);

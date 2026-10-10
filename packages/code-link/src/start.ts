@@ -32,6 +32,8 @@ export interface StartOptions {
   options?: Record<string, unknown>;
   /** Headless coding runs only: the permission mode the engine works under. */
   permissionMode?: string;
+  /** Start although tickets this one waits on are still open; the agent is told which. */
+  allowBlocked?: boolean;
 }
 
 export type StartResult =
@@ -70,6 +72,14 @@ export interface StartHost {
 }
 
 const OPEN = new Set(["backlog", "todo", "doing", "verifying"]);
+
+/** Unfinished dependencies are a question for the human, not a wall: Start again with allowBlocked to work ahead of them. */
+const blockedGate = (item: Item, blockers: Item[]): StartResult => ({
+  ok: false,
+  gate: "blocked",
+  message: `${item.key} waits on ${blockers.map((b) => b.key).join(", ")}`,
+  blockers: blockers.map((b) => b.key)
+});
 
 /**
  * Start (or continue) work on a ticket with a local coding agent. Six gates,
@@ -148,8 +158,8 @@ export class Starter {
       item = ctx.items.get(projectId, item.id) ?? item;
     }
 
-    const blockers = item.blockedBy.map((id) => ctx.items.get(projectId, id)).filter((b): b is Item => !!b && OPEN.has(b.status));
-    if (blockers.length) return { ok: false, gate: "blocked", message: `${item.key} waits on ${blockers.map((b) => b.key).join(", ")}`, blockers: blockers.map((b) => b.key) };
+    const blockers = this.openBlockers(projectId, item);
+    if (blockers.length && !opts.allowBlocked) return blockedGate(item, blockers);
 
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
@@ -220,7 +230,7 @@ export class Starter {
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
     const basePrompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy)
-      : firstPrompt({ item, repo, state, branch, blockers: [], bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy });
+      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy });
     const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
 
     if (opts.mode === "run") {
@@ -263,12 +273,15 @@ export class Starter {
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const other = opts.mode === "terminal" && opts.engine === "other";
     if (other && !terminalSettings.otherCommand.trim()) return { ok: false, gate: "engine", message: "No command is set for another CLI agent — add one under Settings → Code link" };
+    const blockers = this.openBlockers(projectId, item);
+    if (blockers.length && !opts.allowBlocked) return blockedGate(item, blockers);
     const prepared = await agent.prepareGeneral(projectId, item.id, {
       ...(other ? {} : { engine: opts.engine }),
       playbook: opts.playbook,
       options: opts.options,
       surface: opts.mode === "terminal" ? "code" : "assistant",
-      external: other
+      external: other,
+      allowBlocked: opts.allowBlocked
     });
     const thread = agent.store.thread(projectId, prepared.threadId)!;
     const engineId = other ? "other" : prepared.engine;
@@ -310,6 +323,10 @@ export class Starter {
       reasons.push(`${engine.title}: ${state.reason ?? "not available"}`);
     }
     return { ok: false, reason: reasons.join(" · ") };
+  }
+
+  private openBlockers(projectId: string, item: Item): Item[] {
+    return item.blockedBy.map((id) => this.host.ctx.items.get(projectId, id)).filter((b): b is Item => !!b && OPEN.has(b.status));
   }
 
   /** The one ticket that stands between an empty repository and every other ticket on its workstream. */

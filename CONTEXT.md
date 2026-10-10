@@ -19,7 +19,8 @@ _Avoid_: Attachment, association
 **Work type**:
 `coding` or `general`, independent of structural `kind` (`ticket` or `epic`).
 Coding links to repositories, branches and PRs. General requires none of those.
-An active delivery's type cannot change; finish or cancel it first. Historical
+A new ticket without one is coding when its workstream has a repository and
+general when it has none. An active delivery's type cannot change; finish or cancel it first. Historical
 deliveries and their evidence remain when changing type for future work.
 
 **Artifact**:
@@ -31,7 +32,9 @@ files belong to the Files plugin (`@tomradex/files`); ticket metadata is not a f
 A submission pins a report and selected output resources. Human review accepts
 it or requests changes. Revisions stay in the same delivery; reopening completed
 or cancelled work creates the next delivery. General engine success is not human
-acceptance. Mixed Coding/artifact work requires all code links merged and human
+acceptance: a General delivery with a submission, or one an agent ran, is closed
+by a person. One nobody delegated or submitted (a task the person tracks and does
+themselves) may be closed by an agent on the person's word. Mixed Coding/artifact work requires all code links merged and human
 acceptance; pure Coding follows the associated repositories' completion policy.
 
 **Playbook**:
@@ -40,7 +43,14 @@ declared capabilities gate execution; recommendations guide selection without
 rigid type dispatch. Plugin/user/project SKILL.md source precedence remains.
 Runs retain method provenance. A General delivery resumes its pinned method
 unless a person explicitly chooses another. Humans can execute tickets directly
-or take over from an agent without abandoning delivery history.
+or take over from an agent without abandoning delivery history. Built-in methods
+also work without a ticket, saving into Files with nothing to submit.
+
+**Dependency**:
+`blocks` / `blockedBy` between items. Information, not a lock: people move a
+blocked ticket freely. Starting an agent on a ticket that waits on open work
+asks first (`allowBlocked`); once started, the agent is told what is still open
+on every turn and is never stopped for it.
 
 Concurrent independent evidence additions merge. Incompatible deliveries,
 conflicting reviews or undo that would break submitted references stop sync for

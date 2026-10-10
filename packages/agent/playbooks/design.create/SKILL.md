@@ -17,3 +17,6 @@ the ticket requests. Store all deliverable files in the Files plugin. Link each
 immutable version with add_delivery_resource, then submit_delivery with the
 selected artifact IDs and a short description of the design. Revisions stay in
 the same delivery. Human review decides acceptance.
+
+Without a ticket there is nothing to submit: save the files with write_file and
+tell the user where they are.
