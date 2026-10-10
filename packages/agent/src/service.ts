@@ -9,7 +9,7 @@ import { DeliveryStore } from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/ipc";
-import type {} from "@tomradex/write";
+import { writeContext } from "@tomradex/write";
 import type { Item, Patch, UndoRunResult } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
@@ -37,6 +37,7 @@ import {
   type Suspended,
   type ThreadMessage,
   type ThreadSummary,
+  type TurnFollowUp,
   type TurnInput,
   type TurnIO,
   type TurnResult,
@@ -249,6 +250,7 @@ export class Agent extends Service {
 
   private engines = new Map<string, Engine>();
   private workflows = new Map<string, WorkflowSpec>();
+  private followUps = new Map<string, TurnFollowUp>();
   private playbooks = new Map<string, PlaybookVariants>();
   /** Playbooks read from each project's shared copy; refreshed when a run starts. */
   private projectPlaybooks = new Map<string, Map<string, Playbook>>();
@@ -384,11 +386,20 @@ export class Agent extends Service {
           const rc = this.activeById.get(inv.run.id);
           if (!rc) throw new Error(`${spec.id}: no active run`);
           if (this.store.pending(rc.projectId, rc.threadId)) throw new Error("another question is already waiting for the user");
+          if (spec.literal && !rc.engine.literal) throw new Error(`${spec.id} is the fixed questionnaire for engines without a model; hold this conversation yourself (open_playbook for the method)`);
           return this.startWorkflow(spec as WorkflowSpec, args, rc);
         }
       })
     );
     return specDispose;
+  }
+
+  /** Registers a check that runs after every turn; see TurnFollowUp. */
+  followUp(followUp: TurnFollowUp): () => void {
+    return this.ctx.effect(() => {
+      this.followUps.set(followUp.id, followUp);
+      return () => this.followUps.delete(followUp.id);
+    }, `agent.followUp(${followUp.id})`);
   }
 
   // ── views ──────────────────────────────────────────────────────────────────
@@ -925,7 +936,7 @@ export class Agent extends Service {
     };
     progress({});
     const tools = {
-      describe: () => this.ctx.tools.describe(),
+      describe: () => this.ctx.tools.describe().filter((tool) => engine.literal || !this.workflows.get(tool.name)?.literal),
       execute: async (name: string, args: unknown): Promise<unknown> => {
         const t0 = Date.now();
         progress({ activity: name });
@@ -1057,9 +1068,11 @@ export class Agent extends Service {
       const modes = rc.engine.permissionModes;
       const selectedMode = rc.thread.itemId && modes ? rc.thread.permissionMode ?? modes.default : undefined;
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
+      const project = (this.ctx.get("projects") as { get(id: string): { name: string; keyPrefix: string } | null } | undefined)?.get(rc.projectId);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
+        ...(project ? { project: { name: project.name, keyPrefix: project.keyPrefix } } : {}),
         purpose: rc.thread.execution ? "general" : rc.thread.itemId ? "code" : "backlog",
         execution: rc.thread.execution ?? undefined,
         permissionMode: selectedMode,
@@ -1088,8 +1101,33 @@ export class Agent extends Service {
         result = { stop: "error", error: message(err) };
       }
     } finally {
-      this.finish(rc, result ?? { stop: "error", error: "engine returned nothing" });
+      this.finish(rc, await this.runFollowUps(rc, result ?? { stop: "error", error: "engine returned nothing" }));
     }
+  }
+
+  /** The turn is over but the run is not: follow-ups may still write into it, or end it on a question. */
+  private async runFollowUps(rc: RunCtx, result: TurnResult): Promise<TurnResult> {
+    let canAsk = result.stop === "end" && !rc.abort.signal.aborted && !this.store.pending(rc.projectId, rc.threadId);
+    for (const followUp of this.followUps.values()) {
+      try {
+        const start = await followUp.after({ projectId: rc.projectId, threadId: rc.threadId, runId: rc.run.id, canAsk });
+        const spec = start && canAsk ? this.workflows.get(start.workflow) : undefined;
+        if (!spec) continue;
+        const outcome = await this.asRun(rc, () => this.startWorkflow(spec, spec.input.parse(start!.args ?? {}), rc));
+        if (isSuspended(outcome)) {
+          result = { ...result, stop: "asked" };
+          canAsk = false;
+        }
+      } catch (err) {
+        this.ctx.logger.warn(`follow-up ${followUp.id} failed: ${message(err)}`);
+      }
+    }
+    return result;
+  }
+
+  /** Writes a workflow makes outside a tool call still belong to the run, so they count and revert with it. */
+  private asRun<T>(rc: RunCtx, work: () => Promise<T>): Promise<T> {
+    return writeContext.run({ runId: rc.run.id, author: rc.engine.author }, work);
   }
 
   /**
@@ -1105,7 +1143,8 @@ export class Agent extends Service {
     const value = input.kind === "answer" ? input.value : input.kind === "text" ? input.text : "";
     const values = Array.isArray(value) ? value : [value];
     const explicit = input.kind === "answer" && input.questionId === pending.question.id;
-    const onScript = explicit || pending.accepts === "text" || values.every((v) => pending.question.options?.includes(v));
+    // Typed text is an answer only to an engine that cannot judge it; a model tells an answer from an instruction that moves on.
+    const onScript = explicit || (pending.accepts === "text" && !!rc.engine.literal) || values.every((v) => pending.question.options?.includes(v));
 
     if (pending.waiveRule && values.some((v) => pending.waiveOn.includes(v))) this.store.addWaiver(rc.projectId, rc.threadId, pending.waiveRule);
 
@@ -1124,7 +1163,7 @@ export class Agent extends Service {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: `The waiting workflow "${pending.workflow}" is no longer installed.` }, rc.run.id);
       return "engine";
     }
-    const outcome = await this.driveWorkflow(spec, pending.step!, spec.state.parse(pending.state), value, rc);
+    const outcome = await this.asRun(rc, () => this.driveWorkflow(spec, pending.step!, spec.state.parse(pending.state), value, rc));
     return isSuspended(outcome) ? "suspended" : "engine";
   }
 

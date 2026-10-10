@@ -211,6 +211,182 @@ describe("the loop engine on the platform", () => {
   });
 });
 
+describe("a waiting workflow on a model engine", () => {
+  const nameWorkflow = (agent: Agent, received: string[]) =>
+    agent.workflow<Record<string, never>, { asked: boolean }>({
+      id: "name_the_project",
+      title: "Name the project",
+      description: "Ask for a project name.",
+      input: z.object({}),
+      state: z.object({ asked: z.boolean() }),
+      entry: "ask",
+      accepts: "text",
+      start: () => ({ asked: false }),
+      steps: {
+        ask(state, io, answer) {
+          if (answer === undefined) return { ask: { text: "What should the project be called?", freeText: true }, state: { asked: true } };
+          received.push(String(answer));
+          io.emit({ type: "text", text: `Named it ${String(answer)}.` });
+          return { done: { name: answer } };
+        }
+      }
+    });
+
+  it("lets the model judge a typed reply instead of feeding it to the waiting question", async () => {
+    const systems: string[] = [];
+    const script = (req: ChatRequest, step: number): FakeTurn => {
+      systems.push(req.system ?? "");
+      if (step === 0) return { toolCalls: [{ name: "name_the_project", args: {} }] };
+      if (step === 1) return { toolCalls: [{ name: "cancel_workflow", args: {} }] };
+      return { text: "Skipping the name; planning instead." };
+    };
+    const { ctx, agent, project } = await boot(script);
+    const received: string[] = [];
+    nameWorkflow(agent, received);
+    const thread = agent.newThread(project.id);
+    let { runId } = agent.send(project.id, thread.id, { kind: "text", text: "set it up" });
+    expect((await settled(ctx, project.id, runId)).status).toBe("asked");
+    ({ runId } = agent.send(project.id, thread.id, { kind: "text", text: "直接拆解成backlog" }));
+    expect((await settled(ctx, project.id, runId)).status).toBe("done");
+    expect(systems[1]).toContain('A workflow is waiting on: "What should the project be called?"');
+    expect(received).toEqual([]);
+    expect(agent.thread(project.id, thread.id).pending).toBeNull();
+  });
+
+  it("never ends a request on the assistant, even when a workflow answered last", async () => {
+    const script = (_req: ChatRequest, step: number): FakeTurn => (step === 0 ? { toolCalls: [{ name: "name_the_project", args: {} }] } : { text: "Done." });
+    const { ctx, agent, project, model } = await boot(script);
+    const received: string[] = [];
+    nameWorkflow(agent, received);
+    const thread = agent.newThread(project.id);
+    let { runId } = agent.send(project.id, thread.id, { kind: "text", text: "set it up" });
+    await settled(ctx, project.id, runId);
+    const pending = agent.thread(project.id, thread.id).pending!;
+    ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "Memer" }));
+    expect((await settled(ctx, project.id, runId)).status).toBe("done");
+    expect(received).toEqual(["Memer"]);
+    // "Named it Memer." came after the user's answer; thinking-mode endpoints refuse a request that ends there.
+    expect(model.requests.at(-1)!.messages.at(-1)!.role).toBe("user");
+  });
+
+  it("keeps the fixed questionnaire away from a model engine", async () => {
+    const results: string[] = [];
+    const script = (req: ChatRequest, step: number): FakeTurn => {
+      if (step > 0) results.push(JSON.stringify(req.messages.at(-1)));
+      return step === 0 ? { toolCalls: [{ name: "intake_wizard", args: {} }] } : { text: "Asking conversationally instead." };
+    };
+    const { ctx, agent, project, model } = await boot(script);
+    const thread = agent.newThread(project.id);
+    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "我有个新想法" });
+    expect((await settled(ctx, project.id, runId)).status).toBe("done");
+    expect(model.requests[0].tools?.map((t) => t.name)).not.toContain("intake_wizard");
+    expect(results[0]).toContain("fixed questionnaire for engines without a model");
+  });
+});
+
+describe("dependencies after ticket changes", () => {
+  const keyIn = (user: string, title: string) => new RegExp(`(\\S+) "${title}"`).exec(user)?.[1] ?? "";
+
+  it("asks once whether to add what the worker proposes after a turn that creates tickets, and applies it as its own revertible run", async () => {
+    const reviews: string[] = [];
+    const respond = (system: string, user: string) => {
+      if (system.includes("You decompose"))
+        return { epics: [{ title: "Timeline", body: "", features: [{ title: "Define the record model", body: "" }, { title: "Show the chronicle view", body: "" }] }] };
+      if (system.includes("dependencies between backlog tickets")) {
+        reviews.push(user);
+        return { add: [{ prerequisite: keyIn(user, "Define the record model"), dependent: keyIn(user, "Show the chronicle view"), reason: "The view reads the model." }] };
+      }
+      return { duplicates: [], related: [] };
+    };
+    const script = (_req: ChatRequest, step: number): FakeTurn =>
+      step === 0 ? { toolCalls: [{ name: "plan_and_apply", args: { requirement: "A life log app", rootTitle: "Life log" } }] } : { text: "Planned." };
+    const { ctx, agent, items, project } = await boot(script, respond);
+    const thread = agent.newThread(project.id);
+    const first = agent.send(project.id, thread.id, { kind: "text", text: "plan it" });
+    expect((await settled(ctx, project.id, first.runId)).status).toBe("asked");
+    expect(reviews).toHaveLength(1);
+    const byTitle = (title: string) => items.list({ projectId: project.id }).find((i) => i.title === title)!;
+    const model = byTitle("Define the record model");
+    const view = byTitle("Show the chronicle view");
+    expect(reviews[0]).toContain(`created: ${model.key} "Define the record model"`);
+    const pending = agent.thread(project.id, thread.id).pending!;
+    expect(pending.question.text).toContain(`+ ${model.key} Define the record… → ${view.key} Show the chronicle… — The view reads the model.`);
+    expect(pending.question.options).toEqual(["Update now", "Not now"]);
+
+    const second = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "Update now" });
+    const applied = await settled(ctx, project.id, second.runId);
+    expect(byTitle("Define the record model").blocks).toEqual([view.id]);
+    // The edit is the answer's run: counted, revertible, and not itself a change that asks again.
+    expect(applied).toMatchObject({ status: "done", changes: 1 });
+    expect(reviews).toHaveLength(1);
+    expect(agent.thread(project.id, thread.id).pending).toBeNull();
+    agent.revert(project.id, second.runId);
+    expect(byTitle("Define the record model").blocks).toEqual([]);
+  });
+
+  it("carries a cancelled ticket's dependencies to its replacement, checking after the question its turn ended on", async () => {
+    const reviews: string[] = [];
+    const respond = (system: string, user: string) => {
+      if (!system.includes("dependencies between backlog tickets")) return { duplicates: [], related: [] };
+      reviews.push(user);
+      return { add: [{ prerequisite: keyIn(user, "New sync design"), dependent: ids.shipKey, reason: "Sync ships on the new design." }] };
+    };
+    let ids = { old: "", shipKey: "" };
+    const script = (_req: ChatRequest, step: number): FakeTurn => {
+      if (step === 0) return { toolCalls: [{ name: "find_similar", args: { title: "New sync design" } }] };
+      if (step === 1) return { toolCalls: [{ name: "change_status", args: { id: ids.old, status: "cancelled" } }, { name: "create_item", args: { title: "New sync design" } }] };
+      if (step === 2) return { toolCalls: [{ name: "ask_user", args: { question: "Anything else?", options: ["No"] } }] };
+      return { text: "OK." };
+    };
+    const { ctx, agent, items, board, project } = await boot(script, respond);
+    const old = items.create({ projectId: project.id, boardId: board.id, title: "Old sync design", by: "human" });
+    const ship = items.create({ projectId: project.id, boardId: board.id, title: "Ship sync", by: "human" });
+    items.update(project.id, old.id, { blocks: [ship.id] }, "human");
+    ids = { old: old.id, shipKey: ship.key };
+    const thread = agent.newThread(project.id);
+    const first = agent.send(project.id, thread.id, { kind: "text", text: "the sync design changed completely" });
+    expect((await settled(ctx, project.id, first.runId)).status).toBe("asked");
+    // The turn already ends on its own question; the check waits for the next turn rather than being dropped.
+    expect(reviews).toHaveLength(0);
+    const asked = agent.thread(project.id, thread.id).pending!;
+    const second = agent.send(project.id, thread.id, { kind: "answer", questionId: asked.question.id, value: "No" });
+    expect((await settled(ctx, project.id, second.runId)).status).toBe("asked");
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toContain(`cancelled: ${old.key} "Old sync design" (it blocked ${ship.key})`);
+    const replacement = items.list({ projectId: project.id }).find((i) => i.title === "New sync design")!;
+    expect(reviews[0]).toContain(`created: ${replacement.key} "New sync design"`);
+    expect(agent.thread(project.id, thread.id).pending!.question.text).toContain(`+ ${replacement.key} New sync design → ${ship.key} Ship sync`);
+  });
+});
+
+describe("a conversation's project", () => {
+  it("names the project it belongs to and keeps every tool inside it, even when that project is empty", async () => {
+    const systems: string[] = [];
+    const results: string[] = [];
+    let other = "";
+    const script = (req: ChatRequest, step: number): FakeTurn => {
+      systems.push(req.system ?? "");
+      if (step > 0) results.push(JSON.stringify(req.messages.at(-1)));
+      if (step === 0) return { toolCalls: [{ name: "list_projects", args: {} }, { name: "list_items", args: {} }] };
+      if (step === 1) return { toolCalls: [{ name: "list_items", args: { projectId: other } }] };
+      return { text: "This project is new and empty." };
+    };
+    const { ctx, agent, items, board, project, projects } = await boot(script);
+    items.create({ projectId: project.id, boardId: board.id, title: "Old project work", by: "human" });
+    other = project.id;
+    const memer = projects.create({ name: "Memer", keyPrefix: "MEM" });
+    const thread = agent.newThread(memer.id);
+    const { runId } = agent.send(memer.id, thread.id, { kind: "text", text: "现在要干啥" });
+    expect((await settled(ctx, memer.id, runId)).status).toBe("done");
+    expect(systems[0]).toContain('This conversation belongs to the project "Memer" (its keys look like MEM-1)');
+    expect(results[0]).toMatch(/Memer[^}]*current\\":true/);
+    expect(results[0]).toContain("[]");
+    // The other project's work is refused, not read.
+    expect(results[1]).toContain("is another project");
+    expect(results[1]).not.toContain("Old project work");
+  });
+});
+
 describe("crash recovery", () => {
   it("reconciles a run left running by a killed process when the app restarts", async () => {
     const cacheDir = path.join(os.tmpdir(), `tomrade-agent-restart-${Date.now()}-${Math.random()}`);
@@ -274,6 +450,24 @@ describe("the knobs a thread opens on", () => {
 });
 
 describe("the scripted engine", () => {
+  it("starts the intake wizard from the dossier the thread already holds", async () => {
+    const { ctx, agent, project } = await boot([]);
+    const thread = agent.newThread(project.id, "scripted");
+    agent.store.setCard(project.id, thread.id, { id: "dossier", schema: "backlog.dossier", title: "Requirement dossier", data: { goal: "Keep a person's life in one timeline", outcomes: ["Browse by time"] } }, "human");
+    let { runId } = agent.send(project.id, thread.id, { kind: "text", text: "hi" });
+    await settled(ctx, project.id, runId);
+    const menu = agent.thread(project.id, thread.id).pending!;
+    ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: menu.question.id, value: "Requirement intake (fixed questions)" }));
+    await settled(ctx, project.id, runId);
+    // What the dossier already holds is never asked again, and the wizard does not write over it.
+    expect(agent.thread(project.id, thread.id).pending!.question.text).toContain("(3/5) What materials");
+    const pending = agent.thread(project.id, thread.id).pending!;
+    ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "-" }));
+    await settled(ctx, project.id, runId);
+    const dossier = agent.thread(project.id, thread.id).cards.find((c) => c.id === "dossier")!.data as { goal: string; outcomes: string[]; materials: string[] };
+    expect(dossier).toMatchObject({ goal: "Keep a person's life in one timeline", outcomes: ["Browse by time"], materials: ["-"] });
+  });
+
   it("walks the intake wizard deterministically and stores the dossier card", async () => {
     const { ctx, agent, project } = await boot([]);
     const thread = agent.newThread(project.id, "scripted");
@@ -291,11 +485,13 @@ describe("the scripted engine", () => {
       "log water, remind me, show progress",
       "7-day streak of hitting the goal"
     ];
-    for (const answer of answers) {
+    for (const [i, answer] of answers.entries()) {
       pending = agent.thread(project.id, thread.id).pending!;
-      ({ runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: answer }));
+      // Typed into the composer or given through the question, an engine without a model takes it as the answer.
+      ({ runId } = agent.send(project.id, thread.id, i === 2 ? { kind: "text", text: answer } : { kind: "answer", questionId: pending.question.id, value: answer }));
       run = await settled(ctx, project.id, runId);
     }
+    expect((agent.thread(project.id, thread.id).cards.find((c) => c.id === "dossier")!.data as { materials: string[] }).materials).toEqual(["Existing notes"]);
     // Universal fields answered → the confirm question is now waiting.
     pending = agent.thread(project.id, thread.id).pending!;
     expect(pending.question.text).toContain("Plan the backlog");

@@ -14,6 +14,7 @@ export const HOUSE_RULES = [
   "- A list result that says it has all N items, or has fewer rows than its limit, is the complete match: group, filter or sort it yourself, never re-query it by status, board or sort key. To find items about a topic, one distinctive word and then one synonym is usually enough — then answer.",
   "- Before creating an item, check for duplicates (find_similar); a policy will refuse the create otherwise.",
   "- Tickets describe independently deliverable and reviewable outcomes, with short imperative titles. Only coding work is sized for one pull request. Use workType general for documents, design, media, and human activities unless the requested delivery is a code change.",
+  "- When a ticket's goal changes substantially, cancel it (change_status cancelled) and create a new ticket rather than rewriting it; small clarifications are edits. After you create, cancel, delete or re-scope tickets, dependencies are checked for you and the user is asked — do not ask about them yourself.",
   "- Propose defaults instead of interrogating; ask at most three questions per turn, through ask_user.",
   "- NEVER ask the user to choose between actions in prose. Offer choices ONLY through ask_user with options (multiple: true when they combine) — prose gets no buttons and stalls the thread.",
   "- When the user says to proceed, proceed.",
@@ -80,6 +81,11 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  */
 export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean } = {}): string[] {
   const parts: string[] = [];
+  if (input.project) {
+    parts.push(
+      `This conversation belongs to the project "${input.project.name}" (its keys look like ${input.project.keyPrefix}-1). Every tool works in it and only in it, so leave projectId out of tool calls; an empty backlog means the project is new, not that you are in the wrong place. Other projects are out of reach: if the user means one, tell them to open it.`
+    );
+  }
   const media = input.messages.filter(m => m.block.type === "media").slice(-8);
   if (media.length) parts.push("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
     if (m.block.type !== "media") return "";
@@ -116,7 +122,7 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
   if (input.pending) {
     parts.push(
       `A workflow is waiting on: "${input.pending.question.text}"${input.pending.question.options ? " — options: " + input.pending.question.options.join(" / ") : ""}. ` +
-        "If the user's message answers it, call resume_workflow with the answer; if they moved on, call cancel_workflow first."
+        "If the user's message answers it, call resume_workflow with the answer (an answer that points elsewhere, like \"keep what the dossier says\", means that value). If it is an instruction or moves on, call cancel_workflow first, then do what they asked — never feed an instruction in as the answer."
     );
   }
   return parts;

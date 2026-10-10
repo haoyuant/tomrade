@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { emptyDossier, overlap, readiness, renderDossier } from "@tomradex/agent-backlog";
-import { findSimilar, PLAYBOOKS } from "@tomradex/agent-backlog";
+import { findSimilar, planSchema, proposeDependencies, PLAYBOOKS } from "@tomradex/agent-backlog";
+import { FakeLlm } from "@tomradex/llm";
+import { fresh } from "@tomradex/testkit";
 import type { Item } from "@tomradex/domain";
 
 const item = (title: string, extra: Partial<Item> = {}): Item => ({
@@ -39,6 +41,15 @@ describe("readiness", () => {
     d.successSignal = "The person confirms completion";
     expect(readiness(d).missing).toEqual([]);
     expect(d.platform).toBe("");
+  });
+});
+
+describe("planSchema", () => {
+  it("reads priorities written as words and drops what it cannot read instead of failing the plan", () => {
+    const plan = planSchema.parse({
+      epics: [{ title: "Capture", features: [{ title: "a", priority: "high" }, { title: "b", priority: "紧急" }, { title: "c", priority: "soon", workType: "design" }, { title: "d", priority: 2, workType: "general", body: null }] }]
+    });
+    expect(plan.epics[0].features.map((f) => [f.priority, f.workType, f.body])).toEqual([[3, undefined, ""], [4, undefined, ""], [undefined, undefined, ""], [2, "general", ""]]);
   });
 });
 
@@ -83,5 +94,24 @@ describe("the backlog playbooks", () => {
     // details the method depends on survived the move to files
     expect(PLAYBOOKS.find((p) => p.id === "backlog.quick-feature")!.body).toContain("dedup-before-create");
     expect(PLAYBOOKS.find((p) => p.id === "backlog.intake")!.body).toContain("plan_and_apply");
+    // A new codebase's stack is settled with the user before planning, and recorded where the bootstrap reads it.
+    for (const id of ["backlog.intake", "backlog.decompose"]) expect(PLAYBOOKS.find((p) => p.id === id)!.body, id).toMatch(/tech stack[\s\S]*record_decision/);
+  });
+});
+
+describe("proposeDependencies", () => {
+  it("keeps what the worker proposes only when it is new, points at open tickets, closes no cycle and is not implied by the rest", async () => {
+    const { ctx, items, board, project } = await fresh();
+    const make = (title: string, status: Item["status"] = "todo") => items.create({ projectId: project.id, boardId: board.id, title, status, by: "human" });
+    const [model, importer, view, done] = [make("Model"), make("Import"), make("View"), make("Shipped", "done")];
+    items.update(project.id, model.id, { blocks: [importer.id] }, "human");
+    const edge = (prerequisite: Item, dependent: Item) => ({ prerequisite: prerequisite.key, dependent: dependent.key, reason: "r" });
+    const llm = new FakeLlm(() => ({
+      add: [edge(importer, view), edge(model, view), edge(model, importer), edge(view, model), edge(model, done), edge(model, model), { prerequisite: "NOPE-1", dependent: view.key }],
+      remove: [edge(importer, model)]
+    }));
+    const proposal = await proposeDependencies(ctx, llm, project.id, []);
+    expect(proposal.add.map((e) => `${e.from}>${e.to}`)).toEqual([`${importer.key}>${view.key}`]);
+    expect(proposal.remove).toEqual([]);
   });
 });

@@ -5,15 +5,30 @@ import type { LlmService } from "@tomradex/llm";
 import { LlmError } from "@tomradex/llm";
 import { overlap } from "./similar.js";
 
+const PRIORITY_WORDS: Record<string, number> = { none: 0, low: 1, medium: 2, normal: 2, high: 3, urgent: 4, critical: 4, 无: 0, 低: 1, 中: 2, 高: 3, 紧急: 4 };
+
+/**
+ * What a model may get wrong without costing the whole plan: a priority written
+ * as a word is read as its level, and an unreadable priority, work type or body
+ * falls back to the default instead of failing validation.
+ */
+const priority = z
+  .preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const word = value.trim().toLowerCase();
+    return word in PRIORITY_WORDS ? PRIORITY_WORDS[word] : /^[0-4]$/.test(word) ? Number(word) : undefined;
+  }, z.number().int().min(0).max(4).optional())
+  .catch(undefined);
+
 export const planSchema = z.object({
   epics: z.array(
     z.object({
       title: z.string().min(1),
-      body: z.string().default(""),
-      features: z.array(z.object({ title: z.string().min(1), body: z.string().default(""), workType: z.enum(["coding", "general"]).optional(), priority: z.number().int().min(0).max(4).optional() })).default([])
+      body: z.string().catch(""),
+      features: z.array(z.object({ title: z.string().min(1), body: z.string().catch(""), workType: z.enum(["coding", "general"]).optional().catch(undefined), priority })).default([])
     })
   ),
-  notes: z.string().optional()
+  notes: z.string().optional().catch(undefined)
 });
 export type Plan = z.infer<typeof planSchema>;
 
@@ -24,8 +39,10 @@ const PLAN_SYSTEM = [
   "- Each ticket has one independently deliverable and reviewable outcome. Coding tickets should fit one pull request; general tickets do not require Git, a file, or an agent. Assign workType coding or general to every ticket.",
   "- Titles: imperative, under 80 characters. Bodies: 1–3 sentences of intent, lean.",
   "- Do NOT invent requirements the input does not state; note genuine gaps in `notes` instead.",
+  "- Build coding tickets on the tech stack the requirement records. Never choose a stack yourself: when none is recorded, keep ticket titles stack-neutral and say so in `notes`.",
   "- Do not re-propose work the existing backlog already covers.",
-  '- Return JSON: {"epics": [{"title", "body", "features": [{"title", "body", "workType", "priority"?}]}], "notes"?}'
+  "- priority, when you give one, is an integer: 0 none, 1 low, 2 medium, 3 high, 4 urgent.",
+  '- Return JSON: {"epics": [{"title", "body", "features": [{"title", "body", "workType": "coding" | "general", "priority"?: 0-4}]}], "notes"?}'
 ].join("\n");
 
 export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[]): Promise<Plan> {

@@ -94,9 +94,9 @@ export class Projects extends Service {
         defineTool({
           name: "list_projects",
           title: "List projects",
-          description: "The projects on this machine, with the id every other tool takes as projectId.",
+          description: "The projects on this machine, with the id every other tool takes as projectId. In a conversation, `current` marks the one it works in; the others are for reference only.",
           input: z.object({}),
-          execute: () => ctx.projects.list().map((p) => ({ id: p.id, name: p.name, keyPrefix: p.keyPrefix, archived: p.archived }))
+          execute: (_args, inv) => ctx.projects.list().map((p) => ({ id: p.id, name: p.name, keyPrefix: p.keyPrefix, archived: p.archived, ...(inv.projectId ? { current: p.id === inv.projectId } : {}) }))
         })
       );
     });
