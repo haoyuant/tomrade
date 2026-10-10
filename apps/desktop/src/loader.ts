@@ -49,7 +49,11 @@ export function readRows(file: string): PluginPatch[] {
 export function applyPatches(base: PluginPatch[], patches: PluginPatch[][]): PluginRow[] {
   const rows = new Map(base.map((r) => [r.id, { ...r }]));
   for (const patch of patches) {
-    for (const row of patch) rows.set(row.id, { ...rows.get(row.id), ...row });
+    for (const row of patch) {
+      // A switch left behind for a plugin the app no longer ships.
+      if (!rows.has(row.id) && typeof row.name !== "string") continue;
+      rows.set(row.id, { ...rows.get(row.id), ...row });
+    }
   }
   return [...rows.values()].map((r, i) => {
     if (typeof r.name !== "string") throw new Error(`plugins[${i}] "${r.id}" has no plugin name`);

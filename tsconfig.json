@@ -11,9 +11,6 @@
       "path": "./apps/desktop"
     },
     {
-      "path": "./examples/stale"
-    },
-    {
       "path": "./packages/agent"
     },
     {

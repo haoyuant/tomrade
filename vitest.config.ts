@@ -7,11 +7,10 @@ export default defineConfig({
   resolve: {
     // Tests run against sources, so no package needs building first.
     alias: [
-      { find: /^@tomradex\/example-([^/]+)$/, replacement: `${root}examples/$1/src/index.ts` },
       { find: /^@tomradex\/([^/]+)$/, replacement: `${root}packages/$1/src/index.ts` }
     ]
   },
   test: {
-    include: ["packages/*/tests/**/*.test.ts", "examples/*/tests/**/*.test.ts", "apps/*/tests/**/*.test.ts"]
+    include: ["packages/*/tests/**/*.test.ts", "apps/*/tests/**/*.test.ts"]
   }
 });

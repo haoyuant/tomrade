@@ -37,7 +37,6 @@
     "@tomradex/engine-codex": "workspace:*",
     "@tomradex/engine-loop": "workspace:*",
     "@tomradex/engine-scripted": "workspace:*",
-    "@tomradex/example-stale": "workspace:*",
     "@tomradex/extensions": "workspace:*",
     "@tomradex/fields": "workspace:*",
     "@tomradex/files": "workspace:*",

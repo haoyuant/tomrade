@@ -69,7 +69,6 @@ packages/plugin-studio ctx tools for an agent to write a plugin, which loads onl
 packages/community    ctx.community    the store: browse, read before installing, install (digest-checked), update, revoke, report, publish
 packages/testkit      boots a fresh in-memory context for tests
 packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
-examples/stale        an extension that edits no first-party file
 apps/store-admin      the store's admin tool: reports, revocations, official signatures
 design/               OpenDesign prototype — the visual authority for the UI
 docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing)
@@ -112,7 +111,7 @@ Run `pnpm dev`. The MCP server listens on `http://127.0.0.1:19090/mcp` (shown in
 }
 ```
 
-Every registered tool is exposed as `tomrade.<name>`: `list_boards`, `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `delete_item`, `extract_tickets`, `gap_analysis` — plus whatever plugins add (`stale_list_items` from the example). Views are deliberately invisible to MCP. `delete_item` is the *reversible* delete; there is no purge tool, and the refusal lives in the write policy, not in the absence of a tool.
+Every registered tool is exposed as `tomrade.<name>`: `list_boards`, `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `delete_item`, `extract_tickets`, `gap_analysis` — plus whatever plugins add. Views are deliberately invisible to MCP. `delete_item` is the *reversible* delete; there is no purge tool, and the refusal lives in the write policy, not in the absence of a tool.
 
 AI writes are recorded as `ai:mcp` (or `ai:agent`, `ai:claude-code`, `ai:<plugin>`) in the oplog, carry the `baseVersion` the caller read — a write tool that omits it asserts the version it reads itself — and are rejected when the item is human-locked or the version is stale.
 
@@ -120,8 +119,8 @@ AI writes are recorded as `ai:mcp` (or `ai:agent`, `ai:claude-code`, `ai:<plugin
 
 ```
 pnpm install
-pnpm test                                # vitest over every package and the example, against sources
-pnpm build:backend                       # tsc -b: every plugin package, the example and the shell, incrementally
+pnpm test                                # vitest over every package, against sources
+pnpm build:backend                       # tsc -b: every plugin package and the shell, incrementally
 pnpm dev                                 # builds the backend, then Vite + Electron
 pnpm dump-config                         # boots the app headlessly and prints every module and every row's state
 pnpm --filter @tomrade/desktop test:ui   # the UI harness (needs `pnpm dev:ui` up and the backend built)
@@ -151,6 +150,6 @@ Tomrade is source-available under the **Business Source License 1.1** ([`LICENSE
 
 | Under Apache-2.0 | Under the BSL |
 |---|---|
-| `packages/domain`, `packages/plugin-sdk`, `packages/plugin-kit`, `packages/plugin-cli`, `examples/` | everything else, `packages/plugin-host` included |
+| `packages/domain`, `packages/plugin-sdk`, `packages/plugin-kit`, `packages/plugin-cli` | everything else, `packages/plugin-host` included |
 
 The license does not grant any right to the Tomrade name or logo.

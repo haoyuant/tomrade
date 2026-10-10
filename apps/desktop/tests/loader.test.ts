@@ -90,4 +90,10 @@ plugins:
     writePatchRow(patch, "mcp", { disabled: true });
     expect(applyPatches(base, [readRows(patch)])).toEqual([{ id: "mcp", name: "@tomradex/mcp", disabled: true }]);
   });
+
+  it("ignores a switch left behind for a plugin the app no longer ships", () => {
+    const base = readConfig(write("tomrade.yml", "plugins:\n  - id: mcp\n    name: \"@tomradex/mcp\"\n")).rows;
+    const patch = write("patch.yml", "plugins:\n  - id: stale\n    disabled: true\n  - id: mine\n    name: /opt/mine/index.js\n");
+    expect(applyPatches(base, [readRows(patch)])).toEqual([{ id: "mcp", name: "@tomradex/mcp" }, { id: "mine", name: "/opt/mine/index.js" }]);
+  });
 });
