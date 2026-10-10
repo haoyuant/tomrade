@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "Plugin tooling without a context: the .tomrade-plugin package, content digests, signatures, the lock file and the static analyzer shared by the app, the CLI and the review pipeline",
+  "description": "Plugin tooling without a context: the .tomrade-plugin package, content digests, signatures, the lock file and the static analyzer shared by the app, the CLI and the store's admin tool",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

@@ -36,7 +36,7 @@ export function UpdatesTab() {
             <div className="cfg-name">
               <span className="mono">{plan.id}</span> <span className="meta-txt mono">{plan.from} → {plan.to.version}</span>
               <div className="row plug-tags" style={{ gap: 6, marginTop: 3 }}>
-                <TrustTags tier={plan.to.tier} risk={plan.to.risk} reviewedAs={plan.to.reviewed_as} />
+                <TrustTags tier={plan.to.tier} risk={plan.to.risk} />
               </div>
               {!plan.automatic && <div className="meta-txt dense">{t("plugins.updateReasons", { reasons: plan.reasons.join("; ") })}</div>}
               {!!plan.expands.length && <div className="meta-txt dense" style={{ color: "var(--danger)" }}>{t("plugins.updateWider", { list: plan.expands.join(", ") })}</div>}

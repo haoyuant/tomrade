@@ -55,8 +55,8 @@ not a sandbox.** What the system does guarantee:
   listeners, badges and settings cards go with it.
 - `db` is the widest thing an extension can ask for: plain SQL over every table
   in the project caches. It is not scoped to the plugin's own tables; writing
-  the app's tables goes around history and undo, and the store's review and
-  every install dialog say so.
+  the app's tables goes around history and undo, and every install dialog
+  says so.
 
 ## An extension
 
@@ -140,8 +140,9 @@ to its own copies wherever the plugin lives. Documents for surfaces go in
 `contributes` into the manifest from what the plugin was seen to do.
 
 A `.tomrade-plugin` file is the package: a tarball of the manifest, `dist/`,
-the README, the license and, from the store, `ATTESTATION.json` — the store's
-Ed25519 signature over the package's digest, its tier and its risk. Installed
+the README, the license and, for Tomrade's own plugins, `ATTESTATION.json` —
+the store key's Ed25519 signature over the package's digest, its tier and its
+risk. Installed
 versions live in `~/Tomrade/plugins/<publisher>/<name>/<version>/`, each
 plugin's data in `…/<name>/data/`, and `plugins.lock.json` records what is
 installed, from where, at which digest.
@@ -153,10 +154,9 @@ one that fails goes back.
 
 | Tier | How it gets there |
 |---|---|
-| 官方 · Official | published by Tomrade |
-| 官方审核 · Reviewed by Tomrade | a person at Tomrade read this version — or the last reviewed one, and the review judged the change small, low-risk and reaching no further |
-| AI 已审核 · AI-reviewed | built by the store from its public source and reviewed by the pipeline before listing |
-| 本地 · Local | a file without an attestation, or a package changed after install |
+| 官方 · Official | published by Tomrade, and signed with the store key |
+| 社区 · Community | from the store: the publisher's own build of a public, open-source commit, reviewed by nobody |
+| 本地 · Local | a file handed over by hand, or a package changed after install |
 | 开发中 · In development | a folder loaded as it stands, or Plugin Studio |
 
 ## Writing one
@@ -179,7 +179,7 @@ By hand: the `tomrade-plugin` CLI (`@tomradex/plugin-cli`).
 tomrade-plugin init my-plugin --id alice/my-plugin   # a plugin that builds, tests and loads as it is
 tomrade-plugin dev                                    # rebuild on change; Settings → Load folder, once
 tomrade-plugin test                                   # src/test.ts against a throwaway project, sandboxed
-tomrade-plugin check                                  # what the store's review will see
+tomrade-plugin check                                  # what someone installing it will see
 tomrade-plugin pack                                   # a .tomrade-plugin anyone can install
 ```
 
@@ -192,24 +192,26 @@ system Node 26 does.
 ## The store
 
 **Community** (`@tomradex/community`, the registry in `supabase/migrations`)
-lists open-source plugins only. A publisher is a Tomrade account with a linked
-GitHub identity; a plugin id starts with that login and its repository belongs
-to it. Publishing renames a local plugin to the publisher (its namespace
-stays), runs the same check the store will, then commits, tags and pushes the
-source to the public repository and submits that one commit.
+lists open-source plugins only, and reviews none of them: whoever installs a
+plugin judges it. A publisher is a Tomrade account with a linked GitHub
+identity; a plugin id starts with that login and its repository belongs to it.
+Publishing renames a local plugin to the publisher (its namespace stays), runs
+the check, then commits, tags and pushes the source to the public repository.
+The check's build of that same tree is uploaded under the publisher's login,
+and `tomrade_publish_plugin` lists it at once — after checking, on the server,
+that the license is OSI-approved and the id, repository and package path are
+the publisher's. Nothing proves the package was built from the commit; the
+bundle is one readable file, and the listing links the commit.
 
-The review worker (`apps/review`) builds exactly that commit, installs
-production dependencies with their scripts off, tests it in the sandbox, reads
-the bundle with the static analyzer and the source — for an update, the diff
-too — with Claude, and applies the rules: only clearly malicious code is
-refused; high risk is labelled and listed; what the model cannot clear waits
-for a person. What is listed is signed and uploaded.
-
-Installing checks the package's digest against the signed attestation before
-anything is placed. An update lands by itself only when the person switched
-that on, it reaches no further than what is installed, it is no riskier, and —
-for a plugin Tomrade reviewed — it is still reviewed by Tomrade. Revocations
-switch a plugin off at the next check while online.
+Installing first reads the exact package on this machine — what it injects,
+the hosts it names, and what the static analyzer sees it do — and refuses a
+package whose digest is not the one the store lists. An update lands by itself
+only when the person switched that on, it reaches no further than what is
+installed, and it is no riskier; one of Tomrade's own (`official`, signed with
+the store key in `apps/desktop/src/trust.ts`) only moves to another Tomrade
+signed. Tomrade revokes what reports show to be malicious
+(`apps/store-admin`), and revocations switch a plugin off at the next check
+while online.
 
 ## Built-in rows
 

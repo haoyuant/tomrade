@@ -34,18 +34,18 @@ const check = (name, cond, extra = "") => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const key = generateSigningKey();
 
-async function extension(name, { signed, permissions }) {
+async function extension(name, { official, permissions }) {
   const dir = path.join(WORK, "src", name);
   scaffold(dir, { id: `someone/${name}`, title: name[0].toUpperCase() + name.slice(1), description: `The ${name} plugin.` });
   const file = path.join(dir, "tomrade-plugin.json");
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), permissions, inject: ["items", "tools", "contributions"] }, null, 2));
   const built = await build(dir);
   if (!built.ok) throw new Error(built.errors.join("\n"));
-  if (signed) {
+  if (official) {
     const m = JSON.parse(fs.readFileSync(file, "utf8"));
-    fs.writeFileSync(path.join(dir, ATTESTATION_FILE), JSON.stringify(attest({ v: 1, id: m.id, version: m.version, digest: packageDigest(dir), tier: "ai-reviewed", risk: "elevated", issuedAt: Date.now() }, key.privateKey)));
+    fs.writeFileSync(path.join(dir, ATTESTATION_FILE), JSON.stringify(attest({ v: 1, id: m.id, version: m.version, digest: packageDigest(dir), tier: "official", risk: "elevated", issuedAt: Date.now() }, key.privateKey)));
   }
-  return (await packPlugin(dir, path.join(WORK, `${name}.tomrade-plugin`))).file;
+  return packPlugin(dir, path.join(WORK, `${name}.tomrade-plugin`));
 }
 
 const run = async () => {
@@ -59,10 +59,14 @@ const run = async () => {
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
   const { project } = seedDesignProject({ dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields, gitRepos: ctx.repos });
 
-  await ctx.plugins.installFile(await extension("counter", { signed: true, permissions: { network: ["api.example.com"], fs: "none", exec: false } }), { source: "store" });
-  await ctx.plugins.installFile(await extension("runner", { signed: false, permissions: { network: [], fs: "none", exec: true } }));
+  const counter = await extension("counter", { permissions: { network: ["api.example.com"], fs: "none", exec: false } });
+  await ctx.plugins.installFile(counter.file, { source: "store", digest: counter.digest });
+  const keeper = await extension("keeper", { official: true, permissions: { network: [], fs: "none", exec: false } });
+  await ctx.plugins.installFile(keeper.file, { source: "store", digest: keeper.digest });
+  await ctx.plugins.installFile((await extension("runner", { permissions: { network: [], fs: "none", exec: true } })).file);
   const view = (id) => ctx.plugins.list().find((p) => p.id === id);
-  check("a store package installs as AI-reviewed", view("someone/counter")?.extension?.tier === "ai-reviewed" && view("someone/counter")?.state === "active");
+  check("a store package installs as Community", view("someone/counter")?.extension?.tier === "community" && view("someone/counter")?.state === "active");
+  check("one Tomrade signed installs as Official", view("someone/keeper")?.extension?.tier === "official");
   check("a file without an attestation installs as local", view("someone/runner")?.extension?.tier === "local");
 
   // The agent's side, through the same tools any engine calls.
@@ -98,8 +102,8 @@ const run = async () => {
   await openPane();
   check("the pane opens on its tabs", (await $(`document.querySelectorAll('.plug-tabs [role="tab"]').length`)) === 4);
   const ext = (id) => `document.querySelector('[data-testid="extensions"] .plug-ext[data-id="${id}"]')`;
-  check("each extension is listed with who vouches for it", (await $(`${ext("someone/counter")}?.textContent.includes('AI-reviewed')`)) === true);
-  check("a local package says nobody reviewed it", (await $(`${ext("someone/runner")}?.textContent.includes('Local')`)) === true);
+  check("each extension is listed with where it came from", (await $(`${ext("someone/counter")}?.textContent.includes('Community')`)) === true && (await $(`${ext("someone/keeper")}?.textContent.includes('Official')`)) === true);
+  check("a hand-installed package is listed as Local", (await $(`${ext("someone/runner")}?.textContent.includes('Local')`)) === true);
   check("high risk is labelled on the row", (await $(`!!${ext("someone/runner")}?.querySelector('.tag.risk-high')`)) === true);
   check("and what it can reach is spelled out", (await $(`${ext("someone/runner")}?.textContent.includes('Starts other programs')`)) === true);
   check("the agent's build asks to be reviewed", (await $(`!!${ext("local/notes")}?.querySelector('[data-testid="review-build"]')`)) === true);
@@ -141,7 +145,7 @@ const run = async () => {
   await sleep(3500);
   await openPane();
   const zh = await $(`document.querySelector('.dlg-body')?.textContent ?? ''`);
-  check("在中文界面中显示信任标识与风险", zh.includes("AI 已审核") && zh.includes("高风险") && zh.includes("本地"), zh.slice(0, 200));
+  check("在中文界面中显示信任标识与风险", zh.includes("社区") && zh.includes("官方") && zh.includes("高风险") && zh.includes("本地"), zh.slice(0, 200));
   await shot("36-plugins-installed-zh");
 };
 

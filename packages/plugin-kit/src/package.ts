@@ -32,7 +32,7 @@ export function packageFiles(dir: string, manifest: Manifest): string[] {
 
 /**
  * The digest of what a package installs. Taken over the same files whether it
- * is computed at build time, at review, or on the machine that installs it.
+ * is computed at build time, when it is published, or on the machine that installs it.
  */
 export function packageDigest(dir: string, manifest = readManifest(dir)): string {
   return treeDigest(dir, packageFiles(dir, manifest));

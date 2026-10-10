@@ -4,7 +4,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCommunityAccount, useCommunityPlugin, useCommunitySearch, useReport, useStoreInstall } from "~/lib/plugins";
+import { useCommunityAccount, useCommunityPlugin, useCommunitySearch, useInspect, useReport, useStoreInstall } from "~/lib/plugins";
 import { openExternal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { Field, Findings, Reach, TrustTags, messageOf } from "./parts";
@@ -63,7 +63,7 @@ function ListingRow({ listing, onOpen }: { listing: Listing; onOpen: () => void 
         {listing.title} <span className="meta-txt">{t("plugins.by", { publisher: listing.publisher })}</span>
         <div className="meta-txt dense">{listing.description}</div>
         <div className="row plug-tags" style={{ gap: 6, marginTop: 3 }}>
-          {latest && <TrustTags tier={latest.tier} risk={latest.risk} reviewedAs={latest.reviewedAs} />}
+          {latest && <TrustTags tier={latest.tier} risk={latest.risk} />}
           {latest && !latest.compatible && <Tag tone="faint">{t("plugins.incompatible")}</Tag>}
           {latest?.revoked && <span className="tag risk-high">{t("plugins.revoked")}</span>}
           <span className="meta-txt">{t("plugins.installs", { count: listing.downloads })}</span>
@@ -81,16 +81,16 @@ export function PluginDetailDialog({ id, onClose }: { id: string; onClose: () =>
   const [reporting, setReporting] = useState(false);
   const d = detail.data;
   const latest = d?.latest;
-  const report = d?.report;
   const canInstall = latest && latest.compatible && !latest.revoked && latest.version !== d?.installed?.version;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()} label={d?.title ?? id} className="sheet-md">
-      <DialogHead title={d?.title ?? id} aside={latest ? <TrustTags tier={latest.tier} risk={latest.risk} reviewedAs={latest.reviewedAs} /> : undefined} />
+      <DialogHead title={d?.title ?? id} aside={latest ? <TrustTags tier={latest.tier} risk={latest.risk} /> : undefined} />
       <DialogBody>
         {detail.error && <p style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: messageOf(detail.error) })}</p>}
         {d && (
           <div className="stack-3" data-testid="plugin-detail">
             <p>{d.description}</p>
+            {latest?.tier !== "official" && <p className="meta-txt">{t("plugins.unreviewedNote")}</p>}
             <dl className="plug-facts">
               <div className="field-row">
                 <dt>{t("plugins.detailRepository")}</dt>
@@ -100,6 +100,16 @@ export function PluginDetailDialog({ id, onClose }: { id: string; onClose: () =>
                   </button>
                 </dd>
               </div>
+              {latest && (
+                <div className="field-row">
+                  <dt>{t("plugins.detailBuiltFrom")}</dt>
+                  <dd>
+                    <button type="button" className="link-btn mono" onClick={() => openExternal(`${d.repository}/tree/${latest.commit}`)}>
+                      {`${latest.version} · ${latest.commit.slice(0, 7)}`}
+                    </button>
+                  </dd>
+                </div>
+              )}
               <div className="field-row">
                 <dt>{t("plugins.detailLicense")}</dt>
                 <dd className="mono">{d.license}</dd>
@@ -128,38 +138,6 @@ export function PluginDetailDialog({ id, onClose }: { id: string; onClose: () =>
                 <Reach reasons={latest?.riskReasons ?? []} inject={[...d.manifest.inject, ...d.manifest.optional]} hosts={d.manifest.permissions.network.filter((h) => h !== "*")} />
               </>
             )}
-            {report && (
-              <div className="panel stack-2">
-                <Eyebrow>{t("plugins.detailReport")}</Eyebrow>
-                <p>{report.summary}</p>
-                {report.tests && <p className="meta-txt">{t("plugins.detailTests", { passed: report.tests.checks.filter((c) => c.ok).length, total: report.tests.checks.length })}</p>}
-                <Eyebrow>{t("plugins.detailConcerns")}</Eyebrow>
-                {report.ai?.concerns.length ? (
-                  <ul className="dash">
-                    {report.ai.concerns.map((c, i) => (
-                      <li key={i}>
-                        <strong>{c.title}</strong> — {c.detail} {c.file && <span className="meta-txt mono">{c.file}{c.line ? `:${c.line}` : ""}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="meta-txt">{t("plugins.detailNoConcerns")}</p>
-                )}
-                <Findings findings={report.findings.filter((f) => f.severity !== "info")} />
-              </div>
-            )}
-            {!!d.reviews.length && (
-              <div className="stack-2">
-                <Eyebrow>{t("plugins.detailReviews")}</Eyebrow>
-                <ul className="dash">
-                  {d.reviews.map((r, i) => (
-                    <li key={i}>
-                      <span className="mono">{r.version}</span> · {r.decision} {r.notes && `— ${r.notes}`}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         )}
       </DialogBody>
@@ -175,25 +153,46 @@ export function PluginDetailDialog({ id, onClose }: { id: string; onClose: () =>
           </button>
         )}
       </DialogFoot>
-      {installing && d && latest && <InstallConfirmDialog id={d.id} title={d.title} publisher={d.publisher} version={latest.version} risk={latest.risk} reasons={latest.riskReasons} inject={d.manifest ? [...d.manifest.inject, ...d.manifest.optional] : []} hosts={d.manifest?.permissions.network ?? []} onClose={() => setInstalling(false)} onDone={onClose} />}
+      {installing && d && latest && <InstallConfirmDialog id={d.id} title={d.title} publisher={d.publisher} version={latest.version} onClose={() => setInstalling(false)} onDone={onClose} />}
       {reporting && d && <ReportDialog id={d.id} title={d.title} version={latest?.version ?? null} onClose={() => setReporting(false)} />}
     </Dialog>
   );
 }
 
-function InstallConfirmDialog(props: { id: string; title: string; publisher: string; version: string; risk: "low" | "elevated" | "high" | null; reasons: string[]; inject: string[]; hosts: string[]; onClose: () => void; onDone: () => void }) {
+/** What is installed is read on this machine first: nobody else reviewed it. */
+function InstallConfirmDialog(props: { id: string; title: string; publisher: string; version: string; onClose: () => void; onDone: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
+  const inspect = useInspect(props.id, props.version);
   const install = useStoreInstall();
   const [error, setError] = useState<string | null>(null);
+  const read = inspect.data;
   return (
     <Dialog open onOpenChange={(o) => !o && props.onClose()} label={t("plugins.installTitle", { title: props.title, version: props.version })} className="sheet-md">
-      <DialogHead title={t("plugins.installTitle", { title: props.title, version: props.version })} />
+      <DialogHead title={t("plugins.installTitle", { title: props.title, version: props.version })} aside={read ? <TrustTags tier={read.tier} risk={read.risk} /> : undefined} />
       <DialogBody>
-        <div className="stack-3">
-          <p>{t("plugins.installLede")}</p>
-          <Reach reasons={props.reasons} inject={props.inject} hosts={props.hosts.filter((h) => h !== "*")} />
-          {props.risk === "high" && <p style={{ color: "var(--danger)" }}>{t("plugins.highRiskNote", { publisher: props.publisher })}</p>}
+        <div className="stack-3" data-testid="install-inspection">
+          {read?.tier !== "official" && <p>{t("plugins.unreviewedNote")}</p>}
+          {inspect.isPending && <p className="meta-txt">{t("plugins.installReading")}</p>}
+          {inspect.error && <p style={{ color: "var(--danger)" }}>{messageOf(inspect.error)}</p>}
+          {read && (
+            <>
+              <p>{t("plugins.installLede")}</p>
+              <Reach reasons={read.riskReasons} inject={read.inject} hosts={read.hosts.filter((h) => h !== "*")} />
+              {!!read.findings.length && (
+                <>
+                  <Eyebrow>{t("plugins.installFindings")}</Eyebrow>
+                  <Findings findings={read.findings} />
+                </>
+              )}
+              {read.repository && (
+                <button type="button" className="link-btn" onClick={() => openExternal(`${read.repository}/tree/${read.commit}`)}>
+                  {t("plugins.installSource")} <span className="mono meta-txt">{read.commit.slice(0, 7)}</span>
+                </button>
+              )}
+              {read.risk === "high" && <p style={{ color: "var(--danger)" }}>{t("plugins.highRiskNote", { publisher: props.publisher })}</p>}
+            </>
+          )}
           {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
         </div>
       </DialogBody>
@@ -204,7 +203,7 @@ function InstallConfirmDialog(props: { id: string; title: string; publisher: str
         <button
           type="button"
           className="btn btn-primary"
-          disabled={install.isPending}
+          disabled={!read || install.isPending}
           data-testid="store-install-confirm"
           onClick={() =>
             install.mutate(

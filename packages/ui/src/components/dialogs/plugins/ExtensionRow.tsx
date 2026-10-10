@@ -45,7 +45,7 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
         <div className="cfg-name">
           {ext.title} <span className="meta-txt mono">{ext.id}</span> <span className="meta-txt">{t("plugins.version", { version: ext.version })}</span>
           <div className="row plug-tags" style={{ gap: 6, marginTop: 3 }}>
-            <TrustTags tier={ext.tier} risk={ext.risk.level} reviewedAs={null} />
+            <TrustTags tier={ext.tier} risk={ext.risk.level} />
             {ext.pending && (
               <button type="button" className="btn btn-primary btn-xs" onClick={() => setConfirming(true)} data-testid="review-build">
                 {t("plugins.reviewBuild")}

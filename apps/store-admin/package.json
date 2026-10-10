@@ -1,0 +1,24 @@
+{
+  "name": "@tomradex/store-admin",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Tomrade's Community admin tool: reads reports, revokes plugins, and signs Tomrade's own plugins as official",
+  "bin": {
+    "tomrade-store": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "@tomradex/plugin-kit": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

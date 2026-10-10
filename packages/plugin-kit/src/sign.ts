@@ -1,16 +1,14 @@
 import crypto from "node:crypto";
 import { z } from "zod";
 
-/** What the store vouches for, about one exact build of one version. */
+/** Tomrade vouching for one exact build of one version of a plugin it published itself. */
 export const AttestationSchema = z.object({
   v: z.literal(1),
   id: z.string(),
   version: z.string(),
   digest: z.string().regex(/^[0-9a-f]{64}$/),
-  tier: z.enum(["official", "reviewed", "ai-reviewed"]),
+  tier: z.literal("official"),
   risk: z.enum(["low", "elevated", "high"]),
-  /** Where the review report can be read. */
-  report: z.string().optional(),
   issuedAt: z.number(),
   keyId: z.string(),
   signature: z.string()

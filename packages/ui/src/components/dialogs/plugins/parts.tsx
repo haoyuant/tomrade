@@ -4,25 +4,24 @@ import type { Finding } from "@tomradex/plugin-kit";
 import { Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 
-export type TierName = "official" | "reviewed" | "ai-reviewed" | "local" | "dev";
+export type TierName = "official" | "community" | "local" | "dev";
 export type RiskName = "low" | "elevated" | "high";
 
 const TIER: Record<TierName, { label: MessageKey; why: MessageKey; tone: "faint" | "neutral" | "strong" }> = {
   official: { label: "plugins.tierOfficial", why: "plugins.tierOfficialWhy", tone: "strong" },
-  reviewed: { label: "plugins.tierReviewed", why: "plugins.tierReviewedWhy", tone: "strong" },
-  "ai-reviewed": { label: "plugins.tierAiReviewed", why: "plugins.tierAiReviewedWhy", tone: "neutral" },
+  community: { label: "plugins.tierCommunity", why: "plugins.tierCommunityWhy", tone: "neutral" },
   local: { label: "plugins.tierLocal", why: "plugins.tierLocalWhy", tone: "faint" },
   dev: { label: "plugins.tierDev", why: "plugins.tierDevWhy", tone: "faint" }
 };
 
-/** What the store vouches for, and — when it is high — the risk label, which is never hidden behind a tooltip. */
-export function TrustTags({ tier, risk, reviewedAs }: { tier: TierName | null; risk?: RiskName | null; reviewedAs?: string | null }) {
+/** Where a plugin came from, and — when it is high — the risk label, which is never hidden behind a tooltip. */
+export function TrustTags({ tier, risk }: { tier: TierName | null; risk?: RiskName | null }) {
   const { t } = useI18n();
   const spec = tier ? TIER[tier] : null;
   return (
     <>
       {spec && (
-        <Tag tone={spec.tone} title={tier === "reviewed" && reviewedAs ? t("plugins.tierReviewedAsWhy", { version: reviewedAs }) : t(spec.why)}>
+        <Tag tone={spec.tone} title={t(spec.why)}>
           {t(spec.label)}
         </Tag>
       )}

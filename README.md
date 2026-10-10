@@ -66,11 +66,11 @@ packages/plugin-kit   packages, digests, signed attestations, the lock file, the
 packages/plugin-cli   tomrade-plugin: init, build, dev, test, check, pack — and the sandbox agent-written code runs in
 packages/plugin-host  the Tomrade a plugin is tested against, kept out of the CLI so the CLI carries no Tomrade code
 packages/plugin-studio ctx tools for an agent to write a plugin, which loads only at a build a person confirmed
-packages/community    ctx.community    the store: browse, install (attestation-checked), update, revoke, report, publish
+packages/community    ctx.community    the store: browse, read before installing, install (digest-checked), update, revoke, report, publish
 packages/testkit      boots a fresh in-memory context for tests
 packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
 examples/stale        an extension that edits no first-party file
-apps/review           the store's review worker and admin tool
+apps/store-admin      the store's admin tool: reports, revocations, official signatures
 design/               OpenDesign prototype — the visual authority for the UI
 docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing)
 ```
