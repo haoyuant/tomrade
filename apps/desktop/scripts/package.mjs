@@ -13,7 +13,9 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.resolve(here, "..");
 const root = path.resolve(desktop, "../..");
-const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: "inherit" });
+// pnpm is a .cmd on Windows, which Node runs only through a shell.
+const run = (cmd, args, cwd = root) =>
+  execFileSync(cmd, args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
 
 run("pnpm", ["build:backend"]);
 run("pnpm", ["--filter", "@tomradex/ui", "build"]);
