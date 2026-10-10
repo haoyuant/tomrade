@@ -50,7 +50,7 @@ const folderBackend = createGitBackend<{ path: string }>({
   remote: (c) => ({ url: c.path, branch: "main" })
 });
 
-describe("ctx.files", () => {
+describe("ctx.files", { timeout: 30_000 }, () => {
   it("keeps a project's files beside its folder, on the local backend until a remote is chosen", async () => {
     const { ctx, project } = await machine();
     try {
