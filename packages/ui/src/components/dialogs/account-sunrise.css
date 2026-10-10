@@ -43,17 +43,6 @@
   background: radial-gradient(ellipse 65% 46% at 50% var(--poster-horizon), #edc98950, transparent 100%);
 }
 .account-sunrise__sky { position: absolute; inset: 0 0 auto; height: var(--poster-horizon); overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
-.account-sunrise__rays {
-  position: absolute;
-  width: max(220vmax, 1600px);
-  aspect-ratio: 1;
-  left: 50%;
-  top: 100%;
-  translate: -50% -50%;
-  background: repeating-conic-gradient(from -6deg, #b2523426 0deg 9deg, transparent 9deg 22.5deg);
-  mask-image: radial-gradient(ellipse closest-side, #000 5%, #0009 28%, transparent 65%);
-  animation: account-rays-reveal 2.8s ease-out both;
-}
 .account-sunrise__sun {
   position: absolute;
   width: clamp(200px, 29vh, 290px);
@@ -61,12 +50,21 @@
   bottom: -9px;
   left: 50%;
   translate: -50% 0;
-  /* The original cutout is printed directly onto the sky. */
-  mix-blend-mode: multiply;
-  mask-image: linear-gradient(#000 72%, transparent 100%);
-  animation: account-sun-rise 1.9s cubic-bezier(.16,.65,.25,1) both;
 }
-.account-sunrise__sun img { display: block; width: 100%; height: 100%; object-fit: contain; filter: sepia(1) saturate(.65); }
+/* Centred on the logo and sized in logo widths (200 of AccountSunrise's units).
+   Entrance, in order: the cat rises over the horizon, the red sun fades in behind it,
+   then the rays shoot out from behind the sun. */
+.account-sunrise__glow, .account-sunrise__rays, .account-sunrise__disk { position: absolute; left: 50%; top: 50%; translate: -50% -50%; aspect-ratio: 1; }
+.account-sunrise__glow { width: 520%; border-radius: 50%; background: radial-gradient(closest-side, #f6d58fbf, #f1c47e59 35%, #f1c47e00); animation: account-sun-fade 2.2s .7s cubic-bezier(.33,0,.2,1) both; }
+.account-sunrise__disk { width: 125%; animation: account-sun-fade 1.85s .8s cubic-bezier(.33,0,.2,1) both; }
+/* After the entrance the rays turn about a degree every few seconds and a band of light runs out
+   along them now and then: alive, but never enough to pull the eye from the form. */
+.account-sunrise__rays { width: 1600%; animation: account-rays-burst 3.05s 2.55s cubic-bezier(.33,1,.68,1) both, account-rays-turn 1200s linear infinite; }
+.account-sunrise__rays svg, .account-sunrise__glint { position: absolute; inset: 0; width: 100%; height: 100%; }
+.account-sunrise__glint { mask-size: 100% 100%; }
+.account-sunrise__glint i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(closest-side, #e9a44700 78%, #e9a44799 92%, #e9a44700); opacity: 0; animation: account-rays-glint 9s 5.45s linear infinite; }
+/* The original cutout is printed directly onto the sun. */
+.account-sunrise__sun img { position: relative; display: block; width: 100%; height: 100%; object-fit: contain; filter: sepia(1) saturate(.65); mix-blend-mode: multiply; mask-image: linear-gradient(#000 72%, transparent 100%); animation: account-cat-rise 2.05s cubic-bezier(.22,1,.36,1) both; }
 .account-sunrise__sea {
   position: absolute;
   top: calc(var(--poster-horizon) - 23px);
@@ -78,11 +76,11 @@
 .account-sunrise__wave--back { fill: #b9683820; animation: account-wave 8s ease-in-out 2 alternate; }
 .account-sunrise__wave--front { fill: #bc754416; animation: account-wave 10s ease-in-out 2 alternate-reverse; }
 .account-gate__content { position: relative; width: min(100% - 48px, 380px); margin: 0 auto; padding: calc(var(--poster-horizon) + 10px) 0 48px; }
-.account-gate__brand { text-align: center; animation: account-form-rise 1s .7s both; }
+.account-gate__brand { text-align: center; animation: account-form-rise .85s .6s both; }
 .account-gate__brand h1 { margin: 0; font: 800 clamp(32px, 5vw, 42px)/1.1 sans-serif; letter-spacing: .19em; text-indent: .19em; color: var(--poster-red); }
 .account-gate__brand p { margin: 13px 0 0; font: 10px/1.5 sans-serif; letter-spacing: .13em; color: var(--poster-muted); }
 .account-gate__brand p span { margin: 0 9px; color: var(--poster-red); }
-.account-gate__form { margin-top: 32px; animation: account-form-rise 1s 1.15s both; }
+.account-gate__form { margin-top: 32px; animation: account-form-rise .85s 1s both; }
 .account-gate__form > .panel { padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .account-gate__form .sec-title { text-align: center; font-size: var(--text-md); font-weight: 400; }
 .account-gate__form .meta-txt { text-align: center; line-height: 1.7; }
@@ -98,8 +96,12 @@
 .account-gate__form [role="status"], .account-gate__form [role="alert"] { font-size: 12px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
 /* Keyboard users can enter immediately, even during the entrance. */
 .account-gate__form:focus-within { animation: none; }
-@keyframes account-sun-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-@keyframes account-rays-reveal { from { opacity: 0; transform: rotate(-5deg); } to { opacity: 1; transform: rotate(0); } }
+@keyframes account-cat-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes account-sun-fade { from { opacity: 0; scale: .88; } to { opacity: 1; scale: 1; } }
+/* From .2 the ray bases start hidden behind the sun, so the rays emerge from it. */
+@keyframes account-rays-burst { from { opacity: 0; scale: .2; } 30% { opacity: 1; } to { opacity: 1; scale: 1; } }
+@keyframes account-rays-turn { to { rotate: 360deg; } }
+@keyframes account-rays-glint { from { scale: .09; opacity: 0; } 8% { opacity: 1; } 55% { opacity: .7; } 70%, to { scale: .75; opacity: 0; } }
 @keyframes account-form-rise { from { transform: translateY(26px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes account-wave { from { transform: translateX(-20px); } to { transform: translateX(20px); } }
 @media (max-height: 720px) {

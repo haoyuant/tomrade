@@ -1,11 +1,78 @@
 import "./account-sunrise.css";
 
-/** Full-window scenery. The sky clips the logo as it rises over the horizon. */
+/* Poster-style 红太阳: a red sun behind the logo and golden rays that start at a ring
+   around it and run out to the window edge, narrowing as they go. Broad wedges that
+   widen from the centre would read as the Rising Sun flag. */
+const RAY_COUNT = 36;
+const RAY_BASE = 128;
+/** Each ray emerges from transparency over this stretch past its base instead of starting with a cut edge. */
+const RAY_FADE_IN = 110;
+/** Past the corners of a 4K-wide window; account-sunrise.css sizes the ray layer to match. */
+const RAY_REACH = 1600;
+
+/** Logo-centred units: the logo spans -100..100. */
+function rays(spec: (i: number) => [baseHalfWidth: number, tipHalfWidth: number] | undefined) {
+  const n = (v: number) => v.toFixed(1);
+  let d = "";
+  for (let i = 0; i < RAY_COUNT; i++) {
+    const ray = spec(i);
+    if (!ray) continue;
+    const [base, tip] = ray;
+    const angle = (i / RAY_COUNT) * 2 * Math.PI - Math.PI / 2;
+    const c = Math.cos(angle), s = Math.sin(angle);
+    const at = (r: number, half: number) => `${n(r * c - half * s)} ${n(r * s + half * c)}`;
+    d += `M${at(RAY_BASE, base)}L${at(RAY_REACH, tip)}L${at(RAY_REACH, -tip)}L${at(RAY_BASE, -base)}Z`;
+  }
+  return d;
+}
+const WIDE_RAYS = rays(i => i % 2 ? undefined : [10, 5]);
+const NARROW_RAYS = rays(i => i % 2 ? [6.5, 3.2] : undefined);
+const RAY_BOX = `${-RAY_REACH} ${-RAY_REACH} ${2 * RAY_REACH} ${2 * RAY_REACH}`;
+const RAY_START = RAY_BASE / RAY_REACH;
+const RAY_FULL = (RAY_BASE + RAY_FADE_IN) / RAY_REACH;
+// The glint is masked by the rays rather than clipped inside the SVG, so turning and
+// glinting both stay compositor transforms instead of repainting the window each frame.
+const RAY_MASK = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${RAY_BOX}"><radialGradient id="g" r="${RAY_REACH}" cx="0" cy="0" gradientUnits="userSpaceOnUse"><stop offset="${RAY_START}" stop-opacity="0"/><stop offset="${RAY_FULL}"/></radialGradient><path fill="url(#g)" d="${WIDE_RAYS}${NARROW_RAYS}"/></svg>`)}")`;
+
+/** Full-window scenery. The sky clips the sun as it rises over the horizon. */
 export function AccountSunrise() {
   return <div className="account-sunrise" aria-hidden="true">
     <div className="account-sunrise__sky">
-      <div className="account-sunrise__rays" />
       <div className="account-sunrise__sun">
+        <div className="account-sunrise__glow" />
+        <div className="account-sunrise__rays">
+          <svg viewBox={RAY_BOX}>
+            <defs>
+              <radialGradient id="account-sun-wide" r={RAY_REACH} cx="0" cy="0" gradientUnits="userSpaceOnUse">
+                <stop offset={RAY_START} stopColor="#cf7a36" stopOpacity="0" />
+                <stop offset={RAY_FULL} stopColor="#cf7a36" stopOpacity=".62" />
+                <stop offset=".38" stopColor="#dc9a48" stopOpacity=".36" />
+                <stop offset="1" stopColor="#e6b25c" stopOpacity=".2" />
+              </radialGradient>
+              <radialGradient id="account-sun-narrow" r={RAY_REACH} cx="0" cy="0" gradientUnits="userSpaceOnUse">
+                <stop offset={RAY_START} stopColor="#e4a64e" stopOpacity="0" />
+                <stop offset={RAY_FULL} stopColor="#e4a64e" stopOpacity=".55" />
+                <stop offset=".38" stopColor="#e8b260" stopOpacity=".3" />
+                <stop offset="1" stopColor="#ecc070" stopOpacity=".15" />
+              </radialGradient>
+            </defs>
+            <path d={WIDE_RAYS} fill="url(#account-sun-wide)" />
+            <path d={NARROW_RAYS} fill="url(#account-sun-narrow)" />
+          </svg>
+          <div className="account-sunrise__glint" style={{ maskImage: RAY_MASK }}><i /></div>
+        </div>
+        <svg className="account-sunrise__disk" viewBox="-125 -125 250 250">
+          <defs>
+            <radialGradient id="account-sun-disk" r="125" cx="0" cy="-20" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#f7d98e" />
+              <stop offset=".55" stopColor="#efa85a" />
+              <stop offset="1" stopColor="#d4593a" />
+            </radialGradient>
+          </defs>
+          <circle r="124" fill="none" stroke="#c4553a" strokeOpacity=".38" strokeWidth="1.2" />
+          <circle r="116" fill="none" stroke="#c4553a" strokeOpacity=".6" strokeWidth="2" />
+          <circle r="110" fill="url(#account-sun-disk)" opacity=".9" />
+        </svg>
         <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" draggable={false} />
       </div>
     </div>
