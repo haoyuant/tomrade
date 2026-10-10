@@ -197,6 +197,9 @@ plugins:
   # channels, listeners, timers and desktop surface together.
   - id: pet
     name: "@tomradex/pet"
+    config:
+      # Pets made from the user's own images stay on this machine.
+      profilesDir: "${userData}/pet-profiles"
   - id: community
     name: "@tomradex/community"
   - id: plugin-studio

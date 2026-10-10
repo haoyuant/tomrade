@@ -1037,7 +1037,7 @@ ctx.contributions.badge({ id: "hello", compute: (items) => ({ [items[0]?.id]: [{
 ctx.contributions.statusItem({ id: "hello", text: ({ projectId }) => "hello" });
 ctx.contributions.section({ id: "hello", title: "Hello", render: (item) => ({ rows: [{ label: "Key", value: item.key }] }) });
 ctx.contributions.graph({ id: "hello", title: "Hello", icon: "i-graph", compute: (items) => items.flatMap((i) => (i.parentId ? [{ from: i.parentId, to: i.id }] : [])) });
-ctx.contributions.assistantAccessory({ id: "hello.sprite", kind: "sprite-pet", title: "Helper", stateChannel: "hello.sprite.state", changedChannel: "hello.sprite.changed", width: 96, height: 72, animations: { idle: { source: "data:image/png;base64,…", frames: 4, frameWidth: 320, frameHeight: 240, frameMs: 200 } } });
+ctx.contributions.assistantAccessory({ id: "hello.pet", kind: "animated-pet", title: "Helper", stateChannel: "hello.pet.state", changedChannel: "hello.pet.changed", width: 96, height: 72, animations: { idle: { source: "data:image/gif;base64,…", type: "image/gif", box: { x: 12, y: 30, width: 280, height: 200 } } } });
 ```
 
 Every callback may return a Promise; the renderer's refresh waits for it. One
@@ -1056,10 +1056,14 @@ the mono face, and `state` puts a mark before the value — `live` breathes,
 `waiting` blinks, `ended`/`lost` are hollow — still declarative, still drawn by
 the renderer.
 
-A `sprite-pet` **assistant accessory** reserves the renderer-owned stage directly
-above the composer. Its strip URLs, frame geometry and timing are data; the
-renderer owns animation and accessibility, and removes the stage when the
-contribution disappears. `stateChannel` returns `{ mood }` for a selected
+An `animated-pet` **assistant accessory** reserves the renderer-owned stage
+directly above the composer. Each state is a still or animated image (GIF,
+WebP, APNG, PNG, JPEG or AVIF) given as a URL with its MIME `type`; the
+renderer decodes it and shows every frame for its own duration. `box` names the
+part worth showing in image pixels — it is fitted into the stage at 90% of its
+height, bottom-aligned — and `pixelated` asks for nearest-neighbour scaling.
+The renderer owns animation and accessibility, holds the first frame under
+reduced motion, and removes the stage when the contribution disappears. `stateChannel` returns `{ mood }` for a selected
 thread and `changedChannel` broadcasts `(threadId, { mood })`; naming both in
 the descriptor keeps the renderer independent of the feature package.
 `@tomradex/pet` is the shipped example.

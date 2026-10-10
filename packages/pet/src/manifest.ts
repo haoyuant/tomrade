@@ -1,52 +1,41 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { AssistantAccessory, SpriteAnimation } from "@tomradex/contributions";
-import type { PetMood } from "./state.js";
+import type { AccessoryAnimation, AssistantAccessory } from "@tomradex/contributions";
+import type { ResolvedImage } from "./profiles.js";
+import { PET_MOODS, type PetMood } from "./state.js";
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const PET_ASSET_DIR = path.join(packageDir, "assets");
 export const PET_DESKTOP_URL = pathToFileURL(path.join(PET_ASSET_DIR, "desktop.html")).href;
 
-interface AssetAnimation extends SpriteAnimation {
-  file: string;
-}
+/** The built-in pet: memes cropped to their content, each keeping its own frame timings. */
+export const BUILT_IN_IMAGES = Object.fromEntries(
+  PET_MOODS.map((mood) => [mood, { path: path.join(PET_ASSET_DIR, `${mood}.webp`), type: "image/webp" }])
+) as Record<PetMood, { path: string; type: string }>;
 
-export const PET_ANIMATIONS: Record<PetMood, AssetAnimation> = {
-  idle: { file: "cat-idle-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 360 },
-  thinking: { file: "cat-thinking-strip.png", source: "", frames: 12, frameWidth: 352, frameHeight: 280, frameMs: 200 },
-  working: { file: "cat-working-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 150 },
-  waiting: { file: "cat-waiting-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 420 },
-  success: { file: "cat-success-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 190 },
-  error: { file: "cat-error-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 280 },
-  walk: { file: "cat-walk-strip.png", source: "", frames: 4, frameWidth: 352, frameHeight: 280, frameMs: 140 }
-};
-
-let accessory: AssistantAccessory | undefined;
+const animation = (image: ResolvedImage, source: string): AccessoryAnimation => ({
+  source,
+  type: image.type,
+  ...(image.box ? { box: image.box } : {}),
+  ...(image.pixelated ? { pixelated: true } : {})
+});
 
 /** Data URLs work in both the packaged file renderer and Vite's development origin. */
-export function embeddedAccessory(): AssistantAccessory {
-  if (accessory) return accessory;
-  const animations = Object.fromEntries(
-    Object.entries(PET_ANIMATIONS).map(([mood, animation]) => {
-      const { file, ...view } = animation;
-      return [mood, { ...view, source: `data:image/png;base64,${fs.readFileSync(path.join(PET_ASSET_DIR, file)).toString("base64")}` }];
-    })
-  );
-  accessory = {
+export const dataAnimation = (image: ResolvedImage) => animation(image, `data:${image.type};base64,${fs.readFileSync(image.path).toString("base64")}`);
+
+/** The desktop surface is a file document and reads the images where they are. */
+export const fileAnimation = (image: ResolvedImage) => animation(image, pathToFileURL(image.path).href);
+
+export function embeddedAccessory(images: Record<PetMood, ResolvedImage>): AssistantAccessory {
+  return {
     id: "tomrade.pet",
-    kind: "sprite-pet",
+    kind: "animated-pet",
     title: "Tomrade pet",
     stateChannel: "pet.state",
     changedChannel: "pet.changed",
     width: 151,
     height: 120,
-    animations
+    animations: Object.fromEntries(PET_MOODS.map((mood) => [mood, dataAnimation(images[mood])]))
   };
-  return accessory;
-}
-
-export function desktopAnimation(mood: PetMood) {
-  const animation = PET_ANIMATIONS[mood];
-  return { source: animation.file, frames: animation.frames, frameWidth: animation.frameWidth, frameHeight: animation.frameHeight, frameMs: animation.frameMs };
 }

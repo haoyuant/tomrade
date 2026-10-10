@@ -128,6 +128,8 @@ declare module "cordis" {
   interface Events {
     /** Main-process lifecycle stream for feature plugins; renderer IPC is only one consumer. */
     "agent/event"(threadId: string, event: AgentEvent): void;
+    /** The assistant panel switched to this thread, for observers that follow the conversation on screen. */
+    "agent/showing"(threadId: string): void;
   }
 }
 
@@ -151,6 +153,7 @@ declare module "@tomradex/ipc" {
     "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
+    "agent.showing": (threadId: string) => void;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
     "agent.engines": () => EngineView[];
     "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
@@ -248,6 +251,7 @@ export class Agent extends Service {
   private permissions = new Map<string, { pending: PendingView; answer(value: string | null): void }>();
   private permissionQueues = new Map<string, Promise<unknown>>();
   private activeByThread = new Map<string, RunCtx>();
+  private shownThread: string | null = null;
   private activeById = new Map<string, RunCtx>();
   private mediaStore?: AgentMediaStore;
 
@@ -295,6 +299,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
+      ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
       ctx.ipc.handle("agent.engines", () => ctx.agent.engineViews());
       ctx.ipc.handle("agent.setEngine", (projectId, threadId, engineId) => ctx.agent.setEngine(projectId, threadId, engineId));
@@ -386,6 +391,17 @@ export class Agent extends Service {
       cards: this.store.cards(projectId, threadId),
       pending: this.permissions.get(threadId)?.pending ?? (pending ? this.pendingView(pending) : null)
     };
+  }
+
+  /** The thread the assistant panel last showed; it outlives the panel, so leaving a project keeps it. */
+  showing(): string | null {
+    return this.shownThread;
+  }
+
+  show(threadId: string): void {
+    if (threadId === this.shownThread) return;
+    this.shownThread = threadId;
+    this.ctx.emit("agent/showing", threadId);
   }
 
   activities(): AgentActivity[] {

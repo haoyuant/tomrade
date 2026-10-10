@@ -11,6 +11,7 @@ import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { HubPane } from "./HubPane";
 import { McpServersPane } from "./McpServersPane";
+import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
@@ -89,7 +90,7 @@ function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
 }
 
 /** A plugin's settings pane. Edits commit as they are made and fall back to the stored value if refused. */
-function PluginPane({ section, stored, onCommit }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void }) {
+function PluginPane({ section, stored, onCommit, children }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void; children?: ReactNode }) {
   const [value, setValue] = useState<unknown>(stored);
   useEffect(() => setValue(stored), [stored]);
   const schema = section.schema as JsonSchema;
@@ -119,9 +120,15 @@ function PluginPane({ section, stored, onCommit }: { section: SettingsSectionVie
           <SchemaField id={section.id} name={section.id} schema={schema} value={value} onChange={commit} />
         )}
       </div>
+      {children}
     </>
   );
 }
+
+/** What a plugin's pane shows beyond its schema, for the plugins whose settings are more than fields. */
+const PANE_EXTRAS: Record<string, () => ReactNode> = {
+  pet: () => <PetProfilesPanel />
+};
 
 function TokenEditor({ token, value, disabled, onChange }: { token: ThemeTokenName; value: string; disabled: boolean; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
@@ -481,7 +488,9 @@ export function SettingsDialog({
             section={section}
             stored={settings.data?.[section.id]}
             onCommit={(next, revert) => settings.data && save.mutate({ ...settings.data, [section.id]: next }, { onError: revert })}
-          />
+          >
+            {PANE_EXTRAS[section.id]?.()}
+          </PluginPane>
         )
       })
     ),

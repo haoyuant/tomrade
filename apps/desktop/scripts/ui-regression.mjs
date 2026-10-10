@@ -878,7 +878,7 @@ const run = async () => {
   await sleep(1200);
   check("switching the pet back on restores its accessory", !!ctx.get("pet") && ctx.contributions.assistantAccessories().some((a) => a.id === "tomrade.pet"));
   const appSettings = ctx.settings.get();
-  ctx.settings.set({ ...appSettings, pet: { ...appSettings.pet, displayMode: "desktop", roam: false } });
+  ctx.settings.set({ ...appSettings, pet: { ...appSettings.pet, displayMode: "desktop" } });
   await sleep(900);
   const petWindow = BrowserWindow.getAllWindows().find((candidate) => candidate !== win && candidate.getTitle() === "Tomrade pet");
   check("desktop mode owns a separate always-on-top window", !!petWindow?.isAlwaysOnTop());

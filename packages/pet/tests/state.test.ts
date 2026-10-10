@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent, RunView } from "@tomradex/agent";
-import { desktopThreadState, emptyPetModel, moodForThread, reducePetModel } from "@tomradex/pet";
+import { emptyPetModel, moodForThread, reducePetModel } from "@tomradex/pet";
 
 const run = (id: string, status: RunView["status"]): RunView => ({
   id,
@@ -27,7 +27,7 @@ describe("pet state", () => {
     model = reducePetModel(model, "thread", { type: "progress", runId: "r1", activity: "list_items" });
     expect(moodForThread(model, "thread")).toBe("working");
     model = reducePetModel(model, "thread", { type: "progress", runId: "r1", activity: null });
-    expect(moodForThread(model, "thread")).toBe("thinking");
+    expect(moodForThread(model, "thread")).toBe("working");
     model = reducePetModel(model, "thread", { type: "delta", runId: "r1", text: "hello" });
     expect(moodForThread(model, "thread")).toBe("working");
     model = reducePetModel(model, "thread", { type: "pending", pending: { threadId: "thread", kind: "ask", workflow: null, question: { id: "q", text: "Continue?" }, accepts: "text" } });
@@ -36,6 +36,36 @@ describe("pet state", () => {
     expect(moodForThread(model, "thread")).toBe("success");
     model = reducePetModel(model, "thread", { type: "done", run: run("r2", "error") });
     expect(moodForThread(model, "thread")).toBe("error");
+  });
+
+  it("thinks only until each turn's first output", () => {
+    const ask = { threadId: "thread", kind: "ask" as const, workflow: null, question: { id: "q", text: "Allow?" }, accepts: "text" as const };
+    let model = apply([{ type: "run", run: run("r1", "running") }]);
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1", usage: { inputTokens: 10, outputTokens: 0 } });
+    expect(moodForThread(model, "thread")).toBe("thinking");
+    model = reducePetModel(model, "thread", { type: "delta", runId: "r1", text: "Let me look" });
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1", activity: "list_items" });
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1", activity: null });
+    expect(moodForThread(model, "thread")).toBe("working");
+    model = reducePetModel(model, "thread", { type: "pending", pending: ask });
+    expect(moodForThread(model, "thread")).toBe("waiting");
+    model = reducePetModel(model, "thread", { type: "pending", pending: null });
+    expect(moodForThread(model, "thread")).toBe("working");
+    model = reducePetModel(model, "thread", { type: "done", run: run("r1", "done") });
+    model = reducePetModel(model, "thread", { type: "run", run: run("r2", "running") });
+    expect(moodForThread(model, "thread")).toBe("thinking");
+  });
+
+  it("ignores a finished run's late ticks and a question cleared after it", () => {
+    let model = apply([{ type: "run", run: run("r1", "running") }, { type: "delta", runId: "r1", text: "x" }, { type: "done", run: run("r1", "cancelled") }]);
+    const ended = model;
+    model = reducePetModel(model, "thread", { type: "progress", runId: "r1", activity: null });
+    expect(model).toBe(ended);
+    model = reducePetModel(model, "thread", { type: "run", run: run("r2", "running") });
+    model = reducePetModel(model, "thread", { type: "done", run: run("r2", "asked") });
+    expect(moodForThread(model, "thread")).toBe("waiting");
+    model = reducePetModel(model, "thread", { type: "pending", pending: null });
+    expect(moodForThread(model, "thread")).toBe("idle");
   });
 
   it("stays on working through the delta's own usage-only progress tick", () => {
@@ -51,7 +81,7 @@ describe("pet state", () => {
     expect(moodForThread(model, "thread")).toBe("working");
   });
 
-  it("ignores stale progress and chooses a deterministic desktop state", () => {
+  it("ignores stale progress and keeps each thread's state to itself", () => {
     let model = apply([{ type: "run", run: run("current", "running") }]);
     const unchanged = reducePetModel(model, "thread", { type: "delta", runId: "old", text: "late" });
     expect(unchanged).toBe(model);
@@ -59,8 +89,6 @@ describe("pet state", () => {
       type: "pending",
       pending: { threadId: "waiting-thread", kind: "ask", workflow: null, question: { id: "q", text: "Need input" }, accepts: "text" }
     });
-    expect(desktopThreadState(model)).toEqual({ threadId: "waiting-thread", mood: "waiting" });
-    model = reducePetModel(model, "error-thread", { type: "done", run: { ...run("failed", "error"), threadId: "error-thread" } });
-    expect(desktopThreadState(model)).toEqual({ threadId: "error-thread", mood: "error" });
+    expect([moodForThread(model, "waiting-thread"), moodForThread(model, "thread"), moodForThread(model, null)]).toEqual(["waiting", "thinking", "idle"]);
   });
 });

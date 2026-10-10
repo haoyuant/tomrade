@@ -284,6 +284,10 @@ export function AgentPanel({
   const accessories = useAssistantAccessories();
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
   const threadId = (chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
+  // Whatever follows the conversation on screen — the desktop pet — is told which one this is.
+  useEffect(() => {
+    if (threadId) void invoke("agent.showing", threadId).catch(() => {});
+  }, [threadId]);
   const detail = useAgentThread(projectId, threadId);
   const engines = useEngines();
   const newThread = useNewThread(projectId);

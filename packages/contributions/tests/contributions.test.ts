@@ -17,13 +17,13 @@ describe("contributions", () => {
         ctx.contributions.section({ id: "demo", title: "Demo", render: (item) => (item.labels.includes("bug") ? { rows: [{ label: "Severity", value: "high" }] } : null) });
         ctx.contributions.assistantAccessory({
           id: "demo.pet",
-          kind: "sprite-pet",
+          kind: "animated-pet",
           title: "Demo pet",
           stateChannel: "demo.pet.state",
           changedChannel: "demo.pet.changed",
           width: 32,
           height: 24,
-          animations: { idle: { source: "data:image/png;base64,demo", frames: 4, frameWidth: 32, frameHeight: 24, frameMs: 200 } }
+          animations: { idle: { source: "data:image/png;base64,demo", type: "image/png", box: { x: 0, y: 2, width: 32, height: 20 } } }
         });
       }
     });
@@ -37,13 +37,13 @@ describe("contributions", () => {
     expect(ctx.contributions.assistantAccessories()).toEqual([
       {
         id: "demo.pet",
-        kind: "sprite-pet",
+        kind: "animated-pet",
         title: "Demo pet",
         stateChannel: "demo.pet.state",
         changedChannel: "demo.pet.changed",
         width: 32,
         height: 24,
-        animations: { idle: { source: "data:image/png;base64,demo", frames: 4, frameWidth: 32, frameHeight: 24, frameMs: 200 } }
+        animations: { idle: { source: "data:image/png;base64,demo", type: "image/png", box: { x: 0, y: 2, width: 32, height: 20 } } }
       }
     ]);
 
