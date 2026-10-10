@@ -13,7 +13,8 @@ const keys = {
   updates: ["community", "updates"] as const,
   revoked: ["community", "revoked"] as const,
   account: ["community", "account"] as const,
-  submissions: ["community", "submissions"] as const,
+  published: ["community", "published"] as const,
+  inspect: (id: string, version: string) => ["community", "inspect", id, version] as const,
   studio: ["studio"] as const,
   review: (name: string) => ["studio", "review", name] as const,
   snapshots: (name: string) => ["studio", "snapshots", name] as const
@@ -59,7 +60,9 @@ export const useCommunityPlugin = (id: string | null) => useQuery({ queryKey: ke
 export const useUpdates = () => useQuery({ queryKey: keys.updates, queryFn: () => invoke("community.updates"), retry: false });
 export const useRevoked = () => useQuery({ queryKey: keys.revoked, queryFn: () => invoke("community.revoked") });
 export const useCommunityAccount = () => useQuery({ queryKey: keys.account, queryFn: () => invoke("community.account"), retry: false });
-export const useSubmissions = (enabled: boolean) => useQuery({ queryKey: keys.submissions, queryFn: () => invoke("community.submissions"), enabled, retry: false, refetchInterval: 20_000 });
+export const usePublished = (enabled: boolean) => useQuery({ queryKey: keys.published, queryFn: () => invoke("community.published"), enabled, retry: false });
+/** Downloads the package and reads it here; the install that follows reuses the download. */
+export const useInspect = (id: string, version: string) => useQuery({ queryKey: keys.inspect(id, version), queryFn: () => invoke("community.inspect", id, version), retry: false, staleTime: 300_000 });
 
 function useCommunityMutation<A, R>(fn: (args: A) => Promise<R>) {
   const qc = useQueryClient();
@@ -70,7 +73,6 @@ export const useReport = () => useCommunityMutation((a: { id: string; version: s
 export const useLinkGitHub = () => useCommunityMutation(() => invoke("community.linkGitHub"));
 export const useBecomePublisher = () => useCommunityMutation(() => invoke("community.becomePublisher"));
 export const usePublish = () => useCommunityMutation((dir: string) => invoke("community.publish", dir));
-export const useRequestReview = () => useCommunityMutation((a: { id: string; version: string }) => invoke("community.requestReview", a.id, a.version));
 
 export const useWorkspaces = () => useQuery({ queryKey: keys.studio, queryFn: () => invoke("studio.list") });
 export const useBuildReview = (name: string | null) => useQuery({ queryKey: keys.review(name ?? ""), queryFn: () => invoke("studio.review", name!), enabled: !!name, staleTime: 0 });

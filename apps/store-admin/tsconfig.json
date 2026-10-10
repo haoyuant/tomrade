@@ -12,12 +12,6 @@
   ],
   "references": [
     {
-      "path": "../../packages/community"
-    },
-    {
-      "path": "../../packages/plugin-cli"
-    },
-    {
       "path": "../../packages/plugin-kit"
     },
     {

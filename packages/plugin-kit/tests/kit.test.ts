@@ -58,11 +58,11 @@ describe("the plugin package", () => {
   it("trusts an attestation only for the digest it names and only under a known key", () => {
     const key = generateSigningKey();
     const digest = "a".repeat(64);
-    const claims = { v: 1 as const, id: "someone/x", version: "1.0.0", digest, tier: "ai-reviewed" as const, risk: "low" as const, issuedAt: 1 };
+    const claims = { v: 1 as const, id: "someone/x", version: "1.0.0", digest, tier: "official" as const, risk: "low" as const, issuedAt: 1 };
     const signed = attest(claims, key.privateKey);
     expect(verifyAttestation(signed, digest, { [key.keyId]: key.publicKey })).not.toBeNull();
     expect(verifyAttestation(signed, "b".repeat(64), { [key.keyId]: key.publicKey })).toBeNull();
-    expect(verifyAttestation({ ...signed, tier: "official" }, digest, { [key.keyId]: key.publicKey })).toBeNull();
+    expect(verifyAttestation({ ...signed, version: "2.0.0" }, digest, { [key.keyId]: key.publicKey })).toBeNull();
     expect(verifyAttestation(signed, digest, { [generateSigningKey().keyId]: key.publicKey })).toBeNull();
   });
 
@@ -72,6 +72,21 @@ describe("the plugin package", () => {
     const [entry] = readLock(file).plugins;
     expect(tierOf(entry!)).toBe("local");
     expect(tierOf({ ...entry!, source: "studio" })).toBe("dev");
+    expect(tierOf({ ...entry!, source: "store" })).toBe("community");
+    expect(tierOf({ ...entry!, source: "store", modified: true })).toBe("local");
+    const key = generateSigningKey();
+    const official = attest({ v: 1, id: "someone/x", version: "1.0.0", digest: "a".repeat(64), tier: "official", risk: "low", issuedAt: 1 }, key.privateKey);
+    expect(tierOf({ ...entry!, source: "store", attestation: official })).toBe("official");
+  });
+
+  it("reads a lock written when the store still reviewed plugins, dropping the attestation it no longer understands", () => {
+    const file = path.join(tmp, "lock-old", "plugins.lock.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const reviewed = { v: 1, id: "someone/x", version: "1.0.0", digest: "a".repeat(64), tier: "ai-reviewed", risk: "low", issuedAt: 1, keyId: "k", signature: "s" };
+    fs.writeFileSync(file, JSON.stringify({ v: 1, plugins: [{ id: "someone/x", version: "1.0.0", dir: "/x", digest: "d", source: "store", attestation: reviewed, installedAt: 1, updatedAt: 1 }] }));
+    const [entry] = readLock(file).plugins;
+    expect(entry!.attestation).toBeNull();
+    expect(tierOf(entry!)).toBe("community");
   });
 });
 

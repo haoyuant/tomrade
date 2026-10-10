@@ -14,7 +14,7 @@ You are writing a Tomrade plugin for the person you are working with. It runs in
    - Name only the services you use in `inject`; use `optional` + `ctx.when` for ones that may be absent.
    - Writes never take an author; the host records who wrote them. Do not write the app's own tables with SQL — use `ctx.items` / `ctx.fields`.
    - Render callbacks (badges, sections, status items, graphs) must answer in under two seconds: read once per call, not once per item.
-   - Declare what the code really does in `tomrade-plugin.json` → `permissions` (`network` hosts, `fs`, `exec`). Undeclared behaviour is flagged in review.
+   - Declare what the code really does in `tomrade-plugin.json` → `permissions` (`network` hosts, `fs`, `exec`). Undeclared behaviour is flagged to whoever installs it.
 4. **Write a scenario** in `src/test.ts` that creates issues and checks the behaviour through `t.tool`, `t.badges`, `t.sections`, `t.statusItems`, `t.command`, `t.check(name, ok, detail)`.
 5. **Build and test**: plugin_build, then plugin_test. Fix every failure. plugin_test runs the plugin sandboxed against a throwaway project — nothing it does touches the person's data.
 6. **Check**: plugin_check. Clear every problem; explain any remaining finding to the person in one line each.

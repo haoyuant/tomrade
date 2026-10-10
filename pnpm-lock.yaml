@@ -181,32 +181,17 @@ importers:
         specifier: ^8.0.1
         version: 8.0.5(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
 
-  apps/review:
+  apps/store-admin:
     dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.122.0
-        version: 0.122.0(zod@4.4.3)
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
-      '@tomradex/community':
-        specifier: workspace:*
-        version: link:../../packages/community
-      '@tomradex/plugin-cli':
-        specifier: workspace:*
-        version: link:../../packages/plugin-cli
       '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../../packages/plugin-kit
       '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
-      tar:
-        specifier: ^7.5.22
-        version: 7.5.22
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

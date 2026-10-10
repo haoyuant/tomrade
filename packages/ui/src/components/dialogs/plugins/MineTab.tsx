@@ -12,14 +12,13 @@ import {
   useCommunityAccount,
   useLinkGitHub,
   usePublish,
-  useRequestReview,
+  usePublished,
   useSnapshots,
   useStudioContinue,
   useStudioCreate,
   useStudioPack,
   useStudioRemove,
   useStudioRestore,
-  useSubmissions,
   useWorkspaces
 } from "~/lib/plugins";
 import { openExternal, reveal } from "~/lib/shell";
@@ -56,7 +55,7 @@ export function MineTab({ onLeave }: { onLeave?: () => void }) {
       <div className="stack-2" data-testid="workspaces">
         {workspaces.data?.map((w) => <WorkspaceRow key={w.name} workspace={w} onLeave={onLeave} />)}
       </div>
-      <Submissions />
+      <PublishedVersions />
       {creating && projectId && <NewPluginDialog projectId={projectId} onClose={() => setCreating(false)} onLeave={onLeave} />}
     </>
   );
@@ -298,7 +297,7 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
           onClick={() =>
             publish.mutate(w.dir, {
               onSuccess: (r) => {
-                toast({ body: t("plugins.submitted", { id: r.id, version: r.version }) });
+                toast({ body: t("plugins.published", { id: r.id, version: r.version }) });
                 onClose();
               },
               onError: (e) => setError(messageOf(e))
@@ -312,44 +311,27 @@ function PublishDialog({ workspace: w, onClose }: { workspace: Workspace; onClos
   );
 }
 
-function Submissions() {
+function PublishedVersions() {
   const { t } = useI18n();
   const account = useCommunityAccount();
-  const subs = useSubmissions(!!account.data?.publisher);
-  const request = useRequestReview();
-  const [asked, setAsked] = useState<Set<string>>(new Set());
-  if (!subs.data?.length) return null;
+  const published = usePublished(!!account.data?.publisher);
+  if (!published.data?.length) return null;
   return (
     <>
       <hr className="rule" />
-      <SectionHead title={t("plugins.submissions")} />
-      <div className="stack-2" data-testid="submissions">
-        {subs.data.map((s) => {
-          const key = `${s.pluginId}@${s.version}`;
-          const status = s.versionStatus && ["listed", "held", "rejected", "revoked"].includes(s.versionStatus) ? t(`plugins.ver_${s.versionStatus}` as MessageKey) : t(`plugins.sub_${s.status}` as MessageKey);
-          return (
-            <div key={s.id} className="cfg-row">
-              <div className="cfg-name">
-                <span className="mono">{key}</span>
-                <div className="row plug-tags" style={{ gap: 6, marginTop: 3 }}>
-                  <Tag tone="neutral">{status}</Tag>
-                  {s.tier && <TrustTags tier={s.tier} risk={s.risk} />}
-                </div>
-                {s.error && <div className="meta-txt dense" style={{ whiteSpace: "pre-wrap" }}>{s.error}</div>}
+      <SectionHead title={t("plugins.publishedVersions")} />
+      <div className="stack-2" data-testid="published">
+        {published.data.map((v) => (
+          <div key={`${v.pluginId}@${v.version}`} className="cfg-row">
+            <div className="cfg-name">
+              <span className="mono">{`${v.pluginId}@${v.version}`}</span>
+              <div className="row plug-tags" style={{ gap: 6, marginTop: 3 }}>
+                <Tag tone="neutral">{t(v.status === "revoked" ? "plugins.ver_revoked" : "plugins.ver_listed")}</Tag>
+                <TrustTags tier={v.tier} risk={v.risk} />
               </div>
-              {s.versionStatus === "listed" && s.tier === "ai-reviewed" && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={asked.has(key) || request.isPending}
-                  onClick={() => request.mutate({ id: s.pluginId, version: s.version }, { onSuccess: () => setAsked(new Set([...asked, key])) })}
-                >
-                  {asked.has(key) ? t("plugins.requested") : t("plugins.requestReview")}
-                </button>
-              )}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </>
   );

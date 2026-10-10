@@ -60,4 +60,4 @@ export default definePlugin({
 }
 ```
 
-Declare what your code does beyond the SDK — the hosts it talks to, whether it touches the disk, whether it starts programs. The store's review compares it with the code. Community lists open-source plugins only, built from your public GitHub repository and reviewed before they are listed.
+Declare what your code does beyond the SDK — the hosts it talks to, whether it touches the disk, whether it starts programs. Whoever installs it sees it beside what the analyzer finds in the code. Community lists open-source plugins only, published from your public GitHub repository; nobody reviews them, so say plainly what yours does.

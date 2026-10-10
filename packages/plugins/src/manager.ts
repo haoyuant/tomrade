@@ -236,7 +236,7 @@ export class Plugins extends Service {
     return this.snapshot();
   }
 
-  async installFile(file: string, opts: { source?: "store" | "file"; attestation?: unknown } = {}): Promise<PluginsSnapshot> {
+  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown } = {}): Promise<PluginsSnapshot> {
     const entry = await this.store().installFile(file, opts);
     return this.add({ id: entry.id, name: `ext:${entry.id}`, disabled: entry.disabled });
   }

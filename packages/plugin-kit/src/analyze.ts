@@ -1,13 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse } from "@babel/parser";
-import type { Manifest } from "@tomradex/plugin-sdk";
+import { riskOf, type Manifest, type RiskLevel } from "@tomradex/plugin-sdk";
 import { listFiles } from "./digest.js";
 
 export type Severity = "info" | "warn" | "high" | "critical";
 
 export interface Finding {
-  /** Stable key: what the review, the UI and the tests match on. */
+  /** Stable key: what the UI and the tests match on. */
   rule: string;
   severity: Severity;
   message: string;
@@ -108,7 +108,7 @@ function analyzeScript(source: string, file: string, observed: Observed, finding
     }
     if (CODE_MODULES.has(bare)) {
       observed.dynamicCode = true;
-      add("dynamic-code", "high", `loads or runs code the review cannot read (${specifier})`, line);
+      add("dynamic-code", "high", `loads or runs code that cannot be read ahead of time (${specifier})`, line);
     }
     if (DB_MODULES.has(bare)) {
       observed.rawDatabase = true;
@@ -188,7 +188,7 @@ function analyzeScript(source: string, file: string, observed: Observed, finding
 
   if (/\b_0x[0-9a-f]{4,}\b/.test(source)) add("obfuscated", "critical", "is obfuscated: its names were replaced to hide what it does", 1);
   const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
-  if (longest > 20_000) add("minified", "warn", "is minified; review reads it less well than the build's plain output", 1);
+  if (longest > 20_000) add("minified", "warn", "is minified; a person reads it less well than the build's plain output", 1);
 }
 
 function analyzeDocument(html: string, file: string, observed: Observed, findings: Finding[]): void {
@@ -216,6 +216,27 @@ export function analyzePackage(dir: string, manifest: Manifest): Analysis {
   findings.push(...mismatches(manifest, observed));
   const worst = findings.reduce<Severity | null>((w, f) => (w === null || RANK[f.severity] > RANK[w] ? f.severity : w), null);
   return { observed, findings, worst };
+}
+
+const RISK_RANK: Record<RiskLevel, number> = { low: 0, elevated: 1, high: 2 };
+
+/** Risk from what the code was seen doing, beside what the manifest declares. */
+export function observedRisk(observed: Observed, manifest: Manifest): { level: RiskLevel; reasons: string[] } {
+  const declared = riskOf(manifest);
+  const reasons = new Set(declared.reasons);
+  let level = declared.level;
+  const add = (reason: string, at: RiskLevel) => {
+    reasons.add(reason);
+    if (RISK_RANK[at] > RISK_RANK[level]) level = at;
+  };
+  if (observed.exec) add("exec", "high");
+  if (observed.rawDatabase) add("raw-database", "high");
+  if (observed.coreTableWrites.length) add("core-table-writes", "high");
+  if (observed.dynamicCode) add("dynamic-code", "high");
+  if (observed.network && !manifest.permissions.network.length) add("network", "elevated");
+  if (observed.fs && manifest.permissions.fs === "none") add("fs", "elevated");
+  if (observed.env) add("env", "elevated");
+  return { level, reasons: [...reasons] };
 }
 
 /** Where the code does more than the manifest admits. Named, not refused: the listing shows what was observed. */

@@ -81,9 +81,9 @@ const git = (dir: string, args: string[], env: Record<string, string> = {}) => r
 
 /**
  * Everything before the store is told: the plugin takes the publisher's id
- * (its namespace stays), passes the same check the store will run, and its
- * source is committed, tagged and pushed to the publisher's public repository.
- * The store then builds from exactly that commit.
+ * (its namespace stays), passes the check, and its source is committed,
+ * tagged and pushed to the publisher's public repository. The package is the
+ * check's build of exactly that tree.
  */
 export async function prepareRelease(dir: string, publisher: string, github: GitHubAccess, opts: { checkOptions?: Parameters<typeof check>[1] } = {}): Promise<Prepared> {
   const login = await github.login();

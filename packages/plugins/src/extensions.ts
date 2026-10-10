@@ -175,14 +175,18 @@ export class ExtensionStore {
     return adaptSdkPlugin(mod.default, identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) }));
   }
 
-  /** A `.tomrade-plugin` file: from the store (with its attestation) or handed over by a person. */
-  async installFile(file: string, opts: { source?: "store" | "file"; attestation?: unknown } = {}): Promise<LockEntry> {
+  /**
+   * A `.tomrade-plugin` file: from the store, which lists the digest its
+   * contents must have (and, for Tomrade's own plugins, an attestation), or
+   * handed over by a person.
+   */
+  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown } = {}): Promise<LockEntry> {
     const unpacked = await unpackPlugin(file);
-    const attestation = verifyAttestation(opts.attestation ?? unpacked.attestation, unpacked.digest, this.config.trustedKeys);
-    if (opts.source === "store" && !attestation) {
+    if (opts.source === "store" && unpacked.digest !== opts.digest) {
       fs.rmSync(unpacked.dir, { recursive: true, force: true });
-      throw new ExtensionRefused(`${unpacked.manifest.id} ${unpacked.manifest.version} came from the store without a valid attestation for its contents`);
+      throw new ExtensionRefused(`${unpacked.manifest.id} ${unpacked.manifest.version} is not the build the store lists for it`);
     }
+    const attestation = verifyAttestation(opts.attestation ?? unpacked.attestation, unpacked.digest, this.config.trustedKeys);
     if (this.has(unpacked.manifest.id) && ["folder", "studio"].includes(this.entry(unpacked.manifest.id).source)) {
       fs.rmSync(unpacked.dir, { recursive: true, force: true });
       throw new ExtensionRefused(`${unpacked.manifest.id} is loaded from a development folder here; remove it first`);
@@ -260,7 +264,7 @@ export class ExtensionStore {
     this.put({ ...this.entry(id), autoUpdate, updatedAt: now() });
   }
 
-  /** The store re-vouched for the installed build (an official review landed, say). */
+  /** Tomrade signed the installed build as official after it was installed. */
   setAttestation(id: string, raw: unknown): Attestation | null {
     const entry = this.entry(id);
     const attestation = verifyAttestation(raw, entry.digest, this.config.trustedKeys);

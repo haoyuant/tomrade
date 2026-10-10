@@ -100,7 +100,7 @@ export interface TableSpec {
 /**
  * Plain SQL against the caches. The namespace is the plugin's own: tables are
  * `plugin_<namespace>_*`. Reads of the app's tables are allowed; writing them
- * goes around history and undo, and review says so.
+ * goes around history and undo, and the install dialog says so.
  */
 export interface DbApi {
   migrate(steps: { version: number; up: string }[], opts: { scope?: "project" | "hub"; tables: Record<string, TableSpec> }): Promise<void>;

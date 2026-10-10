@@ -39,15 +39,17 @@ function source(name: string, opts: { version?: string; tool?: string; engines?:
   return dir;
 }
 
-async function packed(name: string, opts: Parameters<typeof source>[1] & { signed?: boolean; tier?: "official" | "reviewed" | "ai-reviewed" } = {}) {
+async function pack(name: string, opts: Parameters<typeof source>[1] & { signed?: boolean } = {}) {
   const dir = source(name, opts);
   if (opts.signed) {
     const digest = packageDigest(dir);
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, "tomrade-plugin.json"), "utf8")) as { id: string; version: string };
-    fs.writeFileSync(path.join(dir, ATTESTATION_FILE), JSON.stringify(attest({ v: 1, id: manifest.id, version: manifest.version, digest, tier: opts.tier ?? "ai-reviewed", risk: "low", issuedAt: Date.now() }, key.privateKey)));
+    fs.writeFileSync(path.join(dir, ATTESTATION_FILE), JSON.stringify(attest({ v: 1, id: manifest.id, version: manifest.version, digest, tier: "official", risk: "low", issuedAt: Date.now() }, key.privateKey)));
   }
-  return (await packPlugin(dir, path.join(tmp, `${name}-${Math.random().toString(36).slice(2, 8)}.tomrade-plugin`))).file;
+  return packPlugin(dir, path.join(tmp, `${name}-${Math.random().toString(36).slice(2, 8)}.tomrade-plugin`));
 }
+
+const packed = async (name: string, opts: Parameters<typeof pack>[1] = {}) => (await pack(name, opts)).file;
 
 async function host() {
   const root = fs.mkdtempSync(path.join(tmp, "root-"));
@@ -68,16 +70,21 @@ describe("installed extensions", () => {
     expect(await ctx.tools.execute("greeter_hello", {}, { by: "human" })).toBe("hello from 1.0.0");
   });
 
-  it("believes an attestation only when it signs these exact files", async () => {
+  it("installs from the store only the build it lists, and calls it official only when Tomrade signed these exact files", async () => {
     const { plugins, view } = await host();
-    await plugins.installFile(await packed("signed", { signed: true }), { source: "store" });
-    expect(view("someone/signed").extension).toMatchObject({ tier: "ai-reviewed", source: "store" });
-    await expect(plugins.installFile(await packed("unsigned"), { source: "store" })).rejects.toThrow(/without a valid attestation/);
+    const community = await pack("community");
+    await plugins.installFile(community.file, { source: "store", digest: community.digest });
+    expect(view("someone/community").extension).toMatchObject({ tier: "community", source: "store" });
+    const official = await pack("official", { signed: true });
+    await plugins.installFile(official.file, { source: "store", digest: official.digest });
+    expect(view("someone/official").extension).toMatchObject({ tier: "official", source: "store" });
+    await expect(plugins.installFile(await packed("swapped"), { source: "store", digest: "0".repeat(64) })).rejects.toThrow(/not the build the store lists/);
   });
 
   it("marks an installed plugin whose files changed as the person's own copy", async () => {
     const { plugins, view } = await host();
-    await plugins.installFile(await packed("edited", { signed: true }), { source: "store" });
+    const edited = await pack("edited");
+    await plugins.installFile(edited.file, { source: "store", digest: edited.digest });
     fs.appendFileSync(path.join(view("someone/edited").extension!.dir, "dist/index.js"), "\n// mine");
     await plugins.reload("someone/edited");
     expect(view("someone/edited")).toMatchObject({ state: "active", extension: { modified: true, tier: "local" } });

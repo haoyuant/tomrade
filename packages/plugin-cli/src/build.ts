@@ -26,7 +26,7 @@ const format = (m: esbuild.Message) => `${m.location ? `${m.location.file}:${m.l
 
 /**
  * One readable ESM file per plugin: every dependency bundled in except the
- * few the host provides, nothing minified, so the review reads what runs.
+ * few the host provides, nothing minified, so whoever installs it can read what runs.
  * Documents and images under `static/` are copied beside it. Bundling runs no
  * plugin code; nothing here executes what it builds.
  */

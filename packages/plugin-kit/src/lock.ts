@@ -3,7 +3,8 @@ import path from "node:path";
 import { z } from "zod";
 import { AttestationSchema } from "./sign.js";
 
-const Installed = z.object({ version: z.string(), dir: z.string(), digest: z.string(), attestation: AttestationSchema.nullable().default(null) });
+// An attestation this build no longer understands (a review tier that is gone) reads as none.
+const Installed = z.object({ version: z.string(), dir: z.string(), digest: z.string(), attestation: AttestationSchema.nullable().default(null).catch(null) });
 
 /**
  * Where a plugin came from decides how it is trusted: `store` and `file`
@@ -45,10 +46,12 @@ export function writeLock(file: string, lock: Lock): void {
   fs.renameSync(tmp, file);
 }
 
-export type TrustTier = "official" | "reviewed" | "ai-reviewed" | "local" | "dev";
+/** Nothing in the store is reviewed: `community` is a publisher's own build, `official` one Tomrade signed. */
+export type TrustTier = "official" | "community" | "local" | "dev";
 
 export function tierOf(entry: Pick<LockEntry, "source" | "modified" | "attestation">): TrustTier {
   if (entry.source === "studio" || entry.source === "folder") return "dev";
-  if (entry.modified || !entry.attestation) return "local";
-  return entry.attestation.tier;
+  if (entry.modified) return "local";
+  if (entry.attestation) return "official";
+  return entry.source === "store" ? "community" : "local";
 }

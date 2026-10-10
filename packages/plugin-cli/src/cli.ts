@@ -37,7 +37,7 @@ const usage = `tomrade-plugin <command> [dir]
   init [dir] --id publisher/name [--title T] [--description D]   start a plugin
   build [dir]      bundle src/ into dist/ (one readable file; cordis, the SDK and zod come from Tomrade)
   dev [dir]        rebuild on every change — load the folder in Tomrade and it reloads itself
-  check [dir]      build, inspect in a sandbox, and read the code: what the store's review will see
+  check [dir]      build, inspect in a sandbox, and read the code: what someone installing it will see
   test [dir]       run the plugin against a throwaway project in a sandbox (src/test.ts is the scenario)
   pack [dir]       check, then write a .tomrade-plugin file [--out file]
 `;

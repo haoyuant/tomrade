@@ -7,7 +7,7 @@ import { z } from "zod";
 import type {} from "@tomradex/hub-cloud";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
-import { LIMITS, readManifest, tierOf, type ReviewReport, type TrustTier } from "@tomradex/plugin-kit";
+import { ATTESTATION_FILE, LIMITS, PACKAGE_EXT, analyzePackage, observedRisk, packPlugin, readManifest, tierOf, unpackPlugin, type Finding, type TrustTier } from "@tomradex/plugin-kit";
 import { SDK_CONTRACT, satisfies, type Manifest } from "@tomradex/plugin-sdk";
 import type { Plugins, PluginsSnapshot } from "@tomradex/plugins";
 import { linkGitHub } from "./oauth.js";
@@ -17,7 +17,7 @@ import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, typ
 export const CommunityConfig = z.preprocess(
   (v) => v ?? {},
   z.object({
-    /** A mirror or CDN in front of the package bucket; the attestation, not the host, is what is trusted. */
+    /** A mirror or CDN in front of the package bucket; the digest the store lists, not the host, is what is checked. */
     packagesBaseUrl: z.string().optional(),
     /** How often revocations and updates are checked while online. */
     checkEveryMs: z.number().int().min(60_000).default(6 * 3_600_000)
@@ -27,11 +27,13 @@ export type CommunityConfig = z.infer<typeof CommunityConfig>;
 
 export interface VersionSummary {
   version: string;
-  tier: Tier | null;
+  /** The commit of the public repository this version was built from. */
+  commit: string;
+  tier: Tier;
+  /** What the publisher's own check found; installing reads the package again. */
   risk: VersionRow["risk"];
   riskReasons: string[];
   listedAt: string | null;
-  reviewedAs: string | null;
   compatible: boolean;
   revoked: boolean;
 }
@@ -53,8 +55,20 @@ export interface Listing {
 export interface PluginDetail extends Listing {
   versions: VersionSummary[];
   manifest: Manifest | null;
-  report: ReviewReport | null;
-  reviews: { version: string; decision: string; notes: string; created_at: string }[];
+}
+
+/** One version as this machine read it before installing: nobody else reviewed it. */
+export interface Inspection {
+  id: string;
+  version: string;
+  tier: Tier;
+  commit: string;
+  repository: string;
+  risk: "low" | "elevated" | "high";
+  riskReasons: string[];
+  findings: Finding[];
+  inject: string[];
+  hosts: string[];
 }
 
 export interface CommunityAccount {
@@ -67,17 +81,21 @@ export interface CommunityAccount {
   githubToken: boolean;
 }
 
-export interface SubmissionView {
-  id: string;
+export interface PublishedVersion {
   pluginId: string;
   version: string;
   status: string;
-  error: string | null;
-  createdAt: string;
-  finishedAt: string | null;
-  versionStatus: string | null;
-  tier: Tier | null;
+  tier: Tier;
   risk: VersionRow["risk"];
+  listedAt: string | null;
+}
+
+export interface Published {
+  id: string;
+  version: string;
+  repository: string;
+  commit: string;
+  digest: string;
 }
 
 declare module "cordis" {
@@ -90,6 +108,7 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "community.search": (query: { text?: string; sort?: "downloads" | "updated" | "title" }) => Listing[];
     "community.plugin": (id: string) => PluginDetail;
+    "community.inspect": (id: string, version?: string) => Inspection;
     "community.install": (id: string, version?: string) => PluginsSnapshot;
     "community.updates": () => UpdatePlan[];
     "community.update": (id: string) => PluginsSnapshot;
@@ -98,9 +117,8 @@ declare module "@tomradex/ipc" {
     "community.account": () => CommunityAccount;
     "community.linkGitHub": () => { url: string };
     "community.becomePublisher": () => CommunityAccount;
-    "community.publish": (dir: string) => { submissionId: string; id: string; version: string; repository: string; commit: string };
-    "community.submissions": () => SubmissionView[];
-    "community.requestReview": (id: string, version: string) => void;
+    "community.publish": (dir: string) => Published;
+    "community.published": () => PublishedVersion[];
   }
   interface Broadcasts {
     "community.changed": () => void;
@@ -111,20 +129,21 @@ const safeText = (text: string) => text.replace(/[^\p{L}\p{N}\s_./-]/gu, " ").tr
 
 const summarize = (v: VersionRow, revocations: Revocation[]): VersionSummary => ({
   version: v.version,
+  commit: v.commit_sha,
   tier: v.tier,
   risk: v.risk,
   riskReasons: v.risk_reasons ?? [],
   listedAt: v.listed_at,
-  reviewedAs: v.reviewed_as,
   compatible: !v.sdk_range || satisfies(SDK_CONTRACT, v.sdk_range),
   revoked: v.status === "revoked" || !!revoked(v.plugin_id, v.version, revocations)
 });
 
 /**
- * The store, as the app sees it: browse and install from Community, keep
- * installed plugins up to date within the rules, switch off what the store
- * revoked, report a plugin, and publish one. Everything it installs is
- * checked against a signed attestation before it is placed.
+ * The store, as the app sees it: browse Community, read a version on this
+ * machine and install it, keep installed plugins up to date within the rules,
+ * switch off what the store revoked, report a plugin, and publish one. Nobody
+ * reviews what is listed: every plugin is open source and its person judges
+ * it. What is installed must be the exact build the store lists.
  */
 export class Community extends Service {
   static provide = "community";
@@ -134,6 +153,8 @@ export class Community extends Service {
   private readonly home: Context;
   private revokedNow = new Map<string, string>();
   private publisherCache: string | null = null;
+  /** Packages fetched to be read before installing, by digest; installing takes them from here. */
+  private downloadDir: string | null = null;
   /** For tests: GitHub access other than through the token in settings. */
   github: GitHubAccess;
 
@@ -150,6 +171,7 @@ export class Community extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("community.search", (q) => this.search(q));
       ctx.ipc.handle("community.plugin", (id) => this.plugin(id));
+      ctx.ipc.handle("community.inspect", (id, version) => this.inspect(id, version));
       ctx.ipc.handle("community.install", (id, version) => this.install(id, version));
       ctx.ipc.handle("community.updates", () => this.updates());
       ctx.ipc.handle("community.update", (id) => this.update(id));
@@ -166,8 +188,7 @@ export class Community extends Service {
       });
       ctx.ipc.handle("community.becomePublisher", () => this.becomePublisher());
       ctx.ipc.handle("community.publish", (dir) => this.publish(dir));
-      ctx.ipc.handle("community.submissions", () => this.submissions());
-      ctx.ipc.handle("community.requestReview", (id, version) => this.requestReview(id, version));
+      ctx.ipc.handle("community.published", () => this.published());
     });
     const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${error instanceof Error ? error.message : String(error)}`));
     const first = setTimeout(sweep, 15_000);
@@ -177,6 +198,7 @@ export class Community extends Service {
     return () => {
       clearTimeout(first);
       clearInterval(every);
+      if (this.downloadDir) fs.rmSync(this.downloadDir, { recursive: true, force: true });
     };
   }
 
@@ -246,19 +268,13 @@ export class Community extends Service {
   async plugin(id: string): Promise<PluginDetail> {
     const [plugin] = await this.rows<Record<string, unknown>>(this.client.from("tomrade_plugins").select("*").eq("id", id).limit(1));
     if (!plugin) throw new Error(`${id} is not in the store`);
-    const [versions, revocations, reviews] = await Promise.all([
-      this.versionsOf([id]),
-      this.revocations(),
-      this.rows<{ version: string; decision: string; notes: string; created_at: string }>(this.client.from("tomrade_plugin_reviews").select("version, decision, notes, created_at").eq("plugin_id", id).order("created_at", { ascending: false }))
-    ]);
+    const [versions, revocations] = await Promise.all([this.versionsOf([id]), this.revocations()]);
     const listing = this.listing(plugin, versions, revocations);
     const latest = versions.find((v) => v.version === listing.latest?.version) ?? null;
     return {
       ...listing,
       versions: versions.sort((a, b) => (a.version < b.version ? 1 : -1)).map((v) => summarize(v, revocations)),
-      manifest: latest?.manifest ?? null,
-      report: (latest?.report as ReviewReport | null) ?? null,
-      reviews
+      manifest: latest?.manifest ?? null
     };
   }
 
@@ -267,32 +283,69 @@ export class Community extends Service {
     return this.client.storage.from("plugin-packages").getPublicUrl(pathInBucket).data.publicUrl;
   }
 
-  /** Downloads, checks the package's digest against the store's signed attestation, and installs it. */
-  private async installVersion(row: VersionRow): Promise<PluginsSnapshot> {
-    if (!row.package_path || !row.attestation) throw new Error(`${row.plugin_id} ${row.version} has no package yet`);
+  /** Fetched once per digest: reading a version before installing it costs no second download. */
+  private async download(row: VersionRow): Promise<string> {
+    if (!row.package_path || !row.digest) throw new Error(`${row.plugin_id} ${row.version} has no package`);
+    this.downloadDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-download-"));
+    const file = path.join(this.downloadDir, `${row.digest}${PACKAGE_EXT}`);
+    if (fs.existsSync(file)) return file;
     const res = await fetch(this.packageUrl(row.package_path), { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`the package could not be downloaded (${res.status})`);
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.length > LIMITS.packageBytes) throw new Error("the package is larger than a plugin may be");
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-download-"));
-    const file = path.join(dir, "package.tomrade-plugin");
-    try {
-      fs.writeFileSync(file, bytes);
-      const snapshot = await this.plugins.installFile(file, { source: "store", attestation: row.attestation });
-      void this.client.rpc("tomrade_count_download", { p_plugin: row.plugin_id });
-      this.changed();
-      return snapshot;
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    fs.writeFileSync(`${file}.part`, bytes);
+    fs.renameSync(`${file}.part`, file);
+    return file;
   }
 
-  async install(id: string, version?: string): Promise<PluginsSnapshot> {
+  private async pick(id: string, version?: string): Promise<VersionRow> {
     const [versions, revocations] = await Promise.all([this.versionsOf([id]), this.revocations()]);
     const row = version ? versions.find((v) => v.version === version && v.status === "listed") : latestInstallable(versions, revocations);
     if (!row) throw new Error(version ? `${id} ${version} is not available` : `${id} has no version this Tomrade can run`);
     if (revoked(id, row.version, revocations)) throw new Error(`${id} ${row.version} was revoked by the store`);
-    return this.installVersion(row);
+    return row;
+  }
+
+  /** Reads the exact package that would be installed, here, with the same analyzer the publisher ran. */
+  async inspect(id: string, version?: string): Promise<Inspection> {
+    const row = await this.pick(id, version);
+    const unpacked = await unpackPlugin(await this.download(row));
+    try {
+      if (unpacked.digest !== row.digest) throw new Error(`${id} ${row.version} is not the build the store lists for it`);
+      const m = unpacked.manifest;
+      const analysis = analyzePackage(unpacked.dir, m);
+      const risk = observedRisk(analysis.observed, m);
+      return {
+        id,
+        version: row.version,
+        tier: row.tier,
+        commit: row.commit_sha,
+        repository: m.repository ?? "",
+        risk: risk.level,
+        riskReasons: risk.reasons,
+        findings: analysis.findings.filter((f) => f.severity !== "info"),
+        inject: [...m.inject, ...m.optional],
+        hosts: m.permissions.network
+      };
+    } finally {
+      fs.rmSync(unpacked.dir, { recursive: true, force: true });
+    }
+  }
+
+  private async installVersion(row: VersionRow): Promise<PluginsSnapshot> {
+    const file = await this.download(row);
+    try {
+      const snapshot = await this.plugins.installFile(file, { source: "store", digest: row.digest!, attestation: row.attestation ?? undefined });
+      void this.client.rpc("tomrade_count_download", { p_plugin: row.plugin_id });
+      this.changed();
+      return snapshot;
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  }
+
+  async install(id: string, version?: string): Promise<PluginsSnapshot> {
+    return this.installVersion(await this.pick(id, version));
   }
 
   private async installedFromStore() {
@@ -378,15 +431,45 @@ export class Community extends Service {
     return this.account();
   }
 
-  async publish(dir: string): Promise<{ submissionId: string; id: string; version: string; repository: string; commit: string }> {
+  /**
+   * The source goes to the publisher's public repository first; the package
+   * is the check's build of that same tree, uploaded under the publisher's
+   * login and listed at once.
+   */
+  async publish(dir: string): Promise<Published> {
     const account = await this.account();
     if (!account.signedIn) throw new Error("Sign in to your Tomrade account first");
     if (!account.publisher) throw new Error("Link GitHub and become a publisher first");
     const store = this.plugins.extensions!;
     const before = readManifest(dir).id;
     const release = await prepareRelease(dir, account.publisher, this.github, { checkOptions: { execPath: process.execPath } });
-    const { data, error } = await this.client.rpc("tomrade_submit_plugin", { p_manifest: release.manifest, p_repository: release.repository, p_commit: release.commit, p_tag: release.tag });
-    if (error) throw new Error(error.message);
+    fs.rmSync(path.join(dir, ATTESTATION_FILE), { force: true });
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-publish-"));
+    let digest: string;
+    try {
+      const packed = await packPlugin(dir, path.join(work, `package${PACKAGE_EXT}`));
+      digest = packed.digest;
+      const risk = observedRisk((release.report.analysis ?? analyzePackage(dir, packed.manifest)).observed, packed.manifest);
+      const packagePath = `${release.id}/${release.version}/${digest}${PACKAGE_EXT}`;
+      const bytes = fs.readFileSync(packed.file);
+      const upload = await this.client.storage.from("plugin-packages").upload(packagePath, bytes, { contentType: "application/gzip", upsert: false });
+      // The path names the digest, so what is already there is this same build: a retry after a failed listing.
+      if (upload.error && !/exists/i.test(upload.error.message)) throw new Error(`the package could not be uploaded: ${upload.error.message}`);
+      const { error } = await this.client.rpc("tomrade_publish_plugin", {
+        p_manifest: release.manifest,
+        p_repository: release.repository,
+        p_commit: release.commit,
+        p_tag: release.tag,
+        p_digest: digest,
+        p_package_path: packagePath,
+        p_package_size: bytes.length,
+        p_risk: risk.level,
+        p_risk_reasons: risk.reasons
+      });
+      if (error) throw new Error(error.message);
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
     // A plugin that changed id is a new row: the old one goes, and the new build waits to be confirmed again.
     if (release.renamedFrom && store.has(before)) {
       const source = store.entry(before).source;
@@ -394,34 +477,14 @@ export class Community extends Service {
       if (source === "studio" || source === "folder") await this.plugins.addFolder(dir, source);
     }
     this.changed();
-    return { submissionId: String(data), id: release.id, version: release.version, repository: release.repository, commit: release.commit };
+    return { id: release.id, version: release.version, repository: release.repository, commit: release.commit, digest };
   }
 
-  async submissions(): Promise<SubmissionView[]> {
-    const subs = await this.rows<Record<string, unknown>>(this.client.from("tomrade_plugin_submissions").select("*").order("created_at", { ascending: false }).limit(50));
-    const versions = await this.rows<Pick<VersionRow, "plugin_id" | "version" | "status" | "tier" | "risk">>(
-      this.client.from("tomrade_plugin_versions").select("plugin_id, version, status, tier, risk").in("plugin_id", [...new Set(subs.map((s) => String(s.plugin_id)))]) as never
-    );
-    return subs.map((s) => {
-      const v = versions.find((x) => x.plugin_id === s.plugin_id && x.version === s.version);
-      return {
-        id: String(s.id),
-        pluginId: String(s.plugin_id),
-        version: String(s.version),
-        status: String(s.status),
-        error: (s.error as string | null) ?? null,
-        createdAt: String(s.created_at),
-        finishedAt: (s.finished_at as string | null) ?? null,
-        versionStatus: v?.status ?? null,
-        tier: v?.tier ?? null,
-        risk: v?.risk ?? null
-      };
-    });
-  }
-
-  async requestReview(id: string, version: string): Promise<void> {
-    const { error } = await this.client.rpc("tomrade_request_official_review", { p_plugin: id, p_version: version });
-    if (error) throw new Error(error.message);
+  async published(): Promise<PublishedVersion[]> {
+    const { data } = await this.client.auth.getUser();
+    if (!data?.user) return [];
+    const rows = await this.rows<VersionRow>(this.client.from("tomrade_plugin_versions").select("*").eq("submitted_by", data.user.id).order("submitted_at", { ascending: false }).limit(50));
+    return rows.map((v) => ({ pluginId: v.plugin_id, version: v.version, status: v.status, tier: v.tier, risk: v.risk, listedAt: v.listed_at }));
   }
 }
 

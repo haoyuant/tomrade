@@ -6,7 +6,7 @@
 tomrade-plugin init my-plugin --id you/my-plugin   # a plugin that builds, tests and loads as it is
 tomrade-plugin dev                                  # rebuild on every change; in Tomrade: Settings → Plugins → Load folder
 tomrade-plugin test                                 # src/test.ts against a throwaway project, in a sandbox
-tomrade-plugin check                                # what the store's review will see
+tomrade-plugin check                                # what someone installing it will see
 tomrade-plugin pack                                 # a .tomrade-plugin file anyone can install
 ```
 
