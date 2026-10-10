@@ -59,6 +59,7 @@ export class CloudHub extends Service {
   private home: Context;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private signingOut = false;
+  private readonly sessionKey: string;
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, "cloudHub");
@@ -72,8 +73,10 @@ export class CloudHub extends Service {
     const endpoint = new URL(config.url);
     if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("Supabase requires HTTPS outside localhost.");
     this.cache = new CloudCache(config.cacheFile, endpoint.origin);
+    // supabase-js's own default, named so sign-out can forget the session without the server.
+    this.sessionKey = `sb-${endpoint.hostname.split(".")[0]}-auth-token`;
     this.client = createClient(endpoint.origin, config.publishableKey, {
-      auth: { storage: config.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      auth: { storage: config.sessionStorage, storageKey: this.sessionKey, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
       global: { fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) }) }
     });
   }
@@ -270,8 +273,9 @@ export class CloudHub extends Service {
     this.signingOut = true;
     try {
       if (this.active) await this.active;
+      // Revoking the refresh token is best effort: an unreachable server must not keep this device signed in.
       const { error } = await this.client.auth.signOut({ scope: "local" });
-      if (error) throw new Error(error.message);
+      if (error) await this.config.sessionStorage.removeItem(this.sessionKey);
       this.user = null;
       this.cache.data.offlineAccess = false;
       this.cache.save();

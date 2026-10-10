@@ -12,7 +12,7 @@ import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@to
 
 const remote = vi.hoisted(() => ({
   offline: false, loseReply: false, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", hubId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-  records: new Map<string, CloudRecord>(), receipts: new Map<string, unknown>(), requests: [] as Mutation[]
+  records: new Map<string, CloudRecord>(), receipts: new Map<string, unknown>(), requests: [] as Mutation[], forgotten: [] as string[]
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const user = () => ({ id: remote.userId, email: "user@example.test" });
@@ -20,7 +20,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
     auth: {
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       getSession: async () => ({ data: { session: { user: user() } }, error: null }),
-      stopAutoRefresh() {}, signOut: async () => ({ error: null }),
+      stopAutoRefresh() {}, signOut: async () => ({ error: remote.offline ? { message: "fetch failed" } : null }),
       signInWithPassword: async () => ({ data: { user: user() }, error: null })
     },
     rpc: async (name: string, args?: { p_mutation: Mutation }) => {
@@ -48,7 +48,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
 
 const dirs: string[] = [];
 const contexts: { fiber: { dispose(): Promise<unknown> } }[] = [];
-beforeEach(() => { remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; });
+beforeEach(() => { remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = []; });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
@@ -68,7 +68,7 @@ async function machine() {
   const legacy = fs.readFileSync(path.join(hubDir, "hub.json"), "utf8");
   await bag.ctx.plugin(CloudHub, {
     url: "https://example.supabase.co", publishableKey: "sb_publishable_test", cacheFile: path.join(dir, "hub-cloud.json"),
-    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} }, syncMs: 60_000
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem: (key: string) => { remote.forgotten.push(key); } }, syncMs: 60_000
   });
   await settle();
   await bag.ctx.cloudHub.ready;
@@ -171,4 +171,13 @@ it("persists a removal before the debounce timer or process exit, and explicit s
   expect(cloud.info().offlineAccess).toBe(false);
   expect(cloud.info().user).toBeNull();
   expect(cloud.info().pending).toBeGreaterThan(0);
+});
+
+it("signs out on this device when the server cannot be reached", async () => {
+  const { cloud } = await machine();
+  await cloud.sync();
+  remote.offline = true;
+  await cloud.signOut();
+  expect(remote.forgotten).toEqual(["sb-example-auth-token"]);
+  expect(cloud.info()).toMatchObject({ user: null, offlineAccess: false });
 });
