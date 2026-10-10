@@ -1,0 +1,25 @@
+# Publishing a release (not a prerelease) hands it to the website: the Deploy
+# workflow in haoyuant/tomrade-site copies its installers to download.tomrade.com
+# and redeploys tomrade.com, so the download buttons name the new version.
+# A release published with GITHUB_TOKEN would not start this; publish by hand.
+name: Website
+
+on:
+  release:
+    types: [released]
+
+permissions: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start the site's Deploy workflow
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::error::Secret SITE_DISPATCH_TOKEN is not set"; exit 1; fi
+          gh workflow run deploy.yml -R haoyuant/tomrade-site -f tag="$TAG"
+          echo "Mirroring $TAG: https://github.com/haoyuant/tomrade-site/actions/workflows/deploy.yml" >> "$GITHUB_STEP_SUMMARY"
