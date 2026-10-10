@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 RUN corepack enable
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile --filter "@tomrade/review..." && pnpm exec tsc -b apps/review
+RUN pnpm install --frozen-lockfile --filter "@tomradex/review..." && pnpm exec tsc -b apps/review
 USER node
 ENV NODE_ENV=production
 CMD ["node", "apps/review/dist/cli.js", "worker"]

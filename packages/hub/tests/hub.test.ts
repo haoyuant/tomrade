@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
-import { Catalog, Hub } from "@tomrade/hub";
+import { Catalog, Hub } from "@tomradex/hub";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-hub-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentIndex, estimateTokens, type FileEntry, type FilesAgentPolicy } from "@tomrade/files";
+import { buildAgentIndex, estimateTokens, type FileEntry, type FilesAgentPolicy } from "@tomradex/files";
 
 const day = 24 * 60 * 60 * 1000;
 const listed: FilesAgentPolicy = { default: "listed", rules: [] };

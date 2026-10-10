@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Context } from "cordis";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { FakeChatModel, fakeChat } from "@tomrade/llm";
-import { Agent, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities } from "@tomrade/agent";
-import engineLoop from "@tomrade/engine-loop";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { FakeChatModel, fakeChat } from "@tomradex/llm";
+import { Agent, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities } from "@tomradex/agent";
+import engineLoop from "@tomradex/engine-loop";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-playbooks-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -1,4 +1,4 @@
-import type { FileEntry, FilesSyncPolicy, PathPolicy, SyncMode } from "@tomrade/files";
+import type { FileEntry, FilesSyncPolicy, PathPolicy, SyncMode } from "@tomradex/files";
 
 /** The same closest-ancestor rule the backend applies, for every path dimension. */
 export function effectiveMode<M extends string>(policy: PathPolicy<M>, path: string): M {

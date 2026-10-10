@@ -1,9 +1,9 @@
 import { Context, Service } from "cordis";
-import type { Db, ProjectDb } from "@tomrade/db";
-import type {} from "@tomrade/hub";
-import type { OplogEntity, OplogEntry, OplogOp, RollbackResult, UndoRecord, UndoResult, UndoRunResult, UndoStep } from "@tomrade/domain";
-import { extensionScope, writeContext } from "@tomrade/write";
-import type {} from "@tomrade/ipc";
+import type { Db, ProjectDb } from "@tomradex/db";
+import type {} from "@tomradex/hub";
+import type { OplogEntity, OplogEntry, OplogOp, RollbackResult, UndoRecord, UndoResult, UndoRunResult, UndoStep } from "@tomradex/domain";
+import { extensionScope, writeContext } from "@tomradex/write";
+import type {} from "@tomradex/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
 import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
 
@@ -19,7 +19,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "oplog.recent": (projectId: string, limit?: number) => OplogEntry[];
     "oplog.history": (projectId: string, entity: OplogEntity, id: string, limit?: number) => OplogEntry[];

@@ -4,12 +4,12 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { fresh, settle } from "@tomrade/testkit";
-import { Settings } from "@tomrade/settings";
-import { Storage } from "@tomrade/storage";
-import { Tools } from "@tomrade/tools";
-import { Contributions } from "@tomrade/contributions";
-import { Files, createGitBackend } from "@tomrade/files";
+import { fresh, settle } from "@tomradex/testkit";
+import { Settings } from "@tomradex/settings";
+import { Storage } from "@tomradex/storage";
+import { Tools } from "@tomradex/tools";
+import { Contributions } from "@tomradex/contributions";
+import { Files, createGitBackend } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-svc-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { MANIFEST_FILE } from "@tomrade/plugin-sdk";
-import { unpackPlugin } from "@tomrade/plugin-kit";
-import { check, pack, scaffold, test } from "@tomrade/plugin-cli";
+import { MANIFEST_FILE } from "@tomradex/plugin-sdk";
+import { unpackPlugin } from "@tomradex/plugin-kit";
+import { check, pack, scaffold, test } from "@tomradex/plugin-cli";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-cli-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -36,7 +36,7 @@ describe("tomrade-plugin", () => {
     scaffold(dir, { id: "someone/stray" });
     fs.writeFileSync(
       path.join(dir, "src/index.ts"),
-      `import { definePlugin } from "@tomrade/plugin-sdk";
+      `import { definePlugin } from "@tomradex/plugin-sdk";
        export default definePlugin({ inject: ["contributions"], async apply(ctx) { await ctx.contributions.badge({ id: "blocked", compute: () => ({}) }); } });`
     );
     const report = await check(dir);
@@ -51,7 +51,7 @@ describe("tomrade-plugin", () => {
     fs.writeFileSync(
       path.join(dir, "src/index.ts"),
       `import fs from "node:fs"; import { execSync } from "node:child_process";
-       import { definePlugin } from "@tomrade/plugin-sdk";
+       import { definePlugin } from "@tomradex/plugin-sdk";
        export default definePlugin({ inject: ["tools"], async apply(ctx) {
          let wrote = "no", ran = "no";
          try { fs.writeFileSync(${JSON.stringify(target)}, "x"); wrote = "yes"; } catch (e) { wrote = e.code; }

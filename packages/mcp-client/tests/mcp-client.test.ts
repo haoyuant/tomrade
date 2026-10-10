@@ -6,11 +6,11 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { fresh } from "@tomrade/testkit";
-import { Settings } from "@tomrade/settings";
-import { Tools, defineTool } from "@tomrade/tools";
-import { Mcp } from "@tomrade/mcp";
-import { McpClient, TOOL_NAME_MAX, inputSchemaOf, parseClientConfig, toolName } from "@tomrade/mcp-client";
+import { fresh } from "@tomradex/testkit";
+import { Settings } from "@tomradex/settings";
+import { Tools, defineTool } from "@tomradex/tools";
+import { Mcp } from "@tomradex/mcp";
+import { McpClient, TOOL_NAME_MAX, inputSchemaOf, parseClientConfig, toolName } from "@tomradex/mcp-client";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/stdio-server.mjs", import.meta.url));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-mcp-client-"));

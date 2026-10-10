@@ -5,9 +5,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { ConflictError } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
-import { Tools, ToolInputError, UnknownToolError, defineTool } from "@tomrade/tools";
+import { ConflictError } from "@tomradex/domain";
+import { fresh } from "@tomradex/testkit";
+import { Tools, ToolInputError, UnknownToolError, defineTool } from "@tomradex/tools";
 
 const BACKLOG_TOOLS = [
   "add_delivery_resource",

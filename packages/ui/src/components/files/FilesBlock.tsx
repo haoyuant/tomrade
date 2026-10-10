@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { FilesBackendView } from "@tomrade/files";
+import type { FilesBackendView } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";

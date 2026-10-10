@@ -1,10 +1,10 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomrade/agent";
-import { THEME_TYPOGRAPHY_NAMES, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomrade/domain";
-import type { ModelProfile, ModelsSettings } from "@tomrade/llm";
+import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
+import { THEME_TYPOGRAPHY_NAMES, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
+import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
 import { useQueryClient } from "@tanstack/react-query";
 import { agentKeys, useEngines, usePlaybooks } from "~/lib/agent";
-import type { SettingsSectionView } from "@tomrade/settings";
+import type { SettingsSectionView } from "@tomradex/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { LanguageSwitch } from "~/components/ui/language-switch";

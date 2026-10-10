@@ -3,9 +3,9 @@ import { Context } from "cordis";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fresh, settle } from "@tomrade/testkit";
-import { Storage } from "@tomrade/storage";
-import Settings from "@tomrade/settings";
+import { fresh, settle } from "@tomradex/testkit";
+import { Storage } from "@tomradex/storage";
+import Settings from "@tomradex/settings";
 
 vi.mock("electron", () => ({ safeStorage: { isEncryptionAvailable: () => false } }));
 import hubCloud from "../src/hub-cloud.js";

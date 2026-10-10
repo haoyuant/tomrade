@@ -1,4 +1,4 @@
-import type { Item, Repo } from "@tomrade/domain";
+import type { Item, Repo } from "@tomradex/domain";
 import type { Decision } from "./decisions.js";
 import type { CodeLinkView, RepoStateView, SessionView } from "./store.js";
 

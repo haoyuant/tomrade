@@ -1,4 +1,4 @@
-import type { Item, OplogEntry } from "@tomrade/domain";
+import type { Item, OplogEntry } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
 import { agoLabel } from "~/lib/domain";

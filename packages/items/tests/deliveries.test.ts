@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { exportState, importState } from "@tomrade/storage";
-import { migrateCore } from "@tomrade/db";
+import { fresh } from "@tomradex/testkit";
+import { exportState, importState } from "@tomradex/storage";
+import { migrateCore } from "@tomradex/db";
 
 it("upgrades pre-General items and preserves default methods through snapshot and undo", async () => {
   const { ctx, db, items, project, board } = await fresh();

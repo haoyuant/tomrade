@@ -1,5 +1,5 @@
 import { Context, Service, type Fiber } from "cordis";
-import type {} from "@tomrade/ipc";
+import type {} from "@tomradex/ipc";
 import {
   RequiredModuleError,
   type ModuleView,
@@ -16,7 +16,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "plugins.list": () => PluginsSnapshot;
     "plugins.setEnabled": (id: string, enabled: boolean) => PluginsSnapshot;

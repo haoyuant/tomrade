@@ -25,7 +25,7 @@ deliveries and their evidence remain when changing type for future work.
 **Artifact**:
 An output resource in a delivery, referencing a stable Files `fileId` and an
 immutable `versionId`. Input materials are separate ticket resources. All actual
-files belong to the Files plugin (`@tomrade/files`); ticket metadata is not a file store.
+files belong to the Files plugin (`@tomradex/files`); ticket metadata is not a file store.
 
 **Submission / Review**:
 A submission pins a report and selected output resources. Human review accepts

@@ -3,11 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
-import { Items } from "@tomrade/items";
-import { Tools } from "@tomrade/tools";
-import { fresh, settle } from "@tomrade/testkit";
-import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest } from "@tomrade/plugin-kit";
-import { ExtensionStore, Plugins } from "@tomrade/plugins";
+import { Items } from "@tomradex/items";
+import { Tools } from "@tomradex/tools";
+import { fresh, settle } from "@tomradex/testkit";
+import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest } from "@tomradex/plugin-kit";
+import { ExtensionStore, Plugins } from "@tomradex/plugins";
 
 // Inside the repository: vitest's module runner will not import from the system temp directory.
 const tmp = fs.mkdtempSync(path.join(import.meta.dirname, ".tmp-"));

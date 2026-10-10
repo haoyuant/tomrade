@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import { useSearch } from "@tanstack/react-router";
-import type { FileReference } from "@tomrade/domain";
-import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomrade/files";
+import type { FileReference } from "@tomradex/domain";
+import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { SyncContextActions, SyncMark, SyncScopeSummary, SyncSelect, describeSync, useSyncActions, type SyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, AgentSelect, describeListing, useAgentActions, type AgentActions } from "./AgentPolicy";

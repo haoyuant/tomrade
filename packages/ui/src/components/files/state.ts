@@ -1,4 +1,4 @@
-import type { FilesSyncState } from "@tomrade/files";
+import type { FilesSyncState } from "@tomradex/files";
 import type { MessageKey } from "~/lib/i18n";
 
 export interface StateView {

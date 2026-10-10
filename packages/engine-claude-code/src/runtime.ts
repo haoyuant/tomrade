@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { isSuspended, type TurnInput, type TurnIO, type TurnResult } from "@tomrade/agent";
-import type {} from "@tomrade/mcp";
+import { isSuspended, type TurnInput, type TurnIO, type TurnResult } from "@tomradex/agent";
+import type {} from "@tomradex/mcp";
 
 export interface Runtime {
   readonly token: string;

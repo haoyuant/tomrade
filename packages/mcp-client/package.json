@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/mcp-client",
+  "name": "@tomradex/mcp-client",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -19,14 +19,14 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tomrade/testkit": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^6.0.0"
   }

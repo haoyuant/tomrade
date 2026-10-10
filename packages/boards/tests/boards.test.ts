@@ -4,8 +4,8 @@
  * project first: each project is its own file.
  */
 import { describe, expect, it } from "vitest";
-import { InUseError } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
+import { InUseError } from "@tomradex/domain";
+import { fresh } from "@tomradex/testkit";
 
 describe("boards (workstreams)", () => {
   it("a new project has one workstream and the default views", async () => {

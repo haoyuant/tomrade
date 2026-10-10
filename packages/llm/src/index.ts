@@ -1,6 +1,6 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { SettingsSection } from "@tomrade/settings";
+import type { SettingsSection } from "@tomradex/settings";
 import { AnthropicModel } from "./anthropic.js";
 import { ImagesModel } from "./images.js";
 export { ImagesModel } from "./images.js";

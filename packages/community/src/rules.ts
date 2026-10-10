@@ -1,5 +1,5 @@
-import { SDK_CONTRACT, compareVersions, satisfies, type Manifest } from "@tomrade/plugin-sdk";
-import type { TrustTier } from "@tomrade/plugin-kit";
+import { SDK_CONTRACT, compareVersions, satisfies, type Manifest } from "@tomradex/plugin-sdk";
+import type { TrustTier } from "@tomradex/plugin-kit";
 
 export type Tier = "official" | "reviewed" | "ai-reviewed";
 export type RiskLevel = "low" | "elevated" | "high";

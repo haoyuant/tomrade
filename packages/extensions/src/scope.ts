@@ -1,5 +1,5 @@
-import type { Author } from "@tomrade/domain";
-import { extensionScope, writeContext } from "@tomrade/write";
+import type { Author } from "@tomradex/domain";
+import { extensionScope, writeContext } from "@tomradex/write";
 
 /**
  * A call keeps the human flag it arrived with when it stays inside the same

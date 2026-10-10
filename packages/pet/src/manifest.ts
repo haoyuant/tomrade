@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { AssistantAccessory, SpriteAnimation } from "@tomrade/contributions";
+import type { AssistantAccessory, SpriteAnimation } from "@tomradex/contributions";
 import type { PetMood } from "./state.js";
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

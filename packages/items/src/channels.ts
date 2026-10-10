@@ -1,12 +1,12 @@
 import type { Context } from "cordis";
-import type { CreateItemInput, Item, ListItemsFilter, Patch } from "@tomrade/domain";
+import type { CreateItemInput, Item, ListItemsFilter, Patch } from "@tomradex/domain";
 import type { z } from "zod";
-import type { addResourceSchema, submitDeliverySchema, reviewDeliverySchema } from "@tomrade/domain";
-import type { DeliveryView } from "@tomrade/db";
-import type {} from "@tomrade/ipc";
+import type { addResourceSchema, submitDeliverySchema, reviewDeliverySchema } from "@tomradex/domain";
+import type { DeliveryView } from "@tomradex/db";
+import type {} from "@tomradex/ipc";
 import type { ItemQuery } from "./service.js";
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "items.deliveries": (projectId: string, id: string) => DeliveryView[];
     "items.addResource": (projectId: string, id: string, input: z.input<typeof addResourceSchema>) => Item;

@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { Context, Service } from "cordis";
-import type { BroadcastName, ChannelHandler, ChannelName, Ipc } from "@tomrade/ipc";
+import type { BroadcastName, ChannelHandler, ChannelName, Ipc } from "@tomradex/ipc";
 
 const PREFIX = "tomrade:";
 

@@ -1,4 +1,4 @@
-import type { AgentEvent, RunStatus } from "@tomrade/agent";
+import type { AgentEvent, RunStatus } from "@tomradex/agent";
 
 export type PetMood = "idle" | "thinking" | "working" | "waiting" | "success" | "error" | "walk";
 export type TaskPetMood = Exclude<PetMood, "walk">;

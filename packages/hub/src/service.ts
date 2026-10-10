@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type {} from "@tomrade/ipc";
+import type {} from "@tomradex/ipc";
 import { Catalog, RemoteRef } from "./catalog.js";
 
 declare module "cordis" {
@@ -28,7 +28,7 @@ export interface HubInfo {
   cloudEnabled: boolean;
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "hub.info": () => HubInfo;
     /** First run, or a move: name the Hub folder. Created if absent. */

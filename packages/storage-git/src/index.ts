@@ -1,13 +1,13 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type {} from "@tomrade/storage";
+import type {} from "@tomradex/storage";
 import { createRemoteProvider } from "./provider.js";
 
 export { createRemoteProvider } from "./provider.js";
 export type { RemoteProviderOptions } from "./provider.js";
-export { GitError, GitFolder, GitMissingError, cleanRemote, cloneInto, gitRunner, shortHash } from "@tomrade/storage";
-export type { Git } from "@tomrade/storage";
+export { GitError, GitFolder, GitMissingError, cleanRemote, cloneInto, gitRunner, shortHash } from "@tomradex/storage";
+export type { Git } from "@tomradex/storage";
 
 const RemoteConfig = z.object({
   remote: z.string().min(1).meta({ title: "Repository URL" }).describe("Any repository you can push to — https://… or git@…"),

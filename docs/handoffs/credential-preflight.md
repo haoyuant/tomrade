@@ -155,7 +155,7 @@ and exits 0 for `store`/`erase`. Then re-probe. Do not build SSH key management.
 ## Constraints and gotchas
 
 - Checks, from this worktree: `pnpm test` (baseline: 308 passing on `fc7aad3`), `pnpm build:backend`,
-  `pnpm --filter @tomrade/ui typecheck`. Run all three before every commit. Do not run `pnpm install` unless a
+  `pnpm --filter @tomradex/ui typecheck`. Run all three before every commit. Do not run `pnpm install` unless a
   dependency changes (node_modules is present).
 - Do not touch `/Users/haoyuant/Projects/tomrade-next` (the main worktree) — another session works there.
 - Do not push. Commit per task with the style already in `git log`: `feat(code-link): …` / `fix(code-link): …`,
@@ -165,7 +165,7 @@ and exits 0 for `store`/`erase`. Then re-probe. Do not build SSH key management.
   with the next `version`.
 - Git format strings use `%00` / `%x1f` / `%x1e`, never literal control characters in source.
 - Test fixtures: `CodeLink` injects `settings`, so contexts need `[Settings, {path}]`; branches in fixtures must be
-  created from `main` explicitly; nested `ctx.inject` fibers need a `settle()` tick (`@tomrade/testkit`).
+  created from `main` explicitly; nested `ctx.inject` fibers need a `settle()` tick (`@tomradex/testkit`).
 - In terminal mode the MCP gate must stay **before** thread/link/session creation (a failed start must leave nothing
   behind); put the new `remote` gate before it too, where the current one is.
 - Never let a token reach a log, toast, thread note or repo-state row: scrub `//user:pass@` from any git output you
@@ -193,7 +193,7 @@ Completed 2026-09-08 in this worktree. Nothing was pushed.
 
 - Before changes, `pnpm test`: 306 passed, 7 failed, 1 skipped (314 total). All seven failures were MCP-backed tests unable to bind `127.0.0.1:0`.
 - After tasks 1–4, `pnpm test`: 326 passed, 7 failed, 1 skipped (334 total). The same seven tests fail for the same sandbox restriction; a direct Node probe confirms `listen EPERM: operation not permitted 127.0.0.1` in this environment.
-- `pnpm build:backend` and `pnpm --filter @tomrade/ui typecheck` passed before every task commit.
+- `pnpm build:backend` and `pnpm --filter @tomradex/ui typecheck` passed before every task commit.
 - Runnable focused coverage passed: 22/22 task-1 reachability tests; 3/3 task-2 preflight cases; 9/9 non-TCP session/start checks (with the one TCP terminal case excluded); and 3/3 task-4 prompt/session checks.
 
 ### Skipped at the initial handoff

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse } from "@babel/parser";
-import type { Manifest } from "@tomrade/plugin-sdk";
+import type { Manifest } from "@tomradex/plugin-sdk";
 import { listFiles } from "./digest.js";
 
 export type Severity = "info" | "warn" | "high" | "critical";

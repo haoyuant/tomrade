@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import type { FileContent } from "@tomrade/files";
+import type { FileContent } from "@tomradex/files";
 import { Spacer } from "~/components/ui/atoms";
 import { formatSize } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";

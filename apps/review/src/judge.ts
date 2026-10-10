@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import type { Analysis } from "@tomrade/plugin-kit";
-import type { Manifest } from "@tomrade/plugin-sdk";
+import type { Analysis } from "@tomradex/plugin-kit";
+import type { Manifest } from "@tomradex/plugin-sdk";
 
 export const Verdict = z.object({
   summary: z.string().describe("One paragraph for a person deciding whether to install: what the plugin does and what it reaches"),

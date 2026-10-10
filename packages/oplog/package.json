@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/oplog",
+  "name": "@tomradex/oplog",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,16 +18,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/db": "workspace:*",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/write": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
-    "@tomrade/testkit": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "typescript": "^6.0.0",
     "zod": "^4.4.3"
   }

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { OplogEntry } from "@tomrade/domain";
+import type { OplogEntry } from "@tomradex/domain";
 import { ARTIFACT_DIR } from "./state.js";
 
 export const LOG_DIR = "log";

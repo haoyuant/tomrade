@@ -3,8 +3,8 @@
  * are project rows whose values ride on items through the ordinary write path.
  */
 import { describe, expect, it } from "vitest";
-import { BUILTIN_FIELDS, FieldDefinitionError, FieldValueError } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
+import { BUILTIN_FIELDS, FieldDefinitionError, FieldValueError } from "@tomradex/domain";
+import { fresh } from "@tomradex/testkit";
 
 describe("fields", () => {
   it("lists built-ins first, then the project's own in rank order", async () => {

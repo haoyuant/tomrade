@@ -3,10 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Document, isMap, isSeq, parse, parseDocument } from "yaml";
-import { adaptSdkPlugin, builtinIdentity, identityOf } from "@tomrade/extensions";
-import { dataDirFor } from "@tomrade/plugin-kit";
-import { MANIFEST_FILE, isSdkPlugin, parseManifest } from "@tomrade/plugin-sdk";
-import type { ModuleSpec, PluginRow } from "@tomrade/plugins";
+import { adaptSdkPlugin, builtinIdentity, identityOf } from "@tomradex/extensions";
+import { dataDirFor } from "@tomradex/plugin-kit";
+import { MANIFEST_FILE, isSdkPlugin, parseManifest } from "@tomradex/plugin-sdk";
+import type { ModuleSpec, PluginRow } from "@tomradex/plugins";
 
 export type { PluginRow };
 

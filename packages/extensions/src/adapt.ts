@@ -1,5 +1,5 @@
 import type { Plugin } from "cordis";
-import { namespaceOf, type Manifest, type SdkPlugin, type ServiceName } from "@tomrade/plugin-sdk";
+import { namespaceOf, type Manifest, type SdkPlugin, type ServiceName } from "@tomradex/plugin-sdk";
 import { Host, cordisName, type ExtensionIdentity } from "./host.js";
 import { within } from "./scope.js";
 

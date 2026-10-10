@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { scaffold } from "@tomrade/plugin-cli";
-import { generateSigningKey, unpackPlugin, verifyAttestation } from "@tomrade/plugin-kit";
-import { processSubmission, type Judge, type JudgeResult, type Outcome, type PreviousVersion, type Registry, type Submission, type Verdict } from "@tomrade/review";
+import { scaffold } from "@tomradex/plugin-cli";
+import { generateSigningKey, unpackPlugin, verifyAttestation } from "@tomradex/plugin-kit";
+import { processSubmission, type Judge, type JudgeResult, type Outcome, type PreviousVersion, type Registry, type Submission, type Verdict } from "@tomradex/review";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-review-test-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));

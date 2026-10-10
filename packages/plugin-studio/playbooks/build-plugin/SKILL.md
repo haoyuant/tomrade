@@ -8,7 +8,7 @@ You are writing a Tomrade plugin for the person you are working with. It runs in
 1. **Understand the ask.** One sentence: what the plugin adds (a tool agents call, a badge on cards, a status-bar count, a section on the issue, a palette command, a graph, a scheduled job). If the ask is vague, ask one question with ask_user, then go.
 2. **Start or open the workspace.** New plugin: plugin_create with a short kebab-case name and a one-line description. Existing: plugin_files. Read plugin_reference once before writing code; read the topic you need again when unsure.
 3. **Write the code** with plugin_write into `src/index.ts`. Rules the host enforces:
-   - `export default definePlugin({ inject: [...], optional: [...], async apply(ctx) { ... } })` from `@tomrade/plugin-sdk`. Only `@tomrade/plugin-sdk` and `zod` come from the host; anything else must be a dependency the build bundles — prefer none.
+   - `export default definePlugin({ inject: [...], optional: [...], async apply(ctx) { ... } })` from `@tomradex/plugin-sdk`. Only `@tomradex/plugin-sdk` and `zod` come from the host; anything else must be a dependency the build bundles — prefer none.
    - Every `ctx` call returns a Promise: `await` it. Callbacks you give the host may be async.
    - Every id you register (tools, commands, badges, sections, status items, graphs, settings, playbooks, surfaces) must be the namespace or start with `<namespace>_`, `<namespace>.` or `<namespace>-`. Tables are `plugin_<namespace>_*` and must be declared in `ctx.db.migrate(..., { tables })`.
    - Name only the services you use in `inject`; use `optional` + `ctx.when` for ones that may be absent.

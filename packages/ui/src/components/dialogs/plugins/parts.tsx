@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useParams } from "@tanstack/react-router";
-import type { Finding } from "@tomrade/plugin-kit";
+import type { Finding } from "@tomradex/plugin-kit";
 import { Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 

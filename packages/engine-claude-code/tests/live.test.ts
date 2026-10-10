@@ -1,12 +1,12 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Agent } from "@tomrade/agent";
-import { Mcp } from "@tomrade/mcp";
-import engineClaudeCode from "@tomrade/engine-claude-code";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { Mcp } from "@tomradex/mcp";
+import engineClaudeCode from "@tomradex/engine-claude-code";
 
 /** Opt-in: spawns the real `claude` CLI with the user's own login. TOMRADE_LIVE_CC=1 pnpm test */
 describe.skipIf(!process.env.TOMRADE_LIVE_CC)("live Claude Code", () => {

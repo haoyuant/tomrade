@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/plugin-host",
+  "name": "@tomradex/plugin-host",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,10 +18,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/contributions": "workspace:*",
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/testkit": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {

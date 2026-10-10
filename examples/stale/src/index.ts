@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { definePlugin, defineTool, requireProjectId, type Item } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId, type Item } from "@tomradex/plugin-sdk";
 
 const DAY = 86_400_000;
 const OPEN = new Set(["backlog", "todo", "doing", "verifying"]);

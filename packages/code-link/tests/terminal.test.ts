@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TerminalSettings, fillTemplate, optionFlags, withOptions } from "@tomrade/code-link";
+import { TerminalSettings, fillTemplate, optionFlags, withOptions } from "@tomradex/code-link";
 
 describe("terminal command options", () => {
   it("turns the model and effort picked at Start into each CLI's own flags", () => {

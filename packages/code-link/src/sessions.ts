@@ -3,9 +3,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
-import type {} from "@tomrade/mcp";
-import type {} from "@tomrade/tools";
-import type { Author } from "@tomrade/domain";
+import type {} from "@tomradex/mcp";
+import type {} from "@tomradex/tools";
+import type { Author } from "@tomradex/domain";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import type { CodeLinkStore, SessionState, SessionView } from "./store.js";
 

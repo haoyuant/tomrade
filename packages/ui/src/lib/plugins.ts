@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {} from "@tomrade/community";
-import type {} from "@tomrade/plugin-studio";
-import type { PluginsSnapshot } from "@tomrade/plugins";
+import type {} from "@tomradex/community";
+import type {} from "@tomradex/plugin-studio";
+import type { PluginsSnapshot } from "@tomradex/plugins";
 import { invoke } from "./api";
 import { invalidateProject } from "./queries";
 

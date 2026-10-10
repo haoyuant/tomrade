@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { loadPlaybookDir, type Playbook } from "@tomrade/agent";
+import { loadPlaybookDir, type Playbook } from "@tomradex/agent";
 
 /** `playbooks/<name>/SKILL.md` at the package root — the same format user playbooks use. `../playbooks` resolves from `src/` and `dist/` alike. */
 export const PLAYBOOKS: Playbook[] = loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)), (file, err) => {

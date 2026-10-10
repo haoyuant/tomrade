@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decide, type Evidence } from "@tomrade/code-link";
+import { decide, type Evidence } from "@tomradex/code-link";
 
 const none: Evidence = { branch: false, ahead: 0, merged: false, pr: null, movedAfterDone: false };
 const branch: Evidence = { ...none, branch: true, ahead: 3 };

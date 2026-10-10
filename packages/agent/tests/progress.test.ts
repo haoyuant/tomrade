@@ -3,12 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Agent, type AgentEvent } from "@tomrade/agent";
-import { fakeChat, type ChatEvent, type ChatModel } from "@tomrade/llm";
-import loop from "@tomrade/engine-loop";
+import { fresh } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent, type AgentEvent } from "@tomradex/agent";
+import { fakeChat, type ChatEvent, type ChatModel } from "@tomradex/llm";
+import loop from "@tomradex/engine-loop";
 
 it("keeps the last reported usage on activity events and adds streamed text to the reply count", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-progress-"));

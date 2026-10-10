@@ -1,6 +1,6 @@
 /**
  * Module resolution for code that lives outside the app. An extension imports
- * `cordis`, `@tomrade/plugin-sdk` and `zod` but ships none of them: it must
+ * `cordis`, `@tomradex/plugin-sdk` and `zod` but ships none of them: it must
  * get the host's own copies, or it would build its own world beside ours.
  * Runs on Node's loader thread.
  */

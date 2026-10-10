@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import type { FocusRef } from "@tomrade/agent";
+import type { FocusRef } from "@tomradex/agent";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
 import { usePanelOpen } from "~/lib/panel";
 

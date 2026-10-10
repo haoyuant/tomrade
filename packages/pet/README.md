@@ -1,4 +1,4 @@
-# `@tomrade/pet`
+# `@tomradex/pet`
 
 This optional Cordis plugin owns `ctx.pet` and the complete pet lifecycle. Its
 settings section chooses `embedded` or `desktop`; setting `enabled` hides the

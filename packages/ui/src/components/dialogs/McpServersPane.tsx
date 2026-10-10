@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { McpClientSettings, McpServerConfig, McpServerView, McpTestResult } from "@tomrade/mcp-client";
+import type { McpClientSettings, McpServerConfig, McpServerView, McpTestResult } from "@tomradex/mcp-client";
 import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";

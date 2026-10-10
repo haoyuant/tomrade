@@ -1,10 +1,10 @@
 import type {} from "cordis";
-import type {} from "@tomrade/ipc";
-import type { FileReference, Item } from "@tomrade/domain";
+import type {} from "@tomradex/ipc";
+import type { FileReference, Item } from "@tomradex/domain";
 import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SyncMode } from "./types.js";
 import type { AgentIndex } from "./agent-index.js";
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "files.backends": () => FilesBackendView[];
     "files.info": (projectId: string) => FilesInfo;

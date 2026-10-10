@@ -4,7 +4,9 @@
 appId: com.tomrade.desktop
 productName: Tomrade
 # Electron names the data folder after productName. Only the installed app
-# carries it; a checkout keeps its data under @tomrade/desktop.
+# carries it; a checkout keeps its data under @tomrade/desktop. That is also
+# why the desktop package alone keeps the old @tomrade scope: renaming it would
+# move a checkout's data folder and its keychain key.
 extraMetadata:
   productName: Tomrade
 copyright: Copyright © Tomrade

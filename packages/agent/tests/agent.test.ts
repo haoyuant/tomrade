@@ -2,15 +2,15 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Context } from "cordis";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools, defineTool } from "@tomrade/tools";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
-import { Settings } from "@tomrade/settings";
-import { FakeChatModel, fakeChat, type ChatRequest, type FakeTurn } from "@tomrade/llm";
-import { Agent, type RunView } from "@tomrade/agent";
-import engineLoop from "@tomrade/engine-loop";
-import engineScripted from "@tomrade/engine-scripted";
-import backlog from "@tomrade/agent-backlog";
+import { Settings } from "@tomradex/settings";
+import { FakeChatModel, fakeChat, type ChatRequest, type FakeTurn } from "@tomradex/llm";
+import { Agent, type RunView } from "@tomradex/agent";
+import engineLoop from "@tomradex/engine-loop";
+import engineScripted from "@tomradex/engine-scripted";
+import backlog from "@tomradex/agent-backlog";
 
 const tmpSettings = () => [Settings, { path: path.join(os.tmpdir(), `tomrade-agent-test-${Date.now()}-${Math.random()}.json`) }] as const;
 

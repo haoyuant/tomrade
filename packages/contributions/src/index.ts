@@ -1,7 +1,7 @@
 import { Context, Service } from "cordis";
-import type { Item } from "@tomrade/domain";
-import type {} from "@tomrade/ipc";
-import type {} from "@tomrade/items";
+import type { Item } from "@tomradex/domain";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/items";
 
 export interface CommandScope {
   projectId?: string;
@@ -144,7 +144,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "contributions.commands": () => CommandView[];
     "contributions.run": (id: string, scope: CommandScope) => CommandResult;

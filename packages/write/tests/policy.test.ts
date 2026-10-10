@@ -3,9 +3,9 @@
  * unloaded, the same calls go through — which is what proves they live here.
  */
 import { describe, expect, it } from "vitest";
-import { ConflictError, HumanLockedError, PurgeNotPermittedError } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
-import { humanLock, humanOnlyPurge, optimisticVersion } from "@tomrade/write";
+import { ConflictError, HumanLockedError, PurgeNotPermittedError } from "@tomradex/domain";
+import { fresh } from "@tomradex/testkit";
+import { humanLock, humanOnlyPurge, optimisticVersion } from "@tomradex/write";
 
 describe("write policy as a plugin", () => {
   it("without the policy row, an agent can overwrite a locked title, ignore staleness and purge", async () => {

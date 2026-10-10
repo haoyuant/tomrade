@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { CatalogProject, RemoteRef } from "@tomrade/hub";
+import type { CatalogProject, RemoteRef } from "@tomradex/hub";
 import type { StorageStatus } from "./types.js";
 
 /** A Hub catalog backend. Project folder storage is independent of this port. */

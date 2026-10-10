@@ -4,17 +4,17 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Agent } from "@tomrade/agent";
-import { FakeChatModel, fakeChat } from "@tomrade/llm";
-import loop from "@tomrade/engine-loop";
-import archify, { ArchifyRuntime } from "@tomrade/archify";
-import { Mcp } from "@tomrade/mcp";
-import { Files } from "@tomrade/files";
-import { Storage } from "@tomrade/storage";
-import type { RunHandle } from "@tomrade/tools";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { FakeChatModel, fakeChat } from "@tomradex/llm";
+import loop from "@tomradex/engine-loop";
+import archify, { ArchifyRuntime } from "@tomradex/archify";
+import { Mcp } from "@tomradex/mcp";
+import { Files } from "@tomradex/files";
+import { Storage } from "@tomradex/storage";
+import type { RunHandle } from "@tomradex/tools";
 
 const runHandle = (id: string, projectId: string): RunHandle => ({
   id, threadId: "t1", projectId, author: "ai:test",

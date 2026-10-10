@@ -6,11 +6,11 @@ import { execFileSync } from "node:child_process";
 import { Context } from "cordis";
 import { z } from "zod";
 import { it, expect } from "vitest";
-import { Tools } from "@tomrade/tools";
-import { Mcp } from "@tomrade/mcp";
-import { createClaudeCodeEngine } from "@tomrade/engine-claude-code";
-import { createCodexEngine } from "@tomrade/engine-codex";
-import { evaluateTurn, summarizeEvaluation, type EvaluationObservation, type TurnIO, type TurnInput, type Block } from "@tomrade/agent";
+import { Tools } from "@tomradex/tools";
+import { Mcp } from "@tomradex/mcp";
+import { createClaudeCodeEngine } from "@tomradex/engine-claude-code";
+import { createCodexEngine } from "@tomradex/engine-codex";
+import { evaluateTurn, summarizeEvaluation, type EvaluationObservation, type TurnIO, type TurnInput, type Block } from "@tomradex/agent";
 
 /** Opt-in paid-provider evaluation. Each arm owns fresh provider history and fixture state. */
 it.skipIf(!process.env.TOMRADE_EVAL_ENGINE)("paired production-adapter A/B", async () => {

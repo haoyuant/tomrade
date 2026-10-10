@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import type { Engine } from "@tomrade/agent";
+import type { Engine } from "@tomradex/agent";
 import { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
 import { ClaudeRuntime } from "./sdk.js";
 import { RuntimePool, runtimeFingerprint } from "./runtime.js";

@@ -1,4 +1,4 @@
-import type { ItemStatus } from "@tomrade/domain";
+import type { ItemStatus } from "@tomradex/domain";
 
 export type PrState = "open" | "merged" | "closed";
 

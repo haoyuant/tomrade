@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { RepoStateView } from "@tomrade/code-link";
-import type { Board, Repo } from "@tomrade/domain";
-import type { CheckoutView } from "@tomrade/repos";
+import type { RepoStateView } from "@tomradex/code-link";
+import type { Board, Repo } from "@tomradex/domain";
+import type { CheckoutView } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
 import { useGithubCredential, useGithubCredentialAccount, useRemoteIdentity, useRepoStates } from "~/lib/codeLink";

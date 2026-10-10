@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { CORE_SCHEMA_VERSION, seedDefaultViews, type PluginRegistration, type Queryable } from "@tomrade/db";
+import { CORE_SCHEMA_VERSION, seedDefaultViews, type PluginRegistration, type Queryable } from "@tomradex/db";
 import { NewerSchemaError } from "./types.js";
 
 /** The slice of a connection the artifact needs; a project's `ProjectDb` satisfies it. */

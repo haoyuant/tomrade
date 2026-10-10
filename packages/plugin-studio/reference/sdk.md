@@ -4,7 +4,7 @@
 
 ```ts
 import { z } from "zod";
-import { definePlugin, defineTool, requireProjectId, type Item } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId, type Item } from "@tomradex/plugin-sdk";
 
 export default definePlugin({
   inject: ["items", "tools", "contributions"],   // loaded when all are present

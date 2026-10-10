@@ -2,10 +2,10 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { check, publishingProblems, test, type CheckReport, type TestResult } from "@tomrade/plugin-cli";
-import { ATTESTATION_FILE, atLeast, attest, packPlugin, readManifest, writeAttestation, type Analysis, type Attestation, type Observed, type ReviewReport } from "@tomrade/plugin-kit";
-import { expansion } from "@tomrade/community";
-import { riskOf, type Manifest, type RiskLevel } from "@tomrade/plugin-sdk";
+import { check, publishingProblems, test, type CheckReport, type TestResult } from "@tomradex/plugin-cli";
+import { ATTESTATION_FILE, atLeast, attest, packPlugin, readManifest, writeAttestation, type Analysis, type Attestation, type Observed, type ReviewReport } from "@tomradex/plugin-kit";
+import { expansion } from "@tomradex/community";
+import { riskOf, type Manifest, type RiskLevel } from "@tomradex/plugin-sdk";
 import type { Judge, JudgeResult, Verdict } from "./judge.js";
 
 const run = promisify(execFile);

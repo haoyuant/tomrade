@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { PLUGIN_ID, SDK_CONTRACT, nameOf, namespaceOf } from "@tomrade/plugin-sdk";
+import { PLUGIN_ID, SDK_CONTRACT, nameOf, namespaceOf } from "@tomradex/plugin-sdk";
 
 export interface ScaffoldOptions {
   id: string;
@@ -39,14 +39,14 @@ function files(o: Required<Omit<ScaffoldOptions, "author">> & { author: string }
         private: true,
         type: "module",
         scripts: { build: "tomrade-plugin build", dev: "tomrade-plugin dev", test: "tomrade-plugin test", check: "tomrade-plugin check", pack: "tomrade-plugin pack" },
-        devDependencies: { "@tomrade/plugin-sdk": sdkRange, "@tomrade/plugin-cli": sdkRange, zod: "^4.4.3", typescript: "^6.0.0" }
+        devDependencies: { "@tomradex/plugin-sdk": sdkRange, "@tomradex/plugin-cli": sdkRange, zod: "^4.4.3", typescript: "^6.0.0" }
       },
       null,
       2
     )}\n`,
     "tsconfig.json": `${JSON.stringify({ compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", strict: true, skipLibCheck: true, noEmit: true }, include: ["src"] }, null, 2)}\n`,
     "src/index.ts": `import { z } from "zod";
-import { definePlugin, defineTool, requireProjectId } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId } from "@tomradex/plugin-sdk";
 
 /**
  * ${o.title}. Every call to ctx returns a Promise; every id you register starts

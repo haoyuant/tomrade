@@ -1,8 +1,8 @@
-// cordis first: @tomrade/storage augments it, and a `declare module "cordis"`
+// cordis first: @tomradex/storage augments it, and a `declare module "cordis"`
 // reached before cordis itself declares a new module instead of augmenting one.
 import type {} from "cordis";
 import type { z } from "zod";
-import type { RemoteTarget, StorageProvider } from "@tomrade/storage";
+import type { RemoteTarget, StorageProvider } from "@tomradex/storage";
 
 export interface RemoteProviderOptions<C> {
   id: string;

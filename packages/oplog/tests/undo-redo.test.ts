@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import type { UndoProvider } from "@tomrade/oplog";
-import type { UndoRecord } from "@tomrade/domain";
+import { fresh } from "@tomradex/testkit";
+import type { UndoProvider } from "@tomradex/oplog";
+import type { UndoRecord } from "@tomradex/domain";
 
 describe("undo and redo", () => {
   it("puts a reverted write back, one step at a time, and a new write empties the redo stack", async () => {

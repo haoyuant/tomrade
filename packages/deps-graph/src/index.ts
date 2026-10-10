@@ -1,4 +1,4 @@
-import { definePlugin, type Item } from "@tomrade/plugin-sdk";
+import { definePlugin, type Item } from "@tomradex/plugin-sdk";
 
 const open = (item: Item) => item.status !== "done" && item.status !== "cancelled";
 

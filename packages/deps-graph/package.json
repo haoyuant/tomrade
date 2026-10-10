@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/deps-graph",
+  "name": "@tomradex/deps-graph",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/plugin-sdk": "workspace:*"
+    "@tomradex/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.0"

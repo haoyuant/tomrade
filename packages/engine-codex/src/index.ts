@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
-import type { Engine } from "@tomrade/agent";
-import { RuntimePool, runtimeFingerprint } from "@tomrade/engine-claude-code";
+import type { Engine } from "@tomradex/agent";
+import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
 import { CodexOptions, createCodexCliEngine, migrateLegacyModel } from "./legacy.js";
 import { CodexRuntime } from "./app-server.js";
 

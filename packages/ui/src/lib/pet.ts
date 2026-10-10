@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { AssistantAccessory } from "@tomrade/contributions";
+import type { AssistantAccessory } from "@tomradex/contributions";
 import { invokeDynamic, subscribeDynamic } from "./api";
 
 interface AccessoryState {

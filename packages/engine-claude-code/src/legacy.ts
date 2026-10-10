@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
-import type {} from "@tomrade/mcp";
+import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import type {} from "@tomradex/mcp";
 import { binaryOk, runJsonl } from "./cli.js";
 import { buildSystem, promptOf } from "./system.js";
-import { claudeMediaInput } from "@tomrade/agent";
+import { claudeMediaInput } from "@tomradex/agent";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
 
 export const ClaudeCodeOptions = z.object({
@@ -124,7 +124,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       const live = new LiveUsage();
-      const metrics: import("@tomrade/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
+      const metrics: import("@tomradex/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
       const started = performance.now();
       let costUsd: number | undefined;
       let session: string | undefined;

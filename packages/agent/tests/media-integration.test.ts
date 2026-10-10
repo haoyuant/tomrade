@@ -2,12 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Agent } from "@tomrade/agent";
-import { fakeChat, type ChatModel, type ChatRequest } from "@tomrade/llm";
-import loop from "@tomrade/engine-loop";
+import { fresh } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { fakeChat, type ChatModel, type ChatRequest } from "@tomradex/llm";
+import loop from "@tomradex/engine-loop";
 
 it("transports attachments through the loop, persists generated media, and guards format/project scope", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-media-flow-"));

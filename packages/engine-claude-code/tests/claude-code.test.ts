@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Context } from "cordis";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Agent, type RunView } from "@tomrade/agent";
-import { Mcp } from "@tomrade/mcp";
-import engineClaudeCode from "@tomrade/engine-claude-code";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent, type RunView } from "@tomradex/agent";
+import { Mcp } from "@tomradex/mcp";
+import engineClaudeCode from "@tomradex/engine-claude-code";
 
 const FAKE = `#!/bin/bash
 dir="$(dirname "$0")"

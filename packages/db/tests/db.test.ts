@@ -10,8 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
-import { migrateCore } from "@tomrade/db";
-import { fresh } from "@tomrade/testkit";
+import { migrateCore } from "@tomradex/db";
+import { fresh } from "@tomradex/testkit";
 
 const LEGACY_SQL = `
 CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);

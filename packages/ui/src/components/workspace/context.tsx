@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { Badge } from "@tomrade/contributions";
+import type { Badge } from "@tomradex/contributions";
 import {
   BUILTIN_FIELDS,
   CHECKED,
@@ -19,7 +19,7 @@ import {
   type QueryContext,
   type View,
   type ViewQuery
-} from "@tomrade/domain";
+} from "@tomradex/domain";
 import { PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_KEYS, checkedLabel, emptyGroupLabel, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useBadges, useBoards, useCreateView, useFields, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";

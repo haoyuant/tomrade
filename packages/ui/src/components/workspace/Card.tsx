@@ -1,4 +1,4 @@
-import { CHECKED, type FieldDef, type Item } from "@tomrade/domain";
+import { CHECKED, type FieldDef, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { PriorityGlyph, ProvenanceMark, StatusMark, Tag } from "~/components/ui/atoms";
 import { timeAgo } from "~/lib/domain";

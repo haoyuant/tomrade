@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/example-stale",
+  "name": "@tomradex/example-stale",
   "private": true,
   "license": "Apache-2.0",
   "version": "0.1.0",
@@ -18,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/plugin-sdk": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

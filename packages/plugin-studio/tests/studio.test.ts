@@ -3,13 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
-import { Contributions } from "@tomrade/contributions";
-import { Settings } from "@tomrade/settings";
-import { Tools } from "@tomrade/tools";
-import { fresh, settle } from "@tomrade/testkit";
-import { LOCK_FILE } from "@tomrade/plugin-kit";
-import { ExtensionStore, Plugins } from "@tomrade/plugins";
-import studio from "@tomrade/plugin-studio";
+import { Contributions } from "@tomradex/contributions";
+import { Settings } from "@tomradex/settings";
+import { Tools } from "@tomradex/tools";
+import { fresh, settle } from "@tomradex/testkit";
+import { LOCK_FILE } from "@tomradex/plugin-kit";
+import { ExtensionStore, Plugins } from "@tomradex/plugins";
+import studio from "@tomradex/plugin-studio";
 
 // Inside the repository: vitest's module runner will not import from the system temp directory.
 const tmp = fs.mkdtempSync(path.join(import.meta.dirname, ".tmp-"));
@@ -57,7 +57,7 @@ async function world() {
 }
 
 const SOURCE = `import { z } from "zod";
-import { definePlugin, defineTool } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool } from "@tomradex/plugin-sdk";
 export default definePlugin({
   inject: ["items", "tools", "db", "contributions"],
   async apply(ctx) {

@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/agent",
+  "name": "@tomradex/agent",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,15 +18,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/db": "workspace:*",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/llm": "workspace:*",
-    "@tomrade/oplog": "workspace:*",
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/tools": "workspace:*",
-    "@tomrade/write": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/oplog": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

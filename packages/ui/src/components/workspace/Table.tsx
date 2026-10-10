@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomrade/domain";
+import { groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { BoardField, CustomField, EpicField, LabelsField, PriorityField, StatusField, useIssueWriter, type IssueWrite } from "~/components/issue/fields";
 import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ModuleView, PluginView } from "@tomrade/plugins";
+import type { ModuleView, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";

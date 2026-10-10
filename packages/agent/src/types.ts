@@ -1,8 +1,8 @@
 import type {} from "cordis";
 import type { z } from "zod";
-import type { Author } from "@tomrade/domain";
-import type { LlmService } from "@tomrade/llm";
-import type { RunHandle, ToolDescriptor } from "@tomrade/tools";
+import type { Author } from "@tomradex/domain";
+import type { LlmService } from "@tomradex/llm";
+import type { RunHandle, ToolDescriptor } from "@tomradex/tools";
 
 /**
  * What the user was looking at when they sent a message. Kinds are open on

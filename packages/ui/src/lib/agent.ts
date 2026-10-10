@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookSource, ThreadDetail } from "@tomrade/agent";
+import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookSource, ThreadDetail } from "@tomradex/agent";
 import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
 import { useI18n } from "./i18n";

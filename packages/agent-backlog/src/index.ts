@@ -1,12 +1,12 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { AgentSettings, WorkflowIO } from "@tomrade/agent";
-import type {} from "@tomrade/boards";
-import type {} from "@tomrade/items";
-import type { Item } from "@tomrade/domain";
-import type { LlmService } from "@tomrade/llm";
-import { defineTool, type RunHandle } from "@tomrade/tools";
+import type { AgentSettings, WorkflowIO } from "@tomradex/agent";
+import type {} from "@tomradex/boards";
+import type {} from "@tomradex/items";
+import type { Item } from "@tomradex/domain";
+import type { LlmService } from "@tomradex/llm";
+import { defineTool, type RunHandle } from "@tomradex/tools";
 import { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier, type RequiredField } from "./dossier.js";
 import { applyPlan, findGaps, generatePlan, planSchema, type Plan } from "./plan.js";
 import { PLAYBOOKS } from "./playbooks.js";

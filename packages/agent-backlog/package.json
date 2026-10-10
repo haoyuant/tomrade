@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/agent-backlog",
+  "name": "@tomradex/agent-backlog",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,14 +18,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/agent": "workspace:*",
-    "@tomrade/boards": "workspace:*",
-    "@tomrade/db": "workspace:*",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/items": "workspace:*",
-    "@tomrade/llm": "workspace:*",
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/boards": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

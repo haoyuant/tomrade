@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, screen, type IpcMainEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
-import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities } from "@tomrade/desktop-surface";
+import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities } from "@tomradex/desktop-surface";
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";

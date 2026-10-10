@@ -5,14 +5,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { DeliveryStore } from "@tomrade/db";
-import type {} from "@tomrade/hub";
-import type {} from "@tomrade/oplog";
-import type {} from "@tomrade/ipc";
-import type { Item, Patch, UndoRunResult } from "@tomrade/domain";
-import type { LlmService } from "@tomrade/llm";
-import type { SettingsSection } from "@tomrade/settings";
-import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomrade/tools";
+import { DeliveryStore } from "@tomradex/db";
+import type {} from "@tomradex/hub";
+import type {} from "@tomradex/oplog";
+import type {} from "@tomradex/ipc";
+import type { Item, Patch, UndoRunResult } from "@tomradex/domain";
+import type { LlmService } from "@tomradex/llm";
+import type { SettingsSection } from "@tomradex/settings";
+import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
@@ -131,7 +131,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "agent.recommendPlaybook": (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }) => PlaybookRecommendation;
     "agent.startGeneral": (projectId: string, itemId: string, opts?: GeneralStartOptions) => { threadId: string; runId: string; continued: boolean };

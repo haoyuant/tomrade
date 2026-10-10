@@ -9,7 +9,7 @@ import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
-import { ArchifyRuntime, ARCHIFY_REVISION } from "@tomrade/archify";
+import { ArchifyRuntime, ARCHIFY_REVISION } from "@tomradex/archify";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-media-ui-"));

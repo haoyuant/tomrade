@@ -1,7 +1,7 @@
 import { safeStorage } from "electron";
 import path from "node:path";
 import { Context } from "cordis";
-import { CloudHub, EncryptedSessionStorage } from "@tomrade/hub-cloud";
+import { CloudHub, EncryptedSessionStorage } from "@tomradex/hub-cloud";
 
 /**
  * Public Supabase client configuration for the production desktop build.

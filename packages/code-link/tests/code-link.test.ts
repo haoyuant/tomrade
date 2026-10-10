@@ -9,12 +9,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CodeLink } from "@tomrade/code-link";
-import { Contributions } from "@tomrade/contributions";
-import { Repos } from "@tomrade/repos";
-import { Settings } from "@tomrade/settings";
-import { Storage } from "@tomrade/storage";
-import { fresh, settle } from "@tomrade/testkit";
+import { CodeLink } from "@tomradex/code-link";
+import { Contributions } from "@tomradex/contributions";
+import { Repos } from "@tomradex/repos";
+import { Settings } from "@tomradex/settings";
+import { Storage } from "@tomradex/storage";
+import { fresh, settle } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-link-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

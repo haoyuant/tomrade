@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
-import type { Db, ProjectDb } from "@tomrade/db";
-import type { Oplog } from "@tomrade/oplog";
+import type { Db, ProjectDb } from "@tomradex/db";
+import type { Oplog } from "@tomradex/oplog";
 import { itemsOf } from "./items-like.js";
-import { write } from "@tomrade/write";
-import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput } from "@tomrade/domain";
+import { write } from "@tomradex/write";
+import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput } from "@tomradex/domain";
 
 declare module "cordis" {
   interface Context {

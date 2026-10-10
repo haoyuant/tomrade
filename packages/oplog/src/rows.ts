@@ -1,4 +1,4 @@
-import type { Author, OplogEntity, OplogEntry, OplogOp } from "@tomrade/domain";
+import type { Author, OplogEntity, OplogEntry, OplogOp } from "@tomradex/domain";
 
 /** A row ⌘Z took back, parked in `oplog_undone` until ⇧⌘Z puts it back or a new write drops it. */
 export interface UndoneRow extends OplogRow {

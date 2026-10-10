@@ -1,6 +1,6 @@
-import type { AgentSettings, EnginePick, PlaybookRecommendation } from "@tomrade/agent";
-import type { StartOptions } from "@tomrade/code-link";
-import type { Item } from "@tomrade/domain";
+import type { AgentSettings, EnginePick, PlaybookRecommendation } from "@tomradex/agent";
+import type { StartOptions } from "@tomradex/code-link";
+import type { Item } from "@tomradex/domain";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";

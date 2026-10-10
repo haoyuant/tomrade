@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools, defineTool } from "@tomrade/tools";
-import { Mcp } from "@tomrade/mcp";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools, defineTool } from "@tomradex/tools";
+import { Mcp } from "@tomradex/mcp";
 
 describe("the MCP surface", () => {
   it("rebinds an existing connection to the new run and denies idle or revoked tokens", async () => {

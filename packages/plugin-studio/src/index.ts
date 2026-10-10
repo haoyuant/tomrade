@@ -3,14 +3,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { loadPlaybookDir } from "@tomrade/agent";
-import type {} from "@tomrade/db";
-import type {} from "@tomrade/ipc";
-import { build, check, pack, scaffold, test, type CheckReport } from "@tomrade/plugin-cli";
-import { dataDirFor, packageDigest, readManifest, type Analysis } from "@tomrade/plugin-kit";
-import { MANIFEST_FILE, namespaceOf, riskOf, type Manifest, type Risk } from "@tomrade/plugin-sdk";
-import type { PluginView, Plugins } from "@tomrade/plugins";
-import { defineTool } from "@tomrade/tools";
+import { loadPlaybookDir } from "@tomradex/agent";
+import type {} from "@tomradex/db";
+import type {} from "@tomradex/ipc";
+import { build, check, pack, scaffold, test, type CheckReport } from "@tomradex/plugin-cli";
+import { dataDirFor, packageDigest, readManifest, type Analysis } from "@tomradex/plugin-kit";
+import { MANIFEST_FILE, namespaceOf, riskOf, type Manifest, type Risk } from "@tomradex/plugin-sdk";
+import type { PluginView, Plugins } from "@tomradex/plugins";
+import { defineTool } from "@tomradex/tools";
 
 export const Config = z.preprocess(
   (v) => v ?? {},
@@ -49,7 +49,7 @@ export interface Review {
   diff: { added: number; removed: number } | null;
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "studio.list": () => Workspace[];
     "studio.create": (input: { projectId: string; name: string; title?: string; description: string; engine?: string }) => { threadId: string; dir: string };
@@ -203,7 +203,7 @@ export default {
         execute: ({ types }) => {
           const text = fs.readFileSync(path.join(packageRoot, "reference", "sdk.md"), "utf8");
           if (!types) return text;
-          const dts = path.join(path.dirname(fileURLToPath(import.meta.resolve("@tomrade/plugin-sdk"))), "contract.d.ts");
+          const dts = path.join(path.dirname(fileURLToPath(import.meta.resolve("@tomradex/plugin-sdk"))), "contract.d.ts");
           return `${text}\n\n## contract.d.ts\n\n\`\`\`ts\n${fs.existsSync(dts) ? fs.readFileSync(dts, "utf8") : "(not built)"}\n\`\`\``;
         }
       })

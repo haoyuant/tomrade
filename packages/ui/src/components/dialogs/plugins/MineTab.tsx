@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Workspace } from "@tomrade/plugin-studio";
+import type { Workspace } from "@tomradex/plugin-studio";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";

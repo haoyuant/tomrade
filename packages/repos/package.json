@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/repos",
+  "name": "@tomradex/repos",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,13 +18,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/boards": "workspace:*",
-    "@tomrade/db": "workspace:*",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/storage": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/boards": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/storage": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

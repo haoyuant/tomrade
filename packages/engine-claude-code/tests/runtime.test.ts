@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { RuntimePool, MessageQueue, type Runtime } from "../src/runtime.js";
-import type { TurnInput, TurnIO } from "@tomrade/agent";
+import type { TurnInput, TurnIO } from "@tomradex/agent";
 
 export const input = (id = "thread"): TurnInput => ({ threadId: id, projectId: "project", purpose: "backlog", input: { kind: "text", text: "hello" }, messages: [], cards: [], brief: null, pending: null, options: {} });
 export const io = (resume?: string): TurnIO => ({ resume, emit() {}, delta() {}, progress() {}, signal: new AbortController().signal,

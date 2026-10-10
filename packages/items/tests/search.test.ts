@@ -4,7 +4,7 @@
  * for a trigram fall back to instr(), and the index follows every write.
  */
 import { describe, expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
+import { fresh } from "@tomradex/testkit";
 
 async function seed() {
   const f = await fresh();

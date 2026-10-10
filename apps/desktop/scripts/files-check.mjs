@@ -14,11 +14,11 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { boot } from "../dist/boot.js";
-import { createGitBackend, GitFileStore } from "@tomrade/files";
-import { gitRunner } from "@tomrade/storage";
+import { createGitBackend, GitFileStore } from "@tomradex/files";
+import { gitRunner } from "@tomradex/storage";
 
 // zod is the plugins' dependency, not the app's; borrow it from where the Files plugin resolves it.
-const { z } = await import(pathToFileURL(createRequire(import.meta.resolve("@tomrade/files")).resolve("zod")).href);
+const { z } = await import(pathToFileURL(createRequire(import.meta.resolve("@tomradex/files")).resolve("zod")).href);
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-ui-"));

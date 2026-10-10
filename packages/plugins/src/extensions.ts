@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Plugin } from "cordis";
-import { adaptSdkPlugin, identityOf } from "@tomrade/extensions";
-import { SDK_CONTRACT, isSdkPlugin, namespaceOf, riskOf, satisfies, type Manifest, type Risk } from "@tomrade/plugin-sdk";
+import { adaptSdkPlugin, identityOf } from "@tomradex/extensions";
+import { SDK_CONTRACT, isSdkPlugin, namespaceOf, riskOf, satisfies, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import {
   analyzePackage,
   dataDirFor,
@@ -20,7 +20,7 @@ import {
   type Lock,
   type LockEntry,
   type TrustTier
-} from "@tomrade/plugin-kit";
+} from "@tomradex/plugin-kit";
 
 export interface ExtensionStoreConfig {
   /** `~/Tomrade/plugins`: installed versions and each plugin's data. */
@@ -171,7 +171,7 @@ export class ExtensionStore {
     }
     const url = `${pathToFileURL(path.join(entry.dir, manifest.main)).href}?v=${digest.slice(0, 16)}`;
     const mod = (await this.config.importer(url)) as { default?: unknown };
-    if (!isSdkPlugin(mod.default)) throw new ExtensionRefused(`${id} does not export a plugin written with @tomrade/plugin-sdk's definePlugin`);
+    if (!isSdkPlugin(mod.default)) throw new ExtensionRefused(`${id} does not export a plugin written with @tomradex/plugin-sdk's definePlugin`);
     return adaptSdkPlugin(mod.default, identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) }));
   }
 

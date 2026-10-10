@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Db, ProjectDb, Sqlite } from "@tomrade/db";
-import { DeliveryStore } from "@tomrade/db";
-import type { ItemStatus } from "@tomrade/domain";
+import type { Db, ProjectDb, Sqlite } from "@tomradex/db";
+import { DeliveryStore } from "@tomradex/db";
+import type { ItemStatus } from "@tomradex/domain";
 import { DEFAULT_BRANCH_TEMPLATE } from "./keys.js";
 import type { PrState } from "./rules.js";
 
@@ -181,8 +181,8 @@ export interface CodeLinkView {
   updatedAt: number;
 }
 
-export type { DeliveryState, DeliveryView } from "@tomrade/db";
-import type { DeliveryState, DeliveryView } from "@tomrade/db";
+export type { DeliveryState, DeliveryView } from "@tomradex/db";
+import type { DeliveryState, DeliveryView } from "@tomradex/db";
 
 export type Readiness = "unknown" | "empty" | "scaffolded";
 export type RemoteState = "ok" | "unreachable" | "unknown";

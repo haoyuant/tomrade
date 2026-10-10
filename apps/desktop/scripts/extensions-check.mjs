@@ -10,7 +10,7 @@ import { app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { packPlugin } from "@tomrade/plugin-kit";
+import { packPlugin } from "@tomradex/plugin-kit";
 import { boot } from "../dist/boot.js";
 import { registerExtensionResolution } from "../dist/extension-resolve.js";
 
@@ -34,7 +34,7 @@ function extension(dir, id, body) {
   fs.writeFileSync(path.join(dir, "dist/index.js"), body);
 }
 
-const counter = (tool, label) => `import { definePlugin, defineTool } from "@tomrade/plugin-sdk";
+const counter = (tool, label) => `import { definePlugin, defineTool } from "@tomradex/plugin-sdk";
 import { z } from "zod";
 export default definePlugin({
   inject: ["tools", "items"],

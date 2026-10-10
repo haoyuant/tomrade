@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Db, ProjectDb } from "@tomrade/db";
-import type { Author } from "@tomrade/domain";
+import type { Db, ProjectDb } from "@tomradex/db";
+import type { Author } from "@tomradex/domain";
 import type { Block, CardView, GeneralExecution, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
 
 export const MIGRATIONS = [

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {} from "@tomrade/mcp-client";
-import type { McpServerView } from "@tomrade/mcp-client";
+import type {} from "@tomradex/mcp-client";
+import type { McpServerView } from "@tomradex/mcp-client";
 import { invoke, subscribe } from "./api";
 
 export const mcpClientKeys = { servers: ["mcpClient", "servers"] as const };

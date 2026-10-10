@@ -2,11 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { fresh, settle } from "@tomrade/testkit";
-import { Settings } from "@tomrade/settings";
-import { Storage } from "@tomrade/storage";
-import { Files } from "@tomrade/files";
-import { filesGithub } from "@tomrade/files-github";
+import { fresh, settle } from "@tomradex/testkit";
+import { Settings } from "@tomradex/settings";
+import { Storage } from "@tomradex/storage";
+import { Files } from "@tomradex/files";
+import { filesGithub } from "@tomradex/files-github";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-github-config-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -1,9 +1,9 @@
 export { ArchifyRuntime, ARCHIFY_REVISION, diagramTypes, type DiagramType } from "./runtime.js";
 import type {} from "cordis";
 import type { Context } from "cordis";
-import type {} from "@tomrade/agent";
-import type { Files } from "@tomrade/files";
-import { defineTool } from "@tomrade/tools";
+import type {} from "@tomradex/agent";
+import type { Files } from "@tomradex/files";
+import { defineTool } from "@tomradex/tools";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

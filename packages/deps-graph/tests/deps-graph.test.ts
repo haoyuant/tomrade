@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Contributions, type GraphEdge } from "@tomrade/contributions";
-import { fresh, sdk } from "@tomrade/testkit";
-import depsGraph from "@tomrade/deps-graph";
+import { Contributions, type GraphEdge } from "@tomradex/contributions";
+import { fresh, sdk } from "@tomradex/testkit";
+import depsGraph from "@tomradex/deps-graph";
 
 async function boot() {
   const world = await fresh({ plugins: [Contributions] });

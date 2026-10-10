@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { loadPlaybookDir, type Playbook } from "@tomrade/agent";
+import { loadPlaybookDir, type Playbook } from "@tomradex/agent";
 
 /**
  * The four backlog playbooks, one SKILL.md per `playbooks/<name>/` at the

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { Author } from "@tomrade/domain";
+import type { Author } from "@tomradex/domain";
 
 export interface WriteScope {
   runId: string;

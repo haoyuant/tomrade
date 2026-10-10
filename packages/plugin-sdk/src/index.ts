@@ -24,4 +24,4 @@ export type {
   SortKey,
   View,
   WorkType
-} from "@tomrade/domain";
+} from "@tomradex/domain";

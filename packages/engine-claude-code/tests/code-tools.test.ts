@@ -1,9 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { Context } from "cordis";
-import { Tools } from "@tomrade/tools";
-import { Mcp } from "@tomrade/mcp";
+import { Tools } from "@tomradex/tools";
+import { Mcp } from "@tomradex/mcp";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
-import type { TurnInput, TurnIO } from "@tomrade/agent";
+import type { TurnInput, TurnIO } from "@tomradex/agent";
 import { createClaudeCodeEngine } from "../src/index.js";
 
 const capture = vi.hoisted(() => ({ options: null as Options | null, decisions: [] as string[] }));

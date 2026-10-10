@@ -2,8 +2,8 @@ import { Context, Logger } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
 import { stringify } from "yaml";
-import { ExtensionStore, Plugins, type PluginRow } from "@tomrade/plugins";
-import { LOCK_FILE } from "@tomrade/plugin-kit";
+import { ExtensionStore, Plugins, type PluginRow } from "@tomradex/plugins";
+import { LOCK_FILE } from "@tomradex/plugin-kit";
 import { applyPatches, interpolate, readConfig, readRows, resolvePlugin, writePatchRow, type PluginPatch } from "./loader.js";
 
 export interface BootOptions {

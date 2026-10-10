@@ -1,11 +1,11 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { FieldDef, FieldOption } from "@tomrade/domain";
-import { defineTool, requireProjectId } from "@tomrade/tools";
-import type {} from "@tomrade/ipc";
+import type { FieldDef, FieldOption } from "@tomradex/domain";
+import { defineTool, requireProjectId } from "@tomradex/tools";
+import type {} from "@tomradex/ipc";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "./service.js";
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "fields.list": (projectId: string) => FieldDef[];
     "fields.create": (input: CreateFieldInput) => FieldDef;
