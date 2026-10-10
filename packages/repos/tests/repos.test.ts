@@ -8,10 +8,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { InUseError } from "@tomrade/domain";
-import { Repos, CheckoutUnsetError, normalizeRemote } from "@tomrade/repos";
-import { Storage } from "@tomrade/storage";
-import { fresh, settle } from "@tomrade/testkit";
+import { InUseError } from "@tomradex/domain";
+import { Repos, CheckoutUnsetError, normalizeRemote } from "@tomradex/repos";
+import { Storage } from "@tomradex/storage";
+import { fresh, settle } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-repos-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

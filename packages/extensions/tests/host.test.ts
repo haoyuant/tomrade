@@ -4,11 +4,11 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { Contributions } from "@tomrade/contributions";
-import { Settings } from "@tomrade/settings";
-import { Tools } from "@tomrade/tools";
-import { definePlugin, type PluginContext } from "@tomrade/plugin-sdk";
-import { fresh, sdk, settle } from "@tomrade/testkit";
+import { Contributions } from "@tomradex/contributions";
+import { Settings } from "@tomradex/settings";
+import { Tools } from "@tomradex/tools";
+import { definePlugin, type PluginContext } from "@tomradex/plugin-sdk";
+import { fresh, sdk, settle } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-ext-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

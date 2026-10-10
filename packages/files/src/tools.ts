@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import { defineTool, requireProjectId } from "@tomrade/tools";
+import { defineTool, requireProjectId } from "@tomradex/tools";
 import { formatSize, shortDate } from "./agent-index.js";
 import { policyAt } from "./git-sync.js";
 import type { Files } from "./service.js";

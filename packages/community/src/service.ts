@@ -4,12 +4,12 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type {} from "@tomrade/hub-cloud";
-import type {} from "@tomrade/ipc";
-import type {} from "@tomrade/settings";
-import { LIMITS, readManifest, tierOf, type ReviewReport, type TrustTier } from "@tomrade/plugin-kit";
-import { SDK_CONTRACT, satisfies, type Manifest } from "@tomrade/plugin-sdk";
-import type { Plugins, PluginsSnapshot } from "@tomrade/plugins";
+import type {} from "@tomradex/hub-cloud";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/settings";
+import { LIMITS, readManifest, tierOf, type ReviewReport, type TrustTier } from "@tomradex/plugin-kit";
+import { SDK_CONTRACT, satisfies, type Manifest } from "@tomradex/plugin-sdk";
+import type { Plugins, PluginsSnapshot } from "@tomradex/plugins";
 import { linkGitHub } from "./oauth.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
@@ -86,7 +86,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "community.search": (query: { text?: string; sort?: "downloads" | "updated" | "title" }) => Listing[];
     "community.plugin": (id: string) => PluginDetail;

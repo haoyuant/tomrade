@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { ExtensionAuthorError } from "@tomrade/domain";
-import { extensionScope } from "@tomrade/write";
+import { fresh } from "@tomradex/testkit";
+import { ExtensionAuthorError } from "@tomradex/domain";
+import { extensionScope } from "@tomradex/write";
 
 const as = <T>(human: boolean, fn: () => T) => extensionScope.run({ pluginId: "stale", human }, fn);
 

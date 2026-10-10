@@ -1,7 +1,7 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { Author } from "@tomrade/domain";
-import { writeContext } from "@tomrade/write";
+import type { Author } from "@tomradex/domain";
+import { writeContext } from "@tomradex/write";
 
 /** One tool call as the run's ledger remembers it. */
 export interface LedgerEntry {

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { GIT_ENV, GitFolder, type Git } from "@tomrade/storage";
+import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
 import type { FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */

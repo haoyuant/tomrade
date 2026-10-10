@@ -1,4 +1,4 @@
-import type { BuiltinFieldId, FieldDef, FieldType, FilterOp, Item, ItemStatus, Layout, OplogEntry, Priority, Provenance } from "@tomrade/domain";
+import type { BuiltinFieldId, FieldDef, FieldType, FilterOp, Item, ItemStatus, Layout, OplogEntry, Priority, Provenance } from "@tomradex/domain";
 import { ICON_IDS, type IconId } from "~/components/icons";
 import type { Locale } from "./i18n";
 

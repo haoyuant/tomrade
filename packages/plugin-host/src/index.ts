@@ -1,8 +1,8 @@
 import path from "node:path";
-import { fresh, sdk, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Contributions } from "@tomrade/contributions";
+import { fresh, sdk, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Contributions } from "@tomradex/contributions";
 
 export interface TestCheck {
   name: string;

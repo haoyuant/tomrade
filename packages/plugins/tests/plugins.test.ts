@@ -1,6 +1,6 @@
 import { Context, Service, type Plugin } from "cordis";
 import { beforeEach, describe, expect, it } from "vitest";
-import { Plugins, RequiredModuleError, type ModuleSpec, type PluginRow } from "@tomrade/plugins";
+import { Plugins, RequiredModuleError, type ModuleSpec, type PluginRow } from "@tomradex/plugins";
 
 /** Nested fibers activate a microtask after their dependencies; this lets them. */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -44,7 +44,7 @@ class Reader extends Service {
   }
 }
 
-/** One row, two service keys, reached through a nested plugin — the shape @tomrade/boards has. */
+/** One row, two service keys, reached through a nested plugin — the shape @tomradex/boards has. */
 const pair = {
   name: "pair",
   async apply(ctx: Context) {
@@ -269,7 +269,7 @@ describe("a row that cannot be loaded", () => {
     h = await boot([
       { id: "store", name: "store" },
       { id: "ledger", name: "ledger" },
-      { id: "ghost", name: "@tomrade/ghost" }
+      { id: "ghost", name: "@tomradex/ghost" }
     ]);
   });
 

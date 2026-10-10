@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { AssistantAccessory } from "@tomrade/contributions";
+import type { AssistantAccessory } from "@tomradex/contributions";
 import { useAccessoryState } from "~/lib/pet";
 
 export function PetStage({ accessory, threadId }: { accessory: AssistantAccessory; threadId: string | null }) {

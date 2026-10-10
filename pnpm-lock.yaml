@@ -23,127 +23,127 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../../packages/agent
-      '@tomrade/agent-backlog':
+      '@tomradex/agent-backlog':
         specifier: workspace:*
         version: link:../../packages/agent-backlog
-      '@tomrade/archify':
+      '@tomradex/archify':
         specifier: workspace:*
         version: link:../../packages/archify
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../../packages/boards
-      '@tomrade/code-link':
+      '@tomradex/code-link':
         specifier: workspace:*
         version: link:../../packages/code-link
-      '@tomrade/community':
+      '@tomradex/community':
         specifier: workspace:*
         version: link:../../packages/community
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../../packages/contributions
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@tomrade/deps-graph':
+      '@tomradex/deps-graph':
         specifier: workspace:*
         version: link:../../packages/deps-graph
-      '@tomrade/desktop-surface':
+      '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../../packages/desktop-surface
-      '@tomrade/engine-claude-code':
+      '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../../packages/engine-claude-code
-      '@tomrade/engine-codex':
+      '@tomradex/engine-codex':
         specifier: workspace:*
         version: link:../../packages/engine-codex
-      '@tomrade/engine-loop':
+      '@tomradex/engine-loop':
         specifier: workspace:*
         version: link:../../packages/engine-loop
-      '@tomrade/engine-scripted':
+      '@tomradex/engine-scripted':
         specifier: workspace:*
         version: link:../../packages/engine-scripted
-      '@tomrade/example-stale':
+      '@tomradex/example-stale':
         specifier: workspace:*
         version: link:../../examples/stale
-      '@tomrade/extensions':
+      '@tomradex/extensions':
         specifier: workspace:*
         version: link:../../packages/extensions
-      '@tomrade/fields':
+      '@tomradex/fields':
         specifier: workspace:*
         version: link:../../packages/fields
-      '@tomrade/files':
+      '@tomradex/files':
         specifier: workspace:*
         version: link:../../packages/files
-      '@tomrade/files-github':
+      '@tomradex/files-github':
         specifier: workspace:*
         version: link:../../packages/files-github
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../../packages/hub
-      '@tomrade/hub-cloud':
+      '@tomradex/hub-cloud':
         specifier: workspace:*
         version: link:../../packages/hub-cloud
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../../packages/items
-      '@tomrade/llm':
+      '@tomradex/llm':
         specifier: workspace:*
         version: link:../../packages/llm
-      '@tomrade/mcp':
+      '@tomradex/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
-      '@tomrade/mcp-client':
+      '@tomradex/mcp-client':
         specifier: workspace:*
         version: link:../../packages/mcp-client
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../../packages/oplog
-      '@tomrade/pet':
+      '@tomradex/pet':
         specifier: workspace:*
         version: link:../../packages/pet
-      '@tomrade/plugin-cli':
+      '@tomradex/plugin-cli':
         specifier: workspace:*
         version: link:../../packages/plugin-cli
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../../packages/plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
-      '@tomrade/plugin-studio':
+      '@tomradex/plugin-studio':
         specifier: workspace:*
         version: link:../../packages/plugin-studio
-      '@tomrade/plugins':
+      '@tomradex/plugins':
         specifier: workspace:*
         version: link:../../packages/plugins
-      '@tomrade/projects':
+      '@tomradex/projects':
         specifier: workspace:*
         version: link:../../packages/projects
-      '@tomrade/repos':
+      '@tomradex/repos':
         specifier: workspace:*
         version: link:../../packages/repos
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../../packages/settings
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../../packages/storage
-      '@tomrade/storage-git':
+      '@tomradex/storage-git':
         specifier: workspace:*
         version: link:../../packages/storage-git
-      '@tomrade/storage-github':
+      '@tomradex/storage-github':
         specifier: workspace:*
         version: link:../../packages/storage-github
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../../packages/tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../../packages/write
       cordis:
@@ -189,16 +189,16 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
-      '@tomrade/community':
+      '@tomradex/community':
         specifier: workspace:*
         version: link:../../packages/community
-      '@tomrade/plugin-cli':
+      '@tomradex/plugin-cli':
         specifier: workspace:*
         version: link:../../packages/plugin-cli
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../../packages/plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       tar:
@@ -217,7 +217,7 @@ importers:
 
   examples/stale:
     dependencies:
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       zod:
@@ -230,31 +230,31 @@ importers:
 
   packages/agent:
     dependencies:
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/llm':
+      '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -276,28 +276,28 @@ importers:
 
   packages/agent-backlog:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
-      '@tomrade/llm':
+      '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -313,13 +313,13 @@ importers:
 
   packages/archify:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/files':
+      '@tomradex/files':
         specifier: workspace:*
         version: link:../files
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -338,22 +338,22 @@ importers:
 
   packages/boards:
     dependencies:
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -369,46 +369,46 @@ importers:
 
   packages/code-link:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
-      '@tomrade/mcp':
+      '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@tomrade/repos':
+      '@tomradex/repos':
         specifier: workspace:*
         version: link:../repos
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -433,25 +433,25 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
-      '@tomrade/hub-cloud':
+      '@tomradex/hub-cloud':
         specifier: workspace:*
         version: link:../hub-cloud
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/plugin-cli':
+      '@tomradex/plugin-cli':
         specifier: workspace:*
         version: link:../plugin-cli
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@tomrade/plugins':
+      '@tomradex/plugins':
         specifier: workspace:*
         version: link:../plugins
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
       cordis:
@@ -470,13 +470,13 @@ importers:
 
   packages/contributions:
     dependencies:
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
       cordis:
@@ -489,7 +489,7 @@ importers:
 
   packages/db:
     dependencies:
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
       better-sqlite3:
@@ -511,7 +511,7 @@ importers:
 
   packages/deps-graph:
     dependencies:
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
     devDependencies:
@@ -544,10 +544,10 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.263
         version: 0.3.263(@anthropic-ai/sdk@0.122.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(supports-color@8.1.1)(zod@4.4.3))(zod@4.4.3)
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/mcp':
+      '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
       cordis:
@@ -566,16 +566,16 @@ importers:
 
   packages/engine-codex:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/engine-claude-code':
+      '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
-      '@tomrade/mcp':
+      '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
       cordis:
@@ -585,10 +585,10 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@tomrade/testkit':
+      '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       '@types/node':
@@ -603,13 +603,13 @@ importers:
 
   packages/engine-loop:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/llm':
+      '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -625,7 +625,7 @@ importers:
 
   packages/engine-scripted:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
       cordis:
@@ -638,46 +638,46 @@ importers:
 
   packages/extensions:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/desktop-surface':
+      '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../desktop-surface
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/fields':
+      '@tomradex/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@tomrade/projects':
+      '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -696,16 +696,16 @@ importers:
 
   packages/fields:
     dependencies:
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -721,43 +721,43 @@ importers:
 
   packages/files:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -776,13 +776,13 @@ importers:
 
   packages/files-github:
     dependencies:
-      '@tomrade/files':
+      '@tomradex/files':
         specifier: workspace:*
         version: link:../files
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/storage-github':
+      '@tomradex/storage-github':
         specifier: workspace:*
         version: link:../storage-github
       cordis:
@@ -801,7 +801,7 @@ importers:
 
   packages/hub:
     dependencies:
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
       cordis:
@@ -823,19 +823,19 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/projects':
+      '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
       cordis:
@@ -857,28 +857,28 @@ importers:
 
   packages/items:
     dependencies:
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/fields':
+      '@tomradex/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -897,10 +897,10 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.122.0
         version: 0.122.0(zod@4.4.3)
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
       cordis:
@@ -922,13 +922,13 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -956,13 +956,13 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -972,7 +972,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@tomrade/testkit':
+      '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
       '@types/node':
@@ -984,29 +984,29 @@ importers:
 
   packages/oplog:
     dependencies:
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
-      '@tomrade/testkit':
+      '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       typescript:
@@ -1018,19 +1018,19 @@ importers:
 
   packages/pet:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/desktop-surface':
+      '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../desktop-surface
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
       cordis:
@@ -1049,13 +1049,13 @@ importers:
 
   packages/plugin-cli:
     dependencies:
-      '@tomrade/plugin-host':
+      '@tomradex/plugin-host':
         specifier: workspace:*
         version: link:../plugin-host
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
       cordis:
@@ -1077,16 +1077,16 @@ importers:
 
   packages/plugin-host:
     dependencies:
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/testkit':
+      '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -1105,7 +1105,7 @@ importers:
       '@babel/parser':
         specifier: ^7.29.8
         version: 7.29.8
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
       tar:
@@ -1124,7 +1124,7 @@ importers:
 
   packages/plugin-sdk:
     dependencies:
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
       zod:
@@ -1137,28 +1137,28 @@ importers:
 
   packages/plugin-studio:
     dependencies:
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/plugin-cli':
+      '@tomradex/plugin-cli':
         specifier: workspace:*
         version: link:../plugin-cli
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@tomrade/plugins':
+      '@tomradex/plugins':
         specifier: workspace:*
         version: link:../plugins
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -1177,16 +1177,16 @@ importers:
 
   packages/plugins:
     dependencies:
-      '@tomrade/extensions':
+      '@tomradex/extensions':
         specifier: workspace:*
         version: link:../extensions
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
       cordis:
@@ -1202,19 +1202,19 @@ importers:
 
   packages/projects:
     dependencies:
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       better-sqlite3:
@@ -1239,25 +1239,25 @@ importers:
 
   packages/repos:
     dependencies:
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
-      '@tomrade/tools':
+      '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
       cordis:
@@ -1276,13 +1276,13 @@ importers:
 
   packages/settings:
     dependencies:
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
       cordis:
@@ -1301,31 +1301,31 @@ importers:
 
   packages/storage:
     dependencies:
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/projects':
+      '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -1344,7 +1344,7 @@ importers:
 
   packages/storage-git:
     dependencies:
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
       cordis:
@@ -1363,13 +1363,13 @@ importers:
 
   packages/storage-github:
     dependencies:
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
-      '@tomrade/storage-git':
+      '@tomradex/storage-git':
         specifier: workspace:*
         version: link:../storage-git
       cordis:
@@ -1388,34 +1388,34 @@ importers:
 
   packages/testkit:
     dependencies:
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/extensions':
+      '@tomradex/extensions':
         specifier: workspace:*
         version: link:../extensions
-      '@tomrade/fields':
+      '@tomradex/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@tomrade/projects':
+      '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -1428,10 +1428,10 @@ importers:
 
   packages/tools:
     dependencies:
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/write':
+      '@tomradex/write':
         specifier: workspace:*
         version: link:../write
       cordis:
@@ -1480,28 +1480,28 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.32
         version: 1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@tomrade/agent':
+      '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomrade/fields':
+      '@tomradex/fields':
         specifier: workspace:*
         version: link:../fields
-      '@tomrade/hub':
+      '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
-      '@tomrade/hub-cloud':
+      '@tomradex/hub-cloud':
         specifier: workspace:*
         version: link:../hub-cloud
-      '@tomrade/repos':
+      '@tomradex/repos':
         specifier: workspace:*
         version: link:../repos
-      '@tomrade/settings':
+      '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
-      '@tomrade/storage':
+      '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
       '@xyflow/react':
@@ -1532,55 +1532,55 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.3(vite@6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
-      '@tomrade/boards':
+      '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
-      '@tomrade/code-link':
+      '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
-      '@tomrade/community':
+      '@tomradex/community':
         specifier: workspace:*
         version: link:../community
-      '@tomrade/contributions':
+      '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomrade/db':
+      '@tomradex/db':
         specifier: workspace:*
         version: link:../db
-      '@tomrade/files':
+      '@tomradex/files':
         specifier: workspace:*
         version: link:../files
-      '@tomrade/ipc':
+      '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
-      '@tomrade/items':
+      '@tomradex/items':
         specifier: workspace:*
         version: link:../items
-      '@tomrade/llm':
+      '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
-      '@tomrade/mcp':
+      '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@tomrade/mcp-client':
+      '@tomradex/mcp-client':
         specifier: workspace:*
         version: link:../mcp-client
-      '@tomrade/oplog':
+      '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
-      '@tomrade/plugin-kit':
+      '@tomradex/plugin-kit':
         specifier: workspace:*
         version: link:../plugin-kit
-      '@tomrade/plugin-sdk':
+      '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@tomrade/plugin-studio':
+      '@tomradex/plugin-studio':
         specifier: workspace:*
         version: link:../plugin-studio
-      '@tomrade/plugins':
+      '@tomradex/plugins':
         specifier: workspace:*
         version: link:../plugins
-      '@tomrade/projects':
+      '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
       '@types/react':
@@ -1604,7 +1604,7 @@ importers:
 
   packages/write:
     dependencies:
-      '@tomrade/domain':
+      '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
       cordis:

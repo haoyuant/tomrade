@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Board, FieldDef, FieldType, Item } from "@tomrade/domain";
+import type { Board, FieldDef, FieldType, Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";

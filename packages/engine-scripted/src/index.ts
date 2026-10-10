@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
+import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 
 const CANCEL = "Cancel";
 

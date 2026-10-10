@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as esbuild from "esbuild";
-import { readManifest } from "@tomrade/plugin-kit";
+import { readManifest } from "@tomradex/plugin-kit";
 import { SHARED } from "./sandbox.js";
 
 export interface BuildResult {

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type {} from "@tomrade/hub-cloud";
+import type {} from "@tomradex/hub-cloud";
 import { invoke } from "./api";
 import { useHubInfo } from "./queries";
 

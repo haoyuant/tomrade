@@ -1,6 +1,6 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { useState } from "react";
-import type { FileEntry, FileSyncPreference, SyncMode } from "@tomrade/files";
+import type { FileEntry, FileSyncPreference, SyncMode } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { ContextMenuActionItem } from "~/components/ui/menu";

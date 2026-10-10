@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
-import { MANIFEST_FILE, nameOf, parseManifest, publisherOf, type Manifest } from "@tomrade/plugin-sdk";
+import { MANIFEST_FILE, nameOf, parseManifest, publisherOf, type Manifest } from "@tomradex/plugin-sdk";
 import { listFiles, treeDigest } from "./digest.js";
 import type { Attestation } from "./sign.js";
 

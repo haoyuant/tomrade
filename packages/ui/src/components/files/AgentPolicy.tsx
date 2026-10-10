@@ -1,6 +1,6 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { useState } from "react";
-import type { FileEntry, FileListPreference, ListMode } from "@tomrade/files";
+import type { FileEntry, FileListPreference, ListMode } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { ContextMenuActionItem } from "~/components/ui/menu";
 import { useFilesAgentIndex, useFilesAgentPolicy, useSetAgentRules } from "~/lib/files";

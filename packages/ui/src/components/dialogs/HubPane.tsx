@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { StorageProviderView, SyncState } from "@tomrade/storage";
+import type { StorageProviderView, SyncState } from "@tomradex/storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "~/components/icons";
 import { ConnectionPanel, DestinationPicker, message } from "~/components/projects/destination";

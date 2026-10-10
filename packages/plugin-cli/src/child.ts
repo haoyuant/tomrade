@@ -23,7 +23,7 @@ const MARK = "@@tomrade-sandbox@@";
 const payload = JSON.parse(process.argv[2] ?? "{}") as Payload;
 
 /** The host's own copies, as Node resolves them from here. */
-const SHARED_NAMES = ["cordis", "@tomrade/plugin-sdk", "zod", "zod/v4", "zod/v4/core", "zod/mini"];
+const SHARED_NAMES = ["cordis", "@tomradex/plugin-sdk", "zod", "zod/v4", "zod/v4/core", "zod/mini"];
 const shared: Record<string, string> = Object.fromEntries(
   SHARED_NAMES.flatMap((name) => {
     try {
@@ -53,9 +53,9 @@ async function load(file: string): Promise<Record<string, unknown>> {
 type SdkPlugin = { inject?: string[]; optional?: string[]; config?: { safeParse(v: unknown): { success: boolean; data?: unknown } }; apply(ctx: unknown, config: unknown): unknown };
 
 async function plugin(): Promise<SdkPlugin> {
-  const sdk = (await import(shared["@tomrade/plugin-sdk"]!)) as { isSdkPlugin(v: unknown): boolean };
+  const sdk = (await import(shared["@tomradex/plugin-sdk"]!)) as { isSdkPlugin(v: unknown): boolean };
   const mod = await load(payload.main);
-  if (!sdk.isSdkPlugin(mod.default)) throw new Error("the default export is not a plugin made with definePlugin from @tomrade/plugin-sdk");
+  if (!sdk.isSdkPlugin(mod.default)) throw new Error("the default export is not a plugin made with definePlugin from @tomradex/plugin-sdk");
   return mod.default as SdkPlugin;
 }
 
@@ -76,9 +76,9 @@ async function inspect() {
   report({ ok: true, inject: p.inject ?? [], optional: p.optional ?? [], recording });
 }
 
-/** The Tomrade a plugin is tested against lives in @tomrade/plugin-host, so this package carries none of it. */
+/** The Tomrade a plugin is tested against lives in @tomradex/plugin-host, so this package carries none of it. */
 async function test() {
-  const { testPlugin } = await import("@tomrade/plugin-host");
+  const { testPlugin } = await import("@tomradex/plugin-host");
   const p = await plugin();
   const scenario = payload.scenario;
   report(await testPlugin({ plugin: p, id: payload.id, namespace: payload.namespace, dir: payload.dir, tmp: payload.tmp, scenario: scenario ? () => load(scenario) : null }));

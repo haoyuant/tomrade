@@ -1,5 +1,5 @@
-import type { Db, Migration } from "@tomrade/db";
-import type { Author } from "@tomrade/domain";
+import type { Db, Migration } from "@tomradex/db";
+import type { Author } from "@tomradex/domain";
 
 /** The remote a project shares its files through. Per project, non-secret, travels in the project's folder. */
 export interface RemoteRow {

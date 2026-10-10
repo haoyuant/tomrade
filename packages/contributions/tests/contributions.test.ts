@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Contributions } from "@tomrade/contributions";
-import { fresh } from "@tomrade/testkit";
+import { Contributions } from "@tomradex/contributions";
+import { fresh } from "@tomradex/testkit";
 
 describe("contributions", () => {
   it("a plugin contributes commands, badges, status items and sections as data, and they leave with it", async () => {

@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/hub-cloud",
+  "name": "@tomradex/hub-cloud",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -11,11 +11,11 @@
   "scripts": { "build": "tsc -b", "typecheck": "tsc -p tsconfig.json --noEmit" },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/projects": "workspace:*",
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/storage": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/projects": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/storage": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   }

@@ -3,14 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readManifest } from "@tomrade/plugin-kit";
-import { namespaceOf } from "@tomrade/plugin-sdk";
+import { readManifest } from "@tomradex/plugin-kit";
+import { namespaceOf } from "@tomradex/plugin-sdk";
 import type { Recording } from "./record.js";
 
 export const RESULT_MARK = "@@tomrade-sandbox@@";
 
 /** Imports a plugin needs from the host and must not bundle. */
-export const SHARED = ["cordis", "@tomrade/plugin-sdk", "zod", "zod/v4", "zod/v4/core", "zod/mini"];
+export const SHARED = ["cordis", "@tomradex/plugin-sdk", "zod", "zod/v4", "zod/v4/core", "zod/mini"];
 
 export interface InspectResult {
   ok: boolean;
@@ -76,7 +76,7 @@ export async function runSandboxed(mode: "inspect" | "test", dir: string, opts: 
   const pluginDir = fs.realpathSync(dir);
   const manifest = readManifest(pluginDir);
   const child = childFile();
-  if (!fs.existsSync(child)) throw new Error(`${child} is missing; build @tomrade/plugin-cli first`);
+  if (!fs.existsSync(child)) throw new Error(`${child} is missing; build @tomradex/plugin-cli first`);
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sandbox-")));
   const reads = [...new Set([pluginDir, tmp, hostRoot()])];
   const payload = {

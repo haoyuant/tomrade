@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { Item } from "@tomrade/domain";
-import type { LlmService } from "@tomrade/llm";
+import type { Item } from "@tomradex/domain";
+import type { LlmService } from "@tomradex/llm";
 
 /** Latin words plus CJK bigrams, so “喝水提醒” and "water reminder" both score. */
 export function tokens(text: string): Set<string> {

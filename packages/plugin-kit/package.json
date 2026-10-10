@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/plugin-kit",
+  "name": "@tomradex/plugin-kit",
   "private": true,
   "license": "Apache-2.0",
   "version": "0.0.0",
@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@babel/parser": "^7.29.8",
-    "@tomrade/plugin-sdk": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
     "tar": "^7.5.22",
     "zod": "^4.4.3"
   },

@@ -4,9 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createClaudeCodeEngine } from "../src/index.js";
-import { Tools } from "@tomrade/tools";
-import { Mcp } from "@tomrade/mcp";
-import type { TurnInput, TurnIO } from "@tomrade/agent";
+import { Tools } from "@tomradex/tools";
+import { Mcp } from "@tomradex/mcp";
+import type { TurnInput, TurnIO } from "@tomradex/agent";
 
 it("drives the actual SDK across multiple messages, diffs cumulative cost, and retains its process after interrupt", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-"));

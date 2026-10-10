@@ -3,11 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { Context, Service } from "cordis";
-import type { AgentActivity, RunView } from "@tomrade/agent";
-import type { AssistantAccessory } from "@tomrade/contributions";
-import type { DesktopSurface, DesktopSurfaceSpec, SurfaceBounds } from "@tomrade/desktop-surface";
-import { Settings } from "@tomrade/settings";
-import { Pet, type PetSettings } from "@tomrade/pet";
+import type { AgentActivity, RunView } from "@tomradex/agent";
+import type { AssistantAccessory } from "@tomradex/contributions";
+import type { DesktopSurface, DesktopSurfaceSpec, SurfaceBounds } from "@tomradex/desktop-surface";
+import { Settings } from "@tomradex/settings";
+import { Pet, type PetSettings } from "@tomradex/pet";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pet-test-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

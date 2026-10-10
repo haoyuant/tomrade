@@ -75,48 +75,48 @@ modules:
 
 plugins:
   - id: archify
-    name: "@tomrade/archify"
+    name: "@tomradex/archify"
     config:
       cacheDirectory: "${userData}/runtimes/archify"
   # Caches only: every file under here can be rebuilt from a project's folder.
   - id: db
-    name: "@tomrade/db"
+    name: "@tomradex/db"
     config:
       dir: "${userData}/cache"
   # This machine: its id and local project/repository placements. Hub metadata
   # belongs to Supabase; no local Hub state file is created.
   - id: hub
-    name: "@tomrade/hub"
+    name: "@tomradex/hub"
     config:
       catalogFile: "${userData}/catalog.json"
       deviceFile: "${userData}/device.json"
       defaultDir: "${hubDir}"
   - id: oplog
-    name: "@tomrade/oplog"
+    name: "@tomradex/oplog"
   - id: write-policy
-    name: "@tomrade/write"
+    name: "@tomradex/write"
   # The field registry: built-in fields plus each project's own. Items inject it
   # to validate custom values, so it sits beside them in the required set.
   - id: fields
-    name: "@tomrade/fields"
+    name: "@tomradex/fields"
   - id: items
-    name: "@tomrade/items"
+    name: "@tomradex/items"
   - id: boards
-    name: "@tomrade/boards"
+    name: "@tomradex/boards"
   - id: projects
-    name: "@tomrade/projects"
+    name: "@tomradex/projects"
     config:
       legacyPath: "${userData}/tomrade.db"
       backupsDir: "${userData}/backups"
   - id: settings
-    name: "@tomrade/settings"
+    name: "@tomradex/settings"
     config:
       path: "${userData}/settings.json"
   # Each project's folder is the truth and the cache follows it: the log is
   # written through, the snapshot shortly after, and a folder changed by anyone
   # else is read back in. Git is driven only in folders Tomrade made itself.
   - id: storage
-    name: "@tomrade/storage"
+    name: "@tomradex/storage"
   # Activated when the deployment supplies a Supabase URL and publishable key.
   # Migrates only Hub metadata; project storage providers below keep their role.
   - id: hub-cloud
@@ -125,64 +125,64 @@ plugins:
       userData: "${userData}"
   # Remote transports for a project's own repository: any git URL…
   - id: storage-git
-    name: "@tomrade/storage-git"
+    name: "@tomradex/storage-git"
   # …and GitHub as a hosting choice on top: find a repository, make one.
   - id: storage-github
-    name: "@tomrade/storage-github"
+    name: "@tomradex/storage-github"
   # The code repositories workstreams stand for: shared identity in the project,
   # this machine's checkout in the catalog, a worktree per agent thread.
   - id: repos
-    name: "@tomrade/repos"
+    name: "@tomradex/repos"
   - id: llm
-    name: "@tomrade/llm"
+    name: "@tomradex/llm"
   - id: tools
-    name: "@tomrade/tools"
+    name: "@tomradex/tools"
   # The platform: threads, runs, the ledger, run-scoped undo, and the
   # engine/workflow/playbook/policy registries. It conducts nothing itself.
   - id: agent
-    name: "@tomrade/agent"
+    name: "@tomradex/agent"
     config:
       playbooksDir: "${userData}/playbooks"
       mediaDir: "${userData}/agent-media"
   # Engines are conductors; several can be installed, a thread picks one.
   - id: engine-loop
-    name: "@tomrade/engine-loop"
+    name: "@tomradex/engine-loop"
   - id: engine-scripted
-    name: "@tomrade/engine-scripted"
+    name: "@tomradex/engine-scripted"
   - id: engine-claude-code
-    name: "@tomrade/engine-claude-code"
+    name: "@tomradex/engine-claude-code"
   - id: engine-codex
-    name: "@tomrade/engine-codex"
+    name: "@tomradex/engine-codex"
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
-    name: "@tomrade/agent-backlog"
+    name: "@tomradex/agent-backlog"
   # The dependency lens over Item.blocks: the Dependencies graph and the
   # "blocked" badge. Optional — the platform stores the edges either way.
   - id: deps-graph
-    name: "@tomrade/deps-graph"
+    name: "@tomradex/deps-graph"
   # Ticket ↔ code: the branches, pull requests and coding sessions of a ticket,
   # its status read from git, and the Start button that hands a ticket to a
   # local coding agent. Optional — nothing else reads its tables.
   - id: code-link
-    name: "@tomrade/code-link"
+    name: "@tomradex/code-link"
     config:
       scanMs: 120000
   # The project's files: a folder tree beside the backlog, every save a
   # version, shared through a remote the project names. Optional — tickets keep
   # only versioned references, which read as unavailable without it.
   - id: files
-    name: "@tomrade/files"
+    name: "@tomradex/files"
   # …and GitHub as where those files are shared: find a repository, make one.
   - id: files-github
-    name: "@tomrade/files-github"
+    name: "@tomradex/files-github"
   - id: mcp
-    name: "@tomrade/mcp"
+    name: "@tomradex/mcp"
     config:
       port: 19090
   # The other direction: MCP servers the person connects in Settings, their
   # tools registered beside the built-in ones. Optional — nothing depends on it.
   - id: mcp-client
-    name: "@tomrade/mcp-client"
+    name: "@tomradex/mcp-client"
   - id: ipc
     name: ./dist/ipc.js
   - id: shell
@@ -192,17 +192,17 @@ plugins:
   - id: desktop-surfaces
     name: ./dist/surfaces.js
   - id: contributions
-    name: "@tomrade/contributions"
+    name: "@tomradex/contributions"
   # Optional task-state companion: its row switch unloads the contribution,
   # channels, listeners, timers and desktop surface together.
   - id: pet
-    name: "@tomrade/pet"
+    name: "@tomradex/pet"
   - id: community
-    name: "@tomrade/community"
+    name: "@tomradex/community"
   - id: plugin-studio
-    name: "@tomrade/plugin-studio"
+    name: "@tomradex/plugin-studio"
     config:
       devRoot: "${pluginsDevRoot}"
   # A third-party plugin: it edits nothing above, it is only listed here.
   - id: stale
-    name: "@tomrade/example-stale"
+    name: "@tomradex/example-stale"

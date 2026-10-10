@@ -12,14 +12,14 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Context } from "cordis";
-import { Agent, type Engine, type TurnInput } from "@tomrade/agent";
-import { CodeLink, BOOTSTRAP_LABEL, sessionContext } from "@tomrade/code-link";
-import { Contributions } from "@tomrade/contributions";
-import { Repos } from "@tomrade/repos";
-import { Settings } from "@tomrade/settings";
-import { Storage } from "@tomrade/storage";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
+import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
+import { CodeLink, BOOTSTRAP_LABEL, sessionContext } from "@tomradex/code-link";
+import { Contributions } from "@tomradex/contributions";
+import { Repos } from "@tomradex/repos";
+import { Settings } from "@tomradex/settings";
+import { Storage } from "@tomradex/storage";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-start-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -486,7 +486,7 @@ describe("starting a ticket", () => {
     // Without the MCP server there is nothing for the agent to connect to.
     expect(await codeLink.start(project.id, item.id, { mode: "terminal" })).toMatchObject({ ok: false, gate: "mcp" });
 
-    const { Mcp } = await import("@tomrade/mcp");
+    const { Mcp } = await import("@tomradex/mcp");
     await ctx.plugin(Mcp, { port: 0 });
     await settle();
     const result = await codeLink.start(project.id, item.id, { mode: "terminal" });
@@ -618,7 +618,7 @@ describe("starting a General ticket", () => {
     // The terminal path binds the same thread and delivery; the CLI gets the whole brief in its prompt file.
     ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
     expect(await codeLink.start(project.id, item.id, { mode: "terminal" })).toMatchObject({ ok: false, gate: "mcp" });
-    const { Mcp } = await import("@tomrade/mcp");
+    const { Mcp } = await import("@tomradex/mcp");
     await ctx.plugin(Mcp, { port: 0 });
     await settle();
     // A method whose capability no plugin provides is refused before anything is created.

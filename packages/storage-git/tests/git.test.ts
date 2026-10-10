@@ -9,9 +9,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { fresh, settle } from "@tomrade/testkit";
-import { ARTIFACT_DIR, Storage, digestState, readArtifact, writeArtifact } from "@tomrade/storage";
-import storageGit from "@tomrade/storage-git";
+import { fresh, settle } from "@tomradex/testkit";
+import { ARTIFACT_DIR, Storage, digestState, readArtifact, writeArtifact } from "@tomradex/storage";
+import storageGit from "@tomradex/storage-git";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-git-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

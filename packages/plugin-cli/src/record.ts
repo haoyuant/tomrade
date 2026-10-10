@@ -14,7 +14,7 @@ import {
   type SurfacesApi,
   type ToolsApi,
   type ViewsApi
-} from "@tomrade/plugin-sdk";
+} from "@tomradex/plugin-sdk";
 
 /** What a plugin registers when it is applied with nothing real behind it. */
 export interface Recording {

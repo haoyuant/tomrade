@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type AppSettings, type BuiltInTheme, type CustomTheme, type ThemeAutomation, type ThemePreference } from "@tomrade/domain";
+import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type AppSettings, type BuiltInTheme, type CustomTheme, type ThemeAutomation, type ThemePreference } from "@tomradex/domain";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import type { MessageKey } from "./i18n";

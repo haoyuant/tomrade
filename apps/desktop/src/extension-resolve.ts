@@ -2,7 +2,7 @@ import { register } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const SHARED = ["cordis", "@tomrade/plugin-sdk", "zod", "zod/v4", "zod/v4/core", "zod/mini"];
+const SHARED = ["cordis", "@tomradex/plugin-sdk", "zod", "zod/v4", "zod/v4/core", "zod/mini"];
 
 /** Call before the first extension is imported; later imports see the hook. */
 export function registerExtensionResolution(appRoots: string[]): void {

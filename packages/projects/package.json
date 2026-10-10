@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/projects",
+  "name": "@tomradex/projects",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,11 +18,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/db": "workspace:*",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "better-sqlite3": "^13.0.3",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"

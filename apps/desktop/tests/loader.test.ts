@@ -31,7 +31,7 @@ describe("reading a composition", () => {
     title: Language model
 plugins:
   - id: db
-    name: "@tomrade/db"
+    name: "@tomradex/db"
 `
       )
     );
@@ -39,7 +39,7 @@ plugins:
       { id: "db", title: "Database", required: true },
       { id: "llm", title: "Language model", required: false }
     ]);
-    expect(config.rows).toEqual([{ id: "db", name: "@tomrade/db" }]);
+    expect(config.rows).toEqual([{ id: "db", name: "@tomradex/db" }]);
   });
 
   it("a file with no modules block is a composition with nothing required", () => {
@@ -85,9 +85,9 @@ plugins:
   });
 
   it("is what a later boot reads: the patch decides the row", () => {
-    const base = readConfig(write("tomrade.yml", "plugins:\n  - id: mcp\n    name: \"@tomrade/mcp\"\n")).rows;
+    const base = readConfig(write("tomrade.yml", "plugins:\n  - id: mcp\n    name: \"@tomradex/mcp\"\n")).rows;
     const patch = file("patch.yml");
     writePatchRow(patch, "mcp", { disabled: true });
-    expect(applyPatches(base, [readRows(patch)])).toEqual([{ id: "mcp", name: "@tomrade/mcp", disabled: true }]);
+    expect(applyPatches(base, [readRows(patch)])).toEqual([{ id: "mcp", name: "@tomradex/mcp", disabled: true }]);
   });
 });

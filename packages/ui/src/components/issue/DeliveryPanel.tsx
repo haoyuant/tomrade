@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DeliveryResource, Item } from "@tomrade/domain";
+import type { DeliveryResource, Item } from "@tomradex/domain";
 import { FilePickerDialog } from "~/components/files/FilePickerDialog";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";

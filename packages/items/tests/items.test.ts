@@ -4,8 +4,8 @@
  * mutation lands in the oplog, and undo restores state.
  */
 import { describe, expect, it } from "vitest";
-import { ConflictError, DependencyCycleError, HumanLockedError, NotFoundError, PurgeNotPermittedError, provenanceOf } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
+import { ConflictError, DependencyCycleError, HumanLockedError, NotFoundError, PurgeNotPermittedError, provenanceOf } from "@tomradex/domain";
+import { fresh } from "@tomradex/testkit";
 
 describe("items (write path)", () => {
   it("persists and queries work type independently of hierarchy", async () => {

@@ -107,7 +107,7 @@ the repository's native Electron regression approach was used instead.
 ## Intentional boundaries
 
 - Files storage, picker/preview and media-generation providers were future
-  plugin scope when this landed. Files has since shipped as `@tomrade/files`
+  plugin scope when this landed. Files has since shipped as `@tomradex/files`
   (see `docs/plugin-api.md`, Files); media generation has not. Core supplies resolver/capability contracts and
   versioned references, not an alternative attachment store. Missing capabilities
   are explicit startup errors, never fabricated generated files.

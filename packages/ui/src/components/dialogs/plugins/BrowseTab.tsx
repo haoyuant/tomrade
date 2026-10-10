@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Listing } from "@tomrade/community";
+import type { Listing } from "@tomradex/community";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";

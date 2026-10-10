@@ -1,4 +1,4 @@
-import type { UndoRecord } from "@tomrade/domain";
+import type { UndoRecord } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { Kbd, Num } from "~/components/ui/atoms";

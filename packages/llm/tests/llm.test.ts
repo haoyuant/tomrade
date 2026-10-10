@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { FakeChatModel, collect, userMessage, withPromptTools, type ChatModel } from "@tomrade/llm";
+import { FakeChatModel, collect, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
 
 describe("collect", () => {
   it("gathers text, tool calls and the stop reason", async () => {

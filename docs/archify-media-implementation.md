@@ -2,7 +2,7 @@
 
 ## Usage
 
-The desktop configuration enables `@tomrade/archify`. Ask the loop or a local
+The desktop configuration enables `@tomradex/archify`. Ask the loop or a local
 agent to draw an architecture, workflow, sequence, dataflow, or lifecycle diagram.
 The shared `diagram.archify` playbook and `diagram_schema` / `diagram_render`
 tools are available through the loop registry and run-bound local MCP.

@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/mcp",
+  "name": "@tomradex/mcp",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.1",
@@ -19,9 +19,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "express": "^4.22.2",
     "zod": "^4.4.3"

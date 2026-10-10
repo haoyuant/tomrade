@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { frontmatter } from "@tomrade/agent";
+import { frontmatter } from "@tomradex/agent";
 import { slugify } from "./keys.js";
 
 export type DecisionStatus = "proposed" | "accepted" | "superseded";

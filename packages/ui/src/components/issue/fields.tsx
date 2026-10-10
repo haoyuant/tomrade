@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { Board, FieldDef, FieldValue, Item, ItemStatus, Patch, Priority } from "@tomrade/domain";
+import type { Board, FieldDef, FieldValue, Item, ItemStatus, Patch, Priority } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket } from "~/lib/domain";

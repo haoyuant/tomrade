@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ZodError } from "zod";
-import { analyzePackage, atLeast, packPlugin, readManifest, type Analysis } from "@tomrade/plugin-kit";
-import { MANIFEST_FILE, isOpenSource, riskOf, type Manifest, type Risk } from "@tomrade/plugin-sdk";
+import { analyzePackage, atLeast, packPlugin, readManifest, type Analysis } from "@tomradex/plugin-kit";
+import { MANIFEST_FILE, isOpenSource, riskOf, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import { build, scenarioOf, type BuildResult } from "./build.js";
 import { runSandboxed, type InspectResult, type SandboxOptions, type TestResult } from "./sandbox.js";
 

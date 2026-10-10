@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
-import { LAYOUTS } from "@tomrade/domain";
+import { LAYOUTS } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
 import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";

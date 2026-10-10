@@ -1,8 +1,8 @@
 /** Workstreams are a field's options, so agents get the full set: list, create, rename, remove-with-move. */
 import { describe, expect, it } from "vitest";
-import { InUseError } from "@tomrade/domain";
-import { Tools, ToolInputError } from "@tomrade/tools";
-import { fresh } from "@tomrade/testkit";
+import { InUseError } from "@tomradex/domain";
+import { Tools, ToolInputError } from "@tomradex/tools";
+import { fresh } from "@tomradex/testkit";
 
 async function withTools() {
   const f = await fresh();

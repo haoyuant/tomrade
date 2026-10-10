@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ItemStatus, Priority, WorkType } from "@tomrade/domain";
+import type { ItemStatus, Priority, WorkType } from "@tomradex/domain";
 import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";

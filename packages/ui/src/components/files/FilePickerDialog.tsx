@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { FileEntry } from "@tomrade/files";
+import type { FileEntry } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { useFilesTree } from "~/lib/files";

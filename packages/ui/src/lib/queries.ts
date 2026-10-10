@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { CommandScope } from "@tomrade/contributions";
-import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomrade/storage";
-import type {} from "@tomrade/hub";
-import type {} from "@tomrade/repos";
-import type { CheckoutSelection, CheckoutView } from "@tomrade/repos";
-import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomrade/fields";
-import type { Repo, RepoPatch } from "@tomrade/domain";
+import type { CommandScope } from "@tomradex/contributions";
+import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomradex/storage";
+import type {} from "@tomradex/hub";
+import type {} from "@tomradex/repos";
+import type { CheckoutSelection, CheckoutView } from "@tomradex/repos";
+import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomradex/fields";
+import type { Repo, RepoPatch } from "@tomradex/domain";
 import type {
   AppSettings,
   Board,
@@ -20,7 +20,7 @@ import type {
   ProjectPatch,
   View,
   ViewPatch
-} from "@tomrade/domain";
+} from "@tomradex/domain";
 import { invoke } from "./api";
 
 export const keys = {

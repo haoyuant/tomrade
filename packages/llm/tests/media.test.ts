@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { AnthropicModel, OpenAiCompatible, ImagesModel, collect } from "@tomrade/llm";
+import { AnthropicModel, OpenAiCompatible, ImagesModel, collect } from "@tomradex/llm";
 
 afterEach(() => vi.unstubAllGlobals());
 const media = { mime: "image/png", name: "input.png", base64: "aGVsbG8=" };

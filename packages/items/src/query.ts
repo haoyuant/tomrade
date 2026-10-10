@@ -1,10 +1,10 @@
-import { ITEM_STATUSES, dayBound, type FieldDef, type FilterClause, type FieldValue, type SortKey } from "@tomrade/domain";
+import { ITEM_STATUSES, dayBound, type FieldDef, type FilterClause, type FieldValue, type SortKey } from "@tomradex/domain";
 
 /**
  * Compiles a view query to SQL over `items i`. Built-in fields are column
  * expressions; each custom field the query touches is one LEFT JOIN on
  * `item_values`, so a sort or range filter hits the (field_id, num|text) index.
- * The pure evaluator in @tomrade/domain must agree with this — the parity test
+ * The pure evaluator in @tomradex/domain must agree with this — the parity test
  * in tests/query.test.ts runs both.
  */
 export interface Compiled {

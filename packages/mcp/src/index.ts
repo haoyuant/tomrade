@@ -7,10 +7,10 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
-import type { Author } from "@tomrade/domain";
-import type {} from "@tomrade/ipc";
-import type {} from "@tomrade/tools";
-import type { Tools } from "@tomrade/tools";
+import type { Author } from "@tomradex/domain";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/tools";
+import type { Tools } from "@tomradex/tools";
 
 export const MCP_SERVER_NAME = "tomrade";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -21,7 +21,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     /** The MCP base url, or the per-project endpoint when a project is named. */
     "mcp.url": (projectId?: string) => string | null;

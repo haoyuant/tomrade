@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { exportState, importState } from "@tomrade/storage";
+import { fresh } from "@tomradex/testkit";
+import { exportState, importState } from "@tomradex/storage";
 
 it("requires Files versions, distinguishes inputs, pins review outputs and preserves rejected history", async () => {
   const { ctx, items, project, board } = await fresh();

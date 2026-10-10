@@ -1,8 +1,8 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Author, Item } from "@tomrade/domain";
-import type { LlmService } from "@tomrade/llm";
-import { LlmError } from "@tomrade/llm";
+import type { Author, Item } from "@tomradex/domain";
+import type { LlmService } from "@tomradex/llm";
+import { LlmError } from "@tomradex/llm";
 import { overlap } from "./similar.js";
 
 export const planSchema = z.object({

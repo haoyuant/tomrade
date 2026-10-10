@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitRunner } from "@tomrade/storage";
-import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomrade/files";
+import { gitRunner } from "@tomradex/storage";
+import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

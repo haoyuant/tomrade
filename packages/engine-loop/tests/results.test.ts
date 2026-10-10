@@ -7,12 +7,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { Agent } from "@tomrade/agent";
-import { fakeChat, type ChatEvent, type ChatModel, type ChatRequest } from "@tomrade/llm";
-import loop, { compactRow, render } from "@tomrade/engine-loop";
+import { fresh } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { fakeChat, type ChatEvent, type ChatModel, type ChatRequest } from "@tomradex/llm";
+import loop, { compactRow, render } from "@tomradex/engine-loop";
 
 const item = (n: number) => ({
   id: `id-${n}`,

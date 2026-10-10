@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
-import { Db, ProjectNotOpenError, projectPredicate } from "@tomrade/db";
+import { Db, ProjectNotOpenError, projectPredicate } from "@tomradex/db";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pool-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

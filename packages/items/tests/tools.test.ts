@@ -1,8 +1,8 @@
 /** Backlog tools, run through the tool registry like an agent would call them. */
 import { describe, expect, it } from "vitest";
-import { NotFoundError } from "@tomrade/domain";
-import { ToolInputError, Tools } from "@tomrade/tools";
-import { fresh } from "@tomrade/testkit";
+import { NotFoundError } from "@tomradex/domain";
+import { ToolInputError, Tools } from "@tomradex/tools";
+import { fresh } from "@tomradex/testkit";
 
 async function withTools() {
   const f = await fresh();

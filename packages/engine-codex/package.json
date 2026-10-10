@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/engine-codex",
+  "name": "@tomradex/engine-codex",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,17 +18,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/agent": "workspace:*",
-    "@tomrade/engine-claude-code": "workspace:*",
-    "@tomrade/mcp": "workspace:*",
-    "@tomrade/settings": "workspace:*",
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/engine-claude-code": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
+    "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "@tomrade/testkit": "workspace:*",
-    "@tomrade/tools": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "typescript": "^6.0.0",
     "vitest": "^3.2.7"
   }

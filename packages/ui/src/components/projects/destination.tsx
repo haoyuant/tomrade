@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ConnectionState, StorageProviderView } from "@tomrade/storage";
+import type { ConnectionState, StorageProviderView } from "@tomradex/storage";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import {

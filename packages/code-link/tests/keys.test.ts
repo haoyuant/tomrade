@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { branchFor, keysInText, parseBranch, slugify } from "@tomrade/code-link";
+import { branchFor, keysInText, parseBranch, slugify } from "@tomradex/code-link";
 
 describe("keys", () => {
   it("names a branch from the template", () => {

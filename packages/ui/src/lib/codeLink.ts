@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {} from "@tomrade/code-link";
-import type { StartOptions } from "@tomrade/code-link";
+import type {} from "@tomradex/code-link";
+import type { StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 

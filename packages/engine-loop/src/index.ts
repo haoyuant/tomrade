@@ -1,9 +1,9 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, focusSuffix, isSuspended, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
-import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomrade/llm";
-import { ToolInputError } from "@tomrade/tools";
+import { HOUSE_RULES, focusSuffix, isSuspended, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
+import { ToolInputError } from "@tomradex/tools";
 
 export const LoopOptions = z.object({
   /** auto: the playbook index guides the model; none: the bare loop. */

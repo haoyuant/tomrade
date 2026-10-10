@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { EMPTY_KEY, fieldValueOf, type FieldDef, type FieldValue, type FilterClause, type FilterOp, type Item, type Priority, type SortKey, type ViewQuery } from "@tomrade/domain";
+import { EMPTY_KEY, fieldValueOf, type FieldDef, type FieldValue, type FilterClause, type FilterOp, type Item, type Priority, type SortKey, type ViewQuery } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuCheckItem, MenuEmpty, MenuFoot, MenuHead, MenuRadioItem } from "~/components/ui/menu";

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { GIT_ENV, type Git } from "@tomrade/storage";
+import { GIT_ENV, type Git } from "@tomradex/storage";
 import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/credentials.js";
 import { exec } from "../src/terminal.js";
 

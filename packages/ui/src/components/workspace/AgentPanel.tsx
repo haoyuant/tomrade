@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomrade/agent";
-import type { Item } from "@tomrade/domain";
+import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
+import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { PetStage } from "./PetStage";
 import { AgentMedia } from "./AgentMedia";

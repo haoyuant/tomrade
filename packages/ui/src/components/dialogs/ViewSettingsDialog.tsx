@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { EMPTY_KEY, LAYOUTS, groupKeyOf, type Layout } from "@tomrade/domain";
+import { EMPTY_KEY, LAYOUTS, groupKeyOf, type Layout } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";

@@ -385,7 +385,7 @@ const run = async () => {
   await sleep(600);
 
   // ── dependency graph ────────────────────────────────────────────────
-  // The Graph layout draws the graph @tomrade/deps-graph contributes: same
+  // The Graph layout draws the graph @tomradex/deps-graph contributes: same
   // filtered set, arranged as blocker → blocked. Expectations are computed
   // from the repository, so the section holds whatever the seed contains.
   await press(`document.querySelector('.layout-seg button[data-layout="graph"]')`);

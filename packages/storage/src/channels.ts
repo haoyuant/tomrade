@@ -2,12 +2,12 @@
 // loaded before cordis itself declares a NEW module instead of augmenting it,
 // and every later file then sees a Context without inject/plugin/get.
 import type {} from "cordis";
-import type {} from "@tomrade/ipc";
-import type { RemoteRef } from "@tomrade/hub";
+import type {} from "@tomradex/ipc";
+import type { RemoteRef } from "@tomradex/hub";
 import type { HubManifest } from "./hub.js";
 import type { ConnectionState, StorageInfo, StorageProviderView, StorageStatus } from "./types.js";
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "storage.providers": () => StorageProviderView[];
     "storage.info": (projectId: string) => StorageInfo;

@@ -3,11 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { seedProject, type Db, type ProjectDb } from "@tomrade/db";
-import type { Hub } from "@tomrade/hub";
-import { keyPrefixFor, type CreateProjectInput, type Project, type ProjectPatch } from "@tomrade/domain";
-import type {} from "@tomrade/ipc";
-import { defineTool } from "@tomrade/tools";
+import { seedProject, type Db, type ProjectDb } from "@tomradex/db";
+import type { Hub } from "@tomradex/hub";
+import { keyPrefixFor, type CreateProjectInput, type Project, type ProjectPatch } from "@tomradex/domain";
+import type {} from "@tomradex/ipc";
+import { defineTool } from "@tomradex/tools";
 import { splitLegacy } from "./legacy.js";
 
 declare module "cordis" {
@@ -22,7 +22,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "projects.list": () => Project[];
     "projects.get": (id: string) => Project | null;

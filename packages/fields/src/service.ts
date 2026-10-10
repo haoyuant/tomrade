@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
-import type { ProjectDb } from "@tomrade/db";
+import type { ProjectDb } from "@tomradex/db";
 import {
   BUILTIN_FIELDS,
   CHECKED,
@@ -13,7 +13,7 @@ import {
   type FieldOption,
   type FieldType,
   type FieldValue
-} from "@tomrade/domain";
+} from "@tomradex/domain";
 import { registerChannels, registerTools } from "./contributions.js";
 
 declare module "cordis" {

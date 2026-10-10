@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentEvent, RunView } from "@tomrade/agent";
-import { desktopThreadState, emptyPetModel, moodForThread, reducePetModel } from "@tomrade/pet";
+import type { AgentEvent, RunView } from "@tomradex/agent";
+import { desktopThreadState, emptyPetModel, moodForThread, reducePetModel } from "@tomradex/pet";
 
 const run = (id: string, status: RunView["status"]): RunView => ({
   id,

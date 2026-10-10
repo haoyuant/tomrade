@@ -17,8 +17,8 @@ import {
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
-import type { Item } from "@tomrade/domain";
-import type { GraphEdge } from "@tomrade/contributions";
+import type { Item } from "@tomradex/domain";
+import type { GraphEdge } from "@tomradex/contributions";
 import { Icon } from "~/components/icons";
 import { useIssueWriter } from "~/components/issue/fields";
 import { useI18n } from "~/lib/i18n";

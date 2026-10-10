@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
-import { Settings } from "@tomrade/settings";
-import { fresh, settle } from "@tomrade/testkit";
-import { Tools } from "@tomrade/tools";
-import { Agent } from "@tomrade/agent";
+import { Settings } from "@tomradex/settings";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Agent } from "@tomradex/agent";
 
 it("queues live permissions, rejects stale responses, resumes the same run and cancels without approval", async () => {
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-permission-${Date.now()}.json` }], Agent] });

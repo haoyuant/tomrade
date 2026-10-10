@@ -3,22 +3,22 @@ import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type {} from "@tomrade/agent";
-import type { ThreadSummary } from "@tomrade/agent";
-import type {} from "@tomrade/boards";
-import type {} from "@tomrade/contributions";
-import type { Badge, SectionRow } from "@tomrade/contributions";
-import type {} from "@tomrade/db";
-import type {} from "@tomrade/hub";
-import type {} from "@tomrade/ipc";
-import type {} from "@tomrade/items";
-import type {} from "@tomrade/mcp";
-import type {} from "@tomrade/repos";
-import { normalizeRemote } from "@tomrade/repos";
-import type {} from "@tomrade/settings";
-import type {} from "@tomrade/write";
-import type { Author, Item, Repo } from "@tomrade/domain";
-import { GitFolder, gitRunner, type Git } from "@tomrade/storage";
+import type {} from "@tomradex/agent";
+import type { ThreadSummary } from "@tomradex/agent";
+import type {} from "@tomradex/boards";
+import type {} from "@tomradex/contributions";
+import type { Badge, SectionRow } from "@tomradex/contributions";
+import type {} from "@tomradex/db";
+import type {} from "@tomradex/hub";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/items";
+import type {} from "@tomradex/mcp";
+import type {} from "@tomradex/repos";
+import { normalizeRemote } from "@tomradex/repos";
+import type {} from "@tomradex/settings";
+import type {} from "@tomradex/write";
+import type { Author, Item, Repo } from "@tomradex/domain";
+import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { writeConnectFiles } from "./connect.js";
 import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential } from "./credentials.js";
 import { PLAYBOOKS } from "./playbooks.js";
@@ -86,7 +86,7 @@ export interface ConnectResult {
   message: string;
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "codeLink.links": (projectId: string, itemId?: string) => CodeLinkView[];
     "codeLink.deliveries": (projectId: string, itemId?: string) => DeliveryView[];

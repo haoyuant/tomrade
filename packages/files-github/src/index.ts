@@ -3,9 +3,9 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type {} from "@tomrade/settings";
-import { createGitBackend, type FilesConnection } from "@tomrade/files";
-import { GitHub, GitHubError } from "@tomrade/storage-github";
+import type {} from "@tomradex/settings";
+import { createGitBackend, type FilesConnection } from "@tomradex/files";
+import { GitHub, GitHubError } from "@tomradex/storage-github";
 
 /** Per project and non-secret: it travels in the project's folder. */
 const RepoConfig = z.object({
@@ -18,7 +18,7 @@ const RepoConfig = z.object({
 type RepoConfig = z.infer<typeof RepoConfig>;
 
 /**
- * The token section belongs to `@tomrade/storage-github`, which registers it;
+ * The token section belongs to `@tomradex/storage-github`, which registers it;
  * one account publishes both the backlog and the files. Without that plugin
  * the value is still read and written here — settings keep what they are
  * given — so connecting from a project's Files block works either way.

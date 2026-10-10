@@ -1,11 +1,11 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Board, BoardPatch, CreateBoardInput, CreateViewInput, View, ViewPatch } from "@tomrade/domain";
-import { defineTool, requireProjectId } from "@tomrade/tools";
-import type {} from "@tomrade/ipc";
+import type { Board, BoardPatch, CreateBoardInput, CreateViewInput, View, ViewPatch } from "@tomradex/domain";
+import { defineTool, requireProjectId } from "@tomradex/tools";
+import type {} from "@tomradex/ipc";
 import { itemsOf } from "./items-like.js";
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "boards.list": (projectId: string) => Board[];
     "boards.create": (input: CreateBoardInput) => Board;

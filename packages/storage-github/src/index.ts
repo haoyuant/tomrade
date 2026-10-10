@@ -3,10 +3,10 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type {} from "@tomrade/settings";
-import type {} from "@tomrade/storage";
-import type { ProviderConnection } from "@tomrade/storage";
-import { createRemoteProvider } from "@tomrade/storage-git";
+import type {} from "@tomradex/settings";
+import type {} from "@tomradex/storage";
+import type { ProviderConnection } from "@tomradex/storage";
+import { createRemoteProvider } from "@tomradex/storage-git";
 import { GitHub, GitHubError } from "./api.js";
 
 export { GitHub, GitHubError } from "./api.js";

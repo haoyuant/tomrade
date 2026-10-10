@@ -8,19 +8,19 @@ that claims a key on that context.
 
 There are two kinds of plugin, and this document is the contract for both:
 
-- **Extensions** are written against `@tomrade/plugin-sdk`. Their `apply`
+- **Extensions** are written against `@tomradex/plugin-sdk`. Their `apply`
   receives a `PluginContext`: an async, attributed, namespaced view of the app
   that the host builds for them. Everything that comes from outside the app —
   Community, a `.tomrade-plugin` file, a folder, Plugin Studio — must be one.
   `examples/stale` is the documentation that compiles.
 - **Built-in rows** are the app's own cordis plugins, listed in `tomrade.yml`.
   They take the raw `Context` and the services below it ([Services](#services)
-  onward). A built-in may also be written with the SDK — `@tomrade/deps-graph`
+  onward). A built-in may also be written with the SDK — `@tomradex/deps-graph`
   is — and is then loaded behind the same facade.
 
 ## Stability
 
-- `cordis` is pinned to `4.0.0-rc.8`, and `@tomrade/plugin-sdk` is `0.2`. The
+- `cordis` is pinned to `4.0.0-rc.8`, and `@tomradex/plugin-sdk` is `0.2`. The
   SDK's contract version is `SDK_CONTRACT`; a plugin states the range it needs
   in `engines.sdk` and is refused, with the reason, by a Tomrade outside it.
   Until `1.0` a minor version may break.
@@ -62,7 +62,7 @@ not a sandbox.** What the system does guarantee:
 
 ```ts
 import { z } from "zod";
-import { definePlugin, defineTool, requireProjectId } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId } from "@tomradex/plugin-sdk";
 
 export default definePlugin({
   inject: ["items", "tools", "contributions"],
@@ -126,15 +126,15 @@ not enforced; it is checked against the code. Starting programs, disk anywhere
 and any host are **high risk**: labelled everywhere a person decides, never
 refused for that alone.
 
-**Licenses.** The SDK, `@tomrade/domain`, `@tomrade/plugin-kit` and the CLI are
+**Licenses.** The SDK, `@tomradex/domain`, `@tomradex/plugin-kit` and the CLI are
 Apache-2.0, and a plugin may use any license, commercial ones included.
-`tomrade-plugin test` loads the plugin into `@tomrade/plugin-host`, which is
+`tomrade-plugin test` loads the plugin into `@tomradex/plugin-host`, which is
 Tomrade's own code and comes with the CLI under the repository's Business Source
 License — testing a plugin with it is a permitted use.
 
 `tomrade-plugin build` bundles `src/index.ts` into one readable ESM file,
 `dist/index.js`, with every dependency inside it except the three the host
-provides — `cordis`, `@tomrade/plugin-sdk` and `zod` — which the app resolves
+provides — `cordis`, `@tomradex/plugin-sdk` and `zod` — which the app resolves
 to its own copies wherever the plugin lives. Documents for surfaces go in
 `static/` and are copied beside it. The build stamps `inject`, `optional` and
 `contributes` into the manifest from what the plugin was seen to do.
@@ -162,7 +162,7 @@ one that fails goes back.
 ## Writing one
 
 With the agent: **Plugin Studio** (Settings → Manage plugins → My plugins, or
-ask the assistant). `@tomrade/plugin-studio` gives every engine tools confined
+ask the assistant). `@tomradex/plugin-studio` gives every engine tools confined
 to one workspace in `~/Tomrade/plugins-dev/<name>/` — `plugin_create`,
 `plugin_reference`, `plugin_files`, `plugin_read`, `plugin_write`,
 `plugin_build`, `plugin_test`, `plugin_check`, `plugin_try`, `plugin_status`,
@@ -173,7 +173,7 @@ can reach, and only their confirmation loads it. A new build needs a new
 confirmation. The plugin's own tables are saved before each new build runs and
 can be put back.
 
-By hand: the `tomrade-plugin` CLI (`@tomrade/plugin-cli`).
+By hand: the `tomrade-plugin` CLI (`@tomradex/plugin-cli`).
 
 ```sh
 tomrade-plugin init my-plugin --id alice/my-plugin   # a plugin that builds, tests and loads as it is
@@ -191,7 +191,7 @@ system Node 26 does.
 
 ## The store
 
-**Community** (`@tomrade/community`, the registry in `supabase/migrations`)
+**Community** (`@tomradex/community`, the registry in `supabase/migrations`)
 lists open-source plugins only. A publisher is a Tomrade account with a linked
 GitHub identity; a plugin id starts with that login and its repository belongs
 to it. Publishing renames a local plugin to the publisher (its namespace
@@ -233,12 +233,12 @@ merged by `id` and can add rows the app does not ship:
 ```yaml
 plugins:
   - id: hello
-    name: "@tomrade/hello"
+    name: "@tomradex/hello"
     config: {}
 ```
 
 One TypeScript rule, because it costs an afternoon the first time: **import
-`cordis` before any `@tomrade/*` package, in the file that reaches it first.**
+`cordis` before any `@tomradex/*` package, in the file that reaches it first.**
 A `declare module "cordis"` inside a package loaded before cordis itself
 *declares a new module* rather than augmenting the real one, and every later
 file then sees a `Context` with no `inject`, `plugin` or `get`. Alphabetical
@@ -262,26 +262,26 @@ consumer follows.
 
 | Key | Kind | Package | Owns |
 |---|---|---|---|
-| `ctx.db` | spine | `@tomrade/db` | The pool of SQLite caches — one per project plus the Hub's — the core schema, `migrate()` |
-| `ctx.hub` | spine | `@tomrade/hub` | This machine: its device id, the Hub folder, the catalog of projects and repository checkouts it knows |
-| `ctx.oplog` | spine | `@tomrade/oplog` | `append`, `recent`, `historyFor`, `undoLast`; the timeline across providers: `undo`, `redo`, `timeline`, `rollback`, `revert`, `provide` |
-| `ctx.items` | spine | `@tomrade/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
-| `ctx.fields` | spine | `@tomrade/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
-| `ctx.boards`, `ctx.views` | spine | `@tomrade/boards` | Workstreams (the options of the built-in Workstream field) and the project's saved views |
-| `ctx.projects` | spine | `@tomrade/projects` | The container; outside the oplog and undo |
-| `ctx.tools` | spine | `@tomrade/tools` | The registry and guarded `execute` |
-| `ctx.contributions` | spine | `@tomrade/contributions` | Commands, badges, status items, detail sections, board graphs, assistant accessories |
-| `ctx.ipc` | spine | `@tomrade/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
-| `ctx.desktopSurfaces` | seam | `@tomrade/desktop-surface` (contract), desktop shell (Electron) | Transparent auxiliary-window mechanics for feature plugins |
-| `ctx.settings` | seam | `@tomrade/settings` | A JSON file today; sections registered by schema |
-| `ctx.storage` | spine registry | `@tomrade/storage` | The project folder as the truth: the text artifact, the write-through log, publish/refresh/merge, remote providers, the Hub's catalog |
-| `ctx.repos` | spine | `@tomrade/repos` | The code repositories workstreams stand for; this machine's checkouts; the worktrees agents run in |
-| `ctx.files` | optional registry | `@tomrade/files` | The project's files beside its backlog: a folder tree with versions, the backend registry, the remote a project shares through, sync and conflicts, the versioned references tickets pin |
-| `ctx.llm` | seam | `@tomrade/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
-| `ctx.agent` | spine registry | `@tomrade/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
-| `ctx.pet` | optional feature | `@tomrade/pet` | Pet task-state reduction, settings, renderer state and its embedded/desktop lifecycle |
-| `ctx.mcp` | — | `@tomrade/mcp` | Projects `ctx.tools` onto MCP |
-| `ctx.plugins` | — | `@tomrade/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
+| `ctx.db` | spine | `@tomradex/db` | The pool of SQLite caches — one per project plus the Hub's — the core schema, `migrate()` |
+| `ctx.hub` | spine | `@tomradex/hub` | This machine: its device id, the Hub folder, the catalog of projects and repository checkouts it knows |
+| `ctx.oplog` | spine | `@tomradex/oplog` | `append`, `recent`, `historyFor`, `undoLast`; the timeline across providers: `undo`, `redo`, `timeline`, `rollback`, `revert`, `provide` |
+| `ctx.items` | spine | `@tomradex/items` | Issues, labels, relations, custom values; `query()` runs a view query in SQL |
+| `ctx.fields` | spine | `@tomradex/fields` | The field registry: built-in definitions plus each project's custom fields and their options |
+| `ctx.boards`, `ctx.views` | spine | `@tomradex/boards` | Workstreams (the options of the built-in Workstream field) and the project's saved views |
+| `ctx.projects` | spine | `@tomradex/projects` | The container; outside the oplog and undo |
+| `ctx.tools` | spine | `@tomradex/tools` | The registry and guarded `execute` |
+| `ctx.contributions` | spine | `@tomradex/contributions` | Commands, badges, status items, detail sections, board graphs, assistant accessories |
+| `ctx.ipc` | spine | `@tomradex/ipc` (contract), `apps/desktop/src/ipc.ts` (Electron) | Typed channels to the renderer |
+| `ctx.desktopSurfaces` | seam | `@tomradex/desktop-surface` (contract), desktop shell (Electron) | Transparent auxiliary-window mechanics for feature plugins |
+| `ctx.settings` | seam | `@tomradex/settings` | A JSON file today; sections registered by schema |
+| `ctx.storage` | spine registry | `@tomradex/storage` | The project folder as the truth: the text artifact, the write-through log, publish/refresh/merge, remote providers, the Hub's catalog |
+| `ctx.repos` | spine | `@tomradex/repos` | The code repositories workstreams stand for; this machine's checkouts; the worktrees agents run in |
+| `ctx.files` | optional registry | `@tomradex/files` | The project's files beside its backlog: a folder tree with versions, the backend registry, the remote a project shares through, sync and conflicts, the versioned references tickets pin |
+| `ctx.llm` | seam | `@tomradex/llm` | Model profiles + roles: `for('conversation'|'worker').chat(...)` and `completeJson(schema, request)` |
+| `ctx.agent` | spine registry | `@tomradex/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
+| `ctx.pet` | optional feature | `@tomradex/pet` | Pet task-state reduction, settings, renderer state and its embedded/desktop lifecycle |
+| `ctx.mcp` | — | `@tomradex/mcp` | Projects `ctx.tools` onto MCP |
+| `ctx.plugins` | — | `@tomradex/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
 
 Reserved, not yet declared or provided: `ctx.search` (FTS5, later a vector
 column), `ctx.sync`. A plugin may provide either today; until a first-party
@@ -293,7 +293,7 @@ see below.)
 
 ```ts
 import { Context, Service } from "cordis";
-import type { LLMProvider } from "@tomrade/llm";
+import type { LLMProvider } from "@tomradex/llm";
 
 class Anthropic extends Service implements LLMProvider {
   static provide = "llm";
@@ -320,7 +320,7 @@ modules:
 
 Which plugin fills a module is never declared. `ctx.plugins` reads it off the
 running context — cordis records the fiber that provided each service, so a row
-is credited with what the plugins *it* loads provide, and `@tomrade/boards`
+is credited with what the plugins *it* loads provide, and `@tomradex/boards`
 correctly answers for both `boards` and `views` from one row.
 
 **A required module may not be left empty.** `ctx.plugins.setEnabled(id, false)`
@@ -413,7 +413,7 @@ ctx.agent.policy({
 Ticket `workType` defaults to `coding`; `general` needs no repository. Structural
 `kind` still distinguishes tickets and epics. `playbookId` is an optional default
 method, including `task.assist`, `document.write`, `design.create` and
-`media.generate`. The latter methods require provider capabilities: `@tomrade/files`
+`media.generate`. The latter methods require provider capabilities: `@tomradex/files`
 advertises `files.read`, `files.write` and `document.preview`; media generation
 providers are intentionally not implemented in core.
 
@@ -422,7 +422,7 @@ engine, ticket/dependencies and required capabilities. A run uses a temporary
 execution directory, not durable artifact storage. `agent.prepareGeneral` does
 everything but send the first message — it binds the thread to the delivery and
 the playbook and returns the brief a CLI agent starts from — which is how
-`@tomrade/code-link` opens a General ticket in the user's own terminal. The
+`@tomradex/code-link` opens a General ticket in the user's own terminal. The
 ticket's Start button is one dialog for both work types: `codeLink.start(projectId,
 itemId, { mode: "run" | "terminal", engine?, playbook?, options?, permissionMode? })`
 settles where the work runs, which agent, and the model/effort knobs; `options`
@@ -445,20 +445,20 @@ uses a deterministic keyword/metadata fallback. Recommendation never starts a
 run and never bypasses capability checks.
 
 `TurnInput.filesIndex` carries `{ markdown, digest }`: what this project's Files
-hold, filled in by a plugin on `agent/prepare-turn` — `@tomrade/files` is the one
+hold, filled in by a plugin on `agent/prepare-turn` — `@tomradex/files` is the one
 that does. It is discovery, not permission: it says what is there to look up and
 nothing about what may be read. `promptSections(input, io, { filesIndex: false })`
 leaves it out of the per-turn text, which is what an engine asks for when its
 session prompt already carries it, a user message being paid for again every turn
 while a system prompt is cached. `sessionSystem(input, agentName)`, exported from
-`@tomrade/engine-claude-code`, is that prompt for Claude Code and Codex; `digest`
+`@tomradex/engine-claude-code`, is that prompt for Claude Code and Codex; `digest`
 is how a long-running session notices the index it opened with has gone stale. A
 CLI agent gets no system prompt from Tomrade at all, so `agent/prepare-brief`
 (`{ projectId, itemId, filesIndex? }`) is where the same context enters the brief
 `agent.prepareGeneral` hands over.
 
 A Files provider registers `ctx.items.files({ getVersion(projectId, reference) })`
-and retains the returned disposer; `@tomrade/files` is the one shipped. The
+and retains the returned disposer; `@tomradex/files` is the one shipped. The
 resolver must check project access and return the exact `{ fileId, versionId }`,
 or `null`; versions must be immutable. Registering a resolver does not grant
 agent tools permission to read/write files. There is no fallback attachment
@@ -570,7 +570,7 @@ from `ctx.agent.activities()`, which returns current in-memory runs and durable
 pending questions; subsequent changes arrive through `agent/event`.
 
 The rule everything else rests on: **every mutation of an item, board or view
-passes `write/pre-commit` and lands an oplog row.** `@tomrade/write` enforces the
+passes `write/pre-commit` and lands an oplog row.** `@tomradex/write` enforces the
 default policy — human lock, human-only purge, optimistic version — as three
 plugins. Remove the row and the guarantees are gone, which is what
 `packages/write/tests` proves. A repository method that skips `write()` is a
@@ -622,7 +622,7 @@ ctx.oplog.provide({
 
 `provide` is an effect. A record's `ref` is `provider:id`; `undoable` is false
 for what the timeline shows but cannot take back — purges, sync notes, other
-machines' rows. `@tomrade/files` is the first provider: each write, folder,
+machines' rows. `@tomradex/files` is the first provider: each write, folder,
 move, copy, delete and import is remembered as the versions before and after
 it, and undo restores exactly its paths, refusing with `FileMovedOnError` when
 one has changed since. The renderer reaches all of this through `oplog.undo`,
@@ -649,7 +649,7 @@ context on quoting and indentation.
 
 ### Tools from external MCP servers
 
-`@tomrade/mcp-client` is the other direction of `@tomrade/mcp`: servers the
+`@tomradex/mcp-client` is the other direction of `@tomradex/mcp`: servers the
 person connects in Settings › MCP servers (a command run over stdio, or a
 Streamable HTTP URL with SSE as the fallback) have every tool they list
 registered here as `<server>__<tool>`, so engines and Tomrade's own MCP
@@ -725,7 +725,7 @@ in `fields` because they have their own patch keys.
 clause is `{ field, op: "in" | "not-in" | "contains" | "gte" | "lte", values }`,
 and a `null` value means empty; empties sort last whichever direction. The
 renderer evaluates the same shapes over its cached list with the pure functions
-in `@tomrade/domain` (`matchesFilter`, `compareItems`), and a parity test in
+in `@tomradex/domain` (`matchesFilter`, `compareItems`), and a parity test in
 `packages/items` keeps the two implementations agreeing. Agents reach all of it
 through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
 `update_item` (`patch.fields`). Both `items.list` and `items.query` also take
@@ -820,7 +820,7 @@ file through a temporary name and the manifest last, so a reader never sees a
 manifest describing files that are not there yet. A folder changed by anyone
 else (a pull, a sync tool, a hand edit) is read back in: taken whole when the
 cache is clean, **merged** when both moved. The merge is a pure function
-(`mergeStates` in `@tomrade/storage`): a row changed on one side only is taken,
+(`mergeStates` in `@tomradex/storage`): a row changed on one side only is taken,
 a row changed on both merges field by field, the same field changed on both is
 settled by the logs — later `at` wins, tie by device id, silence falls to the
 folder — and every contested field leaves a `merge` row in the oplog by
@@ -856,8 +856,8 @@ ctx.storage.register(createRemoteProvider({
 provider ships no UI code; a `format: "password"` field is **refused at
 registration** — credentials belong in a `ctx.settings` section named in
 `settingsSection`, collected inline through `connection` where the remote is
-chosen. `browse()` and `draft(name)` remove typing. `@tomrade/storage-git`
-registers `git` (any URL); `@tomrade/storage-github` adds discovery and
+chosen. `browse()` and `draft(name)` remove typing. `@tomradex/storage-git`
+registers `git` (any URL); `@tomradex/storage-github` adds discovery and
 creation on top.
 
 | Call | Does |
@@ -910,8 +910,8 @@ files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 `remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`, and — to be
 undoable — `head` and `restore`). `agentPolicy`, `setAgentRules` and `search`
 are optional too: a backend without them lists everything and cannot search.
-`@tomrade/files-github` registers `github`, sharing the `github` token section
-with `@tomrade/storage-github`.
+`@tomradex/files-github` registers `github`, sharing the `github` token section
+with `@tomradex/storage-github`.
 
 A ticket's files land in a top-level folder named after its workstream:
 `ctx.files.folderFor(projectId, itemId)` is that name (separators become `-`),
@@ -1019,7 +1019,7 @@ section, travels with the Hub, and a clash between two machines is settled by
 the later stamp. A section whose schema holds a password is `machine` whatever
 it declares.
 
-First-party plugins register sections the same way: `@tomrade/files` contributes
+First-party plugins register sections the same way: `@tomradex/files` contributes
 `files`, whose `agentIndexTokens` (1500) is how much of an agent's prompt the
 index of a project's files may take, and zero turns the index off.
 
@@ -1060,7 +1060,7 @@ renderer owns animation and accessibility, and removes the stage when the
 contribution disappears. `stateChannel` returns `{ mood }` for a selected
 thread and `changedChannel` broadcasts `(threadId, { mood })`; naming both in
 the descriptor keeps the renderer independent of the feature package.
-`@tomrade/pet` is the shipped example.
+`@tomradex/pet` is the shipped example.
 
 A **graph** is what a view with the Graph layout draws: the renderer puts the
 same issue cards on an interactive canvas with the plugin's edges as arrows,
@@ -1068,7 +1068,7 @@ and the view's `query.graph` names which contributed graph. The plugin returns
 item-id pairs (`{ from, to, tone?, title? }`) — no layout, no pixels; the view's
 filter still applies, and edges whose ends are filtered out are not drawn. A graph that declares `edits: "blocks"` gets an editable canvas:
 dragging between cards and deleting an arrow write `Item.blocks` patches
-through the ordinary guarded path. `@tomrade/deps-graph` is the shipped
+through the ordinary guarded path. `@tomradex/deps-graph` is the shipped
 example — the Dependencies graph plus a `blocked` badge for issues waiting on
 unfinished work.
 
@@ -1078,7 +1078,7 @@ Plugins add renderer channels by augmenting the contract and registering a
 handler when `ipc` is present:
 
 ```ts
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "hello.count": (projectId: string) => number;
   }
@@ -1094,7 +1094,7 @@ return type. Every renderer write is a human write; channel handlers pass
 
 ## Auxiliary desktop surfaces
 
-`@tomrade/desktop-surface` is the non-Electron contract for a feature-owned
+`@tomradex/desktop-surface` is the non-Electron contract for a feature-owned
 top-level window. A plugin calls `ctx.desktopSurfaces.open({ id, url, width,
 height, ... })`; the returned controller can send serializable state, inspect
 the current work area, move the surface and close it. Opening is a Cordis

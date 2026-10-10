@@ -2,9 +2,9 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { check, type CheckReport } from "@tomrade/plugin-cli";
-import { readManifest } from "@tomrade/plugin-kit";
-import { MANIFEST_FILE, nameOf, namespaceOf, publisherOf } from "@tomrade/plugin-sdk";
+import { check, type CheckReport } from "@tomradex/plugin-cli";
+import { readManifest } from "@tomradex/plugin-kit";
+import { MANIFEST_FILE, nameOf, namespaceOf, publisherOf } from "@tomradex/plugin-sdk";
 
 const run = promisify(execFile);
 

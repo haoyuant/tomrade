@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { PluginView } from "@tomrade/plugins";
+import type { PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";

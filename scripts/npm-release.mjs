@@ -1,7 +1,7 @@
 /**
- * The packages plugin authors install from npm: @tomrade/domain (the types a
- * plugin sees), @tomrade/plugin-sdk (the contract), @tomrade/plugin-cli (one
- * bundled file per entry) and @tomrade/plugin-host (the Tomrade the CLI tests
+ * The packages plugin authors install from npm: @tomradex/domain (the types a
+ * plugin sees), @tomradex/plugin-sdk (the contract), @tomradex/plugin-cli (one
+ * bundled file per entry) and @tomradex/plugin-host (the Tomrade the CLI tests
  * a plugin against, bundled, under the repository's Business Source License).
  * Staged under build/npm/, packed there, and published only with --publish.
  *
@@ -53,7 +53,7 @@ function licensed(source) {
 }
 
 function stage(name, source, files, pkg) {
-  const dir = path.join(out, name.replace("@tomrade/", ""));
+  const dir = path.join(out, name.replace("@tomradex/", ""));
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   for (const [from, to] of [...files, [licenseFile(source), "LICENSE"]]) fs.cpSync(from, path.join(dir, to), { recursive: true, filter: (src) => !src.endsWith(".map") && !src.endsWith(".tsbuildinfo") });
@@ -65,7 +65,7 @@ run("pnpm", ["build:backend"]);
 fs.rmSync(out, { recursive: true, force: true });
 
 const domain = stage(
-  "@tomrade/domain",
+  "@tomradex/domain",
   path.join(root, "packages/domain"),
   [
     [path.join(root, "packages/domain/dist"), "dist"],
@@ -82,7 +82,7 @@ const domain = stage(
 );
 
 const sdkDir = stage(
-  "@tomrade/plugin-sdk",
+  "@tomradex/plugin-sdk",
   path.join(root, "packages/plugin-sdk"),
   [
     [path.join(root, "packages/plugin-sdk/dist"), "dist"],
@@ -95,7 +95,7 @@ const sdkDir = stage(
     types: "dist/index.d.ts",
     exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
     files: ["dist"],
-    dependencies: { "@tomrade/domain": VERSION, zod }
+    dependencies: { "@tomradex/domain": VERSION, zod }
   }
 );
 
@@ -112,7 +112,7 @@ await esbuild.build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["cordis", "zod", "zod/*", "@tomrade/plugin-sdk", "@tomrade/domain", "better-sqlite3"],
+  external: ["cordis", "zod", "zod/*", "@tomradex/plugin-sdk", "@tomradex/domain", "better-sqlite3"],
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
   logLevel: "warning"
 });
@@ -122,14 +122,14 @@ fs.writeFileSync(
   path.join(hostDir, "package.json"),
   `${JSON.stringify(
     {
-      name: "@tomrade/plugin-host",
+      name: "@tomradex/plugin-host",
       ...common,
       license: licensed(hostSource),
       description: json(path.join(hostSource, "package.json")).description,
       main: "dist/index.js",
       exports: { ".": "./dist/index.js" },
       files: ["dist"],
-      dependencies: { "@tomrade/domain": VERSION, "@tomrade/plugin-sdk": VERSION, "better-sqlite3": sqlite, cordis, zod }
+      dependencies: { "@tomradex/domain": VERSION, "@tomradex/plugin-sdk": VERSION, "better-sqlite3": sqlite, cordis, zod }
     },
     null,
     2
@@ -152,7 +152,7 @@ await esbuild.build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["cordis", "zod", "zod/*", "@tomrade/plugin-sdk", "@tomrade/domain", "@tomrade/plugin-host", "esbuild", ...Object.keys(thirdParty)],
+  external: ["cordis", "zod", "zod/*", "@tomradex/plugin-sdk", "@tomradex/domain", "@tomradex/plugin-host", "esbuild", ...Object.keys(thirdParty)],
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
   logLevel: "warning"
 });
@@ -165,7 +165,7 @@ fs.writeFileSync(
   path.join(cliDir, "package.json"),
   `${JSON.stringify(
     {
-      name: "@tomrade/plugin-cli",
+      name: "@tomradex/plugin-cli",
       ...common,
       license: licensed(cliSource),
       description: "tomrade-plugin: scaffold, build, test in a sandbox, check and pack a Tomrade plugin",
@@ -174,7 +174,7 @@ fs.writeFileSync(
       main: "dist/index.js",
       exports: { ".": "./dist/index.js" },
       files: ["dist"],
-      dependencies: { "@tomrade/domain": VERSION, "@tomrade/plugin-sdk": VERSION, "@tomrade/plugin-host": VERSION, cordis, esbuild: esbuildVersion, zod, ...thirdParty }
+      dependencies: { "@tomradex/domain": VERSION, "@tomradex/plugin-sdk": VERSION, "@tomradex/plugin-host": VERSION, cordis, esbuild: esbuildVersion, zod, ...thirdParty }
     },
     null,
     2

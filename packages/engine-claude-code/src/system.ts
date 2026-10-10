@@ -1,4 +1,4 @@
-import { HOUSE_RULES, focusSuffix, promptSections, type TurnIO, type TurnInput } from "@tomrade/agent";
+import { HOUSE_RULES, focusSuffix, promptSections, type TurnIO, type TurnInput } from "@tomradex/agent";
 
 /** The appended system prompt an external agent gets: its identity, the shared house rules, the playbook index, the durable state. */
 export function buildSystem(input: TurnInput, io: TurnIO, agentName: string): string {

@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/plugin-sdk",
+  "name": "@tomradex/plugin-sdk",
   "private": true,
   "license": "Apache-2.0",
   "version": "0.2.0",
@@ -18,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/domain": "workspace:*",
+    "@tomradex/domain": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

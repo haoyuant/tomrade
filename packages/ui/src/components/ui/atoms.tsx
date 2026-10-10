@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { Item, ItemStatus, Priority } from "@tomrade/domain";
+import type { Item, ItemStatus, Priority } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { PRIORITY_LABEL, STATUS, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";

@@ -4,8 +4,8 @@
  * the same ids in the same order.
  */
 import { describe, expect, it } from "vitest";
-import { compareItems, matchesFilter, type FieldDef, type FilterClause, type Item, type QueryContext, type SortKey } from "@tomrade/domain";
-import { fresh } from "@tomrade/testkit";
+import { compareItems, matchesFilter, type FieldDef, type FilterClause, type Item, type QueryContext, type SortKey } from "@tomradex/domain";
+import { fresh } from "@tomradex/testkit";
 
 async function seed() {
   const f = await fresh();

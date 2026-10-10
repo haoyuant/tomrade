@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { fresh, settle } from "@tomrade/testkit";
+import { fresh, settle } from "@tomradex/testkit";
 import {
   ARTIFACT_DIR,
   ForeignProjectError,
@@ -25,7 +25,7 @@ import {
   readLogs,
   serializeState,
   writeArtifact
-} from "@tomrade/storage";
+} from "@tomradex/storage";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-storage-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -315,7 +315,7 @@ describe("ctx.storage", () => {
     const gone = projects.create({ name: "Gone" });
     await settle();
     await new Promise((r) => setTimeout(r, 50));
-    const keptDir = projects.get(kept.id) && (await import("@tomrade/hub")).Catalog ? path.join(path.dirname(dir), "kept") : null;
+    const keptDir = projects.get(kept.id) && (await import("@tomradex/hub")).Catalog ? path.join(path.dirname(dir), "kept") : null;
     expect(keptDir && fs.existsSync(path.join(keptDir, ARTIFACT_DIR, "project.json"))).toBe(true);
     const goneDir = path.join(path.dirname(dir), "gone");
     expect(fs.existsSync(path.join(goneDir, ARTIFACT_DIR, "project.json"))).toBe(true);

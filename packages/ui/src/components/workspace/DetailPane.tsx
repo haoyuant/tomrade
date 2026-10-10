@@ -1,5 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import type { Item, OplogEntry } from "@tomrade/domain";
+import type { Item, OplogEntry } from "@tomradex/domain";
 import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import {

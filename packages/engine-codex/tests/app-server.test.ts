@@ -4,9 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createCodexEngine } from "../src/index.js";
-import { Tools } from "@tomrade/tools";
-import { Mcp } from "@tomrade/mcp";
-import type { TurnIO, TurnInput } from "@tomrade/agent";
+import { Tools } from "@tomradex/tools";
+import { Mcp } from "@tomradex/mcp";
+import type { TurnIO, TurnInput } from "@tomradex/agent";
 
 it("uses one process for two turns, attributes counters per turn, and interrupts without killing the session", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-protocol-"));

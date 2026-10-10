@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/storage-github",
+  "name": "@tomradex/storage-github",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,9 +18,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/settings": "workspace:*",
-    "@tomrade/storage": "workspace:*",
-    "@tomrade/storage-git": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/storage": "workspace:*",
+    "@tomradex/storage-git": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

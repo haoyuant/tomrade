@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
 import { afterAll, describe, expect, it } from "vitest";
-import { MANIFEST_FILE, parseManifest } from "@tomrade/plugin-sdk";
+import { MANIFEST_FILE, parseManifest } from "@tomradex/plugin-sdk";
 import {
   analyzePackage,
   attest,
@@ -16,7 +16,7 @@ import {
   unpackPlugin,
   verifyAttestation,
   writeLock
-} from "@tomrade/plugin-kit";
+} from "@tomradex/plugin-kit";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-kit-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -82,7 +82,7 @@ describe("the static analyzer", () => {
   };
 
   it("finds nothing to say about a plugin that only uses the SDK", () => {
-    const result = read("clean", `import { definePlugin } from "@tomrade/plugin-sdk"; export default definePlugin({ inject: ["items"], async apply(ctx) { await ctx.items.list(); } });`);
+    const result = read("clean", `import { definePlugin } from "@tomradex/plugin-sdk"; export default definePlugin({ inject: ["items"], async apply(ctx) { await ctx.items.list(); } });`);
     expect(result.findings).toEqual([]);
     expect(result.observed.network).toBe(false);
   });

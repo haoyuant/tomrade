@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { emptyDossier, overlap, readiness, renderDossier } from "@tomrade/agent-backlog";
-import { findSimilar, PLAYBOOKS } from "@tomrade/agent-backlog";
-import type { Item } from "@tomrade/domain";
+import { emptyDossier, overlap, readiness, renderDossier } from "@tomradex/agent-backlog";
+import { findSimilar, PLAYBOOKS } from "@tomradex/agent-backlog";
+import type { Item } from "@tomradex/domain";
 
 const item = (title: string, extra: Partial<Item> = {}): Item => ({
   id: title,
@@ -63,7 +63,7 @@ describe("findSimilar without a model", () => {
 
 describe("findSimilarBatch without a model", () => {
   it("answers every proposal from one pass", async () => {
-    const { findSimilarBatch } = await import("@tomrade/agent-backlog");
+    const { findSimilarBatch } = await import("@tomradex/agent-backlog");
     const existing = [item("Send interval water reminders"), item("Export data as CSV")];
     const results = await findSimilarBatch(null, [{ title: "Send water reminders at intervals" }, { title: "Add a dark theme" }], existing);
     expect(results).toHaveLength(2);

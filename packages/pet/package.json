@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/pet",
+  "name": "@tomradex/pet",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,11 +18,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/agent": "workspace:*",
-    "@tomrade/contributions": "workspace:*",
-    "@tomrade/desktop-surface": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/settings": "workspace:*",
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

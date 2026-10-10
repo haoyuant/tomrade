@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { StorageProviderView, SyncState } from "@tomrade/storage";
+import type { StorageProviderView, SyncState } from "@tomradex/storage";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";

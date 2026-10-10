@@ -16,7 +16,7 @@ const root = path.resolve(desktop, "../..");
 const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: "inherit" });
 
 run("pnpm", ["build:backend"]);
-run("pnpm", ["--filter", "@tomrade/ui", "build"]);
+run("pnpm", ["--filter", "@tomradex/ui", "build"]);
 fs.rmSync(path.join(desktop, "ui"), { recursive: true, force: true });
 fs.cpSync(path.join(root, "packages/ui/dist"), path.join(desktop, "ui"), { recursive: true });
 run("pnpm", ["exec", "electron-builder", ...process.argv.slice(2).filter((a) => a !== "--")], desktop);

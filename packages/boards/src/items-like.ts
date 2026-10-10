@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import type { Author } from "@tomrade/domain";
+import type { Author } from "@tomradex/domain";
 
 /**
  * The slice of ctx.items a workstream needs. Structural on purpose: items

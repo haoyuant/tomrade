@@ -1,5 +1,5 @@
 import { createContext, Fragment, useCallback, useContext, useMemo, type ReactNode } from "react";
-import type { AppSettings, LanguagePreference } from "@tomrade/domain";
+import type { AppSettings, LanguagePreference } from "@tomradex/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { en, zh } from "./i18n-messages";

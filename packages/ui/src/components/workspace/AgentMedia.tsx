@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { MediaRef } from "@tomrade/agent";
-import type {} from "@tomrade/files";
+import type { MediaRef } from "@tomradex/agent";
+import type {} from "@tomradex/files";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { invalidateFiles } from "~/lib/files";

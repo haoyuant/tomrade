@@ -1,11 +1,11 @@
 import { Context, Service } from "cordis";
 import { createClient, type SupabaseClient, type SupportedStorage, type User } from "@supabase/supabase-js";
 import { z } from "zod";
-import type {} from "@tomrade/hub";
-import type {} from "@tomrade/ipc";
-import type {} from "@tomrade/projects";
-import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from "@tomrade/storage";
-import type { UserSettingsFile } from "@tomrade/settings";
+import type {} from "@tomradex/hub";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/projects";
+import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from "@tomradex/storage";
+import type { UserSettingsFile } from "@tomradex/settings";
 import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord } from "./cache.js";
 
 export interface AccountInfo {
@@ -17,7 +17,7 @@ export interface AccountInfo {
   conflicts: { id: string; local: unknown; cloud: unknown }[];
 }
 declare module "cordis" { interface Context { cloudHub: CloudHub } }
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "account.info": () => AccountInfo;
     "account.signIn": (email: string, password: string) => AccountInfo;

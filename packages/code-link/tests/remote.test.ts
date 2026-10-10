@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Git } from "@tomrade/storage";
-import { classifyRemoteFailure, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage } from "@tomrade/code-link";
+import type { Git } from "@tomradex/storage";
+import { classifyRemoteFailure, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage } from "@tomradex/code-link";
 
 describe("remote reachability", () => {
   it.each([

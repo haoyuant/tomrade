@@ -17,7 +17,7 @@ import type {
   Project,
   SortKey,
   View
-} from "@tomrade/domain";
+} from "@tomradex/domain";
 
 /**
  * The plugin contract. Everything a plugin reaches returns a Promise, and every

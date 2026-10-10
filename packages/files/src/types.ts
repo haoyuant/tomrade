@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { FileReference } from "@tomrade/domain";
+import type { FileReference } from "@tomradex/domain";
 
 /** Where a project's files stand against what they are shared through. `local` means nothing beyond this machine to be in step with. */
 export type FilesSyncState = "local" | "synced" | "ahead" | "behind" | "diverged" | "conflicted" | "syncing" | "offline" | "error" | "unavailable";

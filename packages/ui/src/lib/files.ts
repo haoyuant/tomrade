@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type {} from "@tomrade/files";
-import type { ConflictChoice, ListMode, SyncMode } from "@tomrade/files";
-import type { FileReference } from "@tomrade/domain";
+import type {} from "@tomradex/files";
+import type { ConflictChoice, ListMode, SyncMode } from "@tomradex/files";
+import type { FileReference } from "@tomradex/domain";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 

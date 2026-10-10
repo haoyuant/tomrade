@@ -2,12 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { fresh, settle } from "@tomrade/testkit";
-import { Settings } from "@tomrade/settings";
-import { Storage } from "@tomrade/storage";
-import { Tools } from "@tomrade/tools";
-import { Agent, promptSections, type TurnInput, type TurnIO } from "@tomrade/agent";
-import { Files } from "@tomrade/files";
+import { fresh, settle } from "@tomradex/testkit";
+import { Settings } from "@tomradex/settings";
+import { Storage } from "@tomradex/storage";
+import { Tools } from "@tomradex/tools";
+import { Agent, promptSections, type TurnInput, type TurnIO } from "@tomradex/agent";
+import { Files } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-prompt-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -1,8 +1,8 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { defineTool } from "@tomrade/tools";
-import type {} from "@tomrade/ipc";
-import type {} from "@tomrade/settings";
+import { defineTool } from "@tomradex/tools";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/settings";
 import { MCP_SERVERS_SECTION, McpClientSettings, McpServerConfig, targetOf, toolName } from "./config.js";
 import { Connection, type RemoteTool, type ServerInfo } from "./connection.js";
 import { parseClientConfig } from "./import.js";
@@ -55,7 +55,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "mcpClient.servers": () => McpServerView[];
     "mcpClient.reconnect": (id: string) => McpServerView[];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hooksSettings } from "@tomrade/code-link";
+import { hooksSettings } from "@tomradex/code-link";
 
 describe("session hooks", () => {
   it("leaves the event response on stdout for Claude Code", () => {

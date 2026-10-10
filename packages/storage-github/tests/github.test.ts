@@ -7,11 +7,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { Settings } from "@tomrade/settings";
-import { Storage } from "@tomrade/storage";
-import { GitError } from "@tomrade/storage-git";
-import { fresh, settle } from "@tomrade/testkit";
-import storageGithub, { GitHub, GitHubError } from "@tomrade/storage-github";
+import { Settings } from "@tomradex/settings";
+import { Storage } from "@tomradex/storage";
+import { GitError } from "@tomradex/storage-git";
+import { fresh, settle } from "@tomradex/testkit";
+import storageGithub, { GitHub, GitHubError } from "@tomradex/storage-github";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-gh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

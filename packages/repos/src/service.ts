@@ -3,13 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { Db, ProjectDb } from "@tomrade/db";
-import type { Hub } from "@tomrade/hub";
-import type {} from "@tomrade/boards";
-import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPatch } from "@tomrade/domain";
-import type {} from "@tomrade/ipc";
-import { GitFolder, cleanRemote, cloneInto, gitRunner, slugOf, type Git } from "@tomrade/storage";
-import { defineTool, requireProjectId } from "@tomrade/tools";
+import type { Db, ProjectDb } from "@tomradex/db";
+import type { Hub } from "@tomradex/hub";
+import type {} from "@tomradex/boards";
+import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPatch } from "@tomradex/domain";
+import type {} from "@tomradex/ipc";
+import { GitFolder, cleanRemote, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
+import { defineTool, requireProjectId } from "@tomradex/tools";
 
 declare module "cordis" {
   interface Context {
@@ -42,7 +42,7 @@ export interface WorkdirView {
   branch: string;
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "repos.list": (projectId: string) => Repo[];
     "repos.create": (input: CreateRepoInput) => Repo;

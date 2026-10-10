@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/testkit",
+  "name": "@tomradex/testkit",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,16 +18,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/boards": "workspace:*",
-    "@tomrade/db": "workspace:*",
-    "@tomrade/extensions": "workspace:*",
-    "@tomrade/fields": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/items": "workspace:*",
-    "@tomrade/oplog": "workspace:*",
-    "@tomrade/plugin-sdk": "workspace:*",
-    "@tomrade/projects": "workspace:*",
-    "@tomrade/write": "workspace:*",
+    "@tomradex/boards": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/extensions": "workspace:*",
+    "@tomradex/fields": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/oplog": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
+    "@tomradex/projects": "workspace:*",
+    "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {

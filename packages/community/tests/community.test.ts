@@ -5,14 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
-import { Settings } from "@tomrade/settings";
-import { Tools } from "@tomrade/tools";
-import { fresh, settle } from "@tomrade/testkit";
-import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest } from "@tomrade/plugin-kit";
-import { ExtensionStore, Plugins } from "@tomrade/plugins";
-import { scaffold } from "@tomrade/plugin-cli";
-import { Community, planUpdate, prepareRelease, type GitHubAccess, type VersionRow } from "@tomrade/community";
-import type { Manifest } from "@tomrade/plugin-sdk";
+import { Settings } from "@tomradex/settings";
+import { Tools } from "@tomradex/tools";
+import { fresh, settle } from "@tomradex/testkit";
+import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest } from "@tomradex/plugin-kit";
+import { ExtensionStore, Plugins } from "@tomradex/plugins";
+import { scaffold } from "@tomradex/plugin-cli";
+import { Community, planUpdate, prepareRelease, type GitHubAccess, type VersionRow } from "@tomradex/community";
+import type { Manifest } from "@tomradex/plugin-sdk";
 
 // Inside the repository: vitest's module runner will not import from the system temp directory.
 const tmp = fs.mkdtempSync(path.join(import.meta.dirname, ".tmp-"));

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CodeLinkStore, MIGRATIONS, TABLES } from "@tomrade/code-link";
-import { ProjectDb, migrateCore } from "@tomrade/db";
-import { fresh } from "@tomrade/testkit";
-import { exportState, importState } from "@tomrade/storage";
+import { CodeLinkStore, MIGRATIONS, TABLES } from "@tomradex/code-link";
+import { ProjectDb, migrateCore } from "@tomradex/db";
+import { fresh } from "@tomradex/testkit";
+import { exportState, importState } from "@tomradex/storage";
 
 describe("code-link delivery migration", () => {
   it("moves legacy delivery identities and baselines into core and imports them without code-link", async () => {

@@ -1,15 +1,15 @@
-# @tomrade/plugin-sdk
+# @tomradex/plugin-sdk
 
 The contract a Tomrade plugin is written against. `definePlugin` hands `apply()` a `PluginContext`: every call returns a Promise, every function you give it may be async, and every id you register carries your plugin's namespace.
 
 ```sh
-npx @tomrade/plugin-cli init my-plugin --id you/my-plugin
+npx @tomradex/plugin-cli init my-plugin --id you/my-plugin
 cd my-plugin && npm install && npm run dev
 ```
 
 ```ts
 import { z } from "zod";
-import { definePlugin, defineTool, requireProjectId } from "@tomrade/plugin-sdk";
+import { definePlugin, defineTool, requireProjectId } from "@tomradex/plugin-sdk";
 
 export default definePlugin({
   inject: ["items", "tools", "contributions"],

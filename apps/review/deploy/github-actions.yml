@@ -16,7 +16,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
-      - run: pnpm install --frozen-lockfile --filter "@tomrade/review..." && pnpm exec tsc -b apps/review
+      - run: pnpm install --frozen-lockfile --filter "@tomradex/review..." && pnpm exec tsc -b apps/review
       - run: node apps/review/dist/cli.js worker --once
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

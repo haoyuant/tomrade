@@ -1,13 +1,13 @@
 import { BrowserWindow } from "electron";
 import type { Context } from "cordis";
-import type {} from "@tomrade/ipc";
+import type {} from "@tomradex/ipc";
 
 export interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
   trafficLights: boolean;
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Broadcasts {
     "window.chrome": (state: WindowChrome) => void;
   }

@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { AppSettings } from "@tomrade/domain";
-import type {} from "@tomrade/hub";
-import type {} from "@tomrade/ipc";
+import type { AppSettings } from "@tomradex/domain";
+import type {} from "@tomradex/hub";
+import type {} from "@tomradex/ipc";
 
 /**
  * `machine` settings stay on this machine — credentials, paths, binaries.
@@ -44,7 +44,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "settings.get": () => AppSettings;
     "settings.set": (next: AppSettings) => AppSettings;

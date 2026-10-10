@@ -2,18 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Context } from "cordis";
-import type {} from "@tomrade/agent";
-import type {} from "@tomrade/boards";
-import type {} from "@tomrade/contributions";
-import type {} from "@tomrade/db";
-import type {} from "@tomrade/desktop-surface";
-import type {} from "@tomrade/fields";
-import type {} from "@tomrade/items";
-import type {} from "@tomrade/oplog";
-import type {} from "@tomrade/projects";
-import type {} from "@tomrade/settings";
-import type {} from "@tomrade/tools";
-import type { WriteIntent } from "@tomrade/write";
+import type {} from "@tomradex/agent";
+import type {} from "@tomradex/boards";
+import type {} from "@tomradex/contributions";
+import type {} from "@tomradex/db";
+import type {} from "@tomradex/desktop-surface";
+import type {} from "@tomradex/fields";
+import type {} from "@tomradex/items";
+import type {} from "@tomradex/oplog";
+import type {} from "@tomradex/projects";
+import type {} from "@tomradex/settings";
+import type {} from "@tomradex/tools";
+import type { WriteIntent } from "@tomradex/write";
 import {
   assertOwned,
   type AgentApi,
@@ -34,7 +34,7 @@ import {
   type ToolCallInfo,
   type ToolsApi,
   type ViewsApi
-} from "@tomrade/plugin-sdk";
+} from "@tomradex/plugin-sdk";
 import { authorFor, within, withTimeout } from "./scope.js";
 
 export interface ExtensionIdentity {

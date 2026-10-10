@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import { ConflictError, ExtensionAuthorError, HumanLockedError, PurgeNotPermittedError, isAi, type Item } from "@tomrade/domain";
+import { ConflictError, ExtensionAuthorError, HumanLockedError, PurgeNotPermittedError, isAi, type Item } from "@tomradex/domain";
 import { extensionScope } from "./context.js";
 
 /** AI writers may never touch these fields on a human-locked item. */

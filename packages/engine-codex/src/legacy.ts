@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomrade/agent";
-import { publishNativeImage } from "@tomrade/agent";
-import { binaryOk, buildSystem, promptOf, runJsonl } from "@tomrade/engine-claude-code";
-import type {} from "@tomrade/mcp";
-import type {} from "@tomrade/settings";
+import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { publishNativeImage } from "@tomradex/agent";
+import { binaryOk, buildSystem, promptOf, runJsonl } from "@tomradex/engine-claude-code";
+import type {} from "@tomradex/mcp";
+import type {} from "@tomradex/settings";
 
 export const CodexOptions = z.object({
   transport: z.enum(["app-server", "cli"]).default("app-server"),
@@ -123,7 +123,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       }
 
       const usage = { inputTokens: 0, outputTokens: 0 };
-      const metrics: import("@tomrade/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
+      const metrics: import("@tomradex/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
       let session: string | undefined;
       let failure: string | null = null;
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fresh } from "@tomrade/testkit";
-import { Tools, defineTool, type RunHandle } from "@tomrade/tools";
-import { writeContext } from "@tomrade/write";
+import { fresh } from "@tomradex/testkit";
+import { Tools, defineTool, type RunHandle } from "@tomradex/tools";
+import { writeContext } from "@tomradex/write";
 import { z } from "zod";
 
 const runHandle = (id: string, projectId: string): RunHandle => ({

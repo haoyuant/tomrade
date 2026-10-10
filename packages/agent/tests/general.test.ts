@@ -2,10 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { Agent, promptSections, type TurnInput } from "@tomrade/agent";
-import { Tools } from "@tomrade/tools";
-import { Settings } from "@tomrade/settings";
-import { fresh, settle } from "@tomrade/testkit";
+import { Agent, promptSections, type TurnInput } from "@tomradex/agent";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { fresh, settle } from "@tomradex/testkit";
 
 it("honors the ticket method and serializes human takeover against restart", async () => {
   const { ctx, items, project, board } = await fresh({ plugins: [Tools, [Settings, { path: path.join(os.tmpdir(), `general-settings-${crypto.randomUUID()}.json`) }], Agent] });

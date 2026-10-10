@@ -1,14 +1,14 @@
 import { Context, type Plugin } from "cordis";
-import { Db } from "@tomrade/db";
-import { Hub } from "@tomrade/hub";
-import { Oplog } from "@tomrade/oplog";
-import { policy } from "@tomrade/write";
-import { Fields } from "@tomrade/fields";
-import { Items } from "@tomrade/items";
-import { boards } from "@tomrade/boards";
-import { Projects } from "@tomrade/projects";
-import { adaptSdkPlugin, builtinIdentity, type ExtensionIdentity } from "@tomrade/extensions";
-import { isSdkPlugin, type SdkPlugin } from "@tomrade/plugin-sdk";
+import { Db } from "@tomradex/db";
+import { Hub } from "@tomradex/hub";
+import { Oplog } from "@tomradex/oplog";
+import { policy } from "@tomradex/write";
+import { Fields } from "@tomradex/fields";
+import { Items } from "@tomradex/items";
+import { boards } from "@tomradex/boards";
+import { Projects } from "@tomradex/projects";
+import { adaptSdkPlugin, builtinIdentity, type ExtensionIdentity } from "@tomradex/extensions";
+import { isSdkPlugin, type SdkPlugin } from "@tomradex/plugin-sdk";
 
 /** An SDK plugin as a loadable row. An `origin: "extension"` identity holds it to its namespace. */
 export const sdk = (plugin: SdkPlugin<unknown>, identity: Partial<ExtensionIdentity> & { id: string }): Plugin =>

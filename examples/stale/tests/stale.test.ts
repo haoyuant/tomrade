@@ -6,11 +6,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import stale from "@tomrade/example-stale";
-import { Contributions } from "@tomrade/contributions";
-import { Settings } from "@tomrade/settings";
-import { Tools } from "@tomrade/tools";
-import { fresh, sdk } from "@tomrade/testkit";
+import stale from "@tomradex/example-stale";
+import { Contributions } from "@tomradex/contributions";
+import { Settings } from "@tomradex/settings";
+import { Tools } from "@tomradex/tools";
+import { fresh, sdk } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-stale-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

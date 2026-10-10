@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LAYOUTS, type Layout } from "@tomrade/domain";
+import { LAYOUTS, type Layout } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";

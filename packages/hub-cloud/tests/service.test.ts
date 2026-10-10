@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { fresh, settle } from "@tomrade/testkit";
-import { Storage, readArtifact, readHubManifest } from "@tomrade/storage";
-import Settings from "@tomrade/settings";
+import { fresh, settle } from "@tomradex/testkit";
+import { Storage, readArtifact, readHubManifest } from "@tomradex/storage";
+import Settings from "@tomradex/settings";
 import { CloudHub } from "../src/service.js";
 import type { CloudRecord, Mutation } from "../src/cache.js";
-import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@tomrade/domain";
+import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@tomradex/domain";
 
 const remote = vi.hoisted(() => ({
   offline: false, loseReply: false, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", hubId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

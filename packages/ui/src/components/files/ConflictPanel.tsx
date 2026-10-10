@@ -1,4 +1,4 @@
-import type { ConflictChoice, FileConflict } from "@tomrade/files";
+import type { ConflictChoice, FileConflict } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";

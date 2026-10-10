@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/settings",
+  "name": "@tomradex/settings",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,9 +18,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/hub": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/hub": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

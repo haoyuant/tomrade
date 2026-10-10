@@ -2,8 +2,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { attest, generateSigningKey, type Attestation } from "@tomrade/plugin-kit";
-import { satisfies } from "@tomrade/plugin-sdk";
+import { attest, generateSigningKey, type Attestation } from "@tomradex/plugin-kit";
+import { satisfies } from "@tomradex/plugin-sdk";
 import { claudeJudge } from "./judge.js";
 import { processSubmission } from "./pipeline.js";
 import { githubSource, installDependencies, serviceClient, supabaseRegistry } from "./supabase.js";

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { Settings, type SettingsSectionView } from "@tomrade/settings";
-import { fresh } from "@tomrade/testkit";
+import { Settings, type SettingsSectionView } from "@tomradex/settings";
+import { fresh } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-settings-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

@@ -1,8 +1,8 @@
 import { BrowserWindow, dialog, shell as electronShell } from "electron";
 import type { Context } from "cordis";
-import type {} from "@tomrade/ipc";
+import type {} from "@tomradex/ipc";
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     /** Native folder picker. Null when the user cancels. */
     "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;

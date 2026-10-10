@@ -1,4 +1,4 @@
-import type {} from "@tomrade/ipc";
+import type {} from "@tomradex/ipc";
 import { invoke } from "./api";
 
 /**
@@ -6,7 +6,7 @@ import { invoke } from "./api";
  * here because the renderer is their only caller and the shell is not a package
  * the UI imports. The pairing is by name, as with every other channel.
  */
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
     /** Native picker for several files, or for folders. Null when the user cancels. */

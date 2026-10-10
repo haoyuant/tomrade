@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { emptyEvidence, addResourceSchema, submitDeliverySchema, reviewDeliverySchema, type FilesResolver, type TicketEvidence, type DeliveryResource } from "@tomrade/domain";
+import { emptyEvidence, addResourceSchema, submitDeliverySchema, reviewDeliverySchema, type FilesResolver, type TicketEvidence, type DeliveryResource } from "@tomradex/domain";
 import { Context, Service } from "cordis";
-import type { ProjectDb } from "@tomrade/db";
-import { DeliveryStore } from "@tomrade/db";
-import type { Oplog } from "@tomrade/oplog";
-import { write } from "@tomrade/write";
+import type { ProjectDb } from "@tomradex/db";
+import { DeliveryStore } from "@tomradex/db";
+import type { Oplog } from "@tomradex/oplog";
+import { write } from "@tomradex/write";
 import {
   DependencyCycleError,
   NotFoundError,
@@ -20,8 +20,8 @@ import {
   type Patch,
   type Priority,
   type SortKey
-} from "@tomrade/domain";
-import type { Fields, StoredValue } from "@tomrade/fields";
+} from "@tomradex/domain";
+import type { Fields, StoredValue } from "@tomradex/fields";
 import { registerChannels } from "./channels.js";
 import { compileQuery, compileSearch, type SearchMode } from "./query.js";
 import { registerTools } from "./tools.js";

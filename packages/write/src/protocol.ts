@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import type { Author, OplogEntity, OplogOp } from "@tomrade/domain";
+import type { Author, OplogEntity, OplogOp } from "@tomradex/domain";
 import { extensionScope, writeContext } from "./context.js";
 
 /** What a repository is about to commit. Policy listeners read it and either throw or call next(). */

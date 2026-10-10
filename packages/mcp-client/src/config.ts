@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { SettingsSection } from "@tomrade/settings";
+import type { SettingsSection } from "@tomradex/settings";
 
 /** A server's id prefixes every tool it contributes, so it stays short and safe in a tool name. */
 export const ServerId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,23}$/, "lowercase letters, digits, _ or -, at most 24");

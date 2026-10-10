@@ -32,7 +32,7 @@ let port = firstPort;
 while (!(await isAvailable(port))) port += 1;
 
 const env = { ...process.env, VITE_DEV_SERVER_URL: `http://${host}:${port}` };
-const ui = spawn("pnpm", ["-F", "@tomrade/ui", "exec", "vite", "--host", host, "--port", String(port)], { env, stdio: "inherit" });
+const ui = spawn("pnpm", ["-F", "@tomradex/ui", "exec", "vite", "--host", host, "--port", String(port)], { env, stdio: "inherit" });
 await waitForServer(port);
 const electron = spawn("pnpm", ["exec", "electron", "."], { env, stdio: "inherit" });
 let shuttingDown = false;

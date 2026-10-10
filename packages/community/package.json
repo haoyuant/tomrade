@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/community",
+  "name": "@tomradex/community",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -19,13 +19,13 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
-    "@tomrade/hub-cloud": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/plugin-cli": "workspace:*",
-    "@tomrade/plugin-kit": "workspace:*",
-    "@tomrade/plugin-sdk": "workspace:*",
-    "@tomrade/plugins": "workspace:*",
-    "@tomrade/settings": "workspace:*",
+    "@tomradex/hub-cloud": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/plugin-cli": "workspace:*",
+    "@tomradex/plugin-kit": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
+    "@tomradex/plugins": "workspace:*",
+    "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

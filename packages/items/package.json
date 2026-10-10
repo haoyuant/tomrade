@@ -1,5 +1,5 @@
 {
-  "name": "@tomrade/items",
+  "name": "@tomradex/items",
   "private": true,
   "license": "BUSL-1.1",
   "version": "0.0.0",
@@ -18,14 +18,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tomrade/boards": "workspace:*",
-    "@tomrade/db": "workspace:*",
-    "@tomrade/domain": "workspace:*",
-    "@tomrade/fields": "workspace:*",
-    "@tomrade/ipc": "workspace:*",
-    "@tomrade/oplog": "workspace:*",
-    "@tomrade/tools": "workspace:*",
-    "@tomrade/write": "workspace:*",
+    "@tomradex/boards": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/fields": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/oplog": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

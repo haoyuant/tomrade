@@ -1,10 +1,10 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { AgentEvent } from "@tomrade/agent";
-import type { DesktopSurface, DesktopSurfaceHost } from "@tomrade/desktop-surface";
-import type { SettingsSection } from "@tomrade/settings";
-import type {} from "@tomrade/contributions";
-import type {} from "@tomrade/ipc";
+import type { AgentEvent } from "@tomradex/agent";
+import type { DesktopSurface, DesktopSurfaceHost } from "@tomradex/desktop-surface";
+import type { SettingsSection } from "@tomradex/settings";
+import type {} from "@tomradex/contributions";
+import type {} from "@tomradex/ipc";
 import { desktopAnimation, embeddedAccessory, PET_DESKTOP_URL } from "./manifest.js";
 import { desktopThreadState, emptyPetModel, moodForThread, reducePetModel, type PetModel, type PetMood, type TaskPetMood } from "./state.js";
 
@@ -50,7 +50,7 @@ declare module "cordis" {
   }
 }
 
-declare module "@tomrade/ipc" {
+declare module "@tomradex/ipc" {
   interface Channels {
     "pet.state": (threadId: string | null) => PetViewState;
   }

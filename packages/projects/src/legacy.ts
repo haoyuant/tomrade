@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { CORE_TABLES_SQL, migrateCore, projectPredicate, type Db, type PluginRegistration, type ProjectDb } from "@tomrade/db";
+import { CORE_TABLES_SQL, migrateCore, projectPredicate, type Db, type PluginRegistration, type ProjectDb } from "@tomradex/db";
 
 /** Core tables and the clause that selects one project's rows in a database holding several. */
 const CORE_SCOPES: [table: string, where: string][] = [

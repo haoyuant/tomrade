@@ -1,4 +1,4 @@
-import type { CreateItemInput, FieldDef, ItemStatus, Patch, Priority, ViewQuery } from "@tomrade/domain";
+import type { CreateItemInput, FieldDef, ItemStatus, Patch, Priority, ViewQuery } from "@tomradex/domain";
 
 /** Two field patches as one write; `fields` maps merge rather than replace. */
 export function mergePatch(a: Patch, b: Patch): Patch {
