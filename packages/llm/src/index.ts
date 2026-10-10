@@ -5,7 +5,7 @@ import { AnthropicModel } from "./anthropic.js";
 import { ImagesModel } from "./images.js";
 export { ImagesModel } from "./images.js";
 import { LlmError } from "./errors.js";
-import { collect, userMessage, type ChatModel, type ChatRequest, type LlmRole } from "./model.js";
+import { assistantMessage, collect, userMessage, type ChatModel, type ChatRequest, type LlmRole, type Message } from "./model.js";
 import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
 
@@ -86,6 +86,44 @@ export const MODELS_SECTION: SettingsSection<ModelsSettings> = {
 
 const parseCandidates = (content: string): string[] => [content, content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "")];
 
+/** The output as `schema`, or the one problem worth telling the model (and then the person) about. */
+function fit<T>(schema: z.ZodType<T>, content: string): { ok: true; value: T } | { ok: false; problem: string } {
+  let problem = "it is not valid JSON";
+  for (const candidate of parseCandidates(content)) {
+    let json: unknown;
+    try {
+      json = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    const parsed = schema.safeParse(json);
+    if (parsed.success) return { ok: true, value: parsed.data };
+    const issue = parsed.error.issues[0];
+    problem = `${issue.path.length ? issue.path.join(".") : "the document"}: ${issue.message}`;
+  }
+  return { ok: false, problem };
+}
+
+/**
+ * One JSON document matching `schema`. Output that does not fit gets one repair
+ * round with the problem quoted back; output that still does not fit is refused
+ * naming `label` and the field, because the model answering here is the worker,
+ * not whichever engine runs the conversation.
+ */
+export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, request: CompletionRequest, label = "The worker model"): Promise<T> {
+  const messages: Message[] = [userMessage(request.user)];
+  let problem = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const out = await collect(model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens: 8000 }));
+    if (!out.text) throw new LlmError(`${label} returned no content`);
+    const result = fit(schema, out.text.trim());
+    if (result.ok) return result.value;
+    problem = out.stop === "max_tokens" ? "it was cut off at the output limit" : result.problem;
+    messages.push(assistantMessage({ text: out.text, toolCalls: [] }), userMessage(`That reply does not fit the required JSON shape (${problem}). Reply with the corrected JSON document only.`));
+  }
+  throw new LlmError(`${label} returned output that failed schema validation — ${problem}`);
+}
+
 /** ctx.llm: profiles + roles from settings, adapters cached until settings change. */
 export class Llm extends Service implements LlmService {
   static provide = "llm";
@@ -152,26 +190,9 @@ export class Llm extends Service implements LlmService {
   }
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
-    const model = this.for("worker");
-    const out = await collect(
-      model.chat({
-        system: request.system,
-        messages: [userMessage(request.user)],
-        json: model.capabilities.json,
-        temperature: request.temperature ?? 0.2,
-        maxTokens: 8000
-      })
-    );
-    if (!out.text) throw new LlmError("LLM returned no content");
-    let lastError: unknown;
-    for (const candidate of parseCandidates(out.text.trim())) {
-      try {
-        return schema.parse(JSON.parse(candidate));
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    throw new LlmError("LLM output failed schema validation", lastError);
+    const profile = this.profileFor("worker");
+    const label = profile ? `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)` : undefined;
+    return completeJson(this.for("worker"), schema, request, label);
   }
 
   /** A v1 `llm` section with a key becomes the first profile, bound to both roles. */

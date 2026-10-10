@@ -8,6 +8,7 @@ import type { Item } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { defineTool, type RunHandle } from "@tomradex/tools";
 import { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier, type RequiredField } from "./dossier.js";
+import { applyDependencies, proposeDependencies, reviewQuestion, ticketChanges, type DependencyProposal } from "./dependencies.js";
 import { applyPlan, findGaps, generatePlan, planSchema, type Plan } from "./plan.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
@@ -15,6 +16,7 @@ import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
 export { applyPlan, findGaps, generatePlan, planSchema, type ApplyOutcome, type Plan } from "./plan.js";
+export { applyDependencies, dependencyReviewSchema, proposeDependencies, ticketChanges, type DependencyProposal, type TicketChange } from "./dependencies.js";
 export { PLAYBOOKS } from "./playbooks.js";
 
 export const DEDUP_RULE = "dedup-before-create";
@@ -165,12 +167,17 @@ export default {
     ctx.agent.workflow<{ seed?: string }, WizardState>({
       id: "intake_wizard",
       title: "Requirement intake (fixed questions)",
-      description: "Walk the six required dossier fields one question at a time, then plan and write the backlog. Fully deterministic.",
+      description: "Ask whatever the thread's dossier still lacks, one fixed question at a time, then plan and write the backlog. Fully deterministic; a complete dossier goes straight to the plan confirmation.",
       input: z.object({ seed: z.string().optional() }),
       state: z.object({ dossier: dossierSchema, asked: z.enum(REQUIRED_FIELDS).nullable() }),
       entry: "ask",
       accepts: "text",
-      start: (input) => ({ dossier: dossierSchema.parse({ goal: input.seed ?? "" }), asked: null }),
+      literal: true,
+      // The thread's dossier is where it starts: what is already there is never asked again or written over.
+      start: (input, io) => {
+        const dossier = dossierOf(io.run);
+        return { dossier: input.seed?.trim() && !dossier.goal ? { ...dossier, goal: input.seed.trim() } : dossier, asked: null };
+      },
       steps: {
         ask(state, io, answer) {
           if (state.asked && answer !== undefined) {
@@ -199,6 +206,77 @@ export default {
           io.emit({ type: "text", text: `Created ${outcome.created.length} items under ${outcome.rootKey}.${outcome.skipped.length ? ` Skipped ${outcome.skipped.length} already covered.` : ""}` });
           return { done: outcome };
         }
+      }
+    });
+
+    // ── dependencies follow ticket changes ────────────────────────────────
+    // Runs whose ticket changes have not been reviewed yet, per thread. Best effort: a restart forgets them.
+    const owed = new Map<string, Set<string>>();
+    const reviewed = new Set<string>();
+    const edit = z.object({ from: z.string(), to: z.string(), fromId: z.string(), toId: z.string(), reason: z.string() });
+    interface ReviewState {
+      runIds: string[];
+      /** Asked for by name rather than after a turn: with nothing changed, it checks the whole backlog. */
+      full: boolean;
+      proposal: DependencyProposal | null;
+      apply: string;
+    }
+    ctx.agent.workflow<{ runIds?: string[] }, ReviewState>({
+      id: "review_dependencies",
+      title: "Review dependencies",
+      description:
+        "Check whether ticket changes call for dependency updates and ask the user before applying them. It runs by itself after a turn that creates, deletes, cancels or re-scopes tickets; call it only when the user asks to recheck dependencies (with nothing changed, it checks the whole backlog).",
+      input: z.object({ runIds: z.array(z.string()).optional() }),
+      state: z.object({ runIds: z.array(z.string()), full: z.boolean(), proposal: z.object({ add: z.array(edit), remove: z.array(edit) }).nullable(), apply: z.string() }),
+      entry: "review",
+      accepts: "options",
+      start(input, io) {
+        const runIds = input.runIds ?? [...(owed.get(io.run.threadId) ?? []), io.run.id];
+        owed.delete(io.run.threadId);
+        for (const id of runIds) reviewed.add(id);
+        return { runIds, full: !input.runIds, proposal: null, apply: "" };
+      },
+      steps: {
+        async review(state, io, answer) {
+          const projectId = io.run.projectId;
+          if (answer !== undefined) {
+            if (answerText(answer) !== state.apply || !state.proposal) return { done: { applied: false } };
+            const outcome = applyDependencies(ctx, projectId, state.proposal, io.run.author);
+            const zh = state.apply === "现在更新";
+            const failed = outcome.failed.map((f) => `${f.key} (${f.reason})`).join("; ");
+            io.emit({ type: "note", text: zh ? `依赖已更新：新增 ${outcome.added} 条，移除 ${outcome.removed} 条。${failed ? `未能更新：${failed}` : ""}` : `Dependencies updated: ${outcome.added} added, ${outcome.removed} removed.${failed ? ` Not updated: ${failed}` : ""}` });
+            return { done: outcome };
+          }
+          const changes = ticketChanges(ctx, projectId, state.runIds);
+          const model = llm();
+          if ((!changes.length && !state.full) || !model?.ready().ok) return { done: { proposed: 0 } };
+          let proposal: DependencyProposal;
+          try {
+            proposal = await proposeDependencies(ctx, model, projectId, changes);
+          } catch (err) {
+            ctx.logger.warn(`dependency review failed: ${err instanceof Error ? err.message : String(err)}`);
+            return { done: { proposed: 0 } };
+          }
+          if (!proposal.add.length && !proposal.remove.length) return { done: { proposed: 0 } };
+          const items = ctx.items.list({ projectId });
+          const titleOf = (key: string) => items.find((i) => i.key === key)?.title ?? "";
+          const zh = /[\u3400-\u9fff]/.test([...changes.map((c) => c.title), ...items.slice(0, 20).map((i) => i.title)].join(""));
+          const question = reviewQuestion(proposal, titleOf, zh);
+          return { ask: { text: question.text, options: [question.apply, question.skip] }, state: { ...state, proposal, apply: question.apply } };
+        }
+      }
+    });
+    ctx.agent.followUp({
+      id: "dependency-review",
+      after({ projectId, threadId, runId, canAsk }) {
+        if (!reviewed.has(runId) && ticketChanges(ctx, projectId, [runId]).length) {
+          const runs = owed.get(threadId) ?? new Set<string>();
+          runs.add(runId);
+          owed.set(threadId, runs);
+        }
+        const runs = owed.get(threadId);
+        if (!canAsk || !runs?.size) return null;
+        return { workflow: "review_dependencies", args: { runIds: [...runs] } };
       }
     });
 

@@ -99,7 +99,15 @@ export class ToolInputError extends Error {
  * to — guessing would write into the wrong project the moment a second exists —
  * so the call is refused with the tool that answers the question.
  */
+/**
+ * The project a call works in. A call bound to one (an assistant thread's run,
+ * a project's MCP session) stays in it: naming another is refused, so an agent
+ * cannot wander into a project the user is not looking at.
+ */
 export function requireProjectId(tool: string, given: string | undefined, invocation: { projectId?: string }): string {
+  if (given && invocation.projectId && given !== invocation.projectId) {
+    throw new ToolInputError(tool, [{ code: "custom", path: ["projectId"], message: `"${given}" is another project — this conversation works only in its own project ("${invocation.projectId}"); omit projectId, and if the user means another project, tell them to open it there`, input: given } as unknown as z.core.$ZodIssue]);
+  }
   const id = given ?? invocation.projectId;
   if (!id) {
     throw new ToolInputError(tool, [{ code: "custom", path: ["projectId"], message: "required here — call list_projects and pass one", input: undefined } as unknown as z.core.$ZodIssue]);

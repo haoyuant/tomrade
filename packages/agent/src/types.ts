@@ -175,6 +175,8 @@ export interface OpenDependency {
 export interface TurnInput {
   threadId: string;
   projectId: string;
+  /** The project the conversation belongs to, named so the model knows where it is. */
+  project?: { name: string; keyPrefix: string };
   purpose: TurnPurpose;
   permissionMode?: string;
   /** The ticket a code thread implements — the branch it must stay on, the key its commits must name. */
@@ -259,6 +261,12 @@ export interface Engine {
   author: Author;
   /** Absent means `["backlog"]`. */
   capabilities?: EngineCapability[];
+  /**
+   * No model judges what the user types: free text while a workflow waits is
+   * taken as that workflow's answer. A model engine instead reads the reply with
+   * the waiting question in its prompt and resumes or cancels the workflow itself.
+   */
+  literal?: boolean;
   available(): Promise<{ ok: boolean; reason?: string }>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
@@ -324,6 +332,24 @@ export interface WorkflowSpec<I = unknown, S = unknown> {
   steps: Record<string, (state: S, io: WorkflowIO, answer?: string | string[]) => WorkflowTransition<S> | Promise<WorkflowTransition<S>>>;
   /** What counts as on-script input while suspended: one of the offered options, or any text. */
   accepts?: "options" | "text";
+  /** Offered only to engines without a model (Engine.literal); a model holds this conversation itself, in the user's language. */
+  literal?: boolean;
+}
+
+/**
+ * Consulted when a turn ends, while its run is still open, so whatever it starts
+ * writes into the same run and asks like any other workflow. `canAsk` is false
+ * when the run already ends on a question, failed or was cancelled; a follow-up
+ * then only notes what it still owes the thread.
+ */
+export interface TurnFollowUp {
+  id: string;
+  after(turn: { projectId: string; threadId: string; runId: string; canAsk: boolean }): FollowUpStart | null | Promise<FollowUpStart | null>;
+}
+
+export interface FollowUpStart {
+  workflow: string;
+  args?: unknown;
 }
 
 /** What a suspending tool call returns; engines end their turn when they see one. */

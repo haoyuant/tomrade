@@ -13,6 +13,7 @@ export function createScriptedEngine(): Engine {
     id: "scripted",
     title: "Scripted (no model)",
     author: "ai:scripted",
+    literal: true,
     available: async () => ({ ok: true }),
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       const startable = io.workflows.list().filter((w) => w.canStartEmpty);

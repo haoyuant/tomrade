@@ -147,6 +147,9 @@ export function createLoopEngine(ctx: Context): Engine {
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
       const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
+      // A workflow that finished on the user's answer may have spoken last. A request may not end on the
+      // assistant: thinking-mode endpoints read it as an unfinished turn and refuse it without its reasoning.
+      if (messages.at(-1)?.role === "assistant") messages.push({ role: "user", content: [{ type: "text", text: "(That ran in reply to the user's last message. Reply to the user now.)" }] });
       const usage = { inputTokens: 0, outputTokens: 0 };
       let invalidStreak = 0;
       // What each read call answered this turn; a write clears it, since the answer may have changed.

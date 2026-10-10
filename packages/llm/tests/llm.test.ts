@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { FakeChatModel, collect, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
+import { FakeChatModel, collect, completeJson, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
 
 describe("collect", () => {
   it("gathers text, tool calls and the stop reason", async () => {
@@ -40,6 +40,22 @@ describe("withPromptTools", () => {
     const out = await collect(withPromptTools(inner(reply)).chat({ system: "s", messages: [], tools: [{ name: "t", description: "d", inputSchema: {} }] }));
     expect(out.toolCalls).toEqual([]);
     expect(out.text).toContain("not json");
+  });
+});
+
+describe("completeJson", () => {
+  const schema = z.object({ priority: z.number() });
+
+  it("gives the model one chance to repair output that does not fit, quoting what was wrong", async () => {
+    const model = new FakeChatModel([{ text: '{"priority": "high"}' }, { text: '{"priority": 3}' }]);
+    expect(await completeJson(model, schema, { system: "s", user: "u" }, "DeepSeek (deepseek-chat)")).toEqual({ priority: 3 });
+    expect(JSON.stringify(model.requests[1].messages)).toContain("priority");
+  });
+
+  it("names the model and the field when the repair does not fit either", async () => {
+    const model = new FakeChatModel([{ text: '{"priority": "high"}' }, { text: "```json\n{\"priority\": \"high\"}\n```" }]);
+    await expect(completeJson(model, schema, { system: "s", user: "u" }, "DeepSeek (deepseek-chat)")).rejects.toThrow(/DeepSeek \(deepseek-chat\).*priority/);
+    expect(model.requests).toHaveLength(2);
   });
 });
 

@@ -306,6 +306,14 @@ class Anthropic extends Service implements LLMProvider {
 
 Replace the `llm` row's `name` in `tomrade.yml` and the assistant never notices.
 
+The shipped `completeJson` runs on the **worker** role, whichever engine holds the
+conversation. Output that does not fit the schema gets one repair round with the
+problem quoted back; if that still does not fit, the error names the worker
+profile and the offending field. `completeJson(model, schema, request, label)` is
+exported for a provider that wants the same behaviour over its own `ChatModel`.
+Keep optional fields in a schema forgiving (`.catch(undefined)`), so a cosmetic
+slip does not cost the whole document.
+
 ## Modules
 
 A **module** is a capability, named by the service key that carries it. The
@@ -408,7 +416,25 @@ ctx.agent.policy({
   id: "one-doc-per-run",
   before: (call, next) => (call.name === "write_doc" && call.run.ledger.find((e) => e.tool === "write_doc") ? Promise.reject(new Error("one document per run")) : next())
 });
+
+// A FOLLOW-UP runs when a turn ends, while its run is still open: it may start
+// one of your workflows, which then writes into the same run and asks like any
+// other. canAsk is false when the run already ends on a question (or failed);
+// note what you owe the thread and start it on a later turn.
+ctx.agent.followUp({
+  id: "doc-index",
+  after: ({ runId, canAsk }) => (canAsk && touchedDocs(runId) ? { workflow: "reindex_docs", args: { runId } } : null)
+});
 ```
+
+A workflow step the platform starts or resumes itself, a follow-up or a clicked
+answer, writes under the run's `run_id` just as a tool call does, so it counts
+in "Changed N" and reverts with that run. `@tomradex/agent-backlog` uses a
+follow-up for dependencies: after a turn that creates, deletes, cancels or
+re-scopes tickets, `review_dependencies` asks the worker model which `blocks`
+edges the change calls for (named prerequisite/dependent, so a model cannot get
+the direction backwards), drops unknown keys, cycles, finished targets and edges
+the others already imply, and asks the user before writing anything.
 
 ### General work, deliveries and the Files plugin
 
@@ -531,8 +557,12 @@ completion. Work type cannot change during an active delivery.
 Engines emit **blocks** — text, trace, question, card, status, changes, note —
 and the panel draws them with the design system's own primitives; a
 third-party engine ships no UI code. While a workflow is suspended, on-script
-input resumes it deterministically; off-script input goes to the engine, which
-holds `resume_workflow` / `cancel_workflow`. Every tool call an engine makes is
+input (a clicked option, or the question's own answer) resumes it
+deterministically; anything else goes to the engine, which holds
+`resume_workflow` / `cancel_workflow`. Typed text counts as on-script only for an
+engine that declares `literal: true` (no model, like the scripted one): a model
+engine reads the reply with the waiting question in its prompt and decides
+whether it is the answer or an instruction that moves on. Every tool call an engine makes is
 run-bound: the oplog rows it produces carry the `run_id`, which is what makes
 "Changed 15 items · Revert" one click. A CLI agent (Claude Code, Codex) is an
 engine like any other: it gets the tools over MCP with a per-run token
@@ -767,7 +797,10 @@ Every method that takes an entity id takes the **project id first** —
 `oplog.undoLast(projectId)` — and so does every renderer channel. A tool
 resolves its project with `requireProjectId(name, args.projectId, inv)`, which
 refuses a call that names none and points at `list_projects`; there is no
-default project to fall back to.
+default project to fall back to. A call already bound to a project (an assistant
+thread's run, a run token, a `/mcp/<projectId>` session) stays in it: naming
+another project is refused, so an agent never reads or writes a project the user
+is not looking at. Only an unbound caller picks the project per call.
 
 ```ts
 ctx.db.migrate("hello", [

@@ -43,10 +43,13 @@ describe("workstream tools", () => {
     await expect(ctx.tools.execute("list_workstreams", {}, { by: "ai:test" })).rejects.toThrow(/list_projects/);
   });
 
-  it("an explicit projectId wins over the caller's scope", async () => {
+  it("keeps a caller bound to a project inside it, and lets an unbound caller name any project", async () => {
     const { ctx, projects, boards } = await withTools();
+    const mine = projects.create({ name: "Mine" });
     const other = projects.create({ name: "Other" });
-    const created = (await ctx.tools.execute("create_workstream", { projectId: other.id, name: "Theirs" }, { by: "ai:test", projectId: "not-this-one" })) as { id: string };
+    await expect(ctx.tools.execute("create_workstream", { projectId: other.id, name: "Theirs" }, { by: "ai:test", projectId: mine.id })).rejects.toThrow("is another project");
+    expect(boards.list(other.id).map((b) => b.name)).not.toContain("Theirs");
+    const created = (await ctx.tools.execute("create_workstream", { projectId: other.id, name: "Theirs" }, { by: "ai:test" })) as { id: string };
     expect(boards.get(other.id, created.id)?.name).toBe("Theirs");
   });
 });

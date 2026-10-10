@@ -50,7 +50,11 @@ also work without a ticket, saving into Files with nothing to submit.
 `blocks` / `blockedBy` between items. Information, not a lock: people move a
 blocked ticket freely. Starting an agent on a ticket that waits on open work
 asks first (`allowBlocked`); once started, the agent is told what is still open
-on every turn and is never stopped for it.
+on every turn and is never stopped for it. After an agent creates, deletes,
+cancels or re-scopes tickets, the assistant checks whether dependencies should
+change and asks before writing them. A ticket whose goal changes substantially
+is cancelled and replaced by a new one, and its dependencies move to the
+replacement.
 
 Concurrent independent evidence additions merge. Incompatible deliveries,
 conflicting reviews or undo that would break submitted references stop sync for
