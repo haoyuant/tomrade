@@ -35,9 +35,9 @@ function withImages(html: string, images: Record<string, string>): { html: strin
   return { html: tpl.innerHTML, wanted: [...wanted] };
 }
 
-function Markdown({ text, linking }: { text: string; linking?: NoteLinking }) {
+function Markdown({ text, linking, lines }: { text: string; linking?: NoteLinking; lines?: boolean }) {
   // Inline HTML in the markdown goes through the same sanitizer as the rendered tree.
-  const base = useMemo(() => renderMarkdown(text, linking?.resolve), [text, linking?.resolve]);
+  const base = useMemo(() => renderMarkdown(text, linking?.resolve, { lines }), [text, linking?.resolve, lines]);
   const [images, setImages] = useState<Record<string, string>>({});
   const { html, wanted } = useMemo(() => withImages(base, images), [base, images]);
   const image = useRef(linking?.image);
@@ -73,20 +73,25 @@ function Markdown({ text, linking }: { text: string; linking?: NoteLinking }) {
   );
 }
 
+/** Whether a file has a rendered form apart from its text: what a preview beside the editor can show. */
+export const isRenderable = (content: FileContent): boolean =>
+  content.encoding === "utf8" && (content.mime === "text/markdown" || content.mime === "text/html" || content.mime === "image/svg+xml");
+
 /**
  * Reads a file the way its kind asks: markdown rendered with its links live,
  * HTML in a sandbox, SVG and images as pictures, everything else as text —
  * with a switch to the source where rendering hides it, unless the screen
- * around it offers editing instead (`switch={false}`).
+ * around it offers editing instead (`switch={false}`). `lines` tags markdown
+ * blocks with their source lines, for a preview that follows an editor.
  */
-export function FileViewer({ content, linking, switch: showSwitch = true }: { content: FileContent; linking?: NoteLinking; switch?: boolean }) {
+export function FileViewer({ content, linking, switch: showSwitch = true, lines }: { content: FileContent; linking?: NoteLinking; switch?: boolean; lines?: boolean }) {
   const { t } = useI18n();
   const [source, setSource] = useState(false);
-  const renderable = content.encoding === "utf8" && (content.mime === "text/markdown" || content.mime === "text/html" || content.mime === "image/svg+xml");
+  const renderable = isRenderable(content);
   const body = (() => {
     if (content.encoding === "utf8") {
       if (renderable && (!source || !showSwitch)) {
-        if (content.mime === "text/markdown") return <Markdown text={content.body} linking={linking} />;
+        if (content.mime === "text/markdown") return <Markdown text={content.body} linking={linking} lines={lines} />;
         if (content.mime === "text/html") return <iframe className="html-view" sandbox="allow-scripts" srcDoc={framed(content.body)} title={content.name} />;
         return <img className="image-view" src={`data:image/svg+xml;utf8,${encodeURIComponent(content.body)}`} alt={content.name} />;
       }

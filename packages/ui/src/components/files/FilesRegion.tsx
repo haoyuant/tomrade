@@ -43,7 +43,7 @@ import { takeEditRequest, useFileMode, useNoteTags, useNotesEnabled, type FileMo
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
 import { Backlinks } from "./Backlinks";
 import { ConflictPanel } from "./ConflictPanel";
-import { FileViewer } from "./FileViewer";
+import { FileViewer, isRenderable } from "./FileViewer";
 import { NoteEditor, type SaveState } from "./NoteEditor";
 import { stateOf, type StateView } from "./state";
 import { useNoteActions } from "./useNoteActions";
@@ -433,9 +433,9 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
   const notesOn = useNotesEnabled();
   const actions = useNoteActions();
   const linking = useMemo(() => actions.linking(path), [actions, path]);
-  const [preferred, setPreferred] = useFileMode();
-  // A note just made, or a link just followed into nothing, opens to be written in.
-  const [requested, setRequested] = useState<FileMode | null>(() => (takeEditRequest(path) ? "edit" : null));
+  const [preferred, setPreferred, writing] = useFileMode();
+  // A note just made, or a link just followed into nothing, opens to be written in — the way writing was last done.
+  const [requested, setRequested] = useState(() => takeEditRequest(path));
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [versionId, setVersionId] = useState<string | null>(null);
   const fileId = content.data?.fileId ?? null;
@@ -445,19 +445,23 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
   const latest = versions[0]?.versionId ?? content.data?.versionId ?? null;
   const shown = versionId ? (older.data ?? null) : (content.data ?? null);
   const editable = !versionId && !conflict && !!content.data && content.data.encoding === "utf8" && !content.data.truncated;
-  const wanted = requested ?? preferred;
+  const wanted: FileMode = requested && preferred === "read" ? writing : preferred;
   // Unsaved edits hold the editor open through a delete, a move or a sync clash, so its own save can ask what to do.
   const held = useRef<FileContent | null>(null);
-  const holding = wanted === "edit" && !editable && saveState !== "saved" && held.current !== null;
-  const mode: FileMode = (editable && wanted === "edit") || holding ? "edit" : "read";
-  if (mode === "edit" && editable) held.current = content.data!;
-  else if (mode === "read") held.current = null;
+  const holding = wanted !== "read" && !editable && saveState !== "saved" && held.current !== null;
+  const writes = (editable && wanted !== "read") || holding;
+  if (writes && editable) held.current = content.data!;
+  else if (!writes) held.current = null;
   const editorContent = editable ? content.data! : held.current;
-  const tags = useNoteTags(projectId, notesOn && mode === "edit");
+  // Side by side only where the file renders as something other than its text.
+  const previewable = !!editorContent && isRenderable(editorContent);
+  const mode: FileMode = !writes ? "read" : wanted === "split" && previewable ? "split" : "edit";
+  const tags = useNoteTags(projectId, notesOn && mode !== "read");
   const setMode = (next: FileMode) => {
-    setRequested(null);
+    setRequested(false);
     setPreferred(next);
   };
+  const backlinks = notesOn && !versionId && isNotePath(path) && content.data ? <Backlinks projectId={projectId} path={path} paths={actions.paths} /> : null;
   useEffect(() => {
     if (!editable) return;
     // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours.
@@ -468,7 +472,7 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
       if (e.defaultPrevented || field || document.documentElement.classList.contains("overlay-open")) return;
       if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
-        setMode(mode === "edit" ? "read" : "edit");
+        setMode(mode === "read" ? writing : "read");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -484,7 +488,7 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
     );
   return (
     <>
-      <div className="files-main">
+      <div className={`files-main${mode === "split" ? " is-split" : ""}`}>
         {conflict && !holding ? (
           <ConflictPanel conflict={conflict} busy={resolve.isPending} onChoose={choose} />
         ) : (
@@ -505,20 +509,26 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
                     <Icon className="ico" name="i-eye" size={13} />
                     {t("notes.read")}
                   </button>
-                  <button type="button" aria-pressed={mode === "edit"} data-tip="⌘E" onClick={() => setMode("edit")}>
+                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? "⌘E" : undefined} onClick={() => setMode("edit")}>
                     <Icon className="ico" name="i-pen" size={13} />
                     {t("notes.edit")}
                   </button>
+                  {previewable && (
+                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? "⌘E" : undefined} onClick={() => setMode("split")}>
+                      <Icon className="ico" name="i-split" size={13} />
+                      {t("notes.split")}
+                    </button>
+                  )}
                 </div>
                 <Spacer />
-                {mode === "edit" && (
+                {mode !== "read" && (
                   <span className="meta-txt files-save-state" data-state={saveState}>
                     {t(SAVE_LABEL[saveState])}
                   </span>
                 )}
               </div>
             )}
-            {content.isLoading || (versionId && older.isLoading) ? null : mode === "edit" && editorContent ? (
+            {content.isLoading || (versionId && older.isLoading) ? null : mode !== "read" && editorContent ? (
               <NoteEditor
                 key={path}
                 projectId={projectId}
@@ -528,14 +538,24 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
                 resolve={linking.resolve}
                 onOpenLink={linking.open}
                 onState={setSaveState}
-                autoFocus={requested === "edit" || preferred === "edit"}
+                autoFocus={requested || preferred !== "read"}
+                preview={
+                  mode === "split"
+                    ? (text) => (
+                        <>
+                          <FileViewer content={{ ...editorContent, body: text }} linking={linking} switch={false} lines />
+                          {backlinks}
+                        </>
+                      )
+                    : undefined
+                }
               />
             ) : shown ? (
               <FileViewer content={shown} linking={linking} switch={!editable} />
             ) : (
               <p className="meta-txt">{t("files.fileGone", { path })}</p>
             )}
-            {notesOn && !versionId && isNotePath(path) && content.data && <Backlinks projectId={projectId} path={path} paths={actions.paths} />}
+            {mode !== "split" && backlinks}
           </>
         )}
       </div>

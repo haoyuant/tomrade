@@ -1846,7 +1846,7 @@ button.kref { cursor: pointer; }
 .text-view { margin: 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.55; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 .html-view { width: 100%; flex: 1; min-height: 520px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; }
 .image-view { max-width: 100%; height: auto; border-radius: var(--radius-md); }
-.md-view.body-prose { margin-top: 0; max-width: 72ch; color: var(--fg-2); }
+.md-view.body-prose { margin-top: 0; color: var(--fg-2); }
 .md-view h1, .md-view h2, .md-view h3, .md-view h4 { color: var(--fg); line-height: var(--leading-tight); margin: var(--space-6) 0 var(--space-2); }
 .md-view h1 { font-size: var(--text-2xl); margin-top: 0; }
 .md-view h2 { font-size: var(--text-xl); }
@@ -1880,8 +1880,15 @@ button.kref { cursor: pointer; }
 .files-mode button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; }
 .files-save-state { font-size: var(--text-xs); }
 .files-save-state[data-state="dirty"] { color: var(--fg-2); }
-.note-editor { display: flex; flex-direction: column; gap: var(--space-3); }
+.note-pane-edit { display: flex; flex-direction: column; gap: var(--space-3); }
 .note-editor-host { cursor: text; }
+/* Split: the text and what it renders, halves of the width, each scrolling on its own. */
+.files-main.is-split { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.files-main.is-split .note-editor { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.note-editor[data-split] .note-pane { min-width: 0; min-height: 0; overflow: auto; padding-bottom: var(--space-12); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.note-editor[data-split] .note-pane-edit { padding-right: var(--space-5); }
+.note-pane-preview { padding-left: var(--space-5); border-left: 1px solid var(--border); }
+.note-pane-preview .html-view { min-height: 100%; }
 /* A note's links sit right under its text, not a screen further down. */
 .files-main:has(.note-backlinks) .file-view { min-height: 0; }
 .dangerbar.files-edit-conflict { align-items: center; }
@@ -1894,7 +1901,7 @@ button.kref { cursor: pointer; }
 .md-view a.is-unresolved { color: var(--muted); border-bottom: 1px dotted var(--meta); text-decoration: none; }
 .md-view a.hashtag { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--tag-bg-faint); color: var(--tag-fg); text-decoration: none; font-size: 0.9em; line-height: 1.5; }
 .md-view a.hashtag:hover { background: var(--tag-bg-strong); }
-.note-backlinks { max-width: 72ch; margin-top: var(--space-10); padding-top: var(--space-4); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); }
+.note-backlinks { margin-top: var(--space-10); padding-top: var(--space-4); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); }
 .note-backlinks-head { display: flex; align-items: center; gap: var(--space-2); color: var(--meta); }
 .note-backlinks-head.is-toggle { border: 0; background: transparent; padding: 0; margin-top: var(--space-3); cursor: pointer; font: inherit; }
 .note-backlinks-head.is-toggle:hover { color: var(--fg-2); }

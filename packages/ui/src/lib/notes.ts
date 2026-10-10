@@ -78,27 +78,40 @@ const editNext = new Set<string>();
 export const requestEdit = (path: string): void => void editNext.add(path);
 export const takeEditRequest = (path: string): boolean => editNext.delete(path);
 
-export type FileMode = "read" | "edit";
+export type FileMode = "read" | "edit" | "split";
+export type WritingMode = Exclude<FileMode, "read">;
 const MODE_KEY = "tomrade.files.mode";
+const WRITING_KEY = "tomrade.files.writing";
 
-/** Reading or writing, remembered per machine the way the last choice was left. */
-export function useFileMode(): [FileMode, (mode: FileMode) => void] {
+const stored = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Reading, writing, or both side by side, remembered per machine the way the
+ * last choice was left; `writing` is where ⌘E goes back to from reading.
+ */
+export function useFileMode(): [FileMode, (mode: FileMode) => void, WritingMode] {
   const [mode, setMode] = useState<FileMode>(() => {
-    try {
-      return localStorage.getItem(MODE_KEY) === "edit" ? "edit" : "read";
-    } catch {
-      return "read";
-    }
+    const value = stored(MODE_KEY);
+    return value === "edit" || value === "split" ? value : "read";
   });
+  const [writing, setWriting] = useState<WritingMode>(() => (stored(WRITING_KEY) === "split" ? "split" : "edit"));
   const set = useCallback((next: FileMode) => {
     setMode(next);
+    if (next !== "read") setWriting(next);
     try {
       localStorage.setItem(MODE_KEY, next);
+      if (next !== "read") localStorage.setItem(WRITING_KEY, next);
     } catch {
       // the choice just is not remembered
     }
   }, []);
-  return [mode, set];
+  return [mode, set, writing];
 }
 
 // ── the search pane in the sidebar ───────────────────────────────────────────

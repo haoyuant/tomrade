@@ -320,6 +320,79 @@ const run = async () => {
   await openFile("docs/plan.md");
   check("…and the next note opens the same way", await wait(() => has('[data-testid="note-editor"] .cm-content'), "editing kept"));
 
+  // ── split: the text and what it renders, side by side ─────────────────
+  await openFile("docs/plan.md");
+  await wait(() => has('[data-testid="note-editor"] .cm-content'), "plan to write");
+  same("a note offers Read, Edit and Split", await $(`[...document.querySelectorAll('.files-mode button')].map((b) => b.textContent).join('|')`), "Read|Edit|Split");
+  check("writing takes the whole width, no reading column", await $(`(() => { const c = document.querySelector('[data-testid="note-editor"] .cm-content'), e = document.querySelector('[data-testid="note-editor"]'); return Math.abs(c.getBoundingClientRect().width - e.getBoundingClientRect().width) < 2; })()`));
+  await $(`document.querySelector('[data-testid="note-editor"] .cm-editor').__probe = 1; true`);
+  await click(".files-mode button:nth-child(3)");
+  await wait(() => has('[data-testid="note-preview"] .md-view'), "split view");
+  same("Split shows the editor and the rendered note", await $(`[document.querySelector('.files-mode')?.dataset.mode, !!document.querySelector('[data-testid="note-preview"] .md-view h1'), document.querySelector('[data-testid="note-editor"] .cm-editor')?.__probe].join()`), "split,true,1");
+  check(
+    "the halves share the width equally and fill it",
+    await $(`(() => {
+      const [a, b] = [...document.querySelectorAll('.note-pane')].map((n) => n.getBoundingClientRect());
+      const main = document.querySelector('.files-main'), cs = getComputedStyle(main);
+      const inner = main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      return Math.abs(a.width - b.width) < 2 && Math.abs(a.width + b.width - inner) < 2 && b.left >= a.right - 1;
+    })()`)
+  );
+  same("the backlinks move under the preview", await $(`[!!document.querySelector('.note-pane-preview .note-backlinks'), document.querySelectorAll('.note-backlinks').length].join()`), "true,1");
+  await focusEditorEnd();
+  await win.webContents.insertText("## Typed just now");
+  check("the preview follows the typing before any save", await wait(() => $(`[...document.querySelectorAll('[data-testid="note-preview"] .md-view h2')].some((h) => h.textContent === 'Typed just now')`), "live preview", 40));
+  await shot("notes-09-split");
+  await click(".files-mode button:nth-child(2)");
+  await wait(() => !has('[data-testid="note-preview"]'), "back to edit");
+  same("leaving the preview keeps the same editor, not a fresh one", await $(`document.querySelector('[data-testid="note-editor"] .cm-editor')?.__probe ?? 0`), 1);
+  await click(".files-mode button:nth-child(3)");
+  await wait(() => has('[data-testid="note-preview"] .md-view'), "split again");
+  await key("s", ["meta"]);
+  await wait(async () => (await read("docs/plan.md"))?.includes("Typed just now"), "split save");
+
+  // the two halves keep each other's place in a long note
+  const long = Array.from({ length: 80 }, (_, i) => `## Section ${i + 1}\n\nBody of section ${i + 1}, long enough to wrap across the narrow half of the screen when it is drawn in the editor and in the preview alike.`).join("\n\n");
+  await ctx.files.write(id, "docs/long.md", `# Long\n\n${long}\n`);
+  await openFile("docs/long.md");
+  await wait(() => $(`document.querySelectorAll('[data-testid="note-preview"] [data-line]').length > 100`), "long note in split");
+  const topSection = (pane) =>
+    $(`(() => {
+      const pane = document.querySelector(${JSON.stringify(pane)}), top = pane.getBoundingClientRect().top + 4;
+      const rows = pane.querySelectorAll(${JSON.stringify(pane === ".note-pane-edit" ? ".cm-line" : "[data-line]")});
+      const row = [...rows].find((r) => r.getBoundingClientRect().bottom > top && /section \\d+/i.test(r.textContent));
+      return Number(/section (\\d+)/i.exec(row?.textContent ?? '')?.[1] ?? 0);
+    })()`);
+  await $(`(() => { const p = document.querySelector('.note-pane-edit'); p.dispatchEvent(new WheelEvent('wheel', { bubbles: true })); p.scrollTop = p.scrollHeight * 0.5; return true; })()`);
+  await sleep(400);
+  const [editAt, previewAt] = [await topSection(".note-pane-edit"), await topSection(".note-pane-preview")];
+  check(`scrolling the editor brings the preview to the same section (${editAt} ↔ ${previewAt})`, editAt > 20 && editAt === previewAt);
+  await $(`(() => { const p = document.querySelector('.note-pane-preview'); p.dispatchEvent(new WheelEvent('wheel', { bubbles: true })); p.scrollTop = p.scrollHeight * 0.2; return true; })()`);
+  await sleep(400);
+  const [previewBack, editBack] = [await topSection(".note-pane-preview"), await topSection(".note-pane-edit")];
+  check(`scrolling the preview brings the editor along (${previewBack} ↔ ${editBack})`, previewBack > 5 && previewBack < editAt && editBack === previewBack);
+  await shot("notes-10-split-long");
+
+  // any file that renders gets the three; plain text has nothing else to show
+  await ctx.files.write(id, "site/page.html", "<h1>Hello</h1>\n");
+  await openFile("site/page.html");
+  await wait(() => has('[data-testid="note-preview"] iframe.html-view'), "html in split");
+  check("an HTML page splits into its source and the page", (await count(".files-mode button")) === 3 && (await $(`document.querySelector('[data-testid="note-preview"] iframe')?.srcdoc.includes('<h1>Hello</h1>')`)));
+  await focusEditorEnd();
+  await win.webContents.insertText("<p>More</p>");
+  check("…and the page redraws as it is written", await wait(() => $(`document.querySelector('[data-testid="note-preview"] iframe')?.srcdoc.includes('<p>More</p>')`), "html live", 40));
+  await key("s", ["meta"]);
+  await wait(async () => (await read("site/page.html"))?.includes("<p>More</p>"), "html saved");
+  await openFile("readme.txt");
+  await wait(() => has('[data-testid="note-editor"] .cm-content'), "plain text");
+  same("plain text writes without a preview beside it", await $(`[document.querySelector('.files-mode')?.dataset.mode, document.querySelectorAll('.files-mode button').length, !!document.querySelector('[data-testid="note-preview"]')].join()`), "edit,2,false");
+  await openFile("docs/plan.md");
+  await wait(() => has('[data-testid="note-preview"]'), "plan split");
+  await key("e", ["meta"]);
+  await wait(() => has(".files-mode[data-mode=read]"), "read by ⌘E");
+  await key("e", ["meta"]);
+  check("⌘E goes back to the split it came from", await wait(() => has('[data-testid="note-preview"] .md-view'), "split by ⌘E"));
+
   // the same screens in the dark
   await $(`document.documentElement.classList.remove('dawn', 'matcha'); document.documentElement.classList.add('dark'); true`);
   await openFile("docs/Pricing.md");
@@ -328,7 +401,7 @@ const run = async () => {
   await shot("notes-07-edit-dark");
   await click(".files-mode button:nth-child(1)");
   await wait(() => has(".md-view"), "reading in the dark");
-  same("the switch reads as what is shown", await $(`[document.querySelector('.files-mode')?.dataset.mode, ...[...document.querySelectorAll('.files-mode button')].map((b) => b.getAttribute('aria-pressed'))].join()`), "read,true,false");
+  same("the switch reads as what is shown", await $(`[document.querySelector('.files-mode')?.dataset.mode, ...[...document.querySelectorAll('.files-mode button')].map((b) => b.getAttribute('aria-pressed'))].join()`), "read,true,false,false");
   await shot("notes-08-read-dark");
   check("harness reached the end", true);
 };

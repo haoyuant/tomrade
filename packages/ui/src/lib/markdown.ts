@@ -70,14 +70,28 @@ function extensions(resolve: LinkResolver | undefined): TokenizerAndRendererExte
   return [wikiLink, hashTag];
 }
 
+/** Each top-level block tagged with the source line it starts on, so a preview can keep pace with the editor beside it. */
+function withLines(marked: Marked, text: string): string {
+  const tokens = marked.lexer(text);
+  let line = 1;
+  let html = "";
+  for (const token of tokens) {
+    // Reference links were resolved while lexing, so a block renders the same alone.
+    const part = marked.parser([token]);
+    html += part.replace(/^(\s*<[a-z][a-z0-9-]*)/i, `$1 data-line="${line}"`);
+    line += token.raw.split("\n").length - 1;
+  }
+  return html;
+}
+
 /**
  * Markdown as the viewer shows it: wiki links and tags drawn as the app's own
  * links, a dangling link marked as one, and the whole tree through the same
  * sanitizer that keeps inline HTML from doing anything.
  */
-export function renderMarkdown(text: string, resolve?: LinkResolver): string {
+export function renderMarkdown(text: string, resolve?: LinkResolver, opts: { lines?: boolean } = {}): string {
   const marked = new Marked({ extensions: extensions(resolve), async: false });
-  const html = marked.parse(text, { async: false }) as string;
+  const html = opts.lines ? withLines(marked, text) : (marked.parse(text, { async: false }) as string);
   // A relative markdown link is a note of this store; mark the ones that lead nowhere.
   const decode = decodeHref;
   const linked = resolve

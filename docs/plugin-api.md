@@ -1005,7 +1005,8 @@ the views in the sidebar, the viewer (markdown rendered and sanitized, HTML in
 a sandboxed frame, text, images) with its version rail, the conflict panel, the
 Sharing block in project settings, and — for any text file of the latest
 version — a Read/Edit switch (⌘E) over a CodeMirror editor that saves on a
-pause, on leaving and on ⌘S, each save a guarded version.
+pause, on leaving and on ⌘S, each save a guarded version, plus Split for a file
+that renders (markdown, HTML, SVG): the editor and a live preview side by side.
 
 ## Notes
 

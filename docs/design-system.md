@@ -14,7 +14,7 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 |---|---|
 | Tokens, base, every component class | `packages/ui/src/styles/app.css` |
 | Tailwind + shadcn token aliases | same file, the two `@theme` blocks |
-| Icon sprite (63 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
+| Icon sprite (64 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
 | Domain vocabulary: statuses, priorities, grouping, the live query | `packages/ui/src/lib/domain.ts` |
 | Primitives on Radix, styled by the design's classes | `packages/ui/src/components/ui/` |
 | Theme resolution and the crossfade | `packages/ui/src/lib/theme.tsx` |
@@ -70,8 +70,10 @@ place with the same head geometry, and no view reads as current while a file
 is open. Reading renders markdown through a sanitizer — wiki links and tags as
 the app's own links, a link to nothing marked as one — HTML in a frame with an
 empty `sandbox`, everything else as text or a picture. Writing is the latest
-version of a text file only, behind a Read/Edit switch the machine remembers:
-every save is a version guarded by the hash it was read at, so a save that
+version of a text file only, behind a Read/Edit switch the machine remembers —
+Read/Edit/Split where the file renders as something other than its text
+(markdown, HTML, SVG): Split halves the full width between the editor and a
+live preview that keep each other's place by source line. Every save is a version guarded by the hash it was read at, so a save that
 would land over somebody else's stops and offers Keep mine, Take theirs or
 Keep both. A version is immutable: a ticket's artifact opens the version it
 pinned and says so in a banner. A file changed on two machines is a decision,
@@ -176,7 +178,7 @@ on the field write, so a refused move leaves no rank behind.
 | `⌘J` | Toggle the assistant panel |
 | `⌘B` | Toggle the sidebar |
 | `⌘,` | Settings |
-| `⌘E` | On a text file, switch between reading and editing |
+| `⌘E` | On a text file, switch between reading and the last way of writing (Edit or Split) |
 | `⌘S` | In the editor, save now (a pause and leaving the file save too) |
 | `⇧⌘F` | Search the project's notes, in the sidebar |
 | `⌘Z` | Undo the last write, agent or human — a permanent delete is not a write it can reach |
@@ -241,7 +243,9 @@ edits, a delete under unsaved edits, leaving an unanswered clash (yours kept as
 a copy), a CRLF file saved with its own line endings, a rename that rewrites
 the links to it, the sidebar search and a tag clicked into it, ⇧⌘F, Today's
 note, New note, the palette as a quick switcher and its offer to search the
-notes, ⌘E, and the editor in the dark — 46 checks.
+notes, ⌘E, Split (live preview, equal halves, the editor kept across the
+switch, scrolling either half brings the other to the same section, an HTML
+page, plain text without one), and the editor in the dark — 59 checks.
 `test:plugins-ui` (`scripts/plugins-ui-check.mjs`) drives the Plugins pane: a
 store package and a local one with their tiers, risk and reach, an agent's
 build that loads only from the review dialog, My plugins and a new plugin from

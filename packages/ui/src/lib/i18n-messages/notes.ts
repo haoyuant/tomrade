@@ -2,7 +2,8 @@ export const notes = {
   en: {
     read: "Read",
     edit: "Edit",
-    modeAria: "Read or edit",
+    split: "Split",
+    modeAria: "Read, edit, or both side by side",
     saved: "Saved",
     saving: "Saving…",
     unsaved: "Edited",
@@ -41,7 +42,8 @@ export const notes = {
   zh: {
     read: "阅读",
     edit: "编辑",
-    modeAria: "阅读或编辑",
+    split: "分栏",
+    modeAria: "阅读、编辑或左右分栏",
     saved: "已保存",
     saving: "正在保存…",
     unsaved: "有改动",

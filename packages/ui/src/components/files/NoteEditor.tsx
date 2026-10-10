@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, MatchDecorator, ViewPlugin, keymap, placeholder, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { html } from "@codemirror/lang-html";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
@@ -19,6 +20,9 @@ import { useToast } from "~/lib/toast";
 /** A pause this long after the last keystroke is a save — each one a version, so not every key. */
 const SAVE_AFTER_MS = 1_500;
 
+/** How long a rendered page beside the editor waits after typing before it reloads. */
+const REDRAW_PAGE_MS = 400;
+
 export type SaveState = "saved" | "dirty" | "saving";
 
 /** The editor works in \n; a file written with \r\n is saved back the way it came. */
@@ -33,7 +37,7 @@ const theme = EditorView.theme({
   "&": { height: "100%", fontSize: "15px", color: "var(--fg)", backgroundColor: "transparent" },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "var(--leading-body)", overflow: "visible" },
-  ".cm-content": { maxWidth: "72ch", minHeight: "40vh", padding: "0 0 var(--space-6)", caretColor: "var(--accent)" },
+  ".cm-content": { minHeight: "40vh", padding: "0 0 var(--space-6)", caretColor: "var(--accent)" },
   ".cm-line": { padding: "0" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--tag-bg-strong)" },
@@ -65,7 +69,11 @@ const highlight = HighlightStyle.define([
   { tag: t.url, color: "var(--meta)" },
   { tag: t.monospace, fontFamily: "var(--font-mono)", fontSize: "0.9em" },
   { tag: t.quote, color: "var(--muted)" },
-  { tag: [t.processingInstruction, t.meta, t.contentSeparator, t.labelName], color: "var(--meta)" }
+  { tag: [t.processingInstruction, t.meta, t.contentSeparator, t.labelName], color: "var(--meta)" },
+  { tag: [t.tagName, t.angleBracket], color: "var(--accent)" },
+  { tag: t.attributeName, color: "var(--fg-2)" },
+  { tag: [t.attributeValue, t.string], color: "var(--tag-fg)" },
+  { tag: t.comment, color: "var(--meta)", fontStyle: "italic" }
 ]);
 
 /** Wiki links and tags as marks the stylesheet draws; a link to nothing reads as one. */
@@ -106,6 +114,25 @@ function linkAt(view: EditorView, pos: number): { target: string; kind: "wiki" |
   return null;
 }
 
+/** Where each block of a preview starts, in its pane's scroll space, closed off by the end of the rendering. */
+function previewBlocks(pane: HTMLElement, lines: number): { line: number; top: number }[] {
+  const origin = pane.getBoundingClientRect().top - pane.scrollTop;
+  const blocks = [{ line: 1, top: 0 }];
+  for (const el of pane.querySelectorAll<HTMLElement>("[data-line]")) blocks.push({ line: Number(el.dataset.line), top: el.getBoundingClientRect().top - origin });
+  const end = pane.querySelector(".md-view");
+  if (end && blocks.length > 1) blocks.push({ line: lines + 1, top: end.getBoundingClientRect().bottom - origin });
+  return blocks;
+}
+
+/** `x` read along a rising line through `points`, straight between each pair. */
+function along(points: [number, number][], x: number): number {
+  let i = 0;
+  while (i < points.length - 2 && points[i + 1]![0] <= x) i++;
+  const [x0, y0] = points[i]!;
+  const [x1, y1] = points[i + 1]!;
+  return y0 + (y1 - y0) * Math.min(1, Math.max(0, (x - x0) / Math.max(1e-6, x1 - x0)));
+}
+
 export interface NoteEditorProps {
   projectId: string;
   content: FileContent;
@@ -116,6 +143,8 @@ export interface NoteEditorProps {
   onOpenLink: (target: string, kind: "wiki" | "markdown") => void;
   onState: (state: SaveState) => void;
   autoFocus?: boolean;
+  /** The file rendered from the text being written, shown beside the editor; the two keep each other's place. */
+  preview?: (text: string) => ReactNode;
 }
 
 /**
@@ -124,7 +153,7 @@ export interface NoteEditorProps {
  * that would land over somebody else's (an agent, a sync, Finder) stops and
  * asks instead. A change from elsewhere while nothing is unsaved just shows up.
  */
-export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLink, onState, autoFocus }: NoteEditorProps) {
+export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLink, onState, autoFocus, preview }: NoteEditorProps) {
   const { t: tr } = useI18n();
   const toast = useToast();
   const host = useRef<HTMLDivElement>(null);
@@ -136,10 +165,27 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
   const [conflict, setConflict] = useState<{ current: FileContent | null } | null>(null);
   const conflictRef = useRef(conflict);
   conflictRef.current = conflict;
-  const latest = useRef({ paths, tags, resolve, onOpenLink, onState });
-  latest.current = { paths, tags, resolve, onOpenLink, onState };
+  const split = !!preview;
+  const latest = useRef({ paths, tags, resolve, onOpenLink, onState, split });
+  latest.current = { paths, tags, resolve, onOpenLink, onState, split };
   const marks = useRef(new Compartment());
   const path = content.path;
+  // Links, tags and their completion are a note's; any other text is just text.
+  const note = isNotePath(path);
+  const editPane = useRef<HTMLDivElement>(null);
+  const previewPane = useRef<HTMLDivElement>(null);
+  // The text as the preview draws it; deferred, so typing never waits on rendering.
+  const [draft, setDraft] = useState(base.current.text);
+  const drawn = useDeferredValue(draft);
+  // The pane last scrolled, clicked or typed in leads; the other follows it.
+  const lead = useRef<"edit" | "preview">("edit");
+  // A page in a frame reloads whole on every change, so it waits for a pause; a note redraws as it is typed.
+  const redrawTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const redraw = (text: string) => {
+    if (redrawTimer.current) clearTimeout(redrawTimer.current);
+    if (note) setDraft(text);
+    else redrawTimer.current = setTimeout(() => setDraft(text), REDRAW_PAGE_MS);
+  };
 
   const report = (state: SaveState) => latest.current.onState(state);
 
@@ -227,13 +273,13 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
         search({ top: true }),
         highlightSelectionMatches(),
         closeBrackets(),
-        autocompletion({ override: [completions], icons: false }),
-        markdown({ base: markdownLanguage }),
+        autocompletion(note ? { override: [completions], icons: false } : { icons: false }),
+        note ? markdown({ base: markdownLanguage }) : /\.(html?|svg)$/i.test(path) ? html() : [],
         syntaxHighlighting(highlight),
         EditorView.lineWrapping,
-        placeholder(tr("notes.placeholder")),
+        note ? placeholder(tr("notes.placeholder")) : [],
         theme,
-        marks.current.of(linkMarks((target) => !!latest.current.resolve(target, "wiki"))),
+        marks.current.of(note ? linkMarks((target) => !!latest.current.resolve(target, "wiki")) : []),
         keymap.of([
           { key: "Mod-s", preventDefault: true, run: () => (void saveRef.current(), true) },
           ...closeBracketsKeymap,
@@ -245,7 +291,7 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
         ]),
         EditorView.domEventHandlers({
           mousedown: (event, v) => {
-            if (!(event.metaKey || event.ctrlKey)) return false;
+            if (!note || !(event.metaKey || event.ctrlKey)) return false;
             const pos = v.posAtCoords({ x: event.clientX, y: event.clientY });
             const link = pos === null ? null : linkAt(v, pos);
             if (!link) return false;
@@ -257,7 +303,9 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
         }),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
-          const dirty = update.state.doc.toString() !== base.current.text;
+          const text = update.state.doc.toString();
+          if (latest.current.split) redraw(text);
+          const dirty = text !== base.current.text;
           report(dirty ? "dirty" : "saved");
           if (timer.current) clearTimeout(timer.current);
           timer.current = dirty ? setTimeout(() => void saveRef.current(), SAVE_AFTER_MS) : null;
@@ -271,6 +319,7 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
     window.addEventListener("beforeunload", flush);
     return () => {
       window.removeEventListener("beforeunload", flush);
+      if (redrawTimer.current) clearTimeout(redrawTimer.current);
       // Closing the file is a save, not a loss.
       void saveRef.current({ final: true }, editor).finally(() => editor.destroy());
       view.current = null;
@@ -280,8 +329,65 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
 
   // Links that start or stop resolving as files come and go.
   useEffect(() => {
-    view.current?.dispatch({ effects: marks.current.reconfigure(linkMarks((target) => !!latest.current.resolve(target, "wiki"))) });
+    if (note) view.current?.dispatch({ effects: marks.current.reconfigure(linkMarks((target) => !!latest.current.resolve(target, "wiki"))) });
   }, [paths]);
+
+  /** Brings the other pane to the place `from` shows: by source line where the preview marks its blocks, by proportion where it cannot. */
+  const follow = (from: "edit" | "preview") => {
+    const editor = view.current;
+    const edit = editPane.current;
+    const shown = previewPane.current;
+    if (!editor || !edit || !shown) return;
+    const [source, target] = from === "edit" ? [edit, shown] : [shown, edit];
+    // The ends meet the ends, whatever lies between.
+    if (source.scrollTop <= 0) return void (target.scrollTop = 0);
+    if (source.scrollTop + source.clientHeight >= source.scrollHeight - 1) return void (target.scrollTop = target.scrollHeight);
+    const blocks = previewBlocks(shown, editor.state.doc.lines);
+    if (blocks.length < 3) {
+      const ratio = source.scrollTop / Math.max(1, source.scrollHeight - source.clientHeight);
+      target.scrollTop = ratio * (target.scrollHeight - target.clientHeight);
+      return;
+    }
+    if (from === "edit") {
+      const y = Math.max(0, edit.getBoundingClientRect().top - editor.documentTop);
+      const block = editor.lineBlockAtHeight(y);
+      const line = editor.state.doc.lineAt(block.from).number + Math.min(1, (y - block.top) / Math.max(1, block.height));
+      shown.scrollTop = along(blocks.map((b) => [b.line, b.top]), line);
+    } else {
+      const line = along(blocks.map((b) => [b.top, b.line]), shown.scrollTop);
+      const at = editor.state.doc.line(Math.min(editor.state.doc.lines, Math.floor(line)));
+      // The editor places it itself: lines it has not drawn yet only have estimated heights.
+      const pos = at.from + Math.round(at.length * Math.min(1, line - at.number));
+      editor.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start" }) });
+    }
+  };
+  const followRef = useRef(follow);
+  followRef.current = follow;
+
+  useEffect(() => {
+    const edit = editPane.current;
+    const shown = previewPane.current;
+    if (!split || !edit || !shown) return;
+    if (view.current) setDraft(view.current.state.doc.toString());
+    const panes = [[edit, "edit"], [shown, "preview"]] as const;
+    const off: (() => void)[] = [];
+    for (const [pane, side] of panes) {
+      const take = () => void (lead.current = side);
+      const scrolled = () => lead.current === side && followRef.current(side);
+      for (const type of ["wheel", "pointerdown", "keydown", "touchstart"]) {
+        pane.addEventListener(type, take, { passive: true });
+        off.push(() => pane.removeEventListener(type, take));
+      }
+      pane.addEventListener("scroll", scrolled, { passive: true });
+      off.push(() => pane.removeEventListener("scroll", scrolled));
+    }
+    return () => off.forEach((f) => f());
+  }, [split]);
+
+  // A fresh rendering moves the preview's blocks; put it back where the editor is.
+  useLayoutEffect(() => {
+    if (split && lead.current === "edit") followRef.current("edit");
+  }, [drawn, split]);
 
   // A save from elsewhere: shown at once when nothing here is unsaved, checked at the next save otherwise.
   useEffect(() => {
@@ -320,29 +426,36 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
   };
 
   return (
-    <div className="note-editor" data-testid="note-editor">
-      {conflict && (
-        <div className="dangerbar files-edit-conflict" role="alert" data-testid="edit-conflict">
-          <Icon className="b-mark" name="i-warn" size={15} />
-          <p style={{ flex: 1, fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
-            {conflict.current ? tr("notes.conflictChanged", { name: nameOf(path) }) : tr("notes.conflictGone", { name: nameOf(path) })}
-          </p>
-          <button type="button" className="btn btn-ghost edit-keep-mine" onClick={() => void resolveConflict("mine")}>
-            {tr("notes.keepMine")}
-          </button>
-          {conflict.current && (
-            <>
-              <button type="button" className="btn btn-ghost edit-take-theirs" onClick={() => void resolveConflict("theirs")}>
-                {tr("notes.takeTheirs")}
-              </button>
-              <button type="button" className="btn btn-ghost edit-keep-both" onClick={() => void resolveConflict("both")}>
-                {tr("notes.keepBoth")}
-              </button>
-            </>
-          )}
+    <div className="note-editor" data-testid="note-editor" data-split={split || undefined}>
+      <div ref={editPane} className="note-pane note-pane-edit">
+        {conflict && (
+          <div className="dangerbar files-edit-conflict" role="alert" data-testid="edit-conflict">
+            <Icon className="b-mark" name="i-warn" size={15} />
+            <p style={{ flex: 1, fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
+              {conflict.current ? tr("notes.conflictChanged", { name: nameOf(path) }) : tr("notes.conflictGone", { name: nameOf(path) })}
+            </p>
+            <button type="button" className="btn btn-ghost edit-keep-mine" onClick={() => void resolveConflict("mine")}>
+              {tr("notes.keepMine")}
+            </button>
+            {conflict.current && (
+              <>
+                <button type="button" className="btn btn-ghost edit-take-theirs" onClick={() => void resolveConflict("theirs")}>
+                  {tr("notes.takeTheirs")}
+                </button>
+                <button type="button" className="btn btn-ghost edit-keep-both" onClick={() => void resolveConflict("both")}>
+                  {tr("notes.keepBoth")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        <div ref={host} className="note-editor-host" />
+      </div>
+      {preview && (
+        <div ref={previewPane} className="note-pane note-pane-preview" data-testid="note-preview">
+          {preview(drawn)}
         </div>
       )}
-      <div ref={host} className="note-editor-host" />
     </div>
   );
 }
