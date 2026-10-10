@@ -43,7 +43,9 @@ const run = async () => {
   const view = (id) => ctx.plugins.list().find((p) => p.id === id);
   const module = (id) => ctx.plugins.modules().find((m) => m.id === id);
 
-  check("every row of the shipped composition is active", ctx.plugins.list().every((p) => p.state === "active"));
+  // The scripted engine ships switched off.
+  const shippedOff = new Set(["engine-scripted"]);
+  check("every row the composition switches on is active", ctx.plugins.list().every((p) => p.state === (shippedOff.has(p.id) ? "disabled" : "active")));
   check("every required module has a provider", ctx.plugins.modules().every((m) => !m.required || m.providers.length));
   check("one row is credited with both keys it provides through nested plugins", view("boards")?.provides.join() === "boards,views");
 
@@ -54,15 +56,15 @@ const run = async () => {
   check("the database is still there", ctx.get("db") !== undefined);
   check("nothing was written to the patch file", !fs.existsSync(patchFile));
 
-  // A third-party row holds nothing up, so it goes.
-  await ctx.plugins.setEnabled("stale", false);
-  check("a third-party plugin switches off", view("stale")?.state === "disabled");
-  check("its tools go with it", !ctx.tools.list().some((t) => t.name === "stale_list_items"), ctx.tools.list().map((t) => t.name).join(","));
+  // An optional row holds nothing up, so it goes.
+  await ctx.plugins.setEnabled("archify", false);
+  check("an optional plugin switches off", view("archify")?.state === "disabled");
+  check("its tools go with it", !ctx.tools.list().some((t) => t.name === "diagram_render"), ctx.tools.list().map((t) => t.name).join(","));
   check("the choice is written to the patch file", fs.existsSync(patchFile) && /disabled: true/.test(fs.readFileSync(patchFile, "utf8")));
 
-  await ctx.plugins.setEnabled("stale", true);
-  check("and switches back on", view("stale")?.state === "active");
-  check("its tools come back", ctx.tools.list().some((t) => t.name === "stale_list_items"));
+  await ctx.plugins.setEnabled("archify", true);
+  check("and switches back on", view("archify")?.state === "active");
+  check("its tools come back", ctx.tools.list().some((t) => t.name === "diagram_render"));
 
   // An optional module: every engine injects the agent platform, so switching
   // it off takes all the conductors down together — and back.

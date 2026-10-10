@@ -784,7 +784,7 @@ const run = async () => {
   check("the switch is locked on the only plugin providing a required module", (await $(`!!${rowFor("db")}.querySelector('.switch[disabled]')`)) === true);
   check("and the row names the module it holds", (await $(`${rowFor("db")}.textContent.includes('holds db')`)) === true);
   check("with the reason on the control itself", (await $(`${rowFor("db")}.querySelector('.switch').title.includes('only plugin providing db')`)) === true);
-  check("a third-party plugin's switch is free", (await $(`!${rowFor("stale")}.querySelector('.switch[disabled]')`)) === true);
+  check("an optional plugin's switch is free", (await $(`!${rowFor("archify")}.querySelector('.switch[disabled]')`)) === true);
   check("the pet is an optional plugin row", (await $(`!${rowFor("pet")}.querySelector('.switch[disabled]')`)) === true);
   check("the manager fits the frame the other panes set", (await $(sheetBox)) === boxOnAppearance);
   await shot("18-plugins");
@@ -792,14 +792,14 @@ const run = async () => {
   await sleep(400);
   await shot("18-plugins-installed");
 
-  await press(`${rowFor("stale")}.querySelector('.switch')`);
+  await press(`${rowFor("archify")}.querySelector('.switch')`);
   await sleep(1200);
-  check("the switch unloads the plugin in the main process", ctx.plugins.list().find((p) => p.id === "stale")?.state === "disabled");
-  check("its tool leaves the registry", !ctx.tools.list().some((t) => t.name === "stale_list_items"));
-  check("and the sheet redraws from what loaded", (await $(`${rowFor("stale")}.querySelector('.tag').textContent`)) === "off");
-  await press(`${rowFor("stale")}.querySelector('.switch')`);
+  check("the switch unloads the plugin in the main process", ctx.plugins.list().find((p) => p.id === "archify")?.state === "disabled");
+  check("its tool leaves the registry", !ctx.tools.list().some((t) => t.name === "diagram_render"));
+  check("and the sheet redraws from what loaded", (await $(`${rowFor("archify")}.querySelector('.tag').textContent`)) === "off");
+  await press(`${rowFor("archify")}.querySelector('.switch')`);
   await sleep(1200);
-  check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "stale_list_items"));
+  check("switching it back on restores the plugin and its tool", ctx.tools.list().some((t) => t.name === "diagram_render"));
 
   // ── external MCP servers ─────────────────────────────────────────────
   // Pasted the way a server's README prints it; Electron runs the stdio fixture as plain Node.
@@ -1230,7 +1230,7 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
-  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Stale issues"));
+  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Pet"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
   await press(settingsNav("Hub"));
   await sleep(700);

@@ -71,9 +71,6 @@ importers:
       '@tomradex/engine-scripted':
         specifier: workspace:*
         version: link:../../packages/engine-scripted
-      '@tomradex/example-stale':
-        specifier: workspace:*
-        version: link:../../examples/stale
       '@tomradex/extensions':
         specifier: workspace:*
         version: link:../../packages/extensions
@@ -205,19 +202,6 @@ importers:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
-      typescript:
-        specifier: ^6.0.0
-        version: 6.0.3
-
-  examples/stale:
-    dependencies:
-      '@tomradex/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
       typescript:
         specifier: ^6.0.0
         version: 6.0.3

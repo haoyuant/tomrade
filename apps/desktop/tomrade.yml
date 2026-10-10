@@ -149,8 +149,10 @@ plugins:
   # Engines are conductors; several can be installed, a thread picks one.
   - id: engine-loop
     name: "@tomradex/engine-loop"
+  # Off until switched on in Settings → Manage plugins: a menu of workflows, no model.
   - id: engine-scripted
     name: "@tomradex/engine-scripted"
+    disabled: true
   - id: engine-claude-code
     name: "@tomradex/engine-claude-code"
   - id: engine-codex
@@ -212,6 +214,3 @@ plugins:
     name: "@tomradex/plugin-studio"
     config:
       devRoot: "${pluginsDevRoot}"
-  # A third-party plugin: it edits nothing above, it is only listed here.
-  - id: stale
-    name: "@tomradex/example-stale"

@@ -12,7 +12,7 @@ There are two kinds of plugin, and this document is the contract for both:
   receives a `PluginContext`: an async, attributed, namespaced view of the app
   that the host builds for them. Everything that comes from outside the app —
   Community, a `.tomrade-plugin` file, a folder, Plugin Studio — must be one.
-  `examples/stale` is the documentation that compiles.
+  `tomrade-plugin init` scaffolds one that builds and passes its tests.
 - **Built-in rows** are the app's own cordis plugins, listed in `tomrade.yml`.
   They take the raw `Context` and the services below it ([Services](#services)
   onward). A built-in may also be written with the SDK — `@tomradex/deps-graph`
