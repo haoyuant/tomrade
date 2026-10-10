@@ -28,6 +28,7 @@ import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 import { registerTools } from "./tools.js";
 import {
+  FileChangedError,
   FilesUnavailableError,
   InvalidPathError,
   UnknownBackendError,
@@ -48,6 +49,7 @@ import {
   type FileSearchInput,
   type FileSearchResult,
   type ListMode,
+  type SaveResult,
   type SyncMode,
   type WriteOptions
 } from "./types.js";
@@ -62,6 +64,8 @@ declare module "cordis" {
     /** A project's files or their sync state moved. */
     "files/changed"(projectId: string): void;
     "files/synced"(projectId: string, status: FilesStatus): void;
+    /** A file or folder moved through the service; awaited, so whatever follows the path moves with it. */
+    "files/moved"(projectId: string, from: string, to: string): Promise<void>;
   }
 }
 
@@ -287,6 +291,7 @@ export class Files extends Service {
       ctx.ipc.handle("files.locate", (projectId, fileId) => this.locate(projectId, fileId));
       ctx.ipc.handle("files.history", (projectId, p, limit) => this.history(projectId, p, limit));
       ctx.ipc.handle("files.write", (projectId, p, body, opts) => this.write(projectId, p, Buffer.from(body, opts?.encoding ?? "utf8"), opts?.message ? { message: opts.message } : {}));
+      ctx.ipc.handle("files.save", (projectId, p, body, opts) => this.save(projectId, p, body, opts ?? {}));
       ctx.ipc.handle("files.import", (projectId, dir, sources) => this.importFiles(projectId, dir, sources));
       ctx.ipc.handle("files.mkdir", (projectId, p) => this.mkdir(projectId, p));
       ctx.ipc.handle("files.move", (projectId, from, to) => this.move(projectId, from, to));
@@ -641,7 +646,7 @@ export class Files extends Service {
       entity: "file",
       entityId: op.path,
       op: op.kind,
-      label: op.kind === "import" ? (op.paths.length <= 3 ? op.paths.join(", ") : `${op.paths.length} items`) : op.path,
+      label: op.kind === "import" || op.paths.length > 1 ? (op.paths.length <= 3 ? op.paths.join(", ") : `${op.paths.length} items`) : op.path,
       target: op.target,
       by: op.by,
       at: op.at,
@@ -655,7 +660,7 @@ export class Files extends Service {
   private describeOp(op: FileOpRow): string {
     switch (op.kind) {
       case "write":
-        return `Saved ${op.path}`;
+        return op.paths.length > 1 ? `Saved ${op.paths.length} files` : `Saved ${op.path}`;
       case "mkdir":
         return `Created folder ${op.path}`;
       case "move":
@@ -705,7 +710,7 @@ export class Files extends Service {
   private undoneSummary(op: FileOpRow): string {
     switch (op.kind) {
       case "write":
-        return `Reverted ${op.path}`;
+        return op.paths.length > 1 ? `Reverted ${op.paths.length} files` : `Reverted ${op.path}`;
       case "mkdir":
         return `Removed folder ${op.path}`;
       case "move":
@@ -724,6 +729,29 @@ export class Files extends Service {
     const { result } = await this.recordOp(projectId, store, { kind: "write", path: p, paths: [p] }, () => store.write(p, Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8"), opts));
     this.notify(projectId);
     return result;
+  }
+
+  /**
+   * A save that refuses to land over somebody else's: with `expect` (the hash
+   * the editor read) a file that moved on comes back as it is now instead.
+   */
+  async save(projectId: string, p: string, body: string, opts: { expect?: string | null; message?: string }): Promise<SaveResult> {
+    try {
+      return { ok: true, content: await this.write(projectId, p, body, opts) };
+    } catch (error) {
+      if (!(error instanceof FileChangedError)) throw error;
+      return { ok: false, current: await this.read(projectId, p) };
+    }
+  }
+
+  /** Several files as one version and one step of history; nothing lands when any `expect` fails. */
+  async writeMany(projectId: string, entries: { path: string; body: string | Buffer; expect?: string | null }[], opts: { message?: string } = {}): Promise<string | null> {
+    const store = await this.store(projectId);
+    if (!store.writeMany) throw new Error("This Files backend cannot save several files at once");
+    const files = entries.map((e) => ({ path: e.path, body: Buffer.isBuffer(e.body) ? e.body : Buffer.from(e.body, "utf8"), expect: e.expect }));
+    const { ref } = await this.recordOp(projectId, store, { kind: "write", path: entries[0]?.path ?? "", paths: entries.map((e) => e.path) }, () => store.writeMany!(files, opts));
+    this.notify(projectId);
+    return ref;
   }
 
   /**
@@ -773,6 +801,7 @@ export class Files extends Service {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "move", path: from, target: to, paths: [from, to] }, () => store.move(from, to));
     this.notify(projectId);
+    if (ref) await this.home.parallel("files/moved", projectId, normalizeRel(from), normalizeRel(to));
     return ref;
   }
 

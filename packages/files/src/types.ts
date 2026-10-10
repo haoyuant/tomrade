@@ -78,6 +78,8 @@ export interface FileContent {
   body: string;
   /** Large bodies are cut short; `size` says how much there is. */
   truncated: boolean;
+  /** sha-256 of the whole file, as `WriteOptions.expect` compares it. Absent where a backend cannot vouch for the bytes. */
+  hash?: string;
 }
 
 export interface FileVersion {
@@ -105,7 +107,23 @@ export type ConflictChoice = "ours" | "theirs" | "both";
 export interface WriteOptions {
   /** The version's message; a default names the path. */
   message?: string;
+  /**
+   * The `hash` the writer last read: a file that no longer has it is left
+   * alone and the write throws `FileChangedError`. `null` means the path must
+   * be free. Omitted, the write lands whatever is there.
+   */
+  expect?: string | null;
 }
+
+/** One file of a `writeMany`: every `expect` is checked before any byte lands. */
+export interface WriteEntry {
+  path: string;
+  body: Buffer;
+  expect?: string | null;
+}
+
+/** What a guarded save got: the new version, or what is there now instead. */
+export type SaveResult = { ok: true; content: FileContent } | { ok: false; current: FileContent | null };
 
 /**
  * The store contract every backend fulfils. Paths are relative and
@@ -125,6 +143,8 @@ export interface FileStore {
   locate(fileId: string): Promise<string | null>;
   history(path: string, limit?: number): Promise<FileVersion[]>;
   write(path: string, body: Buffer, opts?: WriteOptions): Promise<FileContent>;
+  /** Several files as one version; refused whole when any `expect` fails. */
+  writeMany?(entries: WriteEntry[], opts?: { message?: string }): Promise<void>;
   mkdir(path: string): Promise<void>;
   move(from: string, to: string, opts?: WriteOptions): Promise<void>;
   /** Copy a file or folder to a new path, minted as a fresh id — never the source's. Refuses an existing destination. */
@@ -293,6 +313,14 @@ export class FileMovedOnError extends Error {
   constructor(public readonly path: string) {
     super(`${path} has changed since — undo it by hand if you still want to`);
     this.name = "FileMovedOnError";
+  }
+}
+
+/** A guarded write found other bytes than the writer read: somebody saved in between. */
+export class FileChangedError extends Error {
+  constructor(public readonly path: string) {
+    super(`${path} changed since it was read`);
+    this.name = "FileChangedError";
   }
 }
 

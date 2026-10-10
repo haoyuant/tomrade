@@ -1,0 +1,37 @@
+{
+  "name": "@tomradex/notes",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.notes \u2014 a project's files read as notes: wiki links and backlinks, tags, a ranked full-text index, link updates when a note moves, and a daily journal. Optional \u2014 Files works the same without it.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./syntax": {
+      "types": "./dist/syntax.d.ts",
+      "default": "./dist/syntax.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/db": "workspace:*",
+    "@tomradex/files": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

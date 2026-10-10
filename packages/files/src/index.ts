@@ -9,6 +9,7 @@ export { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, policyAt, readStoredPolicy, 
 export { isTextMime, looksBinary, mimeOf } from "./mime.js";
 export { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 export {
+  FileChangedError,
   FileMovedOnError,
   FilesUnavailableError,
   InvalidPathError,
@@ -40,6 +41,8 @@ export {
   type SyncMode,
   type OpenStoreOptions,
   type StoreEnv,
+  type SaveResult,
+  type WriteEntry,
   type WriteOptions
 } from "./types.js";
 export type {} from "./channels.js";

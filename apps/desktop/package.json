@@ -42,6 +42,7 @@
     "@tomradex/fields": "workspace:*",
     "@tomradex/files": "workspace:*",
     "@tomradex/files-github": "workspace:*",
+    "@tomradex/notes": "workspace:*",
     "@tomradex/hub": "workspace:*",
     "@tomradex/hub-cloud": "workspace:*",
     "@tomradex/ipc": "workspace:*",
