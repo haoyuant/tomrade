@@ -74,6 +74,9 @@
       "path": "./packages/llm"
     },
     {
+      "path": "./packages/notes"
+    },
+    {
       "path": "./packages/mcp"
     },
     {

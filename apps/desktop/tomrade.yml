@@ -70,6 +70,8 @@ modules:
     title: Code link
   - id: files
     title: Files
+  - id: notes
+    title: Notes
   - id: pet
     title: Pet
 
@@ -175,6 +177,10 @@ plugins:
   # …and GitHub as where those files are shared: find a repository, make one.
   - id: files-github
     name: "@tomradex/files-github"
+  # The files read as notes: wiki links and backlinks, tags, ranked full-text
+  # search, links kept when a note moves. Optional — Files is the same without it.
+  - id: notes
+    name: "@tomradex/notes"
   - id: mcp
     name: "@tomradex/mcp"
     config:

@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type {} from "@tomradex/ipc";
 import type { FileReference, Item } from "@tomradex/domain";
-import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SyncMode } from "./types.js";
+import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SaveResult, SyncMode } from "./types.js";
 import type { AgentIndex } from "./agent-index.js";
 
 declare module "@tomradex/ipc" {
@@ -19,6 +19,8 @@ declare module "@tomradex/ipc" {
     "files.locate": (projectId: string, fileId: string) => string | null;
     "files.history": (projectId: string, path: string, limit?: number) => FileVersion[];
     "files.write": (projectId: string, path: string, body: string, opts?: { encoding?: "utf8" | "base64"; message?: string }) => FileContent;
+    /** A text save that will not land over somebody else's: `expect` is the `hash` the editor read, null for a new file. */
+    "files.save": (projectId: string, path: string, body: string, opts?: { expect?: string | null; message?: string }) => SaveResult;
     /** Copy files or folders from this machine into a folder of the store. */
     "files.import": (projectId: string, dir: string, sources: string[]) => FileEntry[];
     /** Each returns the history record it made (`files:<id>`, for `oplog.revert`), or null when nothing changed. */

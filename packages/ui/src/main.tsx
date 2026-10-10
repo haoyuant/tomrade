@@ -7,6 +7,7 @@ import { subscribe } from "./lib/api.js";
 import type {} from "@tomradex/repos";
 import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/files";
+import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
 import { invalidateProject } from "./lib/queries.js";
@@ -61,6 +62,8 @@ if (window.tomrade) {
     // A file operation is a record in the history window too.
     void queryClient.invalidateQueries({ queryKey: ["timeline", projectId] });
   });
+  // The notes index caught up with a change: search hits, backlinks and tags may read differently.
+  subscribe("notes.changed", (projectId) => void queryClient.invalidateQueries({ queryKey: ["notes", projectId] }));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: ["codeLink", projectId] });
     void queryClient.invalidateQueries({ queryKey: ["contributions"] });

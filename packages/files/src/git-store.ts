@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
@@ -8,6 +8,7 @@ import { isTextMime, looksBinary, mimeOf } from "./mime.js";
 import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
 import {
+  FileChangedError,
   FileMovedOnError,
   InvalidPathError,
   type ConflictChoice,
@@ -26,6 +27,7 @@ import {
   type ListMode,
   type PathPolicy,
   type SyncMode,
+  type WriteEntry,
   type WriteOptions
 } from "./types.js";
 
@@ -35,6 +37,7 @@ const KEEP = ".keep";
 const TEXT_LIMIT = 2 * 1024 * 1024;
 const BINARY_LIMIT = 8 * 1024 * 1024;
 const TREE_LIMIT = 20_000;
+const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 const DIRECTORY_CHANGED = "Remote directory changed: open a new local store and retain this store for version references";
 
@@ -603,7 +606,7 @@ export class GitFileStore implements FileStore {
 
   private contentOf(rel: string, bytes: Buffer, fileId: string | null, versionId: string | null): FileContent {
     const mime = mimeOf(rel);
-    const base = { path: rel, name: rel.split("/").pop() ?? rel, fileId, versionId, size: bytes.length };
+    const base = { path: rel, name: rel.split("/").pop() ?? rel, fileId, versionId, size: bytes.length, hash: sha256(bytes) };
     if (isTextMime(mime) && !looksBinary(bytes)) {
       const truncated = bytes.length > TEXT_LIMIT;
       return { ...base, mime, encoding: "utf8", body: (truncated ? bytes.subarray(0, TEXT_LIMIT) : bytes).toString("utf8"), truncated };
@@ -793,21 +796,48 @@ export class GitFileStore implements FileStore {
 
   write(p: string, body: Buffer, opts: WriteOptions = {}): Promise<FileContent> {
     return this.locked(async () => {
-      const rel = normalizeRel(p);
-      if (!rel) throw new InvalidPathError(p);
-      const abs = this.abs(rel);
-      if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) throw new Error(`${rel} is a folder`);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      this.quiet();
-      const tmp = `${abs}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, body);
-      fs.renameSync(tmp, abs);
+      const [rel] = this.guard([{ path: p, body, expect: opts.expect }]);
+      this.put(rel!, body);
       await this.commitAll(opts.message ?? `Saved ${rel}`);
       this.afterChange();
-      const content = await this.read(rel);
+      const content = await this.read(rel!);
       if (!content) throw new Error(`${rel} vanished while saving`);
       return content;
     });
+  }
+
+  writeMany(entries: WriteEntry[], opts: { message?: string } = {}): Promise<void> {
+    return this.locked(async () => {
+      if (!entries.length) return;
+      const rels = this.guard(entries);
+      entries.forEach((entry, i) => this.put(rels[i]!, entry.body));
+      if (await this.commitAll(opts.message ?? (rels.length === 1 ? `Saved ${rels[0]}` : `Saved ${rels.length} files`))) this.afterChange();
+    });
+  }
+
+  /** Every path checked, and every `expect` held, before any byte lands. */
+  private guard(entries: WriteEntry[]): string[] {
+    return entries.map((entry) => {
+      const rel = normalizeRel(entry.path);
+      if (!rel) throw new InvalidPathError(entry.path);
+      const abs = this.abs(rel);
+      const stat = fs.statSync(abs, { throwIfNoEntry: false });
+      if (stat?.isDirectory()) throw new Error(`${rel} is a folder`);
+      if (entry.expect !== undefined) {
+        const current = stat?.isFile() ? sha256(fs.readFileSync(abs)) : null;
+        if (current !== entry.expect) throw new FileChangedError(rel);
+      }
+      return rel;
+    });
+  }
+
+  private put(rel: string, body: Buffer): void {
+    const abs = this.abs(rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    this.quiet();
+    const tmp = `${abs}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, body);
+    fs.renameSync(tmp, abs);
   }
 
   mkdir(p: string): Promise<void> {

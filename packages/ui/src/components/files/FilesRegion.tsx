@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { isNotePath } from "@tomradex/notes/syntax";
 import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomradex/domain";
-import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomradex/files";
+import type { ConflictChoice, FileConflict, FileContent, FileEntry, FilesStatus } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { SyncContextActions, SyncMark, SyncScopeSummary, SyncSelect, describeSync, useSyncActions, type SyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, AgentSelect, describeListing, useAgentActions, type AgentActions } from "./AgentPolicy";
@@ -38,10 +39,14 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { takeEditRequest, useFileMode, useNoteTags, useNotesEnabled, type FileMode } from "~/lib/notes";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
+import { Backlinks } from "./Backlinks";
 import { ConflictPanel } from "./ConflictPanel";
-import { FileViewer } from "./FileViewer";
+import { FileViewer, isRenderable } from "./FileViewer";
+import { NoteEditor, type SaveState } from "./NoteEditor";
 import { stateOf, type StateView } from "./state";
+import { useNoteActions } from "./useNoteActions";
 
 const KIND: Record<FileConflict["kind"], MessageKey> = {
   content: "files.kindContent",
@@ -417,20 +422,62 @@ function FolderView({
   );
 }
 
+const SAVE_LABEL: Record<SaveState, MessageKey> = { saved: "notes.saved", dirty: "notes.unsaved", saving: "notes.saving" };
+
 function FileView({ projectId, path, conflict }: { projectId: string; path: string; conflict: FileConflict | null }) {
   const { t } = useI18n();
   const toast = useToast();
   const content = useFileContent(projectId, path);
   const history = useFileHistory(projectId, path);
   const resolve = useResolveConflict(projectId);
+  const notesOn = useNotesEnabled();
+  const actions = useNoteActions();
+  const linking = useMemo(() => actions.linking(path), [actions, path]);
+  const [preferred, setPreferred, writing] = useFileMode();
+  // A note just made, or a link just followed into nothing, opens to be written in — the way writing was last done.
+  const [requested, setRequested] = useState(() => takeEditRequest(path));
+  const [saveState, setSaveState] = useState<SaveState>("saved");
   const [versionId, setVersionId] = useState<string | null>(null);
-  useEffect(() => setVersionId(null), [path]);
   const fileId = content.data?.fileId ?? null;
   const older = useFileVersion(projectId, versionId && fileId ? { fileId, versionId } : null);
   const versions = history.data ?? [];
   // The rail's own newest row, so a click compares against what is drawn, not a content fetch still in flight.
   const latest = versions[0]?.versionId ?? content.data?.versionId ?? null;
   const shown = versionId ? (older.data ?? null) : (content.data ?? null);
+  const editable = !versionId && !conflict && !!content.data && content.data.encoding === "utf8" && !content.data.truncated;
+  const wanted: FileMode = requested && preferred === "read" ? writing : preferred;
+  // Unsaved edits hold the editor open through a delete, a move or a sync clash, so its own save can ask what to do.
+  const held = useRef<FileContent | null>(null);
+  const holding = wanted !== "read" && !editable && saveState !== "saved" && held.current !== null;
+  const writes = (editable && wanted !== "read") || holding;
+  if (writes && editable) held.current = content.data!;
+  else if (!writes) held.current = null;
+  const editorContent = editable ? content.data! : held.current;
+  // Side by side only where the file renders as something other than its text.
+  const previewable = !!editorContent && isRenderable(editorContent);
+  const mode: FileMode = !writes ? "read" : wanted === "split" && previewable ? "split" : "edit";
+  const tags = useNoteTags(projectId, notesOn && mode !== "read");
+  const setMode = (next: FileMode) => {
+    setRequested(false);
+    setPreferred(next);
+  };
+  const backlinks = notesOn && !versionId && isNotePath(path) && content.data ? <Backlinks projectId={projectId} path={path} paths={actions.paths} /> : null;
+  useEffect(() => {
+    if (!editable) return;
+    // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours.
+    const mac = /Mac/i.test(navigator.platform);
+    const onKey = (e: KeyboardEvent) => {
+      // Not behind a dialog, and not from some other field: the editor itself is fine.
+      const field = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? "");
+      if (e.defaultPrevented || field || document.documentElement.classList.contains("overlay-open")) return;
+      if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        setMode(mode === "read" ? writing : "read");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const choose = (choice: ConflictChoice) =>
     resolve.mutate(
       { path, choice },
@@ -441,8 +488,8 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
     );
   return (
     <>
-      <div className="files-main">
-        {conflict ? (
+      <div className={`files-main${mode === "split" ? " is-split" : ""}`}>
+        {conflict && !holding ? (
           <ConflictPanel conflict={conflict} busy={resolve.isPending} onChoose={choose} />
         ) : (
           <>
@@ -455,7 +502,60 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
                 </button>
               </div>
             )}
-            {content.isLoading || (versionId && older.isLoading) ? null : shown ? <FileViewer content={shown} /> : <p className="meta-txt">{t("files.fileGone", { path })}</p>}
+            {(editable || holding) && (
+              <div className="row file-view-bar files-mode-bar">
+                <div className="seg quiet files-mode" role="group" aria-label={t("notes.modeAria")} data-mode={mode}>
+                  <button type="button" aria-pressed={mode === "read"} data-tip="⌘E" onClick={() => setMode("read")}>
+                    <Icon className="ico" name="i-eye" size={13} />
+                    {t("notes.read")}
+                  </button>
+                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? "⌘E" : undefined} onClick={() => setMode("edit")}>
+                    <Icon className="ico" name="i-pen" size={13} />
+                    {t("notes.edit")}
+                  </button>
+                  {previewable && (
+                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? "⌘E" : undefined} onClick={() => setMode("split")}>
+                      <Icon className="ico" name="i-split" size={13} />
+                      {t("notes.split")}
+                    </button>
+                  )}
+                </div>
+                <Spacer />
+                {mode !== "read" && (
+                  <span className="meta-txt files-save-state" data-state={saveState}>
+                    {t(SAVE_LABEL[saveState])}
+                  </span>
+                )}
+              </div>
+            )}
+            {content.isLoading || (versionId && older.isLoading) ? null : mode !== "read" && editorContent ? (
+              <NoteEditor
+                key={path}
+                projectId={projectId}
+                content={editorContent}
+                paths={actions.paths}
+                tags={(tags.data ?? []).map((tag) => tag.tag)}
+                resolve={linking.resolve}
+                onOpenLink={linking.open}
+                onState={setSaveState}
+                autoFocus={requested || preferred !== "read"}
+                preview={
+                  mode === "split"
+                    ? (text) => (
+                        <>
+                          <FileViewer content={{ ...editorContent, body: text }} linking={linking} switch={false} lines />
+                          {backlinks}
+                        </>
+                      )
+                    : undefined
+                }
+              />
+            ) : shown ? (
+              <FileViewer content={shown} linking={linking} switch={!editable} />
+            ) : (
+              <p className="meta-txt">{t("files.fileGone", { path })}</p>
+            )}
+            {mode !== "split" && backlinks}
           </>
         )}
       </div>
@@ -483,6 +583,8 @@ function PinnedVersion({ projectId, ref }: { projectId: string; ref: FileReferen
   const { openFile } = useWorkspace();
   const version = useFileVersion(projectId, ref);
   const location = useFileLocation(projectId, ref.fileId);
+  const actions = useNoteActions();
+  const linking = useMemo(() => actions.linking(version.data?.path ?? ""), [actions, version.data?.path]);
   if (version.isLoading) return <div className="files-main" />;
   if (!version.data) {
     return (
@@ -505,7 +607,7 @@ function PinnedVersion({ projectId, ref }: { projectId: string; ref: FileReferen
           </button>
         )}
       </div>
-      <FileViewer content={version.data} />
+      <FileViewer content={version.data} linking={linking} />
     </div>
   );
 }
@@ -542,12 +644,16 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [newFolder, setNewFolder] = useState(false);
+  const [newNote, setNewNote] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const notesOn = useNotesEnabled();
+  const noteActions = useNoteActions();
   useEffect(() => {
     setRenaming(false);
     setDeleteTargets(null);
     setNewFolder(false);
+    setNewNote(false);
     setAttaching(false);
     setDragOver(false);
   }, [path]);
@@ -746,6 +852,8 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
                 </button>
               }
             >
+              <MenuActionItem icon={<Icon name="i-pen" size={13} />} name={t("notes.newNote")} onSelect={() => setNewNote(true)} />
+              {notesOn && <MenuActionItem icon={<Icon name="i-calendar" size={13} />} name={t("notes.today")} onSelect={() => void noteActions.openToday()} />}
               <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setNewFolder(true)} />
               <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
               <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
@@ -795,6 +903,18 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         </div>
       )}
       {newFolder && <NamePrompt ariaLabel={t("files.newFolderNameAria")} placeholder={t("files.folderNamePlaceholder")} busy={busy} onCommit={createFolder} onCancel={() => setNewFolder(false)} />}
+      {newNote && (
+        <NamePrompt
+          ariaLabel={t("notes.newNoteAria")}
+          placeholder={t("notes.notePlaceholder")}
+          busy={busy}
+          onCommit={(name) => {
+            setNewNote(false);
+            void noteActions.createNote(dir, name);
+          }}
+          onCancel={() => setNewNote(false)}
+        />
+      )}
       {deleteTargets && (
         <div className="dangerbar files-delete" role="alertdialog">
           <Icon className="b-mark" name="i-warn" size={15} />
@@ -849,7 +969,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             agentActions={agentActions}
           />
         ) : (
-          <FileView projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />
+          <FileView key={path} projectId={projectId} path={path} conflict={conflicts.data?.find((c) => c.path === path) ?? null} />
         )}
       </div>
       {attaching && !isDir && <AttachToTicketDialog projectId={projectId} path={path} open={attaching} onOpenChange={setAttaching} />}
