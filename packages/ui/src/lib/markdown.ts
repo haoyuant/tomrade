@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from "marked";
+import { decodeHref } from "@tomradex/notes/syntax";
 
 /** Which file a link means; null when nothing answers to it yet. */
 export type LinkResolver = (target: string, kind: "wiki" | "markdown") => string | null;
@@ -78,13 +79,7 @@ export function renderMarkdown(text: string, resolve?: LinkResolver): string {
   const marked = new Marked({ extensions: extensions(resolve), async: false });
   const html = marked.parse(text, { async: false }) as string;
   // A relative markdown link is a note of this store; mark the ones that lead nowhere.
-  const decode = (href: string) => {
-    try {
-      return decodeURI(href);
-    } catch {
-      return href;
-    }
-  };
+  const decode = decodeHref;
   const linked = resolve
     ? html
         .replace(/<a href="([^"#:][^":]*?)(#[^"]*)?"/g, (whole, href: string) => (resolve(decode(href), "markdown") ? whole : `${whole} class="is-unresolved"`))

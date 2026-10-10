@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkKey, linkTarget, newNotePath, parseNote, resolveLink, rewriteLink } from "@tomradex/notes";
+import { decodeHref, encodeHref, linkKey, linkTarget, newNotePath, parseNote, resolveLink, rewriteLink } from "@tomradex/notes";
 
 describe("parseNote", () => {
   it("reads wiki links with anchors, aliases and embeds, and markdown links to local files", () => {
@@ -45,6 +45,10 @@ describe("parseNote", () => {
     expect(parseNote("```\n# not a title\n```\nplain").title).toBeNull();
   });
 
+  it("reads no tag out of a link to a place in the page or on the web", () => {
+    expect(parseNote("See [intro](#intro) and [docs](https://x.dev/#setup) #real").tags).toEqual(["real"]);
+  });
+
   it("ignores links inside code", () => {
     expect(parseNote("`[[Nope]]`\n```md\n[[Also nope]]\n```\n[[Yes]]").links.map((l) => l.target)).toEqual(["Yes"]);
   });
@@ -87,6 +91,16 @@ describe("rewriting", () => {
     expect(rewriteLink(link!, "Ideas.md", "x.md", paths)).toBe("![[Ideas#Part|shown]]");
     const [md] = parseNote("[text](old.md#h)").links;
     expect(rewriteLink(md!, "b/Plan.md", "a/x.md", paths)).toBe("[text](../b/Plan.md#h)");
+  });
+
+  it("writes a markdown link that reads back as the same file, brackets and hashes included", () => {
+    for (const name of ["Plan (mine).md", "C# notes.md", "a b/it's 100%.md"]) {
+      const [link] = parseNote(`[x](${encodeHref(name)})`).links;
+      expect(link!.target).toBe(name);
+      expect(decodeHref(encodeHref(name))).toBe(name);
+    }
+    const [old] = parseNote("[x](old.md)").links;
+    expect(rewriteLink(old!, "Plan (mine).md", "x.md", ["Plan (mine).md"])).toBe("[x](Plan%20%28mine%29.md)");
   });
 
   it("places a new note beside the linking one unless the link names a folder", () => {

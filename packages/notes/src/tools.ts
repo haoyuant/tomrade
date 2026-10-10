@@ -55,7 +55,7 @@ export function registerTools(ctx: Context, notes: Notes): void {
       execute: async (args, inv) => {
         const projectId = requireProjectId("note_links", args.projectId, inv);
         const p = args.path.replace(/^\/+/, "");
-        const links = await notes.links(projectId, p);
+        const links = await notes.links(projectId, p, { listedOnly: true });
         const out = [p];
         out.push(links.outgoing.length ? `links to (${links.outgoing.length}):` : "links to nothing.");
         for (const l of links.outgoing) out.push(`  L${l.line}: ${l.embed ? "embeds " : ""}${l.target}${l.anchor ? `#${l.anchor}` : ""} → ${l.path ?? "(nothing by that name yet)"}`);

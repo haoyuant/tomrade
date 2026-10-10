@@ -192,10 +192,13 @@ export function Workspace() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const meta = e.metaKey || e.ctrlKey;
       const focused = document.activeElement as HTMLElement | null;
-      // The note editor is contenteditable: its keys, ⌘Z among them, are its own.
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName ?? "") || !!focused?.isContentEditable;
+      // The note editor is contenteditable: its keys, ⌘Z among them, are its own — and so is any
+      // key it already handled, and on a Mac every Ctrl chord (Ctrl-K, -N, -P, -B move the caret there).
+      const editing = !!focused?.isContentEditable;
+      if (editing && e.defaultPrevented) return;
+      const meta = e.metaKey || (e.ctrlKey && !(editing && /Mac/i.test(navigator.platform)));
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName ?? "") || editing;
       const key = e.key.toLowerCase();
       if (meta && key === "k") {
         e.preventDefault();

@@ -94,7 +94,8 @@ export function searchNotes(pool: Db, projectId: string, input: NoteSearchInput)
   if (!q.terms.length && !q.tags.length && !q.folder) return { hits: [], total: 0, terms: [], tags: [] };
   // A trigram cannot see a word under three characters (two-character Chinese words among them).
   const indexed = q.terms.filter((t) => [...t].length >= 3);
-  const short = q.terms.filter((t) => [...t].length < 3).map((t) => t.toLowerCase());
+  // lower() on both sides: SQLite folds ASCII only, so a JS-lowered "Öl" would never meet an "Öl" in the text.
+  const short = q.terms.filter((t) => [...t].length < 3);
   const where: string[] = ["d.project_id = ?"];
   const params: unknown[] = [projectId];
   if (indexed.length) {
@@ -102,7 +103,7 @@ export function searchNotes(pool: Db, projectId: string, input: NoteSearchInput)
     params.push(indexed.map((t) => `"${t.replace(/"/g, '""')}"`).join(" "));
   }
   for (const s of short) {
-    where.push("instr(lower(f.title || ' ' || f.path || ' ' || f.body), ?) > 0");
+    where.push("instr(lower(f.title || ' ' || f.path || ' ' || f.body), lower(?)) > 0");
     params.push(s);
   }
   for (const tag of q.tags) {
@@ -115,7 +116,7 @@ export function searchNotes(pool: Db, projectId: string, input: NoteSearchInput)
   }
   if (input.listedOnly) where.push("d.listed = 1");
   const from = "FROM plugin_notes_fts f JOIN plugin_notes_docs d ON d.id = f.rowid";
-  const titleHits = short.length ? `(${short.map(() => "(instr(lower(f.title || ' ' || f.path), ?) > 0)").join(" + ")}) DESC, ` : "";
+  const titleHits = short.length ? `(${short.map(() => "(instr(lower(f.title || ' ' || f.path), lower(?)) > 0)").join(" + ")}) DESC, ` : "";
   const order = indexed.length ? `bm25(plugin_notes_fts, ${WEIGHTS}) ASC` : `${titleHits}d.modified_at DESC`;
   const db = pool.for(projectId);
   const total = (db.prepare(`SELECT COUNT(*) AS n ${from} WHERE ${where.join(" AND ")}`).get(...params) as { n: number }).n;

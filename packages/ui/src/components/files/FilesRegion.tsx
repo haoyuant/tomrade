@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { isNotePath } from "@tomradex/notes/syntax";
 import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomradex/domain";
-import type { ConflictChoice, FileConflict, FileEntry, FilesStatus } from "@tomradex/files";
+import type { ConflictChoice, FileConflict, FileContent, FileEntry, FilesStatus } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { SyncContextActions, SyncMark, SyncScopeSummary, SyncSelect, describeSync, useSyncActions, type SyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, AgentSelect, describeListing, useAgentActions, type AgentActions } from "./AgentPolicy";
@@ -445,7 +445,14 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
   const latest = versions[0]?.versionId ?? content.data?.versionId ?? null;
   const shown = versionId ? (older.data ?? null) : (content.data ?? null);
   const editable = !versionId && !conflict && !!content.data && content.data.encoding === "utf8" && !content.data.truncated;
-  const mode: FileMode = editable ? (requested ?? preferred) : "read";
+  const wanted = requested ?? preferred;
+  // Unsaved edits hold the editor open through a delete, a move or a sync clash, so its own save can ask what to do.
+  const held = useRef<FileContent | null>(null);
+  const holding = wanted === "edit" && !editable && saveState !== "saved" && held.current !== null;
+  const mode: FileMode = (editable && wanted === "edit") || holding ? "edit" : "read";
+  if (mode === "edit" && editable) held.current = content.data!;
+  else if (mode === "read") held.current = null;
+  const editorContent = editable ? content.data! : held.current;
   const tags = useNoteTags(projectId, notesOn && mode === "edit");
   const setMode = (next: FileMode) => {
     setRequested(null);
@@ -456,6 +463,9 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
     // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours.
     const mac = /Mac/i.test(navigator.platform);
     const onKey = (e: KeyboardEvent) => {
+      // Not behind a dialog, and not from some other field: the editor itself is fine.
+      const field = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? "");
+      if (e.defaultPrevented || field || document.documentElement.classList.contains("overlay-open")) return;
       if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         setMode(mode === "edit" ? "read" : "edit");
@@ -475,7 +485,7 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
   return (
     <>
       <div className="files-main">
-        {conflict ? (
+        {conflict && !holding ? (
           <ConflictPanel conflict={conflict} busy={resolve.isPending} onChoose={choose} />
         ) : (
           <>
@@ -488,7 +498,7 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
                 </button>
               </div>
             )}
-            {editable && (
+            {(editable || holding) && (
               <div className="row file-view-bar files-mode-bar">
                 <div className="seg quiet files-mode" role="group" aria-label={t("notes.modeAria")} data-mode={mode}>
                   <button type="button" aria-pressed={mode === "read"} data-tip="⌘E" onClick={() => setMode("read")}>
@@ -508,11 +518,11 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
                 )}
               </div>
             )}
-            {content.isLoading || (versionId && older.isLoading) ? null : mode === "edit" && content.data ? (
+            {content.isLoading || (versionId && older.isLoading) ? null : mode === "edit" && editorContent ? (
               <NoteEditor
                 key={path}
                 projectId={projectId}
-                content={content.data}
+                content={editorContent}
                 paths={actions.paths}
                 tags={(tags.data ?? []).map((tag) => tag.tag)}
                 resolve={linking.resolve}

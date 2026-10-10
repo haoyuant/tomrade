@@ -235,11 +235,13 @@ receives — 101 checks.
 `test:notes` (`scripts/notes-check.mjs`) drives writing in place: links and tags
 in the reading view, pictures of the store inside a note, backlinks and turning
 an unlinked mention into a link, a dangling link that starts its note, typing
-that saves on a pause, `[[` completion, ⌘S, ⌘Z staying inside the editor, an
-outside save shown at once and one that clashes with unsaved edits, a rename
-that rewrites the links to it, the sidebar search and a tag clicked into it,
-⇧⌘F, Today's note, New note, the palette as a quick switcher and its offer to
-search the notes, ⌘E, and the editor in the dark — 38 checks.
+that saves on a pause, `[[` completion, ⌘S, ⌘Z and Ctrl chords staying inside
+the editor, an outside save shown at once and one that clashes with unsaved
+edits, a delete under unsaved edits, leaving an unanswered clash (yours kept as
+a copy), a CRLF file saved with its own line endings, a rename that rewrites
+the links to it, the sidebar search and a tag clicked into it, ⇧⌘F, Today's
+note, New note, the palette as a quick switcher and its offer to search the
+notes, ⌘E, and the editor in the dark — 46 checks.
 `test:plugins-ui` (`scripts/plugins-ui-check.mjs`) drives the Plugins pane: a
 store package and a local one with their tiers, risk and reach, an agent's
 build that loads only from the review dialog, My plugins and a new plugin from

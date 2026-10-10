@@ -59,7 +59,8 @@ export function Backlinks({ projectId, path, paths }: { projectId: string; path:
   const link = async (mention: Mention) => {
     try {
       const source = await invoke("files.read", projectId, mention.path);
-      const next = source && linkMention(source.body, mention.line, name, linkTarget(path, mention.path, paths));
+      // A note read only in part must not be saved as that part.
+      const next = source && !source.truncated && linkMention(source.body, mention.line, name, linkTarget(path, mention.path, paths));
       if (!source || !next) return toast({ body: t("notes.mentionMoved") });
       const saved = await invoke("files.save", projectId, mention.path, next, { expect: source.hash ?? null, message: `Linked ${name}` });
       toast({ body: saved.ok ? t("notes.linkedToast", { name, source: nameOf(mention.path) }) : t("notes.mentionMoved") });

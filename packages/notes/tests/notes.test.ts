@@ -55,6 +55,9 @@ describe("notes over a project's files", { timeout: 60_000 }, () => {
       expect((await ctx.notes.search(id, { query: "laptop" })).total).toBe(3);
       // two-character Chinese words are below a trigram; they still match
       expect((await ctx.notes.search(id, { query: "喝水" })).hits.map((h) => h.path)).toEqual(["notes/喝水计划.md"]);
+      // and a short word with a capital SQLite cannot fold matches as written
+      await ctx.files.write(id, "notes/öl.md", "Öl wechseln");
+      expect((await ctx.notes.search(id, { query: "Öl" })).hits.map((h) => h.path)).toEqual(["notes/öl.md"]);
       expect((await ctx.notes.search(id, { query: "#process" })).hits.map((h) => h.path).sort()).toEqual(["docs/onboarding.md", "notes/standup.md"]);
       expect((await ctx.notes.search(id, { query: "#process/weekly" })).hits.map((h) => h.path)).toEqual(["notes/standup.md"]);
       expect((await ctx.notes.search(id, { query: "laptop path:notes" })).hits.map((h) => h.path)).toEqual(["notes/standup.md"]);
@@ -142,6 +145,12 @@ describe("notes over a project's files", { timeout: 60_000 }, () => {
       expect((await ctx.files.read(id, "a.md"))!.body).toBe("[b](archive/docs/b.md), [plan](Plan.md)");
       expect((await ctx.files.read(id, "Ideas.md"))!.body).toBe("Links into [[docs/b]] and [[b]].");
 
+      // a link written a moment before the move is followed too, and a name with brackets reads back
+      await ctx.files.write(id, "fresh.md", "Just wrote [[Ideas]] and [it](Ideas.md).");
+      await ctx.files.move(id, "Ideas.md", "Ideas (mine).md");
+      expect((await ctx.files.read(id, "fresh.md"))!.body).toBe("Just wrote [[Ideas (mine)]] and [it](Ideas%20%28mine%29.md).");
+      expect((await ctx.notes.links(id, "Ideas (mine).md")).backlinks.map((b) => b.path)).toEqual(["fresh.md"]);
+
       // switched off, a move leaves the text alone
       ctx.settings.set({ ...ctx.settings.get(), notes: { updateLinks: false, journalFolder: "Journal" } });
       await ctx.files.move(id, "Plan.md", "Master plan.md");
@@ -182,8 +191,11 @@ describe("notes over a project's files", { timeout: 60_000 }, () => {
       expect(found).not.toContain("salaries");
       expect(await call(ctx, "search_notes", { query: "launch", folder: "private" }, id)).toContain("private/salaries.md");
 
+      await ctx.files.write(id, "private/notes.md", "The [[checklist]] is too long.");
       const links = await call(ctx, "note_links", { path: "checklist.md" }, id);
       expect(links).toContain("linked from (1):\n  plan.md:3: Launch after [[checklist]]. #launch");
+      expect(links).not.toContain("private/");
+      expect((await ctx.notes.links(id, "checklist.md")).backlinks.map((b) => b.path).sort()).toEqual(["plan.md", "private/notes.md"]);
     } finally {
       await ctx.fiber.dispose();
     }

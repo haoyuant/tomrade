@@ -8,18 +8,22 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, t
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import type { FileContent, SaveResult } from "@tomradex/files";
-import { isNotePath, linkTarget, noteName } from "@tomradex/notes/syntax";
+import { decodeHref, isNotePath, linkTarget, noteName } from "@tomradex/notes/syntax";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { nameOf, parentOf } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
-import { freeNoteName } from "~/lib/notes";
+import { freeCopyName } from "~/lib/notes";
 import { useToast } from "~/lib/toast";
 
 /** A pause this long after the last keystroke is a save — each one a version, so not every key. */
 const SAVE_AFTER_MS = 1_500;
 
 export type SaveState = "saved" | "dirty" | "saving";
+
+/** The editor works in \n; a file written with \r\n is saved back the way it came. */
+const normalize = (text: string): string => text.replace(/\r\n?/g, "\n");
+const eolOf = (text: string): "\n" | "\r\n" => (/\r\n/.test(text) ? "\r\n" : "\n");
 
 const WIKI_SPAN = /!?\[\[([^[\]\n|#]*)(?:#[^[\]\n|]*)?(?:\|[^[\]\n]*)?\]\]/g;
 const MD_SPAN = /!?\[[^\]\n]*\]\(<?([^)\s>]+)>?(?:\s+"[^"\n]*")?\)/g;
@@ -96,13 +100,7 @@ function linkAt(view: EditorView, pos: number): { target: string; kind: "wiki" |
       if (at < m.index || at > m.index + m[0].length) continue;
       const target = m[1]!.trim();
       if (kind === "markdown" && (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("#"))) return null;
-      let decoded = target.split("#")[0]!;
-      try {
-        decoded = decodeURI(decoded);
-      } catch {
-        // as written
-      }
-      return { target: kind === "markdown" ? decoded : target, kind };
+      return { target: kind === "markdown" ? decodeHref(target.split("#")[0]!) : target, kind };
     }
   }
   return null;
@@ -131,7 +129,8 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
   const toast = useToast();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const base = useRef<{ hash: string | null; text: string }>({ hash: content.hash ?? null, text: content.body });
+  // What the file held when last read or saved, normalized: the editor is dirty when its text differs.
+  const base = useRef<{ hash: string | null; text: string; eol: "\n" | "\r\n" }>({ hash: content.hash ?? null, text: normalize(content.body), eol: eolOf(content.body) });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<void> | null>(null);
   const [conflict, setConflict] = useState<{ current: FileContent | null } | null>(null);
@@ -144,24 +143,44 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
 
   const report = (state: SaveState) => latest.current.onState(state);
 
-  const save = async (force = false): Promise<void> => {
+  const bodyOf = (text: string) => (base.current.eol === "\r\n" ? text.replace(/\n/g, "\r\n") : text);
+
+  /** Yours, beside the file, when the file itself can no longer take it — the editor is closing. */
+  const keepCopy = async (text: string) => {
+    const copy = freeCopyName(path, new Set(latest.current.paths));
+    const saved = await invoke("files.save", projectId, copy, bodyOf(text), { expect: null, message: `Kept unsaved edits to ${nameOf(path)}` });
+    toast({ body: saved.ok ? tr("notes.keptBothToast", { name: nameOf(copy) }) : tr("notes.copyTaken", { name: nameOf(copy) }) });
+    return saved.ok ? copy : null;
+  };
+
+  /**
+   * `final` is the save on the way out: nothing is left to ask with, so what
+   * cannot land on the file lands beside it. The editor is passed along, not
+   * read again, because closing clears the ref before a queued save runs.
+   */
+  const save = async (opts: { force?: boolean; final?: boolean } = {}, editor = view.current): Promise<void> => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    const editor = view.current;
-    if (!editor || conflictRef.current) return;
+    if (!editor) return;
     if (inFlight.current) {
       await inFlight.current;
-      return save(force);
+      return save(opts, editor);
     }
     const text = editor.state.doc.toString();
-    if (text === base.current.text && !force) return report("saved");
+    if (conflictRef.current) {
+      if (opts.final && text !== base.current.text) await keepCopy(text).catch(() => undefined);
+      return;
+    }
+    if (text === base.current.text && !opts.force) return report("saved");
     report("saving");
     const run = (async () => {
       try {
-        const result: SaveResult = await invoke("files.save", projectId, path, text, { expect: base.current.hash });
+        const result: SaveResult = await invoke("files.save", projectId, path, bodyOf(text), { expect: base.current.hash });
         if (result.ok) {
-          base.current = { hash: result.content.hash ?? null, text };
+          base.current = { ...base.current, hash: result.content.hash ?? null, text };
           report(editor.state.doc.toString() === text ? "saved" : "dirty");
+        } else if (opts.final) {
+          await keepCopy(text);
         } else {
           setConflict({ current: result.current });
           report("dirty");
@@ -202,7 +221,7 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
       return null;
     };
     const state = EditorState.create({
-      doc: content.body,
+      doc: base.current.text,
       extensions: [
         history(),
         search({ top: true }),
@@ -253,7 +272,7 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
     return () => {
       window.removeEventListener("beforeunload", flush);
       // Closing the file is a save, not a loss.
-      void saveRef.current().finally(() => editor.destroy());
+      void saveRef.current({ final: true }, editor).finally(() => editor.destroy());
       view.current = null;
     };
     // One editor per file; the parent keys it by path.
@@ -269,41 +288,35 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
     const editor = view.current;
     if (!editor || content.hash === base.current.hash) return;
     if (editor.state.doc.toString() !== base.current.text) return;
-    base.current = { hash: content.hash ?? null, text: content.body };
-    const head = Math.min(editor.state.selection.main.head, content.body.length);
-    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: content.body }, selection: { anchor: head } });
+    base.current = { hash: content.hash ?? null, text: normalize(content.body), eol: eolOf(content.body) };
+    const head = Math.min(editor.state.selection.main.head, base.current.text.length);
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: base.current.text }, selection: { anchor: head } });
     report("saved");
   }, [content.hash, content.body]);
+
+  const take = (current: FileContent | null) => {
+    const editor = view.current;
+    if (!editor) return;
+    base.current = { hash: current?.hash ?? null, text: normalize(current?.body ?? ""), eol: current ? eolOf(current.body) : base.current.eol };
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: base.current.text } });
+    setConflict(null);
+    report("saved");
+  };
 
   const resolveConflict = async (choice: "mine" | "theirs" | "both") => {
     const editor = view.current;
     if (!editor || !conflict) return;
     const current = conflict.current;
-    const mine = editor.state.doc.toString();
-    if (choice === "theirs") {
-      base.current = { hash: current?.hash ?? null, text: current?.body ?? "" };
-      editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: current?.body ?? "" } });
-      setConflict(null);
-      report("saved");
-      return;
-    }
+    if (choice === "theirs") return take(current);
     if (choice === "both") {
-      const taken = new Set(latest.current.paths);
-      const copy = freeNoteName(parentOf(path), `${noteName(path)} (mine)`, taken);
-      const saved = await invoke("files.save", projectId, copy, mine, { expect: null, message: `Kept a copy of ${nameOf(path)}` });
-      if (!saved.ok) return toast({ body: tr("notes.copyTaken", { name: nameOf(copy) }) });
-      toast({ body: tr("notes.keptBothToast", { name: nameOf(copy) }) });
-      base.current = { hash: current?.hash ?? null, text: current?.body ?? "" };
-      editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: current?.body ?? "" } });
-      setConflict(null);
-      report("saved");
+      if (await keepCopy(editor.state.doc.toString())) take(current);
       return;
     }
     // Mine wins, knowingly: against exactly what is there now.
-    base.current = { hash: current?.hash ?? null, text: current?.body ?? "" };
+    base.current = { hash: current?.hash ?? null, text: normalize(current?.body ?? ""), eol: base.current.eol };
     setConflict(null);
     conflictRef.current = null;
-    await saveRef.current(true);
+    await saveRef.current({ force: true });
   };
 
   return (

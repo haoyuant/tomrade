@@ -74,6 +74,22 @@ function joinPath(dir: string, rel: string): string | null {
 
 // ── parsing ──────────────────────────────────────────────────────────────────
 
+/** A markdown link's path as the file is named: `%20`, `%28`, `%23` and the rest decoded; a stray `%` kept. */
+export function decodeHref(href: string): string {
+  try {
+    return decodeURIComponent(href);
+  } catch {
+    return href;
+  }
+}
+
+/** The inverse, per segment: what a markdown link may hold without `(`, `)`, `#` or a space ending it early. */
+export const encodeHref = (path: string): string =>
+  path
+    .split("/")
+    .map((seg) => encodeURIComponent(seg).replace(/[()!'*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`))
+    .join("/");
+
 /** Blank out what is not prose — front matter, fenced and inline code, `%%comments%%` — keeping every offset. */
 function mask(text: string): { masked: string; frontmatter: string | null } {
   const chars = text.split("");
@@ -170,24 +186,24 @@ export function parseNote(text: string): ParsedNote {
       to: m.index + m[0].length
     });
   }
+  // Every markdown link's text is set aside before tags are read, the ones to the web and to `#anchors` too.
+  const elsewhere: { from: number; to: number }[] = [];
   for (const m of masked.matchAll(MARKDOWN)) {
     const raw = m[3]!;
     // Somewhere else on the web, or a place in this page: not a link between notes.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith("#")) continue;
-    const [pathPart, anchor] = raw.split("#", 2) as [string, string | undefined];
-    let target = pathPart;
-    try {
-      target = decodeURI(pathPart);
-    } catch {
-      // a stray % stays as written
+    if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith("#")) {
+      elsewhere.push({ from: m.index, to: m.index + m[0].length });
+      continue;
     }
+    const [pathPart, anchor] = raw.split("#", 2) as [string, string | undefined];
+    const target = decodeHref(pathPart);
     links.push({ target, anchor: anchor || null, alias: m[2] || null, embed: m[1] === "!", kind: "markdown", line: lineAt(starts, m.index), from: m.index, to: m.index + m[0].length });
   }
   links.sort((a, b) => a.from - b.from);
 
   // Link text is not where tags live: `[[Note#Heading]]` names a heading.
   const chars = masked.split("");
-  for (const l of links) chars.fill(" ", l.from, l.to);
+  for (const l of [...links, ...elsewhere]) chars.fill(" ", l.from, l.to);
   const linkless = chars.join("");
   const tagSpans: NoteTag[] = [];
   for (const m of linkless.matchAll(TAG)) {
@@ -271,7 +287,7 @@ export function linkTarget(to: string, from: string, paths: readonly string[]): 
 export function rewriteLink(link: NoteLink, to: string, from: string, paths: readonly string[]): string {
   if (link.kind === "markdown") {
     const rel = relativePath(dirOf(from), to);
-    const href = encodeURI(rel) + (link.anchor ? `#${link.anchor}` : "");
+    const href = encodeHref(rel) + (link.anchor ? `#${link.anchor}` : "");
     return `${link.embed ? "!" : ""}[${link.alias ?? ""}](${href})`;
   }
   const target = linkTarget(to, from, paths);

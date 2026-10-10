@@ -278,14 +278,17 @@ export class Notes extends Service {
   }
 
   /** What a note links to, what links to it, and who mentions it by name without a link. */
-  async links(projectId: string, p: string, opts: { unlinked?: boolean } = {}): Promise<NoteLinks> {
+  /** `listedOnly` leaves out notes kept out of the agent index: they are not volunteered, even as a backlink. */
+  async links(projectId: string, p: string, opts: { unlinked?: boolean; listedOnly?: boolean } = {}): Promise<NoteLinks> {
     await this.ready(projectId);
     const paths = this.filePaths(projectId);
     const doc = this.store.doc(projectId, p);
     const outgoing: OutgoingLink[] = doc
       ? parseNote(this.store.body(projectId, doc.id)).links.map((l) => ({ target: l.target, anchor: l.anchor, alias: l.alias, embed: l.embed, line: l.line, path: resolveLink(l, p, paths) }))
       : [];
-    const titles = new Map(this.store.docs(projectId).map((d) => [d.path, d.title]));
+    const docs = this.store.docs(projectId);
+    const titles = new Map(docs.map((d) => [d.path, d.title]));
+    const hidden = opts.listedOnly ? new Set(docs.filter((d) => !d.listed).map((d) => d.path)) : new Set<string>();
     const name = isNotePath(p) ? noteName(p) : (p.split("/").pop() ?? p);
     const bodies = new Map<number, string[]>();
     const lineOf = (docId: number, line: number) => {
@@ -295,12 +298,12 @@ export class Notes extends Service {
     const backlinks: Mention[] = [];
     const linking = new Set<string>();
     for (const row of this.store.linksNamed(projectId, nameKey(name))) {
-      if (row.source === p || resolveLink(row, row.source, paths) !== p) continue;
+      if (row.source === p || hidden.has(row.source) || resolveLink(row, row.source, paths) !== p) continue;
       linking.add(row.source);
       if (backlinks.some((b) => b.path === row.source && b.line === row.line)) continue;
       backlinks.push({ path: row.source, title: titles.get(row.source) ?? null, line: row.line, text: lineOf(row.docId, row.line) });
     }
-    const unlinked = opts.unlinked === false || !isNotePath(p) ? [] : this.unlinked(projectId, p, name, linking);
+    const unlinked = opts.unlinked === false || !isNotePath(p) ? [] : this.unlinked(projectId, p, name, linking).filter((m) => !hidden.has(m.path));
     return { outgoing, backlinks, unlinked };
   }
 
@@ -349,6 +352,8 @@ export class Notes extends Service {
   async retarget(projectId: string, from: string, to: string): Promise<RetargetResult> {
     const dir = this.ctx.files.dirFor(projectId);
     if (!dir) return { files: 0, links: 0, ref: null };
+    // A link written a moment ago must be among the candidates; rows read after the move map back below.
+    await this.ready(projectId);
     const now = (await this.ctx.files.tree(projectId)).filter((e) => e.kind === "file").map((e) => e.path);
     const under = (p: string, base: string) => p === base || p.startsWith(`${base}/`);
     const back = (p: string) => (under(p, to) ? from + p.slice(to.length) : p);

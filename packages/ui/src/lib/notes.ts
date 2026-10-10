@@ -56,6 +56,20 @@ export function freeNoteName(dir: string, base: string, taken: Set<string>): str
   }
 }
 
+/** `plan (mine).md`, then `plan (mine 2).md`…: a sibling for a copy, keeping the file's own extension. */
+export function freeCopyName(path: string, taken: Set<string>): string {
+  const slash = path.lastIndexOf("/");
+  const dir = slash < 0 ? "" : path.slice(0, slash + 1);
+  const name = path.slice(slash + 1);
+  const dot = name.lastIndexOf(".");
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  const lower = new Set([...taken].map((p) => p.toLowerCase()));
+  for (let i = 1; ; i++) {
+    const candidate = `${dir}${stem} (mine${i > 1 ? ` ${i}` : ""})${ext}`;
+    if (!lower.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 // ── which files open for editing ─────────────────────────────────────────────
 
 const editNext = new Set<string>();

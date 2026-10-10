@@ -86,8 +86,13 @@ const run = async () => {
     })()`);
   // Every line of a short note is in the viewport, so the lines are the document.
   const editorText = () => $(`(() => { const c = document.querySelector('[data-testid="note-editor"] .cm-content'); return c ? [...c.querySelectorAll('.cm-line')].map((l) => l.textContent).join('\\n') : null; })()`);
-  const focusEditorEnd = () =>
-    $(`(() => { const c = document.querySelector('[data-testid="note-editor"] .cm-content'); if (!c) return false; c.focus(); const sel = getSelection(); sel.selectAllChildren(c); sel.collapseToEnd(); return true; })()`);
+  // Focus, then the editor's own "end of document" key: a DOM selection lands oddly on an empty last line.
+  const focusEditorEnd = async () => {
+    await $(`(() => { const c = document.querySelector('[data-testid="note-editor"] .cm-content'); if (!c) return false; c.focus(); return true; })()`);
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Down", modifiers: [process.platform === "darwin" ? "meta" : "control"] });
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Down", modifiers: [process.platform === "darwin" ? "meta" : "control"] });
+    await sleep(60);
+  };
   const key = async (keyCode, modifiers = []) => {
     win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
     win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
@@ -193,6 +198,53 @@ const run = async () => {
   // The copy lands in the main process before the renderer hears back; wait for the editor itself.
   await wait(async () => (await read("docs/Pricing (mine).md")) !== null && (await editorText()) === "# Pricing\n\nTheirs.\n", "copy of mine, theirs shown");
   same("Keep both saves mine beside theirs and shows theirs", `${await read("docs/Pricing (mine).md")} | ${await editorText()}`, "# Pricing\n\nRewritten by an agent.\nMine. | # Pricing\n\nTheirs.\n");
+
+  // ── a file deleted under unsaved edits keeps them ─────────────────────
+  await focusEditorEnd();
+  await win.webContents.insertText("Still typing.");
+  await ctx.files.remove(id, "docs/Pricing.md");
+  await wait(() => has('[data-testid="edit-conflict"]'), "gone banner", 80);
+  same("a delete under unsaved edits keeps the editor and says so", await text('[data-testid="edit-conflict"] p'), "Pricing.md was moved or deleted while you were editing it.");
+  await click(".edit-keep-mine");
+  await wait(async () => (await read("docs/Pricing.md"))?.endsWith("Still typing."), "kept mine");
+  same("Keep mine writes it back", await read("docs/Pricing.md"), "# Pricing\n\nTheirs.\nStill typing.");
+
+  // Ctrl chords are the editor's on a Mac: Ctrl-K deletes to the line end, it does not open the palette
+  if (process.platform === "darwin") {
+    await focusEditorEnd();
+    await key("k", ["control"]);
+    await sleep(300);
+    check("Ctrl-K in the editor stays in the editor", !(await has(".palette-input")));
+  }
+
+  // walking away from an unanswered clash keeps the unsaved text beside the file
+  await focusEditorEnd();
+  await win.webContents.insertText(" Unsaved.");
+  await ctx.files.write(id, "docs/Pricing.md", "# Pricing\n\nTheirs again.\n");
+  await wait(() => has('[data-testid="edit-conflict"]'), "second clash", 80);
+  await openFile("docs/plan.md");
+  await wait(async () => (await read("docs/Pricing (mine 2).md")) !== null, "copy on leaving", 80);
+  same("leaving an unanswered clash keeps yours as a copy", await read("docs/Pricing (mine 2).md"), "# Pricing\n\nTheirs.\nStill typing. Unsaved.");
+  same("…and leaves theirs as it is", await read("docs/Pricing.md"), "# Pricing\n\nTheirs again.\n");
+
+  // ── a file with Windows line endings keeps them ───────────────────────
+  await ctx.files.write(id, "docs/windows.txt", "one\r\ntwo\r\n");
+  await openFile("docs/windows.txt");
+  await wait(() => has(".files-mode"), "CRLF file");
+  await click(".files-mode button:nth-child(2)");
+  await wait(() => has('[data-testid="note-editor"] .cm-content'), "editor on a CRLF file");
+  const crlfVersions = (await ctx.files.history(id, "docs/windows.txt")).length;
+  same("a CRLF file opens clean", await $(`document.querySelector('.files-save-state')?.dataset.state`), "saved");
+  await focusEditorEnd();
+  await $(`document.activeElement?.blur(); true`);
+  await sleep(500);
+  check("opening and leaving it writes nothing", (await ctx.files.history(id, "docs/windows.txt")).length === crlfVersions);
+  await focusEditorEnd();
+  await win.webContents.insertText("three");
+  await key("s", ["meta"]);
+  await wait(async () => (await read("docs/windows.txt"))?.includes("three"), "CRLF save");
+  same("an edit saves with its own line endings", await read("docs/windows.txt"), "one\r\ntwo\r\nthree");
+  await click(".files-mode button:nth-child(1)");
 
   // ── renaming keeps the links ───────────────────────────────────────────
   await openFile("docs/checklist.md");

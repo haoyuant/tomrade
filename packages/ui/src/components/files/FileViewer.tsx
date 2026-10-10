@@ -3,6 +3,7 @@ import type { FileContent } from "@tomradex/files";
 import { Spacer } from "~/components/ui/atoms";
 import { formatSize } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
+import { decodeHref } from "@tomradex/notes/syntax";
 import { renderMarkdown, type LinkResolver } from "~/lib/markdown";
 import { openExternal } from "~/lib/shell";
 
@@ -65,13 +66,7 @@ function Markdown({ text, linking }: { text: string; linking?: NoteLinking }) {
         const href = anchor.getAttribute("href") ?? "";
         if (/^https?:\/\//i.test(href)) openExternal(href);
         else if (href && !href.startsWith("#") && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-          let target = href.split("#")[0]!;
-          try {
-            target = decodeURI(target);
-          } catch {
-            // as written
-          }
-          linking?.open(target, "markdown");
+          linking?.open(decodeHref(href.split("#")[0]!), "markdown");
         }
       }}
     />
