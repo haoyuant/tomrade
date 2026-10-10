@@ -54,6 +54,8 @@ win:
   target: nsis
 linux:
   icon: assets/icon.png
+  # Otherwise derived from the package name, @tomrade/desktop.
+  executableName: tomrade
   target: AppImage
   category: Office
 nsis:
