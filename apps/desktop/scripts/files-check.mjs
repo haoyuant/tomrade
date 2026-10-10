@@ -137,7 +137,7 @@ const run = async () => {
   check("a native drop with no resolvable disk path is a quiet no-op, not a crash", (await has('.side-row.is-file[data-file="external-unbacked.txt"]')) === false);
   await press(".side-files-add");
   await wait(() => $(`document.querySelectorAll('.menu.is-floating .menu-row').length === 2`), "add menu");
-  check("the add button offers a new folder, files and folders", (await $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map(n => n.textContent).join('|')`)) === "New folder|Add files…|Add folder…");
+  check("the add button offers a new note, today's note, a new folder, files and folders", (await $(`[...document.querySelectorAll('.menu.is-floating .menu-row .m-name')].map(n => n.textContent).join('|')`)) === "New note|Today's note|New folder|Add files…|Add folder…");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(300);
 
@@ -154,9 +154,11 @@ const run = async () => {
   await wait(() => $(`document.querySelectorAll('.version-row').length === 1`), "versions");
   check("the version rail lists the save", (await count(".version-row")) === 1 && (await $(`document.querySelector('.version-row')?.dataset.version`)) === brief.versionId);
   await shot("files-01-markdown");
-  await click('.file-view .seg button:nth-child(2)');
-  await sleep(200);
-  check("the source is one switch away", (await has(".file-view .text-view")) === true);
+  await click('.files-mode button:nth-child(2)');
+  await wait(() => has('[data-testid="note-editor"] .cm-content'), "editor");
+  check("the source is one switch away, and it can be written in", (await $(`document.querySelector('[data-testid="note-editor"] .cm-content')?.innerText ?? ''`)).includes("A first draft with a [link](https://example.com)."));
+  await click('.files-mode button:nth-child(1)');
+  await wait(() => has(".md-view h1"), "back to reading");
 
   const second = await ctx.files.write(project.id, "docs/brief.md", "# The brief\n\nSecond draft.\n");
   await wait(() => $(`document.querySelectorAll('.version-row').length === 2`), "second version");

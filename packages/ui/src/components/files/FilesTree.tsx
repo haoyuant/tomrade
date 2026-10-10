@@ -10,7 +10,10 @@ import { useI18n } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { notesSearch, useNotesEnabled, useNotesSearchState } from "~/lib/notes";
 import { stateOf } from "./state";
+import { NotesSearch } from "./NotesSearch";
+import { useNoteActions } from "./useNoteActions";
 import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, useAgentActions } from "./AgentPolicy";
 
@@ -71,7 +74,11 @@ export function FilesTree() {
   const pasteFiles = usePasteFiles(project.id);
   const { open, toggle, show } = useExpanded(project.id, filePath);
   const [creating, setCreating] = useState(false);
+  const [creatingNote, setCreatingNote] = useState(false);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const notesOn = useNotesEnabled();
+  const noteActions = useNoteActions();
+  const searching = useNotesSearchState().open && notesOn;
 
   const entries = tree.data ?? [];
   const existing = useMemo(() => new Set(entries.map((e) => e.path)), [entries]);
@@ -271,6 +278,20 @@ export function FilesTree() {
         </button>
         {state.warn && !unavailable && <span className={`side-mark is-state is-${stateKey}`} title={state.label} data-state={stateKey} />}
         <Spacer />
+        {notesOn && (
+          <button
+            type="button"
+            className="btn btn-icon side-files-search"
+            data-tip={t("notes.search")}
+            data-tip-side="bottom"
+            aria-label={t("notes.search")}
+            aria-pressed={searching}
+            disabled={unavailable}
+            onClick={() => (searching ? notesSearch.close() : notesSearch.open())}
+          >
+            <Icon name="i-search" size={13} />
+          </button>
+        )}
         <Menu
           label={t("files.addMenu")}
           align="end"
@@ -280,6 +301,8 @@ export function FilesTree() {
             </button>
           }
         >
+          <MenuActionItem icon={<Icon name="i-pen" size={13} />} name={t("notes.newNote")} onSelect={() => setCreatingNote(true)} />
+          {notesOn && <MenuActionItem icon={<Icon name="i-calendar" size={13} />} name={t("notes.today")} onSelect={() => void noteActions.openToday()} />}
           <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("files.newFolder")} onSelect={() => setCreating(true)} />
           <MenuActionItem icon={<Icon name="i-file" size={13} />} name={t("files.addFiles")} onSelect={() => void addFiles("files")} />
           <MenuActionItem icon={<Icon name="i-folder" size={13} />} name={t("files.addFolder")} onSelect={() => void addFiles("folders")} />
@@ -290,6 +313,9 @@ export function FilesTree() {
           </button>
         )}
       </div>
+      {searching ? (
+        <NotesSearch />
+      ) : (
       <div
         className={`side-list side-files-list${dragOver === "" ? " is-drag-over" : ""}`}
         style={{ display: "flex", flexDirection: "column", gap: 1 }}
@@ -307,13 +333,29 @@ export function FilesTree() {
       >
         {rows("", 0)}
         {creating && <InlineNameRow icon="i-folder" ariaLabel={t("files.newFolderNameAria")} placeholder={t("files.folderNamePlaceholder")} onCommit={createFolder} onCancel={() => setCreating(false)} />}
-        {!entries.length && !creating && !tree.isLoading && (
+        {creatingNote && (
+          <InlineNameRow
+            icon="i-pen"
+            ariaLabel={t("notes.newNoteAria")}
+            placeholder={t("notes.notePlaceholder")}
+            onCommit={(name) => {
+              setCreatingNote(false);
+              if (name.trim()) {
+                show(currentDir);
+                void noteActions.createNote(currentDir, name);
+              }
+            }}
+            onCancel={() => setCreatingNote(false)}
+          />
+        )}
+        {!entries.length && !creating && !creatingNote && !tree.isLoading && (
           <div className="side-files-empty-placeholder">
             <Icon className="ico" name="i-upload" size={14} />
             <span className="side-name">{unavailable ? t("files.stateUnavailableHint") : t("files.dropHint")}</span>
           </div>
         )}
       </div>
+      )}
     </>
   );
 }

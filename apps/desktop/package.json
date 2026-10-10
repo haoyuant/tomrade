@@ -18,6 +18,7 @@
     "dump-config": "electron . --dump-config",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "test:files": "electron scripts/files-check.mjs",
+    "test:notes": "electron scripts/notes-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
     "package": "node scripts/package.mjs"

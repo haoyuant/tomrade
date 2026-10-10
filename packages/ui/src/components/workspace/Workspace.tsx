@@ -26,6 +26,7 @@ import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { Table } from "./Table";
 import { TitleBar, ViewHead } from "./TitleBar";
 import { useWorkspace } from "./context";
+import { notesSearch, useNotesSearchState } from "~/lib/notes";
 
 /** Below this the three panes cannot all hold their minimum. */
 const THREE_PANE_FLOOR = 1380;
@@ -56,6 +57,11 @@ export function Workspace() {
 
   const { setAiOpen } = useAgentDock();
   const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey);
+  // The note search lives in the sidebar: asking for it, from anywhere, unfolds the sidebar.
+  const searchFocus = useNotesSearchState().focus;
+  useEffect(() => {
+    if (searchFocus) setSideOpen(true);
+  }, [searchFocus, setSideOpen]);
   const [expanded, setExpanded] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
@@ -187,11 +193,16 @@ export function Workspace() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? "");
+      const focused = document.activeElement as HTMLElement | null;
+      // The note editor is contenteditable: its keys, ⌘Z among them, are its own.
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName ?? "") || !!focused?.isContentEditable;
       const key = e.key.toLowerCase();
       if (meta && key === "k") {
         e.preventDefault();
         setPalette(true);
+      } else if (meta && e.shiftKey && key === "f") {
+        e.preventDefault();
+        notesSearch.open();
       } else if (meta && key === "b") {
         e.preventDefault();
         setSideOpen((v) => !v);

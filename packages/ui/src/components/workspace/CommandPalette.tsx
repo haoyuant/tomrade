@@ -8,6 +8,9 @@ import { Kbd, StatusMark } from "~/components/ui/atoms";
 import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCommands, useRunCommand } from "~/lib/queries";
+import { useFilesTree } from "~/lib/files";
+import { notesSearch, useNotesEnabled } from "~/lib/notes";
+import { useNoteActions } from "~/components/files/useNoteActions";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
@@ -39,6 +42,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const commands = useCommands();
   const runCommand = useRunCommand(ws.project.id);
   const [search, setSearch] = useState("");
+  const tree = useFilesTree(ws.project.id);
+  const notesOn = useNotesEnabled();
+  const noteActions = useNoteActions();
+  const files = (tree.data ?? []).filter((e) => e.kind === "file");
   useEffect(() => {
     if (!open) setSearch("");
   }, [open]);
@@ -62,6 +69,8 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
 
   const actionRows = [
     { label: t("commandPalette.newIssue"), kb: "⌘N", run: actions.newIssue },
+    { label: t("notes.newNote"), kb: undefined, run: () => void noteActions.createNote("") },
+    ...(notesOn ? [{ label: t("notes.today"), kb: undefined, run: () => void noteActions.openToday() }, { label: t("notes.search"), kb: "⇧⌘F", run: () => notesSearch.open() }] : []),
     { label: t("commandPalette.newView"), kb: undefined, run: actions.newView },
     ...(ws.dirty ? [{ label: t("commandPalette.saveView"), kb: undefined, run: ws.saveView }, { label: t("commandPalette.discardChanges"), kb: undefined, run: ws.discardChanges }] : []),
     { label: t("commandPalette.toggleAssistant"), kb: "⌘J", run: actions.toggleAssistant },
@@ -101,7 +110,16 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
               onValueChange={setSearch}
             />
             <Command.List className="palette-list">
-              <Command.Empty className="palette-empty">{t("commandPalette.noMatches", { query: search })}</Command.Empty>
+              <Command.Empty>
+                <div className="palette-empty">{t("commandPalette.noMatches", { query: search })}</div>
+                {/* Nothing is called that — it may still be written somewhere. */}
+                {notesOn && search.trim() && (
+                  <button type="button" className="btn btn-ghost palette-search-notes" onClick={() => run(() => notesSearch.open(search.trim()))}>
+                    <Icon name="i-search" size={13} />
+                    {t("notes.paletteSearch", { query: search.trim() })}
+                  </button>
+                )}
+              </Command.Empty>
 
               <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
                 {ws.views.map((view) => (
@@ -140,6 +158,18 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   </Command.Item>
                 ))}
               </Command.Group>
+
+              {files.length > 0 && (
+                <Command.Group heading={t("notes.paletteFiles")} className="eyebrow palette-group">
+                  {files.slice(0, 400).map((file) => (
+                    <Command.Item key={file.path} value={`file ${file.path}`} keywords={[file.name]} className="palette-row" data-file={file.path} onSelect={() => run(() => ws.openFile(file.path))}>
+                      <Icon name="i-file" size={14} style={{ color: "var(--meta)" }} />
+                      <span className="p-label">{file.name}</span>
+                      <span className="card-id">{file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : ""}</span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
 
               <Command.Group heading={t("commandPalette.actionsGroup")} className="eyebrow palette-group">
                 {actionRows.map((action) => (
