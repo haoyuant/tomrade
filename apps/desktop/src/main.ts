@@ -6,6 +6,7 @@ import type {} from "@tomradex/agent";
 import type {} from "@tomradex/storage";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
+import { adoptShellEnv } from "./shell-env.js";
 import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
 
@@ -25,6 +26,9 @@ app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
+
+  // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
+  await adoptShellEnv();
 
   const userData = app.getPath("userData");
   // A separate checkout keeps its own projects and extensions, as it keeps its own database.
