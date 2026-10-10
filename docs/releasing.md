@@ -33,6 +33,14 @@ gh secret set APPLE_API_KEY_ID -R $R --body XXXXXXXXXX
 gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
+## Publishing: the website follows
+
+Publishing the draft (not as a prerelease) runs `.github/workflows/website.yml`. It starts the Deploy workflow in haoyuant/tomrade-site with the tag, which copies the installers to download.tomrade.com, points `latest.json` at them, and redeploys tomrade.com so its download buttons name the new version. Watch it at haoyuant/tomrade-site → Actions → Deploy; a failure is emailed to whoever owns the token. A re-run there, or Run workflow with the tag, repeats it.
+
+Publish by hand: a release published with `GITHUB_TOKEN` doesn't start other workflows. Marking a prerelease as a full release later starts it too.
+
+It needs one secret here, `SITE_DISPATCH_TOKEN`: a fine-grained GitHub token for haoyuant/tomrade-site with Actions: Read and write. The site repository's own secrets are listed in its README.
+
 ## macOS: signing and notarizing
 
 A build without a Developer ID certificate is unsigned, and macOS warns whoever opens it. The config never signs with any other certificate. Without `identity: Developer ID Application`, electron-builder would take an Apple Development certificate from the keychain instead, and that signature is only for this machine.
