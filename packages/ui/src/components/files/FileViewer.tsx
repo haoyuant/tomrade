@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileContent } from "@tomradex/files";
 import { Spacer } from "~/components/ui/atoms";
 import { formatSize } from "~/lib/files";
@@ -11,6 +11,8 @@ export interface NoteLinking {
   resolve: LinkResolver;
   open: (target: string, kind: "wiki" | "markdown") => void;
   tag: (tag: string) => void;
+  /** A picture of the store as something an <img> can show, or null. */
+  image: (path: string) => Promise<string | null>;
 }
 
 /** Its network is images and styles only; scripts run inside the sandboxed, origin-isolated frame, same policy as AgentMedia. */
@@ -18,9 +20,38 @@ const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'no
 
 const framed = (html: string): string => (/<head[\s>]/i.test(html) ? html.replace(/<head([^>]*)>/i, `<head$1>${CSP}`) : `${CSP}${html}`);
 
+/** The pictures the HTML wants that are not drawn yet, and the HTML with the ones that are. */
+function withImages(html: string, images: Record<string, string>): { html: string; wanted: string[] } {
+  if (!html.includes("data-file=")) return { html, wanted: [] };
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  const wanted = new Set<string>();
+  for (const img of tpl.content.querySelectorAll<HTMLImageElement>("img[data-file]")) {
+    const src = images[img.dataset.file!];
+    if (src) img.src = src;
+    else wanted.add(img.dataset.file!);
+  }
+  return { html: tpl.innerHTML, wanted: [...wanted] };
+}
+
 function Markdown({ text, linking }: { text: string; linking?: NoteLinking }) {
   // Inline HTML in the markdown goes through the same sanitizer as the rendered tree.
-  const html = useMemo(() => renderMarkdown(text, linking?.resolve), [text, linking?.resolve]);
+  const base = useMemo(() => renderMarkdown(text, linking?.resolve), [text, linking?.resolve]);
+  const [images, setImages] = useState<Record<string, string>>({});
+  const { html, wanted } = useMemo(() => withImages(base, images), [base, images]);
+  const image = useRef(linking?.image);
+  image.current = linking?.image;
+  useEffect(() => {
+    let live = true;
+    for (const path of wanted) {
+      void image.current?.(path).then((src) => {
+        if (live && src) setImages((prev) => ({ ...prev, [path]: src }));
+      });
+    }
+    return () => {
+      live = false;
+    };
+  }, [wanted.join("\n")]);
   return (
     <article
       className="md-view body-prose"

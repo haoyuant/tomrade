@@ -48,6 +48,9 @@ const run = async () => {
   await ctx.files.write(id, "docs/checklist.md", "# Checklist\n\n- QA on staging #launch\n");
   await ctx.files.write(id, "meetings/kickoff.md", "# Kickoff\n\nWe agreed the checklist stays short.\n");
   await ctx.files.write(id, "readme.txt", "plain text about the launch\n");
+  const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  await ctx.files.write(id, "img/pixel.png", pixel);
+  await ctx.files.write(id, "docs/pictures.md", "# Pictures\n\n![[pixel.png]]\n\n![a pixel](../img/pixel.png)\n");
 
   const win = new BrowserWindow({ width: 1560, height: 940, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   win.webContents.on("console-message", (event) => {
@@ -107,6 +110,11 @@ const run = async () => {
   check("a tag renders as a chip", (await $(`document.querySelector('.md-view a.hashtag')?.dataset.tag`)) === "launch");
   await shot("notes-01-read");
 
+  await openFile("docs/pictures.md");
+  await wait(() => $(`[...document.querySelectorAll('.md-view img.note-image')].filter((i) => i.src.startsWith('data:image/png')).length === 2`), "pictures");
+  check("a picture of the store shows in a note, embedded or linked relatively", (await $(`[...document.querySelectorAll('.md-view img.note-image')].filter((i) => i.src.startsWith('data:image/png')).length`)) === 2);
+  await openFile("docs/plan.md");
+  await wait(() => has(".md-view a.wikilink"), "plan again");
   await click('.md-view a.wikilink:not(.is-unresolved)');
   await wait(() => has('[data-testid="files-region"][data-path="docs/checklist.md"]'), "followed link");
   check("clicking a wiki link opens the note it names", await has('[data-testid="files-region"][data-path="docs/checklist.md"]'));

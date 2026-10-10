@@ -50,7 +50,6 @@ export function NotesSearch() {
     setQuery(state.query);
     input.current?.focus();
     input.current?.select();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus]);
   useEffect(() => {
     const timer = setTimeout(() => {

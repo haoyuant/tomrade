@@ -14,7 +14,7 @@ two prototype files disagree, `design/workspace-board.html` wins — see
 |---|---|
 | Tokens, base, every component class | `packages/ui/src/styles/app.css` |
 | Tailwind + shadcn token aliases | same file, the two `@theme` blocks |
-| Icon sprite (44 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
+| Icon sprite (63 symbols, inline SVG) | `packages/ui/src/components/icons.tsx` |
 | Domain vocabulary: statuses, priorities, grouping, the live query | `packages/ui/src/lib/domain.ts` |
 | Primitives on Radix, styled by the design's classes | `packages/ui/src/components/ui/` |
 | Theme resolution and the crossfade | `packages/ui/src/lib/theme.tsx` |
@@ -67,11 +67,15 @@ own gear on the projects grid, and nowhere in the sidebar.
 **A file is a place, like a view.** The Files tree is the sidebar's first
 group: folders fold (the chevron), a row opens `f/$path` and takes the board's
 place with the same head geometry, and no view reads as current while a file
-is open. The screen never edits — it renders markdown through a sanitizer, HTML
-in a frame with an empty `sandbox`, everything else as text or a picture — and
-a version is immutable: a ticket's artifact opens the version it pinned and
-says so in a banner. A file changed on two machines is a decision, drawn with
-both sides whole, never a silent winner.
+is open. Reading renders markdown through a sanitizer — wiki links and tags as
+the app's own links, a link to nothing marked as one — HTML in a frame with an
+empty `sandbox`, everything else as text or a picture. Writing is the latest
+version of a text file only, behind a Read/Edit switch the machine remembers:
+every save is a version guarded by the hash it was read at, so a save that
+would land over somebody else's stops and offers Keep mine, Take theirs or
+Keep both. A version is immutable: a ticket's artifact opens the version it
+pinned and says so in a banner. A file changed on two machines is a decision,
+drawn with both sides whole, never a silent winner.
 
 **Both side panes fold to the same 48px rail, and remember it.** `⌘B` for the
 sidebar, `⌘J` for the assistant, each persisted per machine (`usePanelOpen`). A
@@ -172,6 +176,9 @@ on the field write, so a refused move leaves no rank behind.
 | `⌘J` | Toggle the assistant panel |
 | `⌘B` | Toggle the sidebar |
 | `⌘,` | Settings |
+| `⌘E` | On a text file, switch between reading and editing |
+| `⌘S` | In the editor, save now (a pause and leaving the file save too) |
+| `⇧⌘F` | Search the project's notes, in the sidebar |
 | `⌘Z` | Undo the last write, agent or human — a permanent delete is not a write it can reach |
 | `Enter` / `Space` | Open the focused card |
 | `←` / `→` | Move the focused card one column |
@@ -225,6 +232,14 @@ agent index: a crossed-out eye on the exception alone, the two settings side by
 side above a folder, a withheld path leaving the index while it still reads by
 path, and the preview in Sharing that shows the person the very text an agent
 receives — 101 checks.
+`test:notes` (`scripts/notes-check.mjs`) drives writing in place: links and tags
+in the reading view, pictures of the store inside a note, backlinks and turning
+an unlinked mention into a link, a dangling link that starts its note, typing
+that saves on a pause, `[[` completion, ⌘S, ⌘Z staying inside the editor, an
+outside save shown at once and one that clashes with unsaved edits, a rename
+that rewrites the links to it, the sidebar search and a tag clicked into it,
+⇧⌘F, Today's note, New note, the palette as a quick switcher and its offer to
+search the notes, ⌘E, and the editor in the dark — 38 checks.
 `test:plugins-ui` (`scripts/plugins-ui-check.mjs`) drives the Plugins pane: a
 store package and a local one with their tiers, risk and reach, an agent's
 build that loads only from the review dialog, My plugins and a new plugin from

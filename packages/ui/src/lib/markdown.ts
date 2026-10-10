@@ -6,6 +6,8 @@ export type LinkResolver = (target: string, kind: "wiki" | "markdown") => string
 
 const escape = (text: string): string => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+
 interface WikiToken extends Tokens.Generic {
   type: "wikiLink";
   embed: boolean;
@@ -40,6 +42,8 @@ function extensions(resolve: LinkResolver | undefined): TokenizerAndRendererExte
     renderer(token) {
       const t = token as WikiToken;
       const resolved = t.target ? (resolve?.(t.target, "wiki") ?? null) : "self";
+      // A picture embedded from the store is drawn; its bytes are filled in by the viewer.
+      if (t.embed && resolved && IMAGE.test(resolved)) return `<img class="note-image" data-file="${escape(resolved)}" alt="${escape(t.alias || t.target)}">`;
       const label = t.alias || (t.anchor ? `${t.target || ""}${t.target ? " › " : ""}${t.anchor}` : t.target);
       const cls = `wikilink${resolved ? "" : " is-unresolved"}${t.embed ? " is-embed" : ""}`;
       return `<a href="#" class="${cls}" data-target="${escape(t.target)}" data-anchor="${escape(t.anchor)}">${escape(label)}</a>`;
@@ -74,16 +78,20 @@ export function renderMarkdown(text: string, resolve?: LinkResolver): string {
   const marked = new Marked({ extensions: extensions(resolve), async: false });
   const html = marked.parse(text, { async: false }) as string;
   // A relative markdown link is a note of this store; mark the ones that lead nowhere.
+  const decode = (href: string) => {
+    try {
+      return decodeURI(href);
+    } catch {
+      return href;
+    }
+  };
   const linked = resolve
-    ? html.replace(/<a href="([^"#:][^":]*?)(#[^"]*)?"/g, (whole, href: string) => {
-        let target = href;
-        try {
-          target = decodeURI(href);
-        } catch {
-          // as written
-        }
-        return resolve(target, "markdown") ? whole : `${whole} class="is-unresolved"`;
-      })
+    ? html
+        .replace(/<a href="([^"#:][^":]*?)(#[^"]*)?"/g, (whole, href: string) => (resolve(decode(href), "markdown") ? whole : `${whole} class="is-unresolved"`))
+        .replace(/<img src="([^":]+?)"/g, (whole, src: string) => {
+          const file = resolve(decode(src), "markdown");
+          return file ? `<img class="note-image" data-file="${escape(file)}"` : whole;
+        })
     : html;
   return DOMPurify.sanitize(linked, { USE_PROFILES: { html: true }, FORBID_TAGS: ["style", "form", "input", "button"] });
 }

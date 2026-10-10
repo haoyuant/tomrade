@@ -257,7 +257,6 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
       view.current = null;
     };
     // One editor per file; the parent keys it by path.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Links that start or stop resolving as files come and go.

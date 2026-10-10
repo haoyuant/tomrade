@@ -910,7 +910,10 @@ is the git-backed store every remote backend builds on; a backend that keeps
 files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 `readVersion`, `resolveVersion`, `locate`, `history`, `write`, `mkdir`, `move`,
 `remove`, `settle`, `status`, `sync`, `conflicts`, `resolve`, and — to be
-undoable — `head` and `restore`). `agentPolicy`, `setAgentRules` and `search`
+undoable — `head` and `restore`; `writeMany` to save several files as one
+version). Its `read` should give each `FileContent` a `hash` (sha-256 of the
+whole file) and its `write` should honour `expect`: without them an editor's
+save lands over whatever is there. `agentPolicy`, `setAgentRules` and `search`
 are optional too: a backend without them lists everything and cannot search.
 `@tomradex/files-github` registers `github`, sharing the `github` token section
 with `@tomradex/storage-github`.
@@ -924,6 +927,18 @@ the code lives in the workstream's `repoPath` of its repository, the documents
 about it in `<workstream>/` of the project's Files. It is a default and a name,
 not a binding — renaming a workstream starts a new folder and moves nothing,
 and any explicit path is honoured as given.
+
+A write can be guarded. `expect` is the `hash` the writer last read — `null`
+for "this name must be free" — and a file that no longer has it is left alone:
+`write` throws `FileChangedError`, and `ctx.files.save(projectId, path, body,
+{ expect })` (the renderer's `files.save`) answers `{ ok: false, current }`
+with what is there now instead of throwing. That is the editor's save, so an
+agent's `write_file`, a sync merging a teammate's change or an edit in Finder
+between reading and saving becomes a question for the person, never a silent
+loss. `writeMany(projectId, entries, { message })` saves several files as one
+version and one step of ⌘Z, checking every `expect` before any byte lands. A
+move through the service emits `files/moved(projectId, from, to)` and awaits
+its listeners, which is how link updates ride along with a rename.
 
 Sync never forces. A save is pushed a few seconds after it lands, outside edits
 are saved as versions when they settle, and every open project is fetched,
@@ -970,7 +985,9 @@ being no reason to stop an exchange.
 | `ctx.files.tree(projectId)` / `list(projectId, dir)` / `read(projectId, path)` | The entries and a working copy, with each file's stable id and last version |
 | `ctx.files.readVersion(projectId, { fileId, versionId })` | An immutable version, or null |
 | `ctx.files.search(projectId, input)` | Literal or regular-expression hits over the working copy, several queries at once; unlisted paths are withheld unless the caller named one |
-| `ctx.files.write(projectId, path, body, { message })` | A new version, returned with its `fileId` and `versionId` |
+| `ctx.files.write(projectId, path, body, { message, expect })` | A new version, returned with its `fileId` and `versionId`; `FileChangedError` when `expect` no longer holds |
+| `ctx.files.save(projectId, path, body, { expect, message })` | The same, answering `{ ok: true, content }` or `{ ok: false, current }` |
+| `ctx.files.writeMany(projectId, entries, { message })` | Several files as one version and one history record, or none of them |
 | `ctx.files.mkdir` / `move` / `copy` / `remove(projectId, …)` | Each returns the history record it made (`files:<seq>`, for `oplog.revert`) or null when nothing changed; all undoable through `oplog.undo` |
 | `ctx.files.sync(projectId)` / `conflicts(projectId)` / `resolve(projectId, path, choice)` | Save, take theirs, push; what waits; settle one |
 | `ctx.files.agentPolicy(projectId)` / `setAgentRules(projectId, paths, mode)` | What the index and the browsing tools mention unasked: `listed`, `unlisted`, `inherit` |
@@ -982,11 +999,60 @@ being no reason to stop an exchange.
 Agent tools: `list_files`, `search_files`, `read_file`, `write_file` and
 `manage_file`, which moves, copies or deletes in one call; `write_file` returns
 the pair `add_delivery_resource` takes. Events: `files/registered`,
-`files/unregistered`, `files/changed`, `files/synced`; the renderer hears
-`files.changed(projectId)`. The renderer draws the tree above the views in the
-sidebar, the viewer (markdown rendered and sanitized, HTML in a sandboxed
-frame, text, images) with its version rail, the conflict panel, and the
-Sharing block in project settings; there is no editor yet.
+`files/unregistered`, `files/changed`, `files/synced`, `files/moved`; the
+renderer hears `files.changed(projectId)`. The renderer draws the tree above
+the views in the sidebar, the viewer (markdown rendered and sanitized, HTML in
+a sandboxed frame, text, images) with its version rail, the conflict panel, the
+Sharing block in project settings, and — for any text file of the latest
+version — a Read/Edit switch (⌘E) over a CodeMirror editor that saves on a
+pause, on leaving and on ⌘S, each save a guarded version.
+
+## Notes
+
+`@tomradex/notes` (`ctx.notes`, module `notes`) reads a project's files as
+notes, the way Obsidian reads a vault: it never owns a file, and switching it
+off leaves Files exactly as it was. What it adds is an index in the project's
+cache — derived, never exported, rebuilt from the files on any machine — caught
+up a moment after every `files/changed` and before every query:
+
+- **Links.** `[[Note]]`, `[[folder/Note#Heading|alias]]`, `![[picture.png]]`
+  and markdown links to files of the store. A wiki link resolves the way
+  Obsidian's does: a path from the linking note's folder, then the whole path,
+  then a path suffix — the bare name being the usual one — ties going to the
+  linking note's folder, then the shallowest path; no extension means a note.
+  `@tomradex/notes/syntax` is that parser and resolver as a pure module, which
+  the renderer imports, so the editor, the preview and the index agree.
+- **Tags.** `#tag` and `#nested/tag` in prose (never in code, headings or
+  link text), and `tags:` in front matter.
+- **Search.** A trigram FTS5 table over title, path and text, ranked by BM25
+  with the title weighing most; words in any order, `"quoted phrases"`,
+  `#tag`, `path:folder`. Words under three characters — two-character Chinese
+  words among them — go through `instr`, as items search does.
+- **Moves.** When `files/moved` fires and the `notes` setting `updateLinks` is
+  on (the default), every note whose link resolved to a moved file — and every
+  moved note whose own relative links would now miss — is rewritten in one
+  `writeMany`, judged against the files as they were before the move. A link
+  that still resolves is left as written.
+
+| Call | Does |
+|---|---|
+| `ctx.notes.search(projectId, { query, limit, folder, listedOnly })` | Ranked hits: path, title, the line that holds most of the words with their offsets marked, tags |
+| `ctx.notes.links(projectId, path)` | `outgoing` (each resolved, or null), `backlinks` (source, line, the line's text), `unlinked` (notes naming it without a link) |
+| `ctx.notes.tags(projectId)` | Every tag with how many notes carry it |
+| `ctx.notes.resolve(projectId, target, from)` | The file a link written in `from` means |
+| `ctx.notes.retarget(projectId, from, to)` | The move rewrite, by hand |
+| `ctx.notes.journal(projectId, "YYYY-MM-DD")` | The day's note under the `journalFolder` setting, made from its date when absent |
+
+Agents get `search_notes` (ranked, a line per hit) and `note_links`; both
+follow the agent index, so an unlisted note stays out of a search that names
+no folder and still answers when named. `search_files` remains the exact-line
+and regular-expression search. Channels are `notes.search`, `notes.links`,
+`notes.tags`, `notes.resolve`, `notes.journal`; the broadcast
+`notes.changed(projectId)` says the index caught up. The renderer draws
+backlinks and unlinked mentions under a note (Link turns a mention into one),
+the search pane in the sidebar (⇧⌘F, or a tag clicked in a note), New note and
+Today's note in the add menus, and offers the notes from the palette when no
+name matches.
 
 ## Settings
 

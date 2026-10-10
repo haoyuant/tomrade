@@ -453,8 +453,10 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
   };
   useEffect(() => {
     if (!editable) return;
+    // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours.
+    const mac = /Mac/i.test(navigator.platform);
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "e") {
+      if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         setMode(mode === "edit" ? "read" : "edit");
       }
