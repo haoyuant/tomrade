@@ -9,6 +9,7 @@ import { DeliveryStore } from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/write";
 import type { Item, Patch, UndoRunResult } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
@@ -27,6 +28,7 @@ import {
   type EngineView,
   type FocusRef,
   type GeneralExecution,
+  type OpenDependency,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
@@ -88,6 +90,8 @@ export interface GeneralStartOptions {
   surface?: "assistant" | "code";
   /** The engine is a CLI the user runs themselves: no engine plugin is checked and none is required. */
   external?: boolean;
+  /** Start although tickets this one waits on are still open; the agent is told which. */
+  allowBlocked?: boolean;
 }
 
 /** A General delivery ready to run: the thread is bound to the delivery and the playbook, nothing has been sent yet. */
@@ -271,6 +275,16 @@ export class Agent extends Service {
     for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId);
     this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId));
     this.ctx.settings.register(AGENT_SECTION);
+    // Closing a General ticket on the person's word is fine; closing one an agent worked on is that work's review.
+    this.ctx.on("write/pre-commit", (intent, next) => {
+      const before = intent.before as Item | null;
+      const after = intent.after as Item | null;
+      if (intent.entity === "item" && intent.op === "update" && intent.by !== "human" && after?.workType === "general" && after.status === "done" && before?.status !== "done") {
+        const active = new DeliveryStore(this.ctx.db).active(intent.projectId, intent.id);
+        if (active && this.store.threadsForItem(intent.projectId, intent.id).some((t) => t.execution?.deliveryId === active.id)) throw new Error("General deliveries require human acceptance");
+      }
+      return next();
+    });
     this.migrateConversationRole();
     this.registerPlatformTools();
     this.loadUserPlaybooks();
@@ -614,7 +628,8 @@ export class Agent extends Service {
     if (!item || item.kind !== "ticket" || item.workType !== "general") throw new Error("Choose a General ticket");
     if (item.humanLocked) throw new Error("Unlock the ticket before starting an agent");
     if (item.status === "done" || item.status === "cancelled") throw new Error("Reopen the ticket before starting another delivery");
-    if (item.blockedBy.some(id => { const blocker = items!.get(projectId, id); return blocker && blocker.status !== "done" && blocker.status !== "cancelled"; })) throw new Error("Complete this ticket's dependencies first");
+    const waitsOn = this.waitsOn(projectId, item);
+    if (waitsOn.length && !opts.allowBlocked) throw new Error(`${item.key} waits on ${waitsOn.map(d => d.key).join(", ")} — start anyway to work ahead of them`);
     const deliveries = new DeliveryStore(this.ctx.db);
     const active = deliveries.active(projectId, itemId);
     let thread = active ? this.store.threadsForItem(projectId, itemId).find(t => !t.archived && t.execution?.deliveryId === active.id) : undefined;
@@ -658,7 +673,7 @@ export class Agent extends Service {
     if (Object.keys(patch).length) items!.update(projectId, itemId, patch, "human");
     const where = await this.workdir(projectId, thread.id);
     if (!where.cwd) throw new Error(where.problem ?? "no working folder for this delivery");
-    const ticket = { key: item.key, title: item.title, body: item.body };
+    const ticket = { key: item.key, title: item.title, body: item.body, waitsOn };
     // A terminal agent gets no system prompt from Tomrade, so whatever an
     // in-app turn would be told has to travel in the brief itself.
     const context: { projectId: string; itemId: string; filesIndex?: string } = { projectId, itemId };
@@ -1001,7 +1016,16 @@ export class Agent extends Service {
     if (!thread.itemId) return undefined;
     const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
     const item = items?.get(thread.projectId, thread.itemId);
-    return item ? { id: item.id, key: item.key, title: item.title, branch: thread.branch, workType: item.workType, body: item.body } : undefined;
+    return item ? { id: item.id, key: item.key, title: item.title, branch: thread.branch, workType: item.workType, body: item.body, waitsOn: this.waitsOn(thread.projectId, item) } : undefined;
+  }
+
+  /** Open dependencies are the human's call at Start; once work is under way they are what the agent is told, not a reason to stop it. */
+  private waitsOn(projectId: string, item: Item): OpenDependency[] {
+    const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
+    return item.blockedBy.flatMap((id) => {
+      const dependency = items?.get(projectId, id);
+      return dependency && dependency.status !== "done" && dependency.status !== "cancelled" ? [{ key: dependency.key, title: dependency.title, status: dependency.status }] : [];
+    });
   }
 
   private async drive(rc: RunCtx, input: UserInput): Promise<void> {
@@ -1019,7 +1043,6 @@ export class Agent extends Service {
         const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
         const currentItem = items?.get(rc.projectId, rc.thread.itemId!);
         if (!currentItem || currentItem.humanLocked || currentItem.status === "done" || currentItem.status === "cancelled") throw new Error("The ticket is closed, missing, or human-locked");
-        if (currentItem.blockedBy.some(id => { const dependency = items?.get(rc.projectId, id); return dependency && dependency.status !== "done" && dependency.status !== "cancelled"; })) throw new Error("Complete this ticket's dependencies first");
         const active = new DeliveryStore(this.ctx.db).active(rc.projectId, rc.thread.itemId!);
         if (!ticket || ticket.workType !== "general" || active?.id !== rc.thread.execution.deliveryId) throw new Error("This thread no longer belongs to an active General delivery");
         if (!rc.engine.capabilities?.includes("general")) throw new Error("This engine cannot execute General work");

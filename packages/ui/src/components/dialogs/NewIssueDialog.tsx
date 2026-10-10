@@ -6,8 +6,16 @@ import { useI18n } from "~/lib/i18n";
 import { useCreateItem, useUndo } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
-import { usePlaybooks } from "~/lib/agent";
+import { ticketMethods, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
+
+/** Built-in methods keep their localized names; any other playbook shows its own title. */
+const BUILT_IN_METHODS: Record<string, "fields.manualTemplate" | "fields.documentTemplate" | "fields.designTemplate" | "fields.mediaTemplate"> = {
+  "task.assist": "fields.manualTemplate",
+  "document.write": "fields.documentTemplate",
+  "design.create": "fields.designTemplate",
+  "media.generate": "fields.mediaTemplate"
+};
 
 export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
@@ -21,13 +29,20 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const pinned = (fieldId: string): string[] =>
     ws.query.filter.filter((c) => c.field === fieldId && c.op === "in").flatMap((c) => c.values.filter((v): v is string | number => v !== null).map(String));
   const columnStatuses = (ws.query.columnBy ?? "status") === "status" ? (ws.columnKeys as ItemStatus[]) : STATUS_KEYS;
-  const defaults = () => ({
-    workType: (pinned("workType")[0] === "general" ? "general" : "coding") as WorkType,
-    boardId: pinned("board")[0] ?? ws.boards[0]?.id ?? "",
+  // Coding needs a repository to land in; on a workstream without one, a new ticket is general work.
+  const typeFor = (boardId: string): WorkType => (ws.boards.find((b) => b.id === boardId)?.repoId ? "coding" : "general");
+  const defaults = () => {
+    const boardId = pinned("board")[0] ?? ws.boards[0]?.id ?? "";
+    const pinnedType = pinned("workType")[0];
+    return {
+      workType: pinnedType === "general" || pinnedType === "coding" ? pinnedType : typeFor(boardId),
+      boardId,
     status: (pinned("status")[0] ?? (columnStatuses.includes("todo") ? "todo" : columnStatuses[0]) ?? "todo") as ItemStatus,
     priority: (pinned("priority").length ? Math.max(...pinned("priority").map(Number)) : 2) as Priority,
-    parentId: pinned("epic")[0] ?? ""
-  });
+      parentId: pinned("epic")[0] ?? ""
+    };
+  };
+  const methods = ticketMethods(playbooks.data, "general");
   const workstreams = ws.boards;
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -127,10 +142,8 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             const untouched = !body.trim() || (["fields.documentBrief", "fields.designBrief", "fields.mediaBrief", "fields.manualBrief"] as const).some(key => body === t(key));
             if (untouched) setBody(t(value === "document.write" ? "fields.documentBrief" : value === "design.create" ? "fields.designBrief" : value === "media.generate" ? "fields.mediaBrief" : "fields.manualBrief"));
           }}>
-            <option value="task.assist">{t("fields.manualTemplate")}</option>
-            <option value="document.write">{t("fields.documentTemplate")}</option>
-            <option value="design.create">{t("fields.designTemplate")}</option>
-            <option value="media.generate">{t("fields.mediaTemplate")}</option>
+            {methods.map((method) => <option key={method.id} value={method.id}>{BUILT_IN_METHODS[method.id] ? t(BUILT_IN_METHODS[method.id]) : method.title}</option>)}
+            {template && !methods.some((method) => method.id === template) && <option value={template}>{BUILT_IN_METHODS[template] ? t(BUILT_IN_METHODS[template]) : template}</option>}
           </select>
           {recommendation && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {playbooks.data?.find(p => p.id === recommendation.playbookId)?.title ?? recommendation.playbookId} — {recommendation.reason}{recommendation.requires.length ? ` (${t("fields.requiresCapability")}: ${recommendation.requires.join(", ")})` : ""}</p>}
         </div>}
@@ -178,7 +191,13 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <div className="grid-2">
           <div className="field">
             <label htmlFor="niBoard">{t("newIssueDialog.boardLabel")}</label>
-            <select id="niBoard" className="select" value={boardId} onChange={(e) => setBoardId(e.target.value)}>
+            <select id="niBoard" className="select" value={boardId} onChange={(e) => {
+              setBoardId(e.target.value);
+              if (workTypeTouched || recommendation) return;
+              const next = typeFor(e.target.value);
+              setWorkType(next);
+              if (!templateTouched) setTemplate(next === "general" ? "task.assist" : "");
+            }}>
               {workstreams.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}

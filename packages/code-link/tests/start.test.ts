@@ -98,7 +98,7 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
     row = bag.ctx.repos.create({ projectId: bag.project.id, remote: repo.remote });
     bag.boards.update(bag.project.id, bag.board.id, { repoId: row.id });
   }
-  const ticket = (title: string, status: "backlog" | "todo" | "doing" = "todo") => bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, status, by: "human" });
+  const ticket = (title: string, status: "backlog" | "todo" | "doing" = "todo") => bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, workType: "coding", status, by: "human" });
   return { ...bag, codeLink: bag.ctx.codeLink, agent: bag.ctx.agent, repo: row, checkout: repo?.checkout ?? null, hubDir, turns, ticket };
 }
 
@@ -241,6 +241,12 @@ describe("starting a ticket", () => {
     const blocker = ticket("Blocker");
     ctx.items.update(project.id, blocker.id, { blocks: [item.id] }, "human");
     expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "blocked", blockers: [blocker.key] });
+
+    // Waiting is the human's call: starting anyway works ahead, and the brief says what is still open.
+    const ahead = await codeLink.start(project.id, item.id, { mode: "run", allowBlocked: true });
+    expect(ahead).toMatchObject({ ok: true });
+    await untilRunsSettle(world.agent);
+    expect((world.turns.at(-1)!.messages[0]?.block as { text: string }).text).toContain(`Waits on (still open): ${blocker.key} Blocker (todo)`);
 
     ctx.items.update(project.id, item.id, { humanLocked: true }, "human");
     expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "locked" });

@@ -19,6 +19,10 @@ let win;
 const run = async () => {
 try {
   ({ ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]] }));
+  // A playbook of the user's own, the kind a non-coding project adds: it must be a method like the built-in ones.
+  const journal = path.join(work, "hub", "playbooks", "journal.daily");
+  fs.mkdirSync(journal, { recursive: true });
+  fs.writeFileSync(path.join(journal, "SKILL.md"), "---\nname: journal.daily\ntitle: Daily journal\ndescription: Write today's journal entry into Files\nworkTypes: [general]\n---\n\nWrite the entry under journal/, named by today's date.\n");
   ctx.hub.configure(path.join(work, "hub"));
   const project = ctx.projects.create({ name: "General work regression", keyPrefix: "GEN" });
   win = new BrowserWindow({ width: 1200, height: 900, show: false, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
@@ -37,8 +41,8 @@ try {
   const viewHash = await js("location.hash");
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, bubbles: true })); true`);
   await wait(() => has("#niWorkType"));
-  await value("#niWorkType", "general", "HTMLSelectElement", "change");
-  await wait(() => has("#niTemplate"));
+  assert("a workstream without a repository proposes General work", await js(`document.querySelector('#niWorkType').value === 'general' && !!document.querySelector('#niTemplate')`));
+  assert("the method list carries the user's own playbooks", await js(`[...document.querySelectorAll('#niTemplate option')].some(o => o.value === 'journal.daily' && o.textContent === 'Daily journal')`));
   await value("#niTemplate", "document.write", "HTMLSelectElement", "change");
   await sleep(100);
   assert("document template supplies a brief", await js(`document.querySelector('#niBody').value.length > 20`));
@@ -100,7 +104,17 @@ try {
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
   assert("Escape closes the Start dialog without starting", !(await has('[data-testid="start-dialog"]')) && current().status === "todo");
-  const coding = ctx.items.create({ projectId: project.id, boardId: item.boardId, title: "Wire the login form", status: "todo", by: "human" });
+  const feedback = ctx.items.create({ projectId: project.id, boardId: item.boardId, title: "Collect the workshop feedback", workType: "general", status: "todo", by: "human" });
+  ctx.items.update(project.id, feedback.id, { blocks: [item.id] }, "human");
+  await js(`location.hash = '#/p/${project.id}/i/${item.id}'; true`);
+  await wait(() => has('[data-testid="start-ticket"]'));
+  await click('[data-testid="start-ticket"]');
+  await wait(() => has('[data-testid="start-waits-on"]'));
+  assert("an open dependency is named before starting, and starting past it is explicit", await js(`document.querySelector('[data-testid="start-waits-on"]').textContent.includes(${JSON.stringify(feedback.key)}) && document.querySelector('[data-testid="start-confirm"]').textContent === 'Start anyway'`));
+  fs.writeFileSync(path.join(work, "start-dialog-waits-on.png"), (await win.webContents.capturePage()).toPNG());
+  await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
+  const coding = ctx.items.create({ projectId: project.id, boardId: item.boardId, title: "Wire the login form", workType: "coding", status: "todo", by: "human" });
   await js(`location.hash = '#/p/${project.id}/i/${coding.id}'; true`);
   await wait(() => has('.issue-wrap [data-testid="start-ticket"], .titlebar [data-testid="start-ticket"]'));
   await click('[data-testid="start-ticket"]');

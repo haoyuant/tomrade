@@ -412,21 +412,25 @@ ctx.agent.policy({
 
 ### General work, deliveries and the Files plugin
 
-Ticket `workType` defaults to `coding`; `general` needs no repository. Structural
+Ticket `workType` defaults to `coding` on a workstream with a repository and to
+`general` on one without; `general` needs no repository. Structural
 `kind` still distinguishes tickets and epics. `playbookId` is an optional default
 method, including `task.assist`, `document.write`, `design.create` and
 `media.generate`. The latter methods require provider capabilities: `@tomradex/files`
 advertises `files.read`, `files.write` and `document.preview`; media generation
 providers are intentionally not implemented in core.
 
-`agent.startGeneral(projectId, itemId, { engine?, playbook?, options? })` preflights the
-engine, ticket/dependencies and required capabilities. A run uses a temporary
+`agent.startGeneral(projectId, itemId, { engine?, playbook?, options?, allowBlocked? })` preflights the
+engine, ticket and required capabilities. A ticket that waits on open work is refused
+unless `allowBlocked` says the person chose to start anyway; the open dependencies
+then travel as `TurnInput.ticket.waitsOn` on every turn (`waitsOnLine` renders them)
+and never stop a run. A run uses a temporary
 execution directory, not durable artifact storage. `agent.prepareGeneral` does
 everything but send the first message — it binds the thread to the delivery and
 the playbook and returns the brief a CLI agent starts from — which is how
 `@tomradex/code-link` opens a General ticket in the user's own terminal. The
 ticket's Start button is one dialog for both work types: `codeLink.start(projectId,
-itemId, { mode: "run" | "terminal", engine?, playbook?, options?, permissionMode? })`
+itemId, { mode: "run" | "terminal", engine?, playbook?, options?, permissionMode?, allowBlocked? })`
 settles where the work runs, which agent, and the model/effort knobs; `options`
 are stored on the thread (`ThreadSummary.options`, `agent.setOptions`) and merged
 over the engine's settings for every turn, so two tickets can run on different

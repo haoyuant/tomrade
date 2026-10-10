@@ -3,11 +3,12 @@ import type { StartOptions } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
+import { ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
-import { invalidateWorkspace, useSettings } from "~/lib/queries";
+import { STATUS } from "~/lib/domain";
+import { invalidateWorkspace, useItems, useSettings } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
@@ -51,8 +52,6 @@ export function StartTicket(props: StartTicketProps) {
   );
 }
 
-const NOT_A_METHOD = ["backlog.", "code."];
-
 function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, onClose }: StartTicketProps & { onClose: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -65,7 +64,13 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const sessions = useCodeSessions(projectId, item.id);
   const deliveries = useCodeDeliveries(projectId, item.id);
   const threads = useAgentThreads(projectId);
+  const items = useItems(projectId);
   const start = useStartTicket(projectId);
+  // Dependencies inform the start rather than forbid it: the dialog names them, and starting past them is an explicit choice.
+  const waitsOn = useMemo(
+    () => item.blockedBy.flatMap((id) => items.data?.find((other) => other.id === id && other.status !== "done" && other.status !== "cancelled") ?? []),
+    [item.blockedBy, items.data]
+  );
 
   // What an earlier start on this delivery settled: its thread carries the engine, the knobs and the method.
   const active = deliveries.data?.find((delivery) => delivery.state === "active");
@@ -112,13 +117,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const permissionMode = permissionModes ? (chosenPermission ?? (thread?.engine === engineId ? thread?.permissionMode : null) ?? permissionModes.default) : undefined;
 
   // General work: the method, recommended by the assistant unless the delivery already has one; the user's pick always wins.
-  const methods = useMemo(
-    () =>
-      [...(playbooks.data ?? [])]
-        .filter((playbook) => !NOT_A_METHOD.some((prefix) => playbook.id.startsWith(prefix)))
-        .sort((a, b) => Number(!!b.workTypes?.includes("general")) - Number(!!a.workTypes?.includes("general"))),
-    [playbooks.data]
-  );
+  const methods = useMemo(() => ticketMethods(playbooks.data, "general"), [playbooks.data]);
   const [chosenPlaybook, setChosenPlaybook] = useState<string | null>(null);
   const [recommendation, setRecommendation] = useState<PlaybookRecommendation | null>(null);
   const [recommending, setRecommending] = useState(general);
@@ -149,12 +148,12 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const ready = engineId === "other" ? true : !!engine?.ok;
   const busy = start.isPending || takeover.isPending;
 
-  const submit = () => {
+  const submit = (allowBlocked = waitsOn.length > 0) => {
     setError(null);
     const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(pickValues)) if (value) options[key] = value;
     start.mutate(
-      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}) },
+      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}) },
       {
         onSuccess: (result) => {
           if (!result.ok) {
@@ -163,7 +162,9 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
                 ? { label: t("codeLink.gateOpenBootstrap", { key: result.bootstrapKey }), run: () => { onClose(); onOpenIssue(result.bootstrapKey!); } }
                 : (result.gate === "checkout" || result.gate === "workstream" || result.gate === "remote") && onOpenRepositories
                   ? { label: t("codeLink.gateRepositories"), run: () => { onClose(); onOpenRepositories(); } }
-                  : undefined;
+                  : result.gate === "blocked"
+                    ? { label: t("codeLink.startAnyway"), run: () => submit(true) }
+                    : undefined;
             setError({ message: result.message, action });
             return;
           }
@@ -271,6 +272,22 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
             </Field>
           )}
 
+          {waitsOn.length > 0 && (
+            <Field label={t("codeLink.waitsOnHead")}>
+              <ul className="stack-1" data-testid="start-waits-on" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                {waitsOn.map((other) => (
+                  <li key={other.id} className="meta-txt">
+                    {onOpenIssue
+                      ? <button type="button" className="btn btn-ghost num" style={{ padding: "0 4px" }} onClick={() => { onClose(); onOpenIssue(other.key); }}>{other.key}</button>
+                      : <span className="num">{other.key}</span>}
+                    {` ${other.title} · ${STATUS[other.status].label}`}
+                  </li>
+                ))}
+              </ul>
+              <p className="meta-txt">{t("codeLink.waitsOnHint")}</p>
+            </Field>
+          )}
+
           {error && (
             <p role="alert" className="meta-txt" style={{ color: "var(--danger)" }} data-testid="start-error">
               {error.message}
@@ -289,8 +306,8 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
         <DialogClose asChild>
           <button type="button" className="btn btn-secondary">{t("common.cancel")}</button>
         </DialogClose>
-        <button type="button" className="btn btn-primary" data-testid="start-confirm" disabled={busy || !engineId || !ready} onClick={submit}>
-          {start.isPending ? t("codeLink.starting") : t(continuing ? "codeLink.continueAction" : "codeLink.startAction")}
+        <button type="button" className="btn btn-primary" data-testid="start-confirm" disabled={busy || !engineId || !ready} onClick={() => submit()}>
+          {start.isPending ? t("codeLink.starting") : t(continuing ? "codeLink.continueAction" : waitsOn.length ? "codeLink.startAnyway" : "codeLink.startAction")}
         </button>
       </DialogFoot>
     </Dialog>
