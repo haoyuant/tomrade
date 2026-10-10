@@ -10,6 +10,8 @@ productName: Tomrade
 extraMetadata:
   productName: Tomrade
 copyright: Copyright © Tomrade
+# One pattern for every target, so each platform and arch gets its own name.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 directories:
   output: release
   buildResources: assets
@@ -44,11 +46,16 @@ mac:
   target:
     - target: dmg
     - target: zip
+dmg:
+  # Signed with the same Developer ID; CI then notarizes and staples it.
+  sign: true
 win:
   icon: assets/icon.png
   target: nsis
 linux:
   icon: assets/icon.png
+  # Otherwise derived from the package name, @tomrade/desktop.
+  executableName: tomrade
   target: AppImage
   category: Office
 nsis:
