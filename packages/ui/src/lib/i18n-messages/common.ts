@@ -24,7 +24,14 @@ export const common = {
     chooseButton: "Choose",
     choosing: "Choosing…",
     choose: "Choose…",
-    iconMenuTitle: "Icon"
+    iconMenuTitle: "Icon",
+    needNumber: "Enter a number.",
+    needWholeNumber: "Enter a whole number.",
+    numberBetween: "Enter a number from {{min}} to {{max}}.",
+    numberAtLeast: "Enter {{min}} or more.",
+    numberAtMost: "Enter {{max}} or less.",
+    notJson: "This is not valid JSON, so it was not saved.",
+    notSaved: "Not saved: {{reason}}"
   },
   zh: {
     cancel: "取消",
@@ -51,6 +58,13 @@ export const common = {
     chooseButton: "选择",
     choosing: "选择中…",
     choose: "选择…",
-    iconMenuTitle: "图标"
+    iconMenuTitle: "图标",
+    needNumber: "请输入数字。",
+    needWholeNumber: "请输入整数。",
+    numberBetween: "请输入 {{min}} 到 {{max}} 之间的数。",
+    numberAtLeast: "请输入不小于 {{min}} 的数。",
+    numberAtMost: "请输入不大于 {{max}} 的数。",
+    notJson: "这不是有效的 JSON，所以没有保存。",
+    notSaved: "没有保存：{{reason}}"
   }
 };

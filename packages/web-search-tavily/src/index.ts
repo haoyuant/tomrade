@@ -21,7 +21,17 @@ export const TAVILY_SECTION: SettingsSection<TavilySettings> = {
   }),
   defaults: { apiKey: "", searchDepth: "basic" },
   order: 17,
-  scope: "machine"
+  scope: "machine",
+  words: {
+    en: { fields: { searchDepth: { options: { basic: "Basic", advanced: "Advanced" } } } },
+    zh: {
+      description: "通过 Tavily 为助手提供网页搜索和网页阅读，使用你在 app.tavily.com 申请的 API key。一次搜索消耗 1 积分（高级深度为 2）；每读取 5 个网页消耗 1 积分。key 只保存在这台机器上，任何智能体都读不到。",
+      fields: {
+        apiKey: { description: "tvly-…；留空则使用环境变量 TAVILY_API_KEY" },
+        searchDepth: { title: "搜索深度", description: "高级：每条结果给出更相关的摘录，消耗的积分翻倍", options: { basic: "基础", advanced: "高级" } }
+      }
+    }
+  }
 };
 
 interface TavilySearch {

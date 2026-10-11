@@ -106,11 +106,18 @@ export const FILES_SECTION: SettingsSection<FilesSettings> = {
   title: "Files",
   description: "How much room the list of this project's files takes in an agent's prompt. Zero leaves agents to browse for themselves.",
   schema: z.object({
-    agentIndexTokens: z.number().int().min(0).max(20_000).default(1_500).meta({ title: "Index size in tokens" })
+    agentIndexTokens: z.number().int().min(0).max(20_000).default(1_500).meta({ title: "Room for the file list" }).describe("In tokens, the unit models count text in — roughly ¾ of an English word each. From 0 to 20,000.")
   }),
   defaults: { agentIndexTokens: 1_500 },
   order: 13,
-  agent: "write"
+  agent: "write",
+  words: {
+    zh: {
+      title: "文件",
+      description: "项目的文件清单在智能体提示词里占多大篇幅。设为 0 则让智能体自己去浏览。",
+      fields: { agentIndexTokens: { title: "文件清单的篇幅", description: "以 token 计——模型计算文字长度的单位，一个汉字大约 1 到 2 个 token。范围 0 到 20000。" } }
+    }
+  }
 };
 
 /** A folder, minus hidden names; a folder left empty gets a marker so git carries it. */

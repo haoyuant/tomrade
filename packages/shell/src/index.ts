@@ -29,7 +29,28 @@ export const SHELL_SECTION: SettingsSection<ShellSettings> = {
   order: 16,
   scope: "machine",
   // An agent must not be able to grant itself a shell that stops asking.
-  agent: "none"
+  agent: "none",
+  words: {
+    en: {
+      fields: {
+        approval: {
+          description: "Ask each time: every command waits for Allow once, Allow for this turn or Deny. Run without asking: commands just run. Off: the assistant has no shell.",
+          options: { ask: "Ask each time", auto: "Run without asking", off: "Off" }
+        }
+      }
+    },
+    zh: {
+      title: "Shell 命令",
+      description: "给助手用的 bash 工具。命令在对话所在工作流的检出目录里运行，没有的话就在项目的 Files 文件夹里运行；命令造成的改动不在运行的撤销范围内。Claude Code 和 Codex 用它们自己的 shell；这个工具不会提供给它们，也不会提供给其他任何 MCP 客户端。",
+      fields: {
+        approval: {
+          title: "命令",
+          description: "每次询问：每条命令都等你选择允许一次、本轮都允许或拒绝。不询问直接运行：命令直接执行。关闭：助手没有 shell。",
+          options: { ask: "每次询问", auto: "不询问直接运行", off: "关闭" }
+        }
+      }
+    }
+  }
 };
 
 /** The approval question and its answers, in the person's language; the answer is compared with the same words. */

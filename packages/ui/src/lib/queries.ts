@@ -85,7 +85,9 @@ export function invalidateProject(qc: QueryClient, projectId: string): void {
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => invoke("projects.list") });
 export const useSettings = () => useQuery({ queryKey: keys.settings, queryFn: () => invoke("settings.get") });
-export const useSettingsSections = () => useQuery({ queryKey: keys.settingsSections, queryFn: () => invoke("settings.sections") });
+/** The cards' words come back in the renderer's language, so a language switch fetches them again. */
+export const useSettingsSections = (locale?: "en" | "zh") =>
+  useQuery({ queryKey: [...keys.settingsSections, locale ?? ""], queryFn: () => invoke("settings.sections", locale) });
 /** The project's own MCP address when one is given; the unscoped server otherwise. */
 export const useMcpUrl = (projectId?: string) => useQuery({ queryKey: keys.mcp(projectId), queryFn: () => invoke("mcp.url", projectId), retry: false });
 /** Where this machine keeps its caches. Never the truth — every file there can be rebuilt. */

@@ -50,7 +50,21 @@ export const PET_SECTION: SettingsSection<PetSettings> = {
   defaults: { enabled: true, displayMode: "embedded", size: "medium", clickThrough: true, allWorkspaces: true },
   order: 20,
   scope: "machine",
-  agent: "write"
+  agent: "write",
+  words: {
+    en: { fields: { displayMode: { options: { embedded: "Embedded", desktop: "On the desktop" } }, size: { options: { small: "Small", medium: "Medium", large: "Large" } } } },
+    zh: {
+      title: "宠物",
+      description: "一只橘白相间的小伙伴，跟着助手的活动变换状态。想彻底卸载它，请在“管理插件”里停用这个插件。",
+      fields: {
+        enabled: { title: "启用", description: "插件加载时显示宠物。" },
+        displayMode: { title: "显示方式", description: "嵌在助手输入框上方，或者浮在独立的窗口里，可以拖到任何地方。", options: { embedded: "嵌入", desktop: "桌面" } },
+        size: { title: "桌面尺寸", options: { small: "小", medium: "中", large: "大" } },
+        clickThrough: { title: "透明处点击穿透", description: "点击透明像素会穿透到下面；拖动不透明的猫来移动它。" },
+        allWorkspaces: { title: "所有桌面", description: "切换虚拟桌面时，桌面宠物依然可见。" }
+      }
+    }
+  }
 };
 
 declare module "cordis" {

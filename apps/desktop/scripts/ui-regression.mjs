@@ -1446,6 +1446,34 @@ const run = async () => {
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
   check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Pet"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
+  check("theme automation is drawn once, on Appearance, and not again as a plugin pane", (await $(navLabels)).includes("Theme automation") === false);
+  const fieldLabels = `[...document.querySelectorAll('.dlg-body .field > label')].map(l => l.textContent)`;
+  await press(settingsNav("Code link"));
+  await sleep(500);
+  const codeLabels = await $(fieldLabels);
+  check("a plugin field without a title still reads as words, not its key", codeLabels.includes("Claude Code command") && !codeLabels.some((l) => /^[a-z]+[A-Z]/.test(l)), codeLabels);
+  check("and no field shows [object Object]", (await $(`[...document.querySelectorAll('.dlg-body input, .dlg-body textarea')].some(i => i.value.includes('[object Object]'))`)) === false);
+  // A value the schema refuses stays as typed with the reason under it, instead of springing back.
+  await press(settingsNav("Files"));
+  await sleep(500);
+  const budget = () => ctx.settings.get().files?.agentIndexTokens;
+  const budgetBefore = budget();
+  const leaveWith = (selector, text) =>
+    $(`(() => { const i = document.querySelector('${selector}'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); return true; })()`);
+  await leaveWith("#sf-files-agentIndexTokens", "25000");
+  await sleep(500);
+  check("an out-of-range number says what is allowed", (await $(`document.querySelector('.dlg-body .field-error')?.textContent ?? ''`)) === "Enter a number from 0 to 20000.");
+  check("and stays as typed, unsaved", (await $(`document.querySelector('#sf-files-agentIndexTokens').value`)) === "25000" && budget() === budgetBefore, budget());
+  await leaveWith("#sf-files-agentIndexTokens", "2500");
+  await sleep(700);
+  check("a value in range saves once the field is left, and the complaint goes", budget() === 2500 && (await $(`!document.querySelector('.dlg-body .field-error')`)) === true, budget());
+  // plugin cards come back in the person's language
+  const language = ctx.settings.get().language;
+  ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+  await sleep(900);
+  check("a plugin pane speaks Chinese when the app does", (await $(navLabels)).includes("宠物") && (await $(fieldLabels)).includes("文件清单的篇幅"), await $(fieldLabels));
+  ctx.settings.set({ ...ctx.settings.get(), language, files: { ...ctx.settings.get().files, agentIndexTokens: budgetBefore } });
+  await sleep(700);
   await press(settingsNav("Hub"));
   await sleep(700);
   const missing = ctx.storage.restores().entries;

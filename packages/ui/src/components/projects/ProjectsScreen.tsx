@@ -129,7 +129,7 @@ function ProjectsHome() {
   const toast = useToast();
   const projects = useProjects();
   // The onboarding plugin is what makes the sample; its settings section says it is loaded.
-  const sections = useSettingsSections();
+  const sections = useSettingsSections(locale);
   const { seen, markSeen } = useSeen();
   const sample = useMutation({
     mutationFn: () => invoke("onboarding.createSample", locale),

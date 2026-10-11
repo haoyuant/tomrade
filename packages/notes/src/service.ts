@@ -52,7 +52,14 @@ export const NOTES_SECTION: SettingsSection<NotesSettings> = {
   }),
   defaults: { updateLinks: true, journalFolder: "Journal" },
   order: 14,
-  agent: "write"
+  agent: "write",
+  words: {
+    zh: {
+      title: "笔记",
+      description: "项目笔记之间的链接，以及每天的日志放在哪里。",
+      fields: { updateLinks: { title: "笔记重命名或移动时更新链接" }, journalFolder: { title: "日志文件夹" } }
+    }
+  }
 };
 
 export interface Mention {
