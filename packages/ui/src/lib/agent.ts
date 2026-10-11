@@ -3,7 +3,7 @@ import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookIndexEntry,
 import type { WorkType } from "@tomradex/domain";
 import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
-import { useI18n } from "./i18n";
+import { useI18n, type MessageKey } from "./i18n";
 import { invalidateWorkspace, useSaveSettings, useSettings } from "./queries";
 import { useToast } from "./toast";
 import { useErrorToast } from "~/lib/toast";
@@ -38,10 +38,24 @@ export const useAgentThread = (projectId: string, threadId: string | null) =>
  * ones and whatever the user or the project adds. Backlog and code playbooks are
  * the assistant's own and the code-link's, never a ticket's method.
  */
+// A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket.
 export const ticketMethods = (playbooks: readonly PlaybookIndexEntry[] | undefined, workType: WorkType): PlaybookIndexEntry[] =>
   (playbooks ?? [])
-    .filter((playbook) => !playbook.id.startsWith("backlog.") && !playbook.id.startsWith("code.") && (!playbook.workTypes?.length || playbook.workTypes.includes(workType)))
+    .filter((playbook) => !playbook.id.startsWith("backlog.") && !playbook.id.startsWith("code.") && (playbook.workTypes?.length ? playbook.workTypes.includes(workType) : playbook.source !== "plugin"))
     .sort((a, b) => Number(!!b.workTypes?.includes(workType)) - Number(!!a.workTypes?.includes(workType)) || a.title.localeCompare(b.title));
+
+const BUILT_IN_METHODS: Record<string, [MessageKey, MessageKey]> = {
+  "task.assist": ["fields.manualTemplate", "playbooks.methodAssistWhen"],
+  "document.write": ["fields.documentTemplate", "playbooks.methodDocumentWhen"],
+  "design.create": ["fields.designTemplate", "playbooks.methodDesignWhen"],
+  "media.generate": ["fields.mediaTemplate", "playbooks.methodMediaWhen"]
+};
+
+/** A method's name and what it does: the person's language for the built-in ones, a playbook's own words for anything else. */
+export const methodWords = (t: (key: MessageKey) => string, id: string, entry?: Pick<PlaybookIndexEntry, "title" | "when" | "source">): { title: string; when: string } => {
+  const words = !entry || entry.source === "plugin" ? BUILT_IN_METHODS[id] : undefined;
+  return words ? { title: t(words[0]), when: t(words[1]) } : { title: entry?.title ?? id, when: entry?.when ?? "" };
+};
 
 export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
 

@@ -6,18 +6,11 @@ import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
-import { ticketMethods, usePlaybooks } from "~/lib/agent";
+import { methodWords, ticketMethods, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { useToastUndo } from "~/lib/undo";
 
 /** Built-in methods keep their localized names; any other playbook shows its own title. */
-const BUILT_IN_METHODS: Record<string, "fields.manualTemplate" | "fields.documentTemplate" | "fields.designTemplate" | "fields.mediaTemplate"> = {
-  "task.assist": "fields.manualTemplate",
-  "document.write": "fields.documentTemplate",
-  "design.create": "fields.designTemplate",
-  "media.generate": "fields.mediaTemplate"
-};
-
 export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
@@ -150,12 +143,12 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             const untouched = !body.trim() || (["fields.documentBrief", "fields.designBrief", "fields.mediaBrief", "fields.manualBrief"] as const).some(key => body === t(key));
             if (untouched) setBody(t(value === "document.write" ? "fields.documentBrief" : value === "design.create" ? "fields.designBrief" : value === "media.generate" ? "fields.mediaBrief" : "fields.manualBrief"));
           }}>
-            {methods.map((method) => <option key={method.id} value={method.id}>{BUILT_IN_METHODS[method.id] ? t(BUILT_IN_METHODS[method.id]) : method.title}</option>)}
-            {template && !methods.some((method) => method.id === template) && <option value={template}>{BUILT_IN_METHODS[template] ? t(BUILT_IN_METHODS[template]) : template}</option>}
+            {methods.map((method) => <option key={method.id} value={method.id}>{methodWords(t, method.id, method).title}</option>)}
+            {template && !methods.some((method) => method.id === template) && <option value={template}>{methodWords(t, template).title}</option>}
           </select>
-          {recommendation && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {playbooks.data?.find(p => p.id === recommendation.playbookId)?.title ?? recommendation.playbookId} — {recommendation.reason}{recommendation.requires.length ? ` (${t("fields.requiresCapability")}: ${recommendation.requires.join(", ")})` : ""}</p>}
+          {recommendation && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {recommendation.playbookId ? methodWords(t, recommendation.playbookId, playbooks.data?.find(p => p.id === recommendation.playbookId)).title : ""} — {recommendation.reason}{recommendation.requires.length ? ` (${t("fields.requiresCapability")}: ${recommendation.requires.join(", ")})` : ""}</p>}
         </div>}
-        {recommendation && workType === "coding" && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {playbooks.data?.find(p => p.id === recommendation.playbookId)?.title ?? recommendation.playbookId} — {recommendation.reason}</p>}
+        {recommendation && workType === "coding" && <p className="meta-txt" role="status">{t("fields.aiRecommendation")}: {recommendation.playbookId ? methodWords(t, recommendation.playbookId, playbooks.data?.find(p => p.id === recommendation.playbookId)).title : ""} — {recommendation.reason}</p>}
         <div className="field">
           <label htmlFor="niTitle">{t("newIssueDialog.titleFieldLabel")}</label>
           <input
