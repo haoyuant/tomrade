@@ -72,6 +72,8 @@
     "@tomradex/storage-git": "workspace:*",
     "@tomradex/storage-github": "workspace:*",
     "@tomradex/tools": "workspace:*",
+    "@tomradex/web-search": "workspace:*",
+    "@tomradex/web-search-tavily": "workspace:*",
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "electron-updater": "6.8.10",

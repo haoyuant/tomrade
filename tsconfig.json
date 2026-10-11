@@ -125,6 +125,12 @@
       "path": "./packages/tools"
     },
     {
+      "path": "./packages/web-search"
+    },
+    {
+      "path": "./packages/web-search-tavily"
+    },
+    {
       "path": "./packages/write"
     },
     {

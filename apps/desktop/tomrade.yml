@@ -74,6 +74,8 @@ modules:
     title: Notes
   - id: pet
     title: Pet
+  - id: webSearch
+    title: Web search
 
 # A contract is a registry plugins plug into, named by the call that does it;
 # its members are interchangeable, and the Plugins pane groups them by it.
@@ -91,6 +93,9 @@ contracts:
   - id: files
     title: File sharing
     registry: files.register
+  - id: webSearch
+    title: Web search
+    registry: webSearch.register
 
 plugins:
   - id: archify
@@ -172,6 +177,14 @@ plugins:
   # Not "shell": that row is the desktop's own OS integration below.
   - id: bash
     name: "@tomradex/shell"
+  # Web search and page reading as tools for every engine, answered by a
+  # provider below. Optional — without a provider the tools are not offered.
+  - id: web-search
+    name: "@tomradex/web-search"
+  # …Tavily as that provider, with the person's own API key (Settings → Tavily).
+  - id: web-search-tavily
+    name: "@tomradex/web-search-tavily"
+    implements: [webSearch]
   # The platform: threads, runs, the ledger, run-scoped undo, and the
   # engine/workflow/playbook/policy registries. It conducts nothing itself.
   - id: agent
