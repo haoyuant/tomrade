@@ -128,7 +128,7 @@ it("offers the connected account for credential failures, reprobes after switchi
   const state = await codeLink.useGithubCredential(project.id, repo!.id);
   expect(state).toMatchObject({ remote: "ok", remoteDetail: null });
   expect(state.remoteAt).toBeGreaterThan(0);
-  expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account" });
+  expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account", tomrade: true });
   expect(await codeLink.githubCredentialAccount(project.id, repo!.id)).toBeNull();
   const item = world.ticket("Use the connected account");
   codeLink.setRepoPolicy(project.id, repo!.id, { agentPush: false });
@@ -159,7 +159,7 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   const config = fs.readFileSync(path.join(local.checkout, ".git/config"), "utf8");
   expect(config).toContain(path.join(hubDir, "bin", "tomrade-credential"));
   expect(config).not.toContain(legacy);
-  expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account" });
+  expect(await codeLink.remoteIdentity(remote)).toEqual({ host: "github.com", login: "right-account", tomrade: true });
   connection.mockRestore();
 });
 

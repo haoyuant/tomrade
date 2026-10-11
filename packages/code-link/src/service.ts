@@ -430,7 +430,7 @@ export class CodeLink extends Service {
     if (!checkout || !fs.existsSync(checkout)) return { host: null, login: null };
     if (githubHttps(remote) && await usesTomradeCredential(this.git, checkout, this.ctx.settings.config.path)) {
       const account = await this.githubAccount();
-      return { host: "github.com", login: account?.replace(/^@/, "") ?? null };
+      return { host: "github.com", login: account?.replace(/^@/, "") ?? null, tomrade: true };
     }
     return readRemoteIdentity(this.git, checkout, remote);
   }

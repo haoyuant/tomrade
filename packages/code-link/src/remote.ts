@@ -6,6 +6,8 @@ export type RemoteFailure = "credentials" | "network" | "unknown";
 export interface RemoteIdentity {
   host: string | null;
   login: string | null;
+  /** The checkout asks Tomrade's own helper, so a missing login means Tomrade's account is not connected. */
+  tomrade?: boolean;
 }
 
 export interface RemoteProbe {
