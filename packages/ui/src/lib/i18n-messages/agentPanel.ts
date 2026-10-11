@@ -37,6 +37,11 @@ export const agentPanel = {
     whatChanged: "what changed",
 
     expandAssistant: "Expand assistant — ⌘J",
+    waitingBadge: "{{n}} waiting for you",
+    attention_permission: "Needs your approval",
+    attention_question: "Asking you something",
+    attention_waiting: "Waiting for you",
+    attention_stuck: "Stopped",
     expandAssistantAria: "Expand assistant panel",
     assistantLabel: "Assistant",
     dragToResize: "Drag to resize",
@@ -129,6 +134,11 @@ export const agentPanel = {
     whatChanged: "查看变更内容",
 
     expandAssistant: "展开助手 — ⌘J",
+    waitingBadge: "{{n}} 个在等你",
+    attention_permission: "需要你批准",
+    attention_question: "在问你问题",
+    attention_waiting: "在等你",
+    attention_stuck: "停下了",
     expandAssistantAria: "展开助手面板",
     assistantLabel: "助手",
     dragToResize: "拖动以调整宽度",

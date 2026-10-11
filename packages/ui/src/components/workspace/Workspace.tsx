@@ -290,7 +290,7 @@ export function Workspace() {
         )}
       </div>
 
-      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} />
+      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)} />
 
       <CommandPalette
         open={palette}

@@ -27,6 +27,7 @@
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
     "test:local-cli": "electron scripts/local-cli-check.mjs",
     "test:storage-race": "electron scripts/storage-race-check.mjs",
+    "test:attention": "electron scripts/attention-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "package": "node scripts/package.mjs"
   },

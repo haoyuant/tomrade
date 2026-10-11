@@ -265,6 +265,10 @@ plugins:
   # and installs only when the person says so. A checkout updates with git.
   - id: updater
     name: ./dist/updater.js
+  # Says when an agent waits on the person: a count on the Dock, a taskbar
+  # flash, and a notification while Tomrade is in the background.
+  - id: attention
+    name: ./dist/attention.js
   # Generic native host for feature-owned auxiliary windows. The host owns
   # Electron mechanics; a feature plugin owns whether its surface exists.
   - id: desktop-surfaces

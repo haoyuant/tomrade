@@ -1,0 +1,67 @@
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { invoke, subscribe } from "~/lib/api";
+
+/** One thing an agent is waiting on the person for — the desktop shell's attention row keeps the list. */
+export interface AttentionEntry {
+  key: string;
+  projectId: string;
+  threadId: string | null;
+  itemId: string | null;
+  itemKey: string | null;
+  kind: "permission" | "question" | "waiting" | "stuck";
+  who: string | null;
+  text: string | null;
+}
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    "attention.list": () => AttentionEntry[];
+  }
+  interface Broadcasts {
+    "attention.changed": (entries: AttentionEntry[]) => void;
+    "attention.open": (entry: AttentionEntry) => void;
+  }
+}
+
+const KEY = ["attention"] as const;
+
+/** Empty in a browser tab, or when the attention row is switched off. */
+export function useAttention(): AttentionEntry[] {
+  const qc = useQueryClient();
+  useEffect(() => subscribe("attention.changed", (entries) => qc.setQueryData(KEY, entries)), [qc]);
+  return useQuery({ queryKey: KEY, queryFn: () => invoke("attention.list").catch(() => []), staleTime: Infinity }).data ?? [];
+}
+
+// A clicked notification may name another project: it waits here until that project's shell mounts.
+let waiting: AttentionEntry | null = null;
+const listeners = new Set<() => void>();
+
+/** The entry a clicked notification asked to show, once, if it belongs to this project. */
+export function takeOpenRequest(projectId: string): AttentionEntry | null {
+  if (waiting?.projectId !== projectId) return null;
+  const entry = waiting;
+  waiting = null;
+  return entry;
+}
+
+export function onOpenRequest(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Mounted once at the root: a clicked notification brings up its project, whose shell then opens the conversation. */
+export function AttentionOpener() {
+  const navigate = useNavigate();
+  useEffect(
+    () =>
+      subscribe("attention.open", (entry) => {
+        waiting = entry;
+        if (!window.location.hash.startsWith(`#/p/${entry.projectId}`)) void navigate({ to: "/p/$projectId", params: { projectId: entry.projectId } });
+        for (const listener of listeners) listener();
+      }),
+    [navigate]
+  );
+  return null;
+}

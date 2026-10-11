@@ -1196,6 +1196,14 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 }
 .ai-rail { background: var(--surface); border-left: 1px solid var(--border); }
 .side-rail { background: var(--bg); border-right: 1px solid var(--border); }
+.rail-btn { position: relative; }
+.rail-badge {
+  position: absolute; top: -3px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--accent); color: var(--accent-on);
+  font-size: 10px; line-height: 16px; text-align: center; pointer-events: none;
+}
+.status-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.status-link:hover { color: var(--fg); }
 .rail-label {
   writing-mode: vertical-rl; font-size: var(--text-xs);
   letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--meta);

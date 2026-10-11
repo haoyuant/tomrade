@@ -44,6 +44,14 @@ export interface StatusItem {
   id: string;
   /** Null hides the item. */
   text(scope: { projectId?: string }): string | null | Promise<string | null>;
+  /** A renderer surface the item opens when clicked, by name ("code-inbox"); absent, the item is plain text. */
+  opens?: string;
+}
+
+export interface StatusItemView {
+  id: string;
+  text: string;
+  opens?: string;
 }
 
 export interface GraphEdge {
@@ -158,7 +166,7 @@ declare module "@tomradex/ipc" {
     "contributions.commands": () => CommandView[];
     "contributions.run": (id: string, scope: CommandScope) => CommandResult;
     "contributions.badges": (projectId: string) => Record<string, Badge[]>;
-    "contributions.statusItems": (scope: { projectId?: string }) => { id: string; text: string }[];
+    "contributions.statusItems": (scope: { projectId?: string }) => StatusItemView[];
     "contributions.sections": (projectId: string, itemId: string) => SectionView[];
     "contributions.graphs": () => GraphInfo[];
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
@@ -247,9 +255,9 @@ export class Contributions extends Service {
     return out;
   }
 
-  async statusItems(scope: { projectId?: string }): Promise<{ id: string; text: string }[]> {
-    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
-    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text }] : []));
+  async statusItems(scope: { projectId?: string }): Promise<StatusItemView[]> {
+    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
+    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}) }] : []));
   }
 
   graphs(): GraphInfo[] {

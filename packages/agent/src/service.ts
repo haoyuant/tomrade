@@ -122,6 +122,7 @@ export interface NewThreadOptions {
 
 /** Current in-memory work plus durable questions, for main-process observers that load mid-run. */
 export interface AgentActivity {
+  projectId: string;
   threadId: string;
   run: RunView | null;
   pending: PendingView | null;
@@ -443,6 +444,7 @@ export class Agent extends Service {
     for (const rc of this.activeByThread.values()) {
       const pending = this.store.pending(rc.projectId, rc.threadId);
       out.set(rc.threadId, {
+        projectId: rc.projectId,
         threadId: rc.threadId,
         run: this.store.run(rc.projectId, rc.run.id) ?? rc.run,
         pending: this.permissions.get(rc.threadId)?.pending ?? (pending ? this.pendingView(pending) : null)
@@ -452,7 +454,7 @@ export class Agent extends Service {
       for (const thread of this.store.threads(projectId)) {
         if (out.has(thread.id)) continue;
         const pending = this.store.pending(projectId, thread.id);
-        if (pending) out.set(thread.id, { threadId: thread.id, run: null, pending: this.pendingView(pending) });
+        if (pending) out.set(thread.id, { projectId, threadId: thread.id, run: null, pending: this.pendingView(pending) });
       }
     }
     return [...out.values()].sort((a, b) => a.threadId.localeCompare(b.threadId));
