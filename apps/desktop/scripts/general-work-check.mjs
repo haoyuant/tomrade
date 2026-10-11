@@ -25,6 +25,13 @@ try {
   fs.writeFileSync(path.join(journal, "SKILL.md"), "---\nname: journal.daily\ntitle: Daily journal\ndescription: Write today's journal entry into Files\nworkTypes: [general]\n---\n\nWrite the entry under journal/, named by today's date.\n");
   ctx.hub.configure(path.join(work, "hub"));
   const project = ctx.projects.create({ name: "General work regression", keyPrefix: "GEN" });
+  // A coding agent that starts with no approval and no sandbox, the way Codex does by default.
+  ctx.agent.engine({
+    id: "unboxed", title: "Unboxed", author: "ai:unboxed", capabilities: ["code"],
+    permissionModes: { default: "full-access", choices: [{ value: "full-access", label: "Full access" }, { value: "workspace", label: "Workspace" }] },
+    available: async () => ({ ok: true }),
+    async turn() { return { stop: "end" }; }
+  });
   win = new BrowserWindow({ width: 1200, height: 900, show: false, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   const errors = [];
   win.webContents.on("console-message", event => { if (event.level === "error") { errors.push(event.message); console.error(event.message); } });
@@ -91,6 +98,8 @@ try {
   assert("Start dialog offers where, agent and method", await js(`document.querySelectorAll('[data-testid="start-mode"] button').length === 2 && !!document.querySelector('#stEngine') && !!document.querySelector('#stMethod')`));
   await wait(() => js(`document.querySelector('[data-testid="start-recommendation"]').textContent.length > 0 && !document.querySelector('[data-testid="start-recommendation"]').textContent.includes('Asking')`));
   assert("the ticket's method is preselected, with the recommendation beside it", await js(`document.querySelector('#stMethod').value === 'document.write' && !document.querySelector('#stMethod').disabled && document.querySelector('[data-testid="start-recommendation"]').dataset.recommended === 'document.write'`));
+  assert("the method list holds methods for work, not the assistant's own playbooks", await js(`(() => { const ids = [...document.querySelectorAll('#stMethod option')].map(o => o.value); return ids.includes('journal.daily') && !ids.includes('app.guide') && !ids.some(id => id.startsWith('studio.')); })()`));
+  assert("the chosen method says what it does, in words, not its id", await js(`(() => { const o = document.querySelector('#stMethod option:checked'); const when = document.querySelector('[data-testid="start-method-when"]')?.textContent ?? ''; return o.textContent === 'Document' && when.startsWith('Writes or revises a document'); })()`));
   await value("#stMethod", "task.assist", "HTMLSelectElement", "change");
   await wait(() => has('[data-testid="start-use-recommendation"]'));
   assert("a human choice of method wins, and the recommendation is one click away", await js(`document.querySelector('#stMethod').value === 'task.assist'`));
@@ -120,6 +129,14 @@ try {
   await click('[data-testid="start-ticket"]');
   await wait(() => has('[data-testid="start-dialog"]'));
   assert("a coding ticket's Start dialog chooses where and which agent, with no method", await js(`document.querySelectorAll('[data-testid="start-mode"] button').length === 2 && !!document.querySelector('#stEngine') && !document.querySelector('#stMethod')`));
+  await value("#stEngine", "unboxed", "HTMLSelectElement", "change");
+  await wait(() => has("#stPermission"));
+  assert("each permission mode says what it lets the agent do", (await js(`document.querySelector('[data-testid="start-permission-hint"]')?.textContent ?? ''`)).startsWith("Never asks."));
+  assert("full access comes with a warning", (await js(`document.querySelector('[data-testid="start-full-access"]')?.textContent ?? ''`)).includes("nothing will be asked"));
+  fs.writeFileSync(path.join(work, "start-dialog-full-access.png"), (await win.webContents.capturePage()).toPNG());
+  await value("#stPermission", "workspace", "HTMLSelectElement", "change");
+  await wait(() => js(`!document.querySelector('[data-testid="start-full-access"]')`));
+  assert("a sandboxed mode explains itself and drops the warning", (await js(`document.querySelector('[data-testid="start-permission-hint"]')?.textContent ?? ''`)).includes("inside the ticket's working copy"));
   fs.writeFileSync(path.join(work, "start-dialog-coding.png"), (await win.webContents.capturePage()).toPNG());
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));

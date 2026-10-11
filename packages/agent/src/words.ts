@@ -10,7 +10,9 @@ const en = {
   stopped: "Stopped.",
   timeLimit: (ms: number) => `Stopped: the run reached its time limit (${ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`}).`,
   budget: "Stopped after its step budget for one turn — say “continue” to pick up from here.",
-  interrupted: "Interrupted — the app closed while this run was in progress."
+  interrupted: "Interrupted — the app closed while this run was in progress.",
+  recommendedByType: "Picked from the kind of work the ticket describes.",
+  reasonLanguage: "English"
 };
 
 export type AgentWords = typeof en;
@@ -24,7 +26,9 @@ const zh: AgentWords = {
   stopped: "已停止。",
   timeLimit: (ms: number) => `已停止：这次运行到了时间上限（${ms >= 60_000 ? `${Math.round(ms / 60_000)} 分钟` : `${Math.round(ms / 1000)} 秒`}）。`,
   budget: "这一轮的步数用完了，已停下——说“继续”就能接着做。",
-  interrupted: "已中断——这次运行进行中时应用关闭了。"
+  interrupted: "已中断——这次运行进行中时应用关闭了。",
+  recommendedByType: "根据工作项描述的工作类型选出。",
+  reasonLanguage: "Simplified Chinese"
 };
 
 export const AGENT_WORDS: Record<Locale, AgentWords> = { en, zh };

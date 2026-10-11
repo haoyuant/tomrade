@@ -3,7 +3,7 @@ import type { StartOptions } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
+import { methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
@@ -16,7 +16,7 @@ import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
-import { permissionLabel } from "~/lib/codeLink";
+import { isFullAccess, permissionHint, permissionLabel } from "~/lib/codeLink";
 
 interface StartTicketProps {
   projectId: string;
@@ -146,7 +146,8 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   // A method the delivery already runs, or the ticket already names, stays; the recommendation is one click away. A ticket with none takes it.
   const playbook = chosenPlaybook ?? thread?.execution?.playbook.id ?? item.playbookId ?? recommendation?.playbookId ?? "task.assist";
   const recommended = recommendation?.playbookId ?? null;
-  const recommendedTitle = recommended ? (methods.find((method) => method.id === recommended)?.title ?? recommended) : null;
+  const method = (id: string) => methodWords(t, id, methods.find((entry) => entry.id === id));
+  const recommendedTitle = recommended ? method(recommended).title : null;
 
   const [error, setError] = useState<{ message: string; action?: { label: string; run: () => void } } | null>(null);
   const takeover = useMutation({
@@ -272,21 +273,30 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
               <select id="stPermission" className="select" value={permissionMode} disabled={busy} onChange={(event) => setChosenPermission(event.target.value)}>
                 {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{permissionLabel(t, choice)}</option>)}
               </select>
+              {permissionHint(t, permissionMode) && <p className="meta-txt" data-testid="start-permission-hint">{permissionHint(t, permissionMode)}</p>}
+              {isFullAccess(permissionMode) && (
+                <p className="start-warning" role="note" data-testid="start-full-access">
+                  <Icon name="i-warn" size={13} />
+                  <span>{t("codeLink.fullAccessWarning")}</span>
+                </p>
+              )}
             </Field>
           )}
 
           {general && (
             <Field label={t("codeLink.methodHead")} htmlFor="stMethod">
               <select id="stMethod" className="select" value={playbook} disabled={busy} onChange={(event) => setChosenPlaybook(event.target.value)}>
-                {methods.map((method) => <option key={method.id} value={method.id}>{method.title}</option>)}
-                {!methods.some((method) => method.id === playbook) && <option value={playbook}>{playbook}</option>}
+                {methods.map((entry) => <option key={entry.id} value={entry.id}>{method(entry.id).title}</option>)}
+                {!methods.some((entry) => entry.id === playbook) && <option value={playbook}>{method(playbook).title}</option>}
               </select>
+              {method(playbook).when && <p className="meta-txt" data-testid="start-method-when">{method(playbook).when}</p>}
               <p className="meta-txt" data-testid="start-recommendation" data-recommended={recommended ?? undefined}>
                 {recommending
                   ? t("codeLink.recommending")
                   : recommended && recommendation
                     ? <>
-                        {`${t(recommendation.source === "llm" ? "codeLink.recommended" : "codeLink.recommendedFallback")} · ${recommendedTitle} — ${recommendation.reason}`}
+                        {/* a guess from the work type has no reason worth reading; the assistant's does */}
+                        {recommendation.source === "llm" ? `${t("codeLink.recommended")} · ${recommendedTitle} — ${recommendation.reason}` : `${t("codeLink.recommendedFallback")} · ${recommendedTitle}`}
                         {recommended !== playbook && <> <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} data-testid="start-use-recommendation" disabled={busy} onClick={() => setChosenPlaybook(recommended)}>{t("codeLink.useRecommendation")}</button></>}
                       </>
                     : ""}
@@ -327,8 +337,8 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
       </DialogBody>
       <DialogFoot>
         {general && (
-          <button type="button" className="btn btn-secondary" data-testid="start-takeover" disabled={busy} onClick={() => takeover.mutate()}>
-            {t("fields.humanTakeover")}
+          <button type="button" className="btn btn-secondary" data-testid="start-takeover" title={t("codeLink.takeoverHint")} disabled={busy} onClick={() => takeover.mutate()}>
+            {t("codeLink.takeover")}
           </button>
         )}
         <span className="spacer" />

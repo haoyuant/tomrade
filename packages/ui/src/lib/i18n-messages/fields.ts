@@ -1,6 +1,5 @@
 export const fields = {
   en: {
-    humanTakeover: "Take over",
     takeoverReady: "Agent execution has stopped. You can continue this delivery manually.",
     takeoverNoRun: "No agent execution is active. You can continue this delivery manually.",
     taskTemplate: "Template",
@@ -107,7 +106,6 @@ export const fields = {
     missingOption: "(removed option)"
   },
   zh: {
-    humanTakeover: "人工接手",
     takeoverReady: "智能体已停止，可以继续人工处理这次交付。",
     takeoverNoRun: "现在没有运行中的智能体，可以继续人工处理这次交付。",
     taskTemplate: "任务模板",

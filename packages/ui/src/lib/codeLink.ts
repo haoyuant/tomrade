@@ -117,3 +117,23 @@ const PERMISSION_LABELS: Record<string, MessageKey> = {
 
 export const permissionLabel = (t: (key: MessageKey) => string, choice: { value: string; label?: string }): string =>
   PERMISSION_LABELS[choice.value] ? t(PERMISSION_LABELS[choice.value]!) : (choice.label ?? choice.value);
+
+const PERMISSION_HINTS: Record<string, MessageKey> = {
+  auto: "codeLink.permHint_auto",
+  bypassPermissions: "codeLink.permHint_full",
+  "full-access": "codeLink.permHint_full",
+  acceptEdits: "codeLink.permHint_acceptEdits",
+  default: "codeLink.permHint_ask",
+  ask: "codeLink.permHint_ask",
+  plan: "codeLink.permHint_plan",
+  local: "codeLink.permHint_local",
+  workspace: "codeLink.permHint_workspace",
+  "read-only": "codeLink.permHint_readOnly"
+};
+
+/** What a permission mode lets the agent do, in a sentence; null for a mode an engine brought along that is not listed. */
+export const permissionHint = (t: (key: MessageKey) => string, value: string | undefined): string | null =>
+  value && PERMISSION_HINTS[value] ? t(PERMISSION_HINTS[value]!) : null;
+
+/** No approval and no sandbox: worth a warning wherever it is chosen. */
+export const isFullAccess = (value: string | undefined): boolean => value === "full-access" || value === "bypassPermissions";

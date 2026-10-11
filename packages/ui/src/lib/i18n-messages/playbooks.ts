@@ -14,7 +14,11 @@ export const playbooks = {
     versionLabel: "Version in effect",
     tagPlugin: "built-in",
     tagUser: "yours",
-    tagProject: "project"
+    tagProject: "project",
+    methodAssistWhen: "Plans, carries out or keeps track of the work — including the steps you do yourself.",
+    methodDesignWhen: "Explores options and delivers a design from the ticket's audience, constraints and references.",
+    methodDocumentWhen: "Writes or revises a document — the ticket's deliverable, or a note kept in Files.",
+    methodMediaWhen: "Makes music, animation or other media with a generation service you have set up."
   },
   zh: {
     conflictBody: "Playbook“{{title}}”存在多个版本——当前使用{{source}}。",
@@ -30,6 +34,10 @@ export const playbooks = {
     versionLabel: "生效版本",
     tagPlugin: "内置",
     tagUser: "本机",
-    tagProject: "项目"
+    tagProject: "项目",
+    methodAssistWhen: "规划、执行或跟进这项工作，包括需要你亲自去做的部分。",
+    methodDesignWhen: "根据工作项里的受众、约束和参考资料，探索方案并交付设计。",
+    methodDocumentWhen: "撰写或修改文档——可以是工作项的交付物，也可以是存放在 Files 里的笔记。",
+    methodMediaWhen: "用你已经配置的生成服务制作音乐、动画等媒体。"
   }
 };

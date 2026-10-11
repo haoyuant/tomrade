@@ -505,7 +505,9 @@ export class Agent extends Service {
 
   async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }): Promise<PlaybookRecommendation> {
     await this.refreshProjectPlaybooks(projectId);
-    const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (!input.workType || !entry.workTypes?.length || entry.workTypes.includes(input.workType)));
+    // A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket.
+    const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !input.workType || entry.workTypes.includes(input.workType) : entry.source !== "plugin"));
+    const words = this.words();
     const candidateIds = new Set(candidates.map((entry) => entry.id));
     const fallback = (): PlaybookRecommendation => {
       const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
@@ -515,13 +517,13 @@ export class Agent extends Service {
         : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
       const playbookId = preferred && candidateIds.has(preferred) ? preferred : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
       const selected = candidates.find((entry) => entry.id === playbookId);
-      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: "Selected from the task type and available playbook metadata.", source: "fallback", requires: selected?.requires ?? [] };
+      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words.recommendedByType, source: "fallback", requires: selected?.requires ?? [] };
     };
     const llm = this.ctx.get("llm") as LlmService | undefined;
     if (!llm || !llm.ready().ok || !candidates.length) return fallback();
     try {
       const result = await llm.completeJson(recommendationSchema, {
-        system: "Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation briefly.",
+        system: `Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       });
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();
