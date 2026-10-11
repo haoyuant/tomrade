@@ -79,6 +79,13 @@ app.whenReady().then(async () => {
   const openMain = () => {
     const win = open();
     mainWindows.add(win);
+    // Closing the last Tomrade window quits, on macOS too, whatever surfaces are
+    // still up; it waits on the quit so that cancelling it keeps the window.
+    win.on("close", (event) => {
+      if (quitApproved() || [...mainWindows].some((other) => other !== win && !other.isDestroyed())) return;
+      event.preventDefault();
+      app.quit();
+    });
     win.on("closed", () => mainWindows.delete(win));
     return win;
   };
@@ -88,8 +95,4 @@ app.whenReady().then(async () => {
     // Tomrade window satisfies application activation.
     if (![...mainWindows].some((win) => !win.isDestroyed())) openMain();
   });
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
 });
