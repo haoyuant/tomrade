@@ -11,7 +11,8 @@ import { usePanelOpen } from "~/lib/panel";
 export interface ScreenBinding {
   /** How panel chips open an issue here; the default navigates to the issue screen. */
   openIssue?: (id: string) => void;
-  openSettings?: () => void;
+  /** Settings on the assistant pane; with an engine, unfolded on that engine's row. */
+  openSettings?: (engineId?: string) => void;
   /** What the user is looking at right now — snapshotted onto each message they send. */
   focus?: FocusRef[];
   /** Which workstream a new thread on this screen would start on, if any. */
@@ -28,6 +29,8 @@ interface DockValue {
   showThread: (threadId: string) => void;
   /** The thread a screen asked for, consumed by the panel. */
   requestedThread: { id: string; at: number } | null;
+  /** Settings at an engine's row — where a ticket's Start sends an agent that is not ready. */
+  openSettings: (engineId?: string) => void;
 }
 
 const Ctx = createContext<DockValue | null>(null);
@@ -93,10 +96,13 @@ export function ProjectShell() {
     },
     [binding, navigate, projectId]
   );
-  const openSettings = useCallback(() => binding?.openSettings?.(), [binding]);
+  const openSettings = useCallback((engineId?: string) => binding?.openSettings?.(engineId), [binding]);
   const openRepositories = useCallback(() => binding?.onOpenRepositories?.(), [binding]);
 
-  const value = useMemo<DockValue>(() => ({ aiOpen, setAiOpen, bind, showThread, requestedThread }), [aiOpen, setAiOpen, bind, showThread, requestedThread]);
+  const value = useMemo<DockValue>(
+    () => ({ aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings }),
+    [aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings]
+  );
 
   return (
     <Ctx.Provider value={value}>

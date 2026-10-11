@@ -297,7 +297,7 @@ export function AgentPanel({
   /** A thread a screen asked to see (a ticket's Start); `at` makes a repeat request for the same id visible. */
   requestedThread?: { id: string; at: number } | null;
   focus: FocusRef[];
-  onOpenSettings: () => void;
+  onOpenSettings: (engineId?: string) => void;
   /** Where a workstream's repository is placed on this machine — the way out of "no local checkout". */
   onOpenRepositories?: () => void;
   onOpenIssue: (id: string) => void;
@@ -785,7 +785,7 @@ export function AgentPanel({
                 }}
               />
             ))}
-            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={onOpenSettings} />
+            <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={() => onOpenSettings()} />
           </Menu>
           {permissionModes && (
             <Menu label={t("agentPanel.permissions")} align="end" trigger={

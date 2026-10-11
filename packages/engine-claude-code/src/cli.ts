@@ -1,14 +1,6 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import readline from "node:readline";
-
-export function binaryOk(command: string, args: string[] = ["--version"]): Promise<{ ok: boolean; reason?: string }> {
-  return new Promise((resolve) => {
-    execFile(command, args, { timeout: 4000 }, (err, stdout) => {
-      if (err) resolve({ ok: false, reason: `${command} not found or not responding — is it installed and on PATH?` });
-      else resolve({ ok: true, reason: stdout.trim().slice(0, 60) });
-    });
-  });
-}
+import { spawnCli, stopCli, type CliLaunch, type CliLocator } from "./locate.js";
 
 /**
  * Whether a CLI that is installed is also signed in. Only a clear "no" says
@@ -16,12 +8,9 @@ export function binaryOk(command: string, args: string[] = ["--version"]): Promi
  * read is taken as signed in, so the check never locks out an account it does
  * not understand (an API key in the environment, a cloud provider).
  */
-export function signedIn(command: string, args: string[], says: (output: string) => boolean | null): Promise<boolean> {
-  return new Promise((resolve) => {
-    execFile(command, args, { timeout: 8000 }, (_err, stdout, stderr) => {
-      resolve(says(`${stdout}\n${stderr}`) ?? true);
-    });
-  });
+export async function signedIn(cli: CliLocator, command: string | undefined, args: string[], says: (output: string) => boolean | null): Promise<boolean> {
+  const { stdout, stderr } = await cli.run(command, args, 8000);
+  return says(`${stdout}\n${stderr}`) ?? true;
 }
 
 /** `claude auth status` prints JSON with `loggedIn`; a first-party account that is not logged in cannot run. */
@@ -45,10 +34,14 @@ export interface CliRun {
 }
 
 /** Spawn a JSONL-speaking CLI: stdin closed, stdout parsed by line, SIGINT then SIGKILL on abort. */
-export function runJsonl(command: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; stdin?: string; signal: AbortSignal; onLine(event: Record<string, unknown>): void }): CliRun {
-  const child = spawn(command, args, { cwd: opts.cwd, env: opts.env ?? process.env, stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
+export function runJsonl(launch: CliLaunch, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; stdin?: string; signal: AbortSignal; onLine(event: Record<string, unknown>): void }): CliRun {
+  const child = spawnCli(launch, args, { cwd: opts.cwd, env: opts.env ?? process.env, stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
   if (opts.stdin !== undefined) { child.stdin?.on("error", () => {}); child.stdin?.end(opts.stdin); }
   let stderr = "";
+  // A CLI that cannot start still closes; its reason belongs with the exit code.
+  child.on("error", (error) => {
+    stderr = `${stderr}\n${error.message}`.slice(-4000);
+  });
   child.stderr?.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000);
   });
@@ -63,10 +56,10 @@ export function runJsonl(command: string, args: string[], opts: { cwd: string; e
     }
   });
   const onAbort = () => {
-    child.kill("SIGINT");
-    setTimeout(() => {
-      if (child.exitCode === null) child.kill("SIGKILL");
-    }, 3000).unref();
+    // Windows has no SIGINT to ask nicely with; kill() there ends only the top process, not the CLI's own children.
+    if (process.platform === "win32") stopCli(child);
+    else child.kill("SIGINT");
+    setTimeout(() => stopCli(child, "SIGKILL"), 3000).unref();
   };
   if (opts.signal.aborted) onAbort();
   else opts.signal.addEventListener("abort", onAbort, { once: true });

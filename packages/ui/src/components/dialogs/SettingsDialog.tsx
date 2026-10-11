@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
 import { THEME_TYPOGRAPHY_NAMES, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
@@ -11,6 +11,7 @@ import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { AboutPane } from "./AboutPane";
 import { HubPane } from "./HubPane";
+import { LocalCliSection } from "./LocalCliSection";
 import { McpServersPane } from "./McpServersPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
@@ -20,6 +21,7 @@ import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useCacheDir, useHubInfo, useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
+import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { reveal } from "~/lib/shell";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
@@ -239,12 +241,15 @@ interface Pane {
 export function SettingsDialog({
   open,
   onOpenChange,
-  pane
+  pane,
+  engine
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Opens on this pane. Empty leaves the sheet on whichever one it was left showing. */
   pane?: string;
+  /** With the assistant pane: the engine row to unfold and bring into view. */
+  engine?: string;
 }) {
   const { t, tx } = useI18n();
   const qc = useQueryClient();
@@ -401,6 +406,7 @@ export function SettingsDialog({
             // choices) — stale beyond useEngines' own staleTime otherwise, so a save here refreshes it right away.
             onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: agentKeys.engines }) })}
             onFindEngines={() => go("plugins", "engine")}
+            focusEngine={open ? engine : undefined}
           />
         ) : null
     },
@@ -562,11 +568,13 @@ function AssistantPane({
   settings,
   onSave,
   onFindEngines,
+  focusEngine,
   scope
 }: {
   settings: AppSettings;
   onSave: (next: AppSettings) => void;
   onFindEngines: () => void;
+  focusEngine?: string;
   scope?: "machine" | "user";
 }) {
   const { t, tx } = useI18n();
@@ -668,6 +676,7 @@ function AssistantPane({
               key={e.id}
               engine={e}
               isDefault={agent.defaultEngine === e.id}
+              focused={focusEngine === e.id}
               onMakeDefault={() => saveAgent({ ...agent, defaultEngine: e.id })}
               options={(agent.engines[e.id] ?? {}) as Record<string, unknown>}
               onCommit={(key, value) => {
@@ -761,34 +770,52 @@ function PlaybooksBlock({ agent, onSave }: { agent: AgentSettings; onSave: (next
 function EngineRow({
   engine,
   isDefault,
+  focused,
   onMakeDefault,
   options,
   onCommit
 }: {
   engine: EngineView;
   isDefault: boolean;
+  focused: boolean;
   onMakeDefault: () => void;
   options: Record<string, unknown>;
   onCommit: (key: string, value: string) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(isDefault);
+  const [open, setOpen] = useState(isDefault || focused);
+  const row = useRef<HTMLDivElement>(null);
+  // Sent here to set this engine up: unfold it where it can be seen.
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    requestAnimationFrame(() => row.current?.scrollIntoView({ block: "nearest" }));
+  }, [focused]);
   const hasPicks = !!engine.picks?.length;
-  const toggle = () => hasPicks && setOpen((o) => !o);
+  const hasBody = hasPicks || !!engine.cli;
+  const toggle = () => hasBody && setOpen((o) => !o);
+  const status = engineStatus(engine);
   return (
-    <div className="eng-row">
-      <div className={`eng-head${hasPicks ? " eng-head-toggle" : ""}`} onClick={toggle}>
+    <div className="eng-row" ref={row} data-engine={engine.id}>
+      <div className={`eng-head${hasBody ? " eng-head-toggle" : ""}`} onClick={toggle}>
         <label className="eng-pick" onClick={(e) => e.stopPropagation()}>
           <input type="radio" className="bs-radio" name="defaultEngine" checked={isDefault} onChange={onMakeDefault} />
           <span>{engine.title}</span>
         </label>
-        <span className="meta-txt eng-state">{engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}</span>
-        {hasPicks && (
+        <span className={`meta-txt eng-state${status === "ready" || status === "other" ? "" : " is-warn"}`} title={engine.ok ? undefined : engine.reason}>
+          {engine.cli ? engineStateLabel(engine, t, t("settingsDialog.engineUnavailable")) : engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}
+        </span>
+        {hasBody && (
           <button type="button" className="btn btn-icon" aria-expanded={open} aria-label={t("settingsDialog.engineToggleAria", { title: engine.title })}>
             <Icon name={open ? "i-chevdown" : "i-chev"} size={12} />
           </button>
         )}
       </div>
+      {open && engine.cli && (
+        <div className="eng-body">
+          <LocalCliSection engine={engine} cli={engine.cli} command={typeof options.command === "string" ? options.command : ""} onSaveCommand={(value) => onCommit("command", value)} />
+        </div>
+      )}
       {open && hasPicks && (
         <div className="eng-body grid-2">
           {(engine.picks ?? []).map((pick) => (

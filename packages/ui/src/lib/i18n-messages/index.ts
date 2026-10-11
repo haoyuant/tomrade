@@ -15,6 +15,7 @@ import { onboarding } from "./onboarding";
 import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
+import { localCli } from "./localCli";
 import { newIssueDialog } from "./newIssueDialog";
 import { newProjectDialog } from "./newProjectDialog";
 import { openProjectDialog } from "./openProjectDialog";
@@ -91,6 +92,7 @@ export const en = {
   agentPanel: agentPanel.en,
   onboarding: onboarding.en,
   codeLink: codeLink.en,
+  localCli: localCli.en,
   files: files.en,
   notes: notes.en,
   history: history.en
@@ -143,6 +145,7 @@ export const zh: typeof en = {
   agentPanel: agentPanel.zh,
   onboarding: onboarding.zh,
   codeLink: codeLink.zh,
+  localCli: localCli.zh,
   files: files.zh,
   notes: notes.zh,
   history: history.zh

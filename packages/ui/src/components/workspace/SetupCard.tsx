@@ -3,21 +3,16 @@ import type { EngineView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { useEngines } from "~/lib/agent";
 import { useI18n } from "~/lib/i18n";
+import { LOCAL_AGENTS, engineStatus } from "~/lib/localCli";
 import { useSeen } from "~/lib/onboarding";
 import { useSettings } from "~/lib/queries";
-
-/** The local agents Start can hand a ticket to, and what fixes each one in a terminal. */
-const LOCAL: Record<string, { install: string; signIn: string }> = {
-  "claude-code": { install: "npm install -g @anthropic-ai/claude-code", signIn: "claude" },
-  codex: { install: "npm install -g @openai/codex", signIn: "codex login" }
-};
 
 /**
  * What the assistant can do on this machine and what is still missing: a
  * model for the built-in engine, a local agent for Start. With nothing ready
  * it is the panel's only way forward and stays; otherwise it can be put away.
  */
-export function SetupCard({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: string) => void }) {
   const { t, tx } = useI18n();
   const { seen, markSeen } = useSeen();
   const engines = useEngines();
@@ -32,15 +27,18 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: () => void }) {
   if (!all) return null;
   const noneReady = !all.some((e) => e.ok);
   const model = all.find((e) => e.id === "loop");
-  const locals = all.filter((e) => e.id in LOCAL);
+  const locals = all.filter((e) => e.id in LOCAL_AGENTS);
   const localReady = locals.filter((e) => e.ok);
   if ((!model || model.ok) && (!locals.length || localReady.length)) return null;
   if (!noneReady && seen("setup-card")) return null;
 
   const fix = (e: EngineView) => {
-    const commands = LOCAL[e.id];
-    if (e.need === "install") return tx("onboarding.installLine", { title: e.title, command: <code>{commands.install}</code> });
-    if (e.need === "sign-in") return tx("onboarding.signInLine", { title: e.title, command: <code>{commands.signIn}</code> });
+    const agent = LOCAL_AGENTS[e.id];
+    const status = engineStatus(e);
+    if (status === "missing") return tx("onboarding.installLine", { title: e.title, command: <code>{agent.install(e.cli?.platform ?? "")[0]}</code> });
+    if (status === "wsl") return t("localCli.wslLine", { title: e.title });
+    if (status === "broken") return t("localCli.repairLine", { title: e.title });
+    if (status === "sign-in") return tx("onboarding.signInLine", { title: e.title, command: <code>{agent.signIn}</code> });
     return t("agentPanel.engineReasonLine", { title: e.title, reason: e.reason ?? "" });
   };
 
@@ -64,7 +62,7 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: () => void }) {
               {model.ok ? (
                 <span className="setup-fix">{t("onboarding.ready")}</span>
               ) : (
-                <button type="button" className="btn btn-secondary setup-action" onClick={onOpenSettings}>
+                <button type="button" className="btn btn-secondary setup-action" onClick={() => onOpenSettings()}>
                   {t("agentPanel.connectModelApi")}
                 </button>
               )}
@@ -80,11 +78,17 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: () => void }) {
               {localReady.length ? (
                 <span className="setup-fix">{t("onboarding.readyWith", { names: localReady.map((e) => e.title).join(" · ") })}</span>
               ) : (
-                locals.map((e) => (
-                  <span key={e.id} className="setup-fix">
-                    {fix(e)}
-                  </span>
-                ))
+                <>
+                  <span className="setup-fix">{t("localCli.whatIsLocal")}</span>
+                  {locals.map((e) => (
+                    <span key={e.id} className="setup-fix">
+                      {fix(e)}
+                    </span>
+                  ))}
+                  <button type="button" className="btn btn-secondary setup-action" data-testid="setup-local" onClick={() => onOpenSettings(locals[0].id)}>
+                    {t("localCli.setUpLocal")}
+                  </button>
+                </>
               )}
             </div>
           </li>

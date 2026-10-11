@@ -1762,6 +1762,21 @@ html.overlay-open .titlebar .btn-primary {
 .eng-pick { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: var(--text-sm); color: var(--fg); }
 .eng-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
 .eng-body { padding: 2px 0 var(--space-3) 23px; }
+.eng-state.is-warn { color: var(--warn); }
+/* A local agent's CLI: what runs, a path to choose instead, and the steps while it is not ready. */
+.cli-setup { font-size: var(--text-sm); }
+.cli-setup p { margin: 0; }
+.cli-setup .mono, .cli-setup code { font-family: var(--font-mono); font-size: 0.95em; overflow-wrap: anywhere; }
+.cli-state { display: flex; flex-direction: column; gap: 4px; }
+.cli-warn { color: var(--warn); }
+.cli-path-row { gap: 6px; flex-wrap: wrap; }
+.cli-path-row .input { flex: 1 1 240px; min-width: 0; }
+.cli-guide { padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--bg); font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); }
+.cli-guide-head { color: var(--fg); font-weight: var(--font-weight-medium); margin-bottom: 4px !important; }
+.cli-guide ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.cli-notes { margin: 6px 0 0; padding-left: 18px; color: var(--meta); }
+.cli-actions { gap: 6px; flex-wrap: wrap; }
+.cli-actions .btn { display: inline-flex; align-items: center; gap: 5px; }
 
 .profile-row { display: flex; align-items: baseline; gap: var(--space-2); padding: 6px 0; border-top: 1px solid var(--border-soft); font-size: var(--text-sm); }
 .profile-row:first-of-type { border-top: 0; }
