@@ -25,6 +25,7 @@ import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { openExternal, reveal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
 import { readableError } from "~/lib/toast";
+import { shortcut } from "~/lib/keys";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -491,7 +492,7 @@ export function SettingsDialog({
               <ul className="dash">
                 <li>{t("settingsDialog.lockedFieldsBullet")}</li>
                 <li>{t("settingsDialog.oplogBullet")}</li>
-                <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>⌘Z</Num> })}</li>
+                <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>{shortcut("⌘Z")}</Num> })}</li>
               </ul>
             </div>
           </div>

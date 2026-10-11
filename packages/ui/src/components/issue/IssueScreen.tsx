@@ -28,6 +28,7 @@ import {
 import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
+import { shortcut } from "~/lib/keys";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
 const FLOW: ItemStatus[] = ["backlog", "todo", "doing", "verifying", "done"];
@@ -239,7 +240,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               ))}
             </div>
             <p className="meta-txt dense" style={{ marginTop: "var(--space-4)" }}>
-              {tx("detailPane.ledgerFooter", { cmdz: <span className="num">⌘Z</span> })}
+              {tx("detailPane.ledgerFooter", { cmdz: <span className="num">{shortcut("⌘Z")}</span> })}
             </p>
           </div>
         </main>

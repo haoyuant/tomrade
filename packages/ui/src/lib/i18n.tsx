@@ -4,6 +4,7 @@ import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { en, zh } from "./i18n-messages";
 import { setDomainLocale } from "./domain";
+import { shortcut } from "./keys";
 
 export type Locale = "en" | "zh";
 
@@ -22,9 +23,9 @@ function lookupIn(dict: Messages, path: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** A key missing from the active locale falls back to English before falling back to the raw key. */
+/** A key missing from the active locale falls back to English before falling back to the raw key. Shortcuts are written for this platform. */
 function lookup(locale: Locale, path: string): string {
-  return lookupIn(DICTS[locale], path) ?? lookupIn(DICTS.en, path) ?? path;
+  return shortcut(lookupIn(DICTS[locale], path) ?? lookupIn(DICTS.en, path) ?? path);
 }
 
 function interpolate(template: string, vars?: Record<string, string | number>): string {

@@ -47,6 +47,7 @@ import { FileViewer, isRenderable } from "./FileViewer";
 import { NoteEditor, type SaveState } from "./NoteEditor";
 import { stateOf, type StateView } from "./state";
 import { useNoteActions } from "./useNoteActions";
+import { shortcut } from "~/lib/keys";
 
 const KIND: Record<FileConflict["kind"], MessageKey> = {
   content: "files.kindContent",
@@ -518,16 +519,16 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
             {(editable || holding) && (
               <div className="row file-view-bar files-mode-bar">
                 <div className="seg quiet files-mode" role="group" aria-label={t("notes.modeAria")} data-mode={mode}>
-                  <button type="button" aria-pressed={mode === "read"} data-tip="⌘E" onClick={() => setMode("read")}>
+                  <button type="button" aria-pressed={mode === "read"} data-tip={shortcut("⌘E")} onClick={() => setMode("read")}>
                     <Icon className="ico" name="i-eye" size={13} />
                     {t("notes.read")}
                   </button>
-                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? "⌘E" : undefined} onClick={() => setMode("edit")}>
+                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? shortcut("⌘E") : undefined} onClick={() => setMode("edit")}>
                     <Icon className="ico" name="i-pen" size={13} />
                     {t("notes.edit")}
                   </button>
                   {previewable && (
-                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? "⌘E" : undefined} onClick={() => setMode("split")}>
+                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? shortcut("⌘E") : undefined} onClick={() => setMode("split")}>
                       <Icon className="ico" name="i-split" size={13} />
                       {t("notes.split")}
                     </button>

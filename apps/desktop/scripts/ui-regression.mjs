@@ -219,27 +219,49 @@ const run = async () => {
   repos.views.update(project.id, rosterBefore[1], { rank: repos.views.get(project.id, rosterBefore[0]).rank + 0.5 });
   await sleep(600);
 
-  // ── keyboard move: ← → is the same write path as a drag ─────────────
+  // ── keyboard move: ⌥← ⌥→ is the same write path as a drag ───────────
   const keysOnBoard = await $(`[...document.querySelectorAll('.card .card-id')].map(n => n.textContent).join(',')`);
   const before = repos.items
     .list({ projectId: project.id })
     .find((i) => i.status === "doing" && i.kind === "ticket" && keysOnBoard.split(",").includes(i.key));
   if (!before) throw new Error(`no draggable card on screen; keys=${keysOnBoard}`);
-  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
+  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true})); return true; })()`);
   await sleep(900);
   const after = repos.items.get(project.id, before.id);
-  check("ArrowRight moves the focused card one column", after.status !== before.status);
+  check("⌥→ moves the focused card one column", after.status !== before.status);
   check("the move bumped the version", after.version === before.version + 1);
   check("a toast offers the undo", (await $(`document.querySelectorAll('.toast').length`)) > 0);
   check("focus follows the card into its new column", (await $(`document.activeElement?.dataset?.id`)) === before.id);
   await shot("05-board-toast");
+  // plain arrows only move focus: down the column, then across to the next one
+  {
+    const focusedId = () => $(`document.activeElement?.dataset?.id ?? null`);
+    const press = (key) => $(`(() => { document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'${key}',bubbles:true})); return true; })()`);
+    const versions = () => JSON.stringify(repos.items.list({ projectId: project.id }).map((i) => i.version));
+    const written = versions();
+    const start = await focusedId();
+    await press("ArrowDown");
+    await sleep(150);
+    const below = await focusedId();
+    await press("ArrowLeft");
+    await sleep(150);
+    const beside = await focusedId();
+    check("arrow keys move focus between cards and write nothing", !!below && below !== start && !!beside && beside !== below && versions() === written, { start, below, beside });
+    // Enter hands focus to the opened ticket; Escape gives it back to the card
+    await press("Enter");
+    await sleep(500);
+    check("opening a card from the keyboard puts focus in its pane", (await $(`document.activeElement?.matches('aside.detail') ?? false`)) === true);
+    await $(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+    await sleep(400);
+    check("closing it with Escape returns focus to the card", (await focusedId()) === beside && (await $(`!document.querySelector('aside.detail')`)) === true);
+  }
 
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(900);
   check("the toast's Undo reverts the move", repos.items.get(project.id, before.id).status === before.status);
   check("and says what it took back", (await $(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Reverted ${before.key}'))`)) === true);
   // a toast's Undo takes back its own write only: once something newer stands, it says so and leaves it
-  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
+  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true})); return true; })()`);
   await sleep(900);
   const moved = repos.items.get(project.id, before.id);
   repos.items.update(project.id, before.id, { priority: moved.priority === 3 ? 2 : 3 }, "human");
@@ -380,7 +402,7 @@ const run = async () => {
   // ── conflict: an agent write the board has not seen ─────────────────
   const raced = repos.items.list({ projectId: project.id }).find((i) => i.status === "todo" && i.kind === "ticket" && keysOnBoard.split(",").includes(i.key));
   repos.items.update(project.id, raced.id, { priority: 4 }, "ai:mcp");
-  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${raced.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
+  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${raced.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true})); return true; })()`);
   await sleep(1200);
   check("a stale move raises the conflict banner", (await $(`!!document.querySelector('.banner[role="alert"]')`)) === true);
   check("the conflict left the issue alone", repos.items.get(project.id, raced.id).status === "todo");
@@ -755,6 +777,26 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
   check("a second Escape closes the pane", (await $(`!!document.querySelector('.detail')`)) === false);
+
+  // "?" lists every shortcut, written for this platform
+  await $(`document.body.focus();document.dispatchEvent(new KeyboardEvent('keydown',{key:'?',bubbles:true}));true`);
+  await sleep(500);
+  const sheet = await $(`[...document.querySelectorAll('.shortcut-row')].map(r => r.textContent).join(' | ')`);
+  check("? opens the keyboard shortcuts", sheet.includes(process.platform === "darwin" ? "⌘K" : "Ctrl+K") && sheet.includes("Move the card a column"), sheet.slice(0, 120));
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(400);
+  // a field's edge reads against the page: 3:1
+  const edge = await $(`(() => {
+    // a 1×1 canvas turns any CSS colour — hex, rgb, oklch — into sRGB bytes
+    const g = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d');
+    const bytes = (css) => { g.clearRect(0, 0, 1, 1); g.fillStyle = css; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+    const lum = (css) => { const [r, gg, b] = bytes(css).map((x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * gg + 0.0722 * b; };
+    const i = document.createElement('input'); i.className = 'input'; document.body.append(i);
+    const border = getComputedStyle(i).borderTopColor; const surface = getComputedStyle(i).backgroundColor; i.remove();
+    const a = lum(border), b = lum(surface);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  })()`);
+  check("an input's border has 3:1 contrast against the surface", edge >= 3, edge);
 
   // ── command palette ─────────────────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
