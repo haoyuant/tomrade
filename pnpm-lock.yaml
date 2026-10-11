@@ -158,6 +158,12 @@ importers:
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../../packages/web-search
+      '@tomradex/web-search-tavily':
+        specifier: workspace:*
+        version: link:../../packages/web-search-tavily
       '@tomradex/write':
         specifier: workspace:*
         version: link:../../packages/write
@@ -1769,6 +1775,47 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
+  packages/web-search:
+    dependencies:
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/web-search-tavily:
+    dependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../web-search
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
 
   packages/write:
     dependencies:

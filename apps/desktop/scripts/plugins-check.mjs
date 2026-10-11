@@ -50,6 +50,9 @@ const run = async () => {
   // The assistant's shell is in the tool registry for engines here, and nowhere on the MCP server.
   check("the bash tool is registered for in-app engines", ctx.tools.has("bash"));
   check("the bash tool is not served over MCP", !ctx.tools.served().some((t) => t.name === "bash"));
+  // Web search reaches every engine, over MCP too, and is filled by its own row.
+  check("web search and page reading are served to every engine", ["web_search", "web_fetch"].every((name) => ctx.tools.served().some((t) => t.name === name)));
+  check("the web search module is credited to its row", module("webSearch")?.providers.join() === "web-search");
   check("one row is credited with both keys it provides through nested plugins", view("boards")?.provides.join() === "boards,views");
 
   // The guard, on the plugin nothing may run without.
@@ -105,9 +108,14 @@ const run = async () => {
   await ctx.mcpClient.settled();
   check("switching it back on reconnects from the saved settings", ctx.tools.has("fx__echo"));
 
+  await ctx.plugins.setEnabled("web-search-tavily", false);
+  check("switching off the last web search provider takes the web tools with it", !ctx.tools.has("web_search") && !ctx.tools.has("web_fetch"));
+  await ctx.plugins.setEnabled("web-search-tavily", true);
+  check("switching it back on offers them again", ctx.tools.has("web_search") && ctx.tools.has("web_fetch"));
+
   // Contracts: declared on the row so a switched-off one still groups, and
   // held to what the running rows actually register.
-  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files");
+  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,webSearch");
   check("a switched-off engine still counts as an engine", view("engine-scripted")?.state === "disabled" && view("engine-scripted")?.implements.join() === "engine");
   await ctx.plugins.setEnabled("engine-scripted", true);
   const declared = new Map(ctx.plugins.rows().map((r) => [r.id, r.implements ?? []]));

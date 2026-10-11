@@ -45,6 +45,8 @@ export const pluginsPanel = {
     contractStorageLede: "Where a project's folder is published: any git remote, or a GitHub repository found or made for you.",
     contractFiles: "File sharing",
     contractFilesLede: "Where a project's files are versioned and shared from.",
+    contractWebSearch: "Web search",
+    contractWebSearchLede: "Who answers the assistant's web_search and web_fetch tools. The first one that is set up does; with none switched on, the tools are not offered.",
     otherPlugins: "Everything else",
   },
   zh: {
@@ -91,6 +93,8 @@ export const pluginsPanel = {
     contractStorageLede: "项目文件夹发布到哪里：任意 git 远程仓库，或为你查找、创建的 GitHub 仓库。",
     contractFiles: "文件共享",
     contractFilesLede: "项目文件在哪里保存版本、从哪里共享。",
+    contractWebSearch: "联网搜索",
+    contractWebSearchLede: "由谁来回答助手的 web_search 与 web_fetch 工具。第一个配置好的插件负责回答；一个都没打开时，这两个工具不会提供给助手。",
     otherPlugins: "其他插件",
   }
 };

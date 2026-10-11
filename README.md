@@ -54,6 +54,8 @@ packages/notes        ctx.notes        the files read as notes: wiki links, back
 packages/agent        ctx.agent        the platform: threads, runs, ledger, cards, workflows, run undo, registries
 packages/engine-loop  —                the hybrid conversational conductor
 packages/shell        —                a bash tool for in-process engines, asked before each command, never served over MCP
+packages/web-search   ctx.webSearch    web_search and web_fetch for every engine, answered by a registered provider
+packages/web-search-tavily —           Tavily as that provider, with the person's own API key
 packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu
 packages/engine-claude-code —          Claude Code as conductor (headless, MCP run bindings); engine-codex and engine-pi likewise
 packages/agent-backlog —               the backlog method: playbooks, dossier, find_similar, plan_and_apply, dedup policy

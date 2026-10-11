@@ -378,6 +378,7 @@ contracts:
 | `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex`, `engine-pi` |
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
+| `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
 
 Unlike a module's, membership **is** declared, on the row: `implements:
 [engine]`. A row switched off registers nothing, and a disabled engine is
@@ -759,6 +760,38 @@ nothing else up. A dropped server is retried after `retryDelaysMs` (1 s, 5 s,
 retries again, so one that keeps dying stays failed. A cancelled call is
 cancelled on the server too. What a server writes outside Tomrade is not in the oplog and
 cannot be undone.
+
+### Web search
+
+`@tomradex/web-search` (`ctx.webSearch`, module `webSearch`) offers every
+engine two tools, MCP included: `web_search` (query, up to 10 results, `news`
+topic, a time range, sites to include or leave out) and `web_fetch` (up to five
+http(s) pages as Markdown, optionally narrowed to the passages about a query).
+Both return text an agent can cite, framed as information from the open web
+rather than instructions. The module answers nothing itself; providers do:
+
+```ts
+ctx.webSearch.register({
+  id: "tavily",
+  title: "Tavily",
+  unavailable: () => (key() ? null : "…tell the user to add one in Settings → Tavily"),
+  search: (request, signal) => …,  // { results: [{ title, url, content, published? }] }
+  read: (request, signal) => …     // optional: { pages: [{ url, content }], failed: [{ url, error }] }
+});
+```
+
+The first registered provider that is not `unavailable()` answers; when none
+is, the first one's reason is the tool's error, so the agent can tell the
+person what to set up. `web_search` exists while any provider is registered and
+`web_fetch` while one of them can `read`, so switching off the last provider
+takes the tools with it. A search is stopped after 30 s and a read after 60 s,
+and either stops with the caller's `signal`. `ctx.webSearch.search()` and
+`read()` are the same calls for plugins that search on their own.
+
+`@tomradex/web-search-tavily` is the provider the app ships: its `tavily`
+section holds the API key (a password field, so machine-scoped and out of every
+agent's reach; empty falls back to `TAVILY_API_KEY`) and the search depth
+(`basic`, or `advanced` at twice the credits).
 
 ## Views
 

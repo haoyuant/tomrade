@@ -43,7 +43,8 @@ function useDetailOf(plugin: PluginView): string {
 const CONTRACT_TEXT: Record<string, [MessageKey, MessageKey]> = {
   engine: ["pluginsPanel.contractEngine", "pluginsPanel.contractEngineLede"],
   storage: ["pluginsPanel.contractStorage", "pluginsPanel.contractStorageLede"],
-  files: ["pluginsPanel.contractFiles", "pluginsPanel.contractFilesLede"]
+  files: ["pluginsPanel.contractFiles", "pluginsPanel.contractFilesLede"],
+  webSearch: ["pluginsPanel.contractWebSearch", "pluginsPanel.contractWebSearchLede"]
 };
 
 function useContractTitle(): (contract: ContractSpec) => string {
