@@ -846,6 +846,13 @@ strong { font-weight: var(--font-weight-medium); }
 .field-group { display: flex; flex-direction: column; gap: 6px; }
 .field-note { font-size: var(--text-xs); line-height: 1.5; color: var(--meta); }
 .field-note.is-error { color: var(--danger); }
+/* Account panel: the password hint shares its line with "Forgot password?". */
+.account-password-foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-3); flex-wrap: wrap; }
+.account-password-foot .link-btn { font-size: var(--text-xs); white-space: nowrap; margin-left: auto; }
+.account-step__title { font-size: var(--text-md); font-weight: 600; }
+.account-step__title:focus { outline: none; }
+.account-step__actions { flex-wrap: wrap; }
+.account-step strong { overflow-wrap: anywhere; }
 
 /* Checkboxes follow the switch, not the OS: the surface inside its ring when
    off, the accent with the mark cut in `--accent-on` when on. */

@@ -38,7 +38,9 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "account.info": () => AccountInfo;
     "account.signIn": (email: string, password: string) => AccountInfo;
-    "account.signUp": (email: string, password: string) => { confirmationRequired: boolean };
+    "account.signUp": (email: string, password: string, lang?: string) => { confirmationRequired: boolean };
+    "account.resendConfirmation": (email: string, lang?: string) => void;
+    "account.resetPassword": (email: string, lang?: string) => void;
     "account.signOut": () => void;
     "account.sync": () => AccountInfo;
     "account.resolve": (id: string, choice: "local" | "cloud") => AccountInfo;
@@ -50,7 +52,9 @@ export const CloudConfig = z.object({
   url: z.url(), publishableKey: z.string().min(1), cacheFile: z.string().min(1),
   sessionStorage: z.custom<SupportedStorage>(v => !!v && typeof (v as SupportedStorage).getItem === "function"),
   syncMs: z.number().int().min(1000).default(30_000),
-  accounts: z.custom<LocalAccounts>(v => !!v && typeof (v as LocalAccounts).open === "function").optional()
+  accounts: z.custom<LocalAccounts>(v => !!v && typeof (v as LocalAccounts).open === "function").optional(),
+  /** Where email links land: `/auth/confirmed/` and `/auth/reset/` on this site, under `/zh/` in Chinese. */
+  site: z.url().default("https://tomrade.com")
 });
 type Config = z.infer<typeof CloudConfig>;
 const Credentials = z.object({ email: z.email(), password: z.string().min(1).max(1024) });
@@ -70,6 +74,7 @@ function credentials(email: string, password: string, min = 1) {
   if (parsed.error.issues[0].path[0] === "email") throw new Error("[email_address_invalid] Enter a valid email address.");
   throw new Error(`[weak_password] Use a password of ${min} to 1024 characters.`);
 }
+const address = (email: string) => credentials(email, "-").email;
 
 /** Supabase owns Hub metadata. The immutable outbox survives failed requests and process exits. */
 export class CloudHub extends Service {
@@ -147,7 +152,9 @@ export class CloudHub extends Service {
         return this.info();
       });
       ctx.ipc.handle("account.signIn", (email, password) => this.signIn(email, password));
-      ctx.ipc.handle("account.signUp", (email, password) => this.signUp(email, password));
+      ctx.ipc.handle("account.signUp", (email, password, lang) => this.signUp(email, password, lang));
+      ctx.ipc.handle("account.resendConfirmation", (email, lang) => this.resendConfirmation(email, lang));
+      ctx.ipc.handle("account.resetPassword", (email, lang) => this.resetPassword(email, lang));
       ctx.ipc.handle("account.signOut", () => this.signOut());
       ctx.ipc.handle("account.sync", async () => { await this.ctx.storage.writeHub(); await this.sync(); return this.info(); });
       ctx.ipc.handle("account.resolve", async (id, choice) => {
@@ -331,18 +338,36 @@ export class CloudHub extends Service {
     await this.sync(); this.notify();
     return this.info();
   }
-  async signUp(email: string, password: string): Promise<{ confirmationRequired: boolean }> {
+  async signUp(email: string, password: string, lang?: string): Promise<{ confirmationRequired: boolean }> {
     const owned = !!this.cache.data.userId;
     // Refuse before the account exists, not after.
     if (owned && !this.config.accounts) throw this.refusal();
-    const { data, error } = await (owned ? this.scratch() : this.client).auth.signUp(credentials(email, password, 8));
+    const { data, error } = await (owned ? this.scratch() : this.client).auth.signUp({
+      ...credentials(email, password, 8), options: { emailRedirectTo: this.page("confirmed", lang) }
+    });
     if (error) throw failure(error);
-    if (!data.session) return { confirmationRequired: true };
+    if (!data.session) {
+      // With confirmation on, Supabase answers a taken address with an identity-less user and sends nothing.
+      if (data.user?.identities?.length === 0) throw new Error("[user_already_exists] An account with this email already exists.");
+      return { confirmationRequired: true };
+    }
     if (await this.handOff(data.session.user, data.session)) return { confirmationRequired: false };
     this.user = data.session.user;
     await this.sync();
     this.notify();
     return { confirmationRequired: false };
+  }
+  async resendConfirmation(email: string, lang?: string): Promise<void> {
+    const { error } = await this.scratch().auth.resend({ type: "signup", email: address(email), options: { emailRedirectTo: this.page("confirmed", lang) } });
+    if (error) throw failure(error);
+  }
+  /** The link opens a page on the site that sets the new password; the person then signs in here. */
+  async resetPassword(email: string, lang?: string): Promise<void> {
+    const { error } = await this.scratch().auth.resetPasswordForEmail(address(email), { redirectTo: this.page("reset", lang) });
+    if (error) throw failure(error);
+  }
+  private page(name: "confirmed" | "reset", lang?: string): string {
+    return new URL(`${lang === "zh" ? "/zh" : ""}/auth/${name}/`, this.config.site).href;
   }
   async signOut(): Promise<void> {
     // Complete any in-flight commit before ending the session; unsent edits stay in the durable outbox.

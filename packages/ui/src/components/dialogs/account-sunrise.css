@@ -96,6 +96,16 @@
 .account-gate__form [role="status"], .account-gate__form [role="alert"] { font-size: 12px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
 /* A note belongs to the field above it, so it lines up with it. */
 .account-gate__form .field-note { font-size: 12px; text-align: left; }
+/* The steps after the form (check your email, reset the password) read centred, like the brand above them. */
+.account-gate__form .account-step { margin-top: 24px; text-align: center; }
+.account-gate__form .account-step__title { margin: 0; font-size: 20px; font-weight: 500; color: var(--poster-ink); }
+.account-gate__form .account-step p { line-height: 1.7; }
+.account-gate__form .account-step > .field-note { text-align: center; }
+.account-gate__form .account-step .field-group { margin-top: 28px; text-align: left; }
+.account-gate__form .account-step .btn { flex: 1; min-height: 44px; border-radius: 3px; box-shadow: none; }
+.account-gate__form .account-step__actions { padding-top: 4px; }
+.account-gate__form .link-btn { color: var(--poster-red); font-size: 12px; }
+.account-gate__form .account-step > .link-btn { display: block; margin-inline: auto; }
 /* Keyboard users can enter immediately, even during the entrance; once shown, it never plays again. */
 .account-gate__form.is-entered { animation: none; }
 @keyframes account-cat-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

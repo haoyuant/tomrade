@@ -14,9 +14,16 @@ const remote = vi.hoisted(() => ({
   offline: false, loseReply: false, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", hubId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   records: new Map<string, CloudRecord>(), receipts: new Map<string, unknown>(), requests: [] as Mutation[], forgotten: [] as string[],
   /** Who the next sign-in or sign-up turns out to be; the owner when null. */
-  as: null as { id: string; email: string } | null, confirm: false, signUps: 0, adopted: [] as unknown[]
+  as: null as { id: string; email: string } | null, confirm: false, signUps: 0, adopted: [] as unknown[],
+  /** Emails asked for, with where their link lands. `taken` answers sign-up as for an existing address. */
+  mails: [] as { type: string; email: string; to?: string }[], taken: false, mailWait: 0
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
+  const mail = async (type: string, email: string, to?: string) => {
+    if (remote.mailWait) return { data: {}, error: { code: "over_email_send_rate_limit", message: `For security purposes, you can only request this after ${remote.mailWait} seconds.` } };
+    remote.mails.push({ type, email, to });
+    return { data: {}, error: null };
+  };
   const user = () => ({ id: remote.userId, email: "user@example.test" });
   const session = () => { const u = remote.as ?? user(); return { access_token: `access-${u.id}`, refresh_token: `refresh-${u.id}`, user: u }; };
   return {
@@ -27,10 +34,14 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       signInWithPassword: async ({ password }: { password: string }) => password === "wrong"
         ? { data: { user: null, session: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }
         : { data: { user: session().user, session: session() }, error: null },
-      signUp: async () => {
+      signUp: async ({ email, options }: { email: string; options?: { emailRedirectTo?: string } }) => {
         remote.signUps++;
+        if (remote.taken) return { data: { user: { ...session().user, identities: [] }, session: null }, error: null };
+        if (remote.confirm) remote.mails.push({ type: "signup", email, to: options?.emailRedirectTo });
         return { data: { user: session().user, session: remote.confirm ? null : session() }, error: null };
       },
+      resend: async ({ type, email, options }: { type: string; email: string; options?: { emailRedirectTo?: string } }) => mail(type, email, options?.emailRedirectTo),
+      resetPasswordForEmail: async (email: string, options?: { redirectTo?: string }) => mail("recovery", email, options?.redirectTo),
       setSession: async (s: { user?: unknown }) => { remote.adopted.push(s); return { data: { session: s, user: s.user }, error: null }; }
     },
     rpc: async (name: string, args?: { p_mutation: Mutation }) => {
@@ -61,6 +72,7 @@ const contexts: { fiber: { dispose(): Promise<unknown> } }[] = [];
 beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
+  remote.mails = []; remote.taken = false; remote.mailWait = 0;
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -291,9 +303,32 @@ it("creates another account beside the owner's, and refuses before creating one 
   expect(remote.signUps).toBe(before);
 });
 
+it("links confirmation and reset emails to the site's pages, in the reader's language", async () => {
+  const { cloud } = await machine();
+  remote.confirm = true;
+  expect(await cloud.signUp("new@example.test", "long enough", "zh")).toEqual({ confirmationRequired: true });
+  await cloud.resendConfirmation("new@example.test", "en");
+  await cloud.resetPassword("new@example.test", "zh");
+  expect(remote.mails).toEqual([
+    { type: "signup", email: "new@example.test", to: "https://tomrade.com/zh/auth/confirmed/" },
+    { type: "signup", email: "new@example.test", to: "https://tomrade.com/auth/confirmed/" },
+    { type: "recovery", email: "new@example.test", to: "https://tomrade.com/zh/auth/reset/" }
+  ]);
+});
+
+it("says so when sign-up meets an address that already has an account", async () => {
+  const { cloud } = await machine();
+  remote.taken = true;
+  await expect(cloud.signUp("user@example.test", "long enough")).rejects.toThrow(/^\[user_already_exists\] /);
+  expect(remote.mails).toEqual([]);
+});
+
 it("leads each failure with a code the sign-in form can translate", async () => {
   const { cloud } = await machine();
   await expect(cloud.signIn("user@example.test", "wrong")).rejects.toThrow(/^\[invalid_credentials\] /);
   await expect(cloud.signIn("not an address", "password")).rejects.toThrow(/^\[email_address_invalid\] /);
   await expect(cloud.signUp("user@example.test", "short")).rejects.toThrow(/^\[weak_password\] /);
+  await expect(cloud.resetPassword("not an address")).rejects.toThrow(/^\[email_address_invalid\] /);
+  remote.mailWait = 42;
+  await expect(cloud.resendConfirmation("user@example.test")).rejects.toThrow(/^\[over_email_send_rate_limit\] .* 42 seconds/);
 });

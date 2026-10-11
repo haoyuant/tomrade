@@ -115,15 +115,14 @@ does not replace that transport. Project-level Git providers are unchanged.
 
 ## Configure a deployment
 
-1. Use the intended Supabase project (Tokyo for this deployment). Enable the
-   desired email/password and email-confirmation settings in Supabase Auth.
-   Production has **Confirm email** switched off since 2026-10-11, so sign-up
-   returns a session and signs in at once. That is because Supabase's built-in
-   mailer sends 2 emails an hour and only to organization members. Before
-   switching confirmation back on, configure custom SMTP (Authentication → Emails)
-   and raise the email rate limit. Tomrade handles both modes: with confirmation
-   on, sign-up asks the person to confirm and then sign in. Whether it is on can
-   be read from the public `GET /auth/v1/settings` (`mailer_autoconfirm`).
+1. Use the intended Supabase project (Tokyo for this deployment). Enable
+   email/password sign-in and, if wanted, **Confirm email** in Supabase Auth.
+   Confirmation needs custom SMTP (Authentication → Emails) and a raised email
+   rate limit: the built-in mailer sends 2 emails an hour, and only to
+   organization members. Production switched it off on 2026-10-11 and back on
+   later the same day. Whether it is on can be read from the public
+   `GET /auth/v1/settings` (`mailer_autoconfirm: false` means on). Set up the
+   account email links as described in [Account emails](#account-emails).
 2. Review and apply the SQL migration through the SQL Editor, or authenticate the
    CLI with `supabase login`, link the intended project using
    `supabase link --project-ref <project-ref>`, inspect
@@ -145,8 +144,42 @@ does not replace that transport. Project-level Git providers are unchanged.
    No `.env` loader is implied. Keep the test data directory separate from the
    production app.
 4. Register/sign in through Tomrade. If email confirmation is enabled, confirm
-   the email and return to Tomrade to sign in; otherwise registering signs in.
-   Check the account panel for pending changes, sync errors and conflicts.
+   the email and return to Tomrade, which signs in by itself; otherwise
+   registering signs in. Check the account panel for pending changes, sync
+   errors and conflicts.
+
+## Account emails
+
+Two emails link out of the app. Both land on pages of the promo site
+(`tomrade-site`, `src/components/AuthPage.astro`), under `/zh/` when the app
+shows Chinese:
+
+| Email | Sent by | Link lands on | What the page does |
+| --- | --- | --- | --- |
+| Confirm signup | `account.signUp`, `account.resendConfirmation` | `https://tomrade.com/auth/confirmed/` | Says the email is confirmed (or the link is spent) and ends the link's own session |
+| Reset password | `account.resetPassword` | `https://tomrade.com/auth/reset/` | Sets the new password through `PUT /auth/v1/user` with the link's session, then ends it |
+
+The site is the hub-cloud row's `site` option (default `https://tomrade.com`).
+In Supabase → Authentication → URL Configuration:
+
+- **Site URL**: `https://tomrade.com/auth/confirmed/`. Builds before these pages
+  pass no redirect, so their confirmation links land on the Site URL.
+- **Redirect URLs**: add `https://tomrade.com/**`. Keep the loopback entry that
+  Community's GitHub linking uses (`http://127.0.0.1:<port>/callback`).
+
+A redirect missing from the list falls back to the Site URL. The probe
+`GET /auth/v1/verify?type=signup&token=x&redirect_to=<url>` (an invalid token,
+so it changes nothing) answers with a `Location` that shows which one won.
+
+The default email templates (`{{ .ConfirmationURL }}`) are enough; nothing in
+the app reads a code. After sign-up, the app waits on a **Check your email**
+step that keeps the typed password in memory. It retries the sign-in when the
+window regains focus, and on **I've confirmed, sign in**. **Resend email**
+counts down from Supabase's one-email-a-minute limit, and when Supabase refuses
+it uses the seconds Supabase reports. A sign-in refused with `email_not_confirmed`
+opens the same step. With confirmation on, Supabase answers sign-up for an
+address that already has an account with an identity-less user and sends
+nothing. The app reports this as `user_already_exists`.
 
 The desktop rejects secret/service-role keys and remote HTTP URLs. Sessions are
 never sent to the renderer or stored as plaintext JSON. If the OS keychain is
