@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { InUseError } from "@tomradex/domain";
-import { Repos, CheckoutUnsetError, normalizeRemote } from "@tomradex/repos";
+import { Repos, CheckoutUnsetError, normalizeRemote, sameRepository } from "@tomradex/repos";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 
@@ -53,6 +53,21 @@ describe("repositories", () => {
     expect(normalizeRemote("git@github.com:acme/app.git")).toBe("git@github.com:acme/app");
   });
 
+  it("knows one repository under SSH, HTTPS and an SSH alias", async () => {
+    const aliases: Record<string, string> = { "github.com-work": "ssh.github.com" };
+    const resolve = async (host: string) => aliases[host] ?? host;
+    const https = "https://github.com/acme/app";
+    for (const spelling of ["git@github.com:acme/app.git", "ssh://git@github.com:22/acme/app.git", "ssh://git@ssh.github.com:443/Acme/App", "git@github.com-work:acme/app.git"]) {
+      expect(await sameRepository(spelling, https, resolve)).toBe(true);
+    }
+    expect(await sameRepository("git@github.com:acme/other.git", https, resolve)).toBe(false);
+    expect(await sameRepository("git@gitlab.com:acme/app.git", https, resolve)).toBe(false);
+    expect(await sameRepository("https://gitlab.com/acme/app", https, resolve)).toBe(false);
+    expect(await sameRepository("git@unknown-alias:acme/app.git", https, resolve)).toBe(false);
+    expect(await sameRepository("/srv/git/app.git", "/srv/git/app", resolve)).toBe(true);
+    expect(await sameRepository("/srv/git/app", "/srv/other/app", resolve)).toBe(false);
+  });
+
   it("is a project row: created once per remote, named after it, refused while a workstream stands for it", async () => {
     const { repos, boards, project, board } = await machine();
     const repo = repos.create({ projectId: project.id, remote: "git@github.com:acme/app.git" });
@@ -90,6 +105,20 @@ describe("repositories", () => {
     expect(hub.catalog.repo(normalizeRemote(a.remote))?.checkout).toBe(a.checkout);
     repos.clearCheckout(a.remote);
     expect(repos.checkout(a.remote).checkout).toBeNull();
+  });
+
+  it("takes a checkout whose origin spells the repository differently, and says whose checkout a wrong one is", async () => {
+    const { repos } = await machine();
+    const checkout = path.join(root, `named-anything-${n++}`);
+    fs.mkdirSync(checkout);
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", "git@github.com:Acme/App.git"], checkout);
+    const selected = await repos.selectCheckout("https://github.com/acme/app", checkout);
+    expect(selected).toEqual({ state: "ready", view: { remote: "https://github.com/acme/app", checkout, runInCheckout: false } });
+
+    const other = await repos.selectCheckout("https://github.com/acme/web", checkout);
+    expect(other).toEqual({ state: "clone", remote: "https://github.com/acme/web", parent: checkout, dir: path.join(checkout, "web"), origin: "git@github.com:Acme/App" });
+    await expect(repos.setCheckout("https://github.com/acme/web", checkout)).rejects.toThrow(/is a checkout of git@github.com:Acme\/App, not of/);
   });
 
   it("requires an explicit parent-folder selection and clones into a repository-named child", async () => {
