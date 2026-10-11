@@ -1,17 +1,22 @@
-# Publishing a release (not a prerelease) hands it to the website: the Deploy
-# workflow in haoyuant/tomrade-site copies its installers to download.tomrade.com
-# and redeploys tomrade.com, so the download buttons name the new version.
+# Publishing a release hands it to the website: the Deploy workflow in
+# haoyuant/tomrade-site copies its installers and update manifests to
+# download.tomrade.com, then redeploys tomrade.com so the download buttons name
+# the new version. A pre-release only reaches the beta update channel: its
+# files are mirrored, the site and latest.json stay on the last release.
 # A release published with GITHUB_TOKEN would not start this; publish by hand.
 name: Website
 
 on:
   release:
-    types: [released]
+    types: [published, released]
 
 permissions: {}
 
 jobs:
   deploy:
+    # A release published from a draft fires both; `released` alone is a
+    # pre-release promoted later, and `published` alone a pre-release.
+    if: github.event.action == 'released' || github.event.release.prerelease
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

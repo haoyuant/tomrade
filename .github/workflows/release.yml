@@ -1,5 +1,5 @@
 # Every v<semver> tag builds the installers on all three systems and attaches
-# them to a draft release, which is published by hand. macOS builds are signed
+# them, with the update manifests, to a draft release, which is published by hand. macOS builds are signed
 # with the Developer ID certificate and notarized; the secrets are listed in
 # docs/releasing.md.
 name: Release
@@ -113,6 +113,9 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*.yml
+            !apps/desktop/release/builder-debug.yml
 
   release:
     needs: build
@@ -120,11 +123,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      # A folder per build: both Mac builds write latest-mac.yml.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: installers-*
-          merge-multiple: true
-          path: installers
+          path: builds
+
+      # Each Mac runner lists only its own zip, and the updater reads one file
+      # for both arches, so the two are merged (yq ships on the runner image).
+      - name: Merge the Mac update manifests
+        run: |
+          mkdir installers
+          find builds -type f ! -name '*-mac.yml' -exec cp {} installers/ \;
+          for name in $(find builds -name '*-mac.yml' -exec basename {} \; | sort -u); do
+            yq eval-all '. as $m ireduce ({}; . *+ $m)' builds/*/"$name" > "installers/$name"
+            yq -e '[.files[].url | select(test("-mac-(arm64|x64)[.]zip$"))] | length == 2' "installers/$name" > /dev/null \
+              || { echo "::error::$name does not list both Mac zips"; exit 1; }
+          done
 
       # A re-run replaces the files on the draft it made the first time.
       - name: Draft release

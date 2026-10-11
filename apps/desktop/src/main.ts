@@ -1,12 +1,11 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow } from "electron";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type {} from "@tomradex/agent";
-import type {} from "@tomradex/storage";
 import { aboutInfo } from "./about.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
+import { prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
@@ -60,37 +59,10 @@ app.whenReady().then(async () => {
     return;
   }
 
-  // A write never waits on a push, so the last quiet window has to be published
-  // on the way out — with a deadline, because quitting must not hang on a remote.
-  let flushed = false;
   app.on("before-quit", (event) => {
-    if (flushed) return;
-    // A coding run in flight dies with the process. Its session is kept and the
-    // ticket offers Continue afterwards, but the person decides — no daemon.
-    const active = ctx.get("agent")?.activeRuns() ?? [];
-    if (active.length) {
-      const code = active.filter((a) => a.thread.itemId).length;
-      const choice = dialog.showMessageBoxSync({
-        type: "warning",
-        buttons: ["Quit", "Cancel"],
-        defaultId: 1,
-        cancelId: 1,
-        message: `${active.length} agent run${active.length === 1 ? " is" : "s are"} in progress`,
-        detail: code ? `${code} of them implement${code === 1 ? "s" : ""} a ticket. Quitting interrupts them; each ticket keeps its branch and offers Continue.` : "Quitting interrupts them."
-      });
-      if (choice === 1) {
-        event.preventDefault();
-        return;
-      }
-    }
-    const storage = ctx.get("storage");
-    if (!storage) return;
+    if (quitApproved()) return;
     event.preventDefault();
-    const done = () => {
-      flushed = true;
-      app.quit();
-    };
-    void Promise.race([storage.flushAll("quit"), new Promise((resolve) => setTimeout(resolve, 5_000))]).then(done, done);
+    void prepareToQuit(ctx).then((ok) => ok && app.quit());
   });
 
   const open = () =>

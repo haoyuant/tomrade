@@ -10,7 +10,7 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-It builds on four runners: macOS arm64, macOS x64, Windows x64 (NSIS, unsigned), and Linux x64 (AppImage). The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+It builds on four runners: macOS arm64, macOS x64, Windows x64 (NSIS, unsigned), and Linux x64 (AppImage). The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
 A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces the files on the existing draft.
 
@@ -35,9 +35,23 @@ gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ## Publishing: the website follows
 
-Publishing the draft (not as a prerelease) runs `.github/workflows/website.yml`. It starts the Deploy workflow in haoyuant/tomrade-site with the tag, which copies the installers to download.tomrade.com, points `latest.json` at them, and redeploys tomrade.com so its download buttons name the new version. Watch it at haoyuant/tomrade-site → Actions → Deploy; a failure is emailed to whoever owns the token. A re-run there, or Run workflow with the tag, repeats it.
+Publishing the draft runs `.github/workflows/website.yml`. It starts the Deploy workflow in haoyuant/tomrade-site with the tag, which copies the installers and update files to download.tomrade.com and writes the update manifests last. For a release it also points `latest.json` at the installers and redeploys tomrade.com so its download buttons name the new version; a prerelease leaves the site alone. Watch it at haoyuant/tomrade-site → Actions → Deploy; a failure is emailed to whoever owns the token. A re-run there, or Run workflow with the tag, repeats it.
 
-Publish by hand: a release published with `GITHUB_TOKEN` doesn't start other workflows. Marking a prerelease as a full release later starts it too.
+Publish by hand: a release published with `GITHUB_TOKEN` doesn't start other workflows. Marking a prerelease as a full release later starts it again, but a `-beta.N` build stays a beta: it wrote no Stable manifests, so the mirror leaves Stable and the site alone.
+
+## Updates: what installed copies see
+
+An installed build asks download.tomrade.com for its channel's manifest (`apps/desktop/src/updater.ts`): `latest-mac.yml`, `latest.yml` (Windows) or `latest-linux.yml` on Stable, the `beta` ones on Beta. Once published, a release reaches everyone within the hour, as a notice: nothing downloads until the person clicks Download, and the restart asks first.
+
+- Only `-beta.N` tags reach the Beta channel. electron-builder names the manifest after the first word of the suffix, so `v0.3.0-rc.1` writes `rc-mac.yml`, which no copy reads.
+- A release also writes the `beta` manifests, so Beta moves on to it. A prerelease writes only its own.
+- Nothing is ever downgraded, so a bad release is pulled by publishing a higher version. Leaving Beta waits for the next release.
+- The two Mac builds each list only their own zip; the release job merges them into one `latest-mac.yml` and fails if either arch is missing.
+- The mirror never moves a manifest back to an older version, so re-running an old tag cannot roll the channel back.
+- Differential downloads use the `.blockmap` files on Windows and Linux. A Mac's first update after installing from the DMG downloads the whole zip.
+- A Mac copy updates itself only from Applications; the About pane offers to move it there.
+
+To try a feed without publishing, point a build at any folder served over HTTP (`TOMRADE_UPDATE_URL=http://127.0.0.1:8080/`). A checkout then checks it too, though it can't install what it finds.
 
 It needs one secret here, `SITE_DISPATCH_TOKEN`: a fine-grained GitHub token for haoyuant/tomrade-site with Actions: Read and write. The site repository's own secrets are listed in its README.
 
