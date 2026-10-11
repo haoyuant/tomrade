@@ -68,8 +68,17 @@ declare module "@tomradex/ipc" {
 
 export const SettingsConfig = z.object({
   /** The machine file. */
-  path: z.string()
+  path: z.string(),
+  /** The system's locale, for a language preference of "system". */
+  locale: z.string().optional()
 });
+
+/** The languages the app speaks. */
+export type Locale = "en" | "zh";
+
+/** A language preference made concrete: "system" follows the system's locale, anything unknown is English. */
+export const resolveLocale = (preference: string | undefined, system: string | undefined): Locale =>
+  preference === "zh" || preference === "en" ? preference : system?.toLowerCase().startsWith("zh") ? "zh" : "en";
 export type SettingsConfig = z.infer<typeof SettingsConfig>;
 
 /** The Hub's settings file: user-scope sections, each stamped so two machines can settle a clash by time. */
@@ -280,6 +289,11 @@ export class Settings extends Service {
   }
 
   /** Registered sections come back complete: defaults filled in under whatever was stored. */
+  /** The language to speak to the person in — for words the backend writes, which the renderer shows as they are. */
+  locale(): Locale {
+    return resolveLocale(this.get().language as string | undefined, this.config.locale);
+  }
+
   get(): AppSettings {
     const out: Record<string, unknown> = { ...this.stored };
     for (const s of this.registry.values()) {

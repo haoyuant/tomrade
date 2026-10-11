@@ -484,6 +484,22 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "Conversation")).toMatchObject({ command: "code-link.open-thread" });
   });
 
+  it("speaks the person's language in the Code section, the badges and the status bar", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+    const item = ticket("中文界面");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    await untilRunsSettle(agent);
+    const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!;
+    expect(section.title).toBe("代码");
+    expect(section.rows.map((r) => r.label)).toEqual(expect.arrayContaining(["分支", "会话", "继续", "对话", "工作树"]));
+    expect(section.rows.find((r) => r.label === "会话")?.value).toMatch(/^空闲 · 由 Tomrade 运行/);
+    expect((await ctx.contributions.statusItems({ projectId: project.id })).find((s) => s.id === "code-link")?.text).toMatch(/^代码：1 个会话/);
+    expect(ctx.contributions.commands().find((c) => c.id === "code-link.start-run")).toMatchObject({ title: "在这里开始工作项", group: "代码" });
+  });
+
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;

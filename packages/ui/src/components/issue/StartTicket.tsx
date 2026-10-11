@@ -16,6 +16,7 @@ import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { permissionLabel } from "~/lib/codeLink";
 
 interface StartTicketProps {
   projectId: string;
@@ -269,7 +270,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
           {permissionModes && (
             <Field label={t("codeLink.permissionsHead")} htmlFor="stPermission">
               <select id="stPermission" className="select" value={permissionMode} disabled={busy} onChange={(event) => setChosenPermission(event.target.value)}>
-                {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+                {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{permissionLabel(t, choice)}</option>)}
               </select>
             </Field>
           )}

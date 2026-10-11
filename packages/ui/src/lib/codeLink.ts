@@ -1,3 +1,4 @@
+import type { MessageKey } from "~/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
 import type { StartOptions } from "@tomradex/code-link";
@@ -96,3 +97,23 @@ export function useRescan(projectId: string) {
     }
   });
 }
+
+/**
+ * The permission modes the bundled engines offer, named in the person's language;
+ * an engine's own label stands for any mode not listed here.
+ */
+const PERMISSION_LABELS: Record<string, MessageKey> = {
+  auto: "codeLink.perm_auto",
+  bypassPermissions: "codeLink.perm_full",
+  "full-access": "codeLink.perm_full",
+  acceptEdits: "codeLink.perm_acceptEdits",
+  default: "codeLink.perm_ask",
+  ask: "codeLink.perm_ask",
+  plan: "codeLink.perm_plan",
+  local: "codeLink.perm_local",
+  workspace: "codeLink.perm_workspace",
+  "read-only": "codeLink.perm_readOnly"
+};
+
+export const permissionLabel = (t: (key: MessageKey) => string, choice: { value: string; label?: string }): string =>
+  PERMISSION_LABELS[choice.value] ? t(PERMISSION_LABELS[choice.value]!) : (choice.label ?? choice.value);

@@ -362,12 +362,11 @@ export class AgentStore {
   }
 
   /** Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. */
-  reconcileInterrupted(projectId: string): void {
+  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress."): void {
     const db = this.db(projectId);
     const stale = db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
     if (!stale.length) return;
     const now = Date.now();
-    const note = "Interrupted — the app closed while this run was in progress.";
     const update = db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = 'cancelled', error = ?, ended_at = ? WHERE id = ?");
     for (const { id, thread_id } of stale) {
       update.run(note, now, id);

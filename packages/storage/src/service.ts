@@ -216,7 +216,10 @@ export class Storage extends Service {
           if (!entry?.dir) return null;
           const state = ctx.storage.cachedState(projectId);
           const where = entry.git === "dedicated" && entry.remote ? entry.remote.provider : path.basename(entry.dir);
-          return state === "synced" ? where : `${where} · ${state}`;
+          if (state === "synced") return where;
+          const zh = (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
+          const word = zh ? ({ ahead: "待发布", behind: "待读取", diverged: "两边都改了", offline: "离线", unavailable: "不可用", error: "出错", syncing: "同步中", local: "仅本机" } as Record<string, string>)[state] ?? state : state;
+          return `${where} · ${word}`;
         }
       });
     });

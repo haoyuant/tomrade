@@ -16,16 +16,25 @@ export interface CommandResult {
   showThread?: string;
 }
 
+/** Words a plugin may compute when shown, so they come out in the person's language at that moment. */
+export type Words = string | (() => string);
+const said = (w: Words | undefined): string | undefined => (typeof w === "function" ? w() : w);
+
 export interface Command {
   id: string;
-  title: string;
+  title: Words;
   /** Palette group heading; defaults to "Plugins". */
-  group?: string;
+  group?: Words;
   shortcut?: string;
   run(scope: CommandScope): CommandResult | void | Promise<CommandResult | void>;
 }
 
-export type CommandView = Omit<Command, "run">;
+export interface CommandView {
+  id: string;
+  title: string;
+  group?: string;
+  shortcut?: string;
+}
 
 export type BadgeTone = "faint" | "neutral" | "strong";
 
@@ -104,7 +113,7 @@ export interface SectionRow {
 
 export interface Section {
   id: string;
-  title: string;
+  title: Words;
   /** Null hides the section for this item. */
   render(item: Item): SectionContent | null | Promise<SectionContent | null>;
 }
@@ -237,7 +246,7 @@ export class Contributions extends Service {
   }
 
   commands(): CommandView[] {
-    return [...this.commandMap.values()].map(({ run: _run, ...view }) => view);
+    return [...this.commandMap.values()].map((c) => ({ id: c.id, title: said(c.title)!, ...(c.group ? { group: said(c.group) } : {}), ...(c.shortcut ? { shortcut: c.shortcut } : {}) }));
   }
 
   async run(id: string, scope: CommandScope): Promise<CommandResult> {
@@ -283,7 +292,7 @@ export class Contributions extends Service {
     const rendered = await Promise.all(sections.map((s) => this.isolated(`section ${s.id}`, () => s.render(item), null)));
     return sections.flatMap((s, i) => {
       const r = rendered[i];
-      return r ? [{ id: s.id, title: s.title, rows: r.rows ?? [], text: r.text }] : [];
+      return r ? [{ id: s.id, title: said(s.title)!, rows: r.rows ?? [], text: r.text }] : [];
     });
   }
 

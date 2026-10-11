@@ -1,5 +1,13 @@
 export const codeLink = {
   en: {
+    perm_auto: "Auto",
+    perm_full: "Full access",
+    perm_acceptEdits: "Accept edits",
+    perm_ask: "Ask permissions",
+    perm_plan: "Plan only",
+    perm_local: "Local rules",
+    perm_workspace: "Workspace",
+    perm_readOnly: "Read only",
     waitingToast: "It is waiting for your answer: {{question}}",
     askedLede: "The agent asked something and is waiting for your answer — answer it in the conversation:",
     openConversation: "Open the conversation",
@@ -57,6 +65,14 @@ export const codeLink = {
     rescanned: "Scanned {{scanned}}/{{repos}} repositories · {{moved}} moved"
   },
   zh: {
+    perm_auto: "自动",
+    perm_full: "完全访问",
+    perm_acceptEdits: "自动接受编辑",
+    perm_ask: "每次询问",
+    perm_plan: "只做计划",
+    perm_local: "按本地规则",
+    perm_workspace: "限工作区",
+    perm_readOnly: "只读",
     waitingToast: "它在等你回答：{{question}}",
     askedLede: "代理问了一个问题，正在等你回答——请在对话里回答：",
     openConversation: "打开对话",

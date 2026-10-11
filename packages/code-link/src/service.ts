@@ -26,6 +26,7 @@ import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult, type ScannedBranch } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
+import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { TerminalSettings, commandOk, exec, launchTerminal } from "./terminal.js";
@@ -358,7 +359,7 @@ export class CodeLink extends Service {
         const thread = this.running.get(threadId);
         const session = thread && this.sessionOf(thread);
         if (!thread || !session) return;
-        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? "needs your approval" : "asking you something" });
+        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? this.words().needsApproval : this.words().askingYou });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
       ctx.on("agent/run-ended", (run, thread) => {
@@ -998,11 +999,18 @@ export class CodeLink extends Service {
 
   // ── contributions ──────────────────────────────────────────────────────────
 
+  /** The words the backend writes for the person, in their language at the moment they are written. */
+  private words(): CodeWords {
+    return CODE_WORDS[this.ctx.settings.locale?.() ?? "en"];
+  }
+
   private contribute(ctx: Context): void {
     ctx.contributions.section({
       id: "code",
-      title: "Code",
+      title: () => this.words().section,
       render: (item) => {
+        const w = this.words();
+        const since = (at: number) => w.ago(Math.max(0, Math.round((Date.now() - at) / 1000)));
         const links = this.store.links(item.projectId, item.id);
         const delivery = this.store.currentDelivery(item.projectId, item.id);
         const open = delivery ? this.store.proposalsForDelivery(item.projectId, item.id, delivery.sequence, "open") : [];
@@ -1015,55 +1023,55 @@ export class CodeLink extends Service {
         const deliveries = this.store.deliveries(item.projectId, item.id);
         const deliveryBySequence = new Map(deliveries.map((entry) => [entry.sequence, entry]));
         const rows: SectionRow[] = [];
-        if (delivery && !current.length) rows.push({ label: "Delivery", icon: "i-merge", state: "live", value: `#${delivery.sequence} · ${delivery.state}` });
+        if (delivery && !current.length) rows.push({ label: w.delivery, icon: "i-merge", state: "live", value: `#${delivery.sequence} · ${w.deliveryState(delivery.state)}` });
         let shownDelivery: number | null = null;
         for (const l of ordered) {
           if (deliveries.length > 1 && shownDelivery !== l.delivery) {
             const entry = deliveryBySequence.get(l.delivery);
-            rows.push({ label: "Delivery", icon: "i-merge", state: entry?.state === "active" ? "live" : entry?.state === "completed" ? "ok" : "ended", value: `#${l.delivery} · ${entry?.state ?? "historical"}` });
+            rows.push({ label: w.delivery, icon: "i-merge", state: entry?.state === "active" ? "live" : entry?.state === "completed" ? "ok" : "ended", value: `#${l.delivery} · ${entry ? w.deliveryState(entry.state) : w.historical}` });
             shownDelivery = l.delivery;
           }
           const repo = this.ctx.repos.get(item.projectId, l.repoId);
-          const name = repo?.name ?? "repository";
-          if (l.branch) rows.push({ label: "Branch", icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
+          const name = repo?.name ?? w.repository;
+          if (l.branch) rows.push({ label: w.branch, icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
           if (l.prNumber !== null || l.prUrl) {
             rows.push({
-              label: "Pull request",
+              label: w.pullRequest,
               icon: "i-merge",
               state: l.prState === "merged" ? "ok" : l.prState === "closed" ? "ended" : l.prState === "open" ? "live" : undefined,
-              value: `${l.prNumber !== null ? `#${l.prNumber}` : "open it"}${l.prState ? ` · ${l.prState}` : ""}`,
+              value: `${l.prNumber !== null ? `#${l.prNumber}` : w.openIt}${l.prState ? ` · ${w.prState(l.prState)}` : ""}`,
               href: l.prUrl ?? undefined
             });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
-            rows.push({ label: "Pull request", icon: "i-merge", value: "Open pull request", command: "code-link.open-pr" });
+            rows.push({ label: w.pullRequest, icon: "i-merge", value: w.openPr, command: "code-link.open-pr" });
           }
-          if (l.mergedSha) rows.push({ label: "Merged", icon: "i-check", state: "ok", mono: true, value: `${l.mergedSha.slice(0, 7)} on ${repo?.defaultBranch ?? "main"}` });
-          if (l.headAt) rows.push({ label: "Last commit", icon: "i-clock", value: ago(l.headAt) });
+          if (l.mergedSha) rows.push({ label: w.merged, icon: "i-check", state: "ok", mono: true, value: w.mergedOn(l.mergedSha.slice(0, 7), repo?.defaultBranch ?? "main") });
+          if (l.headAt) rows.push({ label: w.lastCommit, icon: "i-clock", value: since(l.headAt) });
         }
         const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];
         if (live) {
-          const where = live.mode === "terminal" ? "in a terminal" : "run by Tomrade";
-          const when = live.lastEventAt ? ago(live.lastEventAt) : ago(live.startedAt);
+          const where = live.mode === "terminal" ? w.inTerminal : w.runByTomrade;
+          const when = since(live.lastEventAt ?? live.startedAt);
           const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[live.state];
           // What it is doing beats what it last said; an error is what it last said.
-          const doing = live.state === "error" ? (live.summary ?? "stopped") : (live.activity ?? live.summary ?? "");
+          const doing = live.state === "error" ? (live.summary ?? w.stopped) : (live.activity ?? live.summary ?? "");
           rows.push({
-            label: "Session",
+            label: w.session,
             icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
             state,
-            value: `${live.state}${live.state === "waiting" ? " for you" : ""} · ${where}${doing ? ` · ${doing}` : ""} · last signal ${when}`
+            value: `${w.sessionState(live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w.lastSignal(when)}`
           });
-          if (live.state !== "running") rows.push({ label: "Continue", icon: "i-send", value: live.mode === "terminal" ? "Continue in terminal" : "Continue here", command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
-          if (live.threadId) rows.push({ label: "Conversation", icon: "i-panel", value: live.state === "waiting" ? "Open it — it is waiting for you" : "Open it in the assistant", command: "code-link.open-thread" });
+          if (live.state !== "running") rows.push({ label: w.continue, icon: "i-send", value: live.mode === "terminal" ? w.continueTerminal : w.continueHere, command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
+          if (live.threadId) rows.push({ label: w.conversation, icon: "i-panel", value: live.state === "waiting" ? w.openWaiting : w.openInAssistant, command: "code-link.open-thread" });
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
-        if (worktree) rows.push({ label: "Worktree", icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
+        if (worktree) rows.push({ label: w.worktree, icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
         const proposal = open.find((p) => p.kind === "propose");
         if (proposal) {
-          rows.push({ label: "Proposal", icon: "i-warn", state: "warn", value: `Accept → ${proposal.toStatus}`, command: "code-link.accept-proposal" });
-          rows.push({ label: "Dismiss", icon: "i-close", value: "Not this time", command: "code-link.reject-proposal" });
+          rows.push({ label: w.proposal, icon: "i-warn", state: "warn", value: w.accept(w.status(proposal.toStatus ?? "")), command: "code-link.accept-proposal" });
+          rows.push({ label: w.dismiss, icon: "i-close", value: w.notThisTime, command: "code-link.reject-proposal" });
         }
-        const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${p.toStatus}: ${p.reason}`)).join("\n");
+        const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${w.status(p.toStatus ?? "")}: ${p.reason}`)).join("\n");
         return { rows, text: text || undefined };
       }
     });
@@ -1071,6 +1079,7 @@ export class CodeLink extends Service {
     ctx.contributions.badge({
       id: "code-link",
       compute: (items, { projectId }) => {
+        const w = this.words();
         const byItem = new Map<string, CodeLinkView[]>();
         for (const l of this.store.links(projectId)) (byItem.get(l.itemId) ?? byItem.set(l.itemId, []).get(l.itemId)!).push(l);
         const flags = new Map<string, ProposalView>();
@@ -1081,7 +1090,7 @@ export class CodeLink extends Service {
           for (const id of s.itemIds) {
             if (this.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
             if (s.state === "waiting") waiting.add(id);
-            if (s.state === "error") stuck.set(id, s.summary ?? "stopped");
+            if (s.state === "error") stuck.set(id, s.summary ?? w.stopped);
           }
         }
         const out: Record<string, Badge[]> = {};
@@ -1092,13 +1101,13 @@ export class CodeLink extends Service {
           const flag = flags.get(item.id);
           if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
           const badges: Badge[] = [];
-          if (waiting.has(item.id)) badges.push({ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" });
-          if (stuck.has(item.id)) badges.push({ id: "stuck", label: "stuck", tone: "strong", title: stuck.get(item.id) });
-          if (flag) badges.push({ id: "mismatch", label: "mismatch", tone: "strong", title: flag.reason });
+          if (waiting.has(item.id)) badges.push({ id: "waiting", label: w.badgeWaiting, tone: "strong", title: w.badgeWaitingTitle });
+          if (stuck.has(item.id)) badges.push({ id: "stuck", label: w.badgeStuck, tone: "strong", title: stuck.get(item.id) });
+          if (flag) badges.push({ id: "mismatch", label: w.badgeMismatch, tone: "strong", title: flag.reason });
           const primary = primaryOf(links);
           if (primary?.prState === "open") badges.push({ id: "pr", label: primary.prNumber !== null ? `PR #${primary.prNumber}` : "PR", tone: "strong", title: primary.prUrl ?? undefined });
-          else if (links.some((l) => l.mergedSha)) badges.push({ id: "merged", label: "merged", tone: "faint" });
-          else if (primary?.branch) badges.push({ id: "branch", label: "branch", tone: "neutral", title: primary.branch });
+          else if (links.some((l) => l.mergedSha)) badges.push({ id: "merged", label: w.badgeMerged, tone: "faint" });
+          else if (primary?.branch) badges.push({ id: "branch", label: w.badgeBranch, tone: "neutral", title: primary.branch });
           if (badges.length) out[item.id] = badges;
         }
         return out;
@@ -1110,103 +1119,106 @@ export class CodeLink extends Service {
       opens: "code-inbox",
       text: ({ projectId }) => {
         if (!projectId) return null;
+        const w = this.words();
         const at = this.scannedAt.get(projectId);
         const parts: string[] = [];
         const live = this.store.sessions(projectId, { live: true }).filter((s) => s.state !== "lost");
         const waiting = live.filter((s) => s.state === "waiting").length;
         const stuck = live.filter((s) => s.state === "error").length;
-        if (live.length) parts.push(`${live.length} session${live.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} waiting for you` : ""}${stuck ? ` · ${stuck} stuck` : ""}`);
+        if (live.length) parts.push([w.sessions(live.length), waiting ? w.waitingCount(waiting) : "", stuck ? w.stuckCount(stuck) : ""].filter(Boolean).join(" · "));
         const unlinked = this.unlinked(projectId).length;
         const open = this.store.proposals(projectId).length;
         const unreachable = this.store.repoStates(projectId).filter((repo) => repo.remote === "unreachable").length;
-        if (unlinked) parts.push(`${unlinked} unlinked`);
-        if (open) parts.push(`${open} to confirm`);
-        if (unreachable) parts.push(`${unreachable} unreachable`);
+        if (unlinked) parts.push(w.unlinked(unlinked));
+        if (open) parts.push(w.toConfirm(open));
+        if (unreachable) parts.push(w.unreachable(unreachable));
         if (!parts.length && !at) return null;
-        return `code: ${parts.join(" · ") || "in sync"}${at ? ` · scanned ${ago(at)}` : ""}`;
+        return w.statusLine(parts.join(" · "), at ? w.ago(Math.max(0, Math.round((Date.now() - at) / 1000))) : null);
       }
     });
 
+    const group = () => this.words().group;
     const startCommand = (mode: StartMode) => async (scope: { projectId?: string; itemId?: string | null }) => {
-      if (!scope.projectId || !scope.itemId) return { toast: "Select a ticket first" };
+      const w = this.words();
+      if (!scope.projectId || !scope.itemId) return { toast: w.selectTicket };
       const result = await this.start(scope.projectId, scope.itemId, { mode });
       if (!result.ok) return { toast: result.message };
       const warning = result.warnings?.join("\n");
-      const where = result.branch ? ` on ${result.branch}` : "";
-      if (result.mode === "terminal") return { toast: `${result.launched ? `${result.continued ? "Continuing" : "Started"}${where} — your terminal has it` : `Run this in a terminal:\n${result.command}`}${warning ? `\n${warning}` : ""}` };
+      const started = w.started(result.continued, result.branch);
+      if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${w.terminalHasIt}` : w.runThis(result.command ?? "")}${warning ? `\n${warning}` : ""}` };
       // a run here is followed in its conversation, which opens with it
-      if (result.waitingOn) return { toast: `It is waiting for your answer: ${result.waitingOn}`, showThread: result.threadId };
-      return { toast: `${result.continued ? "Continuing" : "Started"}${where}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
+      if (result.waitingOn) return { toast: w.waitingOn(result.waitingOn), showThread: result.threadId };
+      return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
     };
-    ctx.contributions.command({ id: "code-link.start-run", title: "Start ticket here", group: "Code", run: startCommand("run") });
-    ctx.contributions.command({ id: "code-link.start-terminal", title: "Open ticket in terminal", group: "Code", run: startCommand("terminal") });
+    ctx.contributions.command({ id: "code-link.start-run", title: () => this.words().cmdStartRun, group, run: startCommand("run") });
+    ctx.contributions.command({ id: "code-link.start-terminal", title: () => this.words().cmdStartTerminal, group, run: startCommand("terminal") });
     ctx.contributions.command({
       id: "code-link.open-pr",
-      title: "Open pull request",
-      group: "Code",
+      title: () => this.words().cmdOpenPr,
+      group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: "Select a ticket first" };
+        if (!projectId || !itemId) return { toast: this.words().selectTicket };
         const r = await this.openPr(projectId, itemId);
         return { toast: r.message };
       }
     });
     ctx.contributions.command({
       id: "code-link.open-thread",
-      title: "Open the ticket's conversation",
-      group: "Code",
+      title: () => this.words().cmdOpenThread,
+      group,
       run: ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: "Select a ticket first" };
+        if (!projectId || !itemId) return { toast: this.words().selectTicket };
         const sessions = this.store.sessions(projectId, { itemId }).filter((s) => s.threadId);
         const threadId = (sessions.find((s) => s.state !== "ended") ?? sessions[0])?.threadId ?? this.store.links(projectId, itemId).find((l) => l.threadId)?.threadId;
-        return threadId ? { showThread: threadId } : { toast: "This ticket has no conversation yet — start it first" };
+        return threadId ? { showThread: threadId } : { toast: this.words().noConversation };
       }
     });
     ctx.contributions.command({
       id: "code-link.open-terminal",
-      title: "Open worktree in terminal",
-      group: "Code",
+      title: () => this.words().cmdOpenTerminal,
+      group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: "Select a ticket first" };
+        if (!projectId || !itemId) return { toast: this.words().selectTicket };
         const cwd = this.worktreeOf(projectId, itemId);
-        if (!cwd) return { toast: "No worktree for this ticket on this machine — start it first" };
+        if (!cwd) return { toast: this.words().noWorktree };
         const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
         const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(this.sessionDir("shell"), path.basename(cwd)) }, settings.terminal);
-        return { toast: launch.launched ? `Opened ${cwd}` : `cd ${cwd}` };
+        return { toast: launch.launched ? this.words().opened(cwd) : `cd ${cwd}` };
       }
     });
     const settle = (accept: boolean) => (scope: { projectId?: string; itemId?: string | null }) => {
-      if (!scope.projectId || !scope.itemId) return { toast: "Select a ticket first" };
+      const w = this.words();
+      if (!scope.projectId || !scope.itemId) return { toast: w.selectTicket };
       const proposal = this.store.proposals(scope.projectId, scope.itemId, "open").find((p) => p.kind === "propose");
-      if (!proposal) return { toast: "Nothing proposed for this ticket" };
+      if (!proposal) return { toast: w.nothingProposed };
       this.resolve(scope.projectId, proposal.id, accept);
-      return { toast: accept ? `Moved to ${proposal.toStatus}` : "Dismissed — asked again only on new evidence" };
+      return { toast: accept ? w.movedTo(w.status(proposal.toStatus ?? "")) : w.dismissed };
     };
-    ctx.contributions.command({ id: "code-link.accept-proposal", title: "Accept the code proposal", group: "Code", run: settle(true) });
-    ctx.contributions.command({ id: "code-link.reject-proposal", title: "Dismiss the code proposal", group: "Code", run: settle(false) });
+    ctx.contributions.command({ id: "code-link.accept-proposal", title: () => this.words().cmdAccept, group, run: settle(true) });
+    ctx.contributions.command({ id: "code-link.reject-proposal", title: () => this.words().cmdReject, group, run: settle(false) });
     ctx.contributions.command({
       id: "code-link.connect",
-      title: "Connect repository to coding agents",
-      group: "Code",
+      title: () => this.words().cmdConnect,
+      group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId) return { toast: "Open a project first" };
+        if (!projectId) return { toast: this.words().openProject };
         const item = itemId ? this.ctx.items.get(projectId, itemId) : null;
         const fromItem = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
         const repos = this.ctx.repos.list(projectId);
         const repoId = fromItem ?? (repos.length === 1 ? repos[0]!.id : null);
-        if (!repoId) return { toast: "Select a ticket on the workstream whose repository to connect" };
+        if (!repoId) return { toast: this.words().pickWorkstream };
         const r = await this.connect(projectId, repoId);
         return { toast: r.message };
       }
     });
     ctx.contributions.command({
       id: "code-link.rescan",
-      title: "Rescan repositories",
-      group: "Code",
+      title: () => this.words().cmdRescan,
+      group,
       run: async ({ projectId }) => {
-        if (!projectId) return { toast: "Open a project first" };
+        if (!projectId) return { toast: this.words().openProject };
         const s = await this.scan(projectId);
-        const skipped = s.skipped.length ? ` · ${s.skipped.length} skipped` : "";
-        return { toast: `Scanned ${s.scanned}/${s.repos} repositories · ${s.changed} moved · ${s.proposals} to confirm${skipped}` };
+        return { toast: this.words().scanned(s.scanned, s.repos, s.changed, s.proposals, s.skipped.length) };
       }
     });
   }
