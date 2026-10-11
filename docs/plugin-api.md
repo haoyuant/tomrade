@@ -469,6 +469,18 @@ edges the change calls for (named prerequisite/dependent, so a model cannot get
 the direction backwards), drops unknown keys, cycles, finished targets and edges
 the others already imply, and asks the user before writing anything.
 
+A tool may ask the person at the keyboard: inside a run, `inv.ask(text, options)`
+posts a permission question in the thread and resolves with the chosen option
+(null when the run is cancelled). The run's wall clock stops while it waits, so a
+person taking their time does not spend the agent's budget. `@tomradex/shell`
+is the first-party user: its `bash` runs in the run's workstream checkout
+(`inv.run.cwd`, with `inv.run.env` for credentials plugins supplied), or else the
+project's Files folder, and its Shell settings section chooses `ask` (default —
+every command waits for Allow once / Allow for this turn / Deny), `auto`, or
+`off` (the tool is unregistered). No agent may change that section. Commands run
+one at a time per run, each in its own process group; a timeout, a cancelled
+run, or the command finishing stops everything it started.
+
 ### General work, deliveries and the Files plugin
 
 Ticket `workType` defaults to `coding` on a workstream with a repository and to
@@ -717,14 +729,16 @@ ctx.tools.register(defineTool({ name, title, description, input: z.object({...})
 ```
 
 Names are global and unique. `execute` receives validated `args` and
-`{ by, projectId, run?, signal? }`; use `inv.by` as the author of any write,
+`{ by, projectId, run?, signal?, ask? }`; use `inv.by` as the author of any write,
 `inv.projectId` as the default scope, and `inv.run` (present inside an agent
 run) for the ledger and run-scoped state. `inv.signal` aborts when the caller
 stops waiting — the run was cancelled, or an MCP client withdrew the call — and
 a tool that waits on a process or a network should stop with it. A registered tool appears on every
 surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
-There is no per-surface code to write. A tool may return a string as well as a
+There is no per-surface code to write. The one exception is `mcp: false`: the
+MCP server (any local client, Claude Code and Codex included) never lists or runs
+such a tool, so only engines in this process reach it — the shell is one. A tool may return a string as well as a
 value: the MCP server passes a string through as the result text and serialises
 anything else as compact JSON, so a tool whose answer is already prose spends no
 context on quoting and indentation.

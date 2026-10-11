@@ -143,6 +143,9 @@ importers:
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../../packages/settings
+      '@tomradex/shell':
+        specifier: workspace:*
+        version: link:../../packages/shell
       '@tomradex/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -1389,6 +1392,28 @@ importers:
       '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/shell:
+    dependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools

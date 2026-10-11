@@ -32,6 +32,10 @@ export interface RunHandle {
   waivers: Set<string>;
   /** Run-scoped scratch space; proposals live here between tool calls. */
   scratch: Map<string, unknown>;
+  /** Where the run works once its turn is prepared: the thread's workstream checkout. */
+  cwd?: string;
+  /** Credentials plugins supplied for the run's subprocesses; never persisted. */
+  env?: Record<string, string>;
 }
 
 export interface ToolInvocation {
@@ -42,6 +46,8 @@ export interface ToolInvocation {
   run?: RunHandle;
   /** Aborted when the caller stops waiting — a cancelled run, a client that withdrew the call. Work outside the process should stop with it. */
   signal?: AbortSignal;
+  /** Ask the person behind the call to pick one of `options`; null when the call was cancelled. Absent when nobody can be asked. */
+  ask?(text: string, options: string[]): Promise<string | null>;
 }
 
 export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
@@ -50,6 +56,8 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   description: string;
   input: S;
   execute(args: z.output<S>, invocation: ToolInvocation): unknown;
+  /** False keeps the tool off the MCP server, so only engines in this process can call it — for what no outside client may reach, like a shell. */
+  mcp?: boolean;
   /** How to undo this tool's non-oplog effects; undoRun calls it for ledger entries whose tool declares one. */
   revert?(args: z.output<S>, result: unknown, invocation: ToolInvocation): void | Promise<void>;
 }
@@ -142,6 +150,11 @@ export class Tools extends Service {
 
   list(): ToolDefinition[] {
     return [...this.registry.values()];
+  }
+
+  /** What the MCP server offers: every tool but those kept in this process. */
+  served(): ToolDefinition[] {
+    return this.list().filter((t) => t.mcp !== false);
   }
 
   get(name: string): ToolDefinition | undefined {

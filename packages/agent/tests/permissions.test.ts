@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
@@ -60,4 +60,41 @@ it("stores modes per coding thread and applies a change on the next turn without
     ctx.agent.cancel(second.runId);
     await expect.poll(() => ctx.agent.store.run(project.id, second.runId)?.status).not.toBe("running");
   } finally { await ctx.fiber.dispose(); }
+});
+
+it("stops the run's wall clock while a permission waits, and restarts it after the answer", async () => {
+  const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-wall-${Date.now()}.json` }], [Agent, { maxWallMs: 10_000 }]] });
+  await settle();
+  const answers: (string | null)[] = [];
+  ctx.agent.engine({ id: "slow-human", title: "Slow human", author: "ai:test", available: async () => ({ ok: true }),
+    async turn(_input, io) {
+      answers.push(await io.requestPermission!("Run it?", ["Allow once", "Deny"], io.signal));
+      await new Promise<void>((resolve) => io.signal.addEventListener("abort", () => resolve(), { once: true }));
+      return { stop: "cancelled" };
+    } });
+  const until = async (cond: () => boolean) => {
+    for (let i = 0; i < 500 && !cond(); i++) await new Promise((r) => setImmediate(r));
+    expect(cond()).toBe(true);
+  };
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  try {
+    const thread = ctx.agent.newThread(project.id, "slow-human");
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "go" });
+    await until(() => ctx.agent.thread(project.id, thread.id).pending?.kind === "permission");
+    vi.advanceTimersByTime(60_000);
+    await new Promise((r) => setImmediate(r));
+    const question = ctx.agent.thread(project.id, thread.id).pending!.question;
+    expect(ctx.agent.store.run(project.id, runId)?.status).toBe("running");
+    ctx.agent.send(project.id, thread.id, { kind: "answer", questionId: question.id, value: "Allow once" });
+    await until(() => answers.length === 1);
+    vi.advanceTimersByTime(9_000);
+    await new Promise((r) => setImmediate(r));
+    expect(ctx.agent.store.run(project.id, runId)?.status).toBe("running");
+    vi.advanceTimersByTime(2_000);
+    await until(() => ctx.agent.store.run(project.id, runId)?.status === "cancelled");
+    expect(answers).toEqual(["Allow once"]);
+  } finally {
+    vi.useRealTimers();
+    await ctx.fiber.dispose();
+  }
 });

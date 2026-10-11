@@ -167,6 +167,11 @@ plugins:
     name: "@tomradex/llm"
   - id: tools
     name: "@tomradex/tools"
+  # A bash tool for the in-app assistant, asked before each command by default
+  # (Settings → Shell). Kept off the MCP server: no outside client gets a shell.
+  # Not "shell": that row is the desktop's own OS integration below.
+  - id: bash
+    name: "@tomradex/shell"
   # The platform: threads, runs, the ledger, run-scoped undo, and the
   # engine/workflow/playbook/policy registries. It conducts nothing itself.
   - id: agent

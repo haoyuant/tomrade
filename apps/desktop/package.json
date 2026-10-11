@@ -66,6 +66,7 @@
     "@tomradex/projects": "workspace:*",
     "@tomradex/repos": "workspace:*",
     "@tomradex/settings": "workspace:*",
+    "@tomradex/shell": "workspace:*",
     "@tomradex/storage": "workspace:*",
     "@tomradex/storage-git": "workspace:*",
     "@tomradex/storage-github": "workspace:*",

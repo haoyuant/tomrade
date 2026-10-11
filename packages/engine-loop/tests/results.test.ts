@@ -49,6 +49,10 @@ describe("render", () => {
     expect(out.length).toBeLessThan(17_000);
   });
 
+  it("reads a text answer as written, line breaks and all", () => {
+    expect(render("exit 0\nhello\nworld")).toBe("exit 0\nhello\nworld");
+  });
+
   it("still cuts a single oversized record the old way", () => {
     expect(render({ body: "y".repeat(10_000) })).toContain("truncated");
   });

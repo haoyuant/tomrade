@@ -221,7 +221,7 @@ export class Mcp extends Service {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
-    for (const tool of tools.list()) {
+    for (const tool of tools.served()) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args, extra) => {
         try {
           if (token) {

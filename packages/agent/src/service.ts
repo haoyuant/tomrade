@@ -908,8 +908,12 @@ export class Agent extends Service {
 
   private makeRunCtx(run: RunView, thread: ThreadSummary, engine: Engine): RunCtx {
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), thread.itemId ? this.config.codeMaxWallMs : this.config.maxWallMs);
-    abort.signal.addEventListener("abort", () => clearTimeout(timer));
+    // The wall clock bounds the agent, not the person: it stops while a permission question waits.
+    const wall = { left: thread.itemId ? this.config.codeMaxWallMs : this.config.maxWallMs, since: Date.now(), timer: undefined as NodeJS.Timeout | undefined };
+    const runClock = () => { wall.since = Date.now(); wall.timer = setTimeout(() => abort.abort(), Math.max(0, wall.left)); };
+    const holdClock = () => { clearTimeout(wall.timer); wall.left -= Date.now() - wall.since; };
+    runClock();
+    abort.signal.addEventListener("abort", () => clearTimeout(wall.timer));
     const entries: LedgerEntry[] = [];
     const handle: RunHandle = {
       id: run.id,
@@ -935,13 +939,44 @@ export class Agent extends Service {
       this.broadcast(thread.id, { type: "progress", runId: run.id, elapsedMs: Math.round(performance.now() - startedAt), ...p, usage });
     };
     progress({});
+    const requestPermission: NonNullable<TurnIO["requestPermission"]> = (text, options, signal) => {
+      const previous = this.permissionQueues.get(thread.id) ?? Promise.resolve();
+      const request = previous.catch(() => {}).then(() => new Promise<string | null>((resolve) => {
+        if (abort.signal.aborted || signal?.aborted) { resolve(null); return; }
+        const pending: PendingView = { threadId: thread.id, kind: "permission", workflow: null, accepts: "options",
+          question: { id: randomUUID(), text, options, freeText: false } };
+        const cancel = () => answer(null);
+        let held = true;
+        holdClock();
+        const answer = (value: string | null) => {
+          abort.signal.removeEventListener("abort", cancel);
+          signal?.removeEventListener("abort", cancel);
+          if (held && !abort.signal.aborted) runClock();
+          held = false;
+          if (this.permissions.get(thread.id)?.pending.question.id === pending.question.id) {
+            this.permissions.delete(thread.id);
+            const durable = this.store.pending(thread.projectId, thread.id);
+            this.broadcast(thread.id, { type: "pending", pending: durable ? this.pendingView(durable) : null });
+          }
+          resolve(value);
+        };
+        this.permissions.set(thread.id, { pending, answer });
+        abort.signal.addEventListener("abort", cancel, { once: true });
+        signal?.addEventListener("abort", cancel, { once: true });
+        emit({ type: "question", ...pending.question });
+        this.broadcast(thread.id, { type: "pending", pending });
+      }));
+      this.permissionQueues.set(thread.id, request);
+      void request.finally(() => { if (this.permissionQueues.get(thread.id) === request) this.permissionQueues.delete(thread.id); });
+      return request;
+    };
     const tools = {
       describe: () => this.ctx.tools.describe().filter((tool) => engine.literal || !this.workflows.get(tool.name)?.literal),
       execute: async (name: string, args: unknown): Promise<unknown> => {
         const t0 = Date.now();
         progress({ activity: name });
         try {
-          const result = await this.ctx.tools.execute(name, args, { by: engine.author, projectId: thread.projectId, run: handle, signal: abort.signal });
+          const result = await this.ctx.tools.execute(name, args, { by: engine.author, projectId: thread.projectId, run: handle, signal: abort.signal, ask: (text, options) => requestPermission(text, options) });
           const ms = Date.now() - t0;
           const suspended = isSuspended(result);
           const summary = suspended ? "waiting for the user" : summarize(result);
@@ -970,33 +1005,7 @@ export class Agent extends Service {
       },
       emit,
       permissionMode: (mode) => { handle.scratch.set("permissionMode", mode); this.broadcast(thread.id, { type: "permission-mode", mode }); },
-      requestPermission: (text, options, signal) => {
-        const previous = this.permissionQueues.get(thread.id) ?? Promise.resolve();
-        const request = previous.catch(() => {}).then(() => new Promise<string | null>((resolve) => {
-          if (abort.signal.aborted || signal?.aborted) { resolve(null); return; }
-          const pending: PendingView = { threadId: thread.id, kind: "permission", workflow: null, accepts: "options",
-            question: { id: randomUUID(), text, options, freeText: false } };
-          const cancel = () => answer(null);
-          const answer = (value: string | null) => {
-            abort.signal.removeEventListener("abort", cancel);
-            signal?.removeEventListener("abort", cancel);
-            if (this.permissions.get(thread.id)?.pending.question.id === pending.question.id) {
-              this.permissions.delete(thread.id);
-              const durable = this.store.pending(thread.projectId, thread.id);
-              this.broadcast(thread.id, { type: "pending", pending: durable ? this.pendingView(durable) : null });
-            }
-            resolve(value);
-          };
-          this.permissions.set(thread.id, { pending, answer });
-          abort.signal.addEventListener("abort", cancel, { once: true });
-          signal?.addEventListener("abort", cancel, { once: true });
-          emit({ type: "question", ...pending.question });
-          this.broadcast(thread.id, { type: "pending", pending });
-        }));
-        this.permissionQueues.set(thread.id, request);
-        void request.finally(() => { if (this.permissionQueues.get(thread.id) === request) this.permissionQueues.delete(thread.id); });
-        return request;
-      },
+      requestPermission,
       delta: (text) => {
         streamedSinceReport += text.length;
         this.broadcast(thread.id, { type: "delta", runId: run.id, text });
@@ -1088,6 +1097,8 @@ export class Agent extends Service {
         ...(where.remote && where.branch ? { workdir: { remote: where.remote, branch: where.branch, worktree: where.worktree } } : {})
       };
       await this.ctx.parallel("agent/prepare-turn", turnInput);
+      rc.handle.cwd = turnInput.cwd;
+      rc.handle.env = turnInput.env;
       if (turnInput.cwd && turnInput.purpose !== "backlog") rc.io.run.scratch.set("mediaWorkdir", turnInput.cwd);
       result = await rc.engine.turn(turnInput, rc.io);
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);

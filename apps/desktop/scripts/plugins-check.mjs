@@ -47,6 +47,9 @@ const run = async () => {
   const shippedOff = new Set(["engine-scripted"]);
   check("every row the composition switches on is active", ctx.plugins.list().every((p) => p.state === (shippedOff.has(p.id) ? "disabled" : "active")));
   check("every required module has a provider", ctx.plugins.modules().every((m) => !m.required || m.providers.length));
+  // The assistant's shell is in the tool registry for engines here, and nowhere on the MCP server.
+  check("the bash tool is registered for in-app engines", ctx.tools.has("bash"));
+  check("the bash tool is not served over MCP", !ctx.tools.served().some((t) => t.name === "bash"));
   check("one row is credited with both keys it provides through nested plugins", view("boards")?.provides.join() === "boards,views");
 
   // The guard, on the plugin nothing may run without.
