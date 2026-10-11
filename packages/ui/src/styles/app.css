@@ -1548,6 +1548,8 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   width: 100%; text-align: left; padding: 8px var(--space-3);
   border: 0; border-radius: var(--radius-sm); background: transparent;
   color: var(--fg-2); font-family: var(--font-display); font-size: 14px;
+  /* the group carries .eyebrow for its heading; its rows are titles, not labels */
+  text-transform: none; letter-spacing: normal; line-height: 1.35;
 }
 .palette-row:hover, .palette-row.active { background: var(--surface-warm); color: var(--fg); }
 .palette-row .p-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
