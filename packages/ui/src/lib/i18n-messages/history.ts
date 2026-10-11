@@ -34,6 +34,7 @@ export const history = {
     opCopy: "copied {{label}} to {{target}}",
     opRemove: "deleted {{label}}",
     opImport: "imported {{label}}",
+    opSet: "changed {{label}} in Settings",
     opOther: "{{op}} {{label}}",
     importRoot: "into the root"
   },
@@ -72,6 +73,7 @@ export const history = {
     opCopy: "把 {{label}} 复制到了 {{target}}",
     opRemove: "删除了 {{label}}",
     opImport: "导入了 {{label}}",
+    opSet: "修改了设置：{{label}}",
     opOther: "{{op}} {{label}}",
     importRoot: "到根目录"
   }

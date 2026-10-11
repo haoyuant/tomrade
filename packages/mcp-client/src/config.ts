@@ -37,7 +37,7 @@ export const McpClientSettings = z.object({
 });
 export type McpClientSettings = z.output<typeof McpClientSettings>;
 
-/** Commands, environments and headers carry credentials: the section never leaves this machine. */
+/** Commands, environments and headers carry credentials: the section never leaves this machine, and no agent reads it — or adds a command to it. */
 export const MCP_SERVERS_SECTION: SettingsSection<McpClientSettings> = {
   id: "mcpServers",
   title: "MCP servers",
@@ -45,7 +45,8 @@ export const MCP_SERVERS_SECTION: SettingsSection<McpClientSettings> = {
   schema: McpClientSettings,
   defaults: { servers: [] },
   order: 30,
-  scope: "machine"
+  scope: "machine",
+  agent: "none"
 };
 
 /** Hosts prefix a server name (`mcp__tomrade__`, 14 characters) and cap tool names at 64. */

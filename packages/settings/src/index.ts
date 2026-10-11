@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppSettings } from "@tomradex/domain";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
+import { agentAccess } from "./agent.js";
 
 /**
  * `machine` settings stay on this machine — credentials, paths, binaries.
@@ -13,6 +14,14 @@ import type {} from "@tomradex/ipc";
  * that forgets to say is one that does not travel, never one that leaks.
  */
 export type SettingsScope = "machine" | "user";
+
+/**
+ * What an agent may do with a section through get_settings / update_settings.
+ * `read` is the default: a setting nobody opened up can be looked at, never
+ * changed. A section holding a secret is `none` whatever it declares, and so
+ * is anything that runs a command — those are a person's call.
+ */
+export type SettingsAccess = "write" | "read" | "none";
 
 export interface SettingsSection<T = unknown> {
   id: string;
@@ -23,6 +32,7 @@ export interface SettingsSection<T = unknown> {
   /** Lower renders first. Core sections sit below 10. */
   order?: number;
   scope?: SettingsScope;
+  agent?: SettingsAccess;
 }
 
 /** What the renderer gets: the schema as JSON Schema, so a card can be drawn without the plugin's code. */
@@ -50,6 +60,10 @@ declare module "@tomradex/ipc" {
     "settings.set": (next: AppSettings) => AppSettings;
     "settings.sections": () => SettingsSectionView[];
   }
+  interface Broadcasts {
+    /** Changed from somewhere other than this window's own save: an agent, another machine. */
+    "settings.changed": (next: AppSettings) => void;
+  }
 }
 
 export const SettingsConfig = z.object({
@@ -74,10 +88,11 @@ export interface UserSettingsStore {
 const THEME: SettingsSection<AppSettings["theme"]> = {
   id: "theme",
   title: "Appearance",
-  schema: z.string().refine(v => ["system", "light", "dark", "matcha", "dawn"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)) as z.ZodType<AppSettings["theme"]>,
+  schema: z.string().refine(v => ["system", "light", "dark", "matcha", "dawn"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)).describe('"system", "light", "dark", "matcha", "dawn", or a custom theme\'s id ("custom:…").') as z.ZodType<AppSettings["theme"]>,
   defaults: "dawn",
   order: 0,
-  scope: "user"
+  scope: "user",
+  agent: "write"
 };
 
 const LANGUAGE: SettingsSection<AppSettings["language"]> = {
@@ -86,7 +101,8 @@ const LANGUAGE: SettingsSection<AppSettings["language"]> = {
   schema: z.enum(["system", "en", "zh"]),
   defaults: "system",
   order: 1,
-  scope: "user"
+  scope: "user",
+  agent: "write"
 };
 
 const CSS_VALUE = z.string().min(1).max(256).refine(v => !/[{};]/.test(v), "Invalid CSS token value");
@@ -99,10 +115,10 @@ const CUSTOM_THEMES: SettingsSection<unknown[]> = {
     id: z.string().regex(/^custom:[a-z0-9-]+$/), name: z.string().trim().min(1).max(64),
     base: z.enum(["light", "dark", "matcha", "dawn"]), icon: z.enum(["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"]).default("i-sliders"), tokens: valuesOf(THEME_TOKEN_KEYS), fonts: valuesOf(THEME_FONT_KEYS).partial()
   })).max(32),
-  defaults: [], order: 0.5, scope: "user"
+  defaults: [], order: 0.5, scope: "user", agent: "write"
 };
 const THEME_AUTOMATION: SettingsSection<unknown> = {
-  id: "themeAutomation", title: "Theme automation", description: "Automatic theme switching.", scope: "user", order: 0.25,
+  id: "themeAutomation", title: "Theme automation", description: "Automatic theme switching.", scope: "user", order: 0.25, agent: "write",
   schema: z.object({
     mode: z.enum(["none", "system", "schedule", "shuffle"]),
     defaultTheme: z.string().refine(v => ["light", "dark", "matcha", "dawn"].includes(v) || /^custom:[a-z0-9-]+$/.test(v)),
@@ -202,7 +218,9 @@ export class Settings extends Service {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
       ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));
       ctx.ipc.handle("settings.sections", () => ctx.settings.sections());
+      ctx.on("settings/changed", (next) => ctx.ipc.send("settings.changed", next));
     });
+    this.home.inject(["tools", "db", "oplog", "hub"], (ctx) => agentAccess(ctx));
     // User-scope sections follow the Hub folder once there is one.
     this.home.inject(["hub"], (ctx) => {
       const attach = (dir: string | null) => {
@@ -228,6 +246,14 @@ export class Settings extends Service {
 
   scopeOf(section: SettingsSection): SettingsScope {
     return section.scope === "user" && !holdsSecret(section.schema) ? "user" : "machine";
+  }
+
+  accessOf(section: SettingsSection): SettingsAccess {
+    return holdsSecret(section.schema) ? "none" : section.agent ?? "read";
+  }
+
+  section(id: string): SettingsSection | undefined {
+    return this.registry.get(id);
   }
 
   /** Reversible: the section and its card disappear with the plugin that registered them. */

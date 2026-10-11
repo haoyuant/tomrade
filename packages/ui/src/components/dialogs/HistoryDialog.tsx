@@ -20,16 +20,17 @@ const OP_KEY: Record<string, MessageKey> = {
   move: "history.opMove",
   copy: "history.opCopy",
   remove: "history.opRemove",
-  import: "history.opImport"
+  import: "history.opImport",
+  set: "history.opSet"
 };
 
-const ENTITY_ICON: Record<string, IconId> = { item: "i-stack", board: "i-board", view: "i-board", file: "i-file" };
+const ENTITY_ICON: Record<string, IconId> = { item: "i-stack", board: "i-board", view: "i-board", file: "i-file", setting: "i-sliders" };
 
 const iconOf = (r: UndoRecord): IconId => (r.op === "mkdir" ? "i-folder" : (ENTITY_ICON[r.entity] ?? "i-clock"));
 
 /**
- * Every record the project's history holds — backlog writes and file
- * operations alike — newest first, with the undone ones greyed. Any row can
+ * Every record the project's history holds — backlog writes, file operations
+ * and settings an agent changed alike — newest first, with the undone ones greyed. Any row can
  * become "the latest thing done": rolling back undoes everything above a live
  * row, redoing to an undone row replays the stack down to it.
  */

@@ -107,7 +107,8 @@ export const FILES_SECTION: SettingsSection<FilesSettings> = {
     agentIndexTokens: z.number().int().min(0).max(20_000).default(1_500).meta({ title: "Index size in tokens" })
   }),
   defaults: { agentIndexTokens: 1_500 },
-  order: 13
+  order: 13,
+  agent: "write"
 };
 
 /** A folder, minus hidden names; a folder left empty gets a marker so git carries it. */

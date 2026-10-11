@@ -872,7 +872,7 @@ export class Agent extends Service {
     const projectId = this.store.projectOfRun(runId);
     const run = projectId ? this.store.run(projectId, runId) : null;
     if (!projectId || !run || run.status !== "running") return false;
-    const changes = this.store.changesOf(projectId, runId);
+    const changes = this.store.changesOf(projectId, runId) + this.ctx.oplog.runChanges(projectId, runId).length;
     const view = this.store.endRun(projectId, runId, { status: "cancelled", stop: "cancelled", error: "Interrupted — no active process to cancel.", changes });
     this.broadcast(run.threadId, { type: "done", run: view });
     return true;
@@ -1212,9 +1212,11 @@ export class Agent extends Service {
     if (result.stop === "error") {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: result.error ?? "The engine stopped without an error message." }, rc.run.id);
     }
-    const changes = this.store.changesOf(rc.projectId, rc.run.id);
+    // Settings and anything else an undo provider tracks by run count too, and go with the run's Undo.
+    const elsewhere = this.ctx.oplog.runChanges(rc.projectId, rc.run.id);
+    const changes = this.store.changesOf(rc.projectId, rc.run.id) + elsewhere.length;
     if (changes > 0) {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: this.store.changedEntities(rc.projectId, rc.run.id) }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: [...this.store.changedEntities(rc.projectId, rc.run.id), ...elsewhere] }, rc.run.id);
     }
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
     const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });

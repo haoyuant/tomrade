@@ -67,10 +67,19 @@ export interface ForeignOp {
   patch: Record<string, unknown> | null;
 }
 
+/** One thing an agent run changed, as the run's footer lists it. */
+export interface RunChange {
+  key: string;
+  label: string;
+  op: "created" | "updated" | "deleted";
+}
+
 /**
  * A plugin whose own operations belong in ⌘Z and the history window. It lists
  * them as records, takes one back or re-applies one by its id, and drops what
  * it had undone when a write lands anywhere. Registered with `ctx.oplog.provide`.
+ * A provider that knows which run made each record can also join the run's
+ * count and its Undo; one that does not is left alone by them.
  */
 export interface UndoProvider {
   id: string;
@@ -82,6 +91,10 @@ export interface UndoProvider {
   redo(projectId: string, id: string): string | Promise<string>;
   /** A write landed: the redo stack is void. Synchronous — it runs inside the write's transaction. */
   forget(projectId: string): void;
+  /** What one run changed here, oldest first. */
+  runChanges?(projectId: string, runId: string): RunChange[];
+  /** Take back everything one run changed here, newest first; what moved on since is kept, with the reason. Synchronous, like the backlog's. */
+  undoRun?(projectId: string, runId: string): UndoRunResult;
 }
 
 export const BACKLOG_PROVIDER = "oplog";
@@ -232,7 +245,22 @@ export class Oplog extends Service {
   undoRun(projectId: string, runId: string): UndoRunResult {
     const result = undoRun(this.db(projectId), runId);
     if (result.reverted) this.home.emit("oplog/reverted", projectId);
+    for (const provider of this.providers.values()) {
+      if (!provider.undoRun) continue;
+      try {
+        const theirs = provider.undoRun(projectId, runId);
+        result.reverted += theirs.reverted;
+        result.kept.push(...theirs.kept);
+      } catch (error) {
+        this.home.logger.warn(`oplog: ${provider.id}.undoRun failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     return result;
+  }
+
+  /** What a run changed outside the backlog, from every provider that keeps track. */
+  runChanges(projectId: string, runId: string): RunChange[] {
+    return [...this.providers.values()].flatMap((provider) => provider.runChanges?.(projectId, runId) ?? []);
   }
 
   /** Take back what one extension wrote in a project, optionally only since a moment. */

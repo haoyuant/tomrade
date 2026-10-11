@@ -120,6 +120,8 @@ export interface SettingsSectionSpec<T> {
   schema: z.ZodType<T>;
   defaults: T;
   scope?: "machine" | "user";
+  /** What agents may do with it through get_settings / update_settings. Defaults to read; a section holding a password is none. */
+  agent?: "write" | "read" | "none";
 }
 
 export interface SettingsApi {

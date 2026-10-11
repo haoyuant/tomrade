@@ -643,7 +643,8 @@ record: everything newer than a live record is undone, newest first; an undone
 record is redone together with whatever was undone after it. `oplog.revert`
 takes back one named record out of order, which is what a toast's Undo does.
 `undoLast(projectId, entityId)` still reverts one entity's latest backlog
-write; `undoRun` still consumes a run's rows outright.
+write; `undoRun` still consumes a run's rows outright, then asks every provider
+that implements `undoRun` to take back what that run did there.
 
 A plugin whose operations are not oplog rows joins the same ⌘Z with an
 **undo provider**:
@@ -665,6 +666,14 @@ move, copy, delete and import is remembered as the versions before and after
 it, and undo restores exactly its paths, refusing with `FileMovedOnError` when
 one has changed since. The renderer reaches all of this through `oplog.undo`,
 `oplog.redo`, `oplog.timeline`, `oplog.rollback` and `oplog.revert`.
+
+A provider that knows which run made each record can also implement
+`runChanges(projectId, runId)` — what the run changed there, for the count and
+list under the run in the assistant panel — and `undoRun(projectId, runId)`,
+synchronous like the backlog's, which reverts them newest first and returns
+what it had to keep, with the reason. `@tomradex/settings` does both for the
+settings an agent changes (below); a provider without them stays out of the
+run's count and its Undo.
 
 ## Tools
 
@@ -1158,6 +1167,22 @@ person: it is also written to `<Hub>/settings.json` with a timestamp per
 section, travels with the Hub, and a clash between two machines is settled by
 the later stamp. A section whose schema holds a password is `machine` whatever
 it declares.
+
+A section also says what **agents** may do with it, through the
+`get_settings` and `update_settings` tools that `@tomradex/settings`
+registers: `agent: "write"` lets an agent change it, `"read"` (the default)
+lets one look, `"none"` keeps it out of sight. A section whose schema holds a
+password is `none` whatever it declares; leave anything that names a command
+or a binary, or carries credentials, at `read` or `none` (`mcpServers` is
+`none`). Values an agent reads have every string under a key that sounds secret
+(`apiKey`, `token`, `password`…), and everything in an `env` or `headers` map,
+replaced by `[hidden]`; a `[hidden]` sent back keeps the value it stood for.
+`update_settings` takes `{ changes: { <section id>: value } }`, merges an
+object section's fields into what is there, validates every section before
+any lands, and records the change in the calling project's history — ⌘Z, the
+history window and the run's Undo take it back unless the setting has moved on
+since. The open sections today are `theme`, `themeAutomation`, `customThemes`,
+`language`, `pet`, `notes` and `files`.
 
 First-party plugins register sections the same way: `@tomradex/files` contributes
 `files`, whose `agentIndexTokens` (1500) is how much of an agent's prompt the

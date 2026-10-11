@@ -209,6 +209,22 @@ describe("the loop engine on the platform", () => {
     expect(undone.reverted).toBe(6);
     expect(items.list({ projectId: project.id }).find((i) => i.title === "Water reminder")).toBeUndefined();
   });
+
+  it("changes a setting when asked, lists it under the run, and takes it back with the run", async () => {
+    const script = (_req: ChatRequest, step: number): FakeTurn =>
+      step === 0 ? { toolCalls: [{ name: "update_settings", args: { changes: { theme: "dark", language: "zh" } } }] } : { text: "Switched to Dark, in Chinese." };
+    const { ctx, agent, project } = await boot(script);
+    const thread = agent.newThread(project.id);
+    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "换成深色主题，界面用中文" });
+    const run = await settled(ctx, project.id, runId);
+    expect(run.changes).toBe(2);
+    expect(ctx.settings.get()).toMatchObject({ theme: "dark", language: "zh" });
+    const foot = agent.store.messages(project.id, thread.id).map((m) => m.block).find((b) => b.type === "changes");
+    expect(foot).toMatchObject({ count: 2, items: [{ key: "Appearance", label: "dawn → dark", op: "updated" }, { key: "Language", label: "system → zh", op: "updated" }] });
+
+    expect(agent.revert(project.id, runId).reverted).toBe(2);
+    expect(ctx.settings.get()).toMatchObject({ theme: "dawn", language: "system" });
+  });
 });
 
 describe("a waiting workflow on a model engine", () => {

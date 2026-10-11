@@ -12,6 +12,9 @@
   ],
   "references": [
     {
+      "path": "../db"
+    },
+    {
       "path": "../domain"
     },
     {
@@ -19,6 +22,12 @@
     },
     {
       "path": "../ipc"
+    },
+    {
+      "path": "../oplog"
+    },
+    {
+      "path": "../tools"
     }
   ]
 }
