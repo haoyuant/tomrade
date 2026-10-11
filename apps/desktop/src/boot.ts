@@ -43,7 +43,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
   const ctx = new Context();
   ctx.logger.exporter(consoleExporter());
 
-  const { rows: base, modules } = readConfig(opts.configFile);
+  const { rows: base, modules, contracts } = readConfig(opts.configFile);
   const fromFiles = (opts.patchFiles ?? []).filter((f) => fs.existsSync(f)).map(readRows);
   const baseDir = path.dirname(opts.configFile);
   // A run that names no Hub or plugin folders keeps them beside its own data,
@@ -63,6 +63,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
   await ctx.plugin(Plugins, {
     rows,
     modules,
+    contracts,
     extensions,
     resolve: (row) => resolvePlugin(row, baseDir, extensionsRoot),
     persist: patchFile ? (id, disabled) => writePatchRow(patchFile, id, { disabled }) : undefined

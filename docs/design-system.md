@@ -267,8 +267,9 @@ page, plain text without one), and the editor in the dark — 59 checks.
 `test:plugins-ui` (`scripts/plugins-ui-check.mjs`) drives the Plugins pane: a
 store package and a local one with their tiers, risk and reach, an agent's
 build that loads only from the review dialog, My plugins and a new plugin from
-a description, Browse when the store is unreachable, and the pane in Chinese —
-19 checks. `test:extensions` (8) installs a plugin from outside the app and
+a description, Browse when the store is unreachable, Installed grouped by
+contract and narrowed by its search box, the Assistant pane's link to the
+engines that are switched off, and the pane in Chinese — 32 checks. `test:extensions` (8) installs a plugin from outside the app and
 reloads a development folder in the real shell.
 `test:restore` (`scripts/restore-check.mjs`) plays two computers: a child
 process makes projects on the old one and backs three up to local bare remotes;

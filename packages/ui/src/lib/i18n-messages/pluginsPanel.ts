@@ -32,8 +32,20 @@ export const pluginsPanel = {
     installedTitle: "Installed",
     runningOfTotal: "{{running}} of {{total}} running",
     installedLede:
-      "One row per plugin, in the order the composition lists them. A switch takes effect at once: the plugin unloads with its tools, channels, badges and settings panes, and everything that injected it goes too. The choice is written to your patch file, so it survives a restart. A plugin that holds up a required module on its own has no switch to throw — the module would be left empty.",
+      "One row per plugin, grouped by the contract it fills — the registry it plugs into — and otherwise in the order the composition lists them. A switch takes effect at once: the plugin unloads with its tools, channels, badges and settings panes, and everything that injected it goes too. The choice is written to your patch file, so it survives a restart. A plugin that holds up a required module on its own has no switch to throw — the module would be left empty.",
     emptyRows: "Nothing to show — the composition has not been read.",
+
+    searchLabel: "Search plugins",
+    searchPlaceholder: "Search by name, package, contract or service",
+    noMatch: "No plugin matches “{{query}}”.",
+    contractWhy: "Every plugin here plugs into {{registry}}.",
+    contractEngine: "Engines",
+    contractEngineLede: "Conductors for agent threads. Switch one on and it joins the engine list in Settings → Assistant.",
+    contractStorage: "Destinations",
+    contractStorageLede: "Where a project's folder is published: any git remote, or a GitHub repository found or made for you.",
+    contractFiles: "File sharing",
+    contractFilesLede: "Where a project's files are versioned and shared from.",
+    otherPlugins: "Everything else",
   },
   zh: {
     stateRunning: "运行中",
@@ -66,7 +78,19 @@ export const pluginsPanel = {
 
     installedTitle: "已安装",
     runningOfTotal: "{{total}} 个中有 {{running}} 个在运行",
-    installedLede: "每个插件占一行，顺序与组合文件中一致。开关会立即生效：该插件连同它的工具、通道、徽标与设置面板一起卸载，依赖它的一切也随之卸载。这个选择会写入你的补丁文件，重启后依然有效。若某个插件独自撑起了一个必需模块，它就没有可以关闭的开关——关闭会让该模块留空。",
+    installedLede: "每个插件占一行，按它所遵循的契约（即它接入的注册表）分组，组内顺序与组合文件中一致。开关会立即生效：该插件连同它的工具、通道、徽标与设置面板一起卸载，依赖它的一切也随之卸载。这个选择会写入你的补丁文件，重启后依然有效。若某个插件独自撑起了一个必需模块，它就没有可以关闭的开关——关闭会让该模块留空。",
     emptyRows: "没有可显示的内容——尚未读取组合文件。",
+
+    searchLabel: "搜索插件",
+    searchPlaceholder: "按名称、包名、契约或服务搜索",
+    noMatch: "没有与“{{query}}”匹配的插件。",
+    contractWhy: "这里的每个插件都通过 {{registry}} 接入。",
+    contractEngine: "引擎",
+    contractEngineLede: "主导智能体对话的引擎。打开后，它会出现在 设置 → 助手 的引擎列表中。",
+    contractStorage: "发布目标",
+    contractStorageLede: "项目文件夹发布到哪里：任意 git 远程仓库，或为你查找、创建的 GitHub 仓库。",
+    contractFiles: "文件共享",
+    contractFilesLede: "项目文件在哪里保存版本、从哪里共享。",
+    otherPlugins: "其他插件",
   }
 };

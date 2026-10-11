@@ -7,6 +7,8 @@ export interface PluginRow {
   name: string;
   config?: unknown;
   disabled?: boolean;
+  /** Contract ids this row fills, for when it is switched off and registers nothing to observe. */
+  implements?: string[];
 }
 
 /**
@@ -18,6 +20,18 @@ export interface ModuleSpec {
   id: string;
   title: string;
   required?: boolean;
+}
+
+/**
+ * A contract is a registry plugins plug into, named by the call that does it —
+ * `agent.engine`, `storage.register`. Its members are interchangeable, which
+ * is what the Plugins pane groups them by.
+ */
+export interface ContractSpec {
+  id: string;
+  title: string;
+  /** The registering call. Its effects on a running row are how membership is observed. */
+  registry: string;
 }
 
 export type PluginState = "active" | "failed" | "pending" | "disabled";
@@ -37,6 +51,8 @@ export interface PluginView {
   injects: string[];
   /** Required modules it is the only provider of, which is why it cannot be switched off. */
   holds: string[];
+  /** Contracts it fills: declared on its row, plus any it was seen registering into. */
+  implements: string[];
   /** Present when the row is an installed extension rather than part of the app. */
   extension?: ExtensionInfo;
 }
@@ -51,12 +67,14 @@ export interface ModuleView {
 
 export interface PluginsSnapshot {
   modules: ModuleView[];
+  contracts: ContractSpec[];
   plugins: PluginView[];
 }
 
 export interface PluginsConfig {
   rows: PluginRow[];
   modules?: ModuleSpec[];
+  contracts?: ContractSpec[];
   /**
    * Turning a name into a plugin belongs to the host: Node resolves a bare
    * package specifier against the file that asks for it, and the application
