@@ -70,7 +70,7 @@ const run = async () => {
     $(`(() => {
       const i = document.querySelector('${selector}');
       if (!i) return false;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)});
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(text)});
       i.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     })()`);

@@ -86,7 +86,7 @@ const run = async () => {
   const seen = () => ctx.settings.get().onboarding?.seen ?? [];
   const toasts = () => texts(".toast .toast-body");
   const send = async (text) => {
-    await $(`(() => { const i = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await $(`(() => { const i = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await sleep(100);
     await $(`document.querySelector('.ai-send').click();true`);
   };
