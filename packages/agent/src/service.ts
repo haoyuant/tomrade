@@ -25,6 +25,7 @@ import {
   type Block,
   type CardView,
   type Engine,
+  type CliCheck,
   type EngineView,
   type FocusRef,
   type GeneralExecution,
@@ -160,7 +161,10 @@ declare module "@tomradex/ipc" {
     "agent.cancel": (runId: string) => boolean;
     "agent.showing": (threadId: string) => void;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
-    "agent.engines": () => EngineView[];
+    /** `fresh` looks for each engine's CLI again instead of answering from a recent probe. */
+    "agent.engines": (opts?: { fresh?: boolean }) => EngineView[];
+    /** Runs a file the person picked as an engine's CLI, before it is saved. */
+    "agent.checkCli": (engineId: string, file: string) => CliCheck;
     "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
     "agent.setEngine": (projectId: string, threadId: string, engineId: string) => ThreadSummary;
     /** Engine option overrides for one thread; null clears them so the engine's settings apply again. */
@@ -317,7 +321,12 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
-      ctx.ipc.handle("agent.engines", () => ctx.agent.engineViews());
+      ctx.ipc.handle("agent.engines", (opts) => ctx.agent.engineViews(opts?.fresh));
+      ctx.ipc.handle("agent.checkCli", async (engineId, file) => {
+        const engine = ctx.agent.engines.get(engineId);
+        if (!engine?.checkCli) throw new Error(`${engineId} does not run a local CLI`);
+        return engine.checkCli(file);
+      });
       ctx.ipc.handle("agent.setEngine", (projectId, threadId, engineId) => ctx.agent.setEngine(projectId, threadId, engineId));
       ctx.ipc.handle("agent.setOptions", (projectId, threadId, options) => ctx.agent.setOptions(projectId, threadId, options));
       ctx.ipc.handle("agent.playbooks", async (projectId) => {
@@ -453,12 +462,12 @@ export class Agent extends Service {
     return { threadId: record.threadId, kind: record.kind, workflow: record.workflow, question: record.question, accepts: record.accepts };
   }
 
-  async engineViews(): Promise<EngineView[]> {
+  async engineViews(fresh = false): Promise<EngineView[]> {
     return Promise.all(
       [...this.engines.values()].map(async (engine) => {
         try {
-          const state = await engine.available();
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, picks: engine.picks?.(), permissionModes: engine.permissionModes };
+          const state = await engine.available(fresh ? { fresh } : undefined);
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }

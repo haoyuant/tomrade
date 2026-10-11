@@ -1,9 +1,9 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { codexMediaInput, publishNativeImage } from "@tomradex/agent";
-import { bindTurn, runtimeDirectory, sessionSystem, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
+import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
 
 type Json = Record<string, any>;
@@ -39,10 +39,11 @@ export class CodexRuntime implements Runtime {
     this.alive = false;
     this.fail(new Error("Codex runtime closed"));
     const child = this.child;
-    child?.stdin.end(); child?.kill("SIGTERM");
-    if (child) setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    }, 3000).unref();
+    child?.stdin.end();
+    if (child) {
+      stopCli(child, "SIGTERM");
+      setTimeout(() => stopCli(child, "SIGKILL"), 3000).unref();
+    }
   }
 
   private fail(error: Error): void {
@@ -162,10 +163,10 @@ export class CodexRuntime implements Runtime {
     try {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       if (!this.child) {
-        this.child = spawn(options.command, ["app-server", "-c", `mcp_servers.tomrade.url=${JSON.stringify(this.ctx.mcp.url)}`,
+        this.child = spawnCli(await localCli("codex").launch(options.command), ["app-server", "-c", `mcp_servers.tomrade.url=${JSON.stringify(this.ctx.mcp.url)}`,
           "-c", 'mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN"',
           "-c", 'mcp_servers.tomrade.default_tools_approval_mode="approve"'],
-        { cwd: this.cwd, env: { ...process.env, ...input.env, TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"] });
+        { cwd: this.cwd, env: { ...process.env, ...input.env, TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
         const reader = readline.createInterface({ input: this.child.stdout });
         reader.on("line", (line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } });
         this.child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-1000); });

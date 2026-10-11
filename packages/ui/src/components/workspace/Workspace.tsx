@@ -71,6 +71,8 @@ export function Workspace() {
   const [newIssue, setNewIssue] = useState(false);
   /** null when shut; the pane to land on when open, "" for wherever it was left. */
   const [settings, setSettings] = useState<string | null>(null);
+  /** The engine row Settings opens unfolded on, when sent there to set one up. */
+  const [settingsEngine, setSettingsEngine] = useState<string>();
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [codeInbox, setCodeInbox] = useState(false);
@@ -95,7 +97,10 @@ export function Workspace() {
   const binding = useMemo<ScreenBinding>(
     () => ({
       openIssue: ws.select,
-      openSettings: () => setSettings("assistant"),
+      openSettings: (engineId) => {
+        setSettingsEngine(engineId);
+        setSettings("assistant");
+      },
       focus: [
         ...(selected ? [{ kind: "item", id: selected.id, key: selected.key, title: selected.title }] : []),
         ws.filePath !== null
@@ -320,7 +325,15 @@ export function Workspace() {
       />
       <HistoryDialog projectId={ws.project.id} open={history} onOpenChange={setHistory} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
-      <SettingsDialog open={settings !== null} pane={settings ?? ""} onOpenChange={(o) => setSettings(o ? "" : null)} />
+      <SettingsDialog
+        open={settings !== null}
+        pane={settings ?? ""}
+        engine={settingsEngine}
+        onOpenChange={(o) => {
+          setSettings(o ? "" : null);
+          if (!o) setSettingsEngine(undefined);
+        }}
+      />
       <ViewSettingsDialog open={viewSettings} onOpenChange={setViewSettings} />
       <ProjectSettingsDialog
         project={projectSettings ? ws.project : null}

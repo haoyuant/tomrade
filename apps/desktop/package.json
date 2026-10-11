@@ -25,6 +25,7 @@
     "test:updates": "electron scripts/updates-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
+    "test:local-cli": "electron scripts/local-cli-check.mjs",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {

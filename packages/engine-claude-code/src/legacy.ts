@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type EngineAvailability, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import type {} from "@tomradex/mcp";
-import { binaryOk, claudeSignedIn, runJsonl, signedIn } from "./cli.js";
+import { localAvailability } from "./availability.js";
+import { claudeSignedIn, runJsonl } from "./cli.js";
+import { localCli } from "./locate.js";
 import { buildSystem, promptOf } from "./system.js";
 import { claudeMediaInput } from "@tomradex/agent";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
@@ -41,7 +43,7 @@ interface StreamLine extends ResultCounters {
 }
 
 export function createClaudeCodeCliEngine(ctx: Context): Engine {
-  let probe: { at: number; state: EngineAvailability } | null = null;
+  const cli = localCli("claude");
   return {
     id: "claude-code",
     title: "Claude Code",
@@ -53,19 +55,14 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       { key: "model", title: "Model", choices: [{ value: "sonnet" }, { value: "opus" }, { value: "haiku" }], freeText: true },
       { key: "effort", title: "Effort", choices: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }, { value: "max" }] }
     ],
-    async available() {
-      if (probe && Date.now() - probe.at < 30_000) return probe.state;
-      const bin = await binaryOk("claude");
-      const state: EngineAvailability = !bin.ok
-        ? { ok: false, reason: "claude CLI not found — install Claude Code and sign in", need: "install" }
-        : !ctx.get("mcp")?.url
-          ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin", need: "service" }
-          : !(await signedIn("claude", ["auth", "status"], claudeSignedIn))
-            ? { ok: false, reason: "Claude Code is not signed in — run `claude` in a terminal and log in", need: "sign-in" }
-            : { ok: true };
-      probe = { at: Date.now(), state };
-      return state;
-    },
+    available: localAvailability(ctx, {
+      engineId: "claude-code",
+      title: "Claude Code",
+      cli,
+      install: "install Claude Code and sign in",
+      signIn: { args: ["auth", "status"], says: claudeSignedIn, reason: "Claude Code is not signed in — run `claude` in a terminal and log in" }
+    }),
+    checkCli: (file) => cli.check(file),
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       const options = ClaudeCodeOptions.parse(input.options ?? {});
       if (input.permissionMode) options.codePermissionMode = input.permissionMode === "local" ? undefined : ClaudeCodeOptions.shape.codePermissionMode.parse(input.permissionMode);
@@ -133,7 +130,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       let failure: string | null = null;
 
       try {
-        const run = runJsonl(options.command, args, {
+        const run = runJsonl(await cli.launch(options.command), args, {
           stdin: withMedia ? JSON.stringify({ type: "user", message: { role: "user", content: claudeMediaInput(input, io, promptOf(input)) } }) + "\n" : undefined,
           cwd: input.cwd ?? tmp,
           env: { ...process.env, ...input.env },
@@ -194,5 +191,5 @@ export default {
   }
 };
 
-export { binaryOk, runJsonl } from "./cli.js";
+export { runJsonl } from "./cli.js";
 export { buildSystem, promptOf } from "./system.js";

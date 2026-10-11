@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type EngineAvailability, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { publishNativeImage } from "@tomradex/agent";
-import { binaryOk, buildSystem, promptOf, runJsonl, signedIn } from "@tomradex/engine-claude-code";
+import { buildSystem, localAvailability, localCli, promptOf, runJsonl } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 
@@ -51,7 +51,7 @@ export function codexSignedIn(output: string): boolean | null {
 }
 
 export function createCodexCliEngine(ctx: Context): Engine {
-  let probe: { at: number; state: EngineAvailability } | null = null;
+  const cli = localCli("codex");
   return {
     id: "codex",
     title: "Codex",
@@ -65,19 +65,14 @@ export function createCodexCliEngine(ctx: Context): Engine {
       { key: "model", title: "Model", choices: [], freeText: true },
       { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
     ],
-    async available() {
-      if (probe && Date.now() - probe.at < 30_000) return probe.state;
-      const bin = await binaryOk("codex");
-      const state: EngineAvailability = !bin.ok
-        ? { ok: false, reason: "codex CLI not found — install OpenAI Codex and sign in", need: "install" }
-        : !ctx.get("mcp")?.url
-          ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin", need: "service" }
-          : !(await signedIn("codex", ["login", "status"], codexSignedIn))
-            ? { ok: false, reason: "Codex is not signed in — run `codex login` in a terminal", need: "sign-in" }
-            : { ok: true };
-      probe = { at: Date.now(), state };
-      return state;
-    },
+    available: localAvailability(ctx, {
+      engineId: "codex",
+      title: "Codex",
+      cli,
+      install: "install OpenAI Codex and sign in",
+      signIn: { args: ["login", "status"], says: codexSignedIn, reason: "Codex is not signed in — run `codex login` in a terminal" }
+    }),
+    checkCli: (file) => cli.check(file),
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       const options = CodexOptions.parse(input.options ?? {});
       const url = ctx.mcp.url;
@@ -136,7 +131,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       let failure: string | null = null;
 
       try {
-        const run = runJsonl(options.command, args, {
+        const run = runJsonl(await cli.launch(options.command), args, {
           cwd: input.cwd ?? tmp,
           env: { ...process.env, ...input.env, [TOKEN_ENV]: token },
           signal: io.signal,

@@ -291,6 +291,15 @@ feed and forgets Stable's answer, a missing feed is reported with its reason, an
 older build on the feed is never offered, turning checks back on asks at once,
 and no notice is stacked over the open About pane — 26 checks. The restart
 itself only runs in an installed build (docs/releasing.md).
+`test:local-cli` (`scripts/local-cli-check.mjs`) covers the local agents:
+each engine reports how its CLI was looked for and, when found, its path and
+version; a missing path is refused with its reason; with both agents signed
+out, Start names why in a few words and its Set up opens Settings on that
+agent's row, which shows the chosen file, the sign-in step and a short state;
+a path that does not run is refused before it is saved, automatic detection
+takes a chosen path back, Check again skips the cache, and a Windows CLI found
+only in WSL gets its own warning, the full guide (`where codex` included) and
+diagnostics naming the platform, the folders searched and PATH — 25 checks.
 `test:onboarding` (`scripts/onboarding-check.mjs`) is a first run left alone:
 the app opens on the sample project and nothing else, its seed absent from
 History and from the account's catalog; its Learning path view draws as a

@@ -1,10 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
-import { query, type Query, type SDKMessage, type SDKUserMessage, type Options } from "@anthropic-ai/claude-agent-sdk";
+import { spawn } from "node:child_process";
+import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { claudeMediaInput } from "@tomradex/agent";
 import { ClaudeCodeOptions } from "./legacy.js";
+import { localCli, spawnCli, type CliLaunch } from "./locate.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
 import { sessionSystem, turnPrompt } from "./system.js";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
@@ -16,13 +16,23 @@ function matchesTool(name: string, pattern: string): boolean {
   return new RegExp(`^${escaped}$`).test(name);
 }
 
-export function executable(command: string): string {
-  if (command.includes(path.sep)) return path.resolve(command);
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    const file = path.join(dir, command);
-    try { fs.accessSync(file, fs.constants.X_OK); return file; } catch {}
-  }
-  throw new Error(`Claude Code executable not found: ${command}`);
+/**
+ * The SDK starts a native path itself; a Windows `.cmd` shim needs our launch
+ * (node + script), which the SDK only takes as a custom spawn.
+ */
+function sdkLaunch(launch: CliLaunch): Pick<Options, "pathToClaudeCodeExecutable" | "spawnClaudeCodeProcess"> {
+  if (launch.argv([]).command === launch.file) return { pathToClaudeCodeExecutable: launch.file };
+  return {
+    pathToClaudeCodeExecutable: launch.file,
+    spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
+      const child = command === launch.file
+        ? spawnCli(launch, args, { cwd, env, signal, stdio: ["pipe", "pipe", "pipe"] })
+        : spawn(command, args, { cwd, env, signal, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      // Unread, a full stderr pipe would stall the CLI.
+      child.stderr?.resume();
+      return child as unknown as SpawnedProcess;
+    }
+  };
 }
 
 export class ClaudeRuntime implements Runtime {
@@ -123,9 +133,10 @@ export class ClaudeRuntime implements Runtime {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       if (!this.query) {
         const code = input.purpose !== "backlog";
+        const launch = await localCli("claude").launch(options.command);
         const sdkOptions: Options = {
-          pathToClaudeCodeExecutable: executable(options.command), cwd: this.cwd,
-          env: { ...process.env, ...input.env },
+          ...sdkLaunch(launch), cwd: this.cwd,
+          env: launch.env({ ...process.env, ...input.env }),
           model: options.model, effort: options.effort as Options["effort"],
           resume: io.resume, includePartialMessages: true,
           systemPrompt: { type: "preset", preset: "claude_code", append: sessionSystem(input, "Claude Code") },

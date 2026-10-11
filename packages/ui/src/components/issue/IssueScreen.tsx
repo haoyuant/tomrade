@@ -47,6 +47,8 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const undo = useUndo(projectId);
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Where the panel sent Settings: the assistant pane, maybe at one engine's row. */
+  const [settingsAt, setSettingsAt] = useState<{ pane: string; engine?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
@@ -55,7 +57,10 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const binding = useMemo<ScreenBinding>(
     () => ({
       openIssue,
-      openSettings: () => setSettingsOpen(true),
+      openSettings: (engineId) => {
+        setSettingsAt({ pane: "assistant", engine: engineId });
+        setSettingsOpen(true);
+      },
       focus: item ? [{ kind: "item", id: item.id, key: item.key, title: item.title }] : []
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -247,7 +252,15 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
       <StatusBar projectId={projectId} onUndo={() => undo.mutate(undefined)}>
         <ThemeSwitch compact />
       </StatusBar>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        pane={settingsAt?.pane}
+        engine={settingsAt?.engine}
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open) setSettingsAt(null);
+        }}
+      />
       <DeleteIssueDialog
         item={deleting ? item : null}
         items={items.data ?? []}

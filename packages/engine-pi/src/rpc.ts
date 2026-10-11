@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -6,7 +6,7 @@ import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import type { Context } from "cordis";
 import { attachedMedia, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
-import { bindTurn, runtimeDirectory, sessionSystem, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
+import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { bridgeSource } from "./bridge.js";
 import { PiOptions, toolSelection } from "./options.js";
@@ -62,10 +62,11 @@ export class PiRuntime implements Runtime {
     this.alive = false;
     this.fail(new Error("Pi runtime closed"));
     const child = this.child;
-    child?.stdin.end(); child?.kill("SIGTERM");
-    if (child) setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    }, 3000).unref();
+    child?.stdin.end();
+    if (child) {
+      stopCli(child, "SIGTERM");
+      setTimeout(() => stopCli(child, "SIGKILL"), 3000).unref();
+    }
   }
 
   private fail(error: Error): void {
@@ -118,7 +119,7 @@ export class PiRuntime implements Runtime {
     if (this.alive) this.send({ type: "extension_ui_response", id: request.id, ...reply });
   }
 
-  private spawn(input: TurnInput, io: TurnIO, options: PiOptions): void {
+  private async spawn(input: TurnInput, io: TurnIO, options: PiOptions): Promise<void> {
     this.session = io.resume ?? randomUUID();
     const bridge = path.join(this.dir, "tomrade.ts");
     const system = path.join(this.dir, "system.md");
@@ -129,7 +130,8 @@ export class PiRuntime implements Runtime {
     const args = ["--mode", "rpc", "-e", bridge, "--session-id", this.session, "--append-system-prompt", system,
       ...(options.model ? ["--model", options.model] : []), ...(options.effort ? ["--thinking", options.effort] : []),
       ...(tools ? ["--tools", tools] : [])];
-    const child = spawn(options.command, args, { cwd: this.cwd, env: { ...process.env, ...input.env }, stdio: ["pipe", "pipe", "pipe"] });
+    const launch = await localCli("pi").launch(options.command);
+    const child = spawnCli(launch, args, { cwd: this.cwd, env: { ...process.env, ...input.env }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stdout.on("data", lineSplitter((line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } }));
     child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-1000); });
@@ -225,7 +227,7 @@ export class PiRuntime implements Runtime {
     io.signal.addEventListener("abort", abort, { once: true });
     try {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
-      if (!this.child) this.spawn(input, io, options);
+      if (!this.child) await this.spawn(input, io, options);
       const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/")).map((media) => ({ type: "image", data: media.base64, mimeType: media.mime }));
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
       prompted = true;

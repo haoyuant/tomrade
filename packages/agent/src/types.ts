@@ -252,13 +252,59 @@ export interface TurnResult {
  */
 export type EngineCapability = "backlog" | "code" | "general";
 
-/** What stands between an engine and its first turn, so the app can say how to fix it in the person's language. */
-export type EngineNeed = "install" | "sign-in" | "model" | "service";
+/**
+ * What stands between an engine and its first turn, so the app can say how to fix it in the person's language.
+ * `repair`: the CLI is there but does not run.
+ */
+export type EngineNeed = "install" | "repair" | "sign-in" | "model" | "service";
+
+/** Where a local CLI candidate came from, in the order they are tried. */
+export type CliSource = "manual" | "path" | "login-path" | "known";
+
+export interface CliAttempt {
+  path: string;
+  source: CliSource;
+  ok: boolean;
+  /** The version it printed, or why it did not run. */
+  detail: string;
+}
+
+/** How a local agent's CLI was looked for and what was found — enough to show its state and to report it. */
+export interface LocalCliStatus {
+  name: string;
+  state: "ready" | "missing" | "broken";
+  path?: string;
+  source?: CliSource;
+  version?: string;
+  /** Why the best candidate did not run, when none did. */
+  error?: string;
+  /** A path the person chose that no longer runs; detection carried on without it. */
+  manual?: { path: string; error: string };
+  /** Found only inside WSL, where a Windows app cannot run it. */
+  wsl?: string;
+  attempts: CliAttempt[];
+  /** Directories searched, in order. */
+  searched: string[];
+  platform: string;
+  arch: string;
+  /** The PATH the app itself runs with. */
+  pathEnv: string;
+}
 
 export interface EngineAvailability {
   ok: boolean;
   reason?: string;
   need?: EngineNeed;
+  /** Present for engines that drive a CLI installed on this machine. */
+  cli?: LocalCliStatus;
+}
+
+/** A path the person typed or picked, run once to see whether it is the CLI. */
+export interface CliCheck {
+  ok: boolean;
+  path: string;
+  version?: string;
+  error?: string;
 }
 
 /** Anything that can take one turn on a thread. The conductor seam. */
@@ -276,7 +322,10 @@ export interface Engine {
    * the waiting question in its prompt and resumes or cancels the workflow itself.
    */
   literal?: boolean;
-  available(): Promise<EngineAvailability>;
+  /** `fresh` looks again instead of answering from a recent probe — after the person installs or points at a CLI. */
+  available(opts?: { fresh?: boolean }): Promise<EngineAvailability>;
+  /** For an engine that runs a local CLI: whether this file is one it can use. */
+  checkCli?(file: string): Promise<CliCheck>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
@@ -301,6 +350,7 @@ export interface EngineView {
   ok: boolean;
   reason?: string;
   need?: EngineNeed;
+  cli?: LocalCliStatus;
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
 }

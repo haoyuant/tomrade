@@ -7,6 +7,7 @@ import { ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybook
 import { invoke } from "~/lib/api";
 import { useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
+import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
 import { STATUS } from "~/lib/domain";
 import { invalidateWorkspace, useItems, useSettings } from "~/lib/queries";
@@ -60,7 +61,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
-  const { showThread } = useAgentDock();
+  const { showThread, openSettings } = useAgentDock();
   const general = item.workType === "general";
   const engines = useEngines();
   const settings = useSettings();
@@ -213,12 +214,21 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
             <select id="stEngine" className="select" value={engineId} disabled={busy} onChange={(event) => { setChosenEngine(event.target.value); setChosenPicks(null); setChosenPermission(null); }}>
               {candidates.map((candidate) => (
                 <option key={candidate.id} value={candidate.id} disabled={!candidate.ok}>
-                  {candidate.title}{candidate.ok ? "" : ` — ${candidate.reason ?? ""}`}
+                  {candidate.title}{candidate.ok ? "" : ` — ${engineStateLabel(candidate, t, t("settingsDialog.engineUnavailable"))}`}
                 </option>
               ))}
               {otherAllowed && <option value="other">{t("codeLink.otherAgent")}</option>}
             </select>
             {!candidates.length && !otherAllowed && <p className="meta-txt">{t("codeLink.noAgents")}</p>}
+            {engine && !engine.ok && (
+              <p className="meta-txt" data-testid="start-engine-not-ready">
+                {t("localCli.notReady", { title: engine.title, state: engineStateLabel(engine, t, t("settingsDialog.engineUnavailable")) })}
+                {" "}
+                <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} data-testid="start-engine-configure" onClick={() => { onClose(); openSettings(engine.id); }}>
+                  {t("localCli.configure")}
+                </button>
+              </p>
+            )}
           </Field>
 
           {picks.length > 0 && (

@@ -13,6 +13,8 @@ declare module "@tomradex/ipc" {
     "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
     /** Native picker for several files, or for folders. Null when the user cancels. */
     "shell.pickFiles": (title?: string, buttonLabel?: string, kind?: "files" | "folders") => string[] | null;
+    /** Native picker for one program — a CLI the app should run. Null when the user cancels. */
+    "shell.pickProgram": (title?: string, buttonLabel?: string) => string | null;
     /** Reveal a path in Finder/Explorer, so a destination can be inspected. */
     "shell.reveal": (target: string) => void;
     /** Open a link in the real browser — the renderer must never navigate away from the app. */
@@ -51,6 +53,19 @@ export const shell = {
       };
       const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : result.filePaths;
+    });
+
+    ctx.ipc.handle("shell.pickProgram", async (title, buttonLabel) => {
+      const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      // CLIs live in dot-folders (~/.local/bin) that the dialog hides by default.
+      const options = {
+        title: title ?? "Choose a program",
+        properties: ["openFile" as const, "showHiddenFiles" as const],
+        buttonLabel: buttonLabel ?? "Choose",
+        ...(process.platform === "win32" ? { filters: [{ name: "Programs", extensions: ["exe", "cmd", "bat"] }, { name: "All files", extensions: ["*"] }] } : {})
+      };
+      const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+      return result.canceled ? null : (result.filePaths[0] ?? null);
     });
 
     ctx.ipc.handle("shell.reveal", (target) => {
