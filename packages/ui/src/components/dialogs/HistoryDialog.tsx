@@ -5,7 +5,7 @@ import { Kbd, Num } from "~/components/ui/atoms";
 import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRedo, useRollback, useTimeline, useUndo } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 
 const OP_KEY: Record<string, MessageKey> = {
@@ -47,7 +47,7 @@ export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: st
   const canRedo = records.some((r) => r.undoneAt !== null);
   const busy = undo.isPending || redo.isPending || rollback.isPending;
 
-  const report = (error: Error) => toast({ body: error.message });
+  const report = (error: Error) => toast(errorSpec(error));
   const moveTo = (record: UndoRecord) =>
     rollback.mutate(record.ref, {
       onSuccess: (result) => {

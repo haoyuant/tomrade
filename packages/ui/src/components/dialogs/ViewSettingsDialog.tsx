@@ -7,7 +7,7 @@ import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, DEFAULT_SHOWN_FIELDS, LAYOUT_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useGraphs, useUpdateView } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
 
 /**
@@ -75,7 +75,7 @@ export function ViewSettingsDialog({ open, onOpenChange }: { open: boolean; onOp
           onOpenChange(false);
           toast({ body: <>{tx("viewSettingsDialog.savedToast", { name: <span className="num">{trimmed}</span> })}</> });
         },
-        onError: (err) => toast({ body: err.message })
+        onError: (err) => toast(errorSpec(err))
       }
     );
   };

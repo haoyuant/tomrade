@@ -23,7 +23,7 @@ import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMar
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
@@ -64,7 +64,7 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
   const runCommand = useRunCommand(projectId);
   const toast = useToast();
   const run = (id: string) =>
-    runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast({ body: e.message }) });
+    runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast(errorSpec(e)) });
   return (
     <>
       {(sections.data ?? []).map((s) => {

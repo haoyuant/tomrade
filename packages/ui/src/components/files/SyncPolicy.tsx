@@ -7,7 +7,7 @@ import { ContextMenuActionItem } from "~/components/ui/menu";
 import { useFilesSyncPolicy, useFilesTree, useSetSyncRules } from "~/lib/files";
 import { makesPathsLocal, syncFileCounts } from "~/lib/files-sync-policy";
 import { useI18n } from "~/lib/i18n";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 type Choice = SyncMode | "inherit";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -41,7 +41,7 @@ export function useSyncActions(projectId: string) {
           setReview(null);
           toast({ body: t("files.syncPolicySaved") });
         },
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   };

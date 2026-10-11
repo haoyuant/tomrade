@@ -5,7 +5,7 @@ import { BoardField, CustomField, EpicField, LabelsField, PriorityField, StatusF
 import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, type WorkspaceValue } from "./context";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
@@ -88,7 +88,7 @@ function ComposerRow({ span }: { span: number }) {
         setEditing(false);
         toast({ body: <>{tx("table.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
       },
-      onError: (err) => toast({ body: err.message })
+      onError: (err) => toast(errorSpec(err))
     });
   };
 

@@ -6,6 +6,7 @@ import { invoke, subscribe } from "./api";
 import { useI18n } from "./i18n";
 import { invalidateWorkspace, useSaveSettings, useSettings } from "./queries";
 import { useToast } from "./toast";
+import { useErrorToast } from "~/lib/toast";
 
 export const agentKeys = {
   threads: (projectId: string) => ["agent", "threads", projectId] as const,
@@ -93,8 +94,10 @@ export function useNewThread(projectId: string) {
 
 /** Put the thread on a workstream — and so in that workstream's repository — or back on the whole project. */
 export function useSetWorkstream(projectId: string) {
+  const report = useErrorToast();
   const qc = useQueryClient();
   return useMutation({
+    onError: report,
     mutationFn: (args: { threadId: string; boardId: string | null }) => invoke("agent.setWorkstream", projectId, args.threadId, args.boardId),
     onSuccess: (_thread, args) => {
       void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
@@ -106,12 +109,15 @@ export function useSetWorkstream(projectId: string) {
 
 export function useArchiveThread(projectId: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) }) });
+  const report = useErrorToast();
+  return useMutation({ onError: report, mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) }) });
 }
 
 export function useDeleteThread(projectId: string) {
+  const report = useErrorToast();
   const qc = useQueryClient();
   return useMutation({
+    onError: report,
     mutationFn: (threadId: string) => invoke("agent.deleteThread", projectId, threadId),
     onSuccess: (_deleted, threadId) => {
       qc.setQueryData(agentKeys.threads(projectId), (threads: { id: string }[] | undefined) => threads?.filter((thread) => thread.id !== threadId));
@@ -126,8 +132,10 @@ export const useWorkdir = (projectId: string, threadId: string | null, enabled =
   useQuery({ queryKey: agentKeys.workdir(projectId, threadId ?? ""), queryFn: () => invoke("agent.workdir", projectId, threadId!), enabled: !!threadId && enabled, retry: false, staleTime: 5_000 });
 
 export function useSetEngine(projectId: string) {
+  const report = useErrorToast();
   const qc = useQueryClient();
   return useMutation({
+    onError: report,
     mutationFn: (args: { threadId: string; engineId: string }) => invoke("agent.setEngine", projectId, args.threadId, args.engineId),
     onSuccess: (_thread, args) => {
       void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
@@ -138,8 +146,10 @@ export function useSetEngine(projectId: string) {
 
 /** Engine knobs for one thread — model, effort — layered over the engine's settings; null clears them. */
 export function useSetOptions(projectId: string) {
+  const report = useErrorToast();
   const qc = useQueryClient();
   return useMutation({
+    onError: report,
     mutationFn: (args: { threadId: string; options: Record<string, unknown> | null }) => invoke("agent.setOptions", projectId, args.threadId, args.options),
     onSuccess: (_thread, args) => {
       void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
@@ -149,8 +159,10 @@ export function useSetOptions(projectId: string) {
 }
 
 export function useSetPermissionMode(projectId: string) {
+  const report = useErrorToast();
   const qc = useQueryClient();
   return useMutation({
+    onError: report,
     mutationFn: (args: { threadId: string; mode: string }) => invoke("agent.setPermissionMode", projectId, args.threadId, args.mode),
     onSuccess: (_thread, args) => {
       void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
@@ -161,13 +173,21 @@ export function useSetPermissionMode(projectId: string) {
 
 export const useSend = (projectId: string) =>
   useMutation({ mutationFn: (args: { threadId: string; text: string; focus?: FocusRef[]; attachments?: MediaRef[] }) => invoke("agent.send", projectId, args.threadId, args.text, args.focus, args.attachments) });
-export const useAnswer = (projectId: string) =>
-  useMutation({ mutationFn: (args: { threadId: string; questionId: string; value: string | string[] }) => invoke("agent.answer", projectId, args.threadId, args.questionId, args.value) });
-export const useCancelRun = () => useMutation({ mutationFn: (runId: string) => invoke("agent.cancel", runId) });
+// An answer to a question that expired, or a Stop that did not land, says so rather than doing nothing.
+export function useAnswer(projectId: string) {
+  const report = useErrorToast();
+  return useMutation({ onError: report, mutationFn: (args: { threadId: string; questionId: string; value: string | string[] }) => invoke("agent.answer", projectId, args.threadId, args.questionId, args.value) });
+}
+export function useCancelRun() {
+  const report = useErrorToast();
+  return useMutation({ onError: report, mutationFn: (runId: string) => invoke("agent.cancel", runId) });
+}
 
 export function useRevertRun(projectId: string, threadId: string | null) {
+  const report = useErrorToast();
   const qc = useQueryClient();
   return useMutation({
+    onError: report,
     mutationFn: (runId: string) => invoke("agent.revert", projectId, runId),
     onSuccess: () => {
       if (threadId) void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, threadId) });

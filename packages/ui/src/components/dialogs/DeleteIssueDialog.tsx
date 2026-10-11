@@ -8,7 +8,7 @@ import { invoke } from "~/lib/api";
 import { filesKeys } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { usePurgeItem } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /** The plain-English list of what goes with the issue, and what does not. */
 function consequences(item: Item, items: Item[], t: (key: MessageKey, vars?: Record<string, string | number>) => string): string[] {
@@ -101,7 +101,7 @@ export function DeleteIssueDialog({
         // cannot honour is worse than no toast at all.
         onSuccess: () => {
           if (alsoFiles) {
-            for (const folder of folders) void invoke("files.remove", projectId, folder.path).catch((err: Error) => toast({ body: err.message }));
+            for (const folder of folders) void invoke("files.remove", projectId, folder.path).catch((err: Error) => toast(errorSpec(err)));
           }
           onOpenChange(false);
           onDeleted?.();

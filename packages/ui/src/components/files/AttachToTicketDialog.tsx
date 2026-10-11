@@ -4,7 +4,7 @@ import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { useWorkspace } from "~/components/workspace/context";
 import { nameOf, useAttachFile } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /** From a file to a ticket: pick the ticket and the role, and the latest version is pinned. */
 export function AttachToTicketDialog({ projectId, path, open, onOpenChange }: { projectId: string; path: string; open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -47,7 +47,7 @@ export function AttachToTicketDialog({ projectId, path, open, onOpenChange }: { 
                       onOpenChange(false);
                       toast({ body: t("files.attachedToast", { name, key: item.key }) });
                     },
-                    onError: (error) => toast({ body: error.message })
+                    onError: (error) => toast(errorSpec(error))
                   }
                 )
               }

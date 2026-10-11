@@ -7,7 +7,7 @@ import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useAttachFiles, useImportForTicket, useTicketFolder } from "~/lib/files";
 import { invalidateWorkspace } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
 
 /** A resource opens the version it pinned, never the file's current head. */
@@ -47,7 +47,7 @@ export function DeliveryPanel({ item }: { item: Item }) {
       return invoke("items.reviewDelivery", item.projectId, item.id, { submissionId: submission.id, decision: action, comment }, item.version);
     },
     onSuccess: () => { setReport(""); setComment(""); setSelected(null); },
-    onError: error => toast({ body: error.message }),
+    onError: error => toast(errorSpec(error)),
     onSettled: () => { invalidateWorkspace(qc, item.projectId); void qc.invalidateQueries({ queryKey: ["deliveries", item.projectId, item.id] }); }
   });
   if (item.kind !== "ticket") return null;
@@ -68,13 +68,13 @@ export function DeliveryPanel({ item }: { item: Item }) {
       const role = picking;
       attach.mutate({ itemId: item.id, paths: entries.map(entry => entry.path), role }, {
         onSuccess: () => { setPicking(null); toast({ body: t("files.attachedManyToast", { n: entries.length, key: item.key }) }); },
-        onError: error => toast({ body: error.message })
+        onError: error => toast(errorSpec(error))
       });
     }} onImport={sources => {
       const role = picking;
       importFor.mutate({ itemId: item.id, sources, role }, {
         onSuccess: () => { setPicking(null); toast({ body: t("files.attachedManyToast", { n: sources.length, key: item.key }) }); },
-        onError: error => toast({ body: error.message })
+        onError: error => toast(errorSpec(error))
       });
     }} />}
     {open && <div className="stack-2">

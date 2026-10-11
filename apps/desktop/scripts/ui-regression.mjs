@@ -1474,6 +1474,31 @@ const run = async () => {
   check("it keeps the id agents already know", (await $(`location.hash`)).includes(handoff.id));
   check("its issues and its key prefix came with it", repos.items.list({ projectId: handoff.id })[0]?.key === "HND-1");
 
+  // ── a failure reads as one ───────────────────────────────────────────
+  ctx.contributions.command({ id: "harness.fail", title: "Harness: fail on purpose", run: () => { throw new Error("Boom from a plugin command"); } });
+  await $(`location.reload();true`);
+  await sleep(3000);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
+  await sleep(700);
+  await typeInto(".palette-input", "Harness: fail on purpose");
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.palette-row')].find((r) => r.textContent.includes('Harness: fail on purpose'))`);
+  await sleep(900);
+  const errorToast = await $(`(() => { const t = document.querySelector('.toast.is-error'); return t ? { text: t.querySelector('.toast-body')?.textContent ?? '', role: t.getAttribute('role'), copy: !!t.querySelector('[aria-label="Copy the message"]') } : null; })()`);
+  check("a failed action shows an error toast, marked as one", errorToast?.role === "alert");
+  check("in the error's own words, without Electron's wrapper", !!errorToast && errorToast.text.includes("Boom from a plugin command") && !/Error invoking remote method|^Error:/.test(errorToast.text));
+  check("which can be copied", errorToast?.copy === true);
+
+  // ── New issue: one press, one issue ─────────────────────────────────
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',metaKey:true,bubbles:true}));true`);
+  await sleep(700);
+  check("Create waits for a title", (await $(`[...document.querySelectorAll('[role=dialog] .btn-primary')].find((b) => /Create/.test(b.textContent))?.disabled`)) === true);
+  const issuesBefore = repos.items.list({ projectId: handoff.id }).length;
+  await typeInto("#niTitle", "Pressed twice");
+  await $(`(() => { const i = document.querySelector('#niTitle'); for (let n = 0; n < 2; n++) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
+  await sleep(1200);
+  check("two quick Enters make one issue", repos.items.list({ projectId: handoff.id }).filter((i) => i.title === "Pressed twice").length === 1 && repos.items.list({ projectId: handoff.id }).length === issuesBefore + 1);
+
   // ── the palette searches every ticket, not the first 60 ─────────────
   const handoffBoard = repos.boards.list(handoff.id)[0];
   for (let i = 0; i < 70; i++) repos.items.create({ projectId: handoff.id, boardId: handoffBoard.id, title: `Filler ticket ${i + 1}`, by: "human" });

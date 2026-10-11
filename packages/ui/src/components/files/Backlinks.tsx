@@ -8,7 +8,7 @@ import { invoke } from "~/lib/api";
 import { nameOf } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { useNoteLinks } from "~/lib/notes";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /** The first unlinked mention of `name` on a line, as a link to `target`; the words as written stay as the alias when they differ. */
 export function linkMention(body: string, line: number, name: string, target: string): string | null {
@@ -65,7 +65,7 @@ export function Backlinks({ projectId, path, paths }: { projectId: string; path:
       const saved = await invoke("files.save", projectId, mention.path, next, { expect: source.hash ?? null, message: `Linked ${name}` });
       toast({ body: saved.ok ? t("notes.linkedToast", { name, source: nameOf(mention.path) }) : t("notes.mentionMoved") });
     } catch (error) {
-      toast({ body: (error as Error).message });
+      toast(errorSpec(error));
     }
   };
   return (

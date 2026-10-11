@@ -593,6 +593,10 @@ const run = async () => {
   await click(".body-editor .seg button:not([aria-pressed='true'])");
   check("the preview draws the draft from memory", await wait(() => has(".body-editor-preview img.md-file[src^='data:image/png']"), "draft image"));
   await click(".body-editor .seg button:not([aria-pressed='true'])");
+  // an edited description asks before one Escape throws it away; the second discards
+  await bodyKey("Escape");
+  await sleep(300);
+  check("Escape on the edited description asks first", await has(".body-editor .body-editor-changed[role=alert]"));
   await bodyKey("Escape");
   await sleep(500);
   check("discarding the edit leaves no file behind", (await attached()).length === 0 && !(ctx.items.get(project.id, ticket.id).body ?? "").includes("tomrade-"));

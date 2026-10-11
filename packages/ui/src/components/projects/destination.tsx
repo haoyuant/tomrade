@@ -10,9 +10,10 @@ import {
   useStorageConnection
 } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 
-export const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+/** The words of a failure, without the IPC wrapper or the class name. */
+export const message = (error: unknown): string => readableError(error);
 
 /** What the panels below need of a remote's description; storage providers and files backends both have it. */
 export type RemoteProviderView = Pick<StorageProviderView, "id" | "title" | "connection" | "browsable" | "creatable">;

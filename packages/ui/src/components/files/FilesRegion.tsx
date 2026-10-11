@@ -38,7 +38,7 @@ import {
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles, reveal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { takeEditRequest, useFileMode, useNoteTags, useNotesEnabled, type FileMode } from "~/lib/notes";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
 import { Backlinks } from "./Backlinks";
@@ -122,7 +122,7 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
   const { openFile } = useWorkspace();
   const toast = useToast();
   const resolveAll = useResolveAllConflicts(projectId);
-  const all = (choice: ConflictChoice) => resolveAll.mutate(choice, { onError: (error) => toast({ body: error.message }) });
+  const all = (choice: ConflictChoice) => resolveAll.mutate(choice, { onError: (error) => toast(errorSpec(error)) });
   return (
     <div className="stack-3 files-conflict-list" data-testid="conflict-list">
       <div className="dangerbar">
@@ -483,7 +483,7 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
       { path, choice },
       {
         onSuccess: () => toast({ body: t("files.resolvedToast", { choice: t(choice === "ours" ? "files.sideMine" : choice === "theirs" ? "files.sideTheirs" : "files.sideBoth"), name: nameOf(path) }) }),
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   return (
@@ -674,7 +674,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
   const syncNow = () =>
     sync.mutate(undefined, {
       onSuccess: (next) => toast({ body: t("files.syncedToast", { label: STATE[next.state].label.toLowerCase() }) }),
-      onError: (error) => toast({ body: error.message })
+      onError: (error) => toast(errorSpec(error))
     });
   const addFiles = async (kind: "files" | "folders" = "files") => {
     const chosen = await pickFiles(t(kind === "folders" ? "files.pickFolderTitle" : "files.pickFilesTitle"), t("files.pickFilesButton"), kind);
@@ -686,7 +686,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           const one = added.length === 1 ? added[0]! : null;
           toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) });
         },
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   };
@@ -700,7 +700,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           const one = added.length === 1 ? added[0]! : null;
           toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) });
         },
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   };
@@ -714,7 +714,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
           ws.openFile(to);
           toast({ body: t("files.renamedToast", { name }) });
         },
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   };
@@ -726,7 +726,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         ws.openFile(target);
         toast({ body: t("files.createdFolderToast", { name }) });
       },
-      onError: (error) => toast({ body: error.message })
+      onError: (error) => toast(errorSpec(error))
     });
   };
   const del = async () => {
@@ -750,10 +750,10 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
       };
       toast({
         body: n === 1 ? t("files.deletedToast", { name }) : t("files.deletedManyToast", { n }),
-        onUndo: refs.length ? () => void undoAll().catch((error: Error) => toast({ body: error.message })) : undefined
+        onUndo: refs.length ? () => void undoAll().catch((error: Error) => toast(errorSpec(error))) : undefined
       });
     } catch (error) {
-      toast({ body: (error as Error).message });
+      toast(errorSpec(error));
     } finally {
       setDeletingBusy(false);
     }
@@ -768,7 +768,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         if (clip.mode === "cut") clipboard.clear();
         toast({ body: count === 1 ? t("files.pastedOneToast", { name }) : t("files.pastedManyToast", { n: count }) });
       })
-      .catch((error) => toast({ body: error.message }));
+      .catch((error) => toast(errorSpec(error)));
   };
   const moveInto = (paths: string[], target: string) => {
     pasteFiles({ projectId, mode: "cut", paths }, target, existing)
@@ -776,7 +776,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
         if (!count) return;
         toast({ body: count === 1 ? t("files.movedOneToast", { name }) : t("files.movedManyToast", { n: count }) });
       })
-      .catch((error) => toast({ body: error.message }));
+      .catch((error) => toast(errorSpec(error)));
   };
 
   return (

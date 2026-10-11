@@ -8,7 +8,7 @@ import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
 import { useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import { useRemoveView, useUpdateView } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 
 /**
@@ -132,7 +132,7 @@ function ViewName({ editRequest }: { editRequest: number }) {
     if (!name || name === view.name) return;
     update.mutate(
       { id: view.id, patch: { name } },
-      { onSuccess: () => toast({ body: tx("titleBar.renamedViewToast", { name: <span className="num">{name}</span> }) }), onError: (err) => toast({ body: err.message }) }
+      { onSuccess: () => toast({ body: tx("titleBar.renamedViewToast", { name: <span className="num">{name}</span> }) }), onError: (err) => toast(errorSpec(err)) }
     );
   };
 
@@ -200,7 +200,7 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
   const deleteView = () =>
     remove.mutate(ws.view.id, {
       onSuccess: () => toast({ body: tx("titleBar.deletedViewToast", { name: <span className="num">{ws.view.name}</span> }) }),
-      onError: (err) => toast({ body: err.message })
+      onError: (err) => toast(errorSpec(err))
     });
 
   return (

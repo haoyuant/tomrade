@@ -6,7 +6,7 @@ import { invoke } from "~/lib/api";
 import { filesKeys, nameOf, useFilesTree } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { filePaths, freeNoteName, notesSearch, requestEdit, today } from "~/lib/notes";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import type { NoteLinking } from "./FileViewer";
 
 /** Making notes and following links, the same from the tree, the region, the palette and a note's own text. */
@@ -30,7 +30,7 @@ export function useNoteActions() {
   );
 
   const createNote = useCallback(
-    (dir: string, name?: string) => openNew(freeNoteName(dir, name ?? t("notes.untitled"), new Set(paths)), "").catch((error: Error) => toast({ body: error.message })),
+    (dir: string, name?: string) => openNew(freeNoteName(dir, name ?? t("notes.untitled"), new Set(paths)), "").catch((error: Error) => toast(errorSpec(error))),
     [openNew, paths, t, toast]
   );
 
@@ -41,7 +41,7 @@ export function useNoteActions() {
           requestEdit(path);
           openFile(path);
         })
-        .catch((error: Error) => toast({ body: error.message })),
+        .catch((error: Error) => toast(errorSpec(error))),
     [openFile, project.id, toast]
   );
 
@@ -55,7 +55,7 @@ export function useNoteActions() {
         if (hit) return openFile(hit);
         const fresh = kind === "wiki" ? newNotePath(target, from) : null;
         if (!fresh || !isNotePath(fresh)) return toast({ body: t("notes.noSuchFile", { name: target }) });
-        void openNew(fresh, "").catch((error: Error) => toast({ body: error.message }));
+        void openNew(fresh, "").catch((error: Error) => toast(errorSpec(error)));
       },
       tag: (tag) => notesSearch.open(`#${tag}`),
       // The same cache the file screen reads, so a saved picture refreshes with everything else.

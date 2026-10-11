@@ -10,7 +10,7 @@ import { InlineNameRow } from "./InlineNameRow";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateBoard, useCreateView, useUpdateView } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
 
@@ -125,7 +125,7 @@ function NewViewRow() {
             onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt })
           });
         },
-        onError: (err) => toast({ body: err.message })
+        onError: (err) => toast(errorSpec(err))
       }
     );
   };
@@ -186,7 +186,7 @@ function NewWorkstreamRow() {
           setEditing(false);
           toast({ body: <>{tx("sidebar.createdWorkstreamToast", { name: <span className="num">{trimmed}</span> })}</>, onUndo: () => undoWrite({ id: board.id, stamp: board.updatedAt }) });
         },
-        onError: (err) => toast({ body: err.message })
+        onError: (err) => toast(errorSpec(err))
       }
     );
   };

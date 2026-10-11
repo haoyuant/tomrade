@@ -15,7 +15,7 @@ import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useCreateView, useRedo, useUndo } from "~/lib/queries";
-import { useToast, useToastDismiss } from "~/lib/toast";
+import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast } from "~/lib/onboarding";
 import { FilesRegion } from "~/components/files/FilesRegion";
 import { Board } from "./Board";
@@ -145,7 +145,7 @@ export function Workspace() {
       }, 4000);
       (direction === "undo" ? undo : redo).mutate(undefined, {
         onSuccess: (result) => toast({ body: result ? result.summary : t(direction === "undo" ? "workspace.nothingToUndo" : "workspace.nothingToRedo") }),
-        onError: (error) => toast({ body: error.message }),
+        onError: (error) => toast(errorSpec(error)),
         onSettled: () => {
           window.clearTimeout(soon);
           window.clearTimeout(long);
@@ -189,7 +189,7 @@ export function Workspace() {
           ws.openView(view.id);
           toast({ body: <>{tx("workspace.createdViewToast", { name: <span className="num">{name}</span> })}</>, onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt }) });
         },
-        onError: (err) => toast({ body: err.message })
+        onError: (err) => toast(errorSpec(err))
       }
     );
   }, [createView, t, tx, toast, undo, ws]);
@@ -273,7 +273,21 @@ export function Workspace() {
             <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
             <QueryBar />
             {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
-            {ws.layout === "graph" ? <GraphView /> : ws.layout === "table" ? <Table onConflict={setConflict} /> : <Board onConflict={setConflict} />}
+            {ws.itemsError ? (
+              <div className="items-error" role="alert">
+                <p>{t("workspace.itemsReadFailed")}</p>
+                <code className="route-error-detail">{ws.itemsError}</code>
+                <button type="button" className="btn btn-secondary" onClick={ws.retryItems}>
+                  {t("common.tryAgain")}
+                </button>
+              </div>
+            ) : ws.layout === "graph" ? (
+              <GraphView />
+            ) : ws.layout === "table" ? (
+              <Table onConflict={setConflict} />
+            ) : (
+              <Board onConflict={setConflict} />
+            )}
           </section>
         )}
 

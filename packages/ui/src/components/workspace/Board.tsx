@@ -8,7 +8,7 @@ import { Icon } from "~/components/icons";
 import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem, usePatchItem, useSetViewRank } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
 import { useWorkspace, type WorkspaceValue } from "./context";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
@@ -67,7 +67,7 @@ function Composer({ seed, onDone }: { seed: Patch; onDone: () => void }) {
         onDone();
         toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
       },
-      onError: (err) => toast({ body: err.message })
+      onError: (err) => toast(errorSpec(err))
     });
   };
 
@@ -241,7 +241,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
         onError: (err) => {
           setCells(server);
           if (err instanceof Error && /conflict/i.test(err.message)) onConflict(item.title);
-          else toast({ body: err.message });
+          else toast(errorSpec(err));
         },
         onSuccess: (written) => (
           commitOrder(),
