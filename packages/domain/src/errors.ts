@@ -105,3 +105,16 @@ export function modelErrorKind(message: string): ModelErrorKind {
   if (/fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network|timed? ?out|socket hang up|certificate/i.test(message)) return "network";
   return "other";
 }
+
+/**
+ * An undo aimed at one write — a toast's — refused because the thing changed
+ * again since. The marker survives IPC's message wrapping, so the renderer can
+ * say it in the person's language.
+ */
+export const STALE_UNDO = "[stale-undo]";
+export class StaleUndoError extends Error {
+  constructor(public readonly entityId: string) {
+    super(`${STALE_UNDO} ${entityId} changed again after that edit; undo it from History instead`);
+    this.name = "StaleUndoError";
+  }
+}

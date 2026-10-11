@@ -7,11 +7,12 @@ import { EMPTY_KEY, groupKeyOf, type Item, type Patch } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateItem, usePatchItem, useSetViewRank, useUndo } from "~/lib/queries";
+import { useCreateItem, usePatchItem, useSetViewRank } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { Card } from "./Card";
 import { useWorkspace, type WorkspaceValue } from "./context";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
+import { useToastUndo } from "~/lib/undo";
 
 /** One drop target is one lane × column pair; the lane key is "" when there are no swimlanes. Keys are ids, words or digits, never "|". */
 const SEP = "|";
@@ -53,7 +54,7 @@ function Composer({ seed, onDone }: { seed: Patch; onDone: () => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
   const create = useCreateItem(ws.project.id);
-  const undo = useUndo(ws.project.id);
+  const undoWrite = useToastUndo(ws.project.id);
   const toast = useToast();
 
   const submit = (title: string) => {
@@ -64,7 +65,7 @@ function Composer({ seed, onDone }: { seed: Patch; onDone: () => void }) {
     create.mutate(input, {
       onSuccess: (item) => {
         onDone();
-        toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
+        toast({ body: <>{tx("board.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
       },
       onError: (err) => toast({ body: err.message })
     });
@@ -175,7 +176,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const patch = usePatchItem(project.id);
   const setRank = useSetViewRank(project.id);
   const toast = useToast();
-  const undo = useUndo(project.id);
+  const undoWrite = useToastUndo(project.id);
 
   const cb = query.columnBy ?? "status";
   const groupBy = query.groupBy;
@@ -242,7 +243,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
           if (err instanceof Error && /conflict/i.test(err.message)) onConflict(item.title);
           else toast({ body: err.message });
         },
-        onSuccess: () => (
+        onSuccess: (written) => (
           commitOrder(),
           toast({
             body: (
@@ -253,7 +254,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
                 })}
               </>
             ),
-            onUndo: () => undo.mutate(item.id)
+            onUndo: () => undoWrite({ id: item.id, stamp: written.version })
           })
         )
       }

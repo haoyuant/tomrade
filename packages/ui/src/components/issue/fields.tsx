@@ -4,9 +4,10 @@ import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { usePatchItem, useUndo } from "~/lib/queries";
+import { usePatchItem } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
+import { useToastUndo } from "~/lib/undo";
 
 /**
  * One write path for every editable field on an issue, shared by the docked
@@ -21,7 +22,7 @@ export type IssueWrite = (item: Item, patch: Patch, said: ReactNode) => Promise<
 
 export function useIssueWriter(projectId: string): { write: IssueWrite; pending: boolean } {
   const patch = usePatchItem(projectId);
-  const undo = useUndo(projectId);
+  const undoWrite = useToastUndo(projectId);
   const toast = useToast();
   const { tx } = useI18n();
 
@@ -30,8 +31,8 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
   const write = useCallback<IssueWrite>(
     (item, next, said) =>
       patch.mutateAsync({ id: item.id, patch: next, baseVersion: item.version }).then(
-        () => {
-          toast({ body: said, onUndo: () => undo.mutate(item.id) });
+        (written) => {
+          toast({ body: said, onUndo: () => undoWrite({ id: item.id, stamp: written.version }) });
           return true;
         },
         // a refused edit that says nothing reads as an edit that silently did not happen
@@ -42,7 +43,7 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
           return false;
         }
       ),
-    [patch, toast, undo, tx]
+    [patch, toast, undoWrite, tx]
   );
 
   return { write, pending: patch.isPending };

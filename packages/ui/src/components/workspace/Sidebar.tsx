@@ -9,9 +9,10 @@ import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateBoard, useCreateView, useUndo, useUpdateView } from "~/lib/queries";
+import { useCreateBoard, useCreateView, useUpdateView } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
+import { useToastUndo } from "~/lib/undo";
 
 function ViewRow({ view, index }: { view: View; index: number }) {
   const { items, view: active, openView, virtual, filePath } = useWorkspace();
@@ -97,7 +98,7 @@ function NewViewRow() {
   const { t, tx } = useI18n();
   const { project, openView } = useWorkspace();
   const create = useCreateView(project.id);
-  const undo = useUndo(project.id);
+  const undoWrite = useToastUndo(project.id);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
 
@@ -121,7 +122,7 @@ function NewViewRow() {
           openView(view.id);
           toast({
             body: <>{tx("sidebar.createdViewToast", { name: <span className="num">{trimmed}</span> })}</>,
-            onUndo: () => undo.mutate(view.id)
+            onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt })
           });
         },
         onError: (err) => toast({ body: err.message })
@@ -162,7 +163,7 @@ function NewWorkstreamRow() {
   const { t, tx } = useI18n();
   const { project } = useWorkspace();
   const create = useCreateBoard(project.id);
-  const undo = useUndo(project.id);
+  const undoWrite = useToastUndo(project.id);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
 
@@ -183,7 +184,7 @@ function NewWorkstreamRow() {
       {
         onSuccess: (board) => {
           setEditing(false);
-          toast({ body: <>{tx("sidebar.createdWorkstreamToast", { name: <span className="num">{trimmed}</span> })}</>, onUndo: () => undo.mutate(board.id) });
+          toast({ body: <>{tx("sidebar.createdWorkstreamToast", { name: <span className="num">{trimmed}</span> })}</>, onUndo: () => undoWrite({ id: board.id, stamp: board.updatedAt }) });
         },
         onError: (err) => toast({ body: err.message })
       }

@@ -24,7 +24,8 @@ declare module "@tomradex/ipc" {
     "oplog.recent": (projectId: string, limit?: number) => OplogEntry[];
     "oplog.history": (projectId: string, entity: OplogEntity, id: string, limit?: number) => OplogEntry[];
     /** ⌘Z. With an entity id: that entity's latest backlog write, out of order; without: the newest record anywhere. */
-    "oplog.undo": (projectId: string, entityId?: string) => UndoStep | null;
+    /** `stamp` aims at one write: the entity's version (or updatedAt) right after it; refused once something newer stands. */
+    "oplog.undo": (projectId: string, entityId?: string, stamp?: number) => UndoStep | null;
     "oplog.undoRun": (projectId: string, runId: string) => UndoRunResult;
     "oplog.undoVia": (projectId: string, pluginId: string) => UndoRunResult;
     /** ⇧⌘Z: the record undone most recently. */
@@ -117,7 +118,7 @@ export class Oplog extends Service {
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("oplog.recent", (projectId, limit) => ctx.oplog.recent(projectId, limit));
       ctx.ipc.handle("oplog.history", (projectId, entity, id, limit) => ctx.oplog.historyFor(projectId, entity, id, limit));
-      ctx.ipc.handle("oplog.undo", (projectId, entityId) => (entityId ? ctx.oplog.undoEntity(projectId, entityId) : ctx.oplog.undo(projectId)));
+      ctx.ipc.handle("oplog.undo", (projectId, entityId, stamp) => (entityId ? ctx.oplog.undoEntity(projectId, entityId, stamp) : ctx.oplog.undo(projectId)));
       ctx.ipc.handle("oplog.undoRun", (projectId, runId) => ctx.oplog.undoRun(projectId, runId));
       ctx.ipc.handle("oplog.undoVia", (projectId, pluginId) => ctx.oplog.undoVia(projectId, pluginId));
       ctx.ipc.handle("oplog.redo", (projectId) => ctx.oplog.redo(projectId));
@@ -236,8 +237,8 @@ export class Oplog extends Service {
   // ── the backlog's own undo ───────────────────────────────────────────────────
 
   /** This machine's newest backlog write — or one entity's — reverted and parked for redo. */
-  undoLast(projectId: string, entityId?: string): UndoResult | null {
-    const result = undoLast(this.db(projectId), this.device, entityId);
+  undoLast(projectId: string, entityId?: string, stamp?: number): UndoResult | null {
+    const result = undoLast(this.db(projectId), this.device, entityId, Date.now(), stamp);
     if (result) this.home.emit("oplog/reverted", projectId);
     return result;
   }
@@ -271,8 +272,8 @@ export class Oplog extends Service {
   }
 
   /** The toast's Undo: one entity's latest write, whatever landed since. */
-  undoEntity(projectId: string, entityId: string): UndoStep | null {
-    const result = this.undoLast(projectId, entityId);
+  undoEntity(projectId: string, entityId: string, stamp?: number): UndoStep | null {
+    const result = this.undoLast(projectId, entityId, stamp);
     return result ? { record: this.recordOf(result.entry, Date.now()), summary: result.summary } : null;
   }
 

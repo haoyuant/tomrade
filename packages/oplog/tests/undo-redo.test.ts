@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fresh } from "@tomradex/testkit";
 import type { UndoProvider } from "@tomradex/oplog";
-import type { UndoRecord } from "@tomradex/domain";
+import { StaleUndoError, type UndoRecord } from "@tomradex/domain";
 
 describe("undo and redo", () => {
   it("puts a reverted write back, one step at a time, and a new write empties the redo stack", async () => {
@@ -30,6 +30,26 @@ describe("undo and redo", () => {
     items.create({ projectId: project.id, boardId: board.id, title: "B", by: "human" });
     expect(await oplog.redo(project.id)).toBeNull();
     expect((await oplog.timeline(project.id)).some((r) => r.undoneAt !== null)).toBe(false);
+  });
+
+  it("takes back the one write a toast names, and refuses once something newer stands", async () => {
+    const { items, oplog, project, board } = await fresh();
+    const a = items.create({ projectId: project.id, boardId: board.id, title: "A", by: "human" });
+    const renamed = items.update(project.id, a.id, { title: "Renamed" }, "human");
+    const reprioritised = items.update(project.id, a.id, { priority: 3 }, "human");
+
+    // The rename's toast: the priority change came after it, so it is not the rename's to take back.
+    expect(() => oplog.undoEntity(project.id, a.id, renamed.version)).toThrow(StaleUndoError);
+    expect(items.get(project.id, a.id)).toMatchObject({ title: "Renamed", priority: 3 });
+
+    // The newest toast takes back exactly its write…
+    expect(oplog.undoEntity(project.id, a.id, reprioritised.version)?.summary).toBe(`Reverted ${a.key}`);
+    expect(items.get(project.id, a.id)).toMatchObject({ title: "Renamed", priority: a.priority });
+    // …after which the rename stands again, and its toast works.
+    oplog.undoEntity(project.id, a.id, renamed.version);
+    expect(items.get(project.id, a.id)?.title).toBe("A");
+    // Without a stamp it is still "the newest write to this", as ⌘Z-on-an-entity always was.
+    expect(oplog.undoEntity(project.id, a.id)?.summary).toBe(`Removed ${a.key}`);
   });
 
   it("restores a deleted issue, deletes it again, and keeps the redone write in the live history", async () => {

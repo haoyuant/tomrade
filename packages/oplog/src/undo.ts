@@ -1,5 +1,5 @@
 import type { DeliveryView, ProjectDb } from "@tomradex/db";
-import { InUseError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomradex/domain";
+import { InUseError, StaleUndoError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomradex/domain";
 import { emptyEvidence } from "@tomradex/domain";
 import { rowToEntry, type OplogRow, type UndoneRow } from "./rows.js";
 
@@ -235,11 +235,15 @@ export const labelOf = (entry: OplogEntry): string => {
  * another machine's log carries a patch but no snapshot, and taking it back is
  * a new write of ours, not a revert of theirs.
  */
-export function undoLast(db: ProjectDb, device: string, entityId?: string, at = Date.now()): UndoResult | null {
+export function undoLast(db: ProjectDb, device: string, entityId?: string, at = Date.now(), stamp?: number): UndoResult | null {
   const row = entityId
     ? (db.prepare("SELECT * FROM oplog WHERE entity_id = ? AND op NOT IN ('purge', 'merge') AND device = ? ORDER BY seq DESC LIMIT 1").get(entityId, device) as OplogRow | undefined)
     : (db.prepare("SELECT * FROM oplog WHERE op NOT IN ('purge', 'merge') AND device = ? ORDER BY seq DESC LIMIT 1").get(device) as OplogRow | undefined);
   if (!row) return null;
+  // Aimed at one write (a toast's): only while it is still what stands. Anything
+  // newer — ours, an agent's, another machine's — means that write is not the
+  // one this would take back.
+  if (entityId && stamp !== undefined && currentStamp(db, row.entity, entityId).stamp !== stamp) throw new StaleUndoError(entityId);
   return undoRow(db, row, at);
 }
 

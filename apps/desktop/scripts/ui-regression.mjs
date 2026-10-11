@@ -236,6 +236,21 @@ const run = async () => {
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(900);
   check("the toast's Undo reverts the move", repos.items.get(project.id, before.id).status === before.status);
+  check("and says what it took back", (await $(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Reverted ${before.key}'))`)) === true);
+  // a toast's Undo takes back its own write only: once something newer stands, it says so and leaves it
+  await $(`(() => { const c=[...document.querySelectorAll('.card')].find(n=>n.textContent.includes('${before.key}')); c.focus(); c.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); return true; })()`);
+  await sleep(900);
+  const moved = repos.items.get(project.id, before.id);
+  repos.items.update(project.id, before.id, { priority: moved.priority === 3 ? 2 : 3 }, "human");
+  const newer = repos.items.get(project.id, before.id);
+  await sleep(300);
+  await $(`[...document.querySelectorAll('.toast')].reverse().find((t) => t.querySelector('.btn-ghost')?.textContent?.trim() === 'Undo')?.querySelector('.btn-ghost')?.click();true`);
+  await sleep(900);
+  const now = repos.items.get(project.id, before.id);
+  check("an older toast's Undo leaves a newer change alone", now.status === moved.status && now.priority === newer.priority);
+  check("…and says it changed since", (await $(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('changed again after that'))`)) === true);
+  repos.items.update(project.id, before.id, { status: before.status, priority: before.priority }, "human");
+  await sleep(600);
 
   // ── pointer drag: dnd-kit's own path, not the keyboard twin ─────────
   // dnd-kit ignores synthetic events, so this uses trusted OS-level input.
