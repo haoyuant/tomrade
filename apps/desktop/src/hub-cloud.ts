@@ -11,9 +11,11 @@ import { AccountFolders, machineRoots, restart } from "./accounts.js";
  */
 export const DEFAULT_SUPABASE_URL = "https://bgaifdfgysjnzlkybzrp.supabase.co";
 export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_g7evHCehq8PNxWiqLO1z5w_hzMgMGv-";
+/** Hosts the pages that account emails link to; Supabase's Redirect URLs must allow them. */
+export const DEFAULT_SITE = "https://tomrade.com";
 
 /** Secrets stay in the main process; only account summaries cross IPC. */
-export default function hubCloud(ctx: Context, config: { userData: string; url?: string; publishableKey?: string }) {
+export default function hubCloud(ctx: Context, config: { userData: string; url?: string; publishableKey?: string; site?: string }) {
   // Accept the Vite names as well so one deployment can share its Supabase
   // public configuration with the desktop shell. Explicit plugin config and
   // TOMRADE_* still take precedence over the production defaults.
@@ -25,7 +27,7 @@ export default function hubCloud(ctx: Context, config: { userData: string; url?:
     encrypt: value => safeStorage.encryptString(value), decrypt: value => safeStorage.decryptString(value)
   };
   const sessionStorage = new EncryptedSessionStorage(path.join(config.userData, "account.enc"), cipher);
-  ctx.plugin(CloudHub, { url, publishableKey, sessionStorage, cacheFile: path.join(config.userData, "hub-cloud.json"), syncMs: 30_000, accounts: accountsAt(config.userData, cipher) });
+  ctx.plugin(CloudHub, { url, publishableKey, sessionStorage, cacheFile: path.join(config.userData, "hub-cloud.json"), syncMs: 30_000, site: config.site ?? DEFAULT_SITE, accounts: accountsAt(config.userData, cipher) });
 }
 
 /** Another account signs in here by restarting into its own folders. A directory outside them keeps one account. */
