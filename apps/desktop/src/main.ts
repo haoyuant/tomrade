@@ -19,10 +19,20 @@ const iconPath = path.join(here, "../assets/icon.png");
 // A second checkout can run beside the real one without sharing — or migrating — its database.
 if (process.env.TOMRADE_USER_DATA) app.setPath("userData", path.resolve(process.env.TOMRADE_USER_DATA));
 
+// One process per data folder. Two would share the caches, the Hub catalog and
+// the project folders while each kept its own copy in memory, writing over the
+// other's. A second launch hands over to the running one, which comes forward.
+const primary = app.requestSingleInstanceLock();
+if (!primary) {
+  console.error("Tomrade is already running on this data folder; bringing that window forward.");
+  app.quit();
+}
+
 // Everything under the app's own roots resolves as usual; anything else is an extension.
 registerExtensionResolution([path.resolve(here, "../../.."), app.getAppPath()]);
 
 app.whenReady().then(async () => {
+  if (!primary) return;
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
@@ -90,6 +100,12 @@ app.whenReady().then(async () => {
     return win;
   };
   openMain();
+  app.on("second-instance", () => {
+    const win = [...mainWindows].find((w) => !w.isDestroyed()) ?? openMain();
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
   app.on("activate", () => {
     // Auxiliary plugin surfaces are top-level BrowserWindows too; only a real
     // Tomrade window satisfies application activation.
