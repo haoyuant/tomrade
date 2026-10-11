@@ -14,7 +14,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { it } from "vitest";
-import type { ProjectDb } from "@tomradex/db";
+import { REINDEX_SEARCH_SQL, type ProjectDb } from "@tomradex/db";
 import { fresh } from "@tomradex/testkit";
 import { compileSearch } from "../src/query.js";
 import { generateDataset, type BenchItem, type BenchQuery, type Category, type Variant } from "./fixtures/search-dataset.js";
@@ -275,7 +275,7 @@ async function runSize(n: number, seed: number, limits: (number | null)[], root:
   const insertOff = seedRows(off.db, off.project.id, off.board.id, items, base);
   const insertOn = seedRows(on.db, on.project.id, on.board.id, items, base);
   const storage = { off: fileBytes(off.db), on: fileBytes(on.db), ftsTables: tableBytes(on.db, "items_fts%"), itemsTable: tableBytes(on.db, "items") };
-  const rebuildOn = timed(() => on.db.exec("INSERT INTO items_fts(items_fts) VALUES ('rebuild')")).ms;
+  const rebuildOn = timed(() => on.db.exec(REINDEX_SEARCH_SQL)).ms;
 
   const weights = (process.env.TOMRADE_BENCH_WEIGHTS ?? "").split(",").filter(Boolean).map(Number);
   const engines = [...rawEngines(off.db, off.project.id, on.db, on.project.id, base, weights), ...serviceEngines(off.items, off.project.id, on.items, on.project.id, base)];

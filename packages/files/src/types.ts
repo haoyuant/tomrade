@@ -122,6 +122,12 @@ export interface WriteEntry {
   expect?: string | null;
 }
 
+/** A file a ticket body is about to link to, as the editor holds it until the body is saved. */
+export interface AttachmentInput {
+  name: string;
+  base64: string;
+}
+
 /** What a guarded save got: the new version, or what is there now instead. */
 export type SaveResult = { ok: true; content: FileContent } | { ok: false; current: FileContent | null };
 

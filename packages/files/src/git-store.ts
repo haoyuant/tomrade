@@ -5,7 +5,7 @@ import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
 import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
-import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
 import {
   FileChangedError,
@@ -35,7 +35,8 @@ export const IDS_DIR = ".tomrade-files";
 export const IDS_FILE = `${IDS_DIR}/ids.jsonl`;
 const KEEP = ".keep";
 const TEXT_LIMIT = 2 * 1024 * 1024;
-const BINARY_LIMIT = 8 * 1024 * 1024;
+/** The most of a binary file a read hands back; anything a ticket body links must fit. */
+export const BINARY_LIMIT = 8 * 1024 * 1024;
 const TREE_LIMIT = 20_000;
 const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
@@ -628,7 +629,7 @@ export class GitFileStore implements FileStore {
       modifiedAt: Math.round(stat.mtimeMs),
       fileId: isDir ? null : (ledger.byPath.get(rel) ?? null),
       sync: policyAt(this.policy, rel, isDir),
-      listing: policyAt(this.agents, rel, isDir),
+      listing: listingAt(this.agents, rel, isDir),
       ...(change ? { change } : {})
     };
   }

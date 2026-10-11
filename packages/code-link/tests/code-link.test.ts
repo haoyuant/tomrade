@@ -120,7 +120,7 @@ describe("code link", () => {
         git(["push", "-q", "origin", branch], checkout);
       }
       await codeLink.scan(project.id);
-      items.files({ async getVersion(_project, ref) { return ref; } });
+      items.files({ async getVersion(_project, ref) { return ref; }, async describe() { return []; } });
       let updated = await items.addResource(project.id, item.id, { name: "Guide", role: "output", file: { fileId: "guide", versionId: "v1" } }, "human");
       updated = items.submitDelivery(project.id, item.id, { report: "Code and guide", artifactIds: updated.evidence.resources.map(r => r.id) }, "human");
       const accept = () => {

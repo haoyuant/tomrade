@@ -143,6 +143,67 @@ describe("ctx.files", { timeout: 30_000 }, () => {
     }
   });
 
+  it("saves a ticket body's files under its workstream's attachments folder, as one version, and finds them by id after a move", async () => {
+    const { ctx, items, boards, project } = await machine();
+    try {
+      const web = boards.create({ projectId: project.id, name: "Web" });
+      const ticket = items.create({ projectId: project.id, boardId: web.id, title: "Fix the header", workType: "general", by: "human" });
+      const folder = `Web/attachments/${ticket.key}`;
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString("base64");
+      await ctx.files.write(project.id, `${folder}/截图.png`, Buffer.from("already here"));
+      const before = (await ctx.oplog.timeline(project.id)).length;
+
+      const added = await ctx.files.addAttachments(project.id, ticket.id, [
+        { name: "截图.png", base64: png },
+        { name: "../../截图.png", base64: png },
+        { name: "spec.pdf", base64: Buffer.from("%PDF-1.4").toString("base64") },
+        { name: " \u0007 ", base64: Buffer.from("x").toString("base64") }
+      ]);
+      expect(added.map((a) => a.path)).toEqual([`${folder}/截图 2.png`, `${folder}/截图 3.png`, `${folder}/spec.pdf`, `${folder}/attachment`]);
+      expect(added[0]).toMatchObject({ name: "截图 2.png", mime: "image/png", size: 11, localPath: path.join(ctx.files.dirFor(project.id)!, "Web", "attachments", ticket.key, "截图 2.png") });
+      expect(added.every((a) => /^[0-9a-f-]{36}$/.test(a.fileId))).toBe(true);
+      const timeline = await ctx.oplog.timeline(project.id);
+      expect(timeline.length).toBe(before + 1);
+      expect(timeline[0]).toMatchObject({ provider: "files", op: "write" });
+      expect((await ctx.files.history(project.id, `${folder}/spec.pdf`))[0]?.message).toBe(`Attached 4 files to ${ticket.key}`);
+      expect(await ctx.files.addAttachments(project.id, ticket.id, [])).toEqual([]);
+
+      // Reached through the ticket, so not volunteered — but never refused.
+      const inv = { by: "ai:test" as const, projectId: project.id };
+      expect((await ctx.files.tree(project.id)).find((e) => e.path === "Web/attachments")?.listing).toMatchObject({ mode: "unlisted", source: "default" });
+      expect((await ctx.tools.execute("list_files", { depth: 4 }, inv)) as string).not.toContain("attachments");
+      expect((await ctx.tools.execute("search_files", { queries: ["PDF-1.4"] }, inv)) as string).toContain("no matches");
+      expect((await ctx.tools.execute("search_files", { queries: ["PDF-1.4"], path: "Web/attachments" }, inv)) as string).toContain("spec.pdf");
+
+      const pic = added[0]!;
+      expect((await ctx.files.readById(project.id, pic.fileId))?.body).toBe(png);
+      await ctx.files.move(project.id, pic.path, "Elsewhere/renamed.png");
+      expect((await ctx.files.readById(project.id, pic.fileId))?.path).toBe("Elsewhere/renamed.png");
+      const ghost = "00000000-0000-4000-8000-000000000000";
+      expect(await ctx.files.readById(project.id, ghost)).toBeNull();
+      const described = await ctx.files.describeFiles(project.id, [ghost, pic.fileId, added[2]!.fileId]);
+      expect(described.map((d) => [d.path, d.name])).toEqual([["Elsewhere/renamed.png", "renamed.png"], [`${folder}/spec.pdf`, "spec.pdf"]]);
+
+      await ctx.files.remove(project.id, `${folder}/spec.pdf`);
+      expect(await ctx.files.readById(project.id, added[2]!.fileId)).toBeNull();
+      expect(await ctx.files.describeFiles(project.id, [added[2]!.fileId])).toEqual([]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("refuses a body file over the binary limit, and writes nothing of the batch", async () => {
+    const { ctx, items, project, board } = await machine();
+    try {
+      const ticket = items.create({ projectId: project.id, boardId: board.id, title: "Big", workType: "general", by: "human" });
+      const big = Buffer.alloc(8 * 1024 * 1024 + 1).toString("base64");
+      await expect(ctx.files.addAttachments(project.id, ticket.id, [{ name: "ok.txt", base64: "b2s=" }, { name: "huge.bin", base64: big }])).rejects.toThrow("huge.bin is larger than 8 MB; add it in Files instead");
+      expect(await ctx.files.tree(project.id)).toEqual([]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("gives the agent list, read and write, each write a version to hand to add_delivery_resource", async () => {
     const { ctx, items, project, board } = await machine();
     try {

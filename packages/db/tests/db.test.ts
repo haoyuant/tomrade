@@ -128,6 +128,36 @@ describe("views lifted to the project (v5 → v6), through the split", () => {
     expect(items.list({ projectId: project.id, search: "invoice" }).map((i) => i.title)).toEqual(["Invoice export"]);
   });
 
+  it("leaves a body's file links out of the search index", async () => {
+    const { items, board, project } = await fresh();
+    const id = "0f1e2d3c-4b5a-4968-8776-655443322110";
+    const item = items.create({ projectId: project.id, title: "Header overlap", body: `See ![shot](tomrade-file://${id}) on mobile`, boardId: board.id, by: "human" });
+    items.create({ projectId: project.id, title: "Upload a file", boardId: board.id, by: "human" });
+    const titles = (search: string) => items.list({ projectId: project.id, search }).map((i) => i.title);
+    expect(titles("file")).toEqual(["Upload a file"]);
+    expect(titles("0f1e2d")).toEqual([]);
+    expect(titles("mobile")).toEqual(["Header overlap"]);
+    items.update(project.id, item.id, { body: "fixed on desktop" }, "human", { baseVersion: item.version });
+    expect(titles("mobile")).toEqual([]);
+    expect(titles("desktop")).toEqual(["Header overlap"]);
+  });
+
+  it("swaps an older build's search index for the one that drops file links, without touching the schema version", async () => {
+    const { db, items, board, project } = await fresh();
+    items.create({ projectId: project.id, title: "Invoice export", body: "tomrade-file://0f1e2d3c-4b5a-4968-8776-655443322110", boardId: board.id, by: "human" });
+    db.exec(`DROP TRIGGER items_fts_ai; DROP TRIGGER items_fts_ad; DROP TRIGGER items_fts_au; DROP TABLE items_fts;
+      CREATE VIRTUAL TABLE items_fts USING fts5(title, body, content='items', tokenize='trigram');
+      INSERT INTO items_fts(items_fts) VALUES ('rebuild');`);
+    expect(items.list({ projectId: project.id, search: "tomrade" })).toHaveLength(1);
+    const version = db.pragma("user_version");
+    migrateCore(db.handle);
+    expect(db.pragma("user_version")).toBe(version);
+    expect(items.list({ projectId: project.id, search: "tomrade" })).toEqual([]);
+    expect(items.list({ projectId: project.id, search: "invoice" })).toHaveLength(1);
+    items.create({ projectId: project.id, title: "Second invoice", boardId: board.id, by: "human" });
+    expect(items.list({ projectId: project.id, search: "invoice" })).toHaveLength(2);
+  });
+
   it("running the lift again changes nothing", async () => {
     const { cacheDir, legacyPath } = v5File();
     const { db, views, project } = await fresh({ cacheDir, legacyPath });

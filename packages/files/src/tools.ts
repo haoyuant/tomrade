@@ -2,7 +2,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { formatSize, shortDate } from "./agent-index.js";
-import { policyAt } from "./git-sync.js";
+import { listingAt } from "./git-sync.js";
 import type { Files } from "./service.js";
 import type { FileContent, FileEntry, FilesAgentPolicy } from "./types.js";
 
@@ -14,7 +14,7 @@ const READ_CEILING = 256 * 1024;
 const LIBRARY = "The project's Files library — its documents, notes and references, not the code repository.";
 
 const listed = (entries: FileEntry[], policy: FilesAgentPolicy): FileEntry[] =>
-  entries.filter((entry) => (entry.listing?.mode ?? policyAt(policy, entry.path, entry.kind === "dir").mode) === "listed");
+  entries.filter((entry) => (entry.listing?.mode ?? listingAt(policy, entry.path, entry.kind === "dir").mode) === "listed");
 
 const depthOf = (path: string, base: string): number => path.slice(base ? base.length + 1 : 0).split("/").length;
 

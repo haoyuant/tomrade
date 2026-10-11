@@ -77,5 +77,10 @@ describe("decision notes", () => {
     expect(prompt).toContain("the human owns credentials");
     expect(prompt).toContain("Decisions on record");
     expect(prompt).toContain("0001 State: Riverpod [state management]");
+    expect(prompt).not.toContain("tomrade-file://");
+
+    const shot = items.update(project.id, item.id, { body: "Badge overlaps: ![shot](tomrade-file://0f1e2d3c-4b5a-4968-8776-655443322110)" }, "human");
+    const linked = firstPrompt({ item: shot, repo, state: null, branch: "tom-1/cart-badge", blockers: [], bootstrap: false, mcpUrl: null });
+    expect(linked).toContain("get_item lists them under attachments");
   });
 });

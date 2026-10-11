@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { Agent, promptSections, type TurnInput } from "@tomradex/agent";
+import { Agent, generalPrompt, promptSections, type TurnInput } from "@tomradex/agent";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
@@ -177,4 +177,11 @@ it("refuses an agent closing a General delivery an agent ran, while a person sti
   } finally {
     await ctx.fiber.dispose();
   }
+});
+
+it("tells a delivery that its description's tomrade-file links are files get_item lists, and only when there are some", () => {
+  const playbook = { id: "general.deliver", source: "builtin", digest: "x", body: "Deliver." } as Parameters<typeof generalPrompt>[0]["playbook"];
+  const brief = (body: string) => generalPrompt({ ticket: { key: "TOM-1", title: "Poster", body }, cwd: "/tmp", playbook, continued: false });
+  expect(brief("Use ![logo](tomrade-file://0f1e2d3c-4b5a-4968-8776-655443322110)")).toContain("get_item lists them under attachments");
+  expect(brief("Plain words")).not.toContain("tomrade-file");
 });

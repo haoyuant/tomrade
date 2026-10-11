@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
-import type { FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, SyncMode } from "./types.js";
+import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
 export interface VersionRecord {
@@ -46,6 +46,20 @@ export function policyAt<M extends string>(policy: PathPolicy<M>, rel: string, d
     sourcePath: rule?.path ?? null,
     mixed: directory && policy.rules.some((r) => contains(rel, r.path) && r.mode !== mode)
   };
+}
+
+const ATTACHMENTS = /^[^/]+\/attachments(?=\/|$)/;
+
+/**
+ * The listing dimension, with one built-in default: a workstream's
+ * `attachments/` folder is reached through the tickets that link it, so it is
+ * left out of the index unless a rule at or below that folder lists it.
+ */
+export function listingAt(policy: FilesAgentPolicy, rel: string, directory = false): FileListPreference {
+  const preference = policyAt(policy, rel, directory);
+  const folder = ATTACHMENTS.exec(rel)?.[0];
+  if (!folder || (preference.sourcePath !== null && preference.sourcePath.length >= folder.length)) return preference;
+  return { mode: "unlisted", source: "default", sourcePath: null, mixed: directory && policy.rules.some((r) => contains(rel, r.path) && r.mode !== "unlisted") };
 }
 
 export const DEFAULT_SYNC_POLICY: FilesSyncPolicy = { default: "shared", rules: [] };

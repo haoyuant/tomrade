@@ -1,3 +1,4 @@
+import { linkedFileIds } from "@tomradex/domain";
 import type { FocusRef, GeneralExecution, OpenDependency, TurnInput, TurnIO } from "./types.js";
 
 /**
@@ -37,10 +38,16 @@ export const waitsOnLine = (waitsOn: OpenDependency[] | undefined): string =>
     ? `Waits on (still open): ${waitsOn.map((d) => `${d.key} ${d.title} (${d.status})`).join("; ")}. Do what does not need them; where you need their results, say so in your report instead of guessing.`
     : "";
 
+/** Said only where a ticket's description links files, so the links read as files rather than as broken URLs. */
+export const attachmentsLine = (body: string | null | undefined): string =>
+  linkedFileIds(body).length ? "The description is Markdown and links project files as tomrade-file://<fileId>; get_item lists them under attachments with their Files paths." : "";
+
 /** What every General delivery is told, whichever engine runs it: the outcome, the protocol, the place. */
 export function generalBrief(ticket: { key: string; title: string; body?: string | null; waitsOn?: OpenDependency[] }, cwd: string | undefined): string {
   const waiting = waitsOnLine(ticket.waitsOn);
+  const attachments = attachmentsLine(ticket.body);
   return `You are delivering ${ticket.key} — ${ticket.title}.\n${ticket.body ?? ""}\n` +
+    (attachments ? `${attachments}\n` : "") +
     (waiting ? `${waiting}\n` : "") +
     "Work only toward this ticket's outcome and acceptance criteria. Report progress and missing inputs. Human activities require a human completion report; do not claim to have performed offline actions.\n" +
     "A successful agent turn does not complete a ticket. Submit results for human review. Files must enter the Files plugin before becoming delivery artifacts; temporary paths and external links are not delivered files. If file storage is unavailable, report the draft as not delivered.\n" +

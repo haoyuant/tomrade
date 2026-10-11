@@ -108,9 +108,14 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "get_item",
       title: "Get one item",
-      description: "Fetch a single backlog item by id.",
+      description: "Fetch a single backlog item by id. The body is Markdown; files it links (tomrade-file://<fileId>) come back under attachments with their Files path.",
       input: z.object({ projectId: z.string().optional(), id: z.string() }),
-      execute: ({ projectId, id }, inv) => ctx.items.get(requireProjectId("get_item", projectId, inv), id)
+      async execute({ projectId, id }, inv) {
+        const scope = requireProjectId("get_item", projectId, inv);
+        const item = ctx.items.get(scope, id);
+        const attachments = item ? await ctx.items.linkedFiles(scope, item.body) : null;
+        return item && attachments ? { ...item, attachments } : item;
+      }
     })
   );
 

@@ -1,5 +1,5 @@
 import type { Sqlite } from "./sqlite.js";
-import { CORE_SCHEMA_VERSION } from "./schema.js";
+import { CORE_SCHEMA_VERSION, REINDEX_SEARCH_SQL, SEARCH_INDEX_SQL } from "./schema.js";
 import { insertViewRow, seedProject } from "./seed.js";
 
 function columns(db: Sqlite, table: string): Set<string> {
@@ -118,6 +118,21 @@ function liftViewsToProjects(db: Sqlite, now: number): void {
 }
 
 /**
+ * The search index is cache-only, so its shape moves without the schema
+ * version (which the project's text state carries, and an older build refuses
+ * when it is newer). An index that still reads `items` directly is replaced.
+ */
+function upgradeSearchIndex(db: Sqlite): void {
+  const fts = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'items_fts'").get() as { sql: string } | undefined;
+  if (!fts || fts.sql.includes("contentless_delete")) return;
+  db.transaction(() => {
+    db.exec("DROP TRIGGER IF EXISTS items_fts_ai; DROP TRIGGER IF EXISTS items_fts_ad; DROP TRIGGER IF EXISTS items_fts_au; DROP TABLE items_fts;");
+    db.exec(SEARCH_INDEX_SQL);
+    db.exec(REINDEX_SEARCH_SQL);
+  })();
+}
+
+/**
  * Bring a database written by an older build up to CORE_SCHEMA_VERSION.
  * Additive only: rows are preserved and backfilled, never dropped — the
  * exceptions are the views table, whose rows are reconciled into the current
@@ -125,6 +140,7 @@ function liftViewsToProjects(db: Sqlite, now: number): void {
  * a later build stopped reading (the row survives; only the column goes).
  */
 export function migrateCore(db: Sqlite): void {
+  upgradeSearchIndex(db);
   const from = (db.pragma("user_version", { simple: true }) as number) ?? 0;
   if (from >= CORE_SCHEMA_VERSION) return;
 
@@ -187,7 +203,7 @@ export function migrateCore(db: Sqlite): void {
 
     liftViewsToProjects(db, now);
     // Rows written before the index existed are not in it; the triggers carry it from here.
-    if (from < 14) db.exec("INSERT INTO items_fts(items_fts) VALUES ('rebuild')");
+    if (from < 14) db.exec(REINDEX_SEARCH_SQL);
     db.pragma(`user_version = ${CORE_SCHEMA_VERSION}`);
   })();
 }
