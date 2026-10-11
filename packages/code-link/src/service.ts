@@ -205,6 +205,8 @@ export class CodeLink extends Service {
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
   private readonly worktrees = new Map<string, string>();
+  /** Threads with a run going, so a question raised mid-run finds its session: agent events name only the thread. */
+  private readonly running = new Map<string, ThreadSummary>();
 
   constructor(
     ctx: Context,
@@ -341,10 +343,22 @@ export class CodeLink extends Service {
       ctx.on("storage/imported", placeTerminalThreads);
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
       ctx.on("agent/run-started", (_run, thread) => {
+        this.running.set(thread.id, thread);
         const session = this.sessionOf(thread);
-        if (session) this.sessions.touch(thread.projectId, session.id, { state: "running" });
+        if (session) this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
+      });
+      // A permission question mid-run holds the run's clock and can wait for hours:
+      // the session says it is waiting for the person, and runs again once answered.
+      ctx.on("agent/event", (threadId, event) => {
+        if (event.type !== "pending") return;
+        const thread = this.running.get(threadId);
+        const session = thread && this.sessionOf(thread);
+        if (!thread || !session) return;
+        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? "needs your approval" : "asking you something" });
+        else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
       ctx.on("agent/run-ended", (run, thread) => {
+        this.running.delete(thread.id);
         const session = this.sessionOf(thread);
         if (!session) return;
         const externalId = ctx.agent.store.external(thread.projectId, thread.id)[run.engine];
@@ -352,8 +366,10 @@ export class CodeLink extends Service {
           this.sessions.blockCredentials(thread.projectId, session.id, run.error, { ...(externalId ? { externalId } : {}) });
           return;
         }
+        // a run that failed is stuck until someone looks, not idle
         this.sessions.touch(thread.projectId, session.id, {
-          state: run.stop === "asked" ? "waiting" : "idle",
+          state: run.stop === "asked" ? "waiting" : run.error ? "error" : "idle",
+          activity: null,
           ...(externalId ? { externalId } : {}),
           ...(run.error ? { summary: `stopped: ${run.error.slice(0, 200)}` } : {})
         });

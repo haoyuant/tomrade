@@ -405,6 +405,49 @@ describe("starting a ticket", () => {
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
   });
 
+  it("says a run here is waiting while it asks permission, however long that takes, and stuck when it fails", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    let fail = false;
+    agent.engine({
+      id: "asking",
+      title: "Asking agent",
+      author: "ai:asking",
+      capabilities: ["code"],
+      available: async () => ({ ok: true }),
+      async turn(_input, io) {
+        if (fail) throw new Error("model overloaded");
+        const said = await io.requestPermission!("Run npm install?", ["Allow", "Deny"]);
+        io.emit({ type: "text", text: `got ${said}` });
+        return { stop: "end" };
+      }
+    });
+    const item = ticket("Ask before installing");
+    const started = await codeLink.start(project.id, item.id, { mode: "run", engine: "asking" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const session = () => codeLink.sessionsOf(project.id, item.id)[0];
+
+    // The question holds the run: the ticket says the session waits for the person…
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", activity: "needs your approval" }));
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
+    // …and still does after a long silence, where a running session would be called idle.
+    codeLink.sessions.sweep(project.id, Date.now() + 11 * 60 * 1000);
+    expect(session().state).toBe("waiting");
+
+    const question = agent.thread(project.id, started.threadId).pending!.question;
+    agent.send(project.id, started.threadId, { kind: "answer", questionId: question.id, value: "Allow" });
+    await untilRunsSettle(agent);
+    expect(session()).toMatchObject({ state: "idle", activity: null });
+
+    // A run that fails is stuck, not idle.
+    fail = true;
+    await codeLink.start(project.id, item.id, { mode: "run", engine: "asking" });
+    await untilRunsSettle(agent);
+    expect(session()).toMatchObject({ state: "error", summary: expect.stringContaining("model overloaded") });
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "stuck" })]));
+  });
+
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;

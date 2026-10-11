@@ -373,7 +373,9 @@ export class Sessions {
         continue;
       }
       const quiet = now - (s.lastEventAt ?? s.startedAt);
-      if ((s.state === "running" || s.state === "waiting") && quiet >= IDLE_AFTER_MS) {
+      // Silence means the hooks stopped reaching us while it ran; a session waiting for
+      // the person stays waiting however long they are away (a dead process ends it above).
+      if (s.state === "running" && quiet >= IDLE_AFTER_MS) {
         this.store.patchSession(projectId, s.id, { state: "idle" });
         changed = true;
       } else if (s.state === "idle" && s.mode === "terminal" && quiet >= END_AFTER_MS && this.processAlive(s.id) === false) {
