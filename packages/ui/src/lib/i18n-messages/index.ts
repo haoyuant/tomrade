@@ -1,3 +1,4 @@
+import { about } from "./about";
 import { agentPanel } from "./agentPanel";
 import { board } from "./board";
 import { card } from "./card";
@@ -47,6 +48,7 @@ export const en = {
   theme: theme.en,
   language: language.en,
   settingsDialog: settingsDialog.en,
+  about: about.en,
   playbooks: playbooks.en,
   pluginsPanel: pluginsPanel.en,
   plugins: plugins.en,
@@ -97,6 +99,7 @@ export const zh: typeof en = {
   theme: theme.zh,
   language: language.zh,
   settingsDialog: settingsDialog.zh,
+  about: about.zh,
   playbooks: playbooks.zh,
   pluginsPanel: pluginsPanel.zh,
   plugins: plugins.zh,

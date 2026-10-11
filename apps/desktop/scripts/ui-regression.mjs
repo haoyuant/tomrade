@@ -808,6 +808,19 @@ const run = async () => {
   check("choosing English reverts the dialog", (await $(`document.querySelector('.dlg-head .dlg-title')?.textContent`)) === "Settings");
   check("the html lang attribute reverts to en", (await $(`document.documentElement.lang`)) === "en");
 
+  // ── about ────────────────────────────────────────────────────────────
+  // The facts come from this very process, so they are checked against it.
+  await press(settingsNav("About"));
+  await sleep(700);
+  const fact = (name) => `document.querySelector('.about-facts [data-fact="${name}"] dd')?.textContent`;
+  check("the About pane is reachable from the side menu", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "About Tomrade");
+  check("it names the version the app reports", (await $(fact("version"))) === app.getVersion());
+  check("and the Electron and Chromium it runs on", (await $(fact("electron"))) === process.versions.electron && (await $(fact("chromium"))) === process.versions.chrome);
+  check("and where this machine keeps the app's data", (await $(`document.querySelector('.about-facts .about-path')?.textContent`)) === app.getPath("userData"));
+  check("a checkout says so instead of offering a release update", (await $(`!!document.querySelector('.about-version .tag') && !document.querySelector('.about-update button')`)) === true);
+  check("the About pane fits the frame the other panes set", (await $(sheetBox)) === boxOnAppearance);
+  await shot("17-settings-about");
+
   await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
   await sleep(700);
   check("the demotion lifts with the overlay", (await $(`document.documentElement.classList.contains('overlay-open')`)) === false);
@@ -820,6 +833,16 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
   await sleep(800);
   check("closing a dialog hands focus back to whatever opened it", (await $(`document.activeElement?.getAttribute('aria-label')`)) === "Settings");
+
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
+  await sleep(500);
+  await typeInto(".palette-input", "About");
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.palette-row')].find(r => r.textContent.trim() === 'About Tomrade')`);
+  await sleep(900);
+  check("the palette's About command opens settings on that pane", (await $(`document.querySelector('.dlg-nav .side-row[aria-current="true"]')?.textContent.trim()`)) === "About");
+  await press(`[...document.querySelectorAll('.dlg-foot .btn-secondary')].pop()`);
+  await sleep(700);
 
   // ── plugin manager ─────────────────────────────────────────────────
   // A pane of settings, not a sheet of its own. The counts come from the main

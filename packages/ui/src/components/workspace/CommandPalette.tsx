@@ -25,6 +25,7 @@ export interface PaletteActions {
   openHistory: () => void;
   openSettings: () => void;
   openPlugins: () => void;
+  openAbout: () => void;
   openViewSettings: () => void;
   openFields: () => void;
   openProjectSettings: () => void;
@@ -87,6 +88,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
     { label: t("commandPalette.settings"), kb: "⌘,", run: actions.openSettings },
     { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
+    { label: t("commandPalette.about"), kb: undefined, run: actions.openAbout },
     { label: t("commandPalette.projectSettings"), kb: undefined, run: actions.openProjectSettings },
     ...THEME_OPTIONS.map((opt) => ({
       label: t("commandPalette.themeAction", { label: t(opt.labelKey) }),

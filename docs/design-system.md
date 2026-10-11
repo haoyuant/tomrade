@@ -227,7 +227,7 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port and the
 cloud Hub off, since the harness never signs in — over a throwaway database
 seeded with the prototype's sample project (`apps/desktop/scripts/seed.mjs`).
-It asserts 329 behaviours — among them the Markdown description: rendered
+It asserts 338 behaviours — among them the Markdown description: rendered
 task boxes and line breaks, a click into its editor but not through a link,
 Preview, ⌘↵ and Escape (which leaves the pane, and the expanded overlay, open),
 and a save over a body an agent changed meanwhile, refused until Keep mine —

@@ -1,6 +1,27 @@
 import type {} from "@tomradex/ipc";
 import { invoke } from "./api";
 
+export interface AboutInfo {
+  version: string;
+  /** False for a checkout, which updates from git rather than from releases. */
+  packaged: boolean;
+  commit: string | null;
+  builtAt: string | null;
+  electron: string;
+  chrome: string;
+  node: string;
+  v8: string;
+  os: string;
+  arch: string;
+  userData: string;
+}
+
+export interface UpdateCheck {
+  latest: string;
+  date: string | null;
+  newer: boolean;
+}
+
 /**
  * Channels the desktop shell implements (`apps/desktop/src/shell.ts`), declared
  * here because the renderer is their only caller and the shell is not a package
@@ -13,6 +34,9 @@ declare module "@tomradex/ipc" {
     "shell.pickFiles": (title?: string, buttonLabel?: string, kind?: "files" | "folders") => string[] | null;
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
+    "shell.about": () => AboutInfo;
+    /** Throws when the download host cannot be reached. */
+    "shell.checkForUpdate": () => UpdateCheck;
   }
 }
 

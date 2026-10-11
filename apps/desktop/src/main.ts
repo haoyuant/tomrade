@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/storage";
+import { aboutInfo } from "./about.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { adoptShellEnv } from "./shell-env.js";
@@ -26,6 +27,17 @@ app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
+  // The app menu's About item, which a checkout would otherwise credit to Electron.
+  void aboutInfo(path.resolve(here, "../../..")).then((info) =>
+    app.setAboutPanelOptions({
+      applicationName: "Tomrade",
+      applicationVersion: info.version,
+      ...(info.commit ? { version: info.commit } : {}),
+      copyright: "Copyright © Tomrade",
+      website: "https://tomrade.com",
+      iconPath
+    })
+  );
 
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   await adoptShellEnv();
