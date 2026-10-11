@@ -18,6 +18,8 @@ import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSetti
 
 const MIN_W = 352;
 const MAX_W = 616;
+/** Until someone drags it: room for a conversation without taking the board's second column at 1440px. */
+const DEFAULT_W = 440;
 const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}` };
 
 const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -432,7 +434,7 @@ export function AgentPanel({
 
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
-    if (panel.current) panel.current.style.width = `${saved ? Math.min(MAX_W, Math.max(MIN_W, Number(saved))) : MAX_W}px`;
+    if (panel.current) panel.current.style.width = `${saved ? Math.min(MAX_W, Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
   }, [open]);
 
   // After layout, so a working line or question that just mounted is inside scrollHeight.

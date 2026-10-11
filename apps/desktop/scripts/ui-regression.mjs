@@ -477,6 +477,19 @@ const run = async () => {
   await $(`document.querySelector('.card').click();true`);
   await sleep(900);
   check("a card opens the detail pane", (await $(`!!document.querySelector('.detail')`)) === true);
+  // sidebar, board, detail and assistant side by side: nothing runs off the window or under a neighbour
+  await $(`localStorage.setItem("tomrade.ai.width", "616"); true`);
+  if (await $(`!!document.querySelector('.ai-rail button')`)) await press(`document.querySelector('.ai-rail button')`);
+  await sleep(500);
+  check("with the detail open, a wide assistant gives way so all four panes fit", (await $(`(() => {
+    const board = document.querySelector('section.board-region')?.getBoundingClientRect();
+    return document.documentElement.scrollWidth <= innerWidth && !!board && board.width >= 361 && !!document.querySelector('aside.ai:not(.rail)') && document.querySelector('aside.ai').getBoundingClientRect().right <= innerWidth + 1;
+  })()`)) === true);
+  check("and the board's own chrome stays inside the board", (await $(`(() => {
+    const right = document.querySelector('section.board-region').getBoundingClientRect().right;
+    return ![...document.querySelectorAll('.board-region .board-head *, .board-region .query-bar *')].some((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && getComputedStyle(e).display !== 'none' && b.right > right + 1; });
+  })()`)) === true);
+  await $(`localStorage.removeItem("tomrade.ai.width"); true`);
   const customCount = repos.fields.custom(project.id).length;
   check("the detail prints the field strip, custom fields included", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 9 + customCount);
   check("custom fields follow the built-ins", (await $(`document.querySelectorAll('.detail .field-row[data-field]').length`)) === customCount);

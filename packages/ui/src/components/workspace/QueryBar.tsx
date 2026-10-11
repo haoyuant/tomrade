@@ -296,7 +296,7 @@ function FieldPick({
       trigger={
         <button type="button" className={`qb-btn ${className}`} data-on={allowNone && !!current} title={label}>
           <Icon className="ico" name={icon} size={13} />
-          <span>{label}</span>
+          <span className="lbl">{label}</span>
           <span className="qb-val">{current ? fieldLabel(current) : t("common.none")}</span>
           <Icon className="chev" name="i-chevdown" size={12} />
         </button>
@@ -332,7 +332,7 @@ function SortPick() {
       trigger={
         <button type="button" className="qb-btn qb-sort" data-on={!!key} title={t("queryBar.sortTitle")}>
           <Icon className="ico" name="i-bars" size={13} />
-          <span>{t("queryBar.sort")}</span>
+          <span className="lbl">{t("queryBar.sort")}</span>
           <span className="qb-val">{current ? `${fieldLabel(current)} ${key!.dir === "asc" ? "↑" : "↓"}` : manualSortLabel()}</span>
           <Icon className="chev" name="i-chevdown" size={12} />
         </button>

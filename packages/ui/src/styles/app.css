@@ -440,7 +440,7 @@ strong { font-weight: var(--font-weight-medium); }
  * The query bar wraps to a second line before anything is clipped. */
 @container board (max-width: 700px) { .seg-lbl { display: none; } }
 @container board (max-width: 660px) { .board-region .lbl { display: none; } }
-@container board (max-width: 560px) { .board-facts { display: none; } }
+@container board (max-width: 560px) { .board-region .board-facts { display: none; } }
 /* Railed, or gone below 990px, the sidebar takes the only way to change
  * board with it — so the board head grows its own switcher exactly then. */
 .board-nav { display: none; }
@@ -456,7 +456,7 @@ strong { font-weight: var(--font-weight-medium); }
 .board-title { font-size: var(--text-lg); line-height: var(--leading-tight); white-space: nowrap; }
 /* the view's name renames in place: the read view is the heading itself, the write view an input the same size */
 .view-head .view-ico { color: var(--meta); flex-shrink: 0; }
-.view-title { min-width: 0; }
+.view-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .view-name { font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 6px; margin: 0 -6px; border-radius: var(--radius-sm); cursor: text; }
 .view-name:hover { background: var(--surface-warm); }
 .view-name:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -476,7 +476,7 @@ strong { font-weight: var(--font-weight-medium); }
   border-bottom: 1px solid var(--border);
   background: var(--bg); position: relative; z-index: 20;
 }
-.qb-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.qb-right { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .qb-sep { width: 1px; height: 17px; background: var(--border); flex-shrink: 0; margin: 0 3px; }
 .menu-wrap { position: relative; flex-shrink: 0; }
 .qb-btn {
@@ -1136,6 +1136,9 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 /* ─── AI panel ───────────────────────────────────────────────────────── */
 .ai {
   width: 418px; flex-shrink: 0; position: relative;
+  /* the assistant takes what the board leaves it — a dragged 616px included —
+   * so the board keeps a column and a half however wide the panel was set */
+  max-width: max(352px, calc(100vw - var(--sidebar-w) - 480px));
   display: flex; flex-direction: column; min-height: 0;
   background: var(--surface); border-left: 1px solid var(--border);
 }
@@ -1623,7 +1626,10 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
  * (240 + 320 min + 400 + 380 = 1340). Below it the AI panel collapses to
  * its 44px rail when the detail pane opens — handled in script, so every
  * pane stays in normal flow and nothing ever overlaps.
- * Floor with detail open and AI railed: 240 + 320 + 400 + 44 = 1004px. */
+ * Floor with detail open and AI railed: 240 + 320 + 400 + 44 = 1004px.
+ * Above it, an open detail pane caps the AI panel at what is left after the
+ * board's floor (362px) and the detail's 400px, whatever width it was given. */
+.shell:has(aside.detail:not(.expanded)) > .ai { max-width: max(352px, calc(100vw - var(--sidebar-w) - 762px)); }
 @media (max-width: 1230px) {
   :root { --sidebar-w: 200px; }
   .ai { width: 352px !important; }
