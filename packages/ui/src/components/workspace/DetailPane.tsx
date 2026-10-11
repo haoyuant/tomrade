@@ -26,6 +26,7 @@ import { openExternal } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
+import { shortcut } from "~/lib/keys";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
 function LockBar() {
@@ -54,7 +55,7 @@ export function Ledger({ projectId, itemId }: { projectId: string; itemId: strin
         ))}
         {rows.length === 0 && <p className="meta-txt">{t("detailPane.noWritesYet")}</p>}
       </div>
-      <p className="meta-txt detail-note">{tx("detailPane.ledgerFooter", { cmdz: <span className="num">⌘Z</span> })}</p>
+      <p className="meta-txt detail-note">{tx("detailPane.ledgerFooter", { cmdz: <span className="num">{shortcut("⌘Z")}</span> })}</p>
     </section>
   );
 }
@@ -274,7 +275,12 @@ export function DetailPane({
       </RadixDialog.Root>
     );
   }
-  return <aside className="detail">{body}</aside>;
+  // focusable as a whole, so a card opened from the keyboard can hand focus over
+  return (
+    <aside className="detail" tabIndex={-1} aria-label={`${item.key} — ${item.title}`}>
+      {body}
+    </aside>
+  );
 }
 
 function DetailBody({

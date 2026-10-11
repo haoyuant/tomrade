@@ -35,6 +35,7 @@ import { storageBlock } from "./storageBlock";
 import { theme } from "./theme";
 import { titleBar } from "./titleBar";
 import { toast } from "./toast";
+import { shortcuts } from "./shortcuts";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
 import { graphView } from "./graphView";
@@ -62,6 +63,7 @@ export const en = {
   fieldsDialog: fieldsDialog.en,
   destination: destination.en,
   toast: toast.en,
+  shortcuts: shortcuts.en,
 
   hubSetup: hubSetup.en,
   hubPane: hubPane.en,
@@ -115,6 +117,7 @@ export const zh: typeof en = {
   fieldsDialog: fieldsDialog.zh,
   destination: destination.zh,
   toast: toast.zh,
+  shortcuts: shortcuts.zh,
 
   hubSetup: hubSetup.zh,
   hubPane: hubPane.zh,

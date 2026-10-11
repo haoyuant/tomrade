@@ -7,6 +7,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRedo, useRollback, useTimeline, useUndo } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
+import { shortcut } from "~/lib/keys";
 
 const OP_KEY: Record<string, MessageKey> = {
   create: "history.opCreate",
@@ -72,7 +73,7 @@ export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: st
               disabled={busy || !canUndo}
               onClick={() => undo.mutate(undefined, { onSuccess: (step) => step && toast({ body: step.summary }), onError: report })}
             >
-              <Icon name="i-undo" size={13} /> {t("history.undo")} <Kbd>⌘Z</Kbd>
+              <Icon name="i-undo" size={13} /> {t("history.undo")} <Kbd>{shortcut("⌘Z")}</Kbd>
             </button>
             <button
               type="button"
@@ -80,7 +81,7 @@ export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: st
               disabled={busy || !canRedo}
               onClick={() => redo.mutate(undefined, { onSuccess: (step) => step && toast({ body: step.summary }), onError: report })}
             >
-              <Icon name="i-redo" size={13} /> {t("history.redo")} <Kbd>⇧⌘Z</Kbd>
+              <Icon name="i-redo" size={13} /> {t("history.redo")} <Kbd>{shortcut("⇧⌘Z")}</Kbd>
             </button>
           </>
         }

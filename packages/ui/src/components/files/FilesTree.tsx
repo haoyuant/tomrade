@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { FileEntry } from "@tomradex/files";
+import type { FileChange, FileEntry } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
@@ -16,6 +16,8 @@ import { NotesSearch } from "./NotesSearch";
 import { useNoteActions } from "./useNoteActions";
 import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, useAgentActions } from "./AgentPolicy";
+
+const CHANGE_LETTER: Record<FileChange, string> = { added: "A", modified: "M", deleted: "D", renamed: "R", conflicted: "!" };
 
 const expandedKey = (projectId: string) => `tomrade.files.expanded.${projectId}`;
 
@@ -235,6 +237,20 @@ export function FilesTree() {
                   if (dir) show(entry.path);
                   if (!current) openFile(entry.path);
                 }}
+                // a folder opens with → and folds with ←, the way a tree does
+                onKeyDown={
+                  dir
+                    ? (e) => {
+                        if (e.key === "ArrowRight" && !expanded) {
+                          e.preventDefault();
+                          show(entry.path);
+                        } else if (e.key === "ArrowLeft" && expanded) {
+                          e.preventDefault();
+                          toggle(entry.path);
+                        }
+                      }
+                    : undefined
+                }
               >
                 {dir ? (
                   <span
@@ -253,7 +269,12 @@ export function FilesTree() {
                 <span className="side-name">{entry.name}</span>
                 <SyncMark sync={entry.sync} />
                 <AgentMark listing={entry.listing} />
-                {entry.change && <span className={`side-mark is-${entry.change}`} title={entry.change} />}
+                {entry.change && (
+                  // a letter as well as a colour, and a name for anyone not seeing either
+                  <span className={`side-change is-${entry.change}`} title={t(`files.change_${entry.change}`)} aria-label={t(`files.change_${entry.change}`)}>
+                    {CHANGE_LETTER[entry.change]}
+                  </span>
+                )}
               </button>
             </div>
           }

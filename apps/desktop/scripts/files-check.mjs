@@ -122,6 +122,19 @@ const run = async () => {
   await click('.side-row.is-file[data-file="docs"] .chev');
   await wait(() => has('.side-row.is-file[data-file="docs/brief.md"]'), "unfolded folder");
   check("a folder unfolds to its files, indented", (await $(`document.querySelector('.side-row.is-file[data-file="docs/brief.md"]')?.dataset.depth`)) === "1");
+  // the same folder folds and opens from the keyboard, the way a tree does
+  {
+    const row = '.side-row.is-file[data-file="docs"]';
+    const keyOn = (k) => $(`(() => { const r = document.querySelector('${row}'); r.focus(); r.dispatchEvent(new KeyboardEvent('keydown', { key: '${k}', bubbles: true })); return true; })()`);
+    const open = () => $(`document.querySelector('${row}')?.getAttribute('aria-expanded')`);
+    const was = await open();
+    await keyOn(was === "true" ? "ArrowLeft" : "ArrowRight");
+    await sleep(200);
+    const flipped = await open();
+    await keyOn(flipped === "true" ? "ArrowLeft" : "ArrowRight");
+    await sleep(200);
+    check("a folder in the tree opens with → and folds with ←", flipped !== was && (await open()) === was, { was, flipped });
+  }
   check("each file row carries its stable id", brief.fileId && (await ctx.files.tree(project.id)).find((e) => e.path === "docs/brief.md")?.fileId === brief.fileId);
 
   // ── a folder comes in whole ──────────────────────────────────────────
@@ -314,7 +327,8 @@ const run = async () => {
   check("a file changed on both sides is a clash, not a loss", clashed.state === "conflicted" && clashed.conflicts === 1);
   await wait(() => has('[data-testid="conflict-list"]'), "conflict list");
   check("the root lists what needs a decision", (await text('[data-testid="conflict-list"] .m-name')) === "docs/notes.txt");
-  check("the tree marks the file and the label row", (await has('.side-row.is-file[data-file="docs/notes.txt"] .side-mark.is-conflicted')) && (await $(`document.querySelector('.side-label-row .side-mark.is-state')?.dataset.state`)) === "conflicted");
+  check("the tree marks the file and the label row", (await has('.side-row.is-file[data-file="docs/notes.txt"] .side-change.is-conflicted')) && (await $(`document.querySelector('.side-label-row .side-mark.is-state')?.dataset.state`)) === "conflicted");
+  check("the change mark has a letter and a name, not only a colour", (await $(`(() => { const m = document.querySelector('.side-row.is-file[data-file="docs/notes.txt"] .side-change'); return m && m.textContent.trim() === '!' && /both sides/.test(m.getAttribute('aria-label') ?? ''); })()`)) === true);
   await shot("files-04-conflicts");
   // taking every file one way is asked first: it replaces the other side and syncs at once
   await click('[data-testid="conflict-list"] .dangerbar .btn-ghost');

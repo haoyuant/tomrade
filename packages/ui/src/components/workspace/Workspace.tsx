@@ -26,6 +26,7 @@ import { QueryBar } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { Table } from "./Table";
 import { TitleBar, ViewHead } from "./TitleBar";
+import { ShortcutsDialog } from "~/components/dialogs/ShortcutsDialog";
 
 // Opening a ticket re-renders this screen for its detail pane; the regions beside it hold still.
 const SidebarRegion = memo(Sidebar);
@@ -88,6 +89,7 @@ export function Workspace() {
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [codeInbox, setCodeInbox] = useState(false);
   const [history, setHistory] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** Which field the Fields sheet lands on; null for the list. */
   const [fieldsFocus, setFieldsFocus] = useState<string | null>(null);
   const openFields = useCallback((fieldId?: string) => {
@@ -178,7 +180,7 @@ export function Workspace() {
     if (selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || history || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -252,10 +254,18 @@ export function Workspace() {
         // is how an inner layer says it already handled it
         // innermost first: an expanded detail collapses before it closes
         if (expanded) setExpanded(false);
-        else if (selectedId) ws.select(null);
+        else if (selectedId) {
+          // closing the pane from inside it gives focus back to the card it came from
+          const fromPane = !!(document.activeElement as HTMLElement | null)?.closest?.("aside.detail");
+          ws.select(null);
+          if (fromPane) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.card[data-id="${selectedId}"], .tbl-row[data-id="${selectedId}"] .tbl-title`)?.focus());
+        }
       } else if (key === "n" && !meta && !typing && !anyOverlay) {
         e.preventDefault();
         setNewIssue(true);
+      } else if (e.key === "?" && !meta && !typing && !anyOverlay) {
+        e.preventDefault();
+        setShortcutsOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -318,6 +328,7 @@ export function Workspace() {
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)} />
 
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <CommandPalette
         open={palette}
         onOpenChange={setPalette}
@@ -329,6 +340,7 @@ export function Workspace() {
           undo: runUndo,
           redo: runRedo,
           openHistory: () => setHistory(true),
+          openShortcuts: () => setShortcutsOpen(true),
           openSettings: () => setSettings(""),
           openPlugins: () => setSettings("plugins"),
           openAbout: () => setSettings("about"),
