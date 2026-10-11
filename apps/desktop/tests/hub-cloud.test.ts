@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Storage } from "@tomradex/storage";
 import Settings from "@tomradex/settings";
 
-vi.mock("electron", () => ({ safeStorage: { isEncryptionAvailable: () => false } }));
+vi.mock("electron", () => ({ safeStorage: { isEncryptionAvailable: () => false }, app: { getPath: () => "/nonexistent/tomrade-machine" } }));
 import hubCloud from "../src/hub-cloud.js";
 
 it("boots the configured desktop adapter with the real Supabase client without credentials or network requests", async () => {

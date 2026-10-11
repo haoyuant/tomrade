@@ -35,6 +35,7 @@ invitations and switching between multiple Hubs are outside phase one.
 
 | Location | Role after enabling cloud |
 | --- | --- |
+| `<userData>/accounts.json` | Machine-wide: which folder each account on this machine uses, and which opens next |
 | `<userData>/account.enc` | Supabase session encrypted with the OS-backed Electron cipher |
 | `<userData>/hub-cloud.json` | Account/endpoint binding, downloaded records, durable outbox, observed local facts and unresolved conflicts |
 | `<userData>/catalog.json`, `device.json` | Machine placement and identity |
@@ -47,10 +48,24 @@ machine catalog into a durable queue. No network write happens until an account
 signs in. User settings subsequently travel as one schema-validated settings
 document; machine settings and password-bearing sections stay local.
 
-The cloud cache belongs to one Supabase endpoint and one account. Account switching
-within the same `userData` directory is deliberately refused in phase one: local
-project paths and machine settings are not account-partitioned yet. Use a separate
-`TOMRADE_USER_DATA` directory for another account or a development instance.
+The cloud cache belongs to one Supabase endpoint and one account, so each account
+on a machine gets its own local Hub. The first account keeps the original folders
+(`<userData>` and `~/Tomrade`); every other one gets `<userData>/accounts/<folder>`
+and `~/Tomrade/accounts/<folder>`, the folder named after its email address.
+`<userData>/accounts.json` maps account ids to folders and names the one the next
+start opens. Plugin switches (`tomrade.patch.yml`) and installed extensions stay
+per machine.
+
+Signing in or creating an account always starts on a client that keeps no session.
+The owner's session is then adopted here, and so is that of the first account on an
+unowned local Hub. Any other account's session is written, encrypted, into its own
+folder's `account.enc`. `accounts.json` is then pointed at that folder and the app
+restarts into it. Nothing is merged or deleted: signing back in as the first account
+restarts into the original folders with its projects where they were. Under
+`pnpm dev`, Electron exits with `TOMRADE_RESTART_EXIT_CODE` and the launcher starts
+it again, so the dev server survives the switch. A `userData` directory outside this
+layout (a test or `boot()` caller) still refuses every account but its owner. Use a
+separate `TOMRADE_USER_DATA` directory for a development instance.
 
 The outbox is **not disposable**: unlike `cache/`, it contains edits that may not
 have reached Supabase. Back it up with machine data. Writes use temporary files
@@ -62,7 +77,8 @@ The UI initially requires account sign-in for configured cloud builds. After a
 successful authenticated Hub connection, cached local projects remain usable
 offline, including when the network prevents session renewal. Cloud operations
 still require a valid Supabase session. An explicit local sign-out locks the UI
-and keeps pending edits for the same account's next login. This is an application
+and keeps pending edits for the same account's next login; signing in as another
+account from there opens that account's own local Hub instead. This is an application
 gate, not encryption of project files or a change to the local MCP trust model.
 
 Settings enqueue changes immediately. Project references are derived from the

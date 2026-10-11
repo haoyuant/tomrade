@@ -1,5 +1,5 @@
 import { Context, Service } from "cordis";
-import { createClient, type SupabaseClient, type SupportedStorage, type User } from "@supabase/supabase-js";
+import { createClient, type Session, type SupabaseClient, type SupportedStorage, type User } from "@supabase/supabase-js";
 import { z } from "zod";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
@@ -15,6 +15,23 @@ export interface AccountInfo {
   pending: number;
   offlineAccess: boolean;
   conflicts: { id: string; local: unknown; cloud: unknown }[];
+  /** Whose projects this local Hub holds, when one account already owns it. */
+  owner: { email: string | null } | null;
+  /** Set while another account's sign-in restarts Tomrade into that account's own local Hub. */
+  switchingTo: string | null;
+}
+
+/**
+ * The machine's local Hubs, one per account. The desktop shell supplies it;
+ * without it, this local Hub refuses every account but its owner.
+ */
+export interface LocalAccounts {
+  /** True when `userId` keeps a local Hub on this machine other than this one. */
+  elsewhere(userId: string): boolean;
+  /** This local Hub belongs to `user`. */
+  claim(user: { id: string; email: string }): void;
+  /** Store the session in the user's own local Hub, made if new, and restart into it. */
+  open(user: { id: string; email: string }, session: { key: string; value: string }): Promise<void>;
 }
 declare module "cordis" { interface Context { cloudHub: CloudHub } }
 declare module "@tomradex/ipc" {
@@ -32,7 +49,8 @@ declare module "@tomradex/ipc" {
 export const CloudConfig = z.object({
   url: z.url(), publishableKey: z.string().min(1), cacheFile: z.string().min(1),
   sessionStorage: z.custom<SupportedStorage>(v => !!v && typeof (v as SupportedStorage).getItem === "function"),
-  syncMs: z.number().int().min(1000).default(30_000)
+  syncMs: z.number().int().min(1000).default(30_000),
+  accounts: z.custom<LocalAccounts>(v => !!v && typeof (v as LocalAccounts).open === "function").optional()
 });
 type Config = z.infer<typeof CloudConfig>;
 const Credentials = z.object({ email: z.email(), password: z.string().min(1).max(1024) });
@@ -43,6 +61,15 @@ const UserSettings = z.object({
 });
 const SETTINGS_KEY = "settings";
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
+// Failures carry a leading [code] the renderer translates; the rest is the fallback text.
+const failure = (e: { message: string; code?: string; name?: string }) =>
+  new Error(e.code ? `[${e.code}] ${e.message}` : e.name === "AuthRetryableFetchError" ? `[network] ${e.message}` : e.message);
+function credentials(email: string, password: string, min = 1) {
+  const parsed = Credentials.extend({ password: z.string().min(min).max(1024) }).safeParse({ email, password });
+  if (parsed.success) return parsed.data;
+  if (parsed.error.issues[0].path[0] === "email") throw new Error("[email_address_invalid] Enter a valid email address.");
+  throw new Error(`[weak_password] Use a password of ${min} to 1024 characters.`);
+}
 
 /** Supabase owns Hub metadata. The immutable outbox survives failed requests and process exits. */
 export class CloudHub extends Service {
@@ -59,7 +86,11 @@ export class CloudHub extends Service {
   private home: Context;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private signingOut = false;
+  private switchingTo: string | null = null;
+  private sessionRead: Promise<void> = Promise.resolve();
   private readonly sessionKey: string;
+  private readonly origin: string;
+  private readonly fetch: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) });
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, "cloudHub");
@@ -72,12 +103,13 @@ export class CloudHub extends Service {
     }
     const endpoint = new URL(config.url);
     if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("Supabase requires HTTPS outside localhost.");
+    this.origin = endpoint.origin;
     this.cache = new CloudCache(config.cacheFile, endpoint.origin);
     // supabase-js's own default, named so sign-out can forget the session without the server.
     this.sessionKey = `sb-${endpoint.hostname.split(".")[0]}-auth-token`;
     this.client = createClient(endpoint.origin, config.publishableKey, {
       auth: { storage: config.sessionStorage, storageKey: this.sessionKey, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
-      global: { fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) }) }
+      global: { fetch: this.fetch }
     });
   }
 
@@ -105,10 +137,15 @@ export class CloudHub extends Service {
       this.cache.save();
     }
     settings.refreshUserStore();
+    if (this.cache.data.userId) this.config.accounts?.claim({ id: this.cache.data.userId, email: this.cache.data.email ?? "" });
     this.home.inject(["ipc"], ctx => {
       // Account status is a local read. Session renewal must not hold an offline
-      // user's project UI behind a network timeout.
-      ctx.ipc.handle("account.info", () => this.info());
+      // user's project UI behind a network timeout; a locked one waits for the
+      // stored session rather than flash the sign-in form.
+      ctx.ipc.handle("account.info", async () => {
+        if (!this.cache.data.offlineAccess) await this.sessionRead;
+        return this.info();
+      });
       ctx.ipc.handle("account.signIn", (email, password) => this.signIn(email, password));
       ctx.ipc.handle("account.signUp", (email, password) => this.signUp(email, password));
       ctx.ipc.handle("account.signOut", () => this.signOut());
@@ -133,9 +170,12 @@ export class CloudHub extends Service {
       this.schedule();
       this.notify();
     });
-    this.ready = this.client.auth.getSession().then(async ({ data, error }) => {
+    const session = this.client.auth.getSession().then(({ data, error }) => {
       if (error) this.error = error.message;
       this.user = data.session?.user ?? null;
+    });
+    this.sessionRead = session.catch(() => {});
+    this.ready = session.then(async () => {
       await this.ctx.storage.ready;
       for (const project of this.ctx.hub.catalog.projects()) {
         if (!project.dir) await this.ctx.storage.materialize(project.id);
@@ -196,6 +236,7 @@ export class CloudHub extends Service {
     return { user: this.user ? { id: this.user.id, email: this.user.email ?? "" } : null,
       hubId: this.cache.data.hubId, status: this.status(), pending: this.cache.data.outbox.length,
       offlineAccess: this.cache.data.offlineAccess && !!this.cache.data.userId,
+      owner: this.cache.data.userId ? { email: this.cache.data.email } : null, switchingTo: this.switchingTo,
       conflicts: this.cache.data.conflicts.map(r => ({ id: recordKey(r), cloud: r.value, local: this.cache.view().find(v => recordKey(v) === recordKey(r))?.value })) };
   }
   private schedule(): void {
@@ -224,7 +265,9 @@ export class CloudHub extends Service {
     if (this.closed || this.user?.id !== userId) return;
     this.cache.bind(userId, z.uuid().parse(hubId));
     this.cache.data.offlineAccess = true;
+    this.cache.data.email = this.user?.email ?? this.cache.data.email;
     this.cache.save();
+    this.config.accounts?.claim({ id: userId, email: this.cache.data.email ?? "" });
     for (const op of [...this.cache.data.outbox]) {
       if (this.closed || this.user?.id !== userId) return;
       if (!this.cache.data.outbox.some(p => p.id === op.id)) continue;
@@ -248,28 +291,58 @@ export class CloudHub extends Service {
     this.cache.ingest(rows);
     this.cache.data.lastSyncAt = Date.now(); this.cache.save(); this.error = null;
   }
-  async signIn(email: string, password: string): Promise<AccountInfo> {
-    const credentials = Credentials.parse({ email, password });
-    const { data, error } = await this.client.auth.signInWithPassword(credentials);
-    if (error) throw new Error(error.message);
-    if (this.cache.data.userId && data.user.id !== this.cache.data.userId) {
-      await this.client.auth.signOut({ scope: "local" });
-      this.user = null;
-      throw new Error("This local Hub belongs to another account. Use a separate TOMRADE_USER_DATA directory.");
+  /**
+   * A client that keeps no session. Until the user is known, nobody knows whose
+   * local Hub the session belongs in, so this one's storage is not touched.
+   */
+  private scratch(): SupabaseClient {
+    return createClient(this.origin, this.config.publishableKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: this.fetch }
+    });
+  }
+  /** Another account's session goes to that account's own local Hub; this one stays as it is. */
+  private async handOff(user: User, session: Session): Promise<boolean> {
+    const owner = this.cache.data.userId;
+    const accounts = this.config.accounts;
+    if (owner === user.id || (!owner && !accounts?.elsewhere(user.id))) return false;
+    if (!accounts) throw this.refusal();
+    this.switchingTo = user.email ?? "";
+    this.notify();
+    try {
+      await accounts.open({ id: user.id, email: user.email ?? "" }, { key: this.sessionKey, value: JSON.stringify(session) });
+    } catch (e) {
+      this.switchingTo = null;
+      this.notify();
+      throw e;
     }
+    return true;
+  }
+  private refusal(): Error {
+    return new Error(`[other_account] This computer's projects belong to ${this.cache.data.email ?? "another account"}. Sign in with that account.`);
+  }
+  async signIn(email: string, password: string): Promise<AccountInfo> {
+    const { data, error } = await this.scratch().auth.signInWithPassword(credentials(email, password));
+    if (error) throw failure(error);
+    if (await this.handOff(data.user, data.session)) return this.info();
+    const { error: adopted } = await this.client.auth.setSession(data.session);
+    if (adopted) throw failure(adopted);
     this.user = data.user;
     await this.sync(); this.notify();
     return this.info();
   }
   async signUp(email: string, password: string): Promise<{ confirmationRequired: boolean }> {
-    const credentials = Credentials.extend({ password: z.string().min(8).max(1024) }).parse({ email, password });
-    if (this.cache.data.userId) throw new Error("This local Hub already belongs to an account. Sign in to that account.");
-    const { data, error } = await this.client.auth.signUp(credentials);
-    if (error) throw new Error(error.message);
-    this.user = data.session?.user ?? null;
-    if (this.user) await this.sync();
+    const owned = !!this.cache.data.userId;
+    // Refuse before the account exists, not after.
+    if (owned && !this.config.accounts) throw this.refusal();
+    const { data, error } = await (owned ? this.scratch() : this.client).auth.signUp(credentials(email, password, 8));
+    if (error) throw failure(error);
+    if (!data.session) return { confirmationRequired: true };
+    if (await this.handOff(data.session.user, data.session)) return { confirmationRequired: false };
+    this.user = data.session.user;
+    await this.sync();
     this.notify();
-    return { confirmationRequired: !data.session };
+    return { confirmationRequired: false };
   }
   async signOut(): Promise<void> {
     // Complete any in-flight commit before ending the session; unsent edits stay in the durable outbox.
