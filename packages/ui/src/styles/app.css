@@ -1383,6 +1383,26 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   transition: border-color var(--motion-base) var(--ease-standard), background-color var(--motion-base) var(--ease-standard);
 }
 .proj-new:hover { background: var(--surface-warm); border-color: var(--meta); color: var(--fg); }
+/* A project in the account that is not on this computer yet: the card's
+   shape, drawn as a placeholder, with the step under way as a running rule. */
+.proj-restore { background: transparent; border-style: dashed; }
+.proj-restore:hover { box-shadow: none; border-color: var(--border); }
+.proj-restore[data-restore="restoring"], .proj-restore[data-restore="queued"] { background: var(--surface); }
+.restore-body { overflow-wrap: anywhere; }
+.restore-hint { margin-top: var(--space-2); overflow-wrap: anywhere; }
+.restore-progress { position: relative; height: 2px; margin-top: var(--space-4); overflow: hidden; border-radius: 1px; background: var(--border-soft); }
+.restore-progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 1px; background: var(--accent); animation: sect-run 1.8s ease-in-out infinite; }
+.restore-foot { align-items: center; }
+.restore-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.restore-actions { flex: none; }
+.restore-banner { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-4); }
+.restore-banner[data-mode="attention"] { border-color: var(--danger); }
+.restore-banner-title { font-family: var(--font-display); font-weight: 500; color: var(--fg); }
+.restore-row .cfg-name { display: flex; flex-direction: column; gap: 2px; }
+.restore-row-state { flex: none; }
+@media (prefers-reduced-motion: reduce) {
+  .restore-progress::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
+}
 
 /* ─── theme previews and token table · shared with settings-themes.html ──
  * Each preview card re-declares the token block locally, so all three

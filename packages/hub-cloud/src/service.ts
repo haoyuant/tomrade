@@ -206,7 +206,10 @@ export class CloudHub extends Service {
   sync(): Promise<void> {
     if (this.active) return this.active;
     if (this.closed || this.signingOut || !this.user) return Promise.resolve();
-    this.active = this.performSync().catch(e => { this.error = message(e); }).finally(() => {
+    this.active = this.performSync().then(() => {
+      // The catalog may name projects this machine has never had; bring them here.
+      if (!this.closed) void this.ctx.storage.restoreMissing().catch(e => this.home.logger.warn(`restore: ${message(e)}`));
+    }).catch(e => { this.error = message(e); }).finally(() => {
       this.active = null;
       if (!this.closed) { this.ctx.settings.refreshUserStore(); this.notify(); }
     });

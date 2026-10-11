@@ -5,6 +5,7 @@ import type {} from "cordis";
 import type {} from "@tomradex/ipc";
 import type { RemoteRef } from "@tomradex/hub";
 import type { HubManifest } from "./hub.js";
+import type { RestoreSummary } from "./restore.js";
 import type { ConnectionState, StorageInfo, StorageProviderView, StorageStatus } from "./types.js";
 
 declare module "@tomradex/ipc" {
@@ -36,11 +37,21 @@ declare module "@tomradex/ipc" {
     "storage.hubBind": (providerId: string, config: Record<string, unknown>) => StorageStatus;
     "storage.hubUnbind": () => void;
     "storage.hubSync": () => StorageStatus;
-    /** Clone every project the Hub knows and this machine does not; returns their ids. */
+    /** Bring back every project the Hub knows and this machine does not; returns their ids. */
     "storage.hubAttachAll": () => string[];
+    /** Projects the Hub names that are not on this machine yet, and where each one's restore stands. */
+    "storage.restores": () => RestoreSummary;
+    /** Try this project's restore again now. Progress arrives as `storage.restoresChanged`. */
+    "storage.restore": (projectId: string) => RestoreSummary;
+    /** Open the folder holding a project that has no remote to come back from. */
+    "storage.locate": (projectId: string, dir: string) => string;
+    /** Take a project this machine does not have out of the Hub's catalog, on every machine. Deletes nothing. */
+    "storage.removeFromHub": (projectId: string) => RestoreSummary;
   }
   interface Broadcasts {
     /** This project's rows or its sync state moved; refetch everything keyed by it. */
     "storage.changed": (projectId: string) => void;
+    /** A restore started, moved a step, finished or stopped to wait. */
+    "storage.restoresChanged": () => void;
   }
 }

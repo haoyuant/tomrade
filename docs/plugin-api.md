@@ -913,9 +913,23 @@ creation on top.
 | `ctx.storage.bind(projectId, providerId, config)` | Give a dedicated repository a remote; refused for a shared checkout |
 | `ctx.storage.attach(dir)` / `attachRemote(providerId, config)` | Open a folder, or clone a published project into the Hub |
 | `ctx.storage.rebuild(projectId)` | Drop the cache and read the folder again, history included |
+| `ctx.storage.restores()` | Projects the Hub's catalog names that are not on this machine, each with its restore state |
+| `ctx.storage.restoreMissing()` | The automatic path (boot, Hub sync, account sync): clone or adopt what is missing, one at a time |
+| `ctx.storage.restore(projectId)` / `locate(projectId, dir)` | Retry one now; open the folder holding a project that has no remote |
+| `ctx.storage.removeFromHub(projectId)` | Take a project this machine lacks out of the catalog for every machine; deletes nothing |
+
+Restore states: `queued`, `restoring` (step `contacting` / `downloading` /
+`opening`), `offline` and `unpublished` (retried with backoff),
+`needs-connection` (retried when the provider's account connects),
+`needs-provider` (retried when the provider registers), `not-backed-up` and
+`failed`. A clone lands in `projects/.restoring-<id>` and moves into place only
+after it has been read whole and its id checked; a copy already under
+`projects/` that is a checkout of the same remote is adopted and synced instead
+of cloned again. A project removed on this machine is never brought back.
 
 Events: `storage/registered`, `storage/unregistered`, `storage/synced`,
-`storage/imported`; the renderer hears `storage.changed(projectId)`.
+`storage/imported`, `storage/restored`; the renderer hears
+`storage.changed(projectId)` and `storage.restoresChanged()`.
 `ctx.storage.artifactDirFor(projectId)` names `<dir>/.tomrade` for whatever
 reads what travels beside the state (playbooks, docs).
 

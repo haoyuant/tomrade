@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommandScope } from "@tomradex/contributions";
-import type { StorageInfo, StorageProviderView, StorageStatus } from "@tomradex/storage";
+import type { RestoreSummary, StorageInfo, StorageProviderView, StorageStatus } from "@tomradex/storage";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/repos";
 import type { CheckoutSelection, CheckoutView } from "@tomradex/repos";
@@ -46,6 +46,7 @@ export const keys = {
   repoCheckouts: ["repos", "checkouts"] as const,
   plugins: ["plugins"] as const,
   storageProviders: ["storage", "providers"] as const,
+  restores: ["storage", "restores"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
   storageInfo: (projectId: string) => ["storage", "info", projectId] as const,
   storageConnection: (providerId: string) => ["storage", "connection", providerId] as const,
@@ -584,6 +585,45 @@ export function useAttachAll() {
     onSettled: () => {
       invalidateHub(qc);
       void qc.invalidateQueries({ queryKey: ["storage"] });
+    }
+  });
+}
+
+/* ── restoring ───────────────────────────────────────────────────────────
+   What the account names and this machine lacks. A local read: progress
+   arrives as broadcasts, the poll is only a backstop while work is under way. */
+
+const restoreActive = (summary?: RestoreSummary) => !!summary?.entries.some((e) => e.state === "queued" || e.state === "restoring");
+
+export const useRestores = () =>
+  useQuery({ queryKey: keys.restores, queryFn: () => invoke("storage.restores"), refetchInterval: (q) => (restoreActive(q.state.data) ? 2_000 : false) });
+
+/** Try one project again now; the card follows by broadcast. */
+export function useRetryRestore() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => invoke("storage.restore", projectId),
+    onSuccess: (summary) => qc.setQueryData(keys.restores, summary)
+  });
+}
+
+/** Take a project this computer does not have out of the account's (or Hub's) catalog. Deletes nothing. */
+export function useRemoveFromHub() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => invoke("storage.removeFromHub", projectId),
+    onSuccess: (summary) => qc.setQueryData(keys.restores, summary)
+  });
+}
+
+/** Open the folder holding a project that has no remote to come back from. */
+export function useLocateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { projectId: string; dir: string }) => invoke("storage.locate", args.projectId, args.dir),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.restores });
+      void qc.invalidateQueries({ queryKey: ["projects"] });
     }
   });
 }

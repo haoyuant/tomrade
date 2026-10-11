@@ -6,9 +6,10 @@ import { ConnectionPanel, DestinationPicker, message } from "~/components/projec
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useProjects, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
+import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { RestoreRow } from "~/components/projects/RestoreCards";
 import { AccountPanel } from "./AccountPanel";
 
 /** The same words the project block uses for the same states. */
@@ -28,17 +29,16 @@ function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: str
 
 /**
  * The Hub is the person's folder: give it a remote and another machine becomes
- * this one. Its catalog names every project it knows, so what is missing here
- * can be attached in one go.
+ * this one. Its catalog names every project it knows; what is missing here is
+ * restored by itself, and each row says how far along it is.
  */
 export function HubPane() {
   const { t, tx } = useI18n();
   const qc = useQueryClient();
   const STATE = stateOf(t);
   const hub = useHubInfo();
-  const projects = useProjects();
-  const localProjectIds = new Set((projects.data ?? []).map(p => p.id));
   const remote = useHubRemote();
+  const restores = useRestores();
   const providers = useStorageProviders();
   const sync = useSyncHub();
   const attachAll = useAttachAll();
@@ -47,8 +47,7 @@ export function HubPane() {
   const status = remote.data?.status;
   const state = STATE[status?.state ?? "local"];
   const busy = sync.isPending || attachAll.isPending;
-  const others = (remote.data?.manifest?.projects ?? []).filter((p) => hub.data?.cloudEnabled
-    ? !localProjectIds.has(p.id) : remote.data?.attachable.includes(p.id));
+  const missing = restores.data?.entries ?? [];
 
   const syncNow = () =>
     sync.mutate(undefined, {
@@ -56,12 +55,9 @@ export function HubPane() {
       onError: (error) => toast({ body: message(error) })
     });
 
-  const attach = () =>
+  const retryAll = () =>
     attachAll.mutate(undefined, {
-      onSuccess: (ids) => {
-        toast({ body: ids.length ? t("hubPane.attachedToast", { n: ids.length }) : t("hubPane.attachedNone") });
-        void qc.invalidateQueries({ queryKey: ["projects"] });
-      },
+      onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
       onError: (error) => toast({ body: message(error) })
     });
 
@@ -110,52 +106,33 @@ export function HubPane() {
       )}
 
       <div style={{ marginTop: "var(--space-4)" }}>
-        <Eyebrow>{t("hubPane.othersLabel")}</Eyebrow>
-        {others.length === 0 ? (
+        <Eyebrow>{t("restore.hubTitle")}</Eyebrow>
+        {missing.length === 0 ? (
           <p className="meta-txt dense hub-others-none" style={{ marginTop: "var(--space-2)" }}>
-            {t("hubPane.othersNone")}
+            {t("restore.hubNone")}
           </p>
         ) : (
           <>
             <div className="stack-1" style={{ marginTop: "var(--space-2)" }}>
-              {others.map((p) => (
-                <div key={p.id} className="cfg-row hub-other" data-project={p.id}>
-                  <Icon name="i-stack" size={15} style={{ color: "var(--meta)" }} />
-                  <span className="cfg-name">
-                    {p.name} <span className="meta-txt num">{p.keyPrefix}</span>
-                  </span>
-                  <span className="meta-txt num" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
-                    {p.remote
-                      ? t("hubPane.livesAt", { provider: providers.data?.find((x) => x.id === p.remote!.provider)?.title ?? p.remote.provider, where: describeConfig(p.remote.config) })
-                      : p.hint
-                        ? t("hubPane.livesHint", { hint: p.hint })
-                        : t("hubPane.livesUnknown")}
-                  </span>
-                </div>
+              {missing.map((entry) => (
+                <RestoreRow key={entry.projectId} entry={entry} />
               ))}
             </div>
             <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
-              <button type="button" className="btn btn-secondary hub-attach-all" disabled={busy || !others.some((p) => p.remote)} onClick={attach}>
-                <Icon name="i-plus" size={13} />
-                {attachAll.isPending ? t("hubPane.attaching") : t("hubPane.attachAll")}
+              <button type="button" className="btn btn-secondary hub-attach-all" disabled={busy || missing.every((e) => e.state === "restoring")} onClick={retryAll}>
+                <Icon name="i-sync" size={13} />
+                {attachAll.isPending ? t("restore.retrying") : t("restore.retryAll")}
               </button>
             </div>
           </>
         )}
         <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-          {t("hubPane.othersNote")}
+          {t("restore.hubNote")}
         </p>
       </div>
     </>
   );
 }
-
-/** A remote's config in one line: owner/repo, or the URL. Never a secret — configs hold none. */
-const describeConfig = (config: Record<string, unknown>): string => {
-  if (typeof config.owner === "string" && typeof config.repo === "string") return `${config.owner}/${config.repo}`;
-  if (typeof config.remote === "string") return config.remote.replace(/^https?:\/\//, "");
-  return Object.values(config).filter((v) => typeof v === "string").join(" · ");
-};
 
 /** Same shape as the project block's remote section; the Hub is bound and synced through its own channels. */
 function HubRemoteSection({ bound, location, disabled, providers }: { bound: { provider: string; config: Record<string, unknown> } | null; location: string | null; disabled: boolean; providers: StorageProviderView[] }) {

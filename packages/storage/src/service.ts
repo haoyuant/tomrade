@@ -11,10 +11,11 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, cleanRemote, cloneInto, gitRunner, type Git } from "./git.js";
+import { GitFolder, GitMissingError, cleanRemote, gitRunner, type Git } from "./git.js";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, mergeStates, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
+import { Restorer, fetchProject, type Adoption, type RestoreEntry, type RestoreSummary } from "./restore.js";
 import {
   ARTIFACT_DIR,
   ConflictMarkersError,
@@ -28,6 +29,7 @@ import {
   primaryKeyOf,
   projectIdOf,
   readArtifact,
+  refreshSupportFiles,
   serializeState,
   writeArtifact,
   type ProjectState
@@ -56,6 +58,8 @@ declare module "cordis" {
     "storage/synced"(projectId: string, status: StorageStatus): void;
     /** The folder's copy replaced the local rows; caches for this project are stale. */
     "storage/imported"(projectId: string): void;
+    /** A project the Hub named came back to this machine. */
+    "storage/restored"(projectId: string): void;
   }
 }
 
@@ -71,7 +75,9 @@ export const StorageConfig = z.preprocess(
     /** Watch each project's `.tomrade/` for changes made by someone else (a pull, a sync tool). */
     watch: z.boolean().default(true),
     /** Backstop sweep: publish anything the timers missed. 0 disables. */
-    reconcileMs: z.number().int().min(0).default(300_000)
+    reconcileMs: z.number().int().min(0).default(300_000),
+    /** Bring back, without being asked, every project the Hub names and this machine lacks. */
+    autoRestore: z.boolean().default(true)
   })
 );
 export type StorageConfig = z.infer<typeof StorageConfig>;
@@ -120,6 +126,7 @@ export class Storage extends Service {
   private tombstones = new Map<string, number>();
   private closing = false;
   private hubBackend: HubBackend | null = null;
+  private restorer!: Restorer;
 
   useHubBackend(backend: HubBackend): () => void {
     if (this.hubBackend) throw new Error("A Hub backend is already installed");
@@ -139,6 +146,19 @@ export class Storage extends Service {
   }
 
   [Service.init]() {
+    this.restorer = new Restorer({
+      manifest: () => this.hubManifest(),
+      known: (id) => this.entry(id) !== null || this.tombstones.has(id),
+      provider: (id) => this.registry.get(id) ?? null,
+      git: this.runGit,
+      projectsDir: () => (this.hub.dir ? path.join(this.hub.dir, "projects") : null),
+      folderFor: (name) => this.folderFor(name),
+      adopt: (id, dir, remote, how) => this.adopt(id, dir, remote, how),
+      changed: () => this.home.get("ipc")?.send("storage.restoresChanged"),
+      restored: (id) => this.restored(id),
+      warn: (m) => this.home.logger.warn(`storage: ${m}`),
+      auto: this.config.autoRestore
+    });
     this.home.on("write/committed", (intent) => this.onCommitted(intent.projectId));
     // An undo or redo moves rows without a write; the folder is stale all the same.
     this.home.on("oplog/reverted", (projectId) => this.onCommitted(projectId));
@@ -149,7 +169,9 @@ export class Storage extends Service {
       this.hubBackend?.removeProject(projectId);
       this.scheduleHubWrite();
     });
-    this.home.on("hub/configured", () => void this.reconcileAll("configured"));
+    this.home.on("hub/configured", () => void this.reconcileAll("configured").then(() => this.restoreMissing()));
+    // A destination switched on late may be the one a waiting project needs.
+    this.home.on("storage/registered", (providerId) => this.requeue((e) => e.state === "needs-provider" && e.provider?.id === providerId));
 
     if (this.config.reconcileMs > 0) {
       this.reconcileTimer = setInterval(() => void this.reconcileAll("reconcile"), this.config.reconcileMs);
@@ -179,6 +201,10 @@ export class Storage extends Service {
       ctx.ipc.handle("storage.hubUnbind", () => ctx.storage.unbindHub());
       ctx.ipc.handle("storage.hubSync", () => ctx.storage.syncHub());
       ctx.ipc.handle("storage.hubAttachAll", () => ctx.storage.attachAll());
+      ctx.ipc.handle("storage.restores", () => ctx.storage.restores());
+      ctx.ipc.handle("storage.restore", (projectId) => ctx.storage.restore(projectId));
+      ctx.ipc.handle("storage.locate", (projectId, dir) => ctx.storage.locate(projectId, dir));
+      ctx.ipc.handle("storage.removeFromHub", (projectId) => ctx.storage.removeFromHub(projectId));
     });
 
     this.home.inject(["contributions"], (ctx) => {
@@ -196,9 +222,18 @@ export class Storage extends Service {
     });
 
     this.ready = this.reconcileAll("boot");
+    // Destinations register just after this service; let them arrive before anything is judged missing.
+    let restoreBoot: ReturnType<typeof setTimeout> | null = null;
+    void this.ready.then(() => {
+      if (this.closing) return;
+      restoreBoot = setTimeout(() => void this.restoreMissing(), 1_000);
+      restoreBoot.unref?.();
+    });
 
     return () => {
       this.closing = true;
+      this.restorer.close();
+      if (restoreBoot) clearTimeout(restoreBoot);
       if (this.reconcileTimer) clearInterval(this.reconcileTimer);
       if (this.hubWriteTimer) clearTimeout(this.hubWriteTimer);
       for (const t of [...this.idleTimers.values(), ...this.maxTimers.values(), ...this.watchTimers.values()]) clearTimeout(t);
@@ -341,7 +376,10 @@ export class Storage extends Service {
 
   async connect(providerId: string, secret: string): Promise<ConnectionState> {
     const provider = this.get(providerId);
-    return provider.connection ? provider.connection.connect(secret) : { connected: true };
+    const state = provider.connection ? await provider.connection.connect(secret) : { connected: true };
+    // The account may be what a project waiting to come back needed.
+    if (state.connected) this.requeue((e) => e.provider?.id === providerId && (e.state === "needs-connection" || e.state === "failed"));
+    return state;
   }
 
   async disconnect(providerId: string): Promise<void> {
@@ -475,7 +513,8 @@ export class Storage extends Service {
       exports: entry.exports,
       repo: entry.git === "dedicated" ? "dedicated" : undefined,
       checkpoint: this.checkpointOf(projectId),
-      at
+      at,
+      withhold: entry.withheld
     });
   }
 
@@ -503,7 +542,7 @@ export class Storage extends Service {
     const dir = this.publishedDir(projectId);
     if (!dir) return this.publishedMem.get(projectId) ?? null;
     try {
-      return readArtifact(dir);
+      return readArtifact(dir, { verify: this.verifies(projectId) });
     } catch {
       return null;
     }
@@ -523,7 +562,7 @@ export class Storage extends Service {
     // Someone else's change may be sitting in the folder; take it (merging if
     // need be) before writing over it.
     if (hasArtifact(dir) && reason !== "merge") {
-      const { state: onDisk, problem } = this.readFolder(dir);
+      const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
       if (problem?.state === "syncing") return this.statusFor(projectId);
       if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) await this.refresh(projectId);
     }
@@ -539,6 +578,8 @@ export class Storage extends Service {
         compactLog(dir, this.hub.deviceId, (state.manifest.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS) * DAY, now);
         this.savePublished(projectId, state);
         this.hub.catalog.patchProject(projectId, { lastPublishedDigest: digest, lastSyncAt: now });
+      } else {
+        refreshSupportFiles(dir, { mcpUrl: this.mcpUrl(projectId) });
       }
       const counts = Object.entries(state.tables).filter(([, rows]) => rows.length);
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
@@ -594,10 +635,18 @@ export class Storage extends Service {
 
   // ── reading the folder back ──────────────────────────────────────────────────
 
+  /**
+   * While a table is withheld the folder's digest counts a file git never
+   * carried, so its snapshot is read without the check until one that does arrives.
+   */
+  private verifies(projectId: string): boolean {
+    return !this.entry(projectId)?.withheld.length;
+  }
+
   /** Read the folder; a torn or conflicted artifact is reported as a status, not thrown. */
-  private readFolder(dir: string): { state: ProjectState | null; problem?: { state: SyncState; detail: string } } {
+  private readFolder(dir: string, verify = true): { state: ProjectState | null; problem?: { state: SyncState; detail: string } } {
     try {
-      return { state: readArtifact(dir) };
+      return { state: readArtifact(dir, { verify }) };
     } catch (error) {
       if (error instanceof TornArtifactError) return { state: null, problem: { state: "syncing", detail: "The folder is still being written or synced" } };
       if (error instanceof ConflictMarkersError) return { state: null, problem: { state: "error", detail: error.message } };
@@ -638,7 +687,7 @@ export class Storage extends Service {
   private async takeFolder(projectId: string): Promise<boolean> {
     const entry = this.mustEntry(projectId);
     if (!entry.dir) return false;
-    const { state } = this.readFolder(entry.dir);
+    const { state } = this.readFolder(entry.dir, this.verifies(projectId));
     if (!state) return false;
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
     this.importInto(projectId, entry, state);
@@ -652,6 +701,11 @@ export class Storage extends Service {
     const digest = state.manifest.snapshot?.digest ?? digestState(state);
     const patch: Partial<CatalogProject> = { lastPublishedDigest: digest, lastSyncAt: Date.now(), name: String(state.manifest.project.name ?? entry.name), keyPrefix: String(state.manifest.project.key_prefix ?? entry.keyPrefix) };
     if (state.manifest.exports) patch.exports = state.manifest.exports;
+    // A withheld table this snapshot carries is known here from now on.
+    if (entry.withheld.length) patch.withheld = entry.withheld.filter((key) => {
+      const [ns, table] = key.split("/");
+      return !state.plugins?.[ns]?.[table];
+    });
     // The folder's own log now holds every row of ours up to here.
     const last = this.db(projectId).prepare("SELECT MAX(seq) AS m FROM oplog").get() as { m: number | null };
     patch.lastLoggedSeq = last.m ?? 0;
@@ -685,7 +739,7 @@ export class Storage extends Service {
         }
       }
     }
-    const { state } = this.readFolder(entry.dir);
+    const { state } = this.readFolder(entry.dir, this.verifies(projectId));
     if (!state) return this.statusFor(projectId);
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
     const onDisk = state.manifest.snapshot?.digest ?? digestState(state);
@@ -702,8 +756,9 @@ export class Storage extends Service {
   private async mergeRemote(projectId: string, entry: CatalogProject, g: GitFolder, branch: string): Promise<void> {
     const dir = entry.dir!;
     const baseCommit = await g.mergeBase(branch);
-    const base = baseCommit ? parseArtifact(await g.filesAt(baseCommit, ARTIFACT_DIR), `${baseCommit}`) : this.loadPublished(projectId);
-    const theirs = parseArtifact(await g.filesAt(`origin/${branch}`, ARTIFACT_DIR), `origin/${branch}`);
+    const verify = this.verifies(projectId);
+    const base = baseCommit ? parseArtifact(await g.filesAt(baseCommit, ARTIFACT_DIR), `${baseCommit}`, { verify }) : this.loadPublished(projectId);
+    const theirs = parseArtifact(await g.filesAt(`origin/${branch}`, ARTIFACT_DIR), `origin/${branch}`, { verify });
     if (!theirs) {
       // The remote has commits but no project — a README from "initialize this
       // repository", say. Join the histories, keep their files, carry ours over.
@@ -851,7 +906,7 @@ export class Storage extends Service {
       }
     }
 
-    const { state: onDisk, problem } = this.readFolder(entry.dir);
+    const { state: onDisk, problem } = this.readFolder(entry.dir, this.verifies(projectId));
     if (problem) return this.remember(projectId, { ...problem, location, lastSyncAt: entry.lastSyncAt });
     let localDirty = false;
     try {
@@ -927,7 +982,7 @@ export class Storage extends Service {
       if (counts && counts.behind > 0 && counts.ahead === 0) {
         await g.fastForward(target.branch);
         if (hasArtifact(entry.dir)) {
-          const { state } = this.readFolder(entry.dir);
+          const { state } = this.readFolder(entry.dir, this.verifies(projectId));
           if (state && projectIdOf(state) !== projectId) {
             this.hub.catalog.patchProject(projectId, { remote: null });
             throw new ForeignProjectError(projectId, projectIdOf(state));
@@ -954,15 +1009,21 @@ export class Storage extends Service {
 
   // ── bringing projects in ─────────────────────────────────────────────────────
 
-  /** Open a folder holding a project this machine does not know. */
-  async attach(rawDir: string): Promise<string> {
+  /** Open a folder holding a project this machine does not know; `read` is the folder's state when the caller already has it. */
+  async attach(rawDir: string, read?: ProjectState): Promise<string> {
     const dir = path.resolve(rawDir);
-    const state = readArtifact(dir);
+    const state = read ?? readArtifact(dir);
     if (!state) throw new Error(`${dir} holds no Tomrade project`);
     const projectId = projectIdOf(state);
     if (this.entry(projectId)) throw new Error(`Project ${projectId} is already on this machine`);
-    const db = (this.ctx.db as Db).open(projectId);
-    importState(db, state, { registrations: (this.ctx.db as Db).registrations("project") });
+    const pool = this.ctx.db as Db;
+    const db = pool.open(projectId);
+    try {
+      importState(db, state, { registrations: pool.registrations("project") });
+    } catch (error) {
+      pool.remove(projectId);
+      throw error;
+    }
     const git = await this.detectOrigin(dir, state.manifest.repo === "dedicated");
     const digest = state.manifest.snapshot?.digest ?? digestState(state);
     this.hub.catalog.upsertProject({
@@ -992,24 +1053,30 @@ export class Storage extends Service {
     const provider = this.get(providerId);
     const config = provider.configSchema.parse(rawConfig) as Record<string, unknown>;
     const target = await provider.toRemote(config);
-    const name = cleanRemote(target.url).replace(/\.git$/, "").split(/[/:]/).filter(Boolean).pop() ?? "project";
-    const dir = this.folderFor(name);
-    await cloneInto(this.runGit, target.url, target.branch, dir);
-    if (!hasArtifact(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true });
-      throw new Error(`${cleanRemote(target.url)} holds no Tomrade project on ${target.branch}`);
+    const hubDir = this.hub.dir;
+    if (!hubDir) throw new HubUnconfiguredError();
+    const staging = path.join(hubDir, "projects", `.attaching-${Date.now().toString(36)}`);
+    try {
+      const read = await fetchProject(this.runGit, target, staging);
+      const { state } = read;
+      const projectId = projectIdOf(state);
+      if (this.entry(projectId)) throw new Error(`Project ${projectId} is already on this machine`);
+      const name = cleanRemote(target.url).replace(/\.git$/, "").split(/[/:]/).filter(Boolean).pop() ?? "project";
+      const dir = this.folderFor(name);
+      fs.renameSync(staging, dir);
+      await this.adopt(projectId, dir, { provider: providerId, config }, { found: false, ...read });
+      this.restorer.adopted(projectId);
+      return projectId;
+    } finally {
+      fs.rmSync(staging, { recursive: true, force: true });
     }
-    const projectId = await this.attach(dir);
-    this.hub.catalog.patchProject(projectId, { git: "dedicated", remote: { provider: providerId, config } });
-    this.scheduleHubWrite();
-    return projectId;
   }
 
   /** Drop the cache and read the folder again — the folder is the truth, so nothing is lost but the window's undo. */
   async rebuild(projectId: string): Promise<StorageStatus> {
     const entry = this.mustEntry(projectId);
     if (!entry.dir || !hasArtifact(entry.dir)) throw new Error("The project's folder holds no snapshot to rebuild from");
-    const state = readArtifact(entry.dir);
+    const state = readArtifact(entry.dir, { verify: this.verifies(projectId) });
     if (!state) throw new Error("The project's folder holds no snapshot to rebuild from");
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
     this.unwatch(projectId);
@@ -1027,6 +1094,135 @@ export class Storage extends Service {
     this.home.emit("projects/changed", projectId);
     this.notify(projectId);
     return this.statusFor(projectId);
+  }
+
+  // ── restoring ────────────────────────────────────────────────────────────────
+
+  /** Projects the Hub names that are not on this machine yet, and where each stands. */
+  restores(): RestoreSummary {
+    this.restorer.scan();
+    return this.restorer.summary();
+  }
+
+  /** The automatic path: line up with the Hub's catalog and work through whatever is due. */
+  restoreMissing(): Promise<string[]> {
+    if (this.closing) return Promise.resolve([]);
+    this.restorer.scan();
+    return this.config.autoRestore ? this.restorer.run() : Promise.resolve([]);
+  }
+
+  /** "Retry": this project, now, whatever it was waiting for. Progress arrives as `storage.restoresChanged`. */
+  restore(projectId: string): RestoreSummary {
+    this.restorer.scan();
+    this.restorer.retry((e) => e.projectId === projectId);
+    void this.restorer.run();
+    return this.restorer.summary();
+  }
+
+  /** The person points at the folder holding a project that has no remote to come back from. */
+  async locate(projectId: string, rawDir: string): Promise<string> {
+    this.restorer.scan();
+    const record = this.restorer.record(projectId);
+    if (!record) throw new Error(`Project ${projectId} is already on this machine, or no longer in the Hub`);
+    if (record.remote) throw new Error(`${record.name} comes back from its remote; retry instead of choosing a folder`);
+    const dir = path.resolve(rawDir);
+    const state = readArtifact(dir);
+    if (!state) throw new Error(`${dir} holds no Tomrade project`);
+    if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state), { expected: record.name, found: String(state.manifest.project.name ?? projectIdOf(state)) });
+    await this.adopt(projectId, dir, null, { found: true });
+    this.restorer.adopted(projectId);
+    return projectId;
+  }
+
+  /**
+   * Take a project this machine does not have out of the Hub's catalog, for
+   * every machine — an old project nobody can find the folder of. Nothing is
+   * deleted: a folder that still exists somewhere stays as it is, and a machine
+   * that still has the project lists it again once it changes there.
+   */
+  removeFromHub(projectId: string): RestoreSummary {
+    this.restorer.scan();
+    const entry = this.restorer.entry(projectId);
+    if (!entry) throw new Error(`Project ${projectId} is on this machine or no longer in the Hub; remove it from its own settings`);
+    if (entry.state === "restoring") throw new Error(`${entry.name} is being restored right now`);
+    this.tombstones.set(projectId, Date.now());
+    this.hubBackend?.removeProject(projectId);
+    this.scheduleHubWrite();
+    this.restorer.scan();
+    return this.restorer.summary();
+  }
+
+  private requeue(match: (entry: RestoreEntry) => boolean): void {
+    this.restorer.retry(match);
+    if (this.config.autoRestore && !this.closing) void this.restorer.run();
+  }
+
+  /**
+   * Open a folder holding a project the Hub names, bound to the remote it came
+   * back from. Nothing is written to the remote: a clone short of a file the
+   * old `.gitignore` kept out gets it back beside it (an empty table) or has
+   * that table withheld here (rows unknown).
+   */
+  private async adopt(projectId: string, dir: string, remote: RemoteRef | null, how: Adoption): Promise<void> {
+    const pool = this.ctx.db as Db;
+    // A cache left by an attempt that died halfway; the folder is the truth.
+    if (pool.has(projectId) && !this.entry(projectId)) pool.remove(projectId);
+    for (const [rel, body] of how.fill ?? []) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), body, "utf8");
+    }
+    await this.attach(dir, how.state);
+    const patch: Partial<CatalogProject> = {};
+    if (remote) Object.assign(patch, { git: "dedicated", remote });
+    if (how.withheld?.length) patch.withheld = how.withheld;
+    if (Object.keys(patch).length) this.hub.catalog.patchProject(projectId, patch);
+    if (remote) this.scheduleHubWrite();
+    // A copy that was already on disk may be behind its remote, or ahead of it.
+    if (how.found && remote) await this.sync(projectId).catch((e) => this.warn(projectId, e));
+  }
+
+  private restored(projectId: string): void {
+    this.home.emit("storage/restored", projectId);
+    // The first-run placeholder makes way for the account's own projects.
+    for (const entry of this.hub.catalog.projects()) {
+      if (entry.id !== projectId && this.isPristineSeed(entry)) this.dropSeed(entry);
+    }
+    this.scheduleHubWrite();
+  }
+
+  /**
+   * The Default Project a first run made and nobody has touched: this
+   * machine's placeholder, not one of the account's projects. Any row of
+   * history, an issue or plugin data ends that for good.
+   */
+  private isPristineSeed(entry: CatalogProject): boolean {
+    if (!entry.seed) return false;
+    const pool = this.ctx.db as Db;
+    if (!pool.has(entry.id)) return false;
+    const db = pool.for(entry.id);
+    const holds = (table: string): boolean => {
+      try {
+        return db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get() !== undefined;
+      } catch {
+        return false;
+      }
+    };
+    const touched = holds("oplog") || holds("items") || pool.registrations("project").some((r) => Object.keys(r.tables).some(holds));
+    if (touched) this.hub.catalog.patchProject(entry.id, { seed: false });
+    return !touched;
+  }
+
+  private dropSeed(entry: CatalogProject): void {
+    const projects = this.ctx.get("projects");
+    if (!projects) return;
+    projects.remove(entry.id);
+    if (!entry.dir) return;
+    fs.rmSync(path.join(entry.dir, ARTIFACT_DIR), { recursive: true, force: true });
+    try {
+      fs.rmdirSync(entry.dir);
+    } catch {
+      // something else lives there; leave it
+    }
   }
 
   // ── watching and sweeping ────────────────────────────────────────────────────
@@ -1126,6 +1322,7 @@ export class Storage extends Service {
     const mine: HubManifest = { v: 1, projects: [], repos: [], removed: [...this.tombstones].map(([id, at]) => ({ id, at })) };
     const ignores = new Set<string>(["repos/", "worktrees/", "*.tmp", ".DS_Store"]);
     for (const entry of this.hub.catalog.projects()) {
+      if (this.isPristineSeed(entry)) continue;
       let origin: { url: string | null; branch: string | null } | null = null;
       if (entry.dir && entry.git !== "none") {
         try {
@@ -1148,9 +1345,8 @@ export class Storage extends Service {
     // Projects the manifest knows but this machine does not are kept: they are what "attach all" offers.
     const merged = mergeHubManifests(current, mine);
     for (const p of merged.projects) {
-      const entry = this.hub.catalog.project(p.id);
-      if (entry) {
-        const fresh = mine.projects.find((m) => m.id === p.id)!;
+      const fresh = mine.projects.find((m) => m.id === p.id);
+      if (fresh) {
         if (JSON.stringify({ ...fresh, updatedAt: 0 }) !== JSON.stringify({ ...p, updatedAt: 0 })) Object.assign(p, fresh, { updatedAt: now });
       }
     }
@@ -1260,6 +1456,7 @@ export class Storage extends Service {
     }
     if (probe !== "offline") await g.push(remote.branch);
     this.home.get("ipc")?.send("hub.changed");
+    void this.restoreMissing();
     return this.hubStatus();
   }
 
@@ -1307,20 +1504,11 @@ export class Storage extends Service {
     }
   }
 
-  /** Clone every project the Hub's catalog knows and this machine does not. */
-  async attachAll(): Promise<string[]> {
-    const manifest = this.hubManifest();
-    if (!manifest) return [];
-    const attached: string[] = [];
-    for (const p of manifest.projects) {
-      if (!p.remote || this.entry(p.id) || !this.has(p.remote.provider)) continue;
-      try {
-        attached.push(await this.attachRemote(p.remote.provider, p.remote.config));
-      } catch (error) {
-        this.home.logger.warn(`storage: ${p.name} (${p.id}) not attached — ${message(error)}`);
-      }
-    }
-    return attached;
+  /** Bring back, now, every project the Hub's catalog names and this machine lacks; resolves with their ids. */
+  attachAll(): Promise<string[]> {
+    this.restorer.scan();
+    this.restorer.retry(() => true);
+    return this.restorer.run();
   }
 
   /** Publish every project with something to publish; what the quit path calls. */

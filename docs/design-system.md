@@ -270,3 +270,15 @@ build that loads only from the review dialog, My plugins and a new plugin from
 a description, Browse when the store is unreachable, and the pane in Chinese —
 19 checks. `test:extensions` (8) installs a plugin from outside the app and
 reloads a development folder in the real shell.
+`test:restore` (`scripts/restore-check.mjs`) plays two computers: a child
+process makes projects on the old one and backs three up to local bare remotes;
+the new one boots with nothing but the Hub catalog. Every project in the
+catalog shows on the home screen at once — restoring (step and running rule),
+waiting, offline, not published yet, needing an account, never backed up —
+the backed-up ones come back with every issue unprompted, the untouched first-run
+Default Project makes way and never reaches the catalog, Retry lands where it
+was, connecting the account in place resumes the restore by itself, the card's
+gear opens the project's sheet where one nobody can find the folder of is
+removed from the catalog after one confirmation (Cancel focused, Cancel goes
+back) and stays removed, a located folder becomes the project and its arrival
+is announced, and the Hub pane lists the same — 47 checks.

@@ -28,10 +28,10 @@ function bareRemote(): string {
 
 const QUIET = { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 };
 
-async function machine(label: string) {
+async function machine(label: string, storage: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `${label}-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
-  const bag = await fresh({ hubDir, plugins: [[Storage, QUIET], storageGit] });
+  const bag = await fresh({ hubDir, plugins: [[Storage, { ...QUIET, ...storage }], storageGit] });
   await settle();
   await bag.ctx.storage.ready;
   return { ...bag, storage: bag.ctx.storage, hubDir, dir: bag.hub.catalog.project(bag.project.id)!.dir! };
@@ -201,7 +201,8 @@ describe("the Hub as a repository", () => {
     expect(git(["show", "main:.gitignore"], hubRemote)).toContain("projects/default-project/");
     expect(git(["ls-tree", "-r", "--name-only", "main"], hubRemote)).not.toContain("projects/default-project/.tomrade");
 
-    const b = await machine("hub-b");
+    // Restores by hand here; restore.test.ts covers the automatic path.
+    const b = await machine("hub-b", { autoRestore: false });
     b.projects.remove(b.project.id);
     await b.storage.bindHub("git", { remote: hubRemote, branch: "main" });
     const info = await b.storage.hubInfo();

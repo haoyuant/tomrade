@@ -17,6 +17,7 @@ import {
   TornArtifactError,
   appendLog,
   compactLog,
+  digestFiles,
   digestState,
   exportState,
   importState,
@@ -24,6 +25,7 @@ import {
   readArtifact,
   readLogs,
   serializeState,
+  stateFiles,
   writeArtifact
 } from "@tomradex/storage";
 
@@ -273,6 +275,28 @@ describe("ctx.storage", () => {
     expect(a.items.get(a.project.id, mine.id)?.key).toBe("TOM-3");
     expect(a.items.get(a.project.id, "their-item")?.key).toBe("TOM-2");
     expect(a.items.create({ title: "Next", projectId: a.project.id, boardId: a.board.id, by: "human" }).key).toBe("TOM-4");
+  });
+
+  it("reads a folder written before a core table existed, and keeps publishing to it", async () => {
+    const { storage, items, board, project, dir } = await machine();
+    items.create({ title: "Before deliveries", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    // What a build from before the deliveries table wrote: no file, and a digest that never named one.
+    const older = path.join(ARTIFACT_DIR, "state", "deliveries.jsonl");
+    const files = stateFiles(readArtifact(dir)!);
+    files.delete(older);
+    fs.rmSync(path.join(dir, older));
+    const manifest = JSON.parse(read(dir, "project.json"));
+    manifest.snapshot.digest = digestFiles(files);
+    fs.writeFileSync(path.join(dir, ARTIFACT_DIR, "project.json"), JSON.stringify(manifest, null, 2) + "\n");
+
+    expect(readArtifact(dir)?.tables.items.map((r) => r.title)).toEqual(["Before deliveries"]);
+    expect((await storage.statusFor(project.id)).state).not.toBe("syncing");
+    items.create({ title: "After", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    expect(read(dir, "state/items.jsonl")).toMatch(/After/);
+    expect(fs.existsSync(path.join(dir, older))).toBe(true);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
   });
 
   it("never opens one project over another's folder", async () => {

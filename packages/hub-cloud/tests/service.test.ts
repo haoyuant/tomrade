@@ -53,7 +53,7 @@ afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
-async function machine() {
+async function machine({ used = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-cloud-service-")); dirs.push(dir);
   const hubDir = path.join(dir, "hub");
   const bag = await fresh({ hubDir, plugins: [
@@ -62,6 +62,8 @@ async function machine() {
   ] });
   contexts.push(bag.ctx);
   await bag.ctx.storage.ready;
+  // Used here, so it is the account's project and not the first run's placeholder.
+  if (used) bag.projects.update(bag.project.id, { description: "Worked on this machine" });
   bag.ctx.settings.register({ id: "secret", title: "Secret", schema: z.object({ nested: z.object({ token: z.string().meta({ format: "password" }) }) }), defaults: { nested: { token: "" } }, scope: "user" });
   bag.ctx.settings.set({ ...bag.ctx.settings.get(), theme: "dark", secret: { nested: { token: "never-upload" } } });
   await bag.ctx.storage.writeHub();
@@ -137,7 +139,15 @@ it("pulls cloud-only projects without creating local placements, and refuses rem
   } });
   await cloud.sync();
   expect(cloud.manifest().projects.map(p => p.id)).toContain("elsewhere");
+  await ctx.storage.restoreMissing();
   expect(hub.catalog.project("elsewhere")).toBeNull();
+  expect(ctx.storage.restores().entries).toEqual([expect.objectContaining({ projectId: "elsewhere", name: "Remote project", state: "not-backed-up" })]);
+  // Nobody can find its folder: taking it out of the account is a tombstone every machine receives.
+  ctx.storage.removeFromHub("elsewhere");
+  await cloud.sync();
+  expect(remote.records.get("project:elsewhere")).toMatchObject({ value: null, version: 2 });
+  expect(cloud.manifest().projects.map(p => p.id)).not.toContain("elsewhere");
+  expect(ctx.storage.restores().entries).toEqual([]);
   expect(ctx.settings.get().theme).toBe("light");
   expect(ctx.settings.get().secret).toEqual({ nested: { token: "never-upload" } });
 });
@@ -171,6 +181,16 @@ it("persists a removal before the debounce timer or process exit, and explicit s
   expect(cloud.info().offlineAccess).toBe(false);
   expect(cloud.info().user).toBeNull();
   expect(cloud.info().pending).toBeGreaterThan(0);
+});
+
+it("keeps the first run's untouched project out of the account until someone uses it", async () => {
+  const { cloud, ctx, project, board, items } = await machine({ used: false });
+  await cloud.sync();
+  expect(remote.records.has(`project:${project.id}`)).toBe(false);
+  items.create({ projectId: project.id, boardId: board.id, title: "Now it is real", by: "human" });
+  await ctx.storage.writeHub();
+  await cloud.sync();
+  expect(remote.records.get(`project:${project.id}`)?.value).toMatchObject({ id: project.id, name: "Default Project" });
 });
 
 it("signs out on this device when the server cannot be reached", async () => {

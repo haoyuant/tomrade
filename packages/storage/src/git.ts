@@ -267,6 +267,34 @@ export class GitFolder {
   }
 }
 
+/** Reachable with the branch, reachable without it, unreachable, or reachable but refused (no access, or nothing there). */
+export type RemoteReach = "exists" | "absent" | "offline" | "denied";
+
+const lastWords = (stderr: string): string | undefined => stderr.replace(/\/\/[^@\s/]*@/g, "//").trim().split("\n").slice(-2).join(" ").slice(0, 300) || undefined;
+
+/** git words a network failure differently per transport; anything else is the server saying no. */
+const OFFLINE = /could not resolve|failed to connect|couldn't connect|connection (refused|timed out|reset|closed)|network is unreachable|timed out|no route to host|ssl|tls|proxy|unable to look up/i;
+
+const reachOf = (detail: string | undefined): "offline" | "denied" => (detail && OFFLINE.test(detail) ? "offline" : "denied");
+
+export async function probeUrl(git: Git, url: string, branch: string): Promise<{ reach: RemoteReach; detail?: string }> {
+  const r = await git(["ls-remote", "--exit-code", url, `refs/heads/${branch}`], { ok: true });
+  if (r.code === 0) return { reach: "exists" };
+  if (r.code === 2) return { reach: "absent" };
+  const detail = lastWords(r.stderr ?? "");
+  return { reach: reachOf(detail), detail };
+}
+
+/** Clone one branch, or say why not without leaving a half-made folder behind. */
+export async function cloneBranch(git: Git, url: string, branch: string, dir: string): Promise<{ ok: true } | { ok: false; reach: "offline" | "denied"; detail?: string }> {
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const r = await git(["clone", "-q", "--branch", branch, "--single-branch", url, dir], { ok: true });
+  if (r.code === 0) return { ok: true };
+  fs.rmSync(dir, { recursive: true, force: true });
+  const detail = lastWords(r.stderr ?? "");
+  return { ok: false, reach: reachOf(detail), detail };
+}
+
 export async function cloneInto(git: Git, url: string, branch: string, dir: string): Promise<void> {
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   const r = await git(["clone", "-q", "--branch", branch, "--single-branch", url, dir], { ok: true });

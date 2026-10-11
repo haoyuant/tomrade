@@ -38,6 +38,7 @@ import { graphView } from "./graphView";
 import { history } from "./history";
 import { hubSetup } from "./hubSetup";
 import { hubPane } from "./hubPane";
+import { restore } from "./restore";
 import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
 
@@ -60,6 +61,7 @@ export const en = {
 
   hubSetup: hubSetup.en,
   hubPane: hubPane.en,
+  restore: restore.en,
   repositories: repositories.en,
   projectsScreen: projectsScreen.en,
   newProjectDialog: newProjectDialog.en,
@@ -109,6 +111,7 @@ export const zh: typeof en = {
 
   hubSetup: hubSetup.zh,
   hubPane: hubPane.zh,
+  restore: restore.zh,
   repositories: repositories.zh,
   projectsScreen: projectsScreen.zh,
   newProjectDialog: newProjectDialog.zh,

@@ -9,10 +9,11 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { keys, useHubInfo, useMcpUrl, useProjects } from "~/lib/queries";
+import { keys, useHubInfo, useMcpUrl, useProjects, useRestores } from "~/lib/queries";
 import { HubSetup } from "./HubSetup";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+import { RestoreBanner, RestoreCard, useRestoredToasts } from "./RestoreCards";
 
 interface Facts {
   boards: number;
@@ -129,6 +130,10 @@ function ProjectsHome() {
   const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
   const facts = useProjectFacts(list);
+  // Projects in the account that are not on this computer yet stand in the grid too, saying where they are.
+  const restores = useRestores();
+  const missing = restores.data?.entries ?? [];
+  useRestoredToasts(restores.data, list);
 
   // the gear advertises ⌘, — a shortcut with no handler is a broken promise
   useEffect(() => {
@@ -177,6 +182,8 @@ function ProjectsHome() {
             </div>
           </div>
 
+          {restores.data && <RestoreBanner summary={restores.data} />}
+
           <div className="proj-grid">
             {list.map((p, i) => (
               <ProjectCard
@@ -186,6 +193,9 @@ function ProjectsHome() {
                 boardNames={(boardQueries[i]?.data ?? []).map((b) => b.name)}
                 onOpenSettings={() => setConfiguring(p.id)}
               />
+            ))}
+            {missing.map((entry) => (
+              <RestoreCard key={entry.projectId} entry={entry} />
             ))}
             <button type="button" className="proj-new" onClick={() => setNewOpen(true)}>
               <Icon name="i-plus" size={20} />
