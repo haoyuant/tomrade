@@ -117,6 +117,13 @@ does not replace that transport. Project-level Git providers are unchanged.
 
 1. Use the intended Supabase project (Tokyo for this deployment). Enable the
    desired email/password and email-confirmation settings in Supabase Auth.
+   Production has **Confirm email** switched off since 2026-10-11, so sign-up
+   returns a session and signs in at once. That is because Supabase's built-in
+   mailer sends 2 emails an hour and only to organization members. Before
+   switching confirmation back on, configure custom SMTP (Authentication → Emails)
+   and raise the email rate limit. Tomrade handles both modes: with confirmation
+   on, sign-up asks the person to confirm and then sign in. Whether it is on can
+   be read from the public `GET /auth/v1/settings` (`mailer_autoconfirm`).
 2. Review and apply the SQL migration through the SQL Editor, or authenticate the
    CLI with `supabase login`, link the intended project using
    `supabase link --project-ref <project-ref>`, inspect
@@ -138,8 +145,8 @@ does not replace that transport. Project-level Git providers are unchanged.
    No `.env` loader is implied. Keep the test data directory separate from the
    production app.
 4. Register/sign in through Tomrade. If email confirmation is enabled, confirm
-   the email and return to Tomrade to sign in. Check the account panel for pending
-   changes, sync errors and conflicts.
+   the email and return to Tomrade to sign in; otherwise registering signs in.
+   Check the account panel for pending changes, sync errors and conflicts.
 
 The desktop rejects secret/service-role keys and remote HTTP URLs. Sessions are
 never sent to the renderer or stored as plaintext JSON. If the OS keychain is
