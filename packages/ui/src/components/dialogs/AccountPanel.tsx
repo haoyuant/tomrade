@@ -23,7 +23,8 @@ const copy = {
       weak_password: `That password is too weak. Use at least ${MIN_PASSWORD} characters.`,
       email_address_invalid: "Enter a valid email address.",
       over_request_rate_limit: "Too many attempts. Wait a minute, then try again.",
-      over_email_send_rate_limit: "Too many emails sent. Wait a few minutes, then try again.",
+      over_email_send_rate_limit: "Too many emails sent. Try again later.",
+      email_address_not_authorized: "Tomrade can't send email to this address yet. Try again later.",
       signup_disabled: "New accounts can't be created right now.",
       network: "Can't reach the Tomrade server. Check your connection, then try again.",
       other_account: "This computer's projects belong to another account. Sign in with that account."
@@ -43,7 +44,8 @@ const copy = {
       weak_password: `密码太弱，请至少使用 ${MIN_PASSWORD} 位。`,
       email_address_invalid: "请输入有效的邮箱地址。",
       over_request_rate_limit: "尝试次数过多，请稍等一分钟再试。",
-      over_email_send_rate_limit: "发送邮件过于频繁，请过几分钟再试。",
+      over_email_send_rate_limit: "发送邮件过于频繁，请稍后再试。",
+      email_address_not_authorized: "暂时无法向这个邮箱发送邮件，请稍后再试。",
       signup_disabled: "目前暂不开放注册新账号。",
       network: "无法连接 Tomrade 服务器，请检查网络后重试。",
       other_account: "这台电脑上的项目属于另一个账号，请使用那个账号登录。"
