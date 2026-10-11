@@ -21,6 +21,7 @@ export const deleteIssueDialog = {
     cancel: "Cancel",
     deleting: "Deleting…",
     deleteForever: "Delete {{key}} forever",
+    alsoDeleteAttachments: "Also delete its {{n}} attached files — Files keeps them in its history",
 
     deletedToast: "Permanently deleted {{key}} — {{cmdz}} cannot bring it back",
     conflictToast: "An agent rewrote {{key}} while this was open — it re-read, so check it still deserves deleting."
@@ -47,6 +48,7 @@ export const deleteIssueDialog = {
     cancel: "取消",
     deleting: "正在删除…",
     deleteForever: "永久删除 {{key}}",
+    alsoDeleteAttachments: "同时删除它的 {{n}} 个附件（Files 的历史中仍可恢复）",
 
     deletedToast: "已永久删除 {{key}} —— {{cmdz}} 无法找回它",
     conflictToast: "此对话框打开期间，有智能体重写了 {{key}}——内容已重新读取，请确认它是否仍需要删除。"

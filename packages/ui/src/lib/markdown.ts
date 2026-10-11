@@ -84,13 +84,38 @@ function withLines(marked: Marked, text: string): string {
   return html;
 }
 
+/** A task item's box as a drawing: the sanitizer takes inputs out, and a box nobody can tick should not look tickable. */
+const checkbox = ({ checked }: Tokens.Checkbox): string => `<span class="md-task" role="checkbox" aria-checked="${checked}" aria-disabled="true"></span> `;
+
+/** Files of the store linked by id, and files an editor holds until it saves; the sanitizer would drop either scheme. */
+const APP_LINK = /^tomrade-(file|draft):\/\/([\w-]+)$/;
+
+const appLink = (href: string): string | null => {
+  const m = APP_LINK.exec(href);
+  return m ? `data-${m[1]}-id="${escape(m[2]!.toLowerCase())}"` : null;
+};
+
+const renderer = {
+  checkbox,
+  image({ href, text }: Tokens.Image): string | false {
+    const data = appLink(href);
+    return data ? `<img class="md-file" ${data} alt="${escape(text)}">` : false;
+  },
+  link(this: { parser: { parseInline: (tokens: Tokens.Generic[]) => string } }, { href, tokens }: Tokens.Link): string | false {
+    const data = appLink(href);
+    return data ? `<a href="#" class="md-attachment" ${data}>${this.parser.parseInline(tokens)}</a>` : false;
+  }
+};
+
 /**
  * Markdown as the viewer shows it: wiki links and tags drawn as the app's own
  * links, a dangling link marked as one, and the whole tree through the same
- * sanitizer that keeps inline HTML from doing anything.
+ * sanitizer that keeps inline HTML from doing anything. `notes: false` is
+ * plain GFM, for text that is not a note of the store; `breaks` keeps a single
+ * newline as a line break, as a GitHub issue does.
  */
-export function renderMarkdown(text: string, resolve?: LinkResolver, opts: { lines?: boolean } = {}): string {
-  const marked = new Marked({ extensions: extensions(resolve), async: false });
+export function renderMarkdown(text: string, resolve?: LinkResolver, opts: { lines?: boolean; notes?: boolean; breaks?: boolean } = {}): string {
+  const marked = new Marked({ extensions: opts.notes === false ? [] : extensions(resolve), renderer, breaks: !!opts.breaks, async: false });
   const html = opts.lines ? withLines(marked, text) : (marked.parse(text, { async: false }) as string);
   // A relative markdown link is a note of this store; mark the ones that lead nowhere.
   const decode = decodeHref;

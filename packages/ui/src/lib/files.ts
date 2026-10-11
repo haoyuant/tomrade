@@ -18,6 +18,7 @@ export const filesKeys = {
   content: (projectId: string, path: string) => ["files", projectId, "read", path] as const,
   version: (projectId: string, fileId: string, versionId: string) => ["files", projectId, "version", fileId, versionId] as const,
   location: (projectId: string, fileId: string) => ["files", projectId, "locate", fileId] as const,
+  byId: (projectId: string, fileId: string) => ["files", projectId, "byId", fileId] as const,
   history: (projectId: string, path: string) => ["files", projectId, "history", path] as const,
   conflicts: (projectId: string) => ["files", projectId, "conflicts"] as const,
   folder: (projectId: string, itemId: string) => ["files", projectId, "folderFor", itemId] as const,

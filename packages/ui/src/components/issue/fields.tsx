@@ -17,7 +17,7 @@ import { cn } from "~/lib/utils";
  * says so. `usePatchItem` re-fetches on settle either way, so the retry is
  * made against a fresh version instead of the stale one that was just refused.
  */
-export type IssueWrite = (item: Item, patch: Patch, said: ReactNode) => void;
+export type IssueWrite = (item: Item, patch: Patch, said: ReactNode) => Promise<boolean>;
 
 export function useIssueWriter(projectId: string): { write: IssueWrite; pending: boolean } {
   const patch = usePatchItem(projectId);
@@ -25,21 +25,23 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
   const toast = useToast();
   const { tx } = useI18n();
 
+  // mutateAsync, not mutate: per-call callbacks only fire for the latest call,
+  // and a caller holding a draft needs to hear how its own write went.
   const write = useCallback<IssueWrite>(
-    (item, next, said) => {
-      patch.mutate(
-        { id: item.id, patch: next, baseVersion: item.version },
-        {
-          onSuccess: () => toast({ body: said, onUndo: () => undo.mutate(item.id) }),
-          // react-query swallows the rejection otherwise, and a refused edit
-          // that says nothing reads as an edit that silently did not happen
-          onError: (err) =>
-            toast({
-              body: /conflict/i.test(err.message) ? tx("fields.conflictToast", { key: <span className="num">{item.key}</span> }) : err.message
-            })
+    (item, next, said) =>
+      patch.mutateAsync({ id: item.id, patch: next, baseVersion: item.version }).then(
+        () => {
+          toast({ body: said, onUndo: () => undo.mutate(item.id) });
+          return true;
+        },
+        // a refused edit that says nothing reads as an edit that silently did not happen
+        (err: Error) => {
+          toast({
+            body: /conflict/i.test(err.message) ? tx("fields.conflictToast", { key: <span className="num">{item.key}</span> }) : err.message
+          });
+          return false;
         }
-      );
-    },
+      ),
     [patch, toast, undo, tx]
   );
 
@@ -312,7 +314,6 @@ export function InlineText({
   ariaLabel,
   className,
   heading,
-  submit,
   onSave
 }: {
   value: string;
@@ -322,8 +323,6 @@ export function InlineText({
   className: string;
   /** Keeps the read view a real heading; the write view is always a textarea. */
   heading?: "h1" | "h2";
-  /** A title takes Enter; a body needs it for paragraphs and takes ⌘Enter. */
-  submit: "enter" | "mod-enter";
   onSave: (next: string) => void;
 }) {
   const { t } = useI18n();
@@ -391,8 +390,7 @@ export function InlineText({
           setEditing(false);
           return;
         }
-        const send = submit === "enter" ? e.key === "Enter" && !e.shiftKey : e.key === "Enter" && (e.metaKey || e.ctrlKey);
-        if (send) {
+        if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           commit(e.currentTarget.value);
         }
@@ -402,7 +400,7 @@ export function InlineText({
   );
 }
 
-/** Title and body, wired to the write path. The lock never blocks a human. */
+/** The title, wired to the write path. The lock never blocks a human. */
 export function IssueTitle({ item, write, heading }: FieldProps & { heading: "h1" | "h2" }) {
   const { t, tx } = useI18n();
   return (
@@ -412,22 +410,7 @@ export function IssueTitle({ item, write, heading }: FieldProps & { heading: "h1
       ariaLabel={t("fields.issueTitleAria")}
       className={heading === "h1" ? "issue-title" : "detail-title"}
       heading={heading}
-      submit="enter"
       onSave={(next) => next && write(item, { title: next }, tx("fields.retitledToast", { key: <span className="num">{item.key}</span> }))}
-    />
-  );
-}
-
-export function IssueBody({ item, write, className }: FieldProps & { className: string }) {
-  const { t, tx } = useI18n();
-  return (
-    <InlineText
-      value={item.body ?? ""}
-      placeholder={t("fields.noDescriptionPlaceholder")}
-      ariaLabel={t("fields.issueDescriptionAria")}
-      className={className}
-      submit="mod-enter"
-      onSave={(next) => write(item, { body: next || null }, tx("fields.editedDescriptionToast", { key: <span className="num">{item.key}</span> }))}
     />
   );
 }

@@ -1079,6 +1079,48 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 }
 .inline-ta:focus { outline: none; box-shadow: var(--focus-ring); }
 
+/* ticket description — rendered Markdown that reads as text and opens its
+   editor on a click, and the editor itself: source, preview, attachments */
+.body-read {
+  margin-inline: -6px; padding: 3px 6px; width: calc(100% + 12px);
+  border: 1px solid transparent; border-radius: var(--radius-sm); cursor: text;
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.body-read:hover { background: var(--surface-warm); border-color: var(--border); }
+.body-read:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.md-body h1 { font-size: var(--text-xl); }
+.md-body h2 { font-size: var(--text-lg); }
+.md-body h3, .md-body h4 { font-size: var(--text-base); }
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+.md-body img.md-file { cursor: pointer; }
+.md-file:not([src]) { display: inline-block; width: 12em; height: 6em; vertical-align: top; background: var(--surface-warm); border-radius: var(--radius-sm); }
+.md-file-missing {
+  display: inline-block; padding: 2px 8px; border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  color: var(--meta); font-size: var(--text-sm);
+}
+.md-view a.md-attachment {
+  text-decoration: none; padding: 0 6px; border: 1px solid var(--border-soft); border-radius: 4px;
+  background: var(--surface-warm); font-size: 0.92em;
+}
+.body-editor {
+  --cm-min-height: 8em;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  margin-inline: -6px; padding: 6px; width: calc(100% + 12px);
+  background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-sm); box-shadow: var(--focus-ring);
+}
+.body-editor:focus { outline: none; }
+.body-editor-bar .btn { padding: 3px 8px; font-size: var(--text-sm); }
+.body-editor-text, .body-editor-preview { padding: 0 2px; }
+.body-editor-text[hidden] { display: none; }
+.body-editor-preview { min-height: 8em; }
+.body-editor-changed {
+  display: flex; align-items: center; gap: var(--space-2); padding: 4px 4px 4px 8px;
+  border: 1px solid var(--warn); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--fg-2);
+}
+.body-editor-changed > .ico { color: var(--warn); flex-shrink: 0; }
+.body-editor-foot { color: var(--meta); }
+
 /* ─── AI panel ───────────────────────────────────────────────────────── */
 .ai {
   width: 418px; flex-shrink: 0; position: relative;
@@ -1864,6 +1906,18 @@ button.kref { cursor: pointer; }
 .md-view th, .md-view td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
 .md-view img { max-width: 100%; border-radius: var(--radius-sm); }
 .md-view hr { border: 0; border-top: 1px solid var(--border); margin: var(--space-5) 0; }
+/* a task box is drawn, not an input: the sanitizer keeps inputs out of rendered markdown */
+.md-view li:has(> .md-task, > p > .md-task) { list-style: none; }
+.md-view ul:has(> li > .md-task, > li > p > .md-task) { padding-left: 0.3em; }
+.md-task {
+  display: inline-block; width: 0.95em; height: 0.95em; margin-right: 0.3em; vertical-align: -0.12em;
+  border: 1.5px solid var(--meta); border-radius: 3px;
+}
+.md-task[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.md-task[aria-checked="true"]::after {
+  content: ""; display: block; width: 100%; height: 100%; background: var(--bg);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% no-repeat;
+}
 .conflict-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); }
 .conflict-side { min-width: 0; }
 .conflict-side .eyebrow { margin-bottom: var(--space-2); }

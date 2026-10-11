@@ -7,7 +7,6 @@ import {
   CustomField,
   DepsField,
   EpicField,
-  IssueBody,
   IssueTitle,
   LabelsField,
   LockButton,
@@ -17,6 +16,7 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
+import { IssueBody } from "~/components/issue/IssueBody";
 import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
@@ -260,7 +260,14 @@ export function DetailPane({
       <RadixDialog.Root open onOpenChange={(open) => !open && onToggleExpand()}>
         <RadixDialog.Portal>
           <RadixDialog.Overlay className="scrim" />
-          <RadixDialog.Content className="detail expanded" aria-label={`${item.key} — ${item.title}`}>
+          <RadixDialog.Content
+            className="detail expanded"
+            aria-label={`${item.key} — ${item.title}`}
+            // the body editor takes Escape as "discard my edit", not "close the overlay"
+            onEscapeKeyDown={(e) => {
+              if ((e.target as Element | null)?.closest?.(".body-editor")) e.preventDefault();
+            }}
+          >
             <RadixDialog.Title className="sr-only">{item.title}</RadixDialog.Title>
             {body}
           </RadixDialog.Content>
@@ -334,7 +341,7 @@ function DetailBody({
         <div className="detail-cols">
           <div className="detail-main">
             {item.humanLocked && <LockBar />}
-            <IssueBody item={item} write={write} className="issue-body" />
+            <IssueBody key={`body:${item.id}`} item={item} write={write} className="issue-body" />
             <DeliveryPanel key={item.id} item={item} />
             <PluginSections projectId={item.projectId} itemId={item.id} />
           </div>

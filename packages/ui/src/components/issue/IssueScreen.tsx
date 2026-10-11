@@ -8,6 +8,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
+import { IssueBody } from "~/components/issue/IssueBody";
 import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
@@ -16,7 +17,6 @@ import {
   CustomField,
   DepsField,
   EpicField,
-  IssueBody,
   IssueTitle,
   LabelsField,
   LockButton,
@@ -224,7 +224,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             )}
 
             <div className="body-prose">
-              <IssueBody item={item} write={write} className="bp-body" />
+              <IssueBody key={`body:${item.id}`} item={item} write={write} className="bp-body" />
               <DeliveryPanel key={item.id} item={item} />
             </div>
 
