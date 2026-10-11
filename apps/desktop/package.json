@@ -26,6 +26,7 @@
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
     "test:local-cli": "electron scripts/local-cli-check.mjs",
+    "test:perf": "electron scripts/perf-check.mjs",
     "test:storage-race": "electron scripts/storage-race-check.mjs",
     "test:attention": "electron scripts/attention-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",

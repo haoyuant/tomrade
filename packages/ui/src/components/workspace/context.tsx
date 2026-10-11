@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Badge } from "@tomradex/contributions";
 import {
@@ -80,7 +80,7 @@ export interface WorkspaceValue {
   /** Plugin badges per item id, computed in the main process. */
   badges: Record<string, Badge[]>;
 
-  selectedId: string | null;
+  /** Opens a ticket in the detail pane; which one is open is read with useSelectedId or useIsSelected. */
   select: (id: string | null) => void;
   openView: (viewId: string) => void;
   /** A workstream is a place too: its page is an unsaved board pinned to it. */
@@ -108,6 +108,46 @@ export interface WorkspaceValue {
 }
 
 const Ctx = createContext<WorkspaceValue | null>(null);
+
+/**
+ * The open ticket, kept out of the workspace value: opening one re-renders the
+ * detail and the two cards whose highlight changes, not the whole board.
+ */
+function createSelection() {
+  let current: string | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => current,
+    set: (id: string | null) => {
+      if (id === current) return;
+      current = id;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    }
+  };
+}
+type Selection = ReturnType<typeof createSelection>;
+const SelectionCtx = createContext<Selection | null>(null);
+
+const useSelection = (): Selection => {
+  const selection = useContext(SelectionCtx);
+  if (!selection) throw new Error("useSelectedId outside WorkspaceProvider");
+  return selection;
+};
+
+export function useSelectedId(): string | null {
+  const selection = useSelection();
+  return useSyncExternalStore(selection.subscribe, selection.get);
+}
+
+/** Re-renders only when this ticket gains or loses the selection. */
+export function useIsSelected(id: string): boolean {
+  const selection = useSelection();
+  return useSyncExternalStore(selection.subscribe, () => selection.get() === id);
+}
 
 export function useWorkspace(): WorkspaceValue {
   const value = useContext(Ctx);
@@ -181,7 +221,8 @@ export function WorkspaceProvider({
   const badges = useBadges(projectId);
   const updateView = useUpdateView(projectId);
   const createView = useCreateView(projectId);
-  const [selectedId, select] = useState<string | null>(null);
+  const [selection] = useState(createSelection);
+  const select = selection.set;
   const [draft, setDraft] = useState<Draft | null>(null);
 
   const project = projects.data?.find((p) => p.id === projectId);
@@ -349,7 +390,6 @@ export function WorkspaceProvider({
       visible,
       ranks: rankMap,
       badges: badges.data ?? {},
-      selectedId,
       select,
       openView,
       optionsOf,
@@ -376,7 +416,7 @@ export function WorkspaceProvider({
     labelList,
     ranks.data,
     badges.data,
-    selectedId,
+    select,
     openView,
     openWorkstream,
     openFile,
@@ -419,5 +459,9 @@ export function WorkspaceProvider({
       </div>
     );
   }
-  return <Ctx.Provider value={value}>{children(value)}</Ctx.Provider>;
+  return (
+    <SelectionCtx.Provider value={selection}>
+      <Ctx.Provider value={value}>{children(value)}</Ctx.Provider>
+    </SelectionCtx.Provider>
+  );
 }

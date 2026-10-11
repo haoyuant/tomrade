@@ -6,7 +6,7 @@ import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } 
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
-import { useWorkspace, type WorkspaceValue } from "./context";
+import { useIsSelected, useWorkspace, type WorkspaceValue } from "./context";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 
@@ -52,8 +52,9 @@ function Cell({ item, def, ws, write }: { item: Item; def: FieldDef; ws: Workspa
 
 function Row({ item, columns, ws, write }: { item: Item; columns: FieldDef[]; ws: WorkspaceValue; write: IssueWrite }) {
   const { t } = useI18n();
+  const selected = useIsSelected(item.id);
   return (
-    <tr className="tbl-row" data-id={item.id} data-selected={item.id === ws.selectedId}>
+    <tr className="tbl-row" data-id={item.id} data-selected={selected}>
       <td className="tbl-cell tbl-title-cell" data-field="title">
         <button type="button" className="tbl-title" title={t("table.openTitle")} onClick={() => ws.select(item.id)}>
           <span className="card-id">{item.key}</span>

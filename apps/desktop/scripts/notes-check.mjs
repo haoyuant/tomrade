@@ -294,7 +294,8 @@ const run = async () => {
   await clickMenuItem("New note");
   await wait(() => has('input[aria-label="New note name"]'), "note name row");
   await $(`(() => { const i = document.querySelector('input[aria-label="New note name"]'); i.value = 'Retro'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
-  await wait(() => has('[data-testid="files-region"][data-path="Journal/Retro.md"]'), "new note");
+  // the region names the file before its content has loaded; the editor follows
+  await wait(() => has('[data-testid="files-region"][data-path="Journal/Retro.md"] [data-testid="note-editor"]'), "new note open to write");
   check("New note makes it in the open folder and opens it to write", (await read("Journal/Retro.md")) === "" && (await has('[data-testid="note-editor"]')));
 
   // ── the palette is a quick switcher ────────────────────────────────────

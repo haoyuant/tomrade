@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import type { FocusRef } from "@tomradex/agent";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
@@ -77,6 +77,10 @@ export function ProjectShell() {
     setBinding(next);
     return () => setBinding((current) => (current === next ? null : current));
   }, []);
+  // The binding changes with every ticket opened (it names what is in view); the
+  // callbacks read it late, so the dock's value — and every screen using it — holds still.
+  const bindingRef = useRef(binding);
+  bindingRef.current = binding;
 
   // ⌘J is chrome, not screen behavior: the panel toggles from every screen.
   useEffect(() => {
@@ -92,10 +96,11 @@ export function ProjectShell() {
 
   const openIssue = useCallback(
     (id: string) => {
-      if (binding?.openIssue) binding.openIssue(id);
+      const open = bindingRef.current?.openIssue;
+      if (open) open(id);
       else void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: id } });
     },
-    [binding, navigate, projectId]
+    [navigate, projectId]
   );
   // A clicked notification for this project: its conversation, or the ticket when it has none.
   useEffect(() => {
@@ -108,8 +113,8 @@ export function ProjectShell() {
     return onOpenRequest(take);
   }, [projectId, showThread, openIssue]);
 
-  const openSettings = useCallback((engineId?: string) => binding?.openSettings?.(engineId), [binding]);
-  const openRepositories = useCallback(() => binding?.onOpenRepositories?.(), [binding]);
+  const openSettings = useCallback((engineId?: string) => bindingRef.current?.openSettings?.(engineId), []);
+  const openRepositories = useCallback(() => bindingRef.current?.onOpenRepositories?.(), []);
 
   const value = useMemo<DockValue>(
     () => ({ aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings }),
