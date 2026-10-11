@@ -1,7 +1,7 @@
 /**
  * A first run, end to end: the app opens on the sample project and nothing
  * else, its learning path draws as a graph, the assistant says what is still
- * missing and can be told to stop, the hints show once and stay seen, and the
+ * missing until it is set up, the hints show once and stay seen, and the
  * sample can be made again — in the person's language — after it is deleted.
  * A stand-in engine that writes one ticket makes the run deterministic.
  *
@@ -113,10 +113,9 @@ const run = async () => {
   // ── what the assistant still needs ────────────────────────────────────
   check("the assistant shows what is set up and what is missing", await wait(() => has(".agent-setup"), "setup card"));
   check("the model is missing, with the way to connect one", await $(`(() => { const row = document.querySelector('[data-setup="model"]'); return !!row && !row.classList.contains('is-ok') && !!row.querySelector('.setup-action'); })()`));
+  check("it says Tomrade needs both", (await texts(".agent-setup .setup-head")).includes("Tomrade needs both a model and a local agent:"));
+  check("and cannot be put away while one is missing", await $(`document.querySelectorAll('.agent-setup button:not(.setup-action)').length === 0`));
   await shot("onboarding-03-setup-card");
-  await press(`document.querySelector('.setup-hide')`);
-  check("Hide puts the card away", await wait(async () => !(await has(".agent-setup")), "card hidden"));
-  check("and it stays seen", await wait(async () => seen().includes("setup-card"), "seen setup-card"));
 
   // ── the first write, and the hint beside it ───────────────────────────
   await send("add one");
@@ -127,7 +126,12 @@ const run = async () => {
   check("for good", await wait(async () => seen().includes("hint.revert"), "seen hint.revert"));
   win.webContents.reload();
   await sleep(2500);
-  check("a reload does not bring the card or the hint back", (await has(".run-wrap")) && !(await has(".hint")) && !(await has(".agent-setup")));
+  check("a reload does not bring the hint back, and the card leaves a thread with a run in it", (await has(".run-wrap")) && !(await has(".hint")) && !(await has(".agent-setup")));
+  if (!(await $(`!!document.querySelector('.menu-row.is-radio')`))) await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
+  await sleep(400);
+  await press(`document.querySelector('button[aria-label="New thread"]')`);
+  check("a new thread shows what is still missing again", await wait(() => has(".agent-setup"), "setup card in a new thread"));
+  await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
 
   // ── Start, pointed out once ───────────────────────────────────────────
   const tour = ctx.items.list({ projectId: sample.id }).filter((i) => i.title !== "Written by the assistant");

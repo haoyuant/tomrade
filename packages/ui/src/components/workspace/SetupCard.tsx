@@ -8,13 +8,13 @@ import { useSeen } from "~/lib/onboarding";
 import { useSettings } from "~/lib/queries";
 
 /**
- * What the assistant can do on this machine and what is still missing: a
- * model for the built-in engine, a local agent for Start. With nothing ready
- * it is the panel's only way forward and stays; otherwise it can be put away.
+ * What the assistant can do on this machine and what is still missing. Tomrade
+ * needs both a model for the built-in engine and a local agent for Start, so
+ * the card cannot be put away while either is missing.
  */
 export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: string) => void }) {
   const { t, tx } = useI18n();
-  const { seen, markSeen } = useSeen();
+  const { seen } = useSeen();
   const engines = useEngines();
   const settings = useSettings();
   // A model saved in Settings is the most likely fix; look again as soon as it lands.
@@ -30,7 +30,8 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
   const locals = all.filter((e) => e.id in LOCAL_AGENTS);
   const localReady = locals.filter((e) => e.ok);
   if ((!model || model.ok) && (!locals.length || localReady.length)) return null;
-  if (!noneReady && seen("setup-card")) return null;
+  // Never marked: only a check's "*" puts it away, and never with nothing ready.
+  if (!noneReady && seen("setup-required")) return null;
 
   const fix = (e: EngineView) => {
     const agent = LOCAL_AGENTS[e.id];
@@ -44,14 +45,7 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
 
   return (
     <div className={noneReady ? "agent-empty agent-setup" : "agent-setup"}>
-      <div className="setup-head">
-        <p>{noneReady ? t("agentPanel.giveABrain") : t("onboarding.setupTitle")}</p>
-        {!noneReady && (
-          <button type="button" className="btn btn-ghost setup-hide" title={t("onboarding.setupHideTitle")} onClick={() => markSeen("setup-card")}>
-            {t("onboarding.setupHide")}
-          </button>
-        )}
-      </div>
+      <p className="setup-head">{noneReady ? t("agentPanel.giveABrain") : t("onboarding.setupTitle")}</p>
       <ul className="setup-rows">
         {model && (
           <li className={model.ok ? "setup-row is-ok" : "setup-row"} data-setup="model">
