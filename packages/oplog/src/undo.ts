@@ -152,6 +152,14 @@ function setRank(db: ProjectDb, viewId: string, itemId: string, rank: number | n
   else db.prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank").run(viewId, itemId, rank);
 }
 
+/** A rank entry moves one item (`patch.itemId`, side `{ rank }`) or several (`patch.ranks`, side `{ ranks }`); `side` is its before or its after. */
+function setRanks(db: ProjectDb, entry: OplogEntry, side: unknown): void {
+  const p = entry.patch as { itemId?: string; ranks?: Record<string, number> } | null;
+  const s = side as { rank?: number | null; ranks?: Record<string, number | null> } | null;
+  if (p?.itemId) setRank(db, entry.entityId, p.itemId, s?.rank);
+  else if (p?.ranks) for (const itemId of Object.keys(p.ranks)) setRank(db, entry.entityId, itemId, s?.ranks?.[itemId]);
+}
+
 /** Apply the inverse of one entry. Throws InUseError when a created board now owns issues. */
 export function revertEntry(db: ProjectDb, entry: OplogEntry): void {
   if (entry.entity === "item") {
@@ -168,8 +176,7 @@ export function revertEntry(db: ProjectDb, entry: OplogEntry): void {
     }
   } else if (entry.entity === "view") {
     if (entry.op === "rank") {
-      const p = entry.patch as { itemId?: string } | null;
-      if (p?.itemId) setRank(db, entry.entityId, p.itemId, (entry.before as { rank?: number | null } | null)?.rank);
+      setRanks(db, entry, entry.before);
     } else if (entry.op === "create") {
       db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);
@@ -189,8 +196,7 @@ export function applyEntry(db: ProjectDb, entry: OplogEntry): void {
     else if (entry.after) restoreBoard(db, entry.after as Board);
   } else if (entry.entity === "view") {
     if (entry.op === "rank") {
-      const p = entry.patch as { itemId?: string } | null;
-      if (p?.itemId) setRank(db, entry.entityId, p.itemId, (entry.after as { rank?: number | null } | null)?.rank);
+      setRanks(db, entry, entry.after);
     } else if (entry.op === "delete") {
       db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(entry.entityId);
       db.prepare("DELETE FROM views WHERE id = ?").run(entry.entityId);

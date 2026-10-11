@@ -7,7 +7,7 @@ import { EMPTY_KEY, groupKeyOf, type Item, type Patch } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateItem, usePatchItem, useSetViewRank } from "~/lib/queries";
+import { useCreateItem, usePatchItem, useSetViewRank, useSetViewRanks } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
 import { useWorkspace, type WorkspaceValue } from "./context";
@@ -175,6 +175,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const { project, view, query, visible, select, ranks, columnKeys, groupSpace, groupLabel, patchFor, fieldById } = ws;
   const patch = usePatchItem(project.id);
   const setRank = useSetViewRank(project.id);
+  const setRanks = useSetViewRanks(project.id);
   const toast = useToast();
   const undoWrite = useToastUndo(project.id);
 
@@ -208,9 +209,14 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const columnCount = (col: string) => lanes.reduce((n, lane) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
   const laneCount = (lane: string) => columnKeys.reduce((n, col) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
 
-  /** One pass over the cell when a midpoint is not available. */
+  const rankFailed = (err: Error) => {
+    setCells(server);
+    toast(errorSpec(err));
+  };
+  /** One write for the whole cell when a midpoint is not available — only the cards whose place changes. */
   const renumber = (cell: string) => {
-    (cellsRef.current[cell] ?? []).forEach((card, i) => setRank.mutate({ viewId: view.id, itemId: card.id, rank: i }));
+    const moved = Object.fromEntries((cellsRef.current[cell] ?? []).flatMap((card, i) => (effectiveRank(card, ranks) === i ? [] : [[card.id, i]])));
+    if (Object.keys(moved).length) setRanks.mutate({ viewId: view.id, ranks: moved }, { onError: rankFailed });
   };
 
   const write = (item: Item, fromCell: string, toCell: string, order: { rank: number | null } | null) => {
@@ -232,7 +238,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
     const commitOrder = () => {
       if (!manual) return;
       if (manual.rank === null) renumber(toCell);
-      else setRank.mutate({ viewId: view.id, itemId: item.id, rank: manual.rank });
+      else setRank.mutate({ viewId: view.id, itemId: item.id, rank: manual.rank }, { onError: rankFailed });
     };
     if (!fieldPatch) return commitOrder();
     patch.mutate(

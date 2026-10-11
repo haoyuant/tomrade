@@ -53,6 +53,7 @@ function rankBetween(prev: number | undefined, next: number | undefined): number
 function ViewList() {
   const { project, views } = useWorkspace();
   const update = useUpdateView(project.id);
+  const toast = useToast();
   const [order, setOrder] = useState<View[]>(views);
   const orderRef = useRef(order);
   orderRef.current = order;
@@ -67,8 +68,13 @@ function ViewList() {
     const at = list.findIndex((v) => v.id === id);
     if (at < 0) return;
     const rank = rankBetween(list[at - 1]?.rank, list[at + 1]?.rank);
-    if (rank !== null) update.mutate({ id, patch: { rank } });
-    else list.forEach((v, i) => v.rank !== i && update.mutate({ id: v.id, patch: { rank: i } }));
+    const failed = (err: Error) => {
+      setOrder(views);
+      toast(errorSpec(err));
+    };
+    // views are ranked apart when created, so a renumbering is rare: only ranks that collided, from a sync
+    if (rank !== null) update.mutate({ id, patch: { rank } }, { onError: failed });
+    else list.forEach((v, i) => v.rank !== i && update.mutate({ id: v.id, patch: { rank: i } }, { onError: failed }));
   };
 
   return (
