@@ -26,6 +26,8 @@ const HISTORY_LIMIT = 48;
 /** Tools that only read; an identical call within one turn returns the same thing, so it is not run twice. */
 const READ_TOOL = /^(list|get|count|find|read|open)_|^diagram_schema$/;
 const RESULT_CAP = 6000;
+/** A tool that answers in text (the shell) has already sized it; the cap is only a backstop. */
+const TEXT_RESULT_CAP = 20_000;
 const LIST_CAP = 16000;
 const TEXT_CAP = 160;
 
@@ -69,6 +71,11 @@ export function compactRow(row: unknown): unknown {
  * shortened form, and only past the list cap do rows drop, with the count first.
  */
 export function render(result: unknown, cap = RESULT_CAP): string {
+  // Read as written: a JSON-escaped string turns every line break of command output into \n.
+  if (typeof result === "string") {
+    const limit = Math.max(cap, TEXT_RESULT_CAP);
+    return result.length <= limit ? result : result.slice(0, limit) + "… (truncated)";
+  }
   const full = JSON.stringify(result);
   if (full.length <= cap) return full;
   if (Array.isArray(result) && result.length && result.every((r) => typeof r === "object" && r !== null && !Array.isArray(r))) {
@@ -139,7 +146,7 @@ export function createLoopEngine(ctx: Context): Engine {
       return { input: caps.mediaInput ?? [], output: caps.mediaOutput ?? [] };
     },
     author: "ai:agent",
-    // Talks to the backlog through tools; it has no file or shell tools and never implements a ticket.
+    // Talks to the backlog through tools (a shell among them while @tomradex/shell is on); never implements a ticket.
     capabilities: ["backlog"],
     options: LoopOptions,
     available: async () => {

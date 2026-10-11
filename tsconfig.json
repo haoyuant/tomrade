@@ -107,6 +107,9 @@
       "path": "./packages/settings"
     },
     {
+      "path": "./packages/shell"
+    },
+    {
       "path": "./packages/storage"
     },
     {

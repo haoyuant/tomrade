@@ -26,6 +26,30 @@ describe("the MCP surface", () => {
       expect(unscoped).toBe(0);
     } finally { await client.close(); await ctx.fiber.dispose(); }
   });
+  it("never offers a tool kept in this process, with or without a run token", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    let ran = 0;
+    ctx.tools.register(defineTool({ name: "open_tool", title: "Open", description: "test", input: z.object({}), execute: () => "ok" }));
+    ctx.tools.register(defineTool({ name: "local_tool", title: "Local", description: "test", input: z.object({}), mcp: false, execute: () => { ran++; return "ran"; } }));
+    const unbind = ctx.mcp.bindRun("local-run", { author: "ai:codex", execute: async (name, args) => ctx.tools.execute(name, args, { by: "ai:codex" }) });
+    const clients = [new Client({ name: "plain", version: "0" }), new Client({ name: "run", version: "0" })];
+    try {
+      await clients[0]!.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      await clients[1]!.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers: { "X-Tomrade-Run": "local-run" } } }));
+      for (const client of clients) {
+        const names = (await client.listTools()).tools.map((t) => t.name);
+        expect(names).toContain("open_tool");
+        expect(names).not.toContain("local_tool");
+        expect((await client.callTool({ name: "local_tool", arguments: {} })).isError).toBe(true);
+      }
+      expect(ran).toBe(0);
+    } finally {
+      unbind();
+      for (const client of clients) await client.close();
+      await ctx.fiber.dispose();
+    }
+  });
   it("lists tools under their own names and routes a run token to its binding", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();

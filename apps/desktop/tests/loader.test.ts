@@ -46,6 +46,11 @@ plugins:
     expect(readConfig(write("tomrade.yml", "plugins:\n  - id: db\n    name: x\n")).modules).toEqual([]);
   });
 
+  it("refuses two rows with one id, which would otherwise drop the first without a word", () => {
+    const twice = write("tomrade.yml", "plugins:\n  - id: shell\n    name: a\n  - id: shell\n    name: b\n");
+    expect(() => readConfig(twice)).toThrow(/two plugin rows share the id "shell"/);
+  });
+
   it("says which entry is wrong rather than booting half a list", () => {
     const bad = write("bad.yml", "modules:\n  - id: db\nplugins: []\n");
     expect(() => readConfig(bad)).toThrow(/modules\[0\] needs a string id and title/);

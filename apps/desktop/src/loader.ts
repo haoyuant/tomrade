@@ -50,7 +50,14 @@ function contractsOf(raw: unknown, file: string): ContractSpec[] {
 /** The whole composition: the rows to load, the capabilities they may not leave unfilled, and the registries they plug into. */
 export function readConfig(file: string): { rows: PluginPatch[]; modules: ModuleSpec[]; contracts: ContractSpec[] } {
   const raw: unknown = parse(fs.readFileSync(file, "utf8"));
-  return { rows: rowsOf(raw, file), modules: modulesOf(raw, file), contracts: contractsOf(raw, file) };
+  const rows = rowsOf(raw, file);
+  // Rows are keyed by id, so a second row with the same id would silently replace the first.
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.id)) throw new Error(`${file}: two plugin rows share the id "${row.id}"`);
+    seen.add(row.id);
+  }
+  return { rows, modules: modulesOf(raw, file), contracts: contractsOf(raw, file) };
 }
 
 export function readRows(file: string): PluginPatch[] {

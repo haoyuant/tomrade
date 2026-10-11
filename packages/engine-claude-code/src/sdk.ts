@@ -146,7 +146,7 @@ export class ClaudeRuntime implements Runtime {
             // Pin the registry at session creation. Without this, newer SDK
             // versions may defer remote tools behind tool-search and report a
             // perfectly healthy MCP tool as "not enabled" in a turn.
-            tools: this.ctx.tools.list().map((tool) => ({ name: tool.name, permission_policy: "always_allow" as const }))
+            tools: this.ctx.tools.served().map((tool) => ({ name: tool.name, permission_policy: "always_allow" as const }))
           } },
           strictMcpConfig: !code,
           // Explicitly expose the MCP registry and the configured native
@@ -160,7 +160,7 @@ export class ClaudeRuntime implements Runtime {
           // Some SDK/CLI versions do not expand an MCP wildcard while the
           // server is discovering tools. Include the registry's concrete names
           // as well; retain the wildcard for tools registered after startup.
-          allowedTools: ["mcp__tomrade__*", ...this.ctx.tools.list().map((tool) => `mcp__tomrade__${tool.name}`)],
+          allowedTools: ["mcp__tomrade__*", ...this.ctx.tools.served().map((tool) => `mcp__tomrade__${tool.name}`)],
           hooks: {
             PreToolUse: [{ hooks: [async (hookInput) => {
               const tool = (hookInput as { tool_name?: string }).tool_name ?? "";
