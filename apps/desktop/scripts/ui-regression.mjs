@@ -333,6 +333,49 @@ const run = async () => {
     await sleep(3200);
   }
 
+  // ── the first sort of a tied column: one write, one ⌘Z ──────────────
+  // With every card at the same rank there is no midpoint, so the drop renumbers
+  // the column — as one history entry, not one per card.
+  {
+    const viewId = (await $(`location.hash`)).match(/\/v\/([^/?]+)/)?.[1];
+    const db = repos.dbFor(project.id);
+    const inDoing = repos.items.list({ projectId: project.id }).filter((i) => i.status === "doing" && keysOnBoard.split(",").includes(i.key));
+    if (viewId && inDoing.length >= 3) {
+      db.prepare("DELETE FROM view_item_rank WHERE view_id = ?").run(viewId);
+      for (const item of inDoing) repos.items.update(project.id, item.id, { rank: 0 }, "human");
+      await $(`location.reload();true`);
+      await sleep(3200);
+      const rankOps = () => db.prepare("SELECT COUNT(*) AS n FROM oplog WHERE op = 'rank'").get().n;
+      const rowsBefore = rankOps();
+      // the top card, dropped between the second and third: both neighbours sit at the same rank
+      const box = await $(`(() => {
+        const col = [...document.querySelectorAll('.col')].find(c => c.textContent.includes('Doing'));
+        // at this width the column can sit behind the assistant panel
+        col.scrollIntoView({ block: 'nearest', inline: 'start' });
+        const cards = [...col.querySelectorAll('.card')];
+        const a = cards[0].getBoundingClientRect(), b = cards[1].getBoundingClientRect();
+        return { x0: Math.round(a.left + a.width / 2), y0: Math.round(a.top + 18), x1: Math.round(b.left + b.width / 2), y1: Math.round(b.bottom - 6) };
+      })()`);
+      const send = (type, x, y) => win.webContents.sendInputEvent({ type, x, y, button: "left", clickCount: 1 });
+      send("mouseDown", box.x0, box.y0);
+      for (let i = 1; i <= 16; i++) {
+        send("mouseMove", Math.round(box.x0 + ((box.x1 - box.x0) * i) / 16), Math.round(box.y0 + ((box.y1 - box.y0) * i) / 16));
+        await sleep(35);
+      }
+      await sleep(200);
+      send("mouseUp", box.x1, box.y1);
+      await sleep(1500);
+      const placed = Object.keys(repos.views.ranks(project.id, viewId)).length;
+      check("the first sort of a tied column is one history entry", rankOps() === rowsBefore + 1 && placed >= 2, { entries: rankOps() - rowsBefore, placed });
+      await $(`document.body.focus();document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',metaKey:true,bubbles:true}));true`);
+      await sleep(1200);
+      check("and one ⌘Z puts the whole column back", Object.keys(repos.views.ranks(project.id, viewId)).length === 0, repos.views.ranks(project.id, viewId));
+      for (const item of inDoing) repos.items.update(project.id, item.id, { rank: item.rank }, "human");
+      await $(`location.reload();true`);
+      await sleep(3200);
+    }
+  }
+
   // ── conflict: an agent write the board has not seen ─────────────────
   const raced = repos.items.list({ projectId: project.id }).find((i) => i.status === "todo" && i.kind === "ticket" && keysOnBoard.split(",").includes(i.key));
   repos.items.update(project.id, raced.id, { priority: 4 }, "ai:mcp");

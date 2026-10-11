@@ -165,6 +165,21 @@ describe("views", () => {
     expect(items.get(project.id, a.id)).not.toBeNull();
   });
 
+  it("a renumbered column is one logged op: one undo puts it all back, one redo replays it", async () => {
+    const { oplog, views, items, board, project } = await fresh();
+    const v = views.listForProject(project.id)[0];
+    const [a, b, c] = ["A", "B", "C"].map((title) => items.create({ projectId: project.id, title, boardId: board.id, by: "human" }));
+    views.setRank(project.id, v.id, a.id, 5);
+    const before = oplog.recent(project.id, 50).length;
+    views.setRanks(project.id, v.id, { [c.id]: 0, [a.id]: 1, [b.id]: 2 });
+    expect(oplog.recent(project.id, 50).length).toBe(before + 1);
+    expect(views.ranks(project.id, v.id)).toEqual({ [c.id]: 0, [a.id]: 1, [b.id]: 2 });
+    expect(oplog.undoLast(project.id)?.summary).toMatch(/Moved back/);
+    expect(views.ranks(project.id, v.id)).toEqual({ [a.id]: 5 });
+    await oplog.redo(project.id);
+    expect(views.ranks(project.id, v.id)).toEqual({ [c.id]: 0, [a.id]: 1, [b.id]: 2 });
+  });
+
   it("editing a view is undoable and does not consume an item's undo", async () => {
     const { oplog, views, items, board, project } = await fresh();
     const v = views.listForProject(project.id)[0];

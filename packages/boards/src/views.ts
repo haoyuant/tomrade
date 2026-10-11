@@ -149,6 +149,27 @@ export class Views extends Service {
     );
   }
 
+  /**
+   * Several items' positions in one view, as one decision: a column renumbered
+   * by a drag is one oplog entry, so one ⌘Z puts the whole column back.
+   */
+  setRanks(projectId: string, viewId: string, ranks: Record<string, number>, by: Author = "human"): void {
+    const ids = Object.keys(ranks);
+    if (ids.length <= 1) return ids.length ? this.setRank(projectId, viewId, ids[0]!, ranks[ids[0]!]!, by) : undefined;
+    if (!this.get(projectId, viewId)) throw new NotFoundError(viewId);
+    const db = this.db(projectId);
+    const priorOf = db.prepare("SELECT rank FROM view_item_rank WHERE view_id = ? AND item_id = ?");
+    const prior = Object.fromEntries(ids.map((id) => [id, (priorOf.get(viewId, id) as { rank: number } | undefined)?.rank ?? null]));
+    const patch = { ranks };
+    write(this.ctx, { projectId, entity: "view", op: "rank", id: viewId, by, before: { ranks: prior }, after: { ranks }, patch }, () =>
+      db.transaction(() => {
+        const upsert = db.prepare("INSERT INTO view_item_rank (view_id, item_id, rank) VALUES (?, ?, ?) ON CONFLICT(view_id, item_id) DO UPDATE SET rank = excluded.rank");
+        for (const id of ids) upsert.run(viewId, id, ranks[id]);
+        this.oplog.append(projectId, { entity: "view", op: "rank", entityId: viewId, baseVersion: null, before: { ranks: prior }, after: { ranks }, by, at: Date.now(), patch });
+      })
+    );
+  }
+
   private insert(db: ProjectDb, view: View): void {
     db.prepare(
       `INSERT INTO views (id, project_id, board_id, name, icon, layout, query_json, rank, created_at, updated_at)

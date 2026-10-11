@@ -18,6 +18,7 @@ declare module "@tomradex/ipc" {
     "views.remove": (projectId: string, id: string) => void;
     "views.ranks": (projectId: string, viewId: string) => Record<string, number>;
     "views.setRank": (projectId: string, viewId: string, itemId: string, rank: number) => void;
+    "views.setRanks": (projectId: string, viewId: string, ranks: Record<string, number>) => void;
   }
 }
 
@@ -93,4 +94,5 @@ export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("views.remove", (projectId, id) => ctx.views.remove(projectId, id));
   ctx.ipc.handle("views.ranks", (projectId, viewId) => ctx.views.ranks(projectId, viewId));
   ctx.ipc.handle("views.setRank", (projectId, viewId, itemId, rank) => ctx.views.setRank(projectId, viewId, itemId, rank));
+  ctx.ipc.handle("views.setRanks", (projectId, viewId, ranks) => ctx.views.setRanks(projectId, viewId, ranks));
 }

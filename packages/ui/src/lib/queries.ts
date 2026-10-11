@@ -249,6 +249,18 @@ export function useSetViewRank(projectId: string) {
   });
 }
 
+/** A whole cell renumbered at once: one write, one history entry, one ⌘Z. */
+export function useSetViewRanks(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { viewId: string; ranks: Record<string, number> }) => invoke("views.setRanks", projectId, args.viewId, args.ranks),
+    onSuccess: (_r, args) => {
+      void qc.invalidateQueries({ queryKey: keys.ranks(args.viewId) });
+      void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
+    }
+  });
+}
+
 export function useCreateBoard(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
