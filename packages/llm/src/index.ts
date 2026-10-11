@@ -1,5 +1,7 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
+import { modelErrorKind, type ModelErrorKind } from "@tomradex/domain";
+import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
 import { AnthropicModel } from "./anthropic.js";
 import { ImagesModel } from "./images.js";
@@ -26,6 +28,20 @@ export interface LLMProvider {
   completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T>;
 }
 
+/** One tiny request with a profile: whether it answers, and if not, which part to fix. */
+export type ModelTest = { ok: true } | { ok: false; kind: ModelErrorKind; detail: string };
+
+/** One token from `model`, or why not. A timeout reads as the address, not the key. */
+export async function probe(model: ChatModel, timeoutMs = 20_000): Promise<ModelTest> {
+  try {
+    for await (const _event of model.chat({ system: "Reply with one word.", messages: [userMessage("ping")], maxTokens: 1 }, AbortSignal.timeout(timeoutMs))) break;
+    return { ok: true };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, kind: err instanceof Error && err.name === "TimeoutError" ? "network" : modelErrorKind(detail), detail };
+  }
+}
+
 export interface LlmStatus {
   ok: boolean;
   reason?: string;
@@ -45,6 +61,14 @@ export interface LlmService extends LLMProvider {
   ready(): LlmStatus;
   /** The configured profiles, for pickers. */
   profiles(): { id: string; title: string }[];
+  /** Ask the profile's endpoint for one token — a wrong key or address shows when it is saved, not in the first conversation. */
+  test(profile: ModelProfile): Promise<ModelTest>;
+}
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    "llm.test": (profile: ModelProfile) => ModelTest;
+  }
 }
 
 declare module "cordis" {
@@ -136,6 +160,9 @@ export class Llm extends Service implements LlmService {
   }
 
   [Service.init]() {
+    this.ctx.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("llm.test", (profile) => ctx.llm.test(profile));
+    });
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
     this.ctx.on("settings/changed", () => this.cache.clear());
@@ -174,19 +201,30 @@ export class Llm extends Service implements LlmService {
     return this.models().profiles.map((p) => ({ id: p.id, title: p.title || p.model }));
   }
 
+  async test(input: ModelProfile): Promise<ModelTest> {
+    const profile = modelProfileSchema.parse(input);
+    // an image endpoint has no one-token request; it shows its worth on the first picture
+    if (profile.provider === "openai-images") return { ok: true };
+    return probe(this.build(profile));
+  }
+
   private adapterOf(profile: ModelProfile): ChatModel {
     const key = JSON.stringify(profile);
     const cached = this.cache.get(key);
     if (cached) return cached;
+    const model = this.build(profile);
+    this.cache.set(key, model);
+    return model;
+  }
+
+  private build(profile: ModelProfile): ChatModel {
     const base: ChatModel =
       profile.provider === "openai-images"
         ? new ImagesModel({ baseURL: profile.baseURL ?? "https://api.openai.com/v1", apiKey: profile.apiKey, model: profile.model })
         : profile.provider === "anthropic"
         ? new AnthropicModel({ apiKey: profile.apiKey, model: profile.model, baseURL: profile.baseURL, inputModalities: profile.inputModalities })
         : new OpenAiCompatible({ baseURL: profile.baseURL ?? "https://api.deepseek.com", apiKey: profile.apiKey, model: profile.model, inputModalities: profile.inputModalities, outputModalities: profile.outputModalities });
-    const model = profile.promptTools && profile.provider !== "openai-images" ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
-    this.cache.set(key, model);
-    return model;
+    return profile.promptTools && profile.provider !== "openai-images" ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
   }
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
@@ -225,6 +263,10 @@ export class FakeLlm implements LlmService {
 
   forProfile(): ChatModel {
     throw new LlmError("FakeLlm has no chat model; use fakeChat() in tests that run an engine");
+  }
+
+  async test(): Promise<ModelTest> {
+    return { ok: true };
   }
 
   profiles(): { id: string; title: string }[] {
@@ -280,6 +322,7 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       forProfile: () => model,
       profiles: () => [{ id: "fake", title: "fake" }],
       ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
+      test: async () => ({ ok: true }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
         if (!respond) throw new LlmError("fakeChat was given no completeJson responder");
         return schema.parse(respond(request.system, request.user));

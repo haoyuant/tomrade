@@ -1102,6 +1102,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
