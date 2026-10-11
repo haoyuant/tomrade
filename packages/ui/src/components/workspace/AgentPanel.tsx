@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
-import type { Item } from "@tomradex/domain";
+import { modelErrorKind, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
 import { PetStage } from "./PetStage";
@@ -232,7 +232,43 @@ function RunMetrics({ run }: { run: RunView | undefined }) {
   return <p className="meta-txt num" style={{ margin: "8px 0 0 22px" }}>{elapsed}{usage ? ` · ${usage}` : ""}{timings ? ` · ${timings}` : ""}</p>;
 }
 
-function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean; hint?: boolean }) {
+/**
+ * A run that failed says what the person can do about it — the key, the
+ * model's name, a moment's wait — and keeps the raw message under Details.
+ */
+function ErrorBlock({ text, onOpenSettings, onRetry }: { text: string; onOpenSettings: () => void; onRetry?: () => void }) {
+  const { t } = useI18n();
+  const kind = modelErrorKind(text);
+  const head = kind === "other" ? null : t(`agentPanel.error_${kind}` as MessageKey);
+  const fixInSettings = kind === "auth" || kind === "model" || kind === "quota";
+  return (
+    <div className="ai-error" role="alert">
+      <p>{head ?? text}</p>
+      {head && (
+        <details className="ai-error-details">
+          <summary>{t("agentPanel.errorDetails")}</summary>
+          <code>{text}</code>
+        </details>
+      )}
+      {(fixInSettings || onRetry) && (
+        <div className="row" style={{ gap: 6, marginTop: 6 }}>
+          {fixInSettings && (
+            <button type="button" className="btn btn-ghost" onClick={onOpenSettings}>
+              {t("agentPanel.openModelSettings")}
+            </button>
+          )}
+          {onRetry && !fixInSettings && (
+            <button type="button" className="btn btn-ghost" onClick={onRetry}>
+              {t("agentPanel.retry")}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: () => void; onRetry?: () => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -267,7 +303,7 @@ function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onReve
     ) : b.type === "changes" ? (
       <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
     ) : b.type === "error" ? (
-      <p className="ai-error">{b.text}</p>
+      <ErrorBlock text={b.text} onOpenSettings={onOpenSettings} onRetry={onRetry} />
     ) : b.type === "status" ? (
       <p className="ai-pending">{b.text}</p>
     ) : null;
@@ -531,6 +567,10 @@ export function AgentPanel({
   const empty = threadId ? detail.data?.messages.length === 0 : true;
   // The hint about undoing rides on the newest set of changes only.
   const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
+  const newestLast = [...(detail.data?.messages ?? [])].reverse();
+  const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
+  const lastAskedBlock = newestLast.find((m) => m.role === "user" && m.block.type === "text")?.block;
+  const lastAsked = lastAskedBlock?.type === "text" ? lastAskedBlock.text : null;
   const starters =
     empty && itemsQ.data && !detail.data?.thread.itemId && !busy && !draft && !attachments.length
       ? STARTERS[itemsQ.data.length ? "backlog" : "fresh"]
@@ -662,7 +702,22 @@ export function AgentPanel({
           </div>
         )}
         {(detail.data?.messages ?? []).map((m) => (
-          <Row key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} hint={m.id === lastChangesId} />
+          <Row
+            key={m.id}
+            projectId={projectId}
+            m={m}
+            runs={runs}
+            pending={pending}
+            byKey={byKey}
+            onOpenIssue={onOpenIssue}
+            onAnswer={doAnswer}
+            onRevert={(runId) => revert.mutate(runId)}
+            onOpenSettings={() => onOpenSettings()}
+            // only the newest failure, and only while nothing runs: try the last message again
+            onRetry={m.id === lastErrorId && lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
+            busy={busy}
+            hint={m.id === lastChangesId}
+          />
         ))}
         {live?.text && (
           <div className="turn turn-ai">

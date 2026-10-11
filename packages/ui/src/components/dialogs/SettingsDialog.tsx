@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
-import { THEME_TYPOGRAPHY_NAMES, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
+import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
 import { useQueryClient } from "@tanstack/react-query";
 import { agentKeys, useEngines, usePlaybooks } from "~/lib/agent";
@@ -22,7 +22,8 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useCacheDir, useHubInfo, useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
-import { reveal } from "~/lib/shell";
+import { openExternal, reveal } from "~/lib/shell";
+import { invoke } from "~/lib/api";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -885,11 +886,51 @@ function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView
   );
 }
 
+/** Where each well-known provider hands out keys, by the host its profile talks to. */
+const KEY_PAGES: Record<string, string> = {
+  "api.deepseek.com": "https://platform.deepseek.com/api_keys",
+  "api.anthropic.com": "https://console.anthropic.com/settings/keys",
+  "api.openai.com": "https://platform.openai.com/api-keys",
+  "api.moonshot.cn": "https://platform.moonshot.cn/console/api-keys",
+  "openrouter.ai": "https://openrouter.ai/keys"
+};
+
+const hostOf = (p: ModelProfile): string => {
+  if (p.provider === "anthropic" && !p.baseURL) return "api.anthropic.com";
+  try {
+    return new URL(p.baseURL ?? "").host;
+  } catch {
+    return p.baseURL ?? "";
+  }
+};
+
 function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onSave: (p: ModelProfile) => void; onCancel: () => void }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<ModelProfile>(profile);
-  const set = (patch: Partial<ModelProfile>) => setDraft((d) => ({ ...d, ...patch }));
+  const [checking, setChecking] = useState(false);
+  const [problem, setProblem] = useState<{ kind: ModelErrorKind; detail: string } | null>(null);
+  const set = (patch: Partial<ModelProfile>) => {
+    setProblem(null);
+    setDraft((d) => ({ ...d, ...patch }));
+  };
   const valid = draft.model.trim().length > 0 && (draft.provider !== "anthropic" || draft.apiKey.trim().length > 0);
+  const host = hostOf(draft);
+  const keyPage = KEY_PAGES[host];
+  const candidate = (): ModelProfile => ({ ...draft, title: draft.title || draft.model });
+  // A wrong key or address shows here, at save, not in the first conversation. A rate limit means the key works.
+  const checkAndSave = async () => {
+    setChecking(true);
+    setProblem(null);
+    try {
+      const result = await invoke("llm.test", candidate());
+      if (result.ok || result.kind === "rate") onSave(candidate());
+      else setProblem(result);
+    } catch {
+      onSave(candidate());
+    } finally {
+      setChecking(false);
+    }
+  };
   return (
     <div className="panel stack-3" style={{ background: "var(--bg)" }}>
       <div className="grid-2">
@@ -921,12 +962,36 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
       <div className="field">
         <label htmlFor="pfKey">{t("settingsDialog.apiKeyLabel")}</label>
         <input id="pfKey" className="input num" type="password" value={draft.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
-        <span className="meta-txt">{t("settingsDialog.localEndpointNote")}</span>
+        <span className="meta-txt">
+          {t("settingsDialog.localEndpointNote")}
+          {keyPage && (
+            <>
+              {" "}
+              <button type="button" className="link-inline" onClick={() => openExternal(keyPage)}>
+                {t("settingsDialog.getApiKey", { host })}
+              </button>
+            </>
+          )}
+        </span>
       </div>
+      {problem && (
+        <div className="profile-problem" role="alert">
+          <p>{t(`settingsDialog.profileCheck_${problem.kind}` as MessageKey, { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
+          <details className="ai-error-details">
+            <summary>{t("agentPanel.errorDetails")}</summary>
+            <code>{problem.detail}</code>
+          </details>
+        </div>
+      )}
       <div className="row" style={{ gap: 8 }}>
-        <button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => onSave({ ...draft, title: draft.title || draft.model })}>
-          {t("settingsDialog.saveProfile")}
+        <button type="button" className="btn btn-secondary" disabled={!valid || checking} aria-busy={checking} onClick={() => void checkAndSave()}>
+          {checking ? t("settingsDialog.profileChecking") : t("settingsDialog.saveProfile")}
         </button>
+        {problem && (
+          <button type="button" className="btn btn-ghost" onClick={() => onSave(candidate())}>
+            {t("settingsDialog.profileSaveAnyway")}
+          </button>
+        )}
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           {t("common.cancel")}
         </button>

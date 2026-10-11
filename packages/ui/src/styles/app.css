@@ -1224,6 +1224,13 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .tool-row:first-of-type { border-top: 0; }
 .tool-row .t-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .ai-error { color: var(--danger); font-size: 14px; line-height: var(--leading-dense); }
+.ai-error > p { margin: 0; }
+.profile-problem { padding: var(--space-2) var(--space-3); border: 1px solid var(--danger); border-radius: var(--radius-sm); color: var(--danger); font-size: var(--text-sm); }
+.profile-problem p { margin: 0; }
+.link-inline { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.ai-error-details { margin-top: 4px; color: var(--meta); font-size: var(--text-xs); }
+.ai-error-details summary { cursor: pointer; }
+.ai-error-details code { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); }
 /* the pending line reads as unresolved without animating — nothing here
    loops, so reduced-motion needs no special case */
 .ai-pending { color: var(--meta); font-size: 14px; line-height: var(--leading-dense); }

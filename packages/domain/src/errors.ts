@@ -92,3 +92,16 @@ export class FieldDefinitionError extends Error {
     this.name = "FieldDefinitionError";
   }
 }
+
+/** What a failed model call means for the person — each wants a different fix: the key, the address, a wait. */
+export type ModelErrorKind = "auth" | "quota" | "rate" | "model" | "server" | "network" | "other";
+
+export function modelErrorKind(message: string): ModelErrorKind {
+  if (/\b(401|403)\b|authenticat|unauthori[sz]ed|invalid[ _-]?(api[ _-]?)?key|incorrect api key|api key/i.test(message)) return "auth";
+  if (/\b402\b|insufficient|balance|quota|billing|credit/i.test(message)) return "quota";
+  if (/\b429\b|rate.?limit|too many requests/i.test(message)) return "rate";
+  if (/\b404\b|model.{0,40}(not found|does not exist|not exist|unknown|invalid)|no such model|unknown model/i.test(message)) return "model";
+  if (/\b5\d\d\b|overloaded|bad gateway|service unavailable/i.test(message)) return "server";
+  if (/fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network|timed? ?out|socket hang up|certificate/i.test(message)) return "network";
+  return "other";
+}
