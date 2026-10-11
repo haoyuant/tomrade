@@ -24,7 +24,7 @@ import { useIssueWriter } from "~/components/issue/fields";
 import { useI18n } from "~/lib/i18n";
 import { useGraphEdges, useGraphs } from "~/lib/queries";
 import { Card } from "./Card";
-import { useWorkspace } from "./context";
+import { useSelectedId, useWorkspace } from "./context";
 
 const NODE_W = 260;
 const NODE_H = 92;
@@ -75,6 +75,7 @@ const EDGE_STROKE: Record<string, string> = {
 function Canvas() {
   const { t } = useI18n();
   const ws = useWorkspace();
+  const selectedId = useSelectedId();
   const { write } = useIssueWriter(ws.project.id);
   const { fitView } = useReactFlow();
   const graphs = useGraphs();
@@ -113,10 +114,10 @@ function Canvas() {
         data: { item },
         deletable: false,
         connectable: editable,
-        selected: item.id === ws.selectedId
+        selected: item.id === selectedId
       }))
     );
-  }, [shown, placed, editable, ws.selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shown, placed, editable, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const flowEdges = useMemo<Edge[]>(
     () =>

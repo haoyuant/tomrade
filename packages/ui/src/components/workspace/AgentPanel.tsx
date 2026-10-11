@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import { modelErrorKind, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
@@ -98,15 +98,17 @@ function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: strin
 const OP_GLYPH = { created: "+", updated: "~", deleted: "–" } as const;
 
 function Trace({ block }: { block: Block & { type: "trace" } }) {
+  // the arguments are printed once someone opens the row, not for every folded one
+  const [open, setOpen] = useState(false);
   return (
-    <details className="trace-row">
+    <details className="trace-row" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <Icon name={block.ok ? "i-check" : "i-warn"} size={11} />
         <span className="t-tool num">{block.tool}</span>
         <span className="t-sum">{block.summary}</span>
         {block.ms > 0 && <span className="t-ms num">{block.ms < 1000 ? `${block.ms}ms` : `${(block.ms / 1000).toFixed(1)}s`}</span>}
       </summary>
-      <pre>{JSON.stringify(block.args, null, 2)}</pre>
+      {open && <pre>{JSON.stringify(block.args, null, 2)}</pre>}
     </details>
   );
 }
@@ -269,6 +271,8 @@ function ErrorBlock({ text, onOpenSettings, onRetry }: { text: string; onOpenSet
   );
 }
 
+const TranscriptRow = memo(Row);
+
 function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: () => void; onRetry?: () => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
@@ -415,8 +419,9 @@ export function AgentPanel({
   const busy = !!runningRun || send.isPending || answer.isPending || uploading;
   const blocked = !!workdirProblem;
   const pending = detail.data?.pending ?? null;
-  const runs = new Map((detail.data?.runs ?? []).map((r) => [r.id, r]));
-  const byKey = new Map((itemsQ.data ?? []).map((i) => [i.key, i]));
+  // Stable between renders, so a streamed reply re-renders its own line and not every row above it.
+  const runs = useMemo(() => new Map((detail.data?.runs ?? []).map((r) => [r.id, r])), [detail.data?.runs]);
+  const byKey = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.key, i])), [itemsQ.data]);
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
   // engine creates the thread right there instead of doing silently nothing.
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
@@ -600,6 +605,12 @@ export function AgentPanel({
     if (!threadId || answer.isPending || (busy && pending?.kind !== "permission")) return;
     answer.mutate({ threadId, questionId, value });
   };
+  // rows take callbacks that keep their identity; each reads the latest render's handlers
+  const latest = useRef({ doAnswer, revert: revert.mutate, onOpenSettings });
+  latest.current = { doAnswer, revert: revert.mutate, onOpenSettings };
+  const answerRow = useCallback((questionId: string, value: string | string[]) => latest.current.doAnswer(questionId, value), []);
+  const revertRow = useCallback((runId: string) => latest.current.revert(runId), []);
+  const settingsRow = useCallback(() => latest.current.onOpenSettings(), []);
 
   const archiveThreadById = (id: string) => {
     if (busy) return;
@@ -748,7 +759,7 @@ export function AgentPanel({
           </div>
         )}
         {(detail.data?.messages ?? []).map((m) => (
-          <Row
+          <TranscriptRow
             key={m.id}
             projectId={projectId}
             m={m}
@@ -756,9 +767,9 @@ export function AgentPanel({
             pending={pending}
             byKey={byKey}
             onOpenIssue={onOpenIssue}
-            onAnswer={doAnswer}
-            onRevert={(runId) => revert.mutate(runId)}
-            onOpenSettings={() => onOpenSettings()}
+            onAnswer={answerRow}
+            onRevert={revertRow}
+            onOpenSettings={settingsRow}
             // only the newest failure, and only while nothing runs: try the last message again
             onRetry={m.id === lastErrorId && lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
             busy={busy}

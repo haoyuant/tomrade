@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Board, FieldDef, FieldValue, Item, ItemStatus, Patch, Priority } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
@@ -425,13 +425,20 @@ export function IssueTitle({ item, write, heading }: FieldProps & { heading: "h1
   );
 }
 
-/** Ids reachable from `start` along `blocks` edges, `start` excluded. */
-function reachableFrom(start: string, items: Item[]): Set<string> {
-  const blocksOf = new Map(items.map((i) => [i.id, i.blocks]));
+/** Ids reachable from `start` along `blocks` edges — or against them, with `reverse` — `start` excluded. */
+function reachable(start: string, items: Item[], reverse = false): Set<string> {
+  const edges = new Map<string, string[]>();
+  for (const i of items)
+    for (const b of i.blocks) {
+      const [from, to] = reverse ? [b, i.id] : [i.id, b];
+      const out = edges.get(from);
+      if (out) out.push(to);
+      else edges.set(from, [to]);
+    }
   const seen = new Set<string>();
   const queue = [start];
   while (queue.length) {
-    for (const next of blocksOf.get(queue.pop()!) ?? []) {
+    for (const next of edges.get(queue.pop()!) ?? []) {
       if (!seen.has(next)) {
         seen.add(next);
         queue.push(next);
@@ -455,11 +462,15 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
   const settled = useRef(false);
 
   const related = mode === "blocks" ? item.blocks.map((id) => items.find((i) => i.id === id)).filter((i): i is Item => !!i) : items.filter((i) => i.blocks.includes(item.id));
-  const relatedIds = new Set(related.map((r) => r.id));
-  // For "blocks", a candidate that reaches this issue would close a loop; for
-  // "blocked by", one this issue reaches would.
-  const looped = mode === "blocks" ? (c: Item) => reachableFrom(c.id, items).has(item.id) : (c: Item) => reachableFrom(item.id, items).has(c.id);
-  const candidates = items.filter((c) => isTicket(c) && c.id !== item.id && !relatedIds.has(c.id) && !looped(c));
+  // Worked out only while adding, with one walk of the graph: for "blocks", a
+  // candidate that reaches this issue would close a loop; for "blocked by", one
+  // this issue reaches would.
+  const candidates = useMemo(() => {
+    if (!adding) return [];
+    const relatedIds = new Set(mode === "blocks" ? item.blocks : items.filter((i) => i.blocks.includes(item.id)).map((i) => i.id));
+    const loop = reachable(item.id, items, mode === "blocks");
+    return items.filter((c) => isTicket(c) && c.id !== item.id && !relatedIds.has(c.id) && !loop.has(c.id));
+  }, [adding, mode, item, items]);
 
   const said = (verbKey: "fields.addedBlocksToast" | "fields.removedBlocksToast" | "fields.addedBlockedByToast" | "fields.removedBlockedByToast", other: Item) =>
     tx(verbKey, { key: <span className="num">{item.key}</span>, other: <span className="num">{other.key}</span> });

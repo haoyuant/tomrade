@@ -242,7 +242,8 @@ export function useAgentEvents(
   useEffect(() => {
     return subscribe("agent.event", (eventThreadId: string, event: AgentEvent) => {
       if (eventThreadId !== threadId) {
-        void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+        // another conversation's list entry changes when a run starts or ends, or a message lands — not per streamed word
+        if (event.type === "run" || event.type === "done" || event.type === "message") void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
         return;
       }
       const key = agentKeys.thread(projectId, threadId);

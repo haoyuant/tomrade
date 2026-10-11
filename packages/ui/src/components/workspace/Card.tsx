@@ -3,7 +3,7 @@ import { Icon, type IconId } from "~/components/icons";
 import { PriorityGlyph, ProvenanceMark, StatusMark, Tag } from "~/components/ui/atoms";
 import { timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useWorkspace } from "./context";
+import { useIsSelected, useWorkspace } from "./context";
 
 export interface CardProps {
   item: Item;
@@ -28,7 +28,8 @@ function customValue(def: FieldDef, value: string | number, checked: string): st
  */
 export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardProps) {
   const { t } = useI18n();
-  const { boards, query, epicNames, selectedId, badges, fieldById } = useWorkspace();
+  const { boards, query, epicNames, badges, fieldById } = useWorkspace();
+  const selected = useIsSelected(item.id);
   const marks = badges[item.id] ?? [];
   const grouped = (fieldId: string) => query.columnBy === fieldId || query.groupBy === fieldId;
   // A filter pinned to one workstream already says which one every card is in.
@@ -46,7 +47,7 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
       data-id={item.id}
       role="button"
       tabIndex={0}
-      data-selected={item.id === selectedId}
+      data-selected={selected}
       aria-keyshortcuts="ArrowLeft ArrowRight"
       title={t("card.keyboardHint")}
       onClick={onOpen}

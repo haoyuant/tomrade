@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
@@ -26,7 +26,15 @@ import { QueryBar } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { Table } from "./Table";
 import { TitleBar, ViewHead } from "./TitleBar";
-import { useWorkspace } from "./context";
+
+// Opening a ticket re-renders this screen for its detail pane; the regions beside it hold still.
+const SidebarRegion = memo(Sidebar);
+const ViewHeadRegion = memo(ViewHead);
+const QueryBarRegion = memo(QueryBar);
+const BoardRegion = memo(Board);
+const TableRegion = memo(Table);
+const GraphRegion = memo(GraphView);
+import { useSelectedId, useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
 import { useToastUndo } from "~/lib/undo";
 
@@ -48,6 +56,7 @@ function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => 
 
 export function Workspace() {
   const ws = useWorkspace();
+  const selectedId = useSelectedId();
   usePlaybookConflictNotice(ws.project.id);
   // The sample teaches the graph with a ticket of its own; elsewhere, the first dependency points at it.
   useHintToast("hint.graph", !ws.project.sample && ws.layout !== "graph" && ws.items.some((i) => i.blocks.length > 0), "onboarding.graphHint");
@@ -91,7 +100,7 @@ export function Workspace() {
   /** The issue the confirmation is open on, held by id so it can go stale. */
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const selected = ws.items.find((i) => i.id === ws.selectedId) ?? null;
+  const selected = ws.items.find((i) => i.id === selectedId) ?? null;
   const deleteTarget = ws.items.find((i) => i.id === deleting) ?? null;
 
   // What the global panel should know while this screen is up: chips select
@@ -158,6 +167,7 @@ export function Workspace() {
     [undo, redo, toast, dismissToast, t]
   );
   const runUndo = useCallback(() => runStep("undo"), [runStep]);
+  const openViewSettings = useCallback(() => setViewSettings(true), []);
   const runRedo = useCallback(() => runStep("redo"), [runStep]);
 
   // Opening the detail below the three-pane floor rails the assistant, so
@@ -165,8 +175,8 @@ export function Workspace() {
   // keyed on the selection, not the item object: a write re-creates the object
   // and would re-rail a panel the user had just re-opened
   useEffect(() => {
-    if (ws.selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
-  }, [ws.selectedId, expanded, setAiOpen]);
+    if (selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
+  }, [selectedId, expanded, setAiOpen]);
 
   const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || history || !!projectSettings || !!deleteTarget;
 
@@ -242,7 +252,7 @@ export function Workspace() {
         // is how an inner layer says it already handled it
         // innermost first: an expanded detail collapses before it closes
         if (expanded) setExpanded(false);
-        else if (ws.selectedId) ws.select(null);
+        else if (selectedId) ws.select(null);
       } else if (key === "n" && !meta && !typing && !anyOverlay) {
         e.preventDefault();
         setNewIssue(true);
@@ -250,7 +260,7 @@ export function Workspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [anyOverlay, expanded, runUndo, runRedo, ws]);
+  }, [anyOverlay, expanded, runUndo, runRedo, ws, selectedId]);
 
   return (
     <div className="app">
@@ -265,13 +275,13 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <Sidebar open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenProjectSettings={openProjectSettings} />
+        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenProjectSettings={openProjectSettings} />
         {ws.filePath !== null ? (
           <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
         ) : (
           <section className="board-region" data-layout={ws.layout}>
-            <ViewHead onOpenViewSettings={() => setViewSettings(true)} />
-            <QueryBar />
+            <ViewHeadRegion onOpenViewSettings={openViewSettings} />
+            <QueryBarRegion />
             {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
             {ws.itemsError ? (
               <div className="items-error" role="alert">
@@ -282,11 +292,11 @@ export function Workspace() {
                 </button>
               </div>
             ) : ws.layout === "graph" ? (
-              <GraphView />
+              <GraphRegion />
             ) : ws.layout === "table" ? (
-              <Table onConflict={setConflict} />
+              <TableRegion onConflict={setConflict} />
             ) : (
-              <Board onConflict={setConflict} />
+              <BoardRegion onConflict={setConflict} />
             )}
           </section>
         )}

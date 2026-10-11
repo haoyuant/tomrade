@@ -13,7 +13,7 @@ import { notesSearch, useNotesEnabled } from "~/lib/notes";
 import { useNoteActions } from "~/components/files/useNoteActions";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { errorSpec, useToast } from "~/lib/toast";
-import { useWorkspace, viewCount } from "./context";
+import { useSelectedId, useWorkspace, viewCount } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 
 export interface PaletteActions {
@@ -37,6 +37,7 @@ export interface PaletteActions {
 /** One palette spanning every view, every issue and every action. */
 export function CommandPalette({ open, onOpenChange, actions }: { open: boolean; onOpenChange: (open: boolean) => void; actions: PaletteActions }) {
   const ws = useWorkspace();
+  const selectedId = useSelectedId();
   const navigate = useNavigate();
   const { t } = useI18n();
   const { setPreference } = useTheme();
@@ -72,7 +73,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   }
   const runPlugin = (id: string) =>
     runCommand.mutate(
-      { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: ws.selectedId } },
+      { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: selectedId } },
       { onSuccess: (r) => {
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
