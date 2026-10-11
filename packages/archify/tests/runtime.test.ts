@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { semantic } from "../src/layout.js";
 import { ArchifyRuntime, diagramTypes } from "../src/runtime.js";
 
 const temporary: string[] = [];
@@ -38,6 +39,30 @@ describe.runIf(!!process.env.ARCHIFY_TEST_SKILL)("upstream Archify integration",
       expect(result.receipt).toBeTruthy();
       expect(JSON.parse(await fs.readFile(result.source, "utf8"))).toEqual(example);
     }
+  });
+
+  it("lays out an architecture sent without coordinates", async () => {
+    const runtime = new ArchifyRuntime(await directory());
+    vi.spyOn(runtime, "ensureInstalled").mockResolvedValue(process.env.ARCHIFY_TEST_SKILL!);
+    const { example } = await runtime.schema("architecture");
+    const result = await runtime.render("architecture", semantic(example), await directory());
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, layout: "automatic" });
+    if (result.ok) expect((JSON.parse(await fs.readFile(result.source, "utf8")) as { components: { pos?: unknown }[] }).components.every((c) => Array.isArray(c.pos))).toBe(true);
+  });
+
+  it("renders a placed architecture exactly as written, failures and all", async () => {
+    const runtime = new ArchifyRuntime(await directory());
+    vi.spyOn(runtime, "ensureInstalled").mockResolvedValue(process.env.ARCHIFY_TEST_SKILL!);
+    const { example } = await runtime.schema("architecture");
+    const passing = await runtime.render("architecture", example, await directory());
+    expect(Object.keys(passing).sort()).toEqual(["artifact", "ok", "receipt", "revision", "source"]);
+    // Every component on one spot: a placement Archify rejects, reported in full for the author to repair.
+    const crowded = { ...example, components: (example.components as Record<string, unknown>[]).map((c) => ({ ...c, pos: [40, 40] })) };
+    const failing = await runtime.render("architecture", crowded, await directory());
+    expect(failing.ok).toBe(false);
+    if (!failing.ok) expect(failing.diagnostics).toMatchObject({ ok: false, command: "deliver" });
+    const arranged = await runtime.render("architecture", crowded, await directory(), undefined, { arrange: true });
+    expect(arranged, JSON.stringify(arranged)).toMatchObject({ ok: true, layout: "automatic" });
   });
 
   it("returns diagnostics and no artifact for invalid input", async () => {

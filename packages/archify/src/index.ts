@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { unplaced } from "./layout.js";
 import { ArchifyRuntime, diagramTypes } from "./runtime.js";
 
 export const Config = z.object({
@@ -21,6 +22,9 @@ export default {
   Config,
   apply(ctx: Context, config: z.infer<typeof Config>) {
     const runtime = new ArchifyRuntime(config.cacheDirectory, config.nodeBinary);
+    // Failed renders per run. A placement that is still failing on the third try was never going
+    // to end in a diagram; from there the renderer lays it out instead.
+    const failures = new Map<string, number>();
     ctx.agent.playbook({
       id: "diagram.archify", title: "System diagrams",
       when: "Create architecture, workflow, sequence, data-flow or lifecycle diagrams from a description or known source facts.",
@@ -32,6 +36,7 @@ export default {
         "Author a JSON specification with one main path, at most 12 primary nodes, short labels and automatic routes. Set meta.quality_profile to showcase. Use workflow schema_version 2 for new workflows.",
         "Call diagram_render with the specification. This always creates two complete artifacts: editable source JSON and the full rendered HTML, then displays the HTML in this conversation. The tool installs the pinned runtime if needed; no shell or separate agent skill installation is required.",
         "On failure, use diagnostics to repair only the identified subjects using supportedFixes; retry while the best error count improves. Stop after two consecutive repairs without improvement and report the diagnostics.",
+        "For architecture, when your own placement still fails after two repairs, send the same components, boundaries, connections and cards once more with every coordinate and route control left out (pos, size, row, col, layout, viewBox, via, sides, label positions): diagram_render then lays it out itself. A result with layout \"automatic\" and quality \"standard\" kept a few crossings or tight labels that showcase rejects; say so in one line.",
         "On success, call ask_user before exporting: offer the agent-recommended directory `diagrams/<short-slug>` or let the user provide a directory under Files. Explain that export writes both `diagram.json` and the complete `diagram.html` there. After the answer, call diagram_export with the two media IDs returned by diagram_render and the chosen directory. Do not claim export succeeded until diagram_export returns both file versions.",
         "Validation proves schema/layout checks, not source accuracy or visual review. Do not claim browser review unless it actually happened. Ask for missing system facts or inspect available source tools before asserting actual repository architecture."
       ].join("\n")
@@ -54,8 +59,18 @@ export default {
         if (!inv.run) throw new Error("Diagram rendering requires an active agent conversation");
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), "tomrade-diagram-"));
         try {
-          const result = await runtime.render(type, spec, directory, ctx.agent.runSignal(inv.run.id));
+          const signal = ctx.agent.runSignal(inv.run.id);
+          let result = await runtime.render(type, spec, directory, signal);
+          if (!result.ok && type === "architecture") {
+            const failed = (failures.get(inv.run.id) ?? 0) + 1;
+            failures.set(inv.run.id, failed);
+            if (failed >= 3 && !unplaced(spec)) {
+              const arranged = await runtime.render(type, spec, path.join(directory, "automatic"), signal, { arrange: true });
+              if (arranged.ok) result = arranged;
+            }
+          }
           if (!result.ok) return result;
+          failures.delete(inv.run.id);
           const source = ctx.agent.uploadMedia(inv.run.projectId, inv.run.threadId, {
             name: "diagram.json", mime: "application/json", base64: (await fs.readFile(result.source)).toString("base64")
           });
@@ -63,7 +78,8 @@ export default {
             name: `${title.replace(/[\\/]/g, "-")}.html`, mime: "text/html",
             base64: (await fs.readFile(result.artifact)).toString("base64")
           }, title, source);
-          return { ok: true, media, source, revision: result.revision, receipt: result.receipt, browserReview: "not performed" };
+          const placement = "layout" in result ? { layout: result.layout, quality: result.quality, ...(result.showcaseIssues ? { showcaseIssues: result.showcaseIssues } : {}) } : {};
+          return { ok: true, media, source, ...placement, revision: result.revision, receipt: result.receipt, browserReview: "not performed" };
         } finally { await fs.rm(directory, { recursive: true, force: true }); }
       }
     }));
