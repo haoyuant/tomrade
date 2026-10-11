@@ -99,3 +99,67 @@ describe("read memo", () => {
     expect(traces).toEqual(["list_items", "create_item", "list_items"]);
   });
 });
+
+/**
+ * A thinking model can spend the whole output allowance reasoning and stop at the limit with
+ * nothing to show. That used to end the run as if it had finished — silently, every time the
+ * user asked again. Seen live with DeepSeek at effort high: 8192 tokens, all reasoning.
+ */
+describe("output limit", () => {
+  async function drive(steps: ChatEvent[][], options?: Record<string, unknown>) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-loop-limit-"));
+    const requests: ChatRequest[] = [];
+    let step = 0;
+    const model: ChatModel = {
+      capabilities: { tools: true, streaming: true, json: true },
+      async *chat(request) {
+        requests.push(structuredClone(request));
+        for (const ev of steps[step++] ?? [{ type: "stop", reason: "end" }]) yield ev;
+      }
+    };
+    const f = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], fakeChat(model), [Agent, { mediaDir: path.join(root, "media") }], loop] });
+    const { ctx, project } = f;
+    const thread = ctx.agent.newThread(project.id, "loop", null, { options });
+    const run = ctx.agent.send(project.id, thread.id, { kind: "text", text: "draw it" });
+    await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).not.toBe("running");
+    const status = ctx.agent.store.run(project.id, run.runId)?.status;
+    const blocks = ctx.agent.thread(project.id, thread.id).messages.filter((m) => m.role !== "user").map((m) => m.block);
+    await ctx.fiber.dispose();
+    fs.rmSync(root, { recursive: true, force: true });
+    return { requests, status, blocks };
+  }
+
+  it("says so when the limit is hit before any answer, instead of ending quietly", async () => {
+    const { status, blocks } = await drive([[{ type: "usage", inputTokens: 900, outputTokens: 8192 }, { type: "stop", reason: "max_tokens" }]]);
+    expect(status).toBe("error");
+    const error = blocks.find((b) => b.type === "error");
+    expect(error && "text" in error ? error.text : "").toMatch(/output limit/);
+  });
+
+  it("keeps what was written before the cut, and still says it was cut", async () => {
+    const { status, blocks } = await drive([[{ type: "text", delta: "Here is the plan: first" }, { type: "stop", reason: "max_tokens" }]]);
+    expect(status).toBe("error");
+    expect(blocks.map((b) => b.type)).toEqual(["text", "error"]);
+  });
+
+  it("drops extended thinking for the rest of the turn when the thinking alone hit the limit", async () => {
+    const { status, blocks, requests } = await drive(
+      [
+        [{ type: "usage", inputTokens: 900, outputTokens: 8192 }, { type: "stop", reason: "max_tokens" }],
+        [{ type: "tool_call", id: "a", name: "list_items", args: {} }, { type: "stop", reason: "tool_use" }],
+        [{ type: "text", delta: "Done." }, { type: "stop", reason: "end" }]
+      ],
+      { effort: "high" }
+    );
+    expect(status).toBe("done");
+    expect(requests.map((r) => r.effort)).toEqual(["high", undefined, undefined]);
+    expect(blocks.map((b) => b.type)).toEqual(["note", "trace", "text"]);
+  });
+
+  it("gives up with the error if the retry is cut off too", async () => {
+    const overflow: ChatEvent[] = [{ type: "stop", reason: "max_tokens" }];
+    const { status, requests } = await drive([overflow, overflow], { effort: "high" });
+    expect(status).toBe("error");
+    expect(requests).toHaveLength(2);
+  });
+});

@@ -151,6 +151,8 @@ export function createLoopEngine(ctx: Context): Engine {
       // assistant: thinking-mode endpoints read it as an unfinished turn and refuse it without its reasoning.
       if (messages.at(-1)?.role === "assistant") messages.push({ role: "user", content: [{ type: "text", text: "(That ran in reply to the user's last message. Reply to the user now.)" }] });
       const usage = { inputTokens: 0, outputTokens: 0 };
+      // Dropped for the rest of the turn once the model has thought its way past the output limit.
+      let effort = options.effort;
       let invalidStreak = 0;
       // What each read call answered this turn; a write clears it, since the answer may have changed.
       const memo = new Map<string, string>();
@@ -164,7 +166,7 @@ export function createLoopEngine(ctx: Context): Engine {
               tools,
               toolChoice: invalidStreak >= 2 ? "none" : undefined,
               maxTokens: options.maxTokens,
-              effort: options.effort
+              effort
             },
             io.signal
           ),
@@ -179,6 +181,20 @@ export function createLoopEngine(ctx: Context): Engine {
           io.media.publish(media);
         }
         if (collected.stop === "refusal") return { stop: "error", error: "the model declined to answer", usage };
+        // Cut off with no call to make. Ending as "done" here read as the agent going quiet mid-task.
+        if (collected.stop === "max_tokens" && !collected.toolCalls.length) {
+          // Nothing but reasoning, which is never kept: the same step again, without extended thinking.
+          if (effort && !collected.text.trim()) {
+            effort = undefined;
+            io.emit({ type: "note", text: "The model used its whole output allowance thinking. Trying again without extended thinking." });
+            continue;
+          }
+          return {
+            stop: "error",
+            error: `The model reached its output limit (${options.maxTokens} tokens) ${collected.text.trim() ? "mid-answer" : "before answering"}. Ask for something smaller, or raise the Loop engine's maxTokens.`,
+            usage
+          };
+        }
         if (!collected.toolCalls.length) return { stop: "end", usage };
 
         messages.push(assistantMessage(collected));
