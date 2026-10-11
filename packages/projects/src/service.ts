@@ -42,7 +42,9 @@ export const ProjectsConfig = z.preprocess(
   z.object({
     /** The pre-P0 single database. Split into per-project caches on first boot, then moved to `backupsDir`. */
     legacyPath: z.string().optional(),
-    backupsDir: z.string().optional()
+    backupsDir: z.string().optional(),
+    /** What an empty catalog gets on boot: an empty Default Project, or nothing — another plugin seeds the first project. */
+    firstRun: z.enum(["default", "none"]).optional()
   })
 );
 export type ProjectsConfig = z.infer<typeof ProjectsConfig>;
@@ -80,7 +82,7 @@ export class Projects extends Service {
   [Service.init]() {
     this.adoptLegacy();
     for (const entry of this.hub.catalog.projects()) this.db.open(entry.id);
-    if (!this.hub.catalog.projects().length) this.ensureDefault();
+    if (!this.hub.catalog.projects().length && this.config.firstRun !== "none") this.ensureDefault();
 
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("projects.list", () => ctx.projects.list());
@@ -151,6 +153,7 @@ export class Projects extends Service {
       description: row?.description ?? null,
       keyPrefix: row?.key_prefix ?? entry.keyPrefix,
       archived: entry.archived,
+      ...(entry.sample ? { sample: true } : {}),
       createdAt: row?.created_at ?? entry.createdAt,
       updatedAt: row?.updated_at ?? entry.createdAt
     };
@@ -170,9 +173,12 @@ export class Projects extends Service {
   /**
    * Creates the project's cache, its row, its Main workstream and the default
    * views. The folder is the storage layer's to write, on `projects/created`;
-   * a chosen `dir` is recorded here so it writes there.
+   * a chosen `dir` is recorded here so it writes there. `seed` fills the
+   * project before anyone hears of it, so what it writes is how the project
+   * began rather than its history: the folder's first snapshot holds it, and
+   * its log rows are dropped.
    */
-  create(input: CreateProjectInput, opts: { dir?: string } = {}): Project {
+  create(input: CreateProjectInput, opts: { dir?: string; seed?: (project: Project) => void } = {}): Project {
     const id = randomUUID();
     const now = Date.now();
     const keyPrefix = input.keyPrefix?.toUpperCase() || keyPrefixFor(input.name);
@@ -186,12 +192,22 @@ export class Projects extends Service {
         now,
         now
       );
-      seedProject(db, id, now);
+      seedProject(db, id, now, input.locale);
     });
     const dir = opts.dir ? path.resolve(opts.dir) : null;
     if (dir) fs.mkdirSync(dir, { recursive: true });
     this.hub.catalog.upsertProject({ id, name: input.name, keyPrefix, createdAt: now, dir });
     const project: Project = { id, name: input.name, description: input.description ?? null, keyPrefix, archived: false, createdAt: now, updatedAt: now };
+    if (opts.seed) {
+      try {
+        opts.seed(project);
+      } catch (error) {
+        this.db.remove(id);
+        this.hub.catalog.removeProject(id);
+        throw error;
+      }
+      db.prepare("DELETE FROM oplog").run();
+    }
     this.home.emit("projects/created", project);
     this.notify();
     return project;

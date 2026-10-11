@@ -49,7 +49,8 @@ app.whenReady().then(async () => {
   const { ctx, dump } = await boot({
     configFile: path.join(here, "../tomrade.yml"),
     patchFiles: [path.join(userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
-    vars: { userData, hubDir: tomradeDir, pluginsRoot, pluginsDevRoot },
+    // What a first run is written in, before the person has picked a language.
+    vars: { userData, hubDir: tomradeDir, pluginsRoot, pluginsDevRoot, locale: app.getLocale() },
     extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
   });
 

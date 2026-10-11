@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { isSuspended, type Engine, type EngineAvailability, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import type {} from "@tomradex/mcp";
-import { binaryOk, runJsonl } from "./cli.js";
+import { binaryOk, claudeSignedIn, runJsonl, signedIn } from "./cli.js";
 import { buildSystem, promptOf } from "./system.js";
 import { claudeMediaInput } from "@tomradex/agent";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
@@ -41,7 +41,7 @@ interface StreamLine extends ResultCounters {
 }
 
 export function createClaudeCodeCliEngine(ctx: Context): Engine {
-  let probe: { at: number; state: { ok: boolean; reason?: string } } | null = null;
+  let probe: { at: number; state: EngineAvailability } | null = null;
   return {
     id: "claude-code",
     title: "Claude Code",
@@ -56,11 +56,13 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
     async available() {
       if (probe && Date.now() - probe.at < 30_000) return probe.state;
       const bin = await binaryOk("claude");
-      const state = !bin.ok
-        ? { ok: false, reason: "claude CLI not found — install Claude Code and sign in" }
+      const state: EngineAvailability = !bin.ok
+        ? { ok: false, reason: "claude CLI not found — install Claude Code and sign in", need: "install" }
         : !ctx.get("mcp")?.url
-          ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin" }
-          : { ok: true };
+          ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin", need: "service" }
+          : !(await signedIn("claude", ["auth", "status"], claudeSignedIn))
+            ? { ok: false, reason: "Claude Code is not signed in — run `claude` in a terminal and log in", need: "sign-in" }
+            : { ok: true };
       probe = { at: Date.now(), state };
       return state;
     },

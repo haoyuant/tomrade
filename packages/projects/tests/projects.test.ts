@@ -53,6 +53,29 @@ describe("projects", () => {
     expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["Backlog", "Recently updated"]);
   });
 
+  it("names the seeded workstream and views in the language asked for", async () => {
+    const { projects, boards, views } = await fresh();
+    const p = projects.create({ name: "番茄", locale: "zh-CN" });
+    expect(boards.list(p.id).map((b) => b.name)).toEqual(["主线"]);
+    expect(views.listForProject(p.id).map((v) => v.name)).toEqual(["看板", "最近更新"]);
+  });
+
+  it("a seed fills a project before anyone hears of it, leaves no history, and takes the project with it when it fails", async () => {
+    const { ctx, projects, items, boards } = await fresh();
+    const heard: string[] = [];
+    ctx.on("projects/created", (p) => heard.push(`${p.name}:${items.list({ projectId: p.id }).length}`));
+    const seeded = projects.create(
+      { name: "Seeded" },
+      { seed: (p) => void items.create({ projectId: p.id, boardId: boards.list(p.id)[0].id, title: "Already here", by: "human" }) }
+    );
+    expect(heard).toEqual(["Seeded:1"]);
+    expect(ctx.db.for(seeded.id).prepare("SELECT COUNT(*) AS n FROM oplog").get()).toEqual({ n: 0 });
+
+    expect(() => projects.create({ name: "Broken" }, { seed: () => { throw new Error("no"); } })).toThrow("no");
+    expect(projects.list().map((p) => p.name)).toEqual(["Default Project", "Seeded"]);
+    expect(heard).toEqual(["Seeded:1"]);
+  });
+
   it("derives a key prefix from the project name", () => {
     expect(keyPrefixFor("Tomrade Next")).toBe("TOM");
     expect(keyPrefixFor("42")).toBe("ISS");

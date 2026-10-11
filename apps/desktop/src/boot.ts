@@ -49,7 +49,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
   // A run that names no Hub or plugin folders keeps them beside its own data,
   // so a check never seeds projects into the person's ~/Tomrade.
   const own = opts.vars.userData ?? baseDir;
-  const vars = { hubDir: path.join(own, "hub"), pluginsRoot: path.join(own, "plugins"), pluginsDevRoot: path.join(own, "plugins-dev"), ...opts.vars };
+  const vars = { hubDir: path.join(own, "hub"), pluginsRoot: path.join(own, "plugins"), pluginsDevRoot: path.join(own, "plugins-dev"), locale: "en", ...opts.vars };
   const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), vars);
   // The user's own patch file, which is the first: a --patch passed on the
   // command line describes one run and is never written back.

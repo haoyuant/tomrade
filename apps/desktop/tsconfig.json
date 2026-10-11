@@ -24,6 +24,9 @@
       "path": "../../packages/agent-backlog"
     },
     {
+      "path": "../../packages/onboarding"
+    },
+    {
       "path": "../../packages/boards"
     },
     {

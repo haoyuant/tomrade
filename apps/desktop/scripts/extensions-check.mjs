@@ -59,7 +59,8 @@ const run = async () => {
     extensions: { root: path.join(WORK, "plugins"), trustedKeys: {} }
   });
   const view = (id) => ctx.plugins.list().find((p) => p.id === id);
-  const project = ctx.projects.list()[0];
+  // A project of its own: the first run's is the sample, which already holds issues.
+  const project = ctx.projects.create({ name: "Extensions" });
 
   const src = path.join(WORK, "src", "hello");
   extension(src, "someone/hello", counter("hello_count", "count: "));

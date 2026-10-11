@@ -14,6 +14,6 @@ export {
 } from "./registry.js";
 export { CORE_INDEXES_SQL, CORE_SCHEMA_VERSION, CORE_TABLES_SQL, REINDEX_SEARCH_SQL, SEARCH_INDEX_SQL } from "./schema.js";
 export { migrateCore } from "./migrate.js";
-export { DEFAULT_VIEWS, insertViewRow, seedDefaultViews, seedProject, type ViewSeed } from "./seed.js";
+export { defaultViews, insertViewRow, mainBoardName, seedDefaultViews, seedLocale, seedProject, type SeedLocale, type ViewSeed } from "./seed.js";
 export type { Queryable, Sqlite, Statement } from "./sqlite.js";
 export { Db as default } from "./service.js";

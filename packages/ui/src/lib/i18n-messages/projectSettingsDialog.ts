@@ -84,7 +84,7 @@ export const projectSettingsDialog = {
     consequenceProvenanceJoin: "{{list}} — agents are not asked either",
     consequenceKeyPrefix: "the key prefix {{prefix}} and its counter, so nothing is ever handed those keys again",
     consequencePublished: "nothing at the destination — its published copy is left exactly where it is, to delete there or to attach again",
-    consequenceLastProject: "the last project on this machine — {{brand}} seeds a fresh, empty one the next time it opens"
+    consequenceLastProject: "the last project on this machine — {{brand}} opens on the sample project the next time it starts"
   },
   zh: {
     dialogLabelDelete: "永久删除 {{name}}",
@@ -170,6 +170,6 @@ export const projectSettingsDialog = {
     consequenceProvenanceJoin: "{{list}}——同样不会征询智能体的意见",
     consequenceKeyPrefix: "编号前缀 {{prefix}} 及其计数器，此后不会再有工作项被分配这个前缀",
     consequencePublished: "发布目标上的内容不受影响——已发布的副本会原样留在那里，之后可以在那边删除，或者重新附加",
-    consequenceLastProject: "此设备上的最后一个项目——{{brand}} 会在下次启动时重新创建一个全新的空项目"
+    consequenceLastProject: "此设备上的最后一个项目——{{brand}} 下次启动时会重新放上示例项目"
   }
 };

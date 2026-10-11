@@ -1,0 +1,135 @@
+import { fileURLToPath } from "node:url";
+import { Context, Service } from "cordis";
+import { z } from "zod";
+import { loadPlaybookDir } from "@tomradex/agent";
+import { seedLocale } from "@tomradex/db";
+import type { Item, Project } from "@tomradex/domain";
+import type {} from "@tomradex/boards";
+import type {} from "@tomradex/hub";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/items";
+import type {} from "@tomradex/projects";
+import type { SettingsSection } from "@tomradex/settings";
+import { PATH, SAMPLE, type SampleWords } from "./sample.js";
+
+export { PATH, SAMPLE, type SampleTicket, type SampleWords } from "./sample.js";
+
+declare module "cordis" {
+  interface Context {
+    onboarding: Onboarding;
+  }
+}
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    /** The sample project again, for someone who deleted it; `locale` names its language. */
+    "onboarding.createSample": (locale?: string) => Project;
+  }
+}
+
+export const OnboardingConfig = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    /** The language a first run's sample is written in, before anyone has picked one. */
+    locale: z.string().default("en"),
+    /** Seed the sample when the catalog is empty. Off, the first run gets nothing from here. */
+    firstRun: z.boolean().default(true)
+  })
+);
+export type OnboardingConfig = z.infer<typeof OnboardingConfig>;
+
+export interface OnboardingSettings {
+  /** Hints and cards the person has seen or put away, by id. */
+  seen: string[];
+}
+
+/** The person's, not the machine's: a hint seen on one computer is not taught again on the next. */
+export const ONBOARDING_SECTION: SettingsSection<OnboardingSettings> = {
+  id: "onboarding",
+  title: "Getting started",
+  description: "The hints and setup cards already seen.",
+  schema: z.object({ seen: z.array(z.string()).default([]) }),
+  defaults: { seen: [] },
+  order: 90,
+  scope: "user"
+};
+
+const PLAYBOOKS = loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)), (file, err) => {
+  throw new Error(`onboarding playbook ${file} failed to load: ${err instanceof Error ? err.message : String(err)}`);
+});
+
+/**
+ * A first run opens on the sample project instead of an empty one: a tour
+ * written as tickets, linked into a learning path, with a small backlog to
+ * practise on. It is this machine's own — never in the account's catalog —
+ * and makes way, untouched, for the account's projects when they restore.
+ */
+export class Onboarding extends Service {
+  static provide = "onboarding";
+  static inject = ["hub", "projects", "items", "boards", "views"];
+  static Config = OnboardingConfig;
+
+  private readonly home: Context;
+
+  constructor(
+    ctx: Context,
+    public readonly config: OnboardingConfig
+  ) {
+    super(ctx, "onboarding");
+    this.home = ctx;
+  }
+
+  [Service.init]() {
+    if (this.config.firstRun && !this.ctx.hub.catalog.projects().length) {
+      try {
+        this.createSample(this.config.locale);
+      } catch (error) {
+        this.home.logger.warn(`the sample project could not be seeded — ${error instanceof Error ? error.message : String(error)}`);
+        this.ctx.projects.ensureDefault();
+      }
+    }
+    this.home.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("onboarding.createSample", (locale) => ctx.onboarding.createSample(locale));
+    });
+    this.home.inject(["settings"], (ctx) => {
+      ctx.settings.register(ONBOARDING_SECTION);
+    });
+    this.home.inject(["agent"], (ctx) => {
+      for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
+    });
+  }
+
+  /** The tour, in `locale`. Its seed is how it began, not history: nothing to undo, nothing in History. */
+  createSample(locale?: string): Project {
+    const words = SAMPLE[seedLocale(locale)];
+    return this.ctx.projects.create(
+      { name: words.name, description: words.description, keyPrefix: "TOM", locale },
+      {
+        seed: (project) => {
+          this.ctx.hub.catalog.patchProject(project.id, { seed: true, sample: true });
+          this.fill(project.id, words);
+        }
+      }
+    );
+  }
+
+  private fill(projectId: string, words: SampleWords): void {
+    const { boards, views, items } = this.ctx;
+    const tour = boards.defaultFor(projectId);
+    if (!tour) throw new Error("the sample project has no workstream to fill");
+    boards.update(projectId, tour.id, { name: words.tour, icon: "i-panel" });
+    const example = boards.create({ projectId, name: words.example, icon: "i-clock" });
+    views.create({ projectId, name: words.path, icon: "i-graph", layout: "graph", query: { filter: [{ field: "board", op: "in", values: [tour.id] }], graph: "deps" } });
+
+    const byKey = new Map<string, Item>();
+    words.tickets.forEach((ticket, rank) => {
+      byKey.set(ticket.key, items.create({ projectId, boardId: tour.id, title: ticket.title, body: ticket.body, status: "todo", workType: "general", rank, by: "human" }));
+    });
+    words.examples.forEach((ticket, rank) => {
+      items.create({ projectId, boardId: example.id, title: ticket.title, body: ticket.body, status: "backlog", workType: "general", rank, by: "human" });
+    });
+    for (const [from, to] of PATH) items.addRelation(projectId, byKey.get(from)!.id, byKey.get(to)!.id, "human");
+  }
+}
+
+export default Onboarding;
