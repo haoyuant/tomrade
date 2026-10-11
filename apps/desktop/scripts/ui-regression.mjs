@@ -151,6 +151,7 @@ const run = async () => {
   await shot("03-projects-matcha");
   await themeViaSettings("light");
   check("the projects home leaves the theme to settings", (await $(`!!document.querySelector('.statusbar .theme-seg')`)) === false);
+  check("connecting an outside agent starts folded, in plain words", (await $(`(() => { const d = document.querySelector('.agents-connect'); return !!d && !d.open && !/baseVersion|optimistic|update_item/.test(document.body.innerText); })()`)) === true);
 
   // ── enter the project ───────────────────────────────────────────────
   await $(`document.querySelectorAll('.proj')[0].click();true`);
@@ -554,6 +555,8 @@ const run = async () => {
   check("the detail prints the field strip, custom fields included", (await $(`document.querySelectorAll('.detail .field-row').length`)) === 9 + customCount);
   check("custom fields follow the built-ins", (await $(`document.querySelectorAll('.detail .field-row[data-field]').length`)) === customCount);
   check("the activity ledger reads the oplog", (await $(`document.querySelectorAll('.detail .ledger-row').length`)) > 0);
+  check("the detail says History, not oplog, and keeps the version number out of the fields", (await $(`(() => { const d = document.querySelector('.detail'); return !/oplog/i.test(d.innerText) && ![...d.querySelectorAll('.field-row dt')].some(n => n.textContent === 'Version'); })()`)) === true);
+  check("writers are named in words, not author ids", (await $(`!/\\b(human|ai:[a-z-]+)\\b/.test(document.querySelector('.detail .ledger').innerText + ' ' + document.querySelector('.statusbar').innerText)`)) === true);
   check("the writable fields render as controls", (await $(`document.querySelectorAll('.detail .fsel').length`)) === 5);
   await shot("09-detail-docked");
 

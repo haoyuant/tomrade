@@ -2,7 +2,7 @@ import type { UndoRecord } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { Kbd, Num } from "~/components/ui/atoms";
-import { agoLabel } from "~/lib/domain";
+import { agoLabel, authorLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRedo, useRollback, useTimeline, useUndo } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
@@ -111,7 +111,7 @@ export function HistoryDialog({ projectId, open, onOpenChange }: { projectId: st
                     {tx(OP_KEY[r.op] ?? "history.opOther", { label: <Num>{r.label}</Num>, target: <Num>{target}</Num>, op: r.op })}
                   </span>
                   <span className="meta-txt">
-                    {sync ? t("history.sync") : r.by} · {agoLabel(r.at)}
+                    {sync ? t("history.sync") : authorLabel(r.by)} · {agoLabel(r.at)}
                     {elsewhere && <> · {t("history.fromElsewhere")}</>}
                   </span>
                 </div>

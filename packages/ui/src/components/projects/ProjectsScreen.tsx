@@ -242,43 +242,36 @@ function ProjectsHome() {
           </div>
 
           <hr className="rule" />
-          <div className="sec-head">
-            <div>
-              <h2 className="sec-title">{t("projectsScreen.agentsTitle")}</h2>
-              <p className="sec-lede" style={{ marginTop: 4 }}>
-                {t("projectsScreen.agentsLede")}
-              </p>
-            </div>
-          </div>
-          <div className="grid-2">
-            <div className="panel">
-              <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
-                <LiveDot />
-                <Eyebrow>{t("projectsScreen.mcpListening")}</Eyebrow>
+          {/* For people who drive Claude Code or Cline themselves; nobody needs it to start, so it stays folded. */}
+          <details className="agents-connect">
+            <summary>
+              <Icon name="i-chev" size={12} className="agents-connect-chev" />
+              <span className="sec-title">{t("projectsScreen.agentsTitle")}</span>
+            </summary>
+            <p className="sec-lede">{t("projectsScreen.agentsLede")}</p>
+            <div className="grid-2">
+              <div className="panel">
+                <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
+                  <LiveDot />
+                  <Eyebrow>{t("projectsScreen.mcpListening")}</Eyebrow>
+                </div>
+                <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
+                  {mcp.data ?? t("projectsScreen.notRunning")}
+                </p>
+                <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
+                  {t("projectsScreen.mcpHint")}
+                </p>
               </div>
-              <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
-                {mcp.data ?? t("projectsScreen.notRunning")}
-              </p>
-              <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
-                {t("projectsScreen.mcpHint")}
-              </p>
+              <div className="panel">
+                <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("projectsScreen.toolsExposed")}</Eyebrow>
+                <ul className="dash">
+                  <li>{t("projectsScreen.canTickets")}</li>
+                  <li>{t("projectsScreen.canUndo")}</li>
+                  <li>{t("projectsScreen.lockedWritesBullet")}</li>
+                </ul>
+              </div>
             </div>
-            <div className="panel">
-              <Eyebrow style={{ marginBottom: "var(--space-3)" }}>{t("projectsScreen.toolsExposed")}</Eyebrow>
-              <ul className="dash">
-                <li>
-                  <Num>list_boards</Num> · <Num>list_items</Num> · <Num>get_item</Num> · <Num>create_item</Num>
-                </li>
-                <li>
-                  <Num>update_item</Num> — optimistic lock on <Num>baseVersion</Num>
-                </li>
-                <li>
-                  <Num>change_status</Num> · <Num>delete_item</Num>
-                </li>
-                <li>{t("projectsScreen.lockedWritesBullet")}</li>
-              </ul>
-            </div>
-          </div>
+          </details>
         </div>
       </main>
 

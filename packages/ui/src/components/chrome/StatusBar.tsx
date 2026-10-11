@@ -1,7 +1,7 @@
 import type { Item, OplogEntry } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
-import { agoLabel } from "~/lib/domain";
+import { agoLabel, authorLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useMcpUrl, useOplog, useStatusItems } from "~/lib/queries";
 
@@ -27,7 +27,7 @@ function Ribbon({ entry }: { entry: OplogEntry }) {
   return (
     <span className="status-item">
       {entry.by.startsWith("ai:") && !sync && <span className="ribbon-tick" />}
-      {tx("statusBar.ribbon", { author: <Num>{sync ? t("statusBar.authorSync") : entry.by}</Num>, verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
+      {tx("statusBar.ribbon", { author: sync ? t("statusBar.authorSync") : authorLabel(entry.by), verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
     </span>
   );
 }

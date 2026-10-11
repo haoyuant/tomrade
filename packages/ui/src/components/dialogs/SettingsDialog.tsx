@@ -480,7 +480,7 @@ export function SettingsDialog({
                 {mcp.data ?? t("settingsDialog.notRunning")}
               </p>
               <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
-                {tx("settingsDialog.mcpNote", { baseVersion: <Num>baseVersion</Num> })}
+                {t("settingsDialog.mcpNote")}
               </p>
             </div>
             <div className="panel">
