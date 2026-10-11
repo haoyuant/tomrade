@@ -619,7 +619,7 @@ export class Storage extends Service {
     if (counts && counts.behind > 0) {
       if (counts.ahead === 0) {
         await g.fastForward(remote.branch);
-        await this.takeFolder(projectId);
+        this.absorbFolder(projectId);
       } else {
         await this.mergeRemote(projectId, this.mustEntry(projectId), g, remote.branch);
       }
@@ -683,22 +683,39 @@ export class Storage extends Service {
     ];
   }
 
-  /** Replace the cache with the folder's state and remember it as the base. */
-  private async takeFolder(projectId: string): Promise<boolean> {
+  /**
+   * Take in a folder that moved: replace the cache when it has nothing
+   * unpublished, merge when both moved. Reads the catalog afresh — a publish
+   * may have landed while the caller awaited git — and runs in one tick, so no
+   * write slips in between the export it compares and the import.
+   */
+  private absorbFolder(projectId: string): void {
     const entry = this.mustEntry(projectId);
-    if (!entry.dir) return false;
+    if (!entry.dir) return;
     const { state } = this.readFolder(entry.dir, this.verifies(projectId));
-    if (!state) return false;
+    if (!state) return;
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
-    this.importInto(projectId, entry, state);
-    return true;
+    const onDisk = state.manifest.snapshot?.digest ?? digestState(state);
+    if (onDisk === entry.lastPublishedDigest) return;
+    const local = digestState(this.exportFor(projectId, entry));
+    if (local === entry.lastPublishedDigest) this.importInto(projectId, entry, state);
+    else {
+      this.mergeWith(projectId, entry, this.loadPublished(projectId), state, readLogs(entry.dir));
+      // The merge lives in the cache only; the folder catches up on the usual write schedule.
+      this.schedule(projectId);
+    }
   }
 
-  private importInto(projectId: string, entry: CatalogProject, state: ProjectState): void {
+  /**
+   * Replace the cache with `state`. `base` is what the folder holds — the state
+   * itself after a plain import, the folder's older snapshot after a merge — and
+   * becomes what the next refresh compares the folder against.
+   */
+  private importInto(projectId: string, entry: CatalogProject, state: ProjectState, base: ProjectState = state): void {
     importState(this.db(projectId), state, { registrations: (this.ctx.db as Db).registrations("project") });
     if (entry.dir) this.importForeignLogs(projectId, entry.dir);
-    this.savePublished(projectId, state);
-    const digest = state.manifest.snapshot?.digest ?? digestState(state);
+    this.savePublished(projectId, base);
+    const digest = base.manifest.snapshot?.digest ?? digestState(base);
     const patch: Partial<CatalogProject> = { lastPublishedDigest: digest, lastSyncAt: Date.now(), name: String(state.manifest.project.name ?? entry.name), keyPrefix: String(state.manifest.project.key_prefix ?? entry.keyPrefix) };
     if (state.manifest.exports) patch.exports = state.manifest.exports;
     // A withheld table this snapshot carries is known here from now on.
@@ -739,14 +756,7 @@ export class Storage extends Service {
         }
       }
     }
-    const { state } = this.readFolder(entry.dir, this.verifies(projectId));
-    if (!state) return this.statusFor(projectId);
-    if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
-    const onDisk = state.manifest.snapshot?.digest ?? digestState(state);
-    if (onDisk === entry.lastPublishedDigest) return this.statusFor(projectId);
-    const local = digestState(this.exportFor(projectId, entry));
-    if (local === entry.lastPublishedDigest) this.importInto(projectId, entry, state);
-    else this.mergeWith(projectId, entry, this.loadPublished(projectId), state, readLogs(entry.dir));
+    this.absorbFolder(projectId);
     return this.statusFor(projectId);
   }
 
@@ -825,7 +835,9 @@ export class Storage extends Service {
     }
     const result = mergeStates({ base: base ? this.toMergeState(base) : null, ours: this.toMergeState(ours), theirs: this.toMergeState(theirs), logs: { ours: ourOps, theirs: theirOps }, rules });
     const merged = this.fromMergeState(result.merged, ours, theirs);
-    this.importInto(projectId, entry, merged);
+    // Recording the merge as the base would make the folder's older snapshot
+    // read, on the next refresh, as theirs having deleted every row we added.
+    this.importInto(projectId, entry, merged, theirs);
     this.noteConflicts(projectId, result.conflicts, result.renumbered);
   }
 

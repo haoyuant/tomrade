@@ -260,6 +260,28 @@ describe("ctx.storage", () => {
     expect(fs.readFileSync(path.join(a.dir, ARTIFACT_DIR, "state", "items.jsonl"), "utf8")).toMatch(/Renamed elsewhere/);
   });
 
+  it("keeps a merge it has not published yet: the folder still holding the older snapshot is not a deletion", async () => {
+    const a = await machine();
+    const shared = a.items.create({ title: "Shared", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+    // Someone else renames the shared issue in the folder while we create one of our own.
+    const state = readArtifact(a.dir)!;
+    state.tables.items.find((r) => r.id === shared.id)!.title = "Renamed elsewhere";
+    state.manifest.snapshot!.digest = digestState(state);
+    writeArtifact(a.dir, state);
+    const ours = a.items.create({ title: "Ours, unpublished", projectId: a.project.id, boardId: a.board.id, by: "ai:mcp" });
+    await a.storage.refresh(a.project.id);
+    expect(a.items.get(a.project.id, ours.id)?.title).toBe("Ours, unpublished");
+    // Nothing moved since: another refresh (the watcher, the periodic reconcile) must leave the merge alone.
+    const later = a.items.create({ title: "Later", projectId: a.project.id, boardId: a.board.id, by: "ai:mcp" });
+    await a.storage.refresh(a.project.id);
+    expect(a.items.list({ projectId: a.project.id }).map((i) => i.title).sort()).toEqual(["Later", "Ours, unpublished", "Renamed elsewhere"]);
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("ahead");
+    await a.storage.publish(a.project.id);
+    expect(readArtifact(a.dir)!.tables.items.map((r) => r.id).sort()).toEqual([shared.id, ours.id, later.id].sort());
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+  });
+
   it("renumbers our unpublished issues when the folder already used the key", async () => {
     const a = await machine();
     a.items.create({ title: "First", projectId: a.project.id, boardId: a.board.id, by: "human" });
