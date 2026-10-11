@@ -141,7 +141,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
   const account = useGithubCredentialAccount(projectId, repo.id, !!checkout?.checkout && remoteState?.remote === "unreachable");
   const useCredential = useGithubCredential(projectId, repo.remote);
   const [picking, setPicking] = useState(false);
-  const [cloneTarget, setCloneTarget] = useState<{ parent: string; dir: string } | null>(null);
+  const [cloneTarget, setCloneTarget] = useState<{ parent: string; dir: string; origin?: string } | null>(null);
   useEffect(() => {
     if (checkout?.checkout) setCloneTarget(null);
   }, [checkout?.checkout]);
@@ -158,7 +158,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       {
         onSuccess: (selection) => {
           if (selection.state === "clone") {
-            setCloneTarget({ parent: selection.parent, dir: selection.dir });
+            setCloneTarget({ parent: selection.parent, dir: selection.dir, origin: selection.origin });
             return;
           }
           setCloneTarget(null);
@@ -263,7 +263,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         <div className="cfg-row repo-clone-offer" style={{ marginTop: 0 }}>
           <Icon name="i-folder" size={14} style={{ color: "var(--meta)" }} />
           <span className="repo-remote-copy">
-            <span className="cfg-name">{t("repositories.cloneOffer", { name: repo.name })}</span>
+            <span className="cfg-name">{cloneTarget.origin ? t("repositories.cloneOfferOther", { name: repo.name, origin: cloneTarget.origin }) : t("repositories.cloneOffer", { name: repo.name })}</span>
             <span className="meta-txt num repo-clone-target" title={cloneTarget.dir}>{cloneTarget.dir}</span>
           </span>
           <button type="button" className="btn btn-secondary repo-clone" disabled={busy} onClick={cloneNow}>

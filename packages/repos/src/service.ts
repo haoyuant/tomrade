@@ -8,8 +8,9 @@ import type { Hub } from "@tomradex/hub";
 import type {} from "@tomradex/boards";
 import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPatch } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
-import { GitFolder, cleanRemote, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
+import { GitFolder, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
 import { defineTool, requireProjectId } from "@tomradex/tools";
+import { normalizeRemote, sameRepository } from "./remotes.js";
 
 declare module "cordis" {
   interface Context {
@@ -31,7 +32,7 @@ export interface CheckoutView {
 /** Result of inspecting the folder the user explicitly chose. */
 export type CheckoutSelection =
   | { state: "ready"; view: CheckoutView }
-  | { state: "clone"; remote: string; parent: string; dir: string };
+  | { state: "clone"; remote: string; parent: string; dir: string; /** Set when the chosen folder is a checkout of another repository. */ origin?: string };
 
 export interface WorkdirView {
   repo: Repo;
@@ -81,9 +82,6 @@ interface RepoRow {
 }
 
 const rowToRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, remote: r.remote, name: r.name, defaultBranch: r.default_branch, createdAt: r.created_at, updatedAt: r.updated_at });
-
-/** Two spellings of one repository read the same: no credential, no trailing `.git`, no trailing slash. */
-export const normalizeRemote = (remote: string): string => cleanRemote(remote.trim()).replace(/\/+$/, "").replace(/\.git$/, "");
 
 const nameOf = (remote: string): string => normalizeRemote(remote).split(/[/:]/).filter(Boolean).pop() ?? "repo";
 
@@ -235,7 +233,7 @@ export class Repos extends Service {
     const top = await g.toplevel();
     if (!top) throw new Error(`${dir} is not a git repository`);
     const origin = await g.remoteUrl();
-    if (origin && normalizeRemote(origin) !== key) throw new Error(`${dir} is a checkout of ${normalizeRemote(origin)}, not of ${key}`);
+    if (origin && !(await sameRepository(origin, key))) throw new Error(`${dir} is a checkout of ${normalizeRemote(origin)}, not of ${key}`);
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();
     this.home.emit("repos/checkout-set", key);
@@ -249,10 +247,11 @@ export class Repos extends Service {
     if (!fs.existsSync(parent)) throw new Error(`${parent} does not exist`);
     if (!fs.statSync(parent).isDirectory()) throw new Error(`${parent} is not a folder`);
 
+    let other: string | undefined;
     if (fs.existsSync(path.join(parent, ".git"))) {
-      const selected = new GitFolder(this.runGit, parent);
-      const origin = await selected.remoteUrl();
-      if (!origin || normalizeRemote(origin) === key) return { state: "ready", view: await this.setCheckout(key, parent) };
+      const origin = await new GitFolder(this.runGit, parent).remoteUrl();
+      if (!origin || (await sameRepository(origin, key))) return { state: "ready", view: await this.setCheckout(key, parent) };
+      other = normalizeRemote(origin);
     }
 
     const dir = path.join(parent, checkoutFolderNameOf(key));
@@ -261,7 +260,7 @@ export class Repos extends Service {
       if (fs.existsSync(path.join(dir, ".git"))) return { state: "ready", view: await this.setCheckout(key, dir) };
       if (fs.readdirSync(dir).length !== 0) throw new Error(`${dir} already exists and is not empty — nothing was cloned`);
     }
-    return { state: "clone", remote: key, parent, dir };
+    return other ? { state: "clone", remote: key, parent, dir, origin: other } : { state: "clone", remote: key, parent, dir };
   }
 
   clearCheckout(remote: string): void {
