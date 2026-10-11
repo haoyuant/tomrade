@@ -1705,6 +1705,12 @@ html.overlay-open .titlebar .btn-primary {
 .agent-note { text-align: center; font-size: var(--text-xs); color: var(--meta); margin: var(--space-3) 0; }
 .agent-empty { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-4); font-size: var(--text-sm); color: var(--fg-2); }
 .agent-empty ul { margin: 0; font-size: var(--text-xs); color: var(--meta); }
+.starters { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: var(--space-3) 0 0 -8px; }
+.starter { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 8px; border: 0; border-radius: var(--radius-sm); background: none; font: inherit; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); text-align: left; cursor: pointer; }
+.starter svg { flex-shrink: 0; color: var(--meta); }
+.starter:hover:not(:disabled) { background: var(--surface); color: var(--accent); }
+.starter:hover:not(:disabled) svg { color: var(--accent); }
+.starter:disabled { opacity: 0.55; cursor: default; }
 /* engines as rows: pick the conductor, unfold its knobs */
 .eng-list { display: flex; flex-direction: column; }
 .eng-row { border-top: 1px solid var(--border-soft); }

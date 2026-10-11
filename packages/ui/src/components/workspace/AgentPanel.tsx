@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item } from "@tomradex/domain";
-import { Icon } from "~/components/icons";
+import { Icon, type IconId } from "~/components/icons";
 import { PetStage } from "./PetStage";
 import { AgentMedia } from "./AgentMedia";
 import { AgentAttachment, readAttachment } from "./AgentAttachment";
@@ -10,7 +10,7 @@ import { invoke } from "~/lib/api";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
-import { useI18n } from "~/lib/i18n";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 
@@ -19,6 +19,29 @@ const MAX_W = 616;
 const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}` };
 
 const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+/** `fill` puts the prompt in the composer to finish; otherwise the prompt is sent as is. */
+type Starter = { label: MessageKey; prompt?: MessageKey; icon: IconId; fill?: boolean };
+
+/**
+ * What a fresh thread can do — hints, not a route. Static on purpose so they appear with
+ * the panel, no model call. Shaping an idea into a backlog is only offered to a project
+ * with no tickets yet.
+ */
+const STARTERS: { fresh: Starter[]; backlog: Starter[] } = {
+  fresh: [
+    { label: "agentPanel.starterIdea", prompt: "agentPanel.starterIdeaPrompt", icon: "i-leaf", fill: true },
+    { label: "agentPanel.starterTicket", prompt: "agentPanel.starterTicketPrompt", icon: "i-plus", fill: true },
+    { label: "agentPanel.starterDoc", prompt: "agentPanel.starterDocPrompt", icon: "i-pen", fill: true },
+    { label: "agentPanel.starterHelp", icon: "i-search" }
+  ],
+  backlog: [
+    { label: "agentPanel.starterNext", prompt: "agentPanel.starterNextPrompt", icon: "i-chev" },
+    { label: "agentPanel.starterGroom", prompt: "agentPanel.starterGroomPrompt", icon: "i-filter" },
+    { label: "agentPanel.starterTicket", prompt: "agentPanel.starterTicketPrompt", icon: "i-plus", fill: true },
+    { label: "agentPanel.starterDoc", prompt: "agentPanel.starterDocPrompt", icon: "i-pen", fill: true }
+  ]
+};
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far. */
 function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; progress: RunProgress | null; streaming: boolean }) {
@@ -454,8 +477,7 @@ export function AgentPanel({
   // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
   const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
 
-  const doSend = async () => {
-    const text = draft.trim();
+  const doSend = async (text = draft.trim()) => {
     if ((!text && !attachments.length) || busy || blocked || sending.current) return;
     if (attachments.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return; }
     sending.current = true; setUploading(true); setAttachmentError(null);
@@ -470,6 +492,22 @@ export function AgentPanel({
       setDraft(""); setAttachments([]);
     } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
     finally { sending.current = false; setUploading(false); }
+  };
+
+  // Hidden once anything is typed or attached, so a click never overwrites the user's own words.
+  const empty = threadId ? detail.data?.messages.length === 0 : true;
+  const starters =
+    empty && itemsQ.data && !detail.data?.thread.itemId && !busy && !draft && !attachments.length
+      ? STARTERS[itemsQ.data.length ? "backlog" : "fresh"]
+      : [];
+  const pickStarter = (starter: Starter) => {
+    const text = t(starter.prompt ?? starter.label);
+    if (!starter.fill) return void doSend(text);
+    setDraft(text);
+    requestAnimationFrame(() => {
+      composer.current?.focus();
+      composer.current?.setSelectionRange(text.length, text.length);
+    });
   };
 
   const doAnswer = (questionId: string, value: string | string[]) => {
@@ -565,13 +603,23 @@ export function AgentPanel({
             </ul>
           </div>
         )}
-        {!detail.data?.messages.length && !noEngineReady && (
+        {empty && !noEngineReady && (
           <div className="turn turn-ai">
             <div className="turn-mark">
               <span className="prov-tick" style={{ height: 12 }} />
             </div>
             <div className="turn-body">
               <p>{t("agentPanel.introMessage")}</p>
+              {!!starters.length && (
+                <div className="starters" role="group" aria-label={t("agentPanel.startersAria")}>
+                  {starters.map((starter) => (
+                    <button key={starter.label} type="button" className="starter" disabled={blocked} title={workdirProblem ?? undefined} onClick={() => pickStarter(starter)}>
+                      <Icon name={starter.icon} size={12} />
+                      {t(starter.label)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
