@@ -127,3 +127,26 @@ it("moves an installed helper from the old Hub location to userData, once", asyn
   expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(false);
   expect((await f.fill()).stdout).toContain("password=test-token-one");
 });
+
+it("leaves a checkout on another Tomrade's helper, and still moves an old Hub helper of its own", async () => {
+  const f = await fixture();
+  const dev = path.join(f.dir, "dev's data");
+  const devSettings = path.join(dev, "settings.json");
+  fs.mkdirSync(dev);
+  fs.writeFileSync(devSettings, JSON.stringify({ github: { token: "dev-token" } }));
+  await installGithubCredential(f.git, f.dir, devSettings);
+  const config = fs.readFileSync(path.join(f.dir, ".git/config"), "utf8");
+  fs.writeFileSync(f.settings, JSON.stringify({ github: { token: "" } }));
+  expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(false);
+  expect(fs.readFileSync(path.join(f.dir, ".git/config"), "utf8")).toBe(config);
+  expect((await f.fill()).stdout).toContain("password=dev-token");
+
+  await installGithubCredential(f.git, f.dir, f.settings);
+  const oldHub = path.join(f.dir, "old hub");
+  fs.mkdirSync(path.join(oldHub, "bin"), { recursive: true });
+  for (const name of ["tomrade-credential", "tomrade-credential.cjs"]) fs.copyFileSync(path.join(f.userData, "bin", name), path.join(oldHub, "bin", name));
+  await f.git(["config", "--local", "--replace-all", "credential.https://github.com.helper", ""]);
+  await f.git(["config", "--local", "--add", "credential.https://github.com.helper", `!'${path.join(oldHub, "bin", "tomrade-credential")}'`]);
+  expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(true);
+  expect(await usesTomradeCredential(f.git, f.dir, f.settings)).toBe(true);
+});

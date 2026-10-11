@@ -36,7 +36,8 @@ export const repositories = {
     credentialChecking: "Switching account and checking origin…",
     credentialConnected: "This checkout and its worktrees now use Tomrade's GitHub account. Origin is reachable.",
     credentialStillUnreachable: "Git credentials updated, but origin is still unreachable. Check the account's repository access and your network.",
-    noCredential: "no credential for {{host}}"
+    noCredential: "no credential for {{host}}",
+    tomradeAccountMissing: "This checkout uses Tomrade's GitHub account, which is not connected. Connect it under Storage."
   },
   zh: {
     label: "仓库",
@@ -75,6 +76,7 @@ export const repositories = {
     credentialChecking: "正在切换账户并检查 origin…",
     credentialConnected: "此 checkout 及其 worktree 已使用 Tomrade 的 GitHub 账户，origin 可访问。",
     credentialStillUnreachable: "Git 凭据已更新，但 origin 仍不可访问。请检查账户的仓库权限和网络。",
-    noCredential: "没有 {{host}} 的凭据"
+    noCredential: "没有 {{host}} 的凭据",
+    tomradeAccountMissing: "此 checkout 使用 Tomrade 的 GitHub 账户，但该账户尚未连接。请在「存储」中连接。"
   }
 };

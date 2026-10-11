@@ -225,7 +225,11 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       )}
       {checkout?.checkout && identity.data?.host && (
         <p className="meta-txt dense repo-identity" title={identity.data.host}>
-          {identity.data.login ? t("repositories.remoteIdentity", { login: identity.data.login }) : t("repositories.noCredential", { host: identity.data.host })}
+          {identity.data.login
+            ? t("repositories.remoteIdentity", { login: identity.data.login })
+            : identity.data.tomrade
+              ? t("repositories.tomradeAccountMissing")
+              : t("repositories.noCredential", { host: identity.data.host })}
         </p>
       )}
       {checkout?.checkout && remoteState?.remote === "unreachable" && account.data && (

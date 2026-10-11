@@ -54,15 +54,30 @@ export async function usesTomradeCredential(git: Git, checkout: string, settings
   return result.code === 0 && result.stdout.trimEnd() === `\n${credentialCommand(settings)}`;
 }
 
-/** A helper command this plugin wrote, wherever it lived. Earlier versions put it under the Hub. */
+/** A helper command some Tomrade wrote, wherever it lived. Earlier versions put it under the Hub. */
 const namesOurHelper = (value: string): boolean => /^!.*[/\\]bin[/\\]tomrade-credential'?$/.test(value);
+
+/**
+ * Every helper reads one settings file, named in its `.cjs`. One reading
+ * another file belongs to a second Tomrade on this machine — a dev build, say —
+ * whose account may be the only one that can see the repository.
+ */
+const readsOtherSettings = (value: string, settings: string): boolean => {
+  const helper = /^!'(.*)'$/.exec(value)?.[1]?.replace(/'\\''/g, "'");
+  if (!helper) return false;
+  try {
+    return !fs.readFileSync(`${helper}.cjs`, "utf8").includes(JSON.stringify(path.resolve(settings)));
+  } catch {
+    return false;
+  }
+};
 
 /** Repoint a checkout whose helper still lives under a Hub folder at the userData one. */
 export async function migrateGithubCredential(git: Git, checkout: string, settings: string): Promise<boolean> {
   const result = await git(["config", "--local", "--get-all", key], { cwd: checkout, ok: true });
   if (result.code !== 0) return false;
   const current = credentialCommand(settings);
-  const stale = result.stdout.split("\n").map((line) => line.trimEnd()).some((line) => !!line && line !== current && namesOurHelper(line));
+  const stale = result.stdout.split("\n").map((line) => line.trimEnd()).some((line) => !!line && line !== current && namesOurHelper(line) && !readsOtherSettings(line, settings));
   if (!stale) return false;
   await installGithubCredential(git, checkout, settings);
   return true;
