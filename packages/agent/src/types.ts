@@ -331,6 +331,8 @@ export interface Engine {
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
   picks?(): EnginePick[];
   permissionModes?: { default: string; choices: { value: string; label: string }[] };
+  /** False: it runs only inside Tomrade, with no CLI session a person can be handed in a terminal. */
+  terminal?: boolean;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
 }
 
@@ -353,6 +355,7 @@ export interface EngineView {
   cli?: LocalCliStatus;
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
+  terminal?: boolean;
 }
 
 export interface WorkflowQuestion {

@@ -91,7 +91,11 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(null);
   const mode = chosenMode ?? (latest?.mode === "terminal" ? "terminal" : "run");
   const capability = general ? "general" : "code";
-  const candidates = useMemo(() => (engines.data ?? []).filter((engine) => engine.capabilities.includes(capability)), [engines.data, capability]);
+  // An agent Tomrade drives over ACP has no terminal session to open.
+  const candidates = useMemo(
+    () => (engines.data ?? []).filter((engine) => engine.capabilities.includes(capability) && (mode !== "terminal" || engine.terminal !== false)),
+    [engines.data, capability, mode]
+  );
   const otherAllowed = mode === "terminal" && !!otherCommand;
   const [chosenEngine, setChosenEngine] = useState<string | null>(null);
   const remembered = latest?.agent ?? thread?.engine ?? null;

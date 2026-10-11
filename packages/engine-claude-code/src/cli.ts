@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import readline from "node:readline";
+import { StringDecoder } from "node:string_decoder";
 import { spawnCli, stopCli, type CliLaunch, type CliLocator } from "./locate.js";
 
 /**
@@ -70,4 +71,18 @@ export function runJsonl(launch: CliLaunch, args: string[], opts: { cwd: string;
     });
   });
   return { child, done };
+}
+
+/** Splits on LF only: readline also breaks on U+2028/U+2029, which are legal inside JSON strings. */
+export function lineSplitter(onLine: (line: string) => void): (chunk: Buffer) => void {
+  const decoder = new StringDecoder("utf8");
+  let buffer = "";
+  return (chunk) => {
+    buffer += decoder.write(chunk);
+    for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
+      const line = buffer.slice(0, at).replace(/\r$/, "");
+      buffer = buffer.slice(at + 1);
+      if (line.trim()) onLine(line);
+    }
+  };
 }

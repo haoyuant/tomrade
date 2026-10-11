@@ -3,7 +3,8 @@
  * Settings shows it and lets a path be chosen (checked before it is saved, and
  * taken back with one click), how Start points an agent that is not ready to
  * its row, and what the guide says on Windows when the CLI is only in WSL.
- * Stand-in CLIs make the not-signed-in state deterministic.
+ * Stand-in CLIs make the not-signed-in state deterministic; the ACP agents
+ * are switched off, since this machine may well have one of them ready.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:local-cli
@@ -40,7 +41,7 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work, locale: "en-US" },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...["engine-hermes", "engine-dsh", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;

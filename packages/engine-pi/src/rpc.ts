@@ -3,30 +3,15 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import type { Context } from "cordis";
 import { attachedMedia, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
-import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
+import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { bridgeSource } from "./bridge.js";
 import { PiOptions, toolSelection } from "./options.js";
 
 type Json = Record<string, any>;
 interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } }
-
-/** Splits on LF only: readline also breaks on U+2028/U+2029, which are legal inside JSON strings. */
-export function lineSplitter(onLine: (line: string) => void): (chunk: Buffer) => void {
-  const decoder = new StringDecoder("utf8");
-  let buffer = "";
-  return (chunk) => {
-    buffer += decoder.write(chunk);
-    for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
-      const line = buffer.slice(0, at).replace(/\r$/, "");
-      buffer = buffer.slice(at + 1);
-      if (line.trim()) onLine(line);
-    }
-  };
-}
 
 const DIALOGS = new Set(["confirm", "select", "input", "editor"]);
 

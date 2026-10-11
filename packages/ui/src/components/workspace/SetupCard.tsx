@@ -74,7 +74,7 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
               ) : (
                 <>
                   <span className="setup-fix">{t("localCli.whatIsLocal")}</span>
-                  {locals.map((e) => (
+                  {locals.filter((e) => LOCAL_AGENTS[e.id].suggested || engineStatus(e) !== "missing").map((e) => (
                     <span key={e.id} className="setup-fix">
                       {fix(e)}
                     </span>

@@ -26,6 +26,7 @@
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
     "test:local-cli": "electron scripts/local-cli-check.mjs",
+    "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {
@@ -42,6 +43,10 @@
     "@tomradex/engine-claude-code": "workspace:*",
     "@tomradex/engine-codex": "workspace:*",
     "@tomradex/engine-pi": "workspace:*",
+    "@tomradex/engine-acp": "workspace:*",
+    "@tomradex/engine-hermes": "workspace:*",
+    "@tomradex/engine-dsh": "workspace:*",
+    "@tomradex/engine-workbuddy": "workspace:*",
     "@tomradex/engine-loop": "workspace:*",
     "@tomradex/engine-scripted": "workspace:*",
     "@tomradex/extensions": "workspace:*",
