@@ -76,7 +76,7 @@ async function run() {
   await $(`location.hash = '#/p/${project.id}'; true`);
   await wait(() => $("!!document.querySelector('.ai-input')"), "assistant composer");
   const send = async text => {
-    await $(`(() => { const input = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(text)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await $(`(() => { const input = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value').set.call(input, ${JSON.stringify(text)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await sleep(50);
     await $("document.querySelector('.ai-send').click()");
   };

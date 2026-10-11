@@ -1164,7 +1164,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .pet-slot-name { font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 /* the composer is the input: the send/stop control lives inside its border */
 .ai-composer {
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: flex-end; gap: 4px;
   background: var(--surface); color: var(--fg);
   border: 1px solid var(--border); border-radius: var(--radius-md);
   padding: 2px 4px 2px 10px;
@@ -1172,9 +1172,10 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 /* one focus ring, on the container — a hairline, not the 2px app ring */
 .ai-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .ai-input {
-  flex: 1; min-width: 0; padding: 6px 0;
-  background: transparent; border: 0; outline: none;
+  flex: 1; min-width: 0; padding: 7px 0; margin: 0; align-self: center;
+  background: transparent; border: 0; outline: none; resize: none; overflow-y: auto;
   color: var(--fg); font-family: var(--font-display); font-size: 14px; line-height: 1.4;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
 .ai-input:focus-visible { box-shadow: none; }
 .ai-input::placeholder { color: var(--meta); }

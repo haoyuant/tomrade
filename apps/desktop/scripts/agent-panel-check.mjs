@@ -63,12 +63,12 @@ const run = async () => {
   const press = (expr) =>
     $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
   const send = async (text) => {
-    await $(`(() => { const i = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await $(`(() => { const i = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await sleep(100);
     await $(`document.querySelector('.ai-send').click();true`);
   };
   const panel = () =>
-    $(`({ working: !!document.querySelector('.ai-scroll .working'), locked: document.querySelector('.ai-input')?.disabled ?? null,
+    $(`({ working: !!document.querySelector('.ai-scroll .working'), locked: document.querySelector('.ai-composer')?.hasAttribute('data-busy') ?? null,
           lines: [...document.querySelectorAll('.ai-scroll .turn-ai .turn-body p')].map((p) => p.textContent).filter((t) => ${JSON.stringify(LINES)}.includes(t)) })`);
   const threads = async () => {
     if (!(await $(`!!document.querySelector('.menu-row.is-radio')`))) await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
@@ -123,6 +123,29 @@ const run = async () => {
   await sleep(1000);
   seen = await panel();
   check("picking the busy thread again shows its run finished", !seen.working && seen.lines.join("|") === LINES.join("|"), seen);
+
+  // ── the composer: several lines, typed ahead, and the keyboard left where it was ──
+  const draftNow = () => $(`document.querySelector('.ai-input')?.value ?? null`);
+  const key = (opts) => $(`document.querySelector('.ai-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...${JSON.stringify(opts)} }));true`);
+  const setDraft = (text) => $(`(() => { const i = document.querySelector('.ai-input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await newThread();
+  await send("fourth");
+  await sleep(300);
+  check("the composer is a multi-line box that stays open while a run works", await $(`(() => { const i = document.querySelector('.ai-input'); return i.tagName === 'TEXTAREA' && !i.disabled; })()`));
+  await setDraft("the next message\nwith a second line");
+  await key({ shiftKey: true });
+  await sleep(150);
+  check("Shift+Enter does not send", (await draftNow()) === "the next message\nwith a second line");
+  await key({});
+  await sleep(300);
+  check("Enter while the run works keeps the draft for later", (await draftNow()) === "the next message\nwith a second line" && (await panel()).working);
+  await $(`(() => { const b = document.createElement('input'); b.id = 'elsewhere'; document.body.appendChild(b); b.focus(); return true; })()`);
+  await sleep(4200);
+  check("a run that ends leaves the keyboard where the person put it", (await $(`document.activeElement?.id`)) === "elsewhere" && !(await panel()).working);
+  await key({});
+  await sleep(400);
+  check("once it has ended, Enter sends the waiting draft", (await draftNow()) === "" && (await panel()).working);
+  await sleep(4000);
   check("harness reached the end", true);
 };
 

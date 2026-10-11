@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
@@ -349,7 +349,9 @@ export function AgentPanel({
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
-  const composer = useRef<HTMLInputElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
+  const following = useRef(true);
   const panel = useRef<HTMLElement>(null);
 
   const onDelta = useCallback((runId: string, text: string | null) => {
@@ -440,15 +442,31 @@ export function AgentPanel({
   // After layout, so a working line or question that just mounted is inside scrollHeight.
   useEffect(() => {
     const el = scroll.current;
-    if (!el) return;
+    if (!el || !following.current) return;
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
   }, [detail.data?.messages.length, live?.text, runningRun?.id, pending?.question.id]);
 
+  // another thread opens at its newest line
   useEffect(() => {
-    if (!busy) composer.current?.focus();
+    following.current = true;
+  }, [threadId]);
+
+  // A finished run hands the keyboard back to the composer only when it was the panel's to begin with.
+  useEffect(() => {
+    if (busy) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || panel.current?.contains(active)) composer.current?.focus();
   }, [busy]);
+
+  // the composer grows with what is typed, up to a few lines, then scrolls
+  useLayoutEffect(() => {
+    const el = composer.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+  }, [draft]);
 
   const startResize = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
@@ -497,6 +515,7 @@ export function AgentPanel({
       const refs = await Promise.all(attachments.map(async file => invoke("agent.media.upload", projectId, target!, {
         name: file.name, mime: file.type, base64: await readAttachment(file)
       })));
+      following.current = true;
       await send.mutateAsync({ threadId: target, text, focus: sendFocus.length ? sendFocus : undefined, attachments: refs.length ? refs : undefined });
       setDraft(""); setAttachments([]);
     } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
@@ -600,7 +619,17 @@ export function AgentPanel({
         </button>
       </div>
 
-      <div className="ai-scroll" ref={scroll} role="log" aria-live="polite" aria-busy={busy}>
+      <div
+        className="ai-scroll"
+        ref={scroll}
+        role="log"
+        aria-live="polite"
+        aria-busy={busy}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+      >
         {(noEngineReady || (empty && !detail.data?.thread.itemId)) && <SetupCard onOpenSettings={onOpenSettings} />}
         {empty && !noEngineReady && (
           <div className="turn turn-ai">
@@ -644,22 +673,25 @@ export function AgentPanel({
         {(accessories.data ?? []).map((accessory) => (
           <PetStage key={accessory.id} accessory={accessory} threadId={threadId} />
         ))}
-        <div className="ai-composer">
+        <div className="ai-composer" data-busy={busy || undefined}>
           <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
             addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
           }} />
           <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
-          <input
+          {/* typing stays open while the agent works — the next message can wait in here; only sending waits */}
+          <textarea
             ref={composer}
             className="ai-input"
+            rows={1}
             placeholder={pending ? t("agentPanel.answerPlaceholder") : t("agentPanel.messagePlaceholder")}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
-            disabled={busy}
             onChange={(e) => setDraft(e.target.value)}
             onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) void doSend();
+              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+              e.preventDefault();
+              void doSend();
             }}
           />
           {runningRun ? (
