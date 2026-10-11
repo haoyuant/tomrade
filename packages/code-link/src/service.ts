@@ -41,6 +41,10 @@ declare module "cordis" {
   interface Context {
     codeLink: CodeLink;
   }
+  interface Events {
+    /** Links or sessions of a project changed — for main-process observers; the renderer hears codeLink.changed. */
+    "codeLink/changed"(projectId: string): void;
+  }
 }
 
 /** A branch that names a ticket the project does not have, or a ticket in another project. */
@@ -1102,6 +1106,7 @@ export class CodeLink extends Service {
 
     ctx.contributions.statusItem({
       id: "code-link",
+      opens: "code-inbox",
       text: ({ projectId }) => {
         if (!projectId) return null;
         const at = this.scannedAt.get(projectId);
@@ -1256,6 +1261,7 @@ export class CodeLink extends Service {
   }
 
   private notify(projectId: string): void {
+    this.home.emit("codeLink/changed", projectId);
     this.home.get("ipc")?.send("codeLink.changed", projectId);
   }
 }

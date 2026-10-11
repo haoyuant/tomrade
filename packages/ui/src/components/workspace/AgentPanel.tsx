@@ -15,6 +15,7 @@ import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
+import { useAttention, type AttentionEntry } from "~/lib/attention";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -349,6 +350,10 @@ export function AgentPanel({
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  // what agents in this project wait on the person for: a count on the rail, a word in the thread list
+  const attention = useAttention().filter((e) => e.projectId === projectId);
+  const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
+  const attentionLabel = (e: AttentionEntry) => t(`agentPanel.attention_${e.kind}` as MessageKey);
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
   const following = useRef(true);
@@ -557,8 +562,13 @@ export function AgentPanel({
   if (!open) {
     return (
       <div className="rail ai-rail">
-        <button type="button" className="btn btn-icon" title={t("agentPanel.expandAssistant")} aria-label={t("agentPanel.expandAssistantAria")} onClick={() => onToggle(true)}>
+        <button type="button" className="btn btn-icon rail-btn" title={t("agentPanel.expandAssistant")} aria-label={t("agentPanel.expandAssistantAria")} onClick={() => onToggle(true)}>
           <Icon name="i-panel" size={15} />
+          {attention.length > 0 && (
+            <span className="rail-badge num" role="status" title={attention.map(attentionLabel).join(" · ")} aria-label={t("agentPanel.waitingBadge", { n: attention.length })}>
+              {attention.length}
+            </span>
+          )}
         </button>
         <span className="rail-label">{t("agentPanel.assistantLabel")}</span>
       </div>
@@ -599,7 +609,7 @@ export function AgentPanel({
               key={th.id}
               checked={th.id === threadId}
               name={th.title || t("agentPanel.newThread")}
-              sub={timeAgo(th.updatedAt)}
+              sub={attentionOf.has(th.id) ? `${attentionLabel(attentionOf.get(th.id)!)} · ${timeAgo(th.updatedAt)}` : timeAgo(th.updatedAt)}
               onSelect={() => pickThread(th.id)}
               actions={
                 <>

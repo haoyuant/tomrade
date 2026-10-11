@@ -38,6 +38,7 @@ export function StatusBar({
   onRedo,
   onHistory,
   busy = null,
+  onOpen,
   children
 }: {
   projectId?: string;
@@ -46,6 +47,8 @@ export function StatusBar({
   onHistory?: () => void;
   /** Which step is running; both controls wait for it, and the running one says so. */
   busy?: "undo" | "redo" | null;
+  /** Opens a surface a plugin's status item names ("code-inbox"); without it the items read as plain text. */
+  onOpen?: (surface: string) => void;
   children?: React.ReactNode;
 }) {
   const { t } = useI18n();
@@ -61,11 +64,17 @@ export function StatusBar({
         <LiveDot /> {t("statusBar.mcpLabel")} <Num>{host(mcp.data ?? null) ?? t("statusBar.offline")}</Num>
       </span>
       {latest && <Ribbon entry={latest} />}
-      {plugins.data?.map((s) => (
-        <span className="status-item" key={s.id}>
-          {s.text}
-        </span>
-      ))}
+      {plugins.data?.map((s) =>
+        s.opens && onOpen ? (
+          <button type="button" className="status-item status-link" key={s.id} onClick={() => onOpen(s.opens!)}>
+            {s.text}
+          </button>
+        ) : (
+          <span className="status-item" key={s.id}>
+            {s.text}
+          </span>
+        )
+      )}
       {onUndo && (
         <button type="button" className="btn btn-ghost status-undo" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} disabled={busy !== null} aria-busy={busy === "undo"} title={t("statusBar.undoTitle")}>
           <Icon name={busy === "undo" ? "i-sync" : "i-undo"} size={13} className={busy === "undo" ? "is-spinning" : undefined} /> {busy === "undo" ? t("workspace.undoing") : t("toast.undo")}

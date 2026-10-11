@@ -38,7 +38,7 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(__dirname, "../tomrade.yml"),
     vars: { userData: WORK },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }]]
   });
   // A fresh userData has no Hub folder; the app would open on the setup screen.
   // Choosing one here is what a first run does, so every project gets a folder.
@@ -791,6 +791,16 @@ const run = async () => {
   check("an option nobody holds goes in one click", added && !repos.fields.custom(project.id).find((f) => f.id === area.id).options.some((o) => o.name === "Unused") && (await $(`!!document.querySelector('.fld-opt-confirm')`)) === false);
   await checkCentred("the fields sheet");
   await shot("15-fields-workstreams");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(500);
+
+  // ── the status bar's code item opens the Code inbox ─────────────────
+  // a scan gives the code item something to say
+  await ctx.codeLink.scan(project.id);
+  await sleep(900);
+  check("the code status item is a way into the Code inbox", await press(`[...document.querySelectorAll('.statusbar .status-link')].find((n) => /^code/.test(n.textContent ?? ''))`));
+  await sleep(700);
+  check("…which it opens", (await $(`[...document.querySelectorAll('[role=dialog]')].some((d) => (d.textContent ?? '').includes('Code inbox'))`)) === true);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 

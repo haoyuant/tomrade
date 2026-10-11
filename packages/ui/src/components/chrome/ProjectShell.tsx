@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import type { FocusRef } from "@tomradex/agent";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
+import { onOpenRequest, takeOpenRequest } from "~/lib/attention";
 import { usePanelOpen } from "~/lib/panel";
 
 /**
@@ -96,6 +97,17 @@ export function ProjectShell() {
     },
     [binding, navigate, projectId]
   );
+  // A clicked notification for this project: its conversation, or the ticket when it has none.
+  useEffect(() => {
+    const take = () => {
+      const entry = takeOpenRequest(projectId);
+      if (entry?.threadId) showThread(entry.threadId);
+      else if (entry?.itemId) openIssue(entry.itemId);
+    };
+    take();
+    return onOpenRequest(take);
+  }, [projectId, showThread, openIssue]);
+
   const openSettings = useCallback((engineId?: string) => binding?.openSettings?.(engineId), [binding]);
   const openRepositories = useCallback(() => binding?.onOpenRepositories?.(), [binding]);
 
