@@ -1273,6 +1273,9 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .fld-row[aria-expanded="true"] .fld-chev { transform: rotate(180deg); }
 .fld-editor { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
 .fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
+.fld-opt-confirm { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger); border-radius: var(--radius-md); background: var(--surface); }
+.fld-opt-confirm p { margin: 0; }
 /* a workstream is a small card: the head names it, the code line picks the
  * repository and folder its agents start in, and one sentence says what that
  * means on this machine — the part a bare select and a path box never said */

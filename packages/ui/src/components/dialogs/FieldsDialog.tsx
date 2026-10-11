@@ -92,7 +92,7 @@ function FieldRow({ def, count, selected, onSelect }: { def: FieldDef; count: nu
 }
 
 /** The editor for one custom field: rename, options for a select, and the delete behind a second click. */
-function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; def: FieldDef; count: number; onDeleted: () => void }) {
+function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; def: FieldDef; items: Item[]; onDeleted: () => void }) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const update = useUpdateField(projectId);
@@ -101,16 +101,40 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
   const updateOption = useUpdateFieldOption(projectId);
   const removeOption = useRemoveFieldOption(projectId);
   const [confirming, setConfirming] = useState(false);
+  // An option issues still hold is removed only after saying what becomes of them: "" clears, an id moves them there.
+  const [removing, setRemoving] = useState<{ optionId: string; moveTo: string } | null>(null);
   const [newOption, setNewOption] = useState("");
+  const count = holders(items, def.id);
+  const holding = (optionId: string) => items.filter((i) => i.fields[def.id] === optionId).length;
   const ref = useRef<HTMLDivElement | null>(null);
 
   // The list above can push the editor below the fold; a selection should be seen.
   useEffect(() => {
     setConfirming(false);
+    setRemoving(null);
     ref.current?.scrollIntoView({ block: "nearest" });
   }, [def.id]);
 
   const fail = (err: Error) => toast({ body: err.message });
+
+  const dropOption = (optionId: string, moveTo: string) => {
+    const name = def.options.find((o) => o.id === optionId)?.name ?? "";
+    const target = def.options.find((o) => o.id === moveTo)?.name;
+    removeOption.mutate(
+      { fieldId: def.id, optionId, ...(target ? { moveTo } : {}) },
+      {
+        onSuccess: (n) => {
+          setRemoving(null);
+          toast({
+            body: target
+              ? tx("fieldsDialog.movedOptionToast", { name: <b>{name}</b>, target: <b>{target}</b>, n: <span className="num">{n}</span> })
+              : tx("fieldsDialog.removedOptionToast", { name: <b>{name}</b>, n: <span className="num">{n}</span> })
+          });
+        },
+        onError: fail
+      }
+    );
+  };
 
   const commitOption = () => {
     const name = newOption.trim();
@@ -162,15 +186,40 @@ function FieldEditor({ projectId, def, count, onDeleted }: { projectId: string; 
                   className="btn btn-icon"
                   title={t("fieldsDialog.removeOptionTitle", { name: o.name })}
                   aria-label={t("fieldsDialog.removeOptionAria", { name: o.name })}
-                  onClick={() =>
-                    removeOption.mutate(
-                      { fieldId: def.id, optionId: o.id },
-                      { onSuccess: (n) => toast({ body: tx("fieldsDialog.removedOptionToast", { name: <b>{o.name}</b>, n: <span className="num">{n}</span> }) }), onError: fail }
-                    )
-                  }
+                  aria-expanded={removing?.optionId === o.id}
+                  onClick={() => (holding(o.id) === 0 ? dropOption(o.id, "") : setRemoving({ optionId: o.id, moveTo: "" }))}
                 >
                   <Icon name="i-close" size={13} />
                 </button>
+                {removing?.optionId === o.id && (
+                  <div className="fld-opt-confirm" role="group" aria-label={t("fieldsDialog.removeOptionAria", { name: o.name })}>
+                    <p className="meta-txt dense">{t(holding(o.id) === 1 ? "fieldsDialog.removeOptionHeldOne" : "fieldsDialog.removeOptionHeldMany", { n: holding(o.id), name: o.name })}</p>
+                    <div className="row" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
+                      <select
+                        className="input"
+                        style={{ width: "auto" }}
+                        aria-label={t("fieldsDialog.removeOptionTargetAria", { name: o.name })}
+                        value={removing.moveTo}
+                        onChange={(e) => setRemoving({ optionId: o.id, moveTo: e.target.value })}
+                      >
+                        <option value="">{t("fieldsDialog.removeOptionClear")}</option>
+                        {def.options
+                          .filter((x) => x.id !== o.id)
+                          .map((x) => (
+                            <option key={x.id} value={x.id}>
+                              {t("fieldsDialog.removeOptionMoveTo", { name: x.name })}
+                            </option>
+                          ))}
+                      </select>
+                      <button type="button" className="btn btn-danger" disabled={removeOption.isPending} onClick={() => dropOption(o.id, removing.moveTo)}>
+                        <Icon name="i-trash" size={13} /> {t("fieldsDialog.confirmRemoveOption", { name: o.name })}
+                      </button>
+                      <button type="button" className="btn btn-ghost" onClick={() => setRemoving(null)}>
+                        {t("common.cancel")}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             <div className="row" style={{ gap: "var(--space-2)" }}>
@@ -551,7 +600,7 @@ export function FieldsDialog({
                 {custom.map((f) => (
                   <div key={f.id} className="fld-item">
                     <FieldRow def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
-                    {f.id === selectedId && <FieldEditor projectId={projectId} def={f} count={holders(rows, f.id)} onDeleted={() => setSelectedId(null)} />}
+                    {f.id === selectedId && <FieldEditor projectId={projectId} def={f} items={rows} onDeleted={() => setSelectedId(null)} />}
                   </div>
                 ))}
               </div>
