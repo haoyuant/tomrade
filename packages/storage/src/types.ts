@@ -112,9 +112,10 @@ export class UnknownProviderError extends Error {
 export class ForeignProjectError extends Error {
   constructor(
     public readonly expected: string,
-    public readonly found: string
+    public readonly found: string,
+    names?: { expected: string; found: string }
   ) {
-    super(`That folder holds project ${found}, not ${expected}`);
+    super(names ? `That folder holds “${names.found}”, not “${names.expected}”` : `That folder holds project ${found}, not ${expected}`);
     this.name = "ForeignProjectError";
   }
 }

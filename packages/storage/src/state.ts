@@ -135,6 +135,8 @@ export interface ExportOptions {
   /** Every machine's furthest op present in this file, so a reader knows which log lines the snapshot already holds. */
   checkpoint?: Record<string, number>;
   at?: number;
+  /** `<namespace>/<table>` this machine has never seen: left out, so an empty copy here never stands in for the real one elsewhere. */
+  withhold?: string[];
 }
 
 export function exportState(db: StateDb, projectId: string, opts: ExportOptions = {}): ProjectState {
@@ -152,6 +154,7 @@ export function exportState(db: StateDb, projectId: string, opts: ExportOptions 
     const chosen = exports.includes(reg.namespace);
     for (const [table, spec] of Object.entries(reg.tables).sort(([a], [b]) => a.localeCompare(b))) {
       if (!spec.export || !(chosen || spec.export.always)) continue;
+      if (opts.withhold?.includes(`${reg.namespace}/${table}`)) continue;
       let columns: string[];
       try {
         columns = columnsOf(db, table);
@@ -199,9 +202,17 @@ export function stateFiles(state: ProjectState): Map<string, string> {
 export function serializeState(state: ProjectState, opts: { mcpUrl?: string | null } = {}): Map<string, string> {
   const files = stateFiles(state);
   files.set(path.join(ARTIFACT_DIR, MANIFEST), JSON.stringify(state.manifest, null, 2) + "\n");
+  for (const [rel, body] of supportFiles(opts)) files.set(rel, body);
+  return files;
+}
+
+/** The files beside the state that describe the folder rather than the project. */
+function supportFiles(opts: { mcpUrl?: string | null }): Map<string, string> {
+  const files = new Map<string, string>();
+  // Anchored: an unanchored `files/` also kept `plugins/files/` out of git.
   files.set(
     path.join(ARTIFACT_DIR, GITIGNORE),
-    ["# The cache never belongs in a folder — only this text does; the files keep a repository of their own.", "*.db", "*.db-wal", "*.db-shm", "*.db-journal", "*.tmp", "files/", "files-archive/", ""].join("\n")
+    ["# The cache never belongs in a folder — only this text does; the files keep a repository of their own.", "*.db", "*.db-wal", "*.db-shm", "*.db-journal", "*.tmp", "/files/", "/files-archive/", ""].join("\n")
   );
   files.set(
     path.join(ARTIFACT_DIR, GITATTRIBUTES),
@@ -230,6 +241,13 @@ export function serializeState(state: ProjectState, opts: { mcpUrl?: string | nu
     files.set(path.join(ARTIFACT_DIR, MCP), JSON.stringify({ mcpServers: { tomrade: { type: "http", url: opts.mcpUrl } } }, null, 2) + "\n");
   }
   return files;
+}
+
+/** Bring the support files up to date without touching the snapshot. Returns true when any changed. */
+export function refreshSupportFiles(dir: string, opts: { mcpUrl?: string | null } = {}): boolean {
+  let changed = false;
+  for (const [rel, body] of supportFiles(opts)) changed = writeIfChanged(path.join(dir, rel), body) || changed;
+  return changed;
 }
 
 /** A digest of the state files' own bytes, so "nothing changed" is exact rather than inferred. */
@@ -322,7 +340,7 @@ export type ArtifactFiles = Map<string, string>;
  * state files; a mismatch means a sync is mid-flight and the caller retries
  * rather than importing half a snapshot.
  */
-export function parseArtifact(files: ArtifactFiles, where: string): ProjectState | null {
+export function parseArtifact(files: ArtifactFiles, where: string, opts: { verify?: boolean } = {}): ProjectState | null {
   const manifestRel = path.join(ARTIFACT_DIR, MANIFEST);
   const manifestText = files.get(manifestRel);
   if (manifestText === undefined) return null;
@@ -345,9 +363,10 @@ export function parseArtifact(files: ArtifactFiles, where: string): ProjectState
   const covered = new Map<string, string>();
   for (const spec of TABLES) {
     const rel = path.join(ARTIFACT_DIR, STATE_DIR, `${spec.name}.jsonl`);
-    const body = files.get(rel) ?? "";
-    covered.set(rel, body);
-    tables[spec.name] = parseRows(body, spec.columns);
+    const body = files.get(rel);
+    // A core table newer than the writer has no file, and the writer's digest never named one.
+    if (body !== undefined) covered.set(rel, body);
+    tables[spec.name] = parseRows(body ?? "", spec.columns);
   }
   const plugins: ProjectState["plugins"] = {};
   const pluginsPrefix = path.join(ARTIFACT_DIR, PLUGINS_DIR) + path.sep;
@@ -360,7 +379,7 @@ export function parseArtifact(files: ArtifactFiles, where: string): ProjectState
     (plugins[ns] ??= {})[table] = parseRows(body);
   }
   // The legacy manifest wrote the digest over the whole serialisation; only v2 can be checked.
-  if (manifest.v === 2 && manifest.snapshot && digestFiles(covered) !== manifest.snapshot.digest) throw new TornArtifactError(where);
+  if (opts.verify !== false && manifest.v === 2 && manifest.snapshot && digestFiles(covered) !== manifest.snapshot.digest) throw new TornArtifactError(where);
   return { manifest, tables, plugins };
 }
 
@@ -377,8 +396,41 @@ export function artifactFilesOf(dir: string): ArtifactFiles {
   return files;
 }
 
-export function readArtifact(dir: string): ProjectState | null {
-  return parseArtifact(artifactFilesOf(dir), dir);
+export function readArtifact(dir: string, opts: { verify?: boolean } = {}): ProjectState | null {
+  return parseArtifact(artifactFilesOf(dir), dir, opts);
+}
+
+/** The one table the old unanchored `files/` rule kept out of every repository. */
+const NEVER_COMMITTED = { table: "files/plugin_files_remotes", rel: path.join(ARTIFACT_DIR, PLUGINS_DIR, "files", "plugin_files_remotes.jsonl") };
+
+/**
+ * Read a project cloned from a remote. A commit cannot be caught mid-write, so
+ * a digest that does not match means files never reached git: backups made
+ * before the `.gitignore` was anchored lack `plugins/files/`. When the digest
+ * says that table was empty, `fill` is the file to put back beside the clone;
+ * otherwise its rows are unknown here and it is `withheld` — never exported
+ * from this machine until a snapshot that carries it arrives. Neither writes
+ * anything to the remote.
+ */
+export function readClone(dir: string): { state: ProjectState; fill: Map<string, string>; withheld: string[] } | null {
+  const files = artifactFilesOf(dir);
+  const attempt = (candidate: ArtifactFiles): ProjectState | null | undefined => {
+    try {
+      return parseArtifact(candidate, dir);
+    } catch (error) {
+      if (error instanceof TornArtifactError) return undefined;
+      throw error;
+    }
+  };
+  const exact = attempt(files);
+  if (exact !== undefined) return exact ? { state: exact, fill: new Map(), withheld: [] } : null;
+  // Most often the missing file was an empty table, and the digest says so.
+  if (!files.has(NEVER_COMMITTED.rel)) {
+    const filled = attempt(new Map([...files, [NEVER_COMMITTED.rel, ""]]));
+    if (filled) return { state: filled, fill: new Map([[NEVER_COMMITTED.rel, ""]]), withheld: [] };
+  }
+  const state = parseArtifact(files, dir, { verify: false });
+  return state ? { state, fill: new Map(), withheld: files.has(NEVER_COMMITTED.rel) ? [] : [NEVER_COMMITTED.table] } : null;
 }
 
 /**

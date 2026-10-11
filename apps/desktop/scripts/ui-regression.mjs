@@ -1300,12 +1300,12 @@ const run = async () => {
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
   await press(settingsNav("Hub"));
   await sleep(700);
-  const hubInfo = await ctx.storage.hubInfo();
+  const missing = ctx.storage.restores().entries;
   check("the Hub pane names the folder", (await $(`document.querySelector('#hubDir')?.value`)) === path.join(WORK, "hub"));
   check("with no remote yet it offers the destination kinds", (await $(`!!document.querySelector('#hubProvider') && document.querySelector('.hub-publish')?.disabled === true`)) === true);
-  check("and lists what other machines put in the Hub", (await $(`document.querySelectorAll('.hub-other').length`)) === hubInfo.attachable.length);
-  check("saying so when there is nothing", (await $(`!!document.querySelector('.hub-others-none')`)) === (hubInfo.attachable.length === 0));
-  check("attaching them all waits for one with a remote", (await $(`document.querySelector('.hub-attach-all')?.disabled ?? true`)) === (hubInfo.attachable.length === 0));
+  check("and lists the projects not on this computer yet", (await $(`document.querySelectorAll('.hub-other').length`)) === missing.length);
+  check("saying so when there is nothing", (await $(`!!document.querySelector('.hub-others-none')`)) === (missing.length === 0));
+  check("retrying them all waits for one that is not already under way", (await $(`document.querySelector('.hub-attach-all')?.disabled ?? true`)) === missing.every((e) => e.state === "restoring"));
   await shot("30-hub-pane");
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => /^Data/.test(r.textContent.trim()))`);
   await sleep(500);

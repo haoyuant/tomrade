@@ -328,7 +328,7 @@ describe("ctx.files", { timeout: 30_000 }, () => {
       expect((await one.ctx.files.info(one.project.id)).remote).toEqual({ backend: "folder", config: { path: remote } });
       // The project's own folder must not swallow the files' repository.
       const projectDir = one.ctx.storage.entry(one.project.id)!.dir!;
-      expect(fs.readFileSync(path.join(projectDir, ".tomrade", ".gitignore"), "utf8")).toMatch(/^files\/$/m);
+      expect(fs.readFileSync(path.join(projectDir, ".tomrade", ".gitignore"), "utf8")).toMatch(/^\/files\/$/m);
 
       // Machine two learns the remote the way a project's folder carries it: the same row in its table.
       two.ctx.db.for(two.project.id).prepare("INSERT INTO plugin_files_remotes (project_id, backend, config_json, updated_at) VALUES (?, 'folder', ?, ?)").run(two.project.id, JSON.stringify({ path: remote }), Date.now());

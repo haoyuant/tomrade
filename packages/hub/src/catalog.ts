@@ -33,6 +33,10 @@ export const CatalogProject = z.object({
   /** The last oplog seq already appended to the folder's log; the write-through catches up from here. */
   lastLoggedSeq: z.number().int().default(0),
   archived: z.boolean().default(false),
+  /** Tables (`<namespace>/<table>`) a restore could not read: never exported from here until a snapshot carrying them arrives. */
+  withheld: z.array(z.string()).default([]),
+  /** The first run's Default Project, untouched so far: kept out of the account's catalog until someone uses it. */
+  seed: z.boolean().default(false),
   createdAt: z.number().default(0),
   /** Cached facts for the home grid, refreshed on close and on write. */
   facts: z.object({ items: z.number(), boards: z.number(), updatedAt: z.number() }).optional()

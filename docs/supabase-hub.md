@@ -77,10 +77,20 @@ panel lets the user choose the local or cloud value. Choosing local creates a
 fresh mutation against the observed cloud version, which may conflict again if
 another device writes meanwhile. No device clock decides concurrent edits.
 
-Cloud-only projects appear in the Hub pane. Projects with portable remotes can
-be attached through the existing storage providers. A cloud catalog entry alone
-does not back up a project folder, grant access to its Git repository, or copy a
-checkout to the current machine.
+After every successful sync, projects the account names and this machine lacks
+are restored by themselves (`ctx.storage.restoreMissing()`): those with a
+portable remote are cloned through their storage provider, one at a time; a
+copy already under the Hub's `projects/` is adopted instead. Each shows on the
+home screen as a card saying where it stands — restoring, offline, waiting for
+its provider's account on this machine, or never backed up. A cloud catalog
+entry alone does not back up a project folder, grant access to its Git
+repository, or copy a checkout to the current machine: a project with no
+remote can only be located by hand.
+
+The first run's Default Project is created before the account is known. Until
+someone uses it (an issue, history, a rename, any plugin row) it is never
+written to the account, and it is removed once a restore brings in one of the
+account's own projects, so every new machine does not add one more.
 
 Legacy Hub Git binding is inactive in cloud mode; it is preserved in machine
 configuration for rollback. If that Git repository also carries project files,

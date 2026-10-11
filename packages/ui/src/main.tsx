@@ -42,6 +42,8 @@ if (window.tomrade) {
   // A destination was published to, or its copy replaced this project's rows.
   // An import spares nothing, so neither does this.
   subscribe("storage.changed", (projectId) => invalidateProject(queryClient, projectId));
+  // A project the account names started coming back, moved a step, arrived or stopped to wait.
+  subscribe("storage.restoresChanged", () => void queryClient.invalidateQueries({ queryKey: ["storage", "restores"] }));
   // A project was created, renamed, archived or removed — in this window or another.
   subscribe("projects.changed", () => void queryClient.invalidateQueries({ queryKey: ["projects"] }));
   // The Hub folder was chosen or moved, or its remote changed.

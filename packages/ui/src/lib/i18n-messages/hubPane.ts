@@ -28,17 +28,6 @@ export const hubPane = {
     syncing: "Syncing…",
     syncedToast: "Hub {{label}} · {{location}}",
 
-    othersLabel: "Projects on other machines",
-    othersNone: "Every project the Hub knows is already here.",
-    othersNote: "Named by the Hub's catalog and not on this machine. Attaching clones each one into projects/.",
-    livesAt: "{{provider}} · {{where}}",
-    livesHint: "in a checkout: {{hint}}",
-    livesUnknown: "no remote recorded — open its folder by hand",
-    attachAll: "Attach all",
-    attaching: "Attaching…",
-    attachedToast: "Attached {{n}} project(s)",
-    attachedNone: "Nothing to attach",
-
     scopeMachine: "This machine",
     scopeUser: "Follows the Hub"
   },
@@ -70,17 +59,6 @@ export const hubPane = {
     syncNow: "立即同步",
     syncing: "同步中…",
     syncedToast: "主目录 {{label}} · {{location}}",
-
-    othersLabel: "其他机器上的项目",
-    othersNone: "主目录知道的每个项目都已经在这台机器上。",
-    othersNote: "主目录清单里有、这台机器上没有的项目。接入会把每一个克隆到 projects/ 下。",
-    livesAt: "{{provider}} · {{where}}",
-    livesHint: "在某个 checkout 里：{{hint}}",
-    livesUnknown: "没有记录远端——请手动打开它的文件夹",
-    attachAll: "全部接入",
-    attaching: "接入中…",
-    attachedToast: "已接入 {{n}} 个项目",
-    attachedNone: "没有可接入的项目",
 
     scopeMachine: "仅本机",
     scopeUser: "随主目录"

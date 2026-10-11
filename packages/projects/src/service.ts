@@ -131,7 +131,9 @@ export class Projects extends Service {
   /** A first-run seed, not a repair: only ever runs against an empty catalog. */
   ensureDefault(): Project | null {
     if (this.hub.catalog.projects().length) return null;
-    return this.create({ name: "Default Project", keyPrefix: "TOM" });
+    const project = this.create({ name: "Default Project", keyPrefix: "TOM" });
+    this.hub.catalog.patchProject(project.id, { seed: true });
+    return project;
   }
 
   private rowOf(id: string): ProjectRow | undefined {
@@ -210,7 +212,7 @@ export class Projects extends Service {
     if (this.db.has(id)) {
       this.db.for(id).prepare("UPDATE projects SET name = ?, description = ?, archived = ?, updated_at = ? WHERE id = ?").run(next.name, next.description, next.archived ? 1 : 0, next.updatedAt, id);
     }
-    this.hub.catalog.patchProject(id, { name: next.name, archived: next.archived });
+    this.hub.catalog.patchProject(id, { name: next.name, archived: next.archived, seed: false });
     this.notify();
     return next;
   }
