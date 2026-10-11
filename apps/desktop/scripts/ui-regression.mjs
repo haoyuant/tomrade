@@ -1474,6 +1474,23 @@ const run = async () => {
   check("it keeps the id agents already know", (await $(`location.hash`)).includes(handoff.id));
   check("its issues and its key prefix came with it", repos.items.list({ projectId: handoff.id })[0]?.key === "HND-1");
 
+  // ── the palette searches every ticket, not the first 60 ─────────────
+  const handoffBoard = repos.boards.list(handoff.id)[0];
+  for (let i = 0; i < 70; i++) repos.items.create({ projectId: handoff.id, boardId: handoffBoard.id, title: `Filler ticket ${i + 1}`, by: "human" });
+  await $(`location.reload();true`);
+  await sleep(3000);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));true`);
+  await sleep(700);
+  // a ticket the palette does not list before anything is typed
+  const listed = new Set(await $(`[...document.querySelectorAll('.palette-row .card-id')].map((n) => n.textContent)`));
+  const last = repos.items.list({ projectId: handoff.id }).find((i) => i.kind === "ticket" && !listed.has(i.key));
+  check("seventy-odd tickets are more than the palette lists unasked", !!last);
+  await typeInto(".palette-input", last?.key ?? "none");
+  await sleep(500);
+  check("the palette finds a ticket past the first sixty", (await $(`[...document.querySelectorAll('.palette-row .card-id')].some((n) => n.textContent === ${JSON.stringify(last?.key)})`)) === true);
+  check("and shows its title as written, not in capitals", (await $(`(() => { const r = [...document.querySelectorAll('.palette-row')].find((n) => n.querySelector('.card-id')?.textContent === ${JSON.stringify(last?.key)}); return r ? getComputedStyle(r.querySelector('.p-label')).textTransform : null; })()`)) === "none");
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+
   return results;
 };
 

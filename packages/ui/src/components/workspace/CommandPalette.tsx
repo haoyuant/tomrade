@@ -47,6 +47,12 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const notesOn = useNotesEnabled();
   const noteActions = useNoteActions();
   const files = (tree.data ?? []).filter((e) => e.kind === "file");
+  // cmdk only filters what is rendered, so with a query the whole project is searched first and the best few rendered
+  const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (text: string) => terms.every((term) => text.toLowerCase().includes(term));
+  const tickets = ws.items.filter(isTicket);
+  const shownTickets = (terms.length ? tickets.filter((i) => matches(`${i.key} ${i.title}`)) : tickets).slice(0, 60);
+  const shownFiles = (terms.length ? files.filter((f) => matches(f.path)) : files).slice(0, 400);
   useEffect(() => {
     if (!open) setSearch("");
   }, [open]);
@@ -146,7 +152,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
               </Command.Group>
 
               <Command.Group heading={t("commandPalette.issuesGroup")} className="eyebrow palette-group">
-                {ws.items.filter(isTicket).slice(0, 60).map((item) => (
+                {shownTickets.map((item) => (
                   <Command.Item
                     key={item.id}
                     value={`${item.key} ${item.title}`}
@@ -161,9 +167,9 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 ))}
               </Command.Group>
 
-              {files.length > 0 && (
+              {shownFiles.length > 0 && (
                 <Command.Group heading={t("notes.paletteFiles")} className="eyebrow palette-group">
-                  {files.slice(0, 400).map((file) => (
+                  {shownFiles.map((file) => (
                     <Command.Item key={file.path} value={`file ${file.path}`} keywords={[file.name]} className="palette-row" data-file={file.path} onSelect={() => run(() => ws.openFile(file.path))}>
                       <Icon name="i-file" size={14} style={{ color: "var(--meta)" }} />
                       <span className="p-label">{file.name}</span>
