@@ -6,22 +6,32 @@ import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import { Storage, readArtifact, readHubManifest } from "@tomradex/storage";
 import Settings from "@tomradex/settings";
-import { CloudHub } from "../src/service.js";
+import { CloudHub, type LocalAccounts } from "../src/service.js";
 import type { CloudRecord, Mutation } from "../src/cache.js";
 import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@tomradex/domain";
 
 const remote = vi.hoisted(() => ({
   offline: false, loseReply: false, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", hubId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-  records: new Map<string, CloudRecord>(), receipts: new Map<string, unknown>(), requests: [] as Mutation[], forgotten: [] as string[]
+  records: new Map<string, CloudRecord>(), receipts: new Map<string, unknown>(), requests: [] as Mutation[], forgotten: [] as string[],
+  /** Who the next sign-in or sign-up turns out to be; the owner when null. */
+  as: null as { id: string; email: string } | null, confirm: false, signUps: 0, adopted: [] as unknown[]
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const user = () => ({ id: remote.userId, email: "user@example.test" });
+  const session = () => { const u = remote.as ?? user(); return { access_token: `access-${u.id}`, refresh_token: `refresh-${u.id}`, user: u }; };
   return {
     auth: {
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       getSession: async () => ({ data: { session: { user: user() } }, error: null }),
       stopAutoRefresh() {}, signOut: async () => ({ error: remote.offline ? { message: "fetch failed" } : null }),
-      signInWithPassword: async () => ({ data: { user: user() }, error: null })
+      signInWithPassword: async ({ password }: { password: string }) => password === "wrong"
+        ? { data: { user: null, session: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }
+        : { data: { user: session().user, session: session() }, error: null },
+      signUp: async () => {
+        remote.signUps++;
+        return { data: { user: session().user, session: remote.confirm ? null : session() }, error: null };
+      },
+      setSession: async (s: { user?: unknown }) => { remote.adopted.push(s); return { data: { session: s, user: s.user }, error: null }; }
     },
     rpc: async (name: string, args?: { p_mutation: Mutation }) => {
       if (remote.offline) return { data: null, error: { message: "offline" } };
@@ -48,12 +58,15 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
 
 const dirs: string[] = [];
 const contexts: { fiber: { dispose(): Promise<unknown> } }[] = [];
-beforeEach(() => { remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = []; });
+beforeEach(() => {
+  remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
+  remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
+});
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
-async function machine({ used = true } = {}) {
+async function machine({ used = true, accounts }: { used?: boolean; accounts?: LocalAccounts } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-cloud-service-")); dirs.push(dir);
   const hubDir = path.join(dir, "hub");
   const bag = await fresh({ hubDir, plugins: [
@@ -70,7 +83,7 @@ async function machine({ used = true } = {}) {
   const legacy = fs.readFileSync(path.join(hubDir, "hub.json"), "utf8");
   await bag.ctx.plugin(CloudHub, {
     url: "https://example.supabase.co", publishableKey: "sb_publishable_test", cacheFile: path.join(dir, "hub-cloud.json"),
-    sessionStorage: { getItem: () => null, setItem() {}, removeItem: (key: string) => { remote.forgotten.push(key); } }, syncMs: 60_000
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem: (key: string) => { remote.forgotten.push(key); } }, syncMs: 60_000, accounts
   });
   await settle();
   await bag.ctx.cloudHub.ready;
@@ -200,4 +213,87 @@ it("signs out on this device when the server cannot be reached", async () => {
   await cloud.signOut();
   expect(remote.forgotten).toEqual(["sb-example-auth-token"]);
   expect(cloud.info()).toMatchObject({ user: null, offlineAccess: false });
+});
+
+/** The desktop's other local Hubs, as calls. */
+function folders(elsewhere: string[] = []) {
+  const opened: { user: { id: string; email: string }; session: { key: string; value: string } }[] = [];
+  const claimed: { id: string; email: string }[] = [];
+  const accounts: LocalAccounts = {
+    elsewhere: id => elsewhere.includes(id),
+    claim: user => { claimed.push(user); },
+    open: async (user, session) => { opened.push({ user, session }); }
+  };
+  return { accounts, opened, claimed };
+}
+const other = { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "other@example.test" };
+
+it("hands another account's sign-in to that account's own local Hub and leaves this one as it was", async () => {
+  const { accounts, opened, claimed } = folders();
+  const { cloud } = await machine({ accounts });
+  await cloud.sync();
+  expect(claimed.at(-1)).toEqual({ id: remote.userId, email: "user@example.test" });
+  await cloud.signOut();
+  remote.as = other;
+  const info = await cloud.signIn(other.email, "password");
+  expect(opened).toEqual([{ user: other, session: { key: "sb-example-auth-token", value: expect.stringContaining(`refresh-${other.id}`) } }]);
+  expect(info).toMatchObject({ user: null, switchingTo: other.email, owner: { email: "user@example.test" } });
+  expect(remote.adopted).toEqual([]);
+  expect(cloud.cache.data.userId).toBe(remote.userId);
+});
+
+it("signs the owner back in here, and a machine nobody owns yet belongs to whoever signs in first", async () => {
+  const { accounts, opened } = folders();
+  const { cloud } = await machine({ accounts });
+  await cloud.sync();
+  await cloud.signOut();
+  const info = await cloud.signIn("user@example.test", "password");
+  expect(opened).toEqual([]);
+  expect(remote.adopted).toHaveLength(1);
+  expect(info).toMatchObject({ user: { id: remote.userId }, offlineAccess: true, switchingTo: null });
+
+  const { accounts: none, opened: nowhere } = folders();
+  const fresh = await machine({ accounts: none });
+  expect(fresh.cloud.cache.data.userId).toBeNull();
+  remote.as = other;
+  await fresh.cloud.signIn(other.email, "password");
+  expect(nowhere).toEqual([]);
+  expect(remote.adopted).toHaveLength(2);
+});
+
+it("sends an account that already has a local Hub elsewhere back to it, even from a machine nobody owns", async () => {
+  const { accounts, opened } = folders([other.id]);
+  const { cloud } = await machine({ accounts });
+  remote.as = other;
+  await cloud.signIn(other.email, "password");
+  expect(opened.map(o => o.user.id)).toEqual([other.id]);
+  expect(cloud.cache.data.userId).toBeNull();
+});
+
+it("creates another account beside the owner's, and refuses before creating one when it cannot", async () => {
+  const { accounts, opened } = folders();
+  const { cloud } = await machine({ accounts });
+  await cloud.sync();
+  await cloud.signOut();
+  remote.as = other;
+  remote.confirm = true;
+  expect(await cloud.signUp(other.email, "long enough")).toEqual({ confirmationRequired: true });
+  expect(opened).toEqual([]);
+  remote.confirm = false;
+  expect(await cloud.signUp(other.email, "long enough")).toEqual({ confirmationRequired: false });
+  expect(opened.map(o => o.user.id)).toEqual([other.id]);
+
+  const alone = await machine();
+  await alone.cloud.sync();
+  await alone.cloud.signOut();
+  const before = remote.signUps;
+  await expect(alone.cloud.signUp(other.email, "long enough")).rejects.toThrow(/^\[other_account\] .*user@example\.test/);
+  expect(remote.signUps).toBe(before);
+});
+
+it("leads each failure with a code the sign-in form can translate", async () => {
+  const { cloud } = await machine();
+  await expect(cloud.signIn("user@example.test", "wrong")).rejects.toThrow(/^\[invalid_credentials\] /);
+  await expect(cloud.signIn("not an address", "password")).rejects.toThrow(/^\[email_address_invalid\] /);
+  await expect(cloud.signUp("user@example.test", "short")).rejects.toThrow(/^\[weak_password\] /);
 });

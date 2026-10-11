@@ -94,8 +94,10 @@
 .account-gate__form .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--poster-red); }
 .account-gate__form .btn-secondary:hover { background: var(--surface-warm); }
 .account-gate__form [role="status"], .account-gate__form [role="alert"] { font-size: 12px; line-height: 1.6; text-align: center; overflow-wrap: anywhere; }
-/* Keyboard users can enter immediately, even during the entrance. */
-.account-gate__form:focus-within { animation: none; }
+/* A note belongs to the field above it, so it lines up with it. */
+.account-gate__form .field-note { font-size: 12px; text-align: left; }
+/* Keyboard users can enter immediately, even during the entrance; once shown, it never plays again. */
+.account-gate__form.is-entered { animation: none; }
 @keyframes account-cat-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes account-sun-fade { from { opacity: 0; scale: .88; } to { opacity: 1; scale: 1; } }
 /* From .2 the ray bases start hidden behind the sun, so the rays emerge from it. */

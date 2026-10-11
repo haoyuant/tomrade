@@ -31,11 +31,22 @@ function waitForServer(port) {
 let port = firstPort;
 while (!(await isAvailable(port))) port += 1;
 
-const env = { ...process.env, VITE_DEV_SERVER_URL: `http://${host}:${port}` };
+// Switching accounts restarts the app. Electron exits with this code and is
+// started again here, because a self-relaunched app would outlive this script and its dev server.
+const RESTART = 75;
+const env = { ...process.env, VITE_DEV_SERVER_URL: `http://${host}:${port}`, TOMRADE_RESTART_EXIT_CODE: String(RESTART) };
 const ui = spawn("pnpm", ["-F", "@tomradex/ui", "exec", "vite", "--host", host, "--port", String(port)], { env, stdio: "inherit" });
 await waitForServer(port);
-const electron = spawn("pnpm", ["exec", "electron", "."], { env, stdio: "inherit" });
+let electron;
 let shuttingDown = false;
+const startElectron = () => {
+  electron = spawn("pnpm", ["exec", "electron", "."], { env, stdio: "inherit" });
+  electron.once("exit", (code) => {
+    if (shuttingDown) return;
+    if (code === RESTART) startElectron();
+    else stop(code ?? 0);
+  });
+};
 
 const stop = (code = 0) => {
   if (shuttingDown) return;
@@ -48,6 +59,6 @@ const stop = (code = 0) => {
 process.once("SIGINT", () => stop(0));
 process.once("SIGTERM", () => stop(0));
 ui.once("exit", (code) => { if (!shuttingDown && code !== 0) stop(code ?? 1); });
-electron.once("exit", (code) => { if (!shuttingDown) stop(code ?? 0); });
+startElectron();
 
 console.log(`Tomrade UI: http://${host}:${port}`);

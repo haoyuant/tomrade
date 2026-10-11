@@ -81,4 +81,4 @@ export const Field = ({ label, htmlFor, children }: { label: string; htmlFor?: s
   </div>
 );
 
-export const messageOf = (error: unknown): string => (error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error));
+export { messageOf } from "~/lib/api";

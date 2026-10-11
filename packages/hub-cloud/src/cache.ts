@@ -15,6 +15,8 @@ export const MutationSchema = RecordSchema.omit({ version: true }).extend({
 export type Mutation = z.infer<typeof MutationSchema>;
 const State = z.object({
   v: z.literal(1), endpoint: z.string(), userId: z.string().nullable(), hubId: z.string().nullable(),
+  /** The owner's address, so a signed-out machine can still say whose projects it holds. */
+  email: z.string().nullable().default(null),
   records: z.array(RecordSchema), outbox: z.array(MutationSchema),
   observed: z.record(z.string(), z.string()), conflicts: z.array(RecordSchema),
   migrated: z.boolean(), lastSyncAt: z.number().nullable(),
@@ -34,7 +36,7 @@ export class CloudCache {
   data: CacheState;
   constructor(private readonly file: string, endpoint: string) {
     this.data = fs.existsSync(file) ? State.parse(JSON.parse(fs.readFileSync(file, "utf8"))) : {
-      v: 1, endpoint, userId: null, hubId: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false
+      v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false
     };
     if (this.data.endpoint !== endpoint) throw new Error("This local Hub belongs to another Supabase project. Use a separate TOMRADE_USER_DATA directory.");
   }

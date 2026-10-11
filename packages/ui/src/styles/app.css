@@ -843,6 +843,9 @@ strong { font-weight: var(--font-weight-medium); }
 .textarea { resize: vertical; min-height: 72px; line-height: var(--leading-body); font-size: var(--text-base); }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field > label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); }
+.field-group { display: flex; flex-direction: column; gap: 6px; }
+.field-note { font-size: var(--text-xs); line-height: 1.5; color: var(--meta); }
+.field-note.is-error { color: var(--danger); }
 
 /* Checkboxes follow the switch, not the OS: the surface inside its ring when
    off, the accent with the mark cut in `--accent-on` when on. */

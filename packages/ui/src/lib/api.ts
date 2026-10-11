@@ -12,3 +12,6 @@ export const invokeDynamic = (channel: string, ...args: unknown[]): Promise<unkn
 /** Runtime companion to invokeDynamic for a descriptor's change broadcast. */
 export const subscribeDynamic = (channel: string, listener: (...args: unknown[]) => void): (() => void) =>
   (window.tomrade.on as unknown as (channel: string, listener: (...args: unknown[]) => void) => () => void)(channel, listener);
+
+/** An error's own words, without the "Error invoking remote method" wrapper Electron adds. */
+export const messageOf = (error: unknown): string => (error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error));

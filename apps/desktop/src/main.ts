@@ -1,8 +1,8 @@
 import { app, BrowserWindow } from "electron";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { aboutInfo } from "./about.js";
+import { AccountFolders, machineRoots } from "./accounts.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { prepareToQuit, quitApproved } from "./quit.js";
@@ -41,16 +41,17 @@ app.whenReady().then(async () => {
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   await adoptShellEnv();
 
-  const userData = app.getPath("userData");
-  // A separate checkout keeps its own projects and extensions, as it keeps its own database.
-  const tomradeDir = process.env.TOMRADE_USER_DATA ? userData : path.join(os.homedir(), "Tomrade");
-  const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? path.join(tomradeDir, "plugins");
-  const pluginsDevRoot = path.join(tomradeDir, "plugins-dev");
+  const machine = machineRoots();
+  // Plugins and their switches belong to the machine; projects and settings to the account last signed in.
+  const accounts = new AccountFolders(machine);
+  const { userData, hubDir } = accounts.dirs(accounts.active);
+  const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? path.join(machine.tomradeDir, "plugins");
+  const pluginsDevRoot = path.join(machine.tomradeDir, "plugins-dev");
   const { ctx, dump } = await boot({
     configFile: path.join(here, "../tomrade.yml"),
-    patchFiles: [path.join(userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
+    patchFiles: [path.join(machine.userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
     // What a first run is written in, before the person has picked a language.
-    vars: { userData, hubDir: tomradeDir, pluginsRoot, pluginsDevRoot, locale: app.getLocale() },
+    vars: { userData, hubDir, pluginsRoot, pluginsDevRoot, locale: app.getLocale() },
     extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
   });
 
