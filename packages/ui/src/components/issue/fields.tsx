@@ -324,10 +324,13 @@ export function InlineText({
   className: string;
   /** Keeps the read view a real heading; the write view is always a textarea. */
   heading?: "h1" | "h2";
-  onSave: (next: string) => void;
+  /** False (or a promise of it) when the write was refused: the editor reopens holding what was typed. */
+  onSave: (next: string) => void | boolean | "" | Promise<boolean>;
 }) {
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
+  // what a refused save handed back, so the person can press Enter again instead of retyping
+  const [kept, setKept] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   // Escape unmounts the textarea, and an unmount can still fire blur — without
   // this the discard would be committed by the very blur it caused.
@@ -349,8 +352,13 @@ export function InlineText({
       return;
     }
     const trimmed = next.trim();
+    setKept(null);
     if (trimmed === value.trim()) return;
-    onSave(trimmed);
+    void Promise.resolve(onSave(trimmed)).then((ok) => {
+      if (ok !== false) return;
+      setKept(trimmed);
+      setEditing(true);
+    });
   };
 
   if (!editing) {
@@ -379,7 +387,7 @@ export function InlineText({
       className={cn(className, "inline-ta")}
       aria-label={ariaLabel}
       placeholder={placeholder}
-      defaultValue={value}
+      defaultValue={kept ?? value}
       onInput={(e) => {
         e.currentTarget.style.height = "auto";
         e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
@@ -388,6 +396,7 @@ export function InlineText({
         if (e.key === "Escape") {
           e.stopPropagation();
           discarded.current = true;
+          setKept(null);
           setEditing(false);
           return;
         }

@@ -10,7 +10,7 @@ import type {} from "@tomradex/files";
 import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
-import { invalidateProject } from "./lib/queries.js";
+import { invalidateProject, invalidateWorkspace } from "./lib/queries.js";
 import { watchWindowChrome } from "./lib/window-chrome.js";
 import "./styles/app.css";
 import "./styles/layouts.css";
@@ -68,6 +68,12 @@ if (window.tomrade) {
   });
   // The notes index caught up with a change: search hits, backlinks and tags may read differently.
   subscribe("notes.changed", (projectId) => void queryClient.invalidateQueries({ queryKey: ["notes", projectId] }));
+  // Someone wrote to a project — an agent, MCP, an undo, another view of it: its board catches up at once,
+  // so the next edit carries the version that stands rather than being refused as stale.
+  subscribe("items.changed", (projectId, entities) => {
+    if (entities.some((e) => e !== "item")) invalidateProject(queryClient, projectId);
+    else invalidateWorkspace(queryClient, projectId);
+  });
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: ["codeLink", projectId] });
     void queryClient.invalidateQueries({ queryKey: ["contributions"] });
