@@ -49,7 +49,8 @@ export const PET_SECTION: SettingsSection<PetSettings> = {
   }),
   defaults: { enabled: true, displayMode: "embedded", size: "medium", clickThrough: true, allWorkspaces: true },
   order: 20,
-  scope: "machine"
+  scope: "machine",
+  agent: "write"
 };
 
 declare module "cordis" {

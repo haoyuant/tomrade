@@ -106,7 +106,8 @@ export interface UndoResult {
 /** Result of reverting one agent run. `kept` names writes left in place because someone edited the entity afterwards. */
 export interface UndoRunResult {
   reverted: number;
-  kept: { entity: OplogEntity; entityId: string; label: string; reason: string }[];
+  /** `entity` is an oplog entity, or what another undo provider calls its own (a file, a setting). */
+  kept: { entity: string; entityId: string; label: string; reason: string }[];
 }
 
 /**

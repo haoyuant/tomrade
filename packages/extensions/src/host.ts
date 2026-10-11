@@ -242,7 +242,7 @@ export class Host {
             host.call(() => {
               const id = section.id ?? ns;
               host.own(id, "settings section");
-              settings().register({ id, title: section.title, description: section.description, schema: section.schema, defaults: section.defaults, scope: section.scope, order: 100 });
+              settings().register({ id, title: section.title, description: section.description, schema: section.schema, defaults: section.defaults, scope: section.scope, agent: section.agent, order: 100 });
             }),
           get: <T>(id?: string) => host.call(() => settings().get()[id ?? ns] as T),
           set: (value, id) =>

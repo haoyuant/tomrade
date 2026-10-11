@@ -30,6 +30,8 @@ if (window.tomrade) {
     void queryClient.invalidateQueries({ queryKey: ["settings"] });
   });
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
+  // An agent, or another machine, changed a setting: the theme and language follow at once.
+  subscribe("settings.changed", (next) => queryClient.setQueryData(["settings"], next));
   // Switched from another window, or from the manager in this one.
   subscribe("plugins.changed", () => {
     void queryClient.invalidateQueries({ queryKey: ["plugins"] });

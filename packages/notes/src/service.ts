@@ -51,7 +51,8 @@ export const NOTES_SECTION: SettingsSection<NotesSettings> = {
     journalFolder: z.string().default("Journal").meta({ title: "Journal folder" })
   }),
   defaults: { updateLinks: true, journalFolder: "Journal" },
-  order: 14
+  order: 14,
+  agent: "write"
 };
 
 export interface Mention {
