@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Context } from "cordis";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools, defineTool } from "@tomradex/tools";
@@ -90,6 +90,61 @@ describe("the loop engine on the platform", () => {
     expect(agent.cancel(runId)).toBe(true);
     expect((await settled(ctx, project.id, runId)).status).toBe("cancelled");
     expect(stopped).toBe(true);
+  });
+
+  it("keeps what a stopped run had already said, marked unfinished, and says it stopped", async () => {
+    const { ctx, agent, project } = await boot([]);
+    let streaming = false;
+    agent.engine({
+      id: "streaming",
+      title: "Streaming engine",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      turn: (_input, io) =>
+        new Promise((resolve) => {
+          io.delta("Here is the first half of ");
+          io.delta("my answer");
+          streaming = true;
+          io.signal.addEventListener("abort", () => resolve({ stop: "end" }));
+        })
+    });
+    const thread = agent.newThread(project.id, "streaming");
+    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "go" });
+    for (const t0 = Date.now(); !streaming; ) {
+      if (Date.now() - t0 > 4000) throw new Error("the engine never streamed");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    agent.cancel(runId);
+    expect((await settled(ctx, project.id, runId)).status).toBe("cancelled");
+    const blocks = agent.store.messages(project.id, thread.id).filter((m) => m.runId === runId).map((m) => m.block);
+    expect(blocks).toContainEqual({ type: "text", text: "Here is the first half of my answer …" });
+    expect(blocks).toContainEqual({ type: "note", text: "Stopped." });
+  });
+
+  it("says a run ended at its time limit, not that someone stopped it", async () => {
+    const base = await fresh({ plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([])), [Agent, { maxWallMs: 10_000 }]] });
+    await settle();
+    const { ctx, project } = base;
+    const agent = ctx.agent;
+    agent.engine({
+      id: "slow",
+      title: "Slow engine",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      turn: (_input, io) => new Promise((resolve) => io.signal.addEventListener("abort", () => resolve({ stop: "end" })))
+    });
+    const thread = agent.newThread(project.id, "slow");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let runId = "";
+    try {
+      runId = agent.send(project.id, thread.id, { kind: "text", text: "go" }).runId;
+      await vi.advanceTimersByTimeAsync(10_500);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect((await settled(ctx, project.id, runId)).status).toBe("cancelled");
+    const notes = agent.store.messages(project.id, thread.id).filter((m) => m.runId === runId && m.block.type === "note").map((m) => (m.block as { text: string }).text);
+    expect(notes).toEqual(["Stopped: the run reached its time limit (10 s)."]);
   });
 
   it("answers chit-chat with no tools and no writes", async () => {

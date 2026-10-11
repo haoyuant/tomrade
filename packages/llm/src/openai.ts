@@ -7,6 +7,10 @@ export interface OpenAiConfig {
   model: string;
   inputModalities?: InputModality[];
   outputModalities?: ("image" | "audio")[];
+  /** Tries after the first for a 429, a 5xx or a dropped connection, before any reply has streamed. Default 2. */
+  retries?: number;
+  /** The first wait between tries; each later one is three times longer. Default 1000. */
+  retryDelayMs?: number;
 }
 
 interface OpenAiMessage {
@@ -79,10 +83,44 @@ interface StreamChunk {
 }
 
 /** Any chat/completions endpoint: DeepSeek, OpenAI, Kimi, OpenRouter, Ollama, vLLM, LM Studio… */
+/** Statuses worth one more try: the request was fine, the moment was not. */
+const TRANSIENT = new Set([408, 425, 429, 500, 502, 503, 504, 529]);
+
+const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+  });
+
 export class OpenAiCompatible implements ChatModel {
   get capabilities() { return { tools: true, streaming: true, json: true, mediaInput: inputMimes(this.config.inputModalities ?? []), mediaOutput: this.config.outputModalities ?? [] }; }
 
   constructor(private readonly config: OpenAiConfig) {}
+
+  /**
+   * One hiccup — a rate limit, an overloaded server, a dropped connection — no
+   * longer ends a run twenty steps in: it is tried again, after Retry-After when
+   * the server names one. Only before the reply streams, so nothing is said twice.
+   */
+  private async post(url: string, init: RequestInit & { signal?: AbortSignal }): Promise<Response> {
+    const tries = (this.config.retries ?? 2) + 1;
+    const wait = (attempt: number) => (this.config.retryDelayMs ?? 1000) * 3 ** (attempt - 1);
+    for (let attempt = 1; ; attempt += 1) {
+      let res: Response;
+      try {
+        res = await fetch(url, init);
+      } catch (err) {
+        if (init.signal?.aborted || attempt >= tries) throw err;
+        await pause(wait(attempt), init.signal);
+        continue;
+      }
+      if (!TRANSIENT.has(res.status) || attempt >= tries) return res;
+      const after = Number(res.headers.get("retry-after"));
+      await res.body?.cancel().catch(() => {});
+      await pause(Number.isFinite(after) && after > 0 && after <= 20 ? after * 1000 : wait(attempt), init.signal);
+    }
+  }
 
   async *chat(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
     for (const message of request.messages) for (const block of message.content) {
@@ -106,7 +144,7 @@ export class OpenAiCompatible implements ChatModel {
     }
     if (request.json) body.response_format = { type: "json_object" };
 
-    const res = await fetch(this.config.baseURL.replace(/\/$/, "") + "/chat/completions", {
+    const res = await this.post(this.config.baseURL.replace(/\/$/, "") + "/chat/completions", {
       method: "POST",
       headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(body),

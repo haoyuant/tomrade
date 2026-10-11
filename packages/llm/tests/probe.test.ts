@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-const model = (apiKey: string, name = "deepseek-chat", baseURL = base) => new OpenAiCompatible({ baseURL, apiKey, model: name });
+const model = (apiKey: string, name = "deepseek-chat", baseURL = base) => new OpenAiCompatible({ baseURL, apiKey, model: name, retryDelayMs: 5 });
 
 describe("probe", () => {
   it("passes a profile whose endpoint answers", async () => {
