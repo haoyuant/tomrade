@@ -52,7 +52,7 @@ const en: SampleWords = {
 - The tickets are linked by *blocks*, so they form a path — the next ticket shows you how to see it.
 - This project stays on this computer and never syncs to your account. Delete it from its project settings when you are done.
 
-**Now:** drag this card into the Done column.`
+**Now:** move this card to Done. Drag it to the right — the board scrolls on its own when you hold it near the edge — or open it and set **Status** to Done.`
     },
     {
       key: "a2",
@@ -178,7 +178,7 @@ const zh: SampleWords = {
 - 这些票用 *blocks* 关系串成一条路径，下一张票会教你怎么看到它。
 - 这个项目只在这台电脑上，不会同步到账号。学完可以在项目设置里删掉。
 
-**现在**：把这张卡片拖到「已完成」那一列。`
+**现在**：把这张卡片移到「已完成」。往右拖，拖到看板边缘停一下，看板会自己滚过去；或者打开它，把**状态**改成「已完成」。`
     },
     {
       key: "a2",
