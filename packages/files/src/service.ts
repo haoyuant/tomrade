@@ -210,6 +210,14 @@ const clipTitle = (text: string): string | null => {
 export class Files extends Service {
   static provide = "files";
   static inject = ["db", "hub", "storage", "items", "boards", "oplog"];
+
+  /** The status bar's and the palette's words, in the person's language now. */
+  private words() {
+    const zh = (this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
+    return zh
+      ? { conflicts: "文件 · 有冲突", offline: "文件 · 离线", error: "文件 · 出错", sync: "立即同步文件", group: "文件", openProject: "请先打开一个项目", synced: (state: string, detail?: string) => `文件：${({ synced: "已同步", conflicted: "有冲突", offline: "离线", error: "出错" } as Record<string, string>)[state] ?? state}${detail ? `——${detail}` : ""}` }
+      : { conflicts: "Files · conflicts", offline: "Files · offline", error: "Files · error", sync: "Sync files now", group: "Files", openProject: "Open a project first", synced: (state: string, detail?: string) => `Files: ${state}${detail ? ` — ${detail}` : ""}` };
+  }
   static Config = FilesConfig;
 
   /** How file records name themselves in the timeline: `files:<seq>`. */
@@ -285,17 +293,18 @@ export class Files extends Service {
         id: "files",
         text: ({ projectId }) => {
           const state = projectId ? this.lastState.get(projectId) : undefined;
-          return state === "conflicted" ? "Files · conflicts" : state === "offline" ? "Files · offline" : state === "error" ? "Files · error" : null;
+          const w = this.words();
+          return state === "conflicted" ? w.conflicts : state === "offline" ? w.offline : state === "error" ? w.error : null;
         }
       });
       ctx.contributions.command({
         id: "files.sync",
-        title: "Sync files now",
-        group: "Files",
+        title: () => this.words().sync,
+        group: () => this.words().group,
         run: async ({ projectId }) => {
-          if (!projectId) return { toast: "Open a project first" };
+          if (!projectId) return { toast: this.words().openProject };
           const status = await this.sync(projectId);
-          return { toast: `Files: ${status.state}${status.detail ? ` — ${status.detail}` : ""}` };
+          return { toast: this.words().synced(status.state, status.detail) };
         }
       });
     });

@@ -16,6 +16,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
+import { permissionLabel as permissionName } from "~/lib/codeLink";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -421,7 +422,10 @@ export function AgentPanel({
   const permissionModes = detail.data?.thread.itemId ? engine?.permissionModes : undefined;
   const selectedPermissionMode = detail.data?.thread.permissionMode ?? permissionModes?.default;
   const activePermissionMode = runningRun ? detail.data?.activePermissionMode : undefined;
-  const permissionLabel = (value?: string) => permissionModes?.choices.find((choice) => choice.value === value)?.label ?? value;
+  const permissionLabel = (value?: string) => {
+    const choice = permissionModes?.choices.find((c) => c.value === value);
+    return choice ? permissionName(t, choice) : value;
+  };
   const noEngineReady = engines.data ? !engines.data.some((e) => e.ok) : false;
 
   // Quick picks: with a thread they are that thread's overrides (what Start chose), layered over the engine's

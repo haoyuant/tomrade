@@ -31,13 +31,16 @@ async function ask(ctx: Context): Promise<boolean> {
   const active = ctx.get("agent")?.activeRuns() ?? [];
   if (active.length) {
     const code = active.filter((a) => a.thread.itemId).length;
+    const zh = ctx.get("settings")?.locale?.() === "zh";
     const choice = dialog.showMessageBoxSync({
       type: "warning",
-      buttons: ["Quit", "Cancel"],
+      buttons: zh ? ["退出", "取消"] : ["Quit", "Cancel"],
       defaultId: 1,
       cancelId: 1,
-      message: `${active.length} agent run${active.length === 1 ? " is" : "s are"} in progress`,
-      detail: code ? `${code} of them implement${code === 1 ? "s" : ""} a ticket. Quitting interrupts them; each ticket keeps its branch and offers Continue.` : "Quitting interrupts them."
+      message: zh ? `有 ${active.length} 个代理运行正在进行` : `${active.length} agent run${active.length === 1 ? " is" : "s are"} in progress`,
+      detail: zh
+        ? code ? `其中 ${code} 个在实现工作项。退出会中断它们；每个工作项都会保留分支，之后可以继续。` : "退出会中断它们。"
+        : code ? `${code} of them implement${code === 1 ? "s" : ""} a ticket. Quitting interrupts them; each ticket keeps its branch and offers Continue.` : "Quitting interrupts them."
     });
     if (choice === 1) return false;
   }

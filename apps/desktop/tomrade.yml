@@ -145,6 +145,7 @@ plugins:
     name: "@tomradex/settings"
     config:
       path: "${userData}/settings.json"
+      locale: "${locale}"
   # Each project's folder is the truth and the cache follows it: the log is
   # written through, the snapshot shortly after, and a folder changed by anyone
   # else is read back in. Git is driven only in folders Tomrade made itself.

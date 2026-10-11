@@ -87,7 +87,8 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
             ))}
             {marks.map((b) => (
               <Tag key={b.id} tone={b.tone ?? "neutral"} title={b.title}>
-                {b.label}
+                {/* the dependency plugin's one word, said in the person's language */}
+                {b.id === "blocked" ? t("card.blockedBadge") : b.label}
               </Tag>
             ))}
             {customs.map((def) => (

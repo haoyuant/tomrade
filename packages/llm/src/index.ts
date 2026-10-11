@@ -179,9 +179,10 @@ export class Llm extends Service implements LlmService {
 
   ready(): LlmStatus {
     const profile = this.models().profiles[0];
-    if (!profile) return { ok: false, reason: "No model profile configured — add one in Settings → Assistant" };
+    const zh = this.ctx.settings.locale?.() === "zh";
+    if (!profile) return { ok: false, reason: zh ? "还没有配置模型——去 设置 → 助手 里添加一个" : "No model profile configured — add one in Settings → Assistant" };
     // A local endpoint (Ollama, LM Studio) needs no key; Anthropic always does.
-    if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: `Profile "${profile.title || profile.id}" has no API key` };
+    if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: zh ? `配置“${profile.title || profile.id}”没有 API Key` : `Profile "${profile.title || profile.id}" has no API key` };
     return { ok: true, profile: { id: profile.id, title: profile.title || profile.model, provider: profile.provider, model: profile.model } };
   }
 

@@ -46,6 +46,7 @@ import {
   type WorkflowIO,
   type WorkflowSpec
 } from "./types.js";
+import { AGENT_WORDS, type AgentWords } from "./words.js";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 export interface WorkdirStatus {
@@ -283,8 +284,8 @@ export class Agent extends Service {
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later.
-    for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId);
-    this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId));
+    for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId, this.words().interrupted);
+    this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId, this.words().interrupted));
     this.ctx.settings.register(AGENT_SECTION);
     // Closing a General ticket on the person's word is fine; closing one an agent worked on is that work's review.
     this.ctx.on("write/pre-commit", (intent, next) => {
@@ -603,7 +604,7 @@ export class Agent extends Service {
         if (Date.now() > deadline) throw new Error("The agent has not stopped yet; wait for cancellation before taking over");
         await new Promise(resolve => setTimeout(resolve, 25));
       }
-      for (const { thread } of active) this.appendAndBroadcast(projectId, thread.id, "system", { type: "note", text: "The human took over this delivery. Agent execution has stopped." }, null);
+      for (const { thread } of active) this.appendAndBroadcast(projectId, thread.id, "system", { type: "note", text: this.words().humanTookOver }, null);
       return { stopped: active.length };
     } finally {
       this.generalStarts.delete(key);
@@ -777,12 +778,12 @@ export class Agent extends Service {
       // Switching conductors abandons the waiting question; say so in the thread.
       this.store.clearPending(projectId, threadId);
       this.broadcast(threadId, { type: "pending", pending: null });
-      this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: "Cancelled the waiting question — the engine changed." }, null);
+      this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().cancelledWaiting }, null);
     }
     // Overrides belong to the engine they were picked for.
     this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null, options: null });
     const thread = this.store.thread(projectId, threadId)!;
-    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: `Engine switched to ${this.engines.get(engineId)?.title ?? engineId}.` }, null);
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().engineSwitched(this.engines.get(engineId)?.title ?? engineId) }, null);
     return thread;
   }
 
@@ -900,8 +901,8 @@ export class Agent extends Service {
     if (run.reverted) return { reverted: 0, kept: [] };
     const result = this.ctx.oplog.undoRun(projectId, runId);
     const view = this.store.markReverted(projectId, runId, result.kept.length);
-    const kept = result.kept.length ? `; kept ${result.kept.map((k) => k.label).join(", ")} (${result.kept[0].reason})` : "";
-    this.appendAndBroadcast(projectId, run.threadId, "system", { type: "note", text: `Reverted ${result.reverted} change${result.reverted === 1 ? "" : "s"} from this run${kept}.` }, runId);
+    const kept = result.kept.length ? { labels: result.kept.map((k) => k.label).join(", "), reason: result.kept[0].reason } : null;
+    this.appendAndBroadcast(projectId, run.threadId, "system", { type: "note", text: this.words().reverted(result.reverted, kept) }, runId);
     this.broadcast(run.threadId, { type: "run", run: view });
     return result;
   }
@@ -919,6 +920,11 @@ export class Agent extends Service {
 
   brief(projectId: string): string | null {
     return this.store.brief(projectId);
+  }
+
+  /** The words the platform writes into a conversation, in the person's language now. */
+  private words(): AgentWords {
+    return AGENT_WORDS[(this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en"];
   }
 
   private makeRunCtx(run: RunView, thread: ThreadSummary, engine: Engine): RunCtx {
@@ -1193,7 +1199,7 @@ export class Agent extends Service {
     this.broadcast(rc.threadId, { type: "pending", pending: null });
     const spec = this.workflows.get(pending.workflow!);
     if (!spec) {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: `The waiting workflow "${pending.workflow}" is no longer installed.` }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().workflowGone(pending.workflow ?? "") }, rc.run.id);
       return "engine";
     }
     const outcome = await this.asRun(rc, () => this.driveWorkflow(spec, pending.step!, spec.state.parse(pending.state), value, rc));
@@ -1247,12 +1253,11 @@ export class Agent extends Service {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "text", text: `${rc.partial.text.trim()} …` }, rc.run.id);
     }
     if (result.stop === "cancelled") {
-      const minutes = Math.round(rc.clock.limitMs / 60_000);
-      const why = rc.clock.timedOut ? `Stopped: the run reached its time limit (${minutes >= 1 ? `${minutes} min` : `${Math.round(rc.clock.limitMs / 1000)} s`}).` : "Stopped.";
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: why }, rc.run.id);
+      const w = this.words();
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w.timeLimit(rc.clock.limitMs) : w.stopped }, rc.run.id);
     }
     if (result.stop === "budget") {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: "Stopped after its step budget for one turn — say “continue” to pick up from here." }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().budget }, rc.run.id);
     }
     if (result.stop === "error") {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: result.error ?? "The engine stopped without an error message." }, rc.run.id);

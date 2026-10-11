@@ -5,7 +5,7 @@ import type { OplogEntity, OplogEntry, OplogOp, RollbackResult, UndoRecord, Undo
 import { extensionScope, writeContext } from "@tomradex/write";
 import type {} from "@tomradex/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
-import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
+import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoSummary, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
 
 declare module "cordis" {
   interface Context {
@@ -130,6 +130,11 @@ export class Oplog extends Service {
 
   private db(projectId: string): ProjectDb {
     return (this.ctx.db as Db).for(projectId);
+  }
+
+  /** The person's language, for the summaries ⌘Z shows; English where no settings are loaded. */
+  private locale(): "en" | "zh" {
+    return (this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
   }
 
   private get device(): string {
@@ -274,7 +279,7 @@ export class Oplog extends Service {
   /** The toast's Undo: one entity's latest write, whatever landed since. */
   undoEntity(projectId: string, entityId: string, stamp?: number): UndoStep | null {
     const result = this.undoLast(projectId, entityId, stamp);
-    return result ? { record: this.recordOf(result.entry, Date.now()), summary: result.summary } : null;
+    return result ? { record: this.recordOf(result.entry, Date.now()), summary: undoSummary(result.entry, this.locale()) } : null;
   }
 
   private recordOf(entry: OplogEntry, undoneAt: number | null): UndoRecord {
@@ -312,7 +317,7 @@ export class Oplog extends Service {
       if (!isOwnUndoable(row.op)) throw new Error(row.op === "purge" ? "A permanent delete cannot be restored" : "A sync's decision is history, not a write to undo");
       const result = undoRow(db, row);
       this.home.emit("oplog/reverted", projectId);
-      return result.summary;
+      return undoSummary(result.entry, this.locale());
     },
     redo: (projectId, id) => {
       const db = this.db(projectId);
@@ -327,7 +332,7 @@ export class Oplog extends Service {
       });
       this.home.emit("oplog/appended", projectId, stored);
       this.home.emit("oplog/reverted", projectId);
-      return redoSummary(entry);
+      return redoSummary(entry, this.locale());
     },
     forget: (projectId) => {
       this.db(projectId).prepare("DELETE FROM oplog_undone").run();
