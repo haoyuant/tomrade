@@ -29,6 +29,25 @@ const RESULT_CAP = 6000;
 const LIST_CAP = 16000;
 const TEXT_CAP = 160;
 
+/**
+ * Arguments an adapter could not parse arrive as `{ __raw }`. Validating them reported every
+ * field as missing, which sent DeepSeek after the wrong problem twice before the loop gave up;
+ * say it is the JSON, and show where it breaks.
+ */
+function brokenJson(name: string, args: unknown): string | null {
+  const raw = args && typeof args === "object" && "__raw" in args ? (args as { __raw: unknown }).__raw : undefined;
+  if (typeof raw !== "string") return null;
+  let problem = "it is not one JSON object";
+  let at = raw.length;
+  try {
+    JSON.parse(raw);
+  } catch (err) {
+    problem = err instanceof Error ? err.message : String(err);
+    at = Number(/position (\d+)/.exec(problem)?.[1] ?? raw.length);
+  }
+  return `${name}: the arguments were not valid JSON (${problem}), near: …${raw.slice(Math.max(0, at - 60), at + 30)}… Send the whole call again as one valid JSON object; inside strings, escape double quotes as \\".`;
+}
+
 /** One row of a long list, shorn of what a listing does not need: empties, nested records, the tail of long text. */
 export function compactRow(row: unknown): unknown {
   if (typeof row !== "object" || row === null || Array.isArray(row)) return row;
@@ -200,6 +219,8 @@ export function createLoopEngine(ctx: Context): Engine {
         messages.push(assistantMessage(collected));
         const results = await Promise.all(
           collected.toolCalls.map(async (call) => {
+            const broken = brokenJson(call.name, call.args);
+            if (broken) return { id: call.id, suspended: false, content: `ERROR: ${broken}`, isError: true, invalid: true };
             const key = READ_TOOL.test(call.name) ? `${call.name} ${JSON.stringify(call.args)}` : null;
             if (key && memo.has(key)) return { id: call.id, suspended: false, content: "(identical to an earlier call this turn — nothing has changed since; use the result you already have)", invalid: false };
             try {

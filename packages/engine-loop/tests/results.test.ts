@@ -156,6 +156,15 @@ describe("output limit", () => {
     expect(blocks.map((b) => b.type)).toEqual(["note", "trace", "text"]);
   });
 
+  it("says the arguments were broken JSON, and where, instead of naming every field as missing", async () => {
+    const raw = '{"title": "Light "mode" toggle", "body": null}';
+    const { requests } = await drive([[{ type: "tool_call", id: "a", name: "create_item", args: { __raw: raw } }, { type: "stop", reason: "tool_use" }]]);
+    const result = requests[1]!.messages.at(-1)!.content.find((c) => c.type === "tool_result") as { content: string };
+    expect(result.content).toMatch(/not valid JSON/);
+    expect(result.content).toContain('"Light "mode');
+    expect(result.content).not.toMatch(/title: Invalid input/);
+  });
+
   it("gives up with the error if the retry is cut off too", async () => {
     const overflow: ChatEvent[] = [{ type: "stop", reason: "max_tokens" }];
     const { status, requests } = await drive([overflow, overflow], { effort: "high" });

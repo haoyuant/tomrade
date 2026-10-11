@@ -291,6 +291,9 @@ importers:
 
   packages/archify:
     dependencies:
+      '@dagrejs/dagre':
+        specifier: 3.1.1
+        version: 3.1.1
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
