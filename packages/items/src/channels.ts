@@ -21,6 +21,10 @@ declare module "@tomradex/ipc" {
     "items.purge": (projectId: string, id: string, baseVersion?: number) => void;
     "items.labels": (projectId: string) => string[];
   }
+  interface Broadcasts {
+    /** A project's issues, workstreams or views were written — by anyone: an agent, MCP, an undo, this window. */
+    "items.changed": (projectId: string, entities: string[]) => void;
+  }
 }
 
 /** Every renderer write is a human write. */
@@ -37,4 +41,29 @@ export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("items.delete", (projectId, id) => ctx.items.delete(projectId, id, "human"));
   ctx.ipc.handle("items.purge", (projectId, id, baseVersion) => ctx.items.purge(projectId, id, "human", { baseVersion }));
   ctx.ipc.handle("items.labels", (projectId) => ctx.items.labelsFor(projectId));
+
+  // Every write reaches the window that shows it, whoever made it; a burst of them goes out as one.
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const touched = new Map<string, Set<string>>();
+  const announce = (projectId: string, entity: string) => {
+    const set = touched.get(projectId) ?? new Set<string>();
+    set.add(entity);
+    touched.set(projectId, set);
+    if (timers.has(projectId)) return;
+    timers.set(
+      projectId,
+      setTimeout(() => {
+        timers.delete(projectId);
+        const entities = [...(touched.get(projectId) ?? [])];
+        touched.delete(projectId);
+        ctx.ipc.send("items.changed", projectId, entities);
+      }, 100)
+    );
+  };
+  ctx.on("write/committed", (intent) => announce(intent.projectId, intent.entity));
+  // an undo can move any of the three
+  ctx.on("oplog/reverted", (projectId) => (announce(projectId, "item"), announce(projectId, "board"), announce(projectId, "view")));
+  ctx.effect(() => () => {
+    for (const timer of timers.values()) clearTimeout(timer);
+  }, "items.changed");
 }

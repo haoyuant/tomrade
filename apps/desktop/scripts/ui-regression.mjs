@@ -566,6 +566,28 @@ const run = async () => {
   await sleep(700);
   check("Escape discards the edit instead of committing it", open().title === "Edited by the regression harness");
 
+  // ── writes made elsewhere arrive without a reload ─────────────────────
+  repos.items.update(project.id, opened.id, { title: "Renamed over MCP" }, "ai:mcp");
+  await sleep(900);
+  check("a write an agent makes shows in the open pane without a reload", (await $(`document.querySelector('.detail-title')?.textContent ?? ''`)).includes("Renamed over MCP"));
+  // An edit that loses the race to such a write keeps what was typed, ready to send again.
+  await press(`document.querySelector('.detail-title .inline-edit')`);
+  await sleep(400);
+  repos.items.update(project.id, opened.id, { priority: open().priority === 3 ? 2 : 3 }, "ai:mcp");
+  await $(`(() => {
+    const t = document.querySelector('textarea.detail-title');
+    t.value = 'Typed while an agent wrote';
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return true;
+  })()`);
+  await sleep(1200);
+  check("a refused title edit reopens with what was typed", (await $(`document.querySelector('textarea.detail-title')?.value`)) === "Typed while an agent wrote" && open().title === "Renamed over MCP");
+  await $(`document.querySelector('textarea.detail-title').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));true`);
+  await sleep(900);
+  check("and Enter again saves it over the fresh version", open().title === "Typed while an agent wrote");
+  repos.items.update(project.id, opened.id, { title: "Edited by the regression harness" }, "human");
+  await sleep(700);
+
   // ── the description is Markdown ──────────────────────────────────────
   const BODY = ".detail [data-testid='issue-body']";
   const EDITOR = ".detail .body-editor";

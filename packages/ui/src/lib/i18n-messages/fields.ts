@@ -100,7 +100,7 @@ export const fields = {
     attachTooLargeToast: "{{name}} is larger than 8 MB — add it in Files instead.",
     attachFailedToast: "The attachments were not saved: {{error}}",
 
-    conflictToast: "An agent wrote to {{key}} first — it re-read, so try again.",
+    conflictToast: "Someone wrote to {{key}} first — it re-read; your change is still there to try again.",
 
     setFieldToast: "Set {{name}} on {{key}}",
     clearedFieldToast: "Cleared {{name}} on {{key}}",
@@ -207,7 +207,7 @@ export const fields = {
     attachTooLargeToast: "{{name}} 超过 8 MB，请从 Files 添加。",
     attachFailedToast: "附件未能保存：{{error}}",
 
-    conflictToast: "有智能体先一步写入了 {{key}}——内容已重新读取，请重试。",
+    conflictToast: "有人先一步写入了 {{key}}——内容已重新读取，你的修改还在，可以再试一次。",
 
     setFieldToast: "已设置 {{key}} 的 {{name}}",
     clearedFieldToast: "已清空 {{key}} 的 {{name}}",
