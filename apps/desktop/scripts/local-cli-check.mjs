@@ -161,6 +161,27 @@ const run = async () => {
   })();
   check("diagnostics name the platform, the folders searched and PATH", copied.includes("win32 x64") && copied.includes("C:\\Users\\me\\AppData\\Roaming\\npm") && copied.includes("PATH: C:\\Windows\\system32") && copied.includes("Found in WSL"), copied);
 
+  // ── the assistant, with a model and no local agent ────────────────────
+  // Claude Code signed out again, Codex only in WSL, no pi. "setup-card" is what the card's old Hide saved:
+  // Tomrade needs a local agent, so it no longer puts the card away.
+  const before = ctx.settings.get();
+  ctx.settings.set({
+    ...before,
+    onboarding: { seen: ["setup-card"] },
+    agent: { ...before.agent, engines: { ...before.agent?.engines, "claude-code": { command: claude } } },
+    models: { profiles: [{ id: "local", title: "Local model", provider: "openai-compatible", baseURL: "http://127.0.0.1:9/v1", model: "local", apiKey: "" }], roles: { worker: "" } }
+  });
+  await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await $(`location.hash = '#/p/${project.id}';true`);
+  check("the assistant says a local agent is still missing", await wait(() => $(`!!document.querySelector('.agent-setup [data-setup="local"]:not(.is-ok)')`), "local row missing"));
+  check("while the model is ready", await has('.agent-setup [data-setup="model"].is-ok'));
+  const setup = await text(".agent-setup");
+  check("it says Tomrade needs both, and how to get an agent", setup.includes("Tomrade needs both a model and a local agent") && setup.includes("Claude Code: sign in with claude") && setup.includes("Pi: install with npm install -g @earendil-works/pi-coding-agent"), setup);
+  check("and offers no way to put it away", await $(`document.querySelectorAll('.agent-setup button:not(.setup-action)').length === 0`));
+  await shot("local-cli-05-setup-card-no-agent");
+  await click('[data-testid="setup-local"]');
+  check("Set up opens Settings on the first agent's row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the card"));
+
   console.log(`screenshots in ${shots}`);
 };
 

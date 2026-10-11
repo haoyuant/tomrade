@@ -1730,9 +1730,7 @@ html.overlay-open .titlebar .btn-primary {
 .agent-empty ul { margin: 0; font-size: var(--text-xs); color: var(--meta); }
 /* What the assistant can do here and what is missing; with nothing ready it is the empty state above. */
 .agent-setup { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-4); font-size: var(--text-sm); color: var(--fg-2); }
-.setup-head { display: flex; align-items: baseline; gap: var(--space-2); }
-.setup-head p { flex: 1; margin: 0; }
-.setup-hide { padding: 0 6px; font-size: var(--text-xs); }
+.setup-head { margin: 0; }
 .agent-setup ul.setup-rows { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); color: var(--fg-2); }
 .setup-row { display: grid; grid-template-columns: 14px 1fr; gap: 8px; align-items: start; }
 .setup-row > svg { margin-top: 3px; color: var(--warn); }

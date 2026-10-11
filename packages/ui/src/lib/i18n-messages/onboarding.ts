@@ -1,9 +1,7 @@
 export const onboarding = {
   en: {
     gotIt: "Got it",
-    setupTitle: "Set up the rest",
-    setupHide: "Hide",
-    setupHideTitle: "Hide this card — what is missing stays listed in Settings → Assistant",
+    setupTitle: "Tomrade needs both a model and a local agent:",
     modelName: "Model",
     modelUnlocks: "Talk to the assistant, tidy the backlog, plan an idea into tickets",
     localName: "Local agent",
@@ -23,9 +21,7 @@ export const onboarding = {
   },
   zh: {
     gotIt: "知道了",
-    setupTitle: "还差这些设置",
-    setupHide: "隐藏",
-    setupHideTitle: "隐藏这张卡片——缺少的项在设置 → 助手里仍然看得到",
+    setupTitle: "Tomrade 需要同时接上模型和本地 agent：",
     modelName: "模型",
     modelUnlocks: "和助手对话、整理 backlog、把想法拆成票",
     localName: "本地 agent",

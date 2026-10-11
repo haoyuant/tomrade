@@ -20,8 +20,9 @@ Where things are
 - Sidebar: Files at the top, then Views, then Workstreams; Fields at the foot.
 - Board in the middle. The title bar switches a view's layout (Board, Table,
   Graph) and holds the History clock. ⌘K opens the command palette.
-- Assistant panel on the right: you, and the setup card when something is
-  missing.
+- Assistant panel on the right: you, and the setup card while a model or a
+  local agent is missing. Tomrade needs both: the model for you, a local
+  agent for Start.
 
 What the person can do
 - Tickets: drag between status columns, open one for its body (Markdown,
