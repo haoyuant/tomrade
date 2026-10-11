@@ -95,6 +95,21 @@ describe("the agent index", () => {
     expect(index.markdown).toContain("still reads and writes normally");
   });
 
+  it("leaves a workstream's attachments out by default, and says so apart from the person's rules", () => {
+    const entries = tree("Web/brief.md", "Web/attachments/TOM-1/shot.png", "attachments/top-level.png");
+    const index = build(entries);
+    expect(index.markdown).not.toContain("shot.png");
+    expect(index.markdown).toContain("attachments/top-level.png");
+    expect(index.markdown).toContain("Tickets' attachments/ folders are not shown");
+    expect(index.markdown).not.toContain("Paths the person keeps out");
+
+    const opened = build(entries, { policy: { default: "listed", rules: [{ path: "Web/attachments", mode: "listed" }] } });
+    expect(opened.markdown).toContain("Web/attachments/TOM-1/shot.png");
+    // a rule above the folder does not reach past its built-in default
+    const above = build(entries, { policy: { default: "listed", rules: [{ path: "Web", mode: "listed" }] } });
+    expect(above.markdown).not.toContain("shot.png");
+  });
+
   it("lets a deeper rule open one file inside an unlisted folder", () => {
     const entries = tree("Private/pay.md", "Private/for-agent.md");
     const index = build(entries, {

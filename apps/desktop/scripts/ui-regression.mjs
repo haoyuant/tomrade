@@ -535,6 +535,60 @@ const run = async () => {
   await sleep(700);
   check("Escape discards the edit instead of committing it", open().title === "Edited by the regression harness");
 
+  // ── the description is Markdown ──────────────────────────────────────
+  const BODY = ".detail [data-testid='issue-body']";
+  const EDITOR = ".detail .body-editor";
+  const bodyKey = (k, opts = {}) =>
+    $(`(() => { const n = document.querySelector("${EDITOR} .cm-content"); if (!n) return false; n.dispatchEvent(new KeyboardEvent('keydown', { key: '${k}', bubbles: true, cancelable: true, ...${JSON.stringify(opts)} })); return true; })()`);
+  const seedBody = open().body ?? "";
+  await press(`document.querySelector("${BODY} p") ?? document.querySelector("${BODY}")`);
+  await sleep(600);
+  check("clicking the description opens the Markdown editor", (await $(`!!document.querySelector("${EDITOR} .cm-content")`)) === true);
+  check("the editor holds the source", (await $(`[...document.querySelectorAll("${EDITOR} .cm-line")].map(l => l.textContent).join('\\n')`)) === seedBody);
+  await bodyKey("a", { metaKey: true });
+  await win.webContents.insertText("## Scope\n\n- [x] parse the feed\n- [ ] retry on 429\n\nfirst line\nsecond line [the doc](notes/plan.md)");
+  await press(`[...document.querySelectorAll("${EDITOR} .seg button")].find(b => b.getAttribute('aria-pressed') === 'false')`);
+  await sleep(500);
+  check("Preview renders the draft as it stands", (await $(`!!document.querySelector("${EDITOR} .body-editor-preview h2")`)) === true);
+  await press(`[...document.querySelectorAll("${EDITOR} .seg button")].find(b => b.getAttribute('aria-pressed') === 'false')`);
+  await sleep(300);
+  await bodyKey("Enter", { metaKey: true });
+  await sleep(1000);
+  check("⌘↵ saves the description", open().body?.startsWith("## Scope\n\n- [x] parse the feed") === true);
+  check("saving closes the editor", (await $(`!!document.querySelector("${EDITOR}")`)) === false);
+  check("the description renders its Markdown", (await $(`!!document.querySelector("${BODY} h2") && document.querySelectorAll("${BODY} li").length === 2`)) === true);
+  check("task items draw their boxes, ticked and not", (await $(`[...document.querySelectorAll("${BODY} .md-task")].map(b => b.getAttribute('aria-checked')).join()`)) === "true,false");
+  check("a single newline is a line break, as on GitHub", (await $(`!!document.querySelector("${BODY} p br")`)) === true);
+  await press(`document.querySelector("${BODY} a")`);
+  await sleep(400);
+  check("a link in the description is not a way into its editor", (await $(`!!document.querySelector("${EDITOR}")`)) === false);
+
+  const savedBody = open().body;
+  await press(`document.querySelector("${BODY} p")`);
+  await sleep(600);
+  await win.webContents.insertText(" Not kept.");
+  await bodyKey("Escape");
+  await sleep(600);
+  check("Escape discards a description edit", open().body === savedBody && (await $(`!!document.querySelector("${EDITOR}")`)) === false);
+  check("…without closing the pane around it", (await $(`!!document.querySelector('.detail')`)) === true);
+
+  // an agent writes the body while it is open: the save is refused, the pane
+  // re-reads, and the editor asks instead of writing over the agent's text
+  await press(`document.querySelector("${BODY} p")`);
+  await sleep(600);
+  await win.webContents.insertText(" Mine.");
+  repos.items.update(project.id, opened.id, { body: `${savedBody}\n\nTheirs.` }, "human");
+  await bodyKey("Enter", { metaKey: true });
+  await sleep(1200);
+  check("a save over a body changed mid-edit is refused", open().body === `${savedBody}\n\nTheirs.`);
+  check("…the editor keeps the draft and says what happened", (await $(`!!document.querySelector("${EDITOR} .body-editor-changed")`)) === true);
+  await bodyKey("Enter", { metaKey: true });
+  await sleep(800);
+  check("…and ⌘↵ alone still does not write over it", open().body === `${savedBody}\n\nTheirs.`);
+  await press(`document.querySelector("${EDITOR} .body-editor-changed .btn")`);
+  await sleep(1000);
+  check("Keep mine writes the draft over theirs", open().body === `${savedBody} Mine.`);
+
   const lockedBefore = open().humanLocked;
   await press(`document.querySelector('.detail-head .btn-ghost')`);
   await sleep(900);
@@ -556,6 +610,12 @@ const run = async () => {
   })()`);
   check("the overlay holds focus inside itself", trapped === true);
   check("focus moves into the overlay", (await $(`!!document.querySelector('.detail.expanded')?.contains(document.activeElement)`)) === true);
+  await press(`document.querySelector(".detail.expanded [data-testid='issue-body'] p")`);
+  await sleep(600);
+  await $(`document.querySelector(".detail.expanded .body-editor .cm-content").dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  await sleep(500);
+  check("Escape in the overlay's description editor discards the edit, not the overlay",
+    (await $(`!!document.querySelector('.detail.expanded') && !document.querySelector('.detail.expanded .body-editor')`)) === true);
   await checkCentred("the expanded issue overlay", ".detail.expanded");
   await shot("10-detail-expanded");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);

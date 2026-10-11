@@ -79,6 +79,16 @@ Keep both. A version is immutable: a ticket's artifact opens the version it
 pinned and says so in a banner. A file changed on two machines is a decision,
 drawn with both sides whole, never a silent winner.
 
+**A ticket's description is Markdown that reads as text.** GFM with a single
+newline kept as a line break, as on GitHub; task boxes are drawn, not inputs.
+A click on the text (not on a link, not after selecting) opens the source in
+the same CodeMirror look as a note, with Write/Preview, ⌘↵ to save and Escape
+to discard; leaving the frame saves. Files pasted, dropped or added are drafts
+in memory until the save, then one version under
+`<workstream>/attachments/<KEY>/`, linked as `tomrade-file://<fileId>` so a
+rename in Files never touches the body. A body that changed while it was open
+is never written over: the editor says so and offers Keep mine or Take theirs.
+
 **Both side panes fold to the same 48px rail, and remember it.** `⌘B` for the
 sidebar, `⌘J` for the assistant, each persisted per machine (`usePanelOpen`). A
 railed sidebar takes the board list with it, so the board head grows the same
@@ -217,7 +227,11 @@ clears 2.5.8 AA (24×24) but is under the 2.5.5 enhanced target (44×44).
 does — `apps/desktop/tomrade.yml`, patched to run MCP on a free port and the
 cloud Hub off, since the harness never signs in — over a throwaway database
 seeded with the prototype's sample project (`apps/desktop/scripts/seed.mjs`).
-It asserts 313 behaviours and writes a screenshot per screen and per theme into
+It asserts 329 behaviours — among them the Markdown description: rendered
+task boxes and line breaks, a click into its editor but not through a link,
+Preview, ⌘↵ and Escape (which leaves the pane, and the expanded overlay, open),
+and a save over a body an agent changed meanwhile, refused until Keep mine —
+and writes a screenshot per screen and per theme into
 `apps/desktop/scripts/shots/`. It needs the dev server up (`pnpm dev:ui`) *and*
 a built backend — it loads `apps/desktop/dist` and every plugin's `dist`, so a
 new channel is invisible to it until `pnpm build:backend` has run.
@@ -233,7 +247,11 @@ with its version record while its siblings stay untouched. It also covers the
 agent index: a crossed-out eye on the exception alone, the two settings side by
 side above a folder, a withheld path leaving the index while it still reads by
 path, and the preview in Sharing that shows the person the very text an agent
-receives — 101 checks.
+receives — and files pasted or dropped into a ticket's description: held as
+drafts the preview draws from memory, nothing written on Escape, one version
+under `<workstream>/attachments/<KEY>/` on save with the body linking each by
+id, the image still drawn after a move in Files, and the agent index leaving
+attachments out — 114 checks.
 `test:notes` (`scripts/notes-check.mjs`) drives writing in place: links and tags
 in the reading view, pictures of the store inside a note, backlinks and turning
 an unlinked mention into a link, a dangling link that starts its note, typing

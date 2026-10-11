@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { FileDescription } from "./attachments.js";
 import type { Author } from "./types.js";
 
 /** Metadata only. File bytes and immutable versions belong to the Files plugin. */
@@ -42,4 +43,6 @@ export const reviewDeliverySchema = z.object({ submissionId: z.string().min(1), 
 /** The future Files plugin supplies this resolver; no fallback file store exists. */
 export interface FilesResolver {
   getVersion(projectId: string, reference: FileReference): Promise<FileReference | null>;
+  /** The files behind these ids as they are now; an id with no file here is left out. */
+  describe(projectId: string, fileIds: string[]): Promise<FileDescription[]>;
 }

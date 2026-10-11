@@ -555,6 +555,71 @@ const run = async () => {
     // A dialog left open by a failed step must not swallow the checks after it.
     await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   }
+
+  // ── files pasted into a ticket's description ─────────────────────────
+  // Held by the editor until the body is saved, then written to Files under
+  // the workstream's attachments/<KEY>/ and linked by id, so a rename in
+  // Files never breaks the description.
+  const attachDir = `${board.name}/attachments/${ticket.key}`;
+  const attached = async () => (await ctx.files.list(project.id, attachDir).catch(() => [])).filter((e) => e.kind === "file").map((e) => e.name).sort();
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const giveFile = (event, name, type, b64) =>
+    $(`(() => {
+      const target = document.querySelector('.body-editor .cm-content');
+      if (!target) return false;
+      const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([bytes], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} }));
+      const r = target.getBoundingClientRect();
+      target.dispatchEvent(${JSON.stringify(event)} === 'paste'
+        ? new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })
+        : new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: r.x + 4, clientY: r.bottom - 4 }));
+      return true;
+    })()`);
+  const editorText = () => $(`[...document.querySelectorAll('.body-editor .cm-line')].map((l) => l.textContent).join('\\n')`);
+  const bodyKey = (k, opts = {}) =>
+    $(`(() => { const n = document.querySelector('.body-editor .cm-content'); if (!n) return false; n.dispatchEvent(new KeyboardEvent('keydown', { key: '${k}', bubbles: true, cancelable: true, ...${JSON.stringify(opts)} })); return true; })()`);
+
+  await $(`location.hash = '#/p/${project.id}/i/${ticket.id}'; true`);
+  await wait(() => has('[data-testid="issue-body"]'), "ticket description");
+  await press('[data-testid="issue-body"]');
+  await wait(() => has(".body-editor .cm-content"), "description editor");
+  await giveFile("paste", "shot.png", "image/png", PNG);
+  await wait(async () => (await editorText()).includes("tomrade-draft://"), "draft link");
+  check("a pasted image goes into the description as a link to a draft", /!\[shot\.png\]\(tomrade-draft:\/\/[\w-]+\)/.test(await editorText()));
+  check("…and nothing is written to Files before the body is saved", (await attached()).length === 0);
+  await click(".body-editor .seg button:not([aria-pressed='true'])");
+  check("the preview draws the draft from memory", await wait(() => has(".body-editor-preview img.md-file[src^='data:image/png']"), "draft image"));
+  await click(".body-editor .seg button:not([aria-pressed='true'])");
+  await bodyKey("Escape");
+  await sleep(500);
+  check("discarding the edit leaves no file behind", (await attached()).length === 0 && !(ctx.items.get(project.id, ticket.id).body ?? "").includes("tomrade-"));
+
+  await press('[data-testid="issue-body"]');
+  await wait(() => has(".body-editor .cm-content"), "description editor again");
+  await win.webContents.insertText("Repro below.\n");
+  await giveFile("paste", "shot.png", "image/png", PNG);
+  await giveFile("drop", "spec.pdf", "application/pdf", Buffer.from("%PDF-1.4\n%harness\n").toString("base64"));
+  await wait(async () => ((await editorText()).match(/tomrade-draft:\/\//g) ?? []).length === 2, "two drafts");
+  await bodyKey("Enter", { metaKey: true });
+  await wait(() => $(`!document.querySelector('.body-editor')`), "editor closes on save");
+  const saved = ctx.items.get(project.id, ticket.id).body ?? "";
+  const linked = [...saved.matchAll(/tomrade-file:\/\/([0-9a-f-]{36})/g)].map((m) => m[1]);
+  check("saving writes the drafts to the ticket's attachments folder", JSON.stringify(await attached()) === JSON.stringify(["shot.png", "spec.pdf"]));
+  check("…as one version", (await ctx.files.history(project.id, `${attachDir}/shot.png`))[0]?.message === `Attached 2 files to ${ticket.key}`);
+  check("the saved body links them by file id, an image and a file", linked.length === 2 && saved.includes("![shot.png](tomrade-file://") && saved.includes("[spec.pdf](tomrade-file://") && !saved.includes("tomrade-draft://"));
+  check("the description draws the image from Files", await wait(() => has("[data-testid='issue-body'] img.md-file[src^='data:image/png']"), "saved image"));
+  check("a file that is not an image reads as an attachment link", (await text("[data-testid='issue-body'] a.md-attachment")) === "spec.pdf");
+  check("the agent index leaves attachments out unless a rule lists them", !((await ctx.files.agentIndex(project.id, {}))?.markdown ?? "").includes("spec.pdf"));
+  const described = await ctx.items.linkedFiles(project.id, saved);
+  check("get_item's attachments say where each linked file is", described?.length === 2 && described.every((d) => d.localPath && fs.existsSync(d.localPath)));
+
+  await ctx.files.move(project.id, `${attachDir}/shot.png`, "docs/renamed.png");
+  await sleep(800);
+  check("a linked image moved in Files still shows", (await has("[data-testid='issue-body'] img.md-file[src^='data:image/png']")) && ctx.items.get(project.id, ticket.id).body === saved);
+  await shot("files-14-description-attachments");
+  await click("[data-testid='issue-body'] a.md-attachment");
+  check("an attachment link opens the file in Files", await wait(async () => decodeURIComponent(await $(`location.hash`)).endsWith(`/f/${attachDir}/spec.pdf`), "attachment route"));
   return results;
 };
 

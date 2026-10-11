@@ -4,14 +4,14 @@ import { Decoration, EditorView, MatchDecorator, ViewPlugin, keymap, placeholder
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { html } from "@codemirror/lang-html";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { syntaxHighlighting } from "@codemirror/language";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { tags as t } from "@lezer/highlight";
 import type { FileContent, SaveResult } from "@tomradex/files";
 import { decodeHref, isNotePath, linkTarget, noteName } from "@tomradex/notes/syntax";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
+import { editorTheme, markdownHighlight } from "~/lib/editorStyle";
 import { nameOf, parentOf } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { freeCopyName } from "~/lib/notes";
@@ -32,49 +32,6 @@ const eolOf = (text: string): "\n" | "\r\n" => (/\r\n/.test(text) ? "\r\n" : "\n
 const WIKI_SPAN = /!?\[\[([^[\]\n|#]*)(?:#[^[\]\n|]*)?(?:\|[^[\]\n]*)?\]\]/g;
 const MD_SPAN = /!?\[[^\]\n]*\]\(<?([^)\s>]+)>?(?:\s+"[^"\n]*")?\)/g;
 const TAG_SPAN = /(?<=^|[\s(,;])#[\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*/gu;
-
-const theme = EditorView.theme({
-  "&": { height: "100%", fontSize: "15px", color: "var(--fg)", backgroundColor: "transparent" },
-  "&.cm-focused": { outline: "none" },
-  ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "var(--leading-body)", overflow: "visible" },
-  ".cm-content": { minHeight: "40vh", padding: "0 0 var(--space-6)", caretColor: "var(--accent)" },
-  ".cm-line": { padding: "0" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--tag-bg-strong)" },
-  ".cm-selectionMatch": { backgroundColor: "var(--tag-bg-faint)" },
-  ".cm-placeholder": { color: "var(--meta)" },
-  ".cm-tooltip": { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", boxShadow: "var(--elev-raised)", overflow: "hidden" },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "var(--font-display)", maxHeight: "16em" },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": { padding: "4px 10px", color: "var(--fg-2)" },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": { background: "var(--surface-warm)", color: "var(--fg)" },
-  ".cm-completionDetail": { color: "var(--meta)", fontStyle: "normal", marginLeft: "0.8em" },
-  ".cm-completionMatchedText": { textDecoration: "none", color: "var(--accent)" },
-  ".cm-panels": { background: "var(--surface)", color: "var(--fg)", borderColor: "var(--border)" },
-  ".cm-panels .cm-textfield": { background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--fg)" },
-  ".cm-panels .cm-button": { backgroundImage: "none", background: "var(--surface-warm)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--fg-2)" },
-  ".cm-searchMatch": { backgroundColor: "var(--tag-bg-base)", outline: "1px solid var(--tag-bg-strong)" },
-  ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "var(--tag-bg-strong)" }
-});
-
-/** The markup stays visible, as in Obsidian's source mode, but it is set back so the prose reads first. */
-const highlight = HighlightStyle.define([
-  { tag: t.heading1, fontFamily: "var(--font-display)", fontSize: "1.6em", fontWeight: "600", color: "var(--fg)" },
-  { tag: t.heading2, fontFamily: "var(--font-display)", fontSize: "1.35em", fontWeight: "600", color: "var(--fg)" },
-  { tag: t.heading3, fontFamily: "var(--font-display)", fontSize: "1.15em", fontWeight: "600", color: "var(--fg)" },
-  { tag: [t.heading4, t.heading5, t.heading6], fontWeight: "600", color: "var(--fg)" },
-  { tag: t.strong, fontWeight: "650" },
-  { tag: t.emphasis, fontStyle: "italic" },
-  { tag: t.strikethrough, textDecoration: "line-through", color: "var(--muted)" },
-  { tag: t.link, color: "var(--accent)" },
-  { tag: t.url, color: "var(--meta)" },
-  { tag: t.monospace, fontFamily: "var(--font-mono)", fontSize: "0.9em" },
-  { tag: t.quote, color: "var(--muted)" },
-  { tag: [t.processingInstruction, t.meta, t.contentSeparator, t.labelName], color: "var(--meta)" },
-  { tag: [t.tagName, t.angleBracket], color: "var(--accent)" },
-  { tag: t.attributeName, color: "var(--fg-2)" },
-  { tag: [t.attributeValue, t.string], color: "var(--tag-fg)" },
-  { tag: t.comment, color: "var(--meta)", fontStyle: "italic" }
-]);
 
 /** Wiki links and tags as marks the stylesheet draws; a link to nothing reads as one. */
 function linkMarks(resolve: (target: string) => boolean): Extension {
@@ -275,10 +232,10 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
         closeBrackets(),
         autocompletion(note ? { override: [completions], icons: false } : { icons: false }),
         note ? markdown({ base: markdownLanguage }) : /\.(html?|svg)$/i.test(path) ? html() : [],
-        syntaxHighlighting(highlight),
+        syntaxHighlighting(markdownHighlight),
         EditorView.lineWrapping,
         note ? placeholder(tr("notes.placeholder")) : [],
-        theme,
+        editorTheme,
         marks.current.of(note ? linkMarks((target) => !!latest.current.resolve(target, "wiki")) : []),
         keymap.of([
           { key: "Mod-s", preventDefault: true, run: () => (void saveRef.current(), true) },

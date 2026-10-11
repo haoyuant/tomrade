@@ -489,10 +489,12 @@ CLI agent gets no system prompt from Tomrade at all, so `agent/prepare-brief`
 (`{ projectId, itemId, filesIndex? }`) is where the same context enters the brief
 `agent.prepareGeneral` hands over.
 
-A Files provider registers `ctx.items.files({ getVersion(projectId, reference) })`
-and retains the returned disposer; `@tomradex/files` is the one shipped. The
-resolver must check project access and return the exact `{ fileId, versionId }`,
-or `null`; versions must be immutable. Registering a resolver does not grant
+A Files provider registers `ctx.items.files({ getVersion(projectId, reference),
+describe(projectId, fileIds) })` and retains the returned disposer;
+`@tomradex/files` is the one shipped. `getVersion` must check project access and
+return the exact `{ fileId, versionId }`, or `null`; versions must be immutable.
+`describe` answers what files are behind ids right now (`FileDescription`: path,
+name, mime, size, `localPath`), leaving out ids it has no file for. Registering a resolver does not grant
 agent tools permission to read/write files. There is no fallback attachment
 directory or file-content field on Ticket.
 
@@ -766,8 +768,8 @@ in `@tomradex/domain` (`matchesFilter`, `compareItems`), and a parity test in
 through `list_fields`, `create_field`, `list_items` (`filter` / `sort`) and
 `update_item` (`patch.fields`). Both `items.list` and `items.query` also take
 `search`: terms that must all appear in title or body, matched as substrings in
-any script over an FTS5 trigram index (`items_fts`, kept in step by triggers)
-and returned most relevant first, after any explicit sort. A term is a word, or
+any script over an FTS5 trigram index (`items_fts`, kept in step by triggers;
+a body's `tomrade-file://` links are left out of it) and returned most relevant first, after any explicit sort. A term is a word, or
 a double-quoted run (`"login timeout"`, `“登录 超时”`) that must appear
 contiguously. Relevance is BM25 with the title weighted 5:1 over the body;
 terms under three characters are below a trigram, filter with `instr()` and
@@ -965,6 +967,20 @@ about it in `<workstream>/` of the project's Files. It is a default and a name,
 not a binding — renaming a workstream starts a new folder and moves nothing,
 and any explicit path is honoured as given.
 
+A ticket's description is Markdown, and the files it shows are linked by id —
+`![name](tomrade-file://<fileId>)`, or `[name](…)` for anything that is not a
+picture — so a rename or a move in Files never breaks the link and never
+rewrites the body (`linkedFileIds(body)` in `@tomradex/domain` reads them back).
+The editor holds pasted files until the body is saved, then hands every one the
+text still links to `ctx.files.addAttachments(projectId, itemId, files)`: they
+land in `<workstream>/attachments/<KEY>/` as one version and one step of ⌘Z, a
+taken name gets a number (`截图 2.png`), and anything over the 8 MB binary read
+limit is refused whole. `readById(projectId, fileId)` reads a file wherever it
+has moved, null when it is not on this machine (deleted, or not synced yet).
+`get_item` adds `attachments` — the linked files as `describe` sees them — when
+a body links any. Attachments are not delivery inputs; pinning one stays a
+deliberate act.
+
 A write can be guarded. `expect` is the `hash` the writer last read — `null`
 for "this name must be free" — and a file that no longer has it is left alone:
 `write` throws `FileChangedError`, and `ctx.files.save(projectId, path, body,
@@ -999,8 +1015,10 @@ Listing governs what Tomrade volunteers, never what an agent may do.
 rules: [{ path, mode }] }` and `ctx.files.setAgentRules(projectId, paths, mode)`
 changes a batch atomically, in the same shape as the sharing rules: `inherit`
 drops an exception, the empty path sets the root default, the closest ancestor
-wins, and `FileEntry.listing` reports the effective mode beside `sync`. An
-unlisted path is left out of the index, out of `list_files` and out of a
+wins, and `FileEntry.listing` reports the effective mode beside `sync`. One
+default is built in: `<workstream>/attachments/` is unlisted (source `default`),
+since a ticket's attachments reach an agent through `get_item`; a rule at or
+below that folder lists it again. An unlisted path is left out of the index, out of `list_files` and out of a
 `search_files` call that named no path; it reads and writes exactly as a listed
 one, and a path the person names in conversation or pins to a ticket always
 resolves. `ctx.files.search(projectId, input)` is the search behind that tool —
@@ -1032,6 +1050,8 @@ being no reason to stop an exchange.
 | `ctx.files.bind(projectId, backendId, config)` / `unbind(projectId)` | Share through a backend's remote (and sync at once); stop sharing, keeping everything |
 | `ctx.files.attach(projectId, itemId, { path, role })` | Pin the file's latest version to a ticket as material or an output |
 | `ctx.files.attachMany(projectId, itemId, { paths, role })` | Pin several latest file versions to a ticket in one write |
+| `ctx.files.addAttachments(projectId, itemId, [{ name, base64 }])` | Save files a ticket body links under `<workstream>/attachments/<KEY>/`, one version; returns their `FileDescription`s in order |
+| `ctx.files.readById(projectId, fileId)` / `describeFiles(projectId, fileIds)` | A file's latest content wherever it moved, or null; the resolver's descriptions |
 
 Agent tools: `list_files`, `search_files`, `read_file`, `write_file` and
 `manage_file`, which moves, copies or deletes in one call; `write_file` returns

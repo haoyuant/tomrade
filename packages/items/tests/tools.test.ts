@@ -12,6 +12,34 @@ async function withTools() {
   return { ...f, run };
 }
 
+describe("get_item tool", () => {
+  it("lists the files a body links, as Files describes them, and stays quiet when nothing can", async () => {
+    const { run, items, board, project, ctx } = await withTools();
+    const shot = "0f1e2d3c-4b5a-4968-8776-655443322110";
+    const gone = "11111111-2222-4333-8444-555555555555";
+    const linked = items.create({ projectId: project.id, title: "Header", body: `![shot](tomrade-file://${shot}) [spec](tomrade-file://${gone}) ![again](tomrade-file://${shot})`, boardId: board.id, by: "human" });
+    const plain = items.create({ projectId: project.id, title: "Plain", body: "no links", boardId: board.id, by: "human" });
+    expect(await run("get_item", { id: linked.id })).not.toHaveProperty("attachments");
+
+    const asked: string[][] = [];
+    const describe = async (_projectId: string, ids: string[]) => {
+      asked.push(ids);
+      return ids.filter((id) => id === shot).map((fileId) => ({ fileId, path: "Web/attachments/TOM-1/shot.png", name: "shot.png", mime: "image/png", size: 3, localPath: "/tmp/shot.png" }));
+    };
+    const off = ctx.items.files({ getVersion: async () => null, describe });
+    expect(await run("get_item", { id: linked.id })).toMatchObject({ id: linked.id, attachments: [{ fileId: shot, path: "Web/attachments/TOM-1/shot.png", localPath: "/tmp/shot.png" }] });
+    expect(asked).toEqual([[shot, gone]]);
+    // a brief names the ticket by key, and the key answers the same
+    expect(await run("get_item", { id: linked.key })).toMatchObject({ id: linked.id, attachments: [{ fileId: shot }] });
+    expect(await run("get_item", { id: plain.id })).not.toHaveProperty("attachments");
+    off();
+
+    ctx.items.files({ getVersion: async () => null, describe: async () => { throw new Error("store unavailable"); } });
+    expect(await run("get_item", { id: linked.id })).toMatchObject({ id: linked.id });
+    expect(await run("get_item", { id: linked.id })).not.toHaveProperty("attachments");
+  });
+});
+
 describe("list_items tool", () => {
   it("a boardId naming no real workstream is refused rather than silently matching nothing", async () => {
     const { run, items, board, project } = await withTools();

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { policyAt } from "./git-sync.js";
+import { listingAt } from "./git-sync.js";
 import type { FileEntry, FilesAgentPolicy } from "./types.js";
 
 /**
@@ -60,14 +60,23 @@ interface Node {
   newest: number;
 }
 
-function build(entries: FileEntry[], policy: FilesAgentPolicy): { roots: Node[]; listed: number } {
+function build(entries: FileEntry[], policy: FilesAgentPolicy): { roots: Node[]; listed: number; withheld: { person: boolean; attachments: boolean } } {
   const nodes = new Map<string, Node>();
   const roots: Node[] = [];
+  const withheld = { person: false, attachments: false };
   // Depth first, folders before files, so a parent always exists by the time a
   // child arrives. An unlisted folder is still built: a rule deeper down may
   // list one file inside it, and that file needs somewhere to hang.
   for (const entry of entries) {
-    if (entry.kind === "file" && policyAt(policy, entry.path).mode === "unlisted") continue;
+    if (entry.kind === "file") {
+      const listing = listingAt(policy, entry.path);
+      if (listing.mode === "unlisted") {
+        // the person's rules, or the built-in default for attachments folders
+        if (listing.source === "default" && policy.default === "listed") withheld.attachments = true;
+        else withheld.person = true;
+        continue;
+      }
+    }
     const node: Node = { entry, children: [], files: entry.kind === "file" ? 1 : 0, newest: entry.modifiedAt };
     const slash = entry.path.lastIndexOf("/");
     const parent = slash === -1 ? null : nodes.get(entry.path.slice(0, slash));
@@ -91,7 +100,7 @@ function build(entries: FileEntry[], policy: FilesAgentPolicy): { roots: Node[];
   // A folder holding nothing listed has nothing to say.
   const prune = (list: Node[]): Node[] =>
     list.filter((n) => n.entry.kind === "file" || n.files > 0).map((n) => ({ ...n, children: prune(n.children) }));
-  return { roots: prune(roots), listed };
+  return { roots: prune(roots), listed, withheld };
 }
 
 function render(roots: Node[], folded: Set<string>, titleOf: (e: FileEntry) => string | null, now: number): string[] {
@@ -138,7 +147,7 @@ function protectedPaths(focus: string[]): Set<string> {
 export function buildAgentIndex(input: AgentIndexInput): AgentIndex {
   const now = Date.now();
   const budget = input.budget ?? DEFAULT_BUDGET;
-  const { roots, listed } = build(input.entries, input.policy);
+  const { roots, listed, withheld } = build(input.entries, input.policy);
   const total = input.entries.filter((e) => e.kind === "file").length;
   const keep = protectedPaths(input.focus ?? []);
 
@@ -156,7 +165,7 @@ export function buildAgentIndex(input: AgentIndexInput): AgentIndex {
 
   const folded = new Set<string>();
   const header = headerLines(input, listed, roots);
-  const footer = footerLines(input, listed < total);
+  const footer = footerLines(input, withheld);
   const assemble = (lines: string[]) => [...header, "", ...lines, "", ...footer].join("\n");
 
   let lines = render(roots, folded, input.titleOf, now);
@@ -194,9 +203,10 @@ function headerLines(input: AgentIndexInput, listed: number, roots: Node[]): str
   return lines;
 }
 
-function footerLines(input: AgentIndexInput, withheld: boolean): string[] {
+function footerLines(input: AgentIndexInput, withheld: { person: boolean; attachments: boolean }): string[] {
   const lines: string[] = [];
-  if (withheld) lines.push("Paths the person keeps out of this index are not shown. Any path you are given still reads and writes normally.");
+  if (withheld.attachments) lines.push("Tickets' attachments/ folders are not shown; get_item lists the files a ticket's description links.");
+  if (withheld.person) lines.push("Paths the person keeps out of this index are not shown. Any path you are given still reads and writes normally.");
   lines.push(
     input.native
       ? "read_file returns the version ids a delivery pins; save through write_file (or add_delivery_resource for an existing version) when the result is a ticket's artifact."

@@ -5,7 +5,7 @@ import { Context, Service } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { NotFoundError, type FileReference, type Item } from "@tomradex/domain";
+import { NotFoundError, type FileDescription, type FileReference, type Item } from "@tomradex/domain";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/items";
@@ -20,18 +20,20 @@ import { writeContext } from "@tomradex/write";
 import type { UndoRecord } from "@tomradex/domain";
 import type {} from "./channels.js";
 import { createGitBackend } from "./git-backend.js";
-import { GitFileStore, normalizeRel } from "./git-store.js";
-import { DEFAULT_AGENT_POLICY, policyAt, remoteDirectory } from "./git-sync.js";
+import { BINARY_LIMIT, GitFileStore, normalizeRel } from "./git-store.js";
+import { DEFAULT_AGENT_POLICY, listingAt, remoteDirectory } from "./git-sync.js";
 import { buildAgentIndex, type AgentIndex } from "./agent-index.js";
 import { gitRunner } from "@tomradex/storage";
 import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
+import { mimeOf } from "./mime.js";
 import { registerTools } from "./tools.js";
 import {
   FileChangedError,
   FilesUnavailableError,
   InvalidPathError,
   UnknownBackendError,
+  type AttachmentInput,
   type ConflictChoice,
   type ConnectionState,
   type FileConflict,
@@ -126,6 +128,17 @@ function copyTree(src: string, dest: string): void {
 
 /** A workstream's name as one folder name: separators and a leading dot would make it something else. */
 export const folderName = (name: string): string => name.replace(/[\\/\0]+/g, "-").trim().replace(/^\.+/, "").trim() || "Workstream";
+
+/** A pasted file's own name, never a path: separators and control characters go, an empty name gets one. */
+const attachmentName = (name: string): string => name.split(/[\\/]/).pop()!.replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/^\.+/, "").trim() || "attachment";
+
+/** `name 2.ext`, `name 3.ext`, … — the first that is in neither the folder nor the batch. */
+function freeName(name: string, taken: (candidate: string) => boolean): string {
+  if (!taken(name)) return name;
+  const dot = name.lastIndexOf(".");
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  for (let n = 2; ; n++) if (!taken(`${stem} ${n}${ext}`)) return `${stem} ${n}${ext}`;
+}
 
 const unavailable = (detail: string): FilesStatus => ({ state: "unavailable", location: null, detail, lastSyncAt: null, conflicts: 0, ahead: 0, behind: 0, head: null });
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -232,7 +245,10 @@ export class Files extends Service {
         remote: null
       })
     );
-    this.ctx.effect(() => this.ctx.items.files({ getVersion: (projectId, ref) => this.resolveVersion(projectId, ref) }), "items.files(files)");
+    this.ctx.effect(
+      () => this.ctx.items.files({ getVersion: (projectId, ref) => this.resolveVersion(projectId, ref), describe: (projectId, ids) => this.describeFiles(projectId, ids) }),
+      "items.files(files)"
+    );
     this.ctx.on("db/closed", (projectId) => this.close(projectId));
     // The remote row travels with the project: a folder read back in may name another one.
     this.ctx.on("storage/imported", (projectId) => void this.reopen(projectId).catch((error) => this.warn(projectId, error)));
@@ -317,6 +333,8 @@ export class Files extends Service {
       ctx.ipc.handle("files.attachMany", (projectId, itemId, input) => this.attachMany(projectId, itemId, input));
       ctx.ipc.handle("files.folderFor", (projectId, itemId) => this.folderFor(projectId, itemId));
       ctx.ipc.handle("files.importFor", (projectId, itemId, input) => this.importFor(projectId, itemId, input));
+      ctx.ipc.handle("files.addAttachments", (projectId, itemId, files) => this.addAttachments(projectId, itemId, files));
+      ctx.ipc.handle("files.readById", (projectId, fileId) => this.readById(projectId, fileId));
     });
 
     const timer = this.config.autoSyncMs > 0 ? setInterval(() => void this.syncAll(), this.config.autoSyncMs) : null;
@@ -577,6 +595,36 @@ export class Files extends Service {
 
   async locate(projectId: string, fileId: string): Promise<string | null> {
     return (await this.store(projectId)).locate(fileId);
+  }
+
+  /** The latest content wherever the file has moved; null when it is not here — deleted, or not synced to this machine yet. */
+  async readById(projectId: string, fileId: string): Promise<FileContent | null> {
+    const store = await this.store(projectId);
+    const p = await store.locate(fileId);
+    return p ? store.read(p) : null;
+  }
+
+  /** The resolver's view of linked files: where each is now, what it is. A missing id is left out, never an error. */
+  async describeFiles(projectId: string, fileIds: string[]): Promise<FileDescription[]> {
+    if (!this.dirFor(projectId) || !fileIds.length) return [];
+    try {
+      const store = await this.store(projectId);
+      const found = await Promise.all([...new Set(fileIds)].map(async (fileId) => {
+        const p = await store.locate(fileId);
+        return p ? this.description(store, fileId, p) : null;
+      }));
+      return found.filter((d): d is FileDescription => d !== null);
+    } catch (error) {
+      this.warn(projectId, error);
+      return [];
+    }
+  }
+
+  private description(store: FileStore, fileId: string, rel: string): FileDescription | null {
+    const abs = path.join(store.dir, ...rel.split("/"));
+    const stat = fs.statSync(abs, { throwIfNoEntry: false });
+    if (!stat?.isFile()) return null;
+    return { fileId, path: rel, name: path.posix.basename(rel), mime: mimeOf(rel), size: stat.size, localPath: abs };
   }
 
   async history(projectId: string, p: string, limit?: number): Promise<FileVersion[]> {
@@ -860,7 +908,7 @@ export class Files extends Service {
     const result = await store.search(input);
     // A path the caller named is answered as asked; an open search volunteers only what the index would.
     if (input.path) return result;
-    return { ...result, hits: result.hits.filter((hit) => policyAt(policy, hit.path).mode === "listed") };
+    return { ...result, hits: result.hits.filter((hit) => listingAt(policy, hit.path).mode === "listed") };
   }
 
   /**
@@ -1027,6 +1075,37 @@ export class Files extends Service {
     const added = (await this.importFiles(projectId, folder, input.sources)).filter((e) => e.kind === "file");
     if (!added.length) throw new Error("Choose at least one file");
     return this.attachMany(projectId, itemId, { paths: added.map((e) => e.path), role: input.role });
+  }
+
+  /**
+   * Files a ticket body is about to link to, saved under
+   * `<workstream>/attachments/<KEY>/` as one version and one step of history.
+   * A name already taken there, or earlier in the batch, gets a number.
+   */
+  async addAttachments(projectId: string, itemId: string, files: AttachmentInput[]): Promise<FileDescription[]> {
+    if (!files.length) return [];
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new NotFoundError(itemId);
+    const folder = `${this.folderFor(projectId, itemId)}/attachments/${folderName(item.key)}`;
+    const store = await this.store(projectId);
+    const chosen = new Set<string>();
+    const entries = files.map((file) => {
+      const body = Buffer.from(file.base64, "base64");
+      const name = attachmentName(file.name);
+      if (body.length > BINARY_LIMIT) throw new Error(`${name} is larger than ${BINARY_LIMIT / (1024 * 1024)} MB; add it in Files instead`);
+      const free = freeName(name, (candidate) => chosen.has(candidate.toLowerCase()) || fs.existsSync(path.join(store.dir, ...folder.split("/"), candidate)));
+      chosen.add(free.toLowerCase());
+      return { path: `${folder}/${free}`, body, expect: null };
+    });
+    const names = entries.map((e) => path.posix.basename(e.path));
+    await this.writeMany(projectId, entries, { message: names.length === 1 ? `Attached ${names[0]} to ${item.key}` : `Attached ${names.length} files to ${item.key}` });
+    const ids = new Map((await store.list(folder)).map((e) => [e.path, e.fileId]));
+    return entries.map((e) => {
+      const fileId = ids.get(e.path);
+      const described = fileId ? this.description(store, fileId, e.path) : null;
+      if (!described) throw new Error(`${e.path} was saved without an id`);
+      return described;
+    });
   }
 
   /** Pin the file's latest version to a ticket. The working copy is saved first, so what is pinned is what is there. */

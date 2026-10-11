@@ -5,6 +5,24 @@
  */
 export const CORE_SCHEMA_VERSION = 15;
 
+/** The index and its triggers; `migrateCore` swaps in this shape where an older one is found. */
+export const SEARCH_INDEX_SQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(title, body, content='', contentless_delete=1, tokenize='trigram');
+CREATE TRIGGER IF NOT EXISTS items_fts_ai AFTER INSERT ON items BEGIN
+  INSERT INTO items_fts(rowid, title, body) SELECT id, title, body FROM items_search WHERE id = new.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS items_fts_ad AFTER DELETE ON items BEGIN
+  DELETE FROM items_fts WHERE rowid = old.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS items_fts_au AFTER UPDATE OF title, body ON items BEGIN
+  DELETE FROM items_fts WHERE rowid = old.rowid;
+  INSERT INTO items_fts(rowid, title, body) SELECT id, title, body FROM items_search WHERE id = new.rowid;
+END;
+`;
+
+/** Every row indexed afresh; a contentless table has no 'rebuild'. */
+export const REINDEX_SEARCH_SQL = "DELETE FROM items_fts; INSERT INTO items_fts(rowid, title, body) SELECT id, title, body FROM items_search;";
+
 export const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
   id            TEXT PRIMARY KEY,
@@ -82,22 +100,22 @@ CREATE TABLE IF NOT EXISTS items (
   human_locked  INTEGER NOT NULL DEFAULT 0
 );
 
--- Search index over title/body, an external-content FTS5 table joined to items
--- on its rowid and kept in step by the triggers. Trigram tokens make a query a
+-- Search index over title/body: a contentless FTS5 table keyed by items.rowid,
+-- filled from items_search by the triggers. Trigram tokens make a query a
 -- substring match in any script (unicode61 would take a whole CJK run as one
--- word, so "认证" could never find "用户认证系统"). Nothing renumbers rowids: no
--- VACUUM runs, and rebuilds go through Db.open.
-CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(title, body, content='items', tokenize='trigram');
-CREATE TRIGGER IF NOT EXISTS items_fts_ai AFTER INSERT ON items BEGIN
-  INSERT INTO items_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
-END;
-CREATE TRIGGER IF NOT EXISTS items_fts_ad AFTER DELETE ON items BEGIN
-  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rowid, old.title, old.body);
-END;
-CREATE TRIGGER IF NOT EXISTS items_fts_au AFTER UPDATE OF title, body ON items BEGIN
-  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rowid, old.title, old.body);
-  INSERT INTO items_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
-END;
+-- word, so "认证" could never find "用户认证系统"). The view drops a body's
+-- tomrade-file://<uuid> links (scheme plus the 36-character id), whose words
+-- and hex would otherwise match searches they have nothing to do with; pure
+-- SQL, so an older build opening this file can still write items. Nothing
+-- renumbers rowids: no VACUUM runs, and rebuilds go through Db.open.
+CREATE VIEW IF NOT EXISTS items_search(id, title, body) AS SELECT rowid, title, (
+  WITH RECURSIVE s(t) AS (
+    SELECT items.body
+    UNION ALL SELECT substr(t, 1, instr(t, 'tomrade-file://') - 1) || substr(t, instr(t, 'tomrade-file://') + 51) FROM s WHERE instr(t, 'tomrade-file://') > 0
+  )
+  SELECT t FROM s WHERE t IS NULL OR instr(t, 'tomrade-file://') = 0 LIMIT 1
+) FROM items;
+${SEARCH_INDEX_SQL}
 
 CREATE TABLE IF NOT EXISTS labels (
   id            TEXT PRIMARY KEY,

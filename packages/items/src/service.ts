@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { emptyEvidence, addResourceSchema, submitDeliverySchema, reviewDeliverySchema, type FilesResolver, type TicketEvidence, type DeliveryResource } from "@tomradex/domain";
+import { emptyEvidence, addResourceSchema, linkedFileIds, submitDeliverySchema, reviewDeliverySchema, type FileDescription, type FilesResolver, type TicketEvidence, type DeliveryResource } from "@tomradex/domain";
 import { Context, Service } from "cordis";
 import type { ProjectDb } from "@tomradex/db";
 import { DeliveryStore } from "@tomradex/db";
@@ -120,6 +120,18 @@ export class Items extends Service {
     if (this.filesResolver) throw new Error("A Files resolver is already registered");
     this.filesResolver = resolver;
     return () => { if (this.filesResolver === resolver) this.filesResolver = null; };
+  }
+
+  /** The files a body links, as Files sees them now; null when it links none, or nothing can say where they are. */
+  async linkedFiles(projectId: string, body: string | null): Promise<FileDescription[] | null> {
+    const ids = linkedFileIds(body);
+    const resolver = this.filesResolver;
+    if (!ids.length || !resolver) return null;
+    try {
+      return await resolver.describe(projectId, ids);
+    } catch {
+      return null;
+    }
   }
 
   private openTicket(projectId: string, id: string): Item {

@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type {} from "@tomradex/ipc";
-import type { FileReference, Item } from "@tomradex/domain";
-import type { ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SaveResult, SyncMode } from "./types.js";
+import type { FileDescription, FileReference, Item } from "@tomradex/domain";
+import type { AttachmentInput, ConflictChoice, ConnectionState, FileConflict, FileContent, FileEntry, FileVersion, FilesAgentPolicy, FilesBackendView, FilesInfo, FilesStatus, FilesSyncPolicy, ListMode, SaveResult, SyncMode } from "./types.js";
 import type { AgentIndex } from "./agent-index.js";
 
 declare module "@tomradex/ipc" {
@@ -56,6 +56,10 @@ declare module "@tomradex/ipc" {
     "files.folderFor": (projectId: string, itemId: string) => string;
     /** Copy files from this machine into the ticket's workstream folder and pin them. */
     "files.importFor": (projectId: string, itemId: string, input: { sources: string[]; role: "input" | "output" }) => Item;
+    /** Files for a ticket body to link to, saved as one version under `<workstream>/attachments/<KEY>/`, in input order. */
+    "files.addAttachments": (projectId: string, itemId: string, files: AttachmentInput[]) => FileDescription[];
+    /** A file's latest content by its id, wherever it has moved; null when it is not here (deleted, or not synced yet). */
+    "files.readById": (projectId: string, fileId: string) => FileContent | null;
   }
   interface Broadcasts {
     /** This project's files or their sync state moved; refetch everything keyed by it. */

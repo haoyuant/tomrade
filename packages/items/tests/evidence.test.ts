@@ -8,7 +8,7 @@ it("requires Files versions, distinguishes inputs, pins review outputs and prese
   const resource = { name: "Guide", role: "output" as const, file: { fileId: "guide", versionId: "v1" } };
   await expect(items.addResource(project.id, item.id, resource, "ai:test")).rejects.toThrow("Files plugin is unavailable");
   expect(items.get(project.id, item.id)?.version).toBe(1);
-  const disposeFiles = items.files({ async getVersion(scope, ref) { return scope === project.id && ref.fileId === "guide" && ["v1", "v2"].includes(ref.versionId) ? ref : null; } });
+  const disposeFiles = items.files({ async getVersion(scope, ref) { return scope === project.id && ref.fileId === "guide" && ["v1", "v2"].includes(ref.versionId) ? ref : null; }, async describe() { return []; } });
   await expect(items.addResource(project.id, item.id, { ...resource, file: { fileId: "guide", versionId: "unknown" } }, "human")).rejects.toThrow("does not exist");
   let updated = await items.addResource(project.id, item.id, { ...resource, role: "input" }, "human");
   const inputId = updated.evidence.resources[0].id;

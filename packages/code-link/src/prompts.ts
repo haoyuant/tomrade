@@ -1,4 +1,4 @@
-import { waitsOnLine } from "@tomradex/agent";
+import { attachmentsLine, waitsOnLine } from "@tomradex/agent";
 import type { Item, Repo } from "@tomradex/domain";
 import type { Decision } from "./decisions.js";
 import type { CodeLinkView, RepoStateView, SessionView } from "./store.js";
@@ -45,6 +45,7 @@ export function firstPrompt(input: FirstPromptInput): string {
     "",
     "Ticket:",
     item.body?.trim() || "(no description yet — read the backlog around it, and ask before assuming)",
+    attachmentsLine(item.body),
     "",
     `Repository: ${repo.name} (${repo.remote}) · default branch ${repo.defaultBranch} · your branch ${branch}.`,
     input.subdir ? `This workstream's code lives in ${input.subdir}/ inside the repository — you are started there; keep the work under it, and put shared files (CLAUDE.md, CI) at the repository root.` : "",
@@ -71,6 +72,7 @@ export function continuePrompt(item: Item, repo: Repo, session: SessionView | nu
     "",
     "Ticket:",
     item.body?.trim() || "(no description)",
+    attachmentsLine(item.body),
     "",
     session?.summary ? `Last note: ${session.summary}` : "",
     link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : " · no pull request yet"}.` : "",
