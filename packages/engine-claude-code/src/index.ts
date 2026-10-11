@@ -33,6 +33,6 @@ export default {
 };
 
 export { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
-export { binaryOk, runJsonl } from "./cli.js";
+export { binaryOk, claudeSignedIn, runJsonl, signedIn } from "./cli.js";
 export { buildSystem, promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";
 export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, type Runtime } from "./runtime.js";

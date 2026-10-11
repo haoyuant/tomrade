@@ -13,6 +13,7 @@ import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import { ARTIFACT_DIR, ForeignProjectError, Storage, digestState, readArtifact, readClone, readHubManifest, writeArtifact, writeHubManifest, type HubProject } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
+import { Onboarding } from "@tomradex/onboarding";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-restore-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -69,6 +70,32 @@ describe("restoring the projects the Hub names", () => {
     expect(readHubManifest(b.hubDir)!.projects.map((p) => p.id)).toEqual([a.project.id]);
     expect(b.storage.restores()).toEqual({ entries: [], restored: 1 });
     expect(staged(b.hubDir)).toEqual([]);
+  });
+
+  it("the untouched sample project makes way too, but a used one stays, still out of the catalog", async () => {
+    const a = await machine("a");
+    const remote = bareRemote();
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+
+    const hubDir = path.join(root, `sample-${n++}`);
+    fs.mkdirSync(hubDir, { recursive: true });
+    const b = await fresh({ hubDir, firstRun: "none", plugins: [[Storage, { ...QUIET, autoRestore: true }], storageGit, Onboarding] });
+    await settle();
+    await b.ctx.storage.ready;
+    expect(b.project.sample).toBe(true);
+    names(hubDir, record(a.project.id, { name: a.project.name, remote: viaGit(remote) }));
+    expect(await b.ctx.storage.restoreMissing()).toEqual([a.project.id]);
+    expect(b.projects.list().map((p) => p.id)).toEqual([a.project.id]);
+
+    const c = await fresh({ hubDir: path.join(root, `sample-${n++}`), firstRun: "none", plugins: [[Storage, { ...QUIET, autoRestore: true }], storageGit, Onboarding] });
+    await settle();
+    await c.ctx.storage.ready;
+    c.items.update(c.project.id, c.items.list({ projectId: c.project.id })[0].id, { status: "done" }, "human");
+    names(c.hub.dir!, record(a.project.id, { name: a.project.name, remote: viaGit(remote) }));
+    expect(await c.ctx.storage.restoreMissing()).toEqual([a.project.id]);
+    expect(c.projects.list().map((p) => p.id).sort()).toEqual([a.project.id, c.project.id].sort());
+    await c.ctx.storage.writeHub();
+    expect(readHubManifest(c.hub.dir!)!.projects.map((p) => p.id)).toEqual([a.project.id]);
   });
 
   it("says why a project cannot come back yet, and leaves nothing half-made", async () => {

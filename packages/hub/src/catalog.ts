@@ -35,8 +35,10 @@ export const CatalogProject = z.object({
   archived: z.boolean().default(false),
   /** Tables (`<namespace>/<table>`) a restore could not read: never exported from here until a snapshot carrying them arrives. */
   withheld: z.array(z.string()).default([]),
-  /** The first run's Default Project, untouched so far: kept out of the account's catalog until someone uses it. */
+  /** The first run's project, untouched so far: kept out of the account's catalog until someone uses it. */
   seed: z.boolean().default(false),
+  /** The sample project: this machine's tour, never in the account's catalog however much it is used. */
+  sample: z.boolean().default(false),
   createdAt: z.number().default(0),
   /** Cached facts for the home grid, refreshed on close and on write. */
   facts: z.object({ items: z.number(), boards: z.number(), updatedAt: z.number() }).optional()

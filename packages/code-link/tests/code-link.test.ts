@@ -211,6 +211,44 @@ describe("code link", () => {
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 0, behind: 0, mergedSha: null });
   });
 
+  it("keeps a fresh branch unmerged after the default branch moves past it", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Fresh branch", "doing");
+    const branch = `tom-${item.keyNum}/fresh`;
+    git(["branch", branch, "main"], checkout);
+    // A repository that also holds the project gets Tomrade's own data commit as soon as the ticket moves.
+    commitOn(checkout, "main", "items.jsonl", "tomrade: write — 1 items");
+    git(["push", "-q", "origin", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 0, behind: 1, mergedSha: null });
+    expect(codeLink.deliveries(project.id, item.id).map((d) => [d.sequence, d.state])).toEqual([[1, "active"]]);
+
+    commitOn(checkout, branch, "work.ts", `${item.key}: the work`);
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+  });
+
+  it("reads a fast-forward merge from a head it saw ahead of the default branch", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Fast-forwarded", "doing");
+    const branch = `tom-${item.keyNum}/ff`;
+    commitOn(checkout, branch, "work.ts", "work without a key");
+    await codeLink.scan(project.id);
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, ahead: 1, mergedSha: null });
+
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--ff-only", branch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ ahead: 0, behind: 0, mergedSha: expect.any(String) });
+  });
+
   it("finishes a merged ticket while its terminal session is still active", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Merge message while working", "verifying");

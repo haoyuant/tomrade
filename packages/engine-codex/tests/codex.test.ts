@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Context } from "cordis";
 import { Agent, type RunView } from "@tomradex/agent";
-import engineCodex from "@tomradex/engine-codex";
+import engineCodex, { codexSignedIn } from "@tomradex/engine-codex";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
@@ -62,5 +62,14 @@ describe("the Codex engine", () => {
     expect(resumed).not.toContain("-C");
     expect(resumed).toContain('mcp_servers.tomrade.default_tools_approval_mode="approve"');
     expect(resumed.indexOf("--json")).toBeLessThan(resumed.indexOf("codex-session-1"));
+  });
+});
+
+describe("whether Codex is signed in", () => {
+  it("reads `codex login status`, and does not guess at anything else", () => {
+    expect(codexSignedIn("Logged in using ChatGPT\n")).toBe(true);
+    expect(codexSignedIn("Logged in using an API key - sk-***\n")).toBe(true);
+    expect(codexSignedIn("Not logged in\n")).toBe(false);
+    expect(codexSignedIn("error: unrecognized subcommand 'login'")).toBeNull();
   });
 });

@@ -94,7 +94,7 @@ async function run() {
 
   const { ctx } = await boot({ configFile, vars: { userData: work }, patches });
   const placeholder = ctx.projects.list()[0];
-  check("a first run still makes a Default Project to start in", placeholder?.name === "Default Project");
+  check("a first run opens on the sample project", placeholder?.sample === true && ctx.projects.list().length === 1);
 
   // One destination answers slowly, so the restoring card can be seen; one needs an account first.
   let release;
@@ -164,7 +164,7 @@ async function run() {
     same(`${p.name} came back with every issue`, JSON.stringify(items), JSON.stringify([...p.titles].sort()));
     same(`${p.name} keeps its backup destination`, ctx.hub.catalog.project(p.id)?.git, "dedicated");
   }
-  check("the untouched Default Project made way", !ctx.projects.list().some((p) => p.id === placeholder.id) && !(await projectCard("Default Project")));
+  check("the untouched sample project made way", !ctx.projects.list().some((p) => p.id === placeholder.id) && !(await projectCard(placeholder.name)));
   check("no half-made folder is left behind", !fs.readdirSync(path.join(hubDir, "projects")).some((n) => n.startsWith(".")));
 
   // ── the rest say why ──

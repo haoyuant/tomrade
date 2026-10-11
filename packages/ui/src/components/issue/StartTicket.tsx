@@ -7,6 +7,7 @@ import { ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybook
 import { invoke } from "~/lib/api";
 import { useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
+import { useHintToast } from "~/lib/onboarding";
 import { STATUS } from "~/lib/domain";
 import { invalidateWorkspace, useItems, useSettings } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -38,7 +39,10 @@ export function StartTicket(props: StartTicketProps) {
   const [open, setOpen] = useState(false);
   const sessions = useCodeSessions(projectId, item.id);
   const deliveries = useCodeDeliveries(projectId, item.id);
+  const engines = useEngines();
   const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
+  // Pointed out the first time it could actually run: a local agent is ready to take the ticket.
+  useHintToast("hint.start", startable && !!engines.data?.some((e) => e.ok && e.capabilities.some((c) => c === "code" || c === "general")), "onboarding.startHint");
   if (!startable) return null;
   const active = deliveries.data?.find((delivery) => delivery.state === "active");
   const hasSession = !!active && !!sessions.data?.some((session) => session.delivery === active.sequence);

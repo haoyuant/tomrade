@@ -8,7 +8,7 @@ import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, type RunView } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
-import engineClaudeCode from "@tomradex/engine-claude-code";
+import engineClaudeCode, { claudeSignedIn } from "@tomradex/engine-claude-code";
 
 const FAKE = `#!/bin/bash
 dir="$(dirname "$0")"
@@ -80,5 +80,16 @@ describe("the Claude Code engine", () => {
     expect(codeArgs).not.toContain("--strict-mcp-config");
     expect(codeArgs).toContain("--permission-mode\nauto");
     expect(codeArgs).not.toContain("--max-turns");
+  });
+});
+
+describe("whether Claude Code is signed in", () => {
+  it("says no only for a first-party account that `claude auth status` reports logged out", () => {
+    expect(claudeSignedIn('{"loggedIn": true, "authMethod": "claude.ai", "apiProvider": "firstParty"}')).toBe(true);
+    expect(claudeSignedIn('{"loggedIn": false, "apiProvider": "firstParty"}\n')).toBe(false);
+    expect(claudeSignedIn('{"loggedIn": false}')).toBe(false);
+    // Bedrock, Vertex and the like are signed in some other way; a version without the subcommand prints no JSON.
+    expect(claudeSignedIn('{"loggedIn": false, "apiProvider": "bedrock"}')).toBeNull();
+    expect(claudeSignedIn("error: unknown command 'auth'")).toBeNull();
   });
 });

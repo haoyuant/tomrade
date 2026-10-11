@@ -29,4 +29,4 @@ export default {
   name: "engine-codex", inject: ["agent", "mcp", "tools", "settings"],
   apply(ctx: Context) { migrateLegacyModel(ctx); ctx.agent.engine(createCodexEngine(ctx)); }
 };
-export { CodexOptions, codexModel, createCodexCliEngine } from "./legacy.js";
+export { CodexOptions, codexModel, codexSignedIn, createCodexCliEngine } from "./legacy.js";

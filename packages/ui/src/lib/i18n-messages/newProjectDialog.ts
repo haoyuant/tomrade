@@ -19,6 +19,9 @@ export const newProjectDialog = {
     createdWithProject: "Created with the project",
     mainBoardBullet: "A {{main}} workstream — the built-in field every issue is filed under",
     defaultViewsBullet: "The default views: {{views}}",
+    // The names the backend seeds a project with in this language (packages/db seed.ts).
+    mainName: "Main",
+    defaultViewNames: "Backlog · Recently updated",
     cancel: "Cancel",
     createProject: "Create project"
   },
@@ -42,6 +45,8 @@ export const newProjectDialog = {
     createdWithProject: "随项目一起创建",
     mainBoardBullet: "一个 {{main}} 工作流——每个工作项都归于其下的内置字段",
     defaultViewsBullet: "默认视图：{{views}}",
+    mainName: "主线",
+    defaultViewNames: "看板 · 最近更新",
     cancel: "取消",
     createProject: "创建项目"
   }

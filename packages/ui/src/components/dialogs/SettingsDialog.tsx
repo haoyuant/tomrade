@@ -75,7 +75,7 @@ function ThemePreview({ customThemes }: { customThemes: CustomTheme[] }) {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["theme", "customThemes", "language", "models", "agent", "mcpServers", "updates"]);
+const HAND_DRAWN = new Set(["theme", "customThemes", "language", "models", "agent", "mcpServers", "updates", "onboarding"]);
 
 /** Whether a section stays on this machine or follows the Hub folder — said on every card, so nobody has to guess. */
 function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {

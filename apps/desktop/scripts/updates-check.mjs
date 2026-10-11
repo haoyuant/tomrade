@@ -52,6 +52,8 @@ const run = async () => {
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
+  // Hints and setup cards are taught once, in their own check; these checks are about everything else.
+  ctx.settings.set({ ...ctx.settings.get(), onboarding: { seen: ["*"] } });
   const project = ctx.projects.create({ name: "Updates", keyPrefix: "UP" });
   await ctx.storage.ready;
   ctx.settings.set({ ...ctx.settings.get(), language: "en" });

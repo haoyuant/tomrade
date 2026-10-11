@@ -252,6 +252,15 @@ export interface TurnResult {
  */
 export type EngineCapability = "backlog" | "code" | "general";
 
+/** What stands between an engine and its first turn, so the app can say how to fix it in the person's language. */
+export type EngineNeed = "install" | "sign-in" | "model" | "service";
+
+export interface EngineAvailability {
+  ok: boolean;
+  reason?: string;
+  need?: EngineNeed;
+}
+
 /** Anything that can take one turn on a thread. The conductor seam. */
 export interface Engine {
   /** Actual formats supported by the selected transport/model; absent means text only. */
@@ -267,7 +276,7 @@ export interface Engine {
    * the waiting question in its prompt and resumes or cancels the workflow itself.
    */
   literal?: boolean;
-  available(): Promise<{ ok: boolean; reason?: string }>;
+  available(): Promise<EngineAvailability>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
@@ -291,6 +300,7 @@ export interface EngineView {
   capabilities: EngineCapability[];
   ok: boolean;
   reason?: string;
+  need?: EngineNeed;
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
 }

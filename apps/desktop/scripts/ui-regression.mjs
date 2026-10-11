@@ -17,7 +17,8 @@ import { seedDesignProject } from "./seed.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.TOMRADE_DEV_URL || "http://127.0.0.1:5173/";
 const SHOTS = path.join(__dirname, "shots");
-const WORK = "/tmp/tomrade-ui-regression";
+// Two checkouts can run this side by side when each names its own folder.
+const WORK = process.env.TOMRADE_UI_WORK ?? "/tmp/tomrade-ui-regression";
 
 fs.rmSync(WORK, { recursive: true, force: true });
 fs.mkdirSync(WORK, { recursive: true });
@@ -44,6 +45,8 @@ const run = async () => {
   ctx.hub.configure(path.join(WORK, "hub"));
   // The projects plugin seeds a default project on boot; the design's sample data is the whole fixture.
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
+  // Hints and setup cards are taught once, in their own check; these checks are about everything else.
+  ctx.settings.set({ ...ctx.settings.get(), onboarding: { seen: ["*"] } });
   const repos = { dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields, gitRepos: ctx.repos };
   const { project, repo: sampleRepo } = seedDesignProject(repos);
 

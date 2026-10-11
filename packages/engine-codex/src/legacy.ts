@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { isSuspended, type Engine, type EngineAvailability, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { publishNativeImage } from "@tomradex/agent";
-import { binaryOk, buildSystem, promptOf, runJsonl } from "@tomradex/engine-claude-code";
+import { binaryOk, buildSystem, promptOf, runJsonl, signedIn } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 
@@ -44,8 +44,14 @@ export function migrateLegacyModel(ctx: Context): void {
   ctx.settings.set({ ...all, agent: { ...agent, engines: { ...engines, codex: next } } });
 }
 
+/** `codex login status` says "Logged in using …" or "Not logged in". */
+export function codexSignedIn(output: string): boolean | null {
+  if (/not logged in/i.test(output)) return false;
+  return /logged in/i.test(output) ? true : null;
+}
+
 export function createCodexCliEngine(ctx: Context): Engine {
-  let probe: { at: number; state: { ok: boolean; reason?: string } } | null = null;
+  let probe: { at: number; state: EngineAvailability } | null = null;
   return {
     id: "codex",
     title: "Codex",
@@ -62,11 +68,13 @@ export function createCodexCliEngine(ctx: Context): Engine {
     async available() {
       if (probe && Date.now() - probe.at < 30_000) return probe.state;
       const bin = await binaryOk("codex");
-      const state = !bin.ok
-        ? { ok: false, reason: "codex CLI not found — install OpenAI Codex and sign in" }
+      const state: EngineAvailability = !bin.ok
+        ? { ok: false, reason: "codex CLI not found — install OpenAI Codex and sign in", need: "install" }
         : !ctx.get("mcp")?.url
-          ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin" }
-          : { ok: true };
+          ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin", need: "service" }
+          : !(await signedIn("codex", ["login", "status"], codexSignedIn))
+            ? { ok: false, reason: "Codex is not signed in — run `codex login` in a terminal", need: "sign-in" }
+            : { ok: true };
       probe = { at: Date.now(), state };
       return state;
     },

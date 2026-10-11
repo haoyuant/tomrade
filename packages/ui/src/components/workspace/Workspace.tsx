@@ -16,6 +16,7 @@ import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useCreateView, useRedo, useUndo } from "~/lib/queries";
 import { useToast, useToastDismiss } from "~/lib/toast";
+import { useHintToast } from "~/lib/onboarding";
 import { FilesRegion } from "~/components/files/FilesRegion";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
@@ -47,6 +48,8 @@ function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => 
 export function Workspace() {
   const ws = useWorkspace();
   usePlaybookConflictNotice(ws.project.id);
+  // The sample teaches the graph with a ticket of its own; elsewhere, the first dependency points at it.
+  useHintToast("hint.graph", !ws.project.sample && ws.layout !== "graph" && ws.items.some((i) => i.blocks.length > 0), "onboarding.graphHint");
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
   const redo = useRedo(ws.project.id);

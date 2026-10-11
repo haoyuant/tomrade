@@ -1728,6 +1728,25 @@ html.overlay-open .titlebar .btn-primary {
 .agent-note { text-align: center; font-size: var(--text-xs); color: var(--meta); margin: var(--space-3) 0; }
 .agent-empty { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-4); font-size: var(--text-sm); color: var(--fg-2); }
 .agent-empty ul { margin: 0; font-size: var(--text-xs); color: var(--meta); }
+/* What the assistant can do here and what is missing; with nothing ready it is the empty state above. */
+.agent-setup { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-4); font-size: var(--text-sm); color: var(--fg-2); }
+.setup-head { display: flex; align-items: baseline; gap: var(--space-2); }
+.setup-head p { flex: 1; margin: 0; }
+.setup-hide { padding: 0 6px; font-size: var(--text-xs); }
+.agent-setup ul.setup-rows { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); color: var(--fg-2); }
+.setup-row { display: grid; grid-template-columns: 14px 1fr; gap: 8px; align-items: start; }
+.setup-row > svg { margin-top: 3px; color: var(--warn); }
+.setup-row.is-ok > svg { color: var(--success); }
+.setup-name { display: block; color: var(--fg); font-weight: var(--font-weight-medium); }
+.setup-unlocks { display: block; font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--meta); }
+.setup-fix { display: block; margin-top: 4px; font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); overflow-wrap: anywhere; }
+.setup-fix code { font-family: var(--font-mono); font-size: 0.95em; }
+.setup-action { margin-top: var(--space-2); }
+/* A one-time line beside what it explains. */
+.hint { display: flex; align-items: flex-start; gap: 8px; margin-top: var(--space-2); padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); }
+.hint > svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+.hint-text { flex: 1; }
+.hint-ok { flex-shrink: 0; padding: 0 6px; font-size: var(--text-xs); }
 .starters { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: var(--space-3) 0 0 -8px; }
 .starter { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 8px; border: 0; border-radius: var(--radius-sm); background: none; font: inherit; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); text-align: left; cursor: pointer; }
 .starter svg { flex-shrink: 0; color: var(--meta); }
