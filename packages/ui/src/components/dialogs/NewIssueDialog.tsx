@@ -3,11 +3,12 @@ import type { ItemStatus, Priority, WorkType } from "@tomradex/domain";
 import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateItem, useUndo } from "~/lib/queries";
+import { useCreateItem } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
 import { ticketMethods, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
+import { useToastUndo } from "~/lib/undo";
 
 /** Built-in methods keep their localized names; any other playbook shows its own title. */
 const BUILT_IN_METHODS: Record<string, "fields.manualTemplate" | "fields.documentTemplate" | "fields.designTemplate" | "fields.mediaTemplate"> = {
@@ -21,7 +22,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const { t, tx } = useI18n();
   const ws = useWorkspace();
   const create = useCreateItem(ws.project.id);
-  const undo = useUndo(ws.project.id);
+  const undoWrite = useToastUndo(ws.project.id);
   const toast = useToast();
   const playbooks = usePlaybooks(ws.project.id);
 
@@ -103,7 +104,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         onSuccess: (item) => {
           onOpenChange(false);
           setTitle("");
-          toast({ body: <>{tx("newIssueDialog.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
+          toast({ body: <>{tx("newIssueDialog.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
         }
       }
     );

@@ -197,7 +197,9 @@ function afterTimelineMove(qc: QueryClient, projectId: string): void {
 export function useUndo(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (entityId?: string) => invoke("oplog.undo", projectId, entityId),
+    // a bare id is "the newest write to it"; a stamp aims at one write and is refused once something newer stands
+    mutationFn: (target?: string | { id: string; stamp: number }) =>
+      typeof target === "object" ? invoke("oplog.undo", projectId, target.id, target.stamp) : invoke("oplog.undo", projectId, target),
     onSettled: () => afterTimelineMove(qc, projectId)
   });
 }

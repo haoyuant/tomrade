@@ -28,6 +28,7 @@ import { Table } from "./Table";
 import { TitleBar, ViewHead } from "./TitleBar";
 import { useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
+import { useToastUndo } from "~/lib/undo";
 
 /** Below this the three panes cannot all hold their minimum. */
 const THREE_PANE_FLOOR = 1380;
@@ -52,6 +53,7 @@ export function Workspace() {
   useHintToast("hint.graph", !ws.project.sample && ws.layout !== "graph" && ws.items.some((i) => i.blocks.length > 0), "onboarding.graphHint");
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
+  const undoWrite = useToastUndo(ws.project.id);
   const redo = useRedo(ws.project.id);
   const createView = useCreateView(ws.project.id);
   const toast = useToast();
@@ -185,7 +187,7 @@ export function Workspace() {
       {
         onSuccess: (view) => {
           ws.openView(view.id);
-          toast({ body: <>{tx("workspace.createdViewToast", { name: <span className="num">{name}</span> })}</>, onUndo: () => undo.mutate(view.id) });
+          toast({ body: <>{tx("workspace.createdViewToast", { name: <span className="num">{name}</span> })}</>, onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt }) });
         },
         onError: (err) => toast({ body: err.message })
       }

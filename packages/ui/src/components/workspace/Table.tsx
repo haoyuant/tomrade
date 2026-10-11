@@ -4,10 +4,11 @@ import { Icon } from "~/components/icons";
 import { BoardField, CustomField, EpicField, LabelsField, PriorityField, StatusField, useIssueWriter, type IssueWrite } from "~/components/issue/fields";
 import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateItem, useUndo } from "~/lib/queries";
+import { useCreateItem } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { useWorkspace, type WorkspaceValue } from "./context";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
+import { useToastUndo } from "~/lib/undo";
 
 /** What a table shows when the view has not chosen its fields. */
 
@@ -73,7 +74,7 @@ function ComposerRow({ span }: { span: number }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
   const create = useCreateItem(ws.project.id);
-  const undo = useUndo(ws.project.id);
+  const undoWrite = useToastUndo(ws.project.id);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
 
@@ -85,7 +86,7 @@ function ComposerRow({ span }: { span: number }) {
     create.mutate(input, {
       onSuccess: (item) => {
         setEditing(false);
-        toast({ body: <>{tx("table.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undo.mutate(item.id) });
+        toast({ body: <>{tx("table.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
       },
       onError: (err) => toast({ body: err.message })
     });
