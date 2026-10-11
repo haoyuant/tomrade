@@ -128,6 +128,41 @@ describe("a dedicated repository", () => {
     expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Theirs", status: "done" });
   });
 
+  it("never records a repository inside the folder, and drops one an earlier commit recorded", async () => {
+    const a = await machine("embedded");
+    const remote = bareRemote();
+    // The Files store keeps a repository of its own, made before the project had one.
+    const files = path.join(a.dir, "files");
+    fs.mkdirSync(files, { recursive: true });
+    git(["init", "-q", "-b", "main"], files);
+    fs.writeFileSync(path.join(files, "note.md"), "hello\n");
+    git(["-c", "user.email=t@localhost", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "store"], files);
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    expect(git(["ls-tree", "--name-only", "main"], remote).split("\n")).not.toContain("files");
+
+    // A build without the guard committed the pointer; the next publish takes it out.
+    git(["update-index", "--add", "--cacheinfo", `160000,${git(["rev-parse", "HEAD"], files)},files`], a.dir);
+    git(["-c", "user.email=t@localhost", "-c", "user.name=T", "commit", "-q", "-m", "old build"], a.dir);
+    git(["push", "-q", "origin", "HEAD:refs/heads/main"], a.dir);
+    expect(git(["ls-tree", "main", "files"], remote)).toMatch(/^160000 commit/);
+    a.items.create({ title: "Next", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+    expect(git(["ls-tree", "main", "files"], remote)).toBe("");
+    expect(fs.existsSync(path.join(files, "note.md"))).toBe(true);
+  });
+
+  it("keeps a submodule .gitmodules declares", async () => {
+    const a = await machine("submodule");
+    const remote = bareRemote();
+    const lib = path.join(a.dir, "lib");
+    fs.mkdirSync(lib, { recursive: true });
+    git(["init", "-q", "-b", "main"], lib);
+    git(["-c", "user.email=t@localhost", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "lib"], lib);
+    fs.writeFileSync(path.join(a.dir, ".gitmodules"), '[submodule "lib"]\n\tpath = lib\n\turl = ./lib\n');
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    expect(git(["ls-tree", "main", "lib"], remote)).toMatch(/^160000 commit/);
+  });
+
   it("reports offline for a remote that is not there, rather than throwing", async () => {
     const a = await machine("offline");
     const remote = bareRemote();

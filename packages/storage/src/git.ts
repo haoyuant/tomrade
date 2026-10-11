@@ -161,11 +161,28 @@ export class GitFolder {
   /** Stage a subtree (or everything) and commit if anything is staged. Returns whether a commit was made. */
   async commit(message: string, subtree?: string): Promise<boolean> {
     await this.git(subtree ? ["add", "-A", "--", subtree] : ["add", "-A"], { cwd: this.dir });
+    if (!subtree) await this.dropEmbeddedRepositories();
     const staged = await this.git(["diff", "--cached", "--quiet"], { cwd: this.dir, ok: true });
     if (staged.code === 0) return false;
     await this.ensureIdentity();
     await this.git(["commit", "-q", "-m", message], { cwd: this.dir });
     return true;
+  }
+
+  /**
+   * `add -A` records a repository inside the folder (the Files store, before
+   * its ignore line exists) as a bare commit pointer no clone can fill. Only a
+   * submodule `.gitmodules` declares is meant; any other pointer leaves the
+   * index, one an earlier commit recorded included.
+   */
+  private async dropEmbeddedRepositories(): Promise<void> {
+    const staged = await this.git(["ls-files", "-s", "-z"], { cwd: this.dir });
+    const pointers = staged.stdout.split("\0").filter((line) => line.startsWith("160000 ")).map((line) => line.slice(line.indexOf("\t") + 1));
+    if (!pointers.length) return;
+    const modules = await this.git(["config", "-z", "-f", ".gitmodules", "--get-regexp", "\\.path$"], { cwd: this.dir, ok: true });
+    const declared = new Set(modules.stdout.split("\0").filter(Boolean).map((entry) => entry.slice(entry.indexOf("\n") + 1)));
+    const strays = pointers.filter((p) => !declared.has(p));
+    if (strays.length) await this.git(["update-index", "--force-remove", "--", ...strays], { cwd: this.dir });
   }
 
   /**

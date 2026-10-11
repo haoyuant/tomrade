@@ -37,6 +37,7 @@ export function createGitBackend<C>(opts: GitBackendOptions<C>): FilesBackend<C>
     browse: opts.browse,
     draft: opts.draft,
     describe: opts.describe,
+    repository: opts.remote ? (config) => opts.remote!(config) : undefined,
     open(o) {
       const config = o.remote;
       const shared = opts.remote && config !== null;
@@ -46,6 +47,7 @@ export function createGitBackend<C>(opts: GitBackendOptions<C>): FilesBackend<C>
         dir: o.dir,
         remote: shared ? () => opts.remote!(config) : null,
         ensureRemote: shared && opts.ensureRemote ? () => opts.ensureRemote!(config) : undefined,
+        projectRepository: o.projectRepository,
         location: shared && opts.describe ? opts.describe(config) : null,
         warn: o.warn,
         onChange: o.onChange,

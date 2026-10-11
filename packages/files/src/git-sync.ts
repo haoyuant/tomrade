@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
-import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, SyncMode } from "./types.js";
+import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
 export interface VersionRecord {
@@ -132,6 +132,21 @@ export function remoteDirectory(input = ""): string {
   if (!rel) return "";
   if (rel.startsWith("/") || rel.split("/").some((p) => !p || p === "." || p === ".." || p.toLowerCase() === ".git" || p.includes("\0")) || /^[A-Za-z]:/.test(rel)) throw new Error("Invalid remote directory");
   return rel;
+}
+
+/** Host and path, however the URL is spelled: https, ssh:// or scp-like, with or without a credential or `.git`. */
+const repositoryKey = (url: string): string => {
+  const u = url.trim();
+  const bare = /^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u.replace(/^[^:]+:\/\/([^@/]*@)?/, "") : u.replace(/^[^@/]*@/, "").replace(":", "/");
+  return bare.replace(/\/+$/, "").replace(/\.git$/, "").toLowerCase();
+};
+
+/** Whether a target lands on the project's own checkout: its root, or the folder that checkout keeps this store in. */
+export function collidesWithProject(target: { url: string; branch: string; directory?: string }, project: ProjectRepository | null): boolean {
+  if (!project || (target.branch || "main") !== project.branch || repositoryKey(target.url) !== repositoryKey(project.url)) return false;
+  const directory = remoteDirectory(target.directory);
+  // Case-insensitive: on a default macOS or Windows volume `Files/` is the same folder.
+  return !directory || directory.split("/")[0]!.toLowerCase() === project.folder.toLowerCase();
 }
 
 interface IndexEntry {

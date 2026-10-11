@@ -1062,6 +1062,16 @@ are optional too: a backend without them lists everything and cannot search.
 `@tomradex/files-github` registers `github`, sharing the `github` token section
 with `@tomradex/storage-github`.
 
+The project's own repository (a `dedicated` folder) may hold the files in a
+folder of it, but not at its root, where `.tomrade/` lives, nor in `files/`:
+the project's checkout pulls what Files publishes, and there it would land in
+the store's own working tree, where two repositories would commit the same
+files (local-only ones included). `bind` throws `ProjectRepositoryError` for
+such a target, and a `createGitBackend` store bound there earlier reports the
+same error instead of syncing. Another branch of the same repository is fine. A backend that is not built on `createGitBackend` opts in by
+implementing `repository(config)` and asking `projectRepository()` from its
+open options before each sync.
+
 A ticket's files land in a top-level folder named after its workstream:
 `ctx.files.folderFor(projectId, itemId)` is that name (separators become `-`),
 `importFor(projectId, itemId, { sources, role })` copies files from this machine

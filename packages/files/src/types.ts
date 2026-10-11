@@ -246,6 +246,16 @@ export interface OpenStoreOptions<C> {
   onChange(): void;
   /** What the service was configured with; a backend takes what applies to it. */
   env: StoreEnv;
+  /** The project's own repository, asked on every sync; a backend sharing through git keeps out of its root and the store's folder. */
+  projectRepository?(): Promise<ProjectRepository | null>;
+}
+
+/** The repository Tomrade drives for the project itself, with `.tomrade/` at its root. */
+export interface ProjectRepository {
+  url: string;
+  branch: string;
+  /** The top-level folder its checkout keeps the files store in. */
+  folder: string;
 }
 
 export interface StoreEnv {
@@ -277,6 +287,8 @@ export interface FilesBackend<C = unknown> {
   draft?(name: string): Promise<C> | C;
   /** One non-secret line naming the remote, for status. */
   describe?(config: C): string;
+  /** The git repository a config shares through, so a remote that cannot work is refused before it is saved. */
+  repository?(config: C): Promise<{ url: string; branch: string; directory?: string }> | { url: string; branch: string; directory?: string };
 }
 
 /** What the renderer gets: the schema as JSON Schema, so a form is drawn without the backend's code. */
@@ -327,6 +339,18 @@ export class FileChangedError extends Error {
   constructor(public readonly path: string) {
     super(`${path} changed since it was read`);
     this.name = "FileChangedError";
+  }
+}
+
+/**
+ * The project's own checkout pulls whatever Files publishes there: at the root
+ * Files would take `.tomrade/`, and in the store's own folder two repositories
+ * would commit the same files, local-only ones included.
+ */
+export class ProjectRepositoryError extends Error {
+  constructor(public readonly folder: string) {
+    super(`This repository holds the project itself: share Files through a folder in it other than ${folder}/, such as project-files, or through another branch or repository`);
+    this.name = "ProjectRepositoryError";
   }
 }
 
