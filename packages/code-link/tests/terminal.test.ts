@@ -5,6 +5,7 @@ describe("terminal command options", () => {
   it("turns the model and effort picked at Start into each CLI's own flags", () => {
     expect(optionFlags("claude-code", { model: "opus", effort: "high" })).toBe("--model opus --effort high");
     expect(optionFlags("codex", { model: "gpt-5", effort: "medium" })).toBe("-m gpt-5 -c model_reasoning_effort=medium");
+    expect(optionFlags("pi", { model: "anthropic/claude-sonnet-4-5", effort: "high" })).toBe("--model anthropic/claude-sonnet-4-5 --thinking high");
     expect(optionFlags("claude-code", { effort: "high" })).toBe("--effort high");
     expect(optionFlags("claude-code", { model: "  " })).toBe("");
     expect(optionFlags("other", { model: "x" })).toBe("");
@@ -21,6 +22,8 @@ describe("terminal command options", () => {
     expect(fillTemplate(withOptions(defaults.claudeCommand, ""), values)).toBe('claude --mcp-config "/s/mcp.json" --settings "/s/settings.json" "$(cat "/s/prompt.md")"');
     expect(fillTemplate(withOptions(defaults.claudeCommand, "--model opus"), values)).toBe('claude --model opus --mcp-config "/s/mcp.json" --settings "/s/settings.json" "$(cat "/s/prompt.md")"');
     expect(fillTemplate(withOptions(defaults.codexCommand, "-m gpt-5"), { ...values, resume: "resume abc" })).toMatch(/^codex resume abc -m gpt-5 -c mcp_servers/);
+    expect(fillTemplate(withOptions(defaults.piCommand, "--thinking high"), { ...values, piExtension: "/s/pi-extension.ts", resume: "--session-id abc" }))
+      .toBe('pi --thinking high -e "/s/pi-extension.ts" --session-id abc "$(cat "/s/prompt.md")"');
     const legacy = 'claude --mcp-config "{mcpConfig}" "$(cat "{prompt}")"';
     expect(withOptions(legacy, "--effort high")).toBe('claude --effort high --mcp-config "{mcpConfig}" "$(cat "{prompt}")"');
     expect(withOptions(legacy, "")).toBe(legacy);

@@ -9,7 +9,8 @@ import { useSettings } from "~/lib/queries";
 /** The local agents Start can hand a ticket to, and what fixes each one in a terminal. */
 const LOCAL: Record<string, { install: string; signIn: string }> = {
   "claude-code": { install: "npm install -g @anthropic-ai/claude-code", signIn: "claude" },
-  codex: { install: "npm install -g @openai/codex", signIn: "codex login" }
+  codex: { install: "npm install -g @openai/codex", signIn: "codex login" },
+  pi: { install: "npm install -g @earendil-works/pi-coding-agent", signIn: "pi" }
 };
 
 /**
