@@ -12,6 +12,8 @@ export interface CommandScope {
 
 export interface CommandResult {
   toast?: string;
+  /** A conversation the renderer should bring up in the assistant panel. */
+  showThread?: string;
 }
 
 export interface Command {
