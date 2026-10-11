@@ -30,7 +30,9 @@ async function store(remote: string | null = null) {
     location: remote ? "test remote" : null,
     warn: noop,
     onChange: noop,
-    watch: false
+    watch: false,
+    // Tests sync by hand; a timed push landing mid-test would be joined by their sync() and skip a later write.
+    pushMs: 600_000
   }).open();
 }
 

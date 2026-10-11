@@ -7,13 +7,14 @@ import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { Files, createGitBackend } from "@tomradex/files";
+import storageGit from "@tomradex/storage-git";
+import { Files, ProjectRepositoryError, createGitBackend } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-sync-svc-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 let n = 0;
 
-async function machine() {
+async function machine(extra: unknown[] = []) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const bag = await fresh({
@@ -21,7 +22,8 @@ async function machine() {
     plugins: [
       [Settings, { path: path.join(hubDir, "settings.json") }],
       [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
-      [Files, { watch: false, autoSyncMs: 0 }]
+      [Files, { watch: false, autoSyncMs: 0 }],
+      ...extra
     ]
   });
   await settle();
@@ -264,6 +266,58 @@ describe("selective sync through ctx.files", { timeout: 60_000 }, () => {
       expect((await ctx.files.read(id, "incoming.md"))?.body).toBe("incoming doc\n");
       expect((await ctx.files.read(id, "private.md"))?.body).toBe("stays here");
       expect(git(remote, "show", "main:src/index.ts")).toBe("export const version = 2;");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+});
+
+describe("the project's own repository", { timeout: 60_000 }, () => {
+  const bare = () => {
+    const remote = path.join(root, `own-${n++}.git`);
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+    return remote;
+  };
+
+  it("refuses its root before saving, and shares a folder in it", async () => {
+    const { ctx, project } = await machine([storageGit]);
+    const id = project.id;
+    try {
+      ctx.plugin({ name: "scoped-folder-backend", inject: ["files"], apply: (c) => void c.files.register(folderBackend) });
+      await settle();
+      const remote = bare();
+      await ctx.files.write(id, "notes.md", "hello\n");
+      await ctx.storage.bind(id, "git", { remote, branch: "main" });
+      await expect(ctx.files.bind(id, "scoped-folder", { path: `${remote}/`, directory: "" })).rejects.toThrow(ProjectRepositoryError);
+      expect(ctx.files.remoteOf(id)).toBeNull();
+      expect(git(remote, "ls-tree", "--name-only", "main").split("\n")).toEqual([".tomrade"]);
+
+      // The project publishes the new binding to the same branch at once; Files may have to push again.
+      await ctx.files.bind(id, "scoped-folder", { path: remote, directory: "project-files" });
+      expect((await ctx.files.sync(id)).state).toBe("synced");
+      expect(git(remote, "show", "main:project-files/notes.md")).toBe("hello");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("stops a root binding made before the project took the repository", async () => {
+    const { ctx, project } = await machine([storageGit]);
+    const id = project.id;
+    try {
+      ctx.plugin({ name: "scoped-folder-backend", inject: ["files"], apply: (c) => void c.files.register(folderBackend) });
+      await settle();
+      const remote = bare();
+      await ctx.files.write(id, "notes.md", "hello\n");
+      expect((await ctx.files.bind(id, "scoped-folder", { path: remote, directory: "" })).state).toBe("synced");
+      await ctx.storage.bind(id, "git", { remote, branch: "main" });
+      const tip = git(remote, "rev-parse", "main");
+      await ctx.files.write(id, "later.md", "not shared\n");
+      const status = await ctx.files.sync(id);
+      expect(status.state).toBe("error");
+      expect(status.detail).toMatch(/holds the project itself/);
+      expect(git(remote, "rev-parse", "main")).toBe(tip);
+      expect((await ctx.files.read(id, "later.md"))?.body).toBe("not shared\n");
     } finally {
       await ctx.fiber.dispose();
     }

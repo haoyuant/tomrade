@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
-import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, SyncMode } from "./types.js";
+import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
 export interface VersionRecord {
@@ -132,6 +132,19 @@ export function remoteDirectory(input = ""): string {
   if (!rel) return "";
   if (rel.startsWith("/") || rel.split("/").some((p) => !p || p === "." || p === ".." || p.toLowerCase() === ".git" || p.includes("\0")) || /^[A-Za-z]:/.test(rel)) throw new Error("Invalid remote directory");
   return rel;
+}
+
+/** Host and path, however the URL is spelled: https, ssh:// or scp-like, with or without a credential or `.git`. */
+const repositoryKey = (url: string): string => {
+  const u = url.trim();
+  const bare = /^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u.replace(/^[^:]+:\/\/([^@/]*@)?/, "") : u.replace(/^[^@/]*@/, "").replace(":", "/");
+  return bare.replace(/\/+$/, "").replace(/\.git$/, "").toLowerCase();
+};
+
+/** Whether a target is the root of the project's own repository, where `.tomrade/` lives. */
+export function sharesProjectRoot(target: { url: string; branch: string; directory?: string }, project: ProjectRepository | null): boolean {
+  if (!project || remoteDirectory(target.directory)) return false;
+  return (target.branch || "main") === project.branch && repositoryKey(target.url) === repositoryKey(project.url);
 }
 
 interface IndexEntry {
