@@ -61,8 +61,12 @@ function layout(items: Item[], edges: GraphEdge[]): Map<string, { x: number; y: 
   return out;
 }
 
+/** Below this a card's title is too small to read. */
+const FIT_MIN_ZOOM = 0.65;
+
+// a satisfied dependency reads quieter, and dashed, rather than vanishing
 const EDGE_STROKE: Record<string, string> = {
-  faint: "var(--rule)",
+  faint: "var(--border)",
   neutral: "var(--meta)",
   strong: "var(--meta)",
   danger: "var(--danger)"
@@ -98,8 +102,9 @@ function Canvas() {
   };
 
   const edgeShape = edges.map((e) => `${e.from}>${e.to}`).join();
+  // dagre runs when the nodes or the edges change, not when a card is selected
+  const placed = useMemo(() => layout(shown, edges), [shown, edgeShape]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const placed = layout(shown, edges);
     setNodes(
       shown.map((item) => ({
         id: item.id,
@@ -111,7 +116,7 @@ function Canvas() {
         selected: item.id === ws.selectedId
       }))
     );
-  }, [shown, edgeShape, editable, ws.selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shown, placed, editable, ws.selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const flowEdges = useMemo<Edge[]>(
     () =>
@@ -122,7 +127,7 @@ function Canvas() {
         title: e.title,
         selectable: editable,
         deletable: editable,
-        style: { stroke: EDGE_STROKE[e.tone ?? "neutral"], strokeWidth: e.tone === "danger" ? 2 : 1.5 },
+        style: { stroke: EDGE_STROKE[e.tone ?? "neutral"], strokeWidth: e.tone === "danger" ? 2 : 1.5, ...(e.tone === "faint" ? { strokeDasharray: "4 3" } : {}) },
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: EDGE_STROKE[e.tone ?? "neutral"] }
       })),
     [edges, editable]
@@ -160,18 +165,19 @@ function Canvas() {
         nodesConnectable={editable}
         deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
         fitView
-        fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
+        // fitting a wide graph never shrinks the cards past reading; the rest is a pan away
+        fitViewOptions={{ padding: 0.15, maxZoom: 1, minZoom: FIT_MIN_ZOOM }}
         minZoom={0.2}
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--rule)" />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--border-soft)" />
       </ReactFlow>
       {shown.length === 0 && <p className="col-empty graph-empty">{t("graphView.empty")}</p>}
       {!graphId && <p className="col-empty graph-empty">{t("graphView.noGraph")}</p>}
       <div className="graph-foot">
         <span className="meta-txt dense">{editable ? t("graphView.editHint") : t("graphView.readOnlyHint")}</span>
-        <button type="button" className="btn btn-ghost" style={{ padding: "4px 8px" }} onClick={() => void fitView({ padding: 0.15, maxZoom: 1, duration: 250 })}>
+        <button type="button" className="btn btn-ghost" style={{ padding: "4px 8px" }} onClick={() => void fitView({ padding: 0.15, maxZoom: 1, minZoom: FIT_MIN_ZOOM, duration: 250 })}>
           <Icon name="i-shrink" size={13} /> {t("graphView.fit")}
         </button>
       </div>

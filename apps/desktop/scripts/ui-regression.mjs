@@ -418,6 +418,8 @@ const run = async () => {
   const graphOwned = ownedNow();
   check("the graph draws a card node per owned issue", (await $(`document.querySelectorAll('.react-flow__node .card').length`)) === graphOwned.length);
   check("the dependencies draw as arrows", (await $(`document.querySelectorAll('.react-flow__edge').length`)) === edgesAmong(graphOwned));
+  check("fitting the graph keeps cards readable", (await $(`new DOMMatrix(getComputedStyle(document.querySelector('.react-flow__viewport')).transform).a`)) >= 0.649);
+  check("every edge is drawn in a colour the theme defines", (await $(`[...document.querySelectorAll('.react-flow__edge-path')].every((p) => { const c = getComputedStyle(p).stroke; return c && c !== 'none' && !c.startsWith('rgba(0, 0, 0, 0)'); })`)) === true);
 
   await press(`document.querySelector('.react-flow__node .card')`);
   await sleep(900);
