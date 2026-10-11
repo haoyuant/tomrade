@@ -170,7 +170,7 @@ const zh: CodeWords = {
   cmdOpenTerminal: "在终端里打开工作树",
   cmdAccept: "接受代码建议",
   cmdReject: "忽略代码建议",
-  cmdConnect: "把仓库连接到编码代理",
+  cmdConnect: "把仓库连接到编码智能体",
   cmdRescan: "重新扫描仓库",
   needsApproval: "需要你批准",
   askingYou: "在问你问题"

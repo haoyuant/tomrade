@@ -108,9 +108,9 @@ export const localCli = {
     notReady: "{{title}} 未就绪：{{state}}。",
     configure: "去配置",
 
-    whatIsLocal: "Claude Code、Codex 和 Pi 是运行在你电脑上的编程 agent。点“开始”后，Tomrade 把 ticket 交给它们，由它们在你的仓库里完成工作——先安装并登录其中一个。",
+    whatIsLocal: "Claude Code、Codex 和 Pi 是运行在你电脑上的编程智能体。点“开始”后，Tomrade 把工作项交给它们，由它们在你的仓库里完成工作——先安装并登录其中一个。",
     repairLine: "{{title}}：找到了但无法运行",
     wslLine: "{{title}}：只装在 WSL 中，Windows 版 Tomrade 用不了",
-    setUpLocal: "配置本地 agent"
+    setUpLocal: "配置本地智能体"
   }
 };

@@ -59,7 +59,7 @@ export const repositories = {
     cloning: "克隆中…",
     clonedToast: "已把 {{name}} 克隆到 {{dir}}",
     runInCheckout: "直接在 checkout 里运行",
-    runInCheckoutNote: "agent 默认在主目录下的 worktree 里运行；打开后改为在你的工作区里运行——那是你的决定和风险。",
+    runInCheckoutNote: "智能体默认在主目录下的工作树里运行；打开后改为在你的工作区里运行——那是你的决定和风险。",
     clear: "清除",
     remove: "移除",
     removeTitle: "移除 {{name}}",

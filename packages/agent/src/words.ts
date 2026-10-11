@@ -16,7 +16,7 @@ const en = {
 export type AgentWords = typeof en;
 
 const zh: AgentWords = {
-  humanTookOver: "人工接手了这次交付，代理已停止执行。",
+  humanTookOver: "人工接手了这次交付，智能体已停止执行。",
   cancelledWaiting: "引擎换了，等待中的问题已取消。",
   engineSwitched: (title: string) => `已切换到引擎 ${title}。`,
   reverted: (n: number, kept: { labels: string; reason: string } | null) => `已撤销这次运行的 ${n} 处改动${kept ? `；保留了 ${kept.labels}（${kept.reason}）` : ""}。`,
