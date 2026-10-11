@@ -171,8 +171,18 @@ A redirect missing from the list falls back to the Site URL. The probe
 `GET /auth/v1/verify?type=signup&token=x&redirect_to=<url>` (an invalid token,
 so it changes nothing) answers with a `Location` that shows which one won.
 
-The default email templates (`{{ .ConfirmationURL }}`) are enough; nothing in
-the app reads a code. After sign-up, the app waits on a **Check your email**
+The two emails are bilingual (Chinese first, as in the app's brand line) and
+live in `supabase/templates/`. Supabase does not read them from the repository:
+paste each one under Authentication → Emails → Templates and set its subject.
+
+| Template | File | Subject |
+| --- | --- | --- |
+| Confirm signup | `supabase/templates/confirm-signup.html` | `确认你的 Tomrade 邮箱 / Confirm your Tomrade email` |
+| Reset password | `supabase/templates/reset-password.html` | `重设你的 Tomrade 密码 / Reset your Tomrade password` |
+
+They use only `{{ .Email }}` and `{{ .ConfirmationURL }}`; nothing in the app
+reads a code. The other templates (magic link, invite, email change,
+reauthentication) are not used. After sign-up, the app waits on a **Check your email**
 step that keeps the typed password in memory. It retries the sign-in when the
 window regains focus, and on **I've confirmed, sign in**. **Resend email**
 counts down from Supabase's one-email-a-minute limit, and when Supabase refuses
