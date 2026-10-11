@@ -152,6 +152,8 @@ declare module "@tomradex/ipc" {
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     "agent.archiveThread": (projectId: string, threadId: string) => boolean;
+    "agent.archivedThreads": (projectId: string) => ThreadSummary[];
+    "agent.unarchiveThread": (projectId: string, threadId: string) => boolean;
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
@@ -309,13 +311,19 @@ export class Agent extends Service {
       });
     });
     this.ctx.inject(["ipc"], (ctx) => {
-      ctx.ipc.handle("agent.threads", (projectId) => ctx.agent.store.threads(projectId));
+      // the panel's list says which conversations are working right now
+      ctx.ipc.handle("agent.threads", (projectId) => {
+        const running = new Set(ctx.agent.activeRuns().map((a) => a.thread.id));
+        return ctx.agent.store.threads(projectId).map((th) => (running.has(th.id) ? { ...th, running: true } : th));
+      });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.startGeneral", (projectId, itemId, opts) => ctx.agent.startGeneral(projectId, itemId, opts));
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
+      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.store.archivedThreads(projectId));
+      ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
@@ -724,6 +732,12 @@ export class Agent extends Service {
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
     if (!this.store.thread(projectId, threadId)) return false;
     this.store.setArchived(projectId, threadId, true);
+    return true;
+  }
+
+  unarchiveThread(projectId: string, threadId: string): boolean {
+    if (!this.store.thread(projectId, threadId)) return false;
+    this.store.setArchived(projectId, threadId, false);
     return true;
   }
 

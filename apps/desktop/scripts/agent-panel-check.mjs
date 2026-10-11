@@ -146,6 +146,30 @@ const run = async () => {
   await sleep(400);
   check("once it has ended, Enter sends the waiting draft", (await draftNow()) === "" && (await panel()).working);
   await sleep(4000);
+
+  // ── the thread list: searchable, says what runs, keeps the archive ───
+  for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
+  await newThread();
+  await send("a long one");
+  await sleep(300);
+  await threads();
+  check("a long thread list offers a search", await $(`!!document.querySelector('.menu-search input')`));
+  check("a conversation with a run going says so", await $(`[...document.querySelectorAll('.menu-row.is-radio')].some((r) => (r.textContent ?? '').includes('Running'))`));
+  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation 3'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(300);
+  check("typing narrows the list", (await $(`[...document.querySelectorAll('.menu-row.is-radio')].filter((r) => r.closest('.menu-foot') === null).map((r) => r.querySelector('.m-name')?.textContent)`)).join("|") === "Filler conversation 3");
+  const filler = ctx.agent.store.threads(alpha.id).find((th) => th.title === "Filler conversation 3");
+  ctx.agent.archiveThread(alpha.id, filler.id);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  await threads();
+  await press(`[...document.querySelectorAll('.menu-foot [role="menuitem"]')].find((r) => /Show archived/.test(r.textContent ?? ''))`);
+  await sleep(600);
+  check("the archive lists what was put away", await $(`[...document.querySelectorAll('.menu-foot .menu-row.is-radio')].some((r) => r.textContent?.includes('Filler conversation 3'))`));
+  await press(`[...document.querySelectorAll('.menu-foot .menu-row.is-radio')].find((r) => r.textContent?.includes('Filler conversation 3'))`);
+  await sleep(800);
+  check("picking it brings it back", ctx.agent.store.thread(alpha.id, filler.id)?.archived === false);
+  await sleep(3500);
   check("harness reached the end", true);
 };
 

@@ -13,7 +13,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
 import { permissionLabel as permissionName } from "~/lib/codeLink";
@@ -391,6 +391,13 @@ export function AgentPanel({
   const attention = useAttention().filter((e) => e.projectId === projectId);
   const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
   const attentionLabel = (e: AttentionEntry) => t(`agentPanel.attention_${e.kind}` as MessageKey);
+  // the list: searchable once it is long, with what is running or waiting said beside each, and the archive a click away
+  const [threadQuery, setThreadQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const archived = useArchivedThreads(projectId, showArchived);
+  const unarchive = useUnarchiveThread(projectId);
+  const threadTerm = threadQuery.trim().toLowerCase();
+  const matchingThreads = (threads.data ?? []).filter((th) => !threadTerm || (th.title || "").toLowerCase().includes(threadTerm));
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
   const following = useRef(true);
@@ -648,12 +655,28 @@ export function AgentPanel({
               </button>
             }
           />
-          {(threads.data ?? []).slice(0, 12).map((th) => (
+          {(threads.data?.length ?? 0) > 6 && (
+            <div className="menu-search">
+              <input
+                className="input"
+                type="search"
+                aria-label={t("agentPanel.searchThreads")}
+                placeholder={t("agentPanel.searchThreads")}
+                value={threadQuery}
+                // the menu's typeahead would take the keys otherwise
+                onKeyDown={(e) => e.stopPropagation()}
+                onChange={(e) => setThreadQuery(e.target.value)}
+              />
+            </div>
+          )}
+          {threadTerm && matchingThreads.length === 0 && <p className="meta-txt dense menu-note">{t("agentPanel.noThreadsMatch")}</p>}
+          {matchingThreads.length > 30 && <p className="meta-txt dense menu-note">{t("agentPanel.moreThreads", { n: matchingThreads.length - 30 })}</p>}
+          {matchingThreads.slice(0, 30).map((th) => (
             <MenuRadioItem
               key={th.id}
               checked={th.id === threadId}
               name={th.title || t("agentPanel.newThread")}
-              sub={attentionOf.has(th.id) ? `${attentionLabel(attentionOf.get(th.id)!)} · ${timeAgo(th.updatedAt)}` : timeAgo(th.updatedAt)}
+              sub={[attentionOf.has(th.id) ? attentionLabel(attentionOf.get(th.id)!) : th.running ? t("agentPanel.threadRunning") : null, timeAgo(th.updatedAt)].filter(Boolean).join(" · ")}
               onSelect={() => pickThread(th.id)}
               actions={
                 <>
@@ -667,6 +690,25 @@ export function AgentPanel({
               }
             />
           ))}
+          <div className="menu-foot">
+            <MenuActionItem icon={<Icon name="i-archive" size={13} />} name={showArchived ? t("agentPanel.hideArchived") : t("agentPanel.showArchived")} keepOpen onSelect={() => setShowArchived((v) => !v)} />
+            {showArchived && (archived.data ?? []).length === 0 && <p className="meta-txt dense menu-note">{t("agentPanel.noArchived")}</p>}
+            {showArchived &&
+              (archived.data ?? []).map((th) => (
+                <MenuRadioItem
+                  key={th.id}
+                  checked={false}
+                  name={th.title || t("agentPanel.newThread")}
+                  sub={timeAgo(th.updatedAt)}
+                  onSelect={() => unarchive.mutate(th.id, { onSuccess: () => pickThread(th.id) })}
+                  actions={
+                    <button type="button" className="btn btn-icon" title={t("agentPanel.restoreThread")} aria-label={t("agentPanel.restoreThread")} onClick={() => unarchive.mutate(th.id)}>
+                      <Icon name="i-undo" size={12} />
+                    </button>
+                  }
+                />
+              ))}
+          </div>
         </Menu>
         <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} />

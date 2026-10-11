@@ -18,6 +18,16 @@ export const agentKeys = {
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agentKeys.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
+/** Put-away conversations, fetched only while the list asks for them. */
+export const useArchivedThreads = (projectId: string, enabled: boolean) =>
+  useQuery({ queryKey: [...agentKeys.threads(projectId), "archived"], queryFn: () => invoke("agent.archivedThreads", projectId), enabled });
+
+export function useUnarchiveThread(projectId: string) {
+  const qc = useQueryClient();
+  const report = useErrorToast();
+  return useMutation({ onError: report, mutationFn: (threadId: string) => invoke("agent.unarchiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) }) });
+}
+
 // Events only patch the thread on screen, so a cached one missed whatever its run did meanwhile
 // (even finishing, which left the panel "working" for good): always refetch when it comes back into view.
 export const useAgentThread = (projectId: string, threadId: string | null) =>
@@ -245,6 +255,8 @@ export function useAgentEvents(
           break;
         case "run":
           patch((d) => ({ ...d, runs: [...d.runs.filter((r) => r.id !== event.run.id), event.run] }));
+          // the thread list says which conversations are running
+          void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId), exact: true });
           break;
         case "done":
           onDelta(event.run.id, null);

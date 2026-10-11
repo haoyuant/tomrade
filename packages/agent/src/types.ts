@@ -43,6 +43,8 @@ export type ThreadSurface = "assistant" | "code";
 
 export interface ThreadSummary {
   execution?: GeneralExecution | null;
+  /** In a listing for the panel: a run of it is going right now. */
+  running?: boolean;
   id: string;
   projectId: string;
   /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */

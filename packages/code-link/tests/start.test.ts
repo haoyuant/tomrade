@@ -500,6 +500,22 @@ describe("starting a ticket", () => {
     expect(ctx.contributions.commands().find((c) => c.id === "code-link.start-run")).toMatchObject({ title: "在这里开始工作项", group: "代码" });
   });
 
+  it("brings an archived conversation back when its ticket is continued", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Archived midway");
+    const first = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await untilRunsSettle(agent);
+    agent.archiveThread(project.id, first.threadId);
+    expect(agent.store.archivedThreads(project.id).map((t) => t.id)).toContain(first.threadId);
+    const again = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(again).toMatchObject({ ok: true, continued: true, threadId: first.threadId });
+    expect(agent.store.thread(project.id, first.threadId)?.archived).toBe(false);
+    await untilRunsSettle(agent);
+  });
+
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;

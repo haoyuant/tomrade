@@ -233,6 +233,11 @@ export class AgentStore {
     return rows.map(toThread);
   }
 
+  /** Put away, newest first — so a conversation archived by mistake can be found and brought back. */
+  archivedThreads(projectId: string, surface: ThreadSurface = "assistant"): ThreadSummary[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface = ? AND archived = 1 ORDER BY updated_at DESC").all(projectId, surface) as ThreadRow[]).map(toThread);
+  }
+
   setArchived(projectId: string, id: string, archived: boolean): void {
     this.db(projectId).prepare("UPDATE plugin_agent_threads SET archived = ?, updated_at = ? WHERE id = ?").run(archived ? 1 : 0, Date.now(), id);
   }

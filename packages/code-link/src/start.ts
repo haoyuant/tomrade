@@ -190,6 +190,11 @@ export class Starter {
     const asked = thread && opts.mode === "run" && !agent.activeRuns().some((a) => a.thread.id === thread!.id) ? agent.store.pending(projectId, thread.id)?.question : undefined;
     if (thread) {
       continued = true;
+      // continuing a conversation someone archived brings it back, so the run is not out of sight
+      if (thread.archived) {
+        agent.unarchiveThread(projectId, thread.id);
+        thread = agent.store.thread(projectId, thread.id)!;
+      }
       if (thread.surface !== surface) {
         agent.store.touchThread(projectId, thread.id, { surface });
         thread = agent.store.thread(projectId, thread.id)!;
