@@ -183,6 +183,14 @@ const run = async () => {
   await click('[data-testid="setup-local"]');
   check("Set up opens Settings on the first agent's row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the card"));
 
+  // signed in in a terminal meanwhile: the card's own Check again sees it, past the probe cache
+  await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(500);
+  fs.writeFileSync(claude, `#!/bin/sh\ncase "$1" in\n  --version) echo "claude 9.9.9";;\n  *) echo '{"loggedIn": true}';;\nesac\n`, { mode: 0o755 });
+  check("the card offers to look again", await has('[data-testid="setup-recheck"]'));
+  await click('[data-testid="setup-recheck"]');
+  check("and finds the agent signed in, without a restart", await wait(() => $(`!document.querySelector('.agent-setup [data-setup="local"]:not(.is-ok)')`), "local row ready"));
+
   console.log(`screenshots in ${shots}`);
 };
 
