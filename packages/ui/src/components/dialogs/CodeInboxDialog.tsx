@@ -5,7 +5,7 @@ import { useAdoptBranch, useProposals, useRescan, useResolveProposal, useUnlinke
 import { STATUS, agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useItems } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /**
  * What git says that the backlog does not yet: status changes the scanner
@@ -34,7 +34,7 @@ export function CodeInboxDialog({ projectId, open, onOpenChange, onOpenIssue }: 
             type="button"
             className="btn btn-secondary"
             disabled={rescan.isPending}
-            onClick={() => rescan.mutate(undefined, { onSuccess: (s) => toast({ body: t("codeLink.rescanned", { scanned: s.scanned, repos: s.repos, moved: s.changed }) }), onError: (e) => toast({ body: e.message }) })}
+            onClick={() => rescan.mutate(undefined, { onSuccess: (s) => toast({ body: t("codeLink.rescanned", { scanned: s.scanned, repos: s.repos, moved: s.changed }) }), onError: (e) => toast(errorSpec(e)) })}
           >
             {rescan.isPending ? t("codeLink.scanning") : t("codeLink.rescan")}
           </button>
@@ -57,11 +57,11 @@ export function CodeInboxDialog({ projectId, open, onOpenChange, onOpenIssue }: 
                 </div>
                 <div className="inbox-actions">
                   {p.kind === "propose" && p.toStatus && (
-                    <button type="button" className="btn btn-primary" disabled={resolve.isPending} onClick={() => resolve.mutate({ proposalId: p.id, accept: true }, { onError: (e) => toast({ body: e.message }) })}>
+                    <button type="button" className="btn btn-primary" disabled={resolve.isPending} onClick={() => resolve.mutate({ proposalId: p.id, accept: true }, { onError: (e) => toast(errorSpec(e)) })}>
                       {t("codeLink.accept", { status: STATUS[p.toStatus].label })}
                     </button>
                   )}
-                  <button type="button" className="btn btn-ghost" disabled={resolve.isPending} onClick={() => resolve.mutate({ proposalId: p.id, accept: false }, { onError: (e) => toast({ body: e.message }) })}>
+                  <button type="button" className="btn btn-ghost" disabled={resolve.isPending} onClick={() => resolve.mutate({ proposalId: p.id, accept: false }, { onError: (e) => toast(errorSpec(e)) })}>
                     {t("codeLink.dismiss")}
                   </button>
                 </div>
@@ -86,7 +86,7 @@ export function CodeInboxDialog({ projectId, open, onOpenChange, onOpenIssue }: 
                   type="button"
                   className="btn btn-secondary"
                   disabled={adopt.isPending}
-                  onClick={() => adopt.mutate({ repoId: b.repoId, branch: b.branch }, { onSuccess: (item) => toast({ body: t("codeLink.adopted", { key: item.key }) }), onError: (e) => toast({ body: e.message }) })}
+                  onClick={() => adopt.mutate({ repoId: b.repoId, branch: b.branch }, { onSuccess: (item) => toast({ body: t("codeLink.adopted", { key: item.key }) }), onError: (e) => toast(errorSpec(e)) })}
                 >
                   <Icon name="i-plus" size={13} /> {t("codeLink.createTicket")}
                 </button>

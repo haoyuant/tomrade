@@ -10,7 +10,7 @@ import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUp
 import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
 import { StorageBlock } from "./StorageBlock";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -155,9 +155,17 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
 
   const save = () => {
     const trimmed = name.trim() || project.name;
-    update.mutate({ id: project.id, patch: { name: trimmed, description: description.trim() || null, archived } });
-    onClose();
-    toast({ body: <>{tx("projectSettingsDialog.savedToast", { name: <span className="num">{trimmed}</span> })}</> });
+    // "Saved" only once it is: a refused save keeps the sheet open with the draft
+    update.mutate(
+      { id: project.id, patch: { name: trimmed, description: description.trim() || null, archived } },
+      {
+        onSuccess: () => {
+          onClose();
+          toast({ body: <>{tx("projectSettingsDialog.savedToast", { name: <span className="num">{trimmed}</span> })}</> });
+        },
+        onError: (err) => toast(errorSpec(err))
+      }
+    );
   };
 
   useEffect(() => {
@@ -348,7 +356,7 @@ function DeleteFace({
         onDeleted();
         toast({ body: <>{tx("projectSettingsDialog.deletedToast", { name: <span className="num">{project.name}</span> })}</> });
       },
-      onError: (err) => toast({ body: err.message })
+      onError: (err) => toast(errorSpec(err))
     });
   };
 

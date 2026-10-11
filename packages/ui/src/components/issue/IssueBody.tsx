@@ -16,7 +16,7 @@ import { filesKeys } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { renderMarkdown } from "~/lib/markdown";
 import { openExternal } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import type { FieldProps } from "./fields";
 
@@ -187,7 +187,7 @@ function BodyMarkdown({ projectId, text, drafts }: { projectId: string; text: st
   const open = (fileId: string, name: string) =>
     void invoke("files.locate", projectId, fileId)
       .then((path) => (path ? void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: path } }) : toast({ body: t("fields.attachMissing", { name }) })))
-      .catch((err: Error) => toast({ body: err.message }));
+      .catch((err: Error) => toast(errorSpec(err)));
 
   const onClick = (e: MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;

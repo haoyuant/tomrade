@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
+import { messageOf } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 
 export interface ToastSpec {
@@ -11,7 +12,18 @@ export interface ToastSpec {
   actions?: { label: string; run: () => void }[];
   /** Stays until dismissed by its id — for work in progress, not news. */
   sticky?: boolean;
+  /** An error reads as one: marked, said assertively, longer-lived, and its words can be copied. */
+  tone?: "error";
 }
+
+/** An error in the person's view: no IPC wrapper, no class name in front. */
+export const readableError = (error: unknown): string => {
+  const raw = messageOf(error);
+  return raw.replace(/^(?:[A-Z][A-Za-z]*Error): /, "").trim() || raw;
+};
+
+/** The toast for a failure: `toast(errorSpec(err))`. */
+export const errorSpec = (error: unknown): ToastSpec => ({ body: readableError(error), tone: "error" });
 
 interface Toast extends ToastSpec {
   id: number;
@@ -21,6 +33,8 @@ type Push = (t: ToastSpec) => number;
 const Ctx = createContext<{ push: Push; dismiss: (id: number) => void }>({ push: () => 0, dismiss: () => {} });
 
 const LIFETIME = 6000;
+/** Long enough to read a git error to the end. Hovering or focusing holds either. */
+const ERROR_LIFETIME = 15000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -59,13 +73,15 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
 
   useEffect(() => {
     if (held || toast.sticky) return;
-    const timer = window.setTimeout(() => dismiss.current(), LIFETIME);
+    const timer = window.setTimeout(() => dismiss.current(), toast.tone === "error" ? ERROR_LIFETIME : LIFETIME);
     return () => window.clearTimeout(timer);
-  }, [held, toast.sticky]);
+  }, [held, toast.sticky, toast.tone]);
 
+  const error = toast.tone === "error";
   return (
     <div
-      className={toast.sticky ? "toast is-sticky" : "toast"}
+      className={["toast", toast.sticky && "is-sticky", error && "is-error"].filter(Boolean).join(" ")}
+      role={error ? "alert" : undefined}
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocus={() => setHeld(true)}
@@ -100,6 +116,18 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
           {action.label}
         </button>
       ))}
+      {error && typeof toast.body === "string" && (
+        <button
+          type="button"
+          className="btn btn-icon"
+          style={{ padding: 4 }}
+          title={t("toast.copy")}
+          aria-label={t("toast.copy")}
+          onClick={() => void navigator.clipboard?.writeText(toast.body as string).catch(() => {})}
+        >
+          <Icon name="i-copy" size={12} />
+        </button>
+      )}
       <button
         type="button"
         className="btn btn-icon"
@@ -118,3 +146,9 @@ export const useToast = (): Push => useContext(Ctx).push;
 
 /** For a toast that reports work in progress: put it up, take it down when the work is done. */
 export const useToastDismiss = () => useContext(Ctx).dismiss;
+
+/** For hooks whose callers report nothing: a failure still reaches the person. */
+export function useErrorToast(): (error: unknown) => void {
+  const { push } = useContext(Ctx);
+  return useCallback((error: unknown) => void push(errorSpec(error)), [push]);
+}

@@ -5,7 +5,7 @@ import { Icon } from "~/components/icons";
 import { ContextMenuActionItem } from "~/components/ui/menu";
 import { useFilesAgentIndex, useFilesAgentPolicy, useSetAgentRules } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 type Choice = ListMode | "inherit";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -31,7 +31,7 @@ export function useAgentActions(projectId: string) {
   const toast = useToast();
   const change = (paths: string[], mode: Choice) => {
     if (pending || !policy.data || !paths.length) return;
-    mutation.mutate({ paths, mode }, { onSuccess: () => toast({ body: t("files.agentSaved") }), onError: (error) => toast({ body: error.message }) });
+    mutation.mutate({ paths, mode }, { onSuccess: () => toast({ body: t("files.agentSaved") }), onError: (error) => toast(errorSpec(error)) });
   };
   return { policy, change, disabled: pending || policy.isError || !policy.data };
 }

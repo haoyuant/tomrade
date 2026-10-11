@@ -24,7 +24,7 @@ import {
   useUpdateField,
   useUpdateFieldOption
 } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 const CUSTOM_TYPES: FieldType[] = ["text", "number", "date", "select", "checkbox"];
 
@@ -115,7 +115,7 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
     ref.current?.scrollIntoView({ block: "nearest" });
   }, [def.id]);
 
-  const fail = (err: Error) => toast({ body: err.message });
+  const fail = (err: Error) => toast(errorSpec(err));
 
   const dropOption = (optionId: string, moveTo: string) => {
     const name = def.options.find((o) => o.id === optionId)?.name ?? "";
@@ -296,7 +296,7 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
   const items = useItems(projectId);
   const [removing, setRemoving] = useState(false);
   const [dest, setDest] = useState(others[0]?.id ?? "");
-  const fail = (err: Error) => toast({ body: err.message });
+  const fail = (err: Error) => toast(errorSpec(err));
 
   const repo = (repos.data ?? []).find((r) => r.id === board.repoId) ?? null;
   const checkout = repo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(repo.remote))?.checkout ?? null) : null;
@@ -451,7 +451,7 @@ function WorkstreamEditor({ projectId, items, onOpenRepositories }: { projectId:
     if (!name) return;
     create.mutate(
       { name, icon: "i-board" },
-      { onSuccess: (b) => (setNewName(""), toast({ body: tx("fieldsDialog.addedWorkstreamToast", { name: <b>{b.name}</b> }) })), onError: (err) => toast({ body: err.message }) }
+      { onSuccess: (b) => (setNewName(""), toast({ body: tx("fieldsDialog.addedWorkstreamToast", { name: <b>{b.name}</b> }) })), onError: (err) => toast(errorSpec(err)) }
     );
   };
 
@@ -558,7 +558,7 @@ export function FieldsDialog({
           setSelectedId(def.id);
           toast({ body: tx("fieldsDialog.createdToast", { name: <b>{def.name}</b> }) });
         },
-        onError: (err) => toast({ body: err.message })
+        onError: (err) => toast(errorSpec(err))
       }
     );
   };

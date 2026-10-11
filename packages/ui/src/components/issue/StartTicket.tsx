@@ -11,7 +11,7 @@ import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
 import { STATUS } from "~/lib/domain";
 import { invalidateWorkspace, useItems, useSettings } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
@@ -148,7 +148,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const takeover = useMutation({
     mutationFn: () => invoke("agent.takeoverGeneral", projectId, item.id),
     onSuccess: (result) => toast({ body: t(result.stopped > 0 ? "fields.takeoverReady" : "fields.takeoverNoRun") }),
-    onError: (err) => setError({ message: err.message }),
+    onError: (err) => setError({ message: readableError(err) }),
     onSettled: () => invalidateWorkspace(qc, projectId)
   });
 
@@ -192,7 +192,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
             toast({ body: warning ? `${command}\n${warning}` : command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
           }
         },
-        onError: (err) => setError({ message: err.message })
+        onError: (err) => setError({ message: readableError(err) })
       }
     );
   };

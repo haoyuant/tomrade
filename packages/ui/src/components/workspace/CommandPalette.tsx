@@ -12,7 +12,7 @@ import { useFilesTree } from "~/lib/files";
 import { notesSearch, useNotesEnabled } from "~/lib/notes";
 import { useNoteActions } from "~/components/files/useNoteActions";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 
 export interface PaletteActions {
@@ -71,7 +71,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const runPlugin = (id: string) =>
     runCommand.mutate(
       { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: ws.selectedId } },
-      { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast({ body: e.message }) }
+      { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast(errorSpec(e)) }
     );
 
   const actionRows = [

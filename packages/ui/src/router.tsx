@@ -12,6 +12,7 @@ import { ToastProvider } from "~/lib/toast";
 import { AccountGate } from "~/components/dialogs/AccountPanel";
 import { PendingBuildWatcher } from "~/components/dialogs/plugins/ConfirmBuildDialog";
 import { UpdateNotice } from "~/components/dialogs/UpdateNotice";
+import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
 
 const rootRoute = createRootRoute({
@@ -109,7 +110,7 @@ const routeTree = rootRoute.addChildren([indexRoute, projectShellRoute.addChildr
 
 // Hash history: the production build is loaded from file://, where a path-based
 // history has nothing to resolve a reload against.
-export const router = createRouter({ routeTree, history: createHashHistory() });
+export const router = createRouter({ routeTree, history: createHashHistory(), defaultErrorComponent: RouteError });
 
 declare module "@tanstack/react-router" {
   interface Register {

@@ -15,7 +15,7 @@ import { editorTheme, markdownHighlight } from "~/lib/editorStyle";
 import { nameOf, parentOf } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { freeCopyName } from "~/lib/notes";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /** A pause this long after the last keystroke is a save — each one a version, so not every key. */
 const SAVE_AFTER_MS = 1_500;
@@ -190,7 +190,7 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
         }
       } catch (error) {
         report("dirty");
-        toast({ body: (error as Error).message });
+        toast(errorSpec(error));
       }
     })();
     inFlight.current = run;

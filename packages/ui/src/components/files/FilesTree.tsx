@@ -9,7 +9,7 @@ import { FILES_DRAG_MIME, parentOf, useFilesClipboard, useFilesStatus, useFilesT
 import { useI18n } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { notesSearch, useNotesEnabled, useNotesSearchState } from "~/lib/notes";
 import { stateOf } from "./state";
 import { NotesSearch } from "./NotesSearch";
@@ -108,7 +108,7 @@ export function FilesTree() {
           const one = added.length === 1 ? added[0]! : null;
           toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) });
         },
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   };
@@ -123,7 +123,7 @@ export function FilesTree() {
         openFile(path);
         toast({ body: t("files.createdFolderToast", { name: trimmed }) });
       },
-      onError: (error) => toast({ body: error.message })
+      onError: (error) => toast(errorSpec(error))
     });
   };
 
@@ -135,7 +135,7 @@ export function FilesTree() {
         show(target);
         toast({ body: count === 1 ? t("files.movedOneToast", { name }) : t("files.movedManyToast", { n: count }) });
       })
-      .catch((error) => toast({ body: error.message }));
+      .catch((error) => toast(errorSpec(error)));
   };
 
   const dropFiles = (dir: string, dataTransfer: DataTransfer) => {
@@ -158,7 +158,7 @@ export function FilesTree() {
           const one = added.length === 1 ? added[0]! : null;
           toast({ body: one ? t(one.kind === "dir" ? "files.addedFolderToast" : "files.addedOneToast", { name: one.name }) : t("files.addedToast", { n: added.length, dir: dir || t("files.home") }) });
         },
-        onError: (error) => toast({ body: error.message })
+        onError: (error) => toast(errorSpec(error))
       }
     );
   };
@@ -173,7 +173,7 @@ export function FilesTree() {
         show(target);
         toast({ body: count === 1 ? t("files.pastedOneToast", { name }) : t("files.pastedManyToast", { n: count }) });
       })
-      .catch((error) => toast({ body: error.message }));
+      .catch((error) => toast(errorSpec(error)));
   };
 
   // The record the delete made is what its Undo takes back — not whatever happens to be newest by then.
@@ -184,10 +184,10 @@ export function FilesTree() {
         toast({
           body: t("files.deletedToast", { name: entry.name }),
           onUndo: ref
-            ? () => revert.mutate(ref, { onSuccess: () => toast({ body: t("files.restoredToast", { name: entry.name }) }), onError: (error) => toast({ body: error.message }) })
+            ? () => revert.mutate(ref, { onSuccess: () => toast({ body: t("files.restoredToast", { name: entry.name }) }), onError: (error) => toast(errorSpec(error)) })
             : undefined
         }),
-      onError: (error) => toast({ body: error.message })
+      onError: (error) => toast(errorSpec(error))
     });
   };
 

@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { ItemStatus, Priority, WorkType } from "@tomradex/domain";
 import { Dialog, DialogClose } from "~/components/ui/dialog";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
 import { ticketMethods, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
@@ -95,9 +95,12 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     return () => { cancelled = true; clearTimeout(timer); };
   }, [open, title, body, workType, workTypeTouched, templateTouched, recommendationKey, ws.project.id]);
 
+  // one press, one issue: a second Enter in the same tick sees this before any re-render
+  const submitting = useRef(false);
   const submit = () => {
     const trimmed = title.trim();
-    if (!trimmed) return;
+    if (!trimmed || submitting.current) return;
+    submitting.current = true;
     create.mutate(
       { title: trimmed, body: body.trim() || null, playbookId: template || null, boardId, workType, status, priority, parentId: parentId || null, labels: pinned("labels").slice(0, 1) },
       {
@@ -105,6 +108,10 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           onOpenChange(false);
           setTitle("");
           toast({ body: <>{tx("newIssueDialog.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });
+        },
+        onError: (err) => toast(errorSpec(err)),
+        onSettled: () => {
+          submitting.current = false;
         }
       }
     );
@@ -224,7 +231,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               {t("newIssueDialog.cancel")}
             </button>
           </DialogClose>
-          <button type="button" className="btn btn-primary" onClick={submit}>
+          <button type="button" className="btn btn-primary" disabled={!title.trim() || create.isPending} aria-busy={create.isPending} onClick={submit}>
             {t("newIssueDialog.createIssue")}
           </button>
         </div>

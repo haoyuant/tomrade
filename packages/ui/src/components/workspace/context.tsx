@@ -23,7 +23,7 @@ import {
 import { PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_KEYS, checkedLabel, emptyGroupLabel, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useBadges, useBoards, useCreateView, useFields, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, readableError, useToast } from "~/lib/toast";
 
 /** One option of a groupable / filterable field, in display terms. */
 export interface FieldOptionView {
@@ -41,6 +41,9 @@ export interface FieldOptionView {
  * the field registry directly.
  */
 export interface WorkspaceValue {
+  /** Why the project's issues could not be read, so a failure never passes for an empty backlog. */
+  itemsError: string | null;
+  retryItems: () => void;
   project: Project;
   projects: Project[];
   views: View[];
@@ -306,10 +309,12 @@ export function WorkspaceProvider({
             setDraft(null);
             openView(created.id);
           },
-          onError: (err) => toast({ body: err.message })
+          onError: (err) => toast(errorSpec(err))
         }
       );
     return {
+      itemsError: items.isError ? readableError(items.error) : null,
+      retryItems: () => void items.refetch(),
       project,
       projects: projects.data ?? [],
       views: views.data ?? [],
@@ -331,7 +336,7 @@ export function WorkspaceProvider({
         if (!dirty) return;
         // A workstream page has nothing saved to write back to; saving it makes a view.
         if (virtual) return saveAsNewView(view.name);
-        updateView.mutate({ id: view.id, patch: { layout: live.layout, query: live.query } }, { onSuccess: () => setDraft(null), onError: (err) => toast({ body: err.message }) });
+        updateView.mutate({ id: view.id, patch: { layout: live.layout, query: live.query } }, { onSuccess: () => setDraft(null), onError: (err) => toast(errorSpec(err)) });
       },
       discardChanges: () => setDraft(null),
       saveAsNewView,
@@ -385,7 +390,9 @@ export function WorkspaceProvider({
     queryCtx,
     updateView,
     createView,
-    toast
+    toast,
+    items.isError,
+    items.error
   ]);
 
   // Deleting the open view strands this route; the project loader knows how to
