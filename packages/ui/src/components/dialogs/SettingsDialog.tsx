@@ -585,6 +585,8 @@ function AssistantPane({
   const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
+  // removing a profile deletes its key too: asked once, in the row
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const saveModels = (next: ModelsSettings) => onSave({ ...settings, models: next });
   const saveAgent = (next: AgentSettings) => onSave({ ...settings, agent: next });
@@ -608,18 +610,37 @@ function AssistantPane({
       </SectionHead>
       <div className="panel stack-3">
         {models.profiles.length === 0 && <p className="meta-txt">{t("settingsDialog.noProfileYet")}</p>}
-        {models.profiles.map((p) => (
-          <div className="profile-row" key={p.id}>
-            <span className="p-title">{p.title || p.model}</span>
-            <span className="p-model num">{p.provider === "anthropic" ? "anthropic" : (p.baseURL ?? "")} · {p.model}</span>
-            <button type="button" className="btn btn-ghost" onClick={() => setEditing(p)}>
-              {t("common.edit")}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => remove(p.id)}>
-              {t("common.remove")}
-            </button>
-          </div>
-        ))}
+        {models.profiles.map((p) =>
+          removing === p.id ? (
+            <div className="profile-row profile-remove" key={p.id} role="alert">
+              <span className="p-title" style={{ flex: 1 }}>{t("settingsDialog.removeProfileConfirm", { name: p.title || p.model })}</span>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => {
+                  remove(p.id);
+                  setRemoving(null);
+                }}
+              >
+                {t("common.remove")}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setRemoving(null)}>
+                {t("common.cancel")}
+              </button>
+            </div>
+          ) : (
+            <div className="profile-row" key={p.id}>
+              <span className="p-title">{p.title || p.model}</span>
+              <span className="p-model num">{p.provider === "anthropic" ? "anthropic" : (p.baseURL ?? "")} · {p.model}</span>
+              <button type="button" className="btn btn-ghost" onClick={() => setEditing(p)}>
+                {t("common.edit")}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setRemoving(p.id)}>
+                {t("common.remove")}
+              </button>
+            </div>
+          )
+        )}
         {editing ? (
           <ProfileForm profile={editing} onCancel={() => setEditing(null)} onSave={upsert} />
         ) : (

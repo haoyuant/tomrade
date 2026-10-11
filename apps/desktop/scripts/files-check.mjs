@@ -316,6 +316,12 @@ const run = async () => {
   check("the root lists what needs a decision", (await text('[data-testid="conflict-list"] .m-name')) === "docs/notes.txt");
   check("the tree marks the file and the label row", (await has('.side-row.is-file[data-file="docs/notes.txt"] .side-mark.is-conflicted')) && (await $(`document.querySelector('.side-label-row .side-mark.is-state')?.dataset.state`)) === "conflicted");
   await shot("files-04-conflicts");
+  // taking every file one way is asked first: it replaces the other side and syncs at once
+  await click('[data-testid="conflict-list"] .dangerbar .btn-ghost');
+  await sleep(300);
+  check("Keep all asks before replacing every file", (await has(".files-conflict-confirm")) && (await ctx.files.status(project.id)).state === "conflicted");
+  await click(".files-conflict-confirm .btn-ghost");
+  await sleep(200);
   await click('[data-testid="conflict-list"] .menu-row');
   await wait(() => has('[data-testid="conflict-panel"]'), "conflict panel");
   check("both sides are shown whole", (await $(`[...document.querySelectorAll('.conflict-side .text-view')].map(n => n.textContent).join('|')`)) === "my notes\n|their notes\n");

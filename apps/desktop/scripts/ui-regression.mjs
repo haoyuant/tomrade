@@ -749,6 +749,11 @@ const run = async () => {
   await sleep(1200);
   check("deleting the view from its menu removes it", repos.views.listForProject(project.id).length === viewsBefore);
   check("and lands on a surviving view", /\/p\/.+\/v\/.+/.test(await $(`location.hash`)) && !(await $(`location.hash`)).includes(docs.id));
+  await $(`[...document.querySelectorAll('.toast')].reverse().find((t) => t.textContent.includes('Docs'))?.querySelector('.btn-ghost')?.click();true`);
+  await sleep(1200);
+  check("the deleted view's toast brings it back", repos.views.listForProject(project.id).some((v) => v.id === docs.id));
+  repos.views.remove(project.id, docs.id);
+  await sleep(600);
   await press(`document.querySelector('.side-row.is-view[data-view="${allViews[0].id}"]')`);
   await sleep(1000);
 
@@ -1520,6 +1525,16 @@ const run = async () => {
   await $(`(() => { const i = document.querySelector('#niTitle'); for (let n = 0; n < 2; n++) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
   await sleep(1200);
   check("two quick Enters make one issue", repos.items.list({ projectId: handoff.id }).filter((i) => i.title === "Pressed twice").length === 1 && repos.items.list({ projectId: handoff.id }).length === issuesBefore + 1);
+
+  // ── a project's last view cannot be deleted ─────────────────────────
+  for (const v of repos.views.listForProject(handoff.id).slice(1)) repos.views.remove(handoff.id, v.id);
+  await $(`location.hash = '#/p/${handoff.id}';true`);
+  await sleep(1500);
+  await press(`document.querySelector('.view-menu-btn')`);
+  await sleep(400);
+  check("Delete view is off on a project's only view", (await $(`[...document.querySelectorAll('.menu [role="menuitem"]')].find(r => /Delete view/.test(r.textContent))?.hasAttribute('data-disabled')`)) === true);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(300);
 
   // ── the palette searches every ticket, not the first 60 ─────────────
   const handoffBoard = repos.boards.list(handoff.id)[0];

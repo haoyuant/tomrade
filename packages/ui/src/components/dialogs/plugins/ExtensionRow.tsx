@@ -82,6 +82,7 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
               icon={<Icon name="i-undo" size={13} />}
               name={t("plugins.undoWrites")}
               onSelect={() =>
+                window.confirm(t("plugins.undoWritesConfirm", { title: ext.title })) &&
                 undo.mutate(ext.namespace, {
                   onSuccess: (r) => {
                     toast({ body: r.reverted ? `${t("plugins.undoneWrites", { reverted: r.reverted, title: ext.title })}${r.kept.length ? ` · ${t("plugins.keptWrites", { kept: r.kept.length })}` : ""}` : t("plugins.undoneNothing", { title: ext.title }) });

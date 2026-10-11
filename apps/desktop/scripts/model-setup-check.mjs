@@ -112,6 +112,12 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.ai-error button')].find((b) => b.textContent?.trim() === 'Open model settings')`);
   await sleep(800);
   check("and opens the model settings", (await $(`[...document.querySelectorAll('.dlg-body .sec-title')].some((n) => n.textContent === 'Models')`)) === true);
+  await press(`[...document.querySelectorAll('.profile-row button')].find((b) => b.textContent?.trim() === 'Remove')`);
+  await sleep(300);
+  check("removing a profile asks first, naming what goes with it", (await $(`document.querySelector('.profile-remove')?.textContent ?? ''`)).includes("API key is deleted") && profiles().length === 1);
+  await press(`document.querySelector('.profile-remove .btn-danger')`);
+  await sleep(600);
+  check("and removes it once confirmed", profiles().length === 0);
   check("harness reached the end", true);
 };
 
