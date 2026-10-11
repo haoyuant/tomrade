@@ -206,10 +206,6 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
                 <span className="fs-v">{item.kind === "epic" ? t("detailPane.fieldEpic") : t("issueScreen.kindTicket")}</span>
               </span>
               <span className="fs-item">
-                <span className="fs-k">{t("detailPane.fieldVersion")}</span>
-                <span className="fs-v num">{item.version}</span>
-              </span>
-              <span className="fs-item">
                 <span className="fs-k">{t("detailPane.fieldLastWrite")}</span>
                 <span className="fs-v">
                   {(prov === "ai" || prov === "sync") && <span className={prov === "sync" ? "prov-tick is-sync" : "prov-tick"} style={{ height: 12 }} />}

@@ -2148,3 +2148,9 @@ button.kref { cursor: pointer; }
 .about-path { min-width: 0; overflow-wrap: anywhere; }
 .about-note { flex-basis: 100%; }
 .about-license { margin-top: var(--space-4); }
+.agents-connect > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: var(--space-1) 0; }
+.agents-connect > summary::-webkit-details-marker { display: none; }
+.agents-connect > summary .sec-title { font-size: var(--text-md); }
+.agents-connect-chev { color: var(--meta); transform: rotate(-90deg); transition: transform 0.15s ease; }
+.agents-connect[open] .agents-connect-chev { transform: none; }
+.agents-connect[open] > .sec-lede { margin: var(--space-2) 0 var(--space-4); }

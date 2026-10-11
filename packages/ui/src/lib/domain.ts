@@ -48,8 +48,8 @@ const PRIORITY_LABEL_BY_LOCALE: Record<Locale, readonly string[]> = {
 export const PRIORITY_LABEL: string[] = [...PRIORITY_LABEL_BY_LOCALE.en];
 
 const PROVENANCE_BY_LOCALE: Record<Locale, Record<Provenance, string>> = {
-  en: { ai: "ai:mcp", human: "human", sync: "git", locked: "human-locked" },
-  zh: { ai: "ai:mcp", human: "人工", sync: "git 同步", locked: "人工锁定" }
+  en: { ai: "Agent", human: "Human", sync: "Git", locked: "Locked" },
+  zh: { ai: "智能体", human: "人工", sync: "Git 同步", locked: "已锁定" }
 };
 
 export const PROVENANCE: Record<Provenance, string> = { ...PROVENANCE_BY_LOCALE.en };
@@ -183,9 +183,21 @@ export function timeAgo(ts: number, now = Date.now()): string {
 }
 
 /** The author as history prints it: a sync is a machine settling a clash, not an agent writing. */
+const AUTHORS: Record<string, [string, string]> = {
+  human: ["You", "你"],
+  "ai:sync": ["Sync", "同步"],
+  "ai:loop": ["The assistant", "助手"],
+  "ai:mcp": ["An agent", "智能体"],
+  "ai:claude-code": ["Claude Code", "Claude Code"],
+  "ai:codex": ["Codex", "Codex"],
+  "ai:pi": ["Pi", "Pi"]
+};
+
+/** Who wrote, as a person reads it: "You", "The assistant", an agent's name — not its author id. */
 export function authorLabel(by: string): string {
-  if (by === "ai:sync") return currentLocale === "zh" ? "同步" : "Sync";
-  return by;
+  const known = AUTHORS[by];
+  if (known) return known[currentLocale === "zh" ? 1 : 0];
+  return by.startsWith("ai:") ? by.slice(3) : by;
 }
 
 const fieldWord = (field: string): string => {

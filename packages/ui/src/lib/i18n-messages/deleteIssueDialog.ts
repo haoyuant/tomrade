@@ -1,6 +1,6 @@
 export const deleteIssueDialog = {
   en: {
-    activityTrail: "its whole activity trail — every oplog row this issue ever wrote",
+    activityTrail: "its whole history — every change ever recorded for it",
     labelLinkOne: "{{n}} label link",
     labelLinkMany: "{{n}} label links",
     blocksRelationOne: "{{n}} blocks relation, cut in both directions",
@@ -11,7 +11,7 @@ export const deleteIssueDialog = {
     dialogLabelEmpty: "Delete issue",
     headTitle: "Delete permanently",
 
-    notUndoable: "This is {{strong}}. Every other write in Tomrade can be walked back with {{cmdz}}, because the oplog keeps a snapshot — this one deletes that history too, so there is nothing left to restore from.",
+    notUndoable: "This is {{strong}}. Every other change in Tomrade can be taken back with {{cmdz}}, because each one keeps a copy of what came before — this one deletes that history too, so there is nothing left to restore from.",
     notUndoableStrong: "not undoable",
     alsoTakes: "Deleting {{key}} also takes:",
     childrenNoteOne: "{{n}} issue sits under it. It is released to “No epic”, not deleted — and that reparenting is not undoable either.",
@@ -27,7 +27,7 @@ export const deleteIssueDialog = {
     conflictToast: "An agent rewrote {{key}} while this was open — it re-read, so check it still deserves deleting."
   },
   zh: {
-    activityTrail: "它的整条活动记录——这个工作项写下的每一条操作日志",
+    activityTrail: "它的全部历史——为它记录过的每一处修改",
     labelLinkOne: "{{n}} 个标签关联",
     labelLinkMany: "{{n}} 个标签关联",
     blocksRelationOne: "{{n}} 个阻塞关系（两个方向都会一并切断）",
@@ -38,7 +38,7 @@ export const deleteIssueDialog = {
     dialogLabelEmpty: "删除工作项",
     headTitle: "永久删除",
 
-    notUndoable: "这个操作{{strong}}。Tomrade 中其他所有写入都可以用 {{cmdz}} 撤回，因为操作日志保留着快照——唯独这一次会连同历史一起删除，所以之后没有任何东西可以恢复。",
+    notUndoable: "这个操作{{strong}}。Tomrade 里其他所有修改都可以用 {{cmdz}} 撤回，因为每一处修改都保留着之前的样子——唯独这一次会连同历史一起删除，所以之后没有任何东西可以恢复。",
     notUndoableStrong: "不可撤销",
     alsoTakes: "删除 {{key}} 还会一并带走：",
     childrenNoteOne: "有 {{n}} 个工作项挂在它下面。它会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",

@@ -222,17 +222,11 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
         </div>
       ))}
       <div className="field-row">
-        <dt>{t("detailPane.fieldVersion")}</dt>
-        <dd>
-          <span className="num">{item.version}</span>
-        </dd>
-      </div>
-      <div className="field-row">
         <dt>{t("detailPane.fieldLastWrite")}</dt>
         <dd>
           {prov === "ai" && <span className="prov-tick" style={{ height: 12 }} />}
           {prov === "locked" && <Icon className="prov-lock" name="i-lock" size={13} />}
-          <span className="num">{PROVENANCE[prov]}</span> · {agoLabel(item.updatedAt)}
+          {PROVENANCE[prov]} · {agoLabel(item.updatedAt)}
         </dd>
       </div>
     </dl>

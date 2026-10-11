@@ -7,17 +7,16 @@ export const detailPane = {
     fieldBlockedBy: "Blocked by",
     fieldBlocks: "Blocks",
     fieldBoard: "Workstream",
-    fieldVersion: "Version",
-    fieldLastWrite: "Last write",
+    fieldLastWrite: "Last change",
     versionWord: "version",
 
-    lockedNoticeStrong: "human-locked",
+    lockedNoticeStrong: "locked",
     lockedNotice:
-      "Title and body are {{strong}}. Agents can still read this issue and change its status, but a write to the locked fields is rejected with a typed error rather than merged.",
+      "Title and body are {{strong}}. Agents can still read this ticket and change its status, but they cannot change the locked text.",
 
-    activityHeading: "Activity · append-only oplog",
-    noWritesYet: "No writes recorded yet.",
-    ledgerFooter: "Every row above is reversible. {{cmdz}} walks the oplog backwards, newest first.",
+    activityHeading: "History",
+    noWritesYet: "No changes recorded yet.",
+    ledgerFooter: "Every change above can be undone — {{cmdz}} takes back the newest first.",
 
     collapseTitle: "Collapse",
     expandTitle: "Expand",
@@ -33,16 +32,15 @@ export const detailPane = {
     fieldBlockedBy: "依赖",
     fieldBlocks: "阻塞",
     fieldBoard: "工作流",
-    fieldVersion: "版本",
-    fieldLastWrite: "最后写入",
+    fieldLastWrite: "最近修改",
     versionWord: "版本",
 
     lockedNoticeStrong: "锁定",
-    lockedNotice: "标题与描述已{{strong}}。智能体仍可读取该工作项并修改其状态，但对已锁定字段的写入会被以类型化错误拒绝，而不会被合并。",
+    lockedNotice: "标题与描述已{{strong}}。智能体仍可读取该工作项并修改其状态，但改不了已锁定的文字。",
 
-    activityHeading: "活动 · 仅追加的操作日志",
-    noWritesYet: "尚无任何写入记录。",
-    ledgerFooter: "以上每一行都可撤销。{{cmdz}} 会按时间从新到旧依次撤销操作日志。",
+    activityHeading: "历史",
+    noWritesYet: "还没有任何修改记录。",
+    ledgerFooter: "以上每一处修改都可以撤销——{{cmdz}} 从最新的一处开始撤回。",
 
     collapseTitle: "折叠",
     expandTitle: "展开",
