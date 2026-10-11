@@ -59,12 +59,21 @@ importers:
       '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../../packages/desktop-surface
+      '@tomradex/engine-acp':
+        specifier: workspace:*
+        version: link:../../packages/engine-acp
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../../packages/engine-claude-code
       '@tomradex/engine-codex':
         specifier: workspace:*
         version: link:../../packages/engine-codex
+      '@tomradex/engine-dsh':
+        specifier: workspace:*
+        version: link:../../packages/engine-dsh
+      '@tomradex/engine-hermes':
+        specifier: workspace:*
+        version: link:../../packages/engine-hermes
       '@tomradex/engine-loop':
         specifier: workspace:*
         version: link:../../packages/engine-loop
@@ -74,6 +83,9 @@ importers:
       '@tomradex/engine-scripted':
         specifier: workspace:*
         version: link:../../packages/engine-scripted
+      '@tomradex/engine-workbuddy':
+        specifier: workspace:*
+        version: link:../../packages/engine-workbuddy
       '@tomradex/extensions':
         specifier: workspace:*
         version: link:../../packages/extensions
@@ -538,6 +550,40 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/engine-acp:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-claude-code':
+        specifier: workspace:*
+        version: link:../engine-claude-code
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
+
   packages/engine-claude-code:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
@@ -584,6 +630,86 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
+
+  packages/engine-dsh:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-acp':
+        specifier: workspace:*
+        version: link:../engine-acp
+      '@tomradex/engine-claude-code':
+        specifier: workspace:*
+        version: link:../engine-claude-code
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
+
+  packages/engine-hermes:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-acp':
+        specifier: workspace:*
+        version: link:../engine-acp
+      '@tomradex/engine-claude-code':
+        specifier: workspace:*
+        version: link:../engine-claude-code
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
@@ -671,6 +797,46 @@ importers:
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
+
+  packages/engine-workbuddy:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-acp':
+        specifier: workspace:*
+        version: link:../engine-acp
+      '@tomradex/engine-claude-code':
+        specifier: workspace:*
+        version: link:../engine-claude-code
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
 
   packages/extensions:
     dependencies:

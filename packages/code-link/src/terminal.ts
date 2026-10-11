@@ -11,10 +11,23 @@ export const TerminalSettings = z.object({
   codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"'),
   /** Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks. */
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"'),
+  /** WorkBuddy's CLI takes Claude Code's flags and posts Claude-shaped hooks. */
+  workbuddyCommand: z.string().default('codebuddy {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
   /** Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in. */
   otherCommand: z.string().default("")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
+
+/** The command template a terminal session starts an engine with; Claude Code's flags are the common ground. */
+export function terminalTemplate(settings: TerminalSettings, engine: string): string {
+  switch (engine) {
+    case "codex": return settings.codexCommand;
+    case "pi": return settings.piCommand;
+    case "workbuddy": return settings.workbuddyCommand;
+    case "other": return settings.otherCommand;
+    default: return settings.claudeCommand;
+  }
+}
 
 export interface LaunchInput {
   cwd: string;
@@ -38,7 +51,7 @@ export function optionFlags(engine: string, options: unknown): string {
   const model = typeof o.model === "string" && o.model.trim() ? o.model.trim() : null;
   const effort = typeof o.effort === "string" && o.effort.trim() ? o.effort.trim() : null;
   const flags: string[] = [];
-  if (engine === "claude-code") {
+  if (engine === "claude-code" || engine === "workbuddy") {
     if (model) flags.push(`--model ${bare(model)}`);
     if (effort) flags.push(`--effort ${bare(effort)}`);
   } else if (engine === "codex") {

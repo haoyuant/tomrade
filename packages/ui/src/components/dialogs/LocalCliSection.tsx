@@ -81,7 +81,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
         {status === "wsl" && <p className="cli-warn">{t("localCli.wslDetail", { name: cli.name, path: cli.wsl ?? "" })}</p>}
         {status === "broken" && (
           <p className="cli-warn">
-            {tx("localCli.brokenDetail", { path: <span className="mono">{cli.path ?? ""}</span>, error: cli.error ?? "" })} {t("localCli.brokenHint")}
+            {tx("localCli.brokenDetail", { path: <span className="mono">{cli.path ?? ""}</span>, error: sentence(cli.error ?? engine.reason ?? "") })} {t("localCli.brokenHint")}
           </p>
         )}
         {cli.manual && (
@@ -182,3 +182,6 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
     </div>
   );
 }
+
+/** An error read out before another sentence needs its own full stop. */
+const sentence = (text: string) => (!text || /[.!?。！？]$/.test(text) ? text : `${text}.`);

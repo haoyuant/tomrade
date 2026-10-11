@@ -169,6 +169,18 @@ function findNode(shimDir: string, dirs: string[], env: NodeJS.ProcessEnv): stri
   return null;
 }
 
+/** A CLI shipped inside a desktop app as a Node script, which that app's own Electron binary runs as Node. */
+export interface BundledCli {
+  file: string;
+  runtime: string;
+}
+
+/** How to start a bundled CLI: the app's binary with `ELECTRON_RUN_AS_NODE`, so the machine needs no Node of its own. */
+export function bundledLaunch(cli: BundledCli, host: Pick<CliHost, "platform" | "env">): CliLaunch {
+  const plain = launchFor(cli.file, host);
+  return { file: cli.file, argv: (args) => ({ command: cli.runtime, args: [cli.file, ...args] }), env: (base) => ({ ...plain.env(base), ELECTRON_RUN_AS_NODE: "1" }) };
+}
+
 /** Start a resolved CLI: no console window on Windows, its own folder first on PATH. */
 export function spawnCli(launch: CliLaunch, args: string[], options: SpawnOptions & { env?: NodeJS.ProcessEnv } = {}): ChildProcess {
   const spec = launch.argv(args);
@@ -325,10 +337,14 @@ interface Candidate {
 
 const shared = new Map<string, CliLocator>();
 
-/** One locator per CLI for the whole app, so the engine's views and its turns share what was found. */
-export function localCli(name: string): CliLocator {
+/**
+ * One locator per CLI for the whole app, so the engine's views and its turns
+ * share what was found. `bundled` names copies that ship inside a desktop app,
+ * tried after every folder a terminal would search.
+ */
+export function localCli(name: string, opts: { bundled?: (host: CliHost) => BundledCli[] } = {}): CliLocator {
   let locator = shared.get(name);
-  if (!locator) shared.set(name, (locator = new CliLocator(name)));
+  if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled)));
   return locator;
 }
 
@@ -345,8 +361,16 @@ export class CliLocator {
   constructor(
     readonly name: string,
     private host: CliHost = machineHost(),
-    private timeoutMs = host.platform === "win32" ? 15_000 : 10_000
+    private timeoutMs = host.platform === "win32" ? 15_000 : 10_000,
+    private bundled: (host: CliHost) => BundledCli[] = () => []
   ) {}
+
+  /** How to start `file`: through its app's runtime when it is a bundled copy, the way a terminal would otherwise. */
+  private launchOf(file: string, dirs: string[] = []): CliLaunch {
+    const same = (a: string, b: string) => (this.host.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+    const copy = this.bundled(this.host).find((cli) => same(cli.file, file));
+    return copy ? bundledLaunch(copy, this.host) : launchFor(file, this.host, dirs);
+  }
 
   /** A command setting that names something other than the default is the person's choice. */
   manualOf(command: string | undefined): string | undefined {
@@ -362,21 +386,21 @@ export class CliLocator {
   async launch(command?: string): Promise<CliLaunch> {
     const manual = this.manualOf(command);
     const known = this.cache.get(manual ?? "");
-    if (known?.status.path) return launchFor(known.status.path, this.host, known.dirs);
+    if (known?.status.path) return this.launchOf(known.status.path, known.dirs);
     if (manual) {
       // Not probed yet: trust the person's path rather than spend a --version on every cold turn.
       const file = this.manualCandidates(manual).find((c) => isFile(c.file, this.host.platform))?.file ?? manual;
-      return launchFor(file, this.host);
+      return this.launchOf(file);
     }
     const { status, dirs } = await this.found({});
-    return launchFor(status.path ?? this.name, this.host, dirs);
+    return this.launchOf(status.path ?? this.name, dirs);
   }
 
   async check(file: string): Promise<CliCheck> {
     const candidates = this.manualCandidates(file.trim());
     const candidate = candidates.find((c) => isFile(c.file, this.host.platform));
     if (!candidate) return { ok: false, path: file, error: (candidates.length && whyNot(candidates.at(-1)!.file, this.host.platform)) || "file not found" };
-    const result = describeRun(await this.host.run(launchFor(candidate.file, this.host), ["--version"], this.timeoutMs), this.timeoutMs);
+    const result = describeRun(await this.host.run(this.launchOf(candidate.file), ["--version"], this.timeoutMs), this.timeoutMs);
     return result.ok ? { ok: true, path: candidate.file, version: result.detail } : { ok: false, path: candidate.file, error: result.detail };
   }
 
@@ -445,7 +469,7 @@ export class CliLocator {
       for (const c of candidates) {
         if (tried.has(norm(c.file)) || !isFile(c.file, platform)) continue;
         tried.add(norm(c.file));
-        const result = describeRun(await this.host.run(launchFor(c.file, this.host, extra), ["--version"], this.timeoutMs), this.timeoutMs);
+        const result = describeRun(await this.host.run(this.launchOf(c.file, extra), ["--version"], this.timeoutMs), this.timeoutMs);
         const attempt = { path: c.file, source: c.source, ok: result.ok, detail: result.detail };
         attempts.push(attempt);
         if (result.ok) return attempt;
@@ -477,6 +501,12 @@ export class CliLocator {
     const known = (await knownDirs(this.host)).filter((dir) => !searched.some((d) => norm(d) === norm(dir)));
     searched.push(...known);
     hit = await tryAll(this.inDirs(known, "known"));
+    if (hit) return ready(hit);
+
+    const p = pathFor(platform);
+    const apps = this.bundled(this.host).filter((cli) => isFile(cli.runtime, platform));
+    searched.push(...apps.map((cli) => p.dirname(cli.file)));
+    hit = await tryAll(apps.map((cli) => ({ file: cli.file, source: "known" as const })));
     if (hit) return ready(hit);
 
     const broken = attempts.find((a) => a.source !== "manual") ?? attempts[0];

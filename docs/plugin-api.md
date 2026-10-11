@@ -375,7 +375,7 @@ contracts:
 
 | Contract | Registry | Rows that fill it |
 |---|---|---|
-| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex`, `engine-pi` |
+| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex`, `engine-pi`, `engine-hermes`, `engine-dsh`, `engine-workbuddy` |
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 | `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
@@ -617,7 +617,19 @@ engine like any other: it gets the tools over MCP with a per-run token
 (`ctx.mcp.bindRun`), so the ledger, the policies and the revert apply to it
 unchanged. Pi has no MCP flag, so `engine-pi` (and a terminal pi session) loads a
 generated session-only extension that registers the server instead; the user's
-own `mcp.json` is never written. A binding may also carry `event(payload)`: whatever is POSTed to
+own `mcp.json` is never written. Agents that speak ACP (the Agent Client
+Protocol) share one conductor, `@tomradex/engine-acp`: `createAcpEngine(ctx,
+agent)` spawns the agent's ACP server on stdio, hands it Tomrade's tools as an
+HTTP MCP server in `session/new`, reopens a stored session with
+`session/resume` or `session/load`, and answers `session/request_permission`
+for the turn's policy — Tomrade's own tools always, the person in "ask" mode,
+a refusal for anything but reading in "read-only" and backlog turns. ACP has no
+system prompt, so a session's first message carries Tomrade's instructions.
+`engine-hermes` (`hermes acp`), `engine-dsh` (`dsh --profile acp`) and
+`engine-workbuddy` (`codebuddy --acp`, also the copy inside the WorkBuddy app,
+run by that app's Electron binary) are thin descriptions on top of it. An
+engine that runs only inside Tomrade sets `terminal: false`, and Start offers
+it no terminal session. A binding may also carry `event(payload)`: whatever is POSTed to
 `/sessions/<token>/event` on the MCP server — a coding agent's hooks reporting
 it started, stopped or is waiting — reaches the binding that owns the token.
 Hooks a repository commits for every developer carry no token; they post to
@@ -626,7 +638,7 @@ and `session_id` the payload carries.
 
 An engine declares **capabilities**: `backlog` (the default) talks to the app
 through its tools; `code` also edits files and runs commands in a repository.
-Only a local coding agent (Claude Code, Codex, Pi) declares `code`, and only such
+Only a local coding agent (Claude Code, Codex, Pi, the ACP agents) declares `code`, and only such
 an engine is offered when a ticket is started — the in-app loop never
 implements a ticket. A thread started from a ticket carries `itemId` and
 `branch`; its turns arrive with `purpose: "code"` and a `ticket`, run in a

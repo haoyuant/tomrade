@@ -622,6 +622,29 @@ describe("starting a ticket", () => {
     expect(again.ok ? again.command : "").toContain("--session-id pi-abc");
   });
 
+  it("starts WorkBuddy in a terminal with Claude's flags, and refuses an agent that runs only inside Tomrade", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    await ctx.plugin({ name: "fake-acp", inject: ["agent"], apply: (c: Context) => {
+      c.agent.engine({ ...fakeCodeEngine([]), id: "workbuddy", title: "WorkBuddy", author: "ai:workbuddy" });
+      c.agent.engine({ ...fakeCodeEngine([]), id: "hermes", title: "Hermes", author: "ai:hermes", terminal: false });
+    } });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    const item = ticket("WorkBuddy terminal work");
+    const result = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "workbuddy", options: { model: "hy3" } });
+    expect(result.ok ? result.command : result).toMatch(/^codebuddy --model hy3 --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
+
+    const other = ticket("Hermes terminal work");
+    expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "hermes" }))
+      .toEqual({ ok: false, gate: "engine", message: "Hermes runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
+    const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "Hermes general work", workType: "general", status: "todo", by: "human" });
+    expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "hermes" })).toMatchObject({ ok: false, gate: "engine" });
+  });
+
   it("carries the knobs picked at Start onto the ticket's thread, where the turn and the panel read them", async () => {
     const world = await machine(codeRepo());
     const { codeLink, project, agent } = world;

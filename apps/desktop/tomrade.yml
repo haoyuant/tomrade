@@ -210,6 +210,17 @@ plugins:
   - id: engine-pi
     name: "@tomradex/engine-pi"
     implements: [engine]
+  # Agents that speak ACP (the Agent Client Protocol) over stdio, each its own row.
+  - id: engine-hermes
+    name: "@tomradex/engine-hermes"
+    implements: [engine]
+  - id: engine-dsh
+    name: "@tomradex/engine-dsh"
+    implements: [engine]
+  # WorkBuddy's CLI (CodeBuddy Code): `codebuddy` on PATH, else the copy inside the WorkBuddy app.
+  - id: engine-workbuddy
+    name: "@tomradex/engine-workbuddy"
+    implements: [engine]
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"

@@ -8,7 +8,7 @@ import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, type RunView } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
-import engineClaudeCode, { claudeSignedIn } from "@tomradex/engine-claude-code";
+import engineClaudeCode, { claudeSignedIn, lineSplitter } from "@tomradex/engine-claude-code";
 
 const FAKE = `#!/bin/bash
 dir="$(dirname "$0")"
@@ -92,4 +92,13 @@ describe("whether Claude Code is signed in", () => {
     expect(claudeSignedIn('{"loggedIn": false, "apiProvider": "bedrock"}')).toBeNull();
     expect(claudeSignedIn("error: unknown command 'auth'")).toBeNull();
   });
+});
+
+it("splits records on LF only, across chunk boundaries", () => {
+  const lines: string[] = [];
+  const push = lineSplitter((line) => lines.push(line));
+  const text = JSON.stringify({ a: "x\u2028y" }) + "\r\n" + JSON.stringify({ b: "é" }) + "\n";
+  const bytes = Buffer.from(text);
+  push(bytes.subarray(0, 5)); push(bytes.subarray(5, bytes.length - 3)); push(bytes.subarray(bytes.length - 3));
+  expect(lines.map((line) => JSON.parse(line))).toEqual([{ a: "x\u2028y" }, { b: "é" }]);
 });

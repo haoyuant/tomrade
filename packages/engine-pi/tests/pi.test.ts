@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { bridgeSource, createPiEngine, listedModels, piSignedIn, toolSelection } from "../src/index.js";
-import { lineSplitter } from "../src/rpc.js";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
 import type { Block, TurnIO, TurnInput } from "@tomradex/agent";
@@ -23,15 +22,6 @@ it("narrows tools for backlog and read-only turns only", () => {
   expect(toolSelection({ purpose: "code", permissionMode: "read-only" })).toBe("read,grep,find,ls,mcp__tomrade__*");
   expect(toolSelection({ purpose: "code", permissionMode: "full-access" })).toBeNull();
   expect(toolSelection({ purpose: "general", permissionMode: "ask" })).toBeNull();
-});
-
-it("splits records on LF only, across chunk boundaries", () => {
-  const lines: string[] = [];
-  const push = lineSplitter((line) => lines.push(line));
-  const text = JSON.stringify({ a: "x\u2028y" }) + "\r\n" + JSON.stringify({ b: "é" }) + "\n";
-  const bytes = Buffer.from(text);
-  push(bytes.subarray(0, 5)); push(bytes.subarray(5, bytes.length - 3)); push(bytes.subarray(bytes.length - 3));
-  expect(lines.map((line) => JSON.parse(line))).toEqual([{ a: "x\u2028y" }, { b: "é" }]);
 });
 
 it("registers Tomrade's MCP server and gates only what may change something", async () => {

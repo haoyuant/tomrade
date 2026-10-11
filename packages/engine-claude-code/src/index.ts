@@ -33,11 +33,11 @@ export default {
 };
 
 export { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
-export { claudeSignedIn, runJsonl, signedIn } from "./cli.js";
+export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
 export { localAvailability, chosenCommand } from "./availability.js";
 export {
-  CliLocator, localCli, launchFor, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
-  type CliHost, type CliLaunch, type CliRunResult
+  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
+  type BundledCli, type CliHost, type CliLaunch, type CliRunResult
 } from "./locate.js";
 export { buildSystem, promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";
 export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, type Runtime } from "./runtime.js";

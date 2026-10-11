@@ -131,6 +131,26 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     expect(status).toMatchObject({ state: "broken", error: "did not answer --version within 0.3s" });
   });
 
+  it("runs a copy bundled in a desktop app with that app's own runtime, after every folder a terminal searches", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-locate-"));
+    // The app's binary acts as Node only when asked to, as Electron does.
+    const runtime = cli(path.join(root, "App.app/Contents/MacOS"), '[ "$ELECTRON_RUN_AS_NODE" = 1 ] || exit 9\nexec /bin/sh "$@"', "Electron");
+    const file = cli(path.join(root, "App.app/Contents/Resources/cli/bin"), 'echo "2.137.1"');
+    const gone = { file: path.join(root, "Gone.app/cli/bin", NAME), runtime: path.join(root, "Gone.app/Electron") };
+    const { host } = setup();
+    const locator = new CliLocator(NAME, host, undefined, () => [gone, { file, runtime }]);
+    expect(await locator.locate()).toMatchObject({ state: "ready", path: file, source: "known", version: "2.137.1" });
+    const launch = await locator.launch();
+    expect(launch.argv(["--acp"])).toEqual({ command: runtime, args: [file, "--acp"] });
+    expect(launch.env().ELECTRON_RUN_AS_NODE).toBe("1");
+    // Chosen by hand, the same file still starts through its app.
+    expect(await locator.check(file)).toEqual({ ok: true, path: file, version: "2.137.1" });
+
+    const onPath = cli(path.join(root, "bin"), 'echo "2.155.0"');
+    const first = setup({ path: [path.join(root, "bin")] });
+    expect(await new CliLocator(NAME, first.host, undefined, () => [{ file, runtime }]).locate()).toMatchObject({ path: onPath, source: "path" });
+  });
+
   it("checks a picked file before it is saved", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-locate-"));
     const good = cli(path.join(root, "ok"), 'echo "2.0.14 (Claude Code)"');

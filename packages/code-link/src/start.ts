@@ -15,7 +15,7 @@ import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./p
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
-import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, withOptions } from "./terminal.js";
+import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
 import { githubHttps, usesTomradeCredential, withGithubCredential } from "./credentials.js";
 
 export type StartMode = "run" | "terminal";
@@ -170,7 +170,7 @@ export class Starter {
     const other = opts.mode === "terminal" && (opts.engine === "other" || (!opts.engine && agent.codeEngines().length === 0)) && !!terminalSettings.otherCommand.trim();
     let engineId = "other";
     if (!other) {
-      const picked = await this.pickEngine(agent, opts.engine);
+      const picked = await this.pickEngine(agent, opts.engine, opts.mode === "terminal");
       if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason };
       engineId = picked.engine.id;
     }
@@ -253,7 +253,7 @@ export class Starter {
 
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */
   private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown): string {
-    const template = engineId === "codex" ? settings.codexCommand : engineId === "pi" ? settings.piCommand : engineId === "other" ? settings.otherCommand : settings.claudeCommand;
+    const template = terminalTemplate(settings, engineId);
     const id = session.externalId;
     const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
     return fillTemplate(withOptions(template, optionFlags(engineId, options)), { cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension, resume });
@@ -274,6 +274,8 @@ export class Starter {
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const other = opts.mode === "terminal" && opts.engine === "other";
     if (other && !terminalSettings.otherCommand.trim()) return { ok: false, gate: "engine", message: "No command is set for another CLI agent — add one under Settings → Code link" };
+    const refused = opts.mode === "terminal" && !other && opts.engine ? insideOnly(agent, opts.engine) : null;
+    if (refused) return { ok: false, gate: "engine", message: refused };
     const blockers = this.openBlockers(projectId, item);
     if (blockers.length && !opts.allowBlocked) return blockedGate(item, blockers);
     const prepared = await agent.prepareGeneral(projectId, item.id, {
@@ -304,6 +306,9 @@ export class Starter {
       return { ...base, command: null, launched: true, runId };
     }
 
+    // The thread may have brought its own engine; one that runs only inside Tomrade has no terminal session.
+    const inside = insideOnly(agent, engineId);
+    if (inside) return { ok: false, gate: "engine", message: inside };
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), prepared.prompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId));
@@ -314,8 +319,10 @@ export class Starter {
   }
 
   /** A local coding agent that is installed and ready; the in-app model never qualifies. */
-  async pickEngine(agent: Agent, wanted?: string): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
-    const candidates = agent.codeEngines().filter((e) => !wanted || e.id === wanted);
+  async pickEngine(agent: Agent, wanted?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
+    const inside = terminal && wanted ? insideOnly(agent, wanted) : null;
+    if (inside) return { ok: false, reason: inside };
+    const candidates = agent.codeEngines().filter((e) => (!wanted || e.id === wanted) && (!terminal || e.terminal !== false));
     if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code, Codex or Pi, then try again" };
     const reasons: string[] = [];
     for (const engine of candidates) {
@@ -343,3 +350,9 @@ export class Starter {
 }
 
 export type { RepoStateView };
+
+/** Why an engine cannot be handed a ticket in a terminal, or null when it can. */
+function insideOnly(agent: Agent, engineId: string): string | null {
+  const engine = agent.codeEngines().find((e) => e.id === engineId);
+  return engine?.terminal === false ? `${engine.title} runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link` : null;
+}
