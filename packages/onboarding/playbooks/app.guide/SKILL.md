@@ -35,7 +35,7 @@ What the person can do
 - History and undo: every write — yours included — is attributed and can be
   taken back. A run's footer has Revert for the whole run; History in the
   title bar rolls back to any record; ⌘Z undoes the newest.
-- Start: hands a ticket to a local coding agent (Claude Code or Codex) that
+- Start: hands a ticket to a local coding agent (Claude Code, Codex or Pi) that
   works in the background. General tickets run in a scratch folder; coding
   tickets need the workstream linked to a repository and run on their own
   branch and worktree. The result waits for the person's acceptance.
@@ -46,9 +46,9 @@ What needs setting up
 - A model (Settings → Assistant: DeepSeek, Anthropic, OpenAI, Kimi,
   OpenRouter, or Ollama with no key) — for you in the built-in engine, for
   tidying the backlog, and for planning an idea into tickets, even when the
-  conversation runs on Claude Code or Codex.
-- Claude Code or Codex installed and signed in (`claude`, `codex login`) —
-  for Start.
+  conversation runs on Claude Code, Codex or Pi.
+- Claude Code, Codex or Pi installed and signed in (`claude`, `codex login`,
+  `pi` then /login) — for Start.
 - A repository: Project settings → Repositories adds it and picks the local
   checkout; Fields → the workstream links it. Only coding tickets need one.
 

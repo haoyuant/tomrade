@@ -189,6 +189,9 @@ plugins:
   - id: engine-codex
     name: "@tomradex/engine-codex"
     implements: [engine]
+  - id: engine-pi
+    name: "@tomradex/engine-pi"
+    implements: [engine]
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"

@@ -5,12 +5,13 @@ import { invoke } from "./api";
 import type { MessageKey } from "./i18n";
 
 /** What each local agent's CLI is called and how a person installs and signs in to it. */
-export const LOCAL_AGENTS: Record<string, { name: string; install: (platform: string) => string[]; signIn: string; docs: string }> = {
+export const LOCAL_AGENTS: Record<string, { name: string; install: (platform: string) => string[]; signIn: string; signInRuns?: boolean; docs: string }> = {
   "claude-code": {
     name: "claude",
     // The official installer first; npm still works and is what many already have.
     install: (platform) => [platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],
     signIn: "claude",
+    signInRuns: true,
     docs: "https://docs.anthropic.com/en/docs/claude-code/setup"
   },
   codex: {
@@ -18,6 +19,14 @@ export const LOCAL_AGENTS: Record<string, { name: string; install: (platform: st
     install: () => ["npm install -g @openai/codex"],
     signIn: "codex login",
     docs: "https://github.com/openai/codex"
+  },
+  pi: {
+    name: "pi",
+    install: () => ["npm install -g @earendil-works/pi-coding-agent"],
+    // Inside pi, /login picks a provider; an API key in the environment works too.
+    signIn: "pi",
+    signInRuns: true,
+    docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent"
   }
 };
 

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, screen, type IpcMainEvent } from "electron";
+import { app, autoUpdater, BrowserWindow, ipcMain, screen, type IpcMainEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
@@ -47,11 +47,19 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       surface.win.setIgnoreMouseEvents(!interactive, { forward: true });
     };
     const onMessage = (event: IpcMainEvent, message: unknown) => this.openByContents.get(event.sender.id)?.spec.onMessage?.(message);
+    // On macOS a window that can't be closed calls off a quit, update installs included.
+    const onQuit = () => {
+      for (const surface of this.openById.values()) if (!surface.win.isDestroyed()) surface.win.setClosable(true);
+    };
     ipcMain.on(INTERACTIVE_CHANNEL, onInteractive);
     ipcMain.on(MESSAGE_CHANNEL, onMessage);
+    app.on("before-quit", onQuit);
+    autoUpdater.on("before-quit-for-update", onQuit);
     return () => {
       ipcMain.off(INTERACTIVE_CHANNEL, onInteractive);
       ipcMain.off(MESSAGE_CHANNEL, onMessage);
+      app.off("before-quit", onQuit);
+      autoUpdater.off("before-quit-for-update", onQuit);
       for (const surface of [...this.openById.values()]) this.destroy(surface);
     };
   }

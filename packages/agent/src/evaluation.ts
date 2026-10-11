@@ -3,7 +3,7 @@ import type { Block, Engine, TurnInput, TurnIO, TurnResult } from "./types.js";
 
 /** Provider counters stay separate: cached tokens are context, not free input. */
 export interface TurnMetrics {
-  transport: "cli" | "sdk" | "app-server";
+  transport: "cli" | "sdk" | "app-server" | "rpc";
   runtime: "cold" | "warm";
   readyMs?: number;
   firstTokenMs?: number;

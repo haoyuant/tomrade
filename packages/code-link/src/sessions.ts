@@ -59,6 +59,8 @@ export interface SessionFiles {
   dir: string;
   mcpConfig: string;
   settings: string;
+  /** The extension a terminal pi session loads: the MCP server and hook-style reports in one. */
+  piExtension: string;
   prompt: string;
   mcpUrl: string;
   eventUrl: string;
@@ -177,12 +179,14 @@ export class Sessions {
     fs.mkdirSync(dir, { recursive: true });
     const mcpConfig = path.join(dir, "mcp.json");
     const settings = path.join(dir, "settings.json");
+    const piFile = path.join(dir, "pi-extension.ts");
     const promptFile = path.join(dir, "prompt.md");
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(settings, JSON.stringify(hooksSettings(eventUrl), null, 2));
+    fs.writeFileSync(piFile, piExtension(mcpUrl, token, eventUrl));
     fs.writeFileSync(promptFile, prompt);
     fs.rmSync(path.join(dir, "pid"), { force: true });
-    return { dir, mcpConfig, settings, prompt: promptFile, mcpUrl, eventUrl, token };
+    return { dir, mcpConfig, settings, piExtension: piFile, prompt: promptFile, mcpUrl, eventUrl, token };
   }
 
   token(sessionId: string): string | null {
@@ -410,4 +414,51 @@ export function hooksSettings(eventUrl: string): Record<string, unknown> {
   const hooks: Record<string, unknown> = {};
   for (const event of HOOK_EVENTS) hooks[event] = [{ hooks: [post] }];
   return { hooks };
+}
+
+/**
+ * Pi has neither an MCP flag nor command hooks, so its terminal session loads
+ * this extension instead: it registers Tomrade's server for the session and
+ * posts the same events Claude's hooks do, under Claude's tool names, so the
+ * session reads alike. A deny or extra context in the reply is honoured.
+ */
+export function piExtension(mcpUrl: string, token: string, eventUrl: string): string {
+  const server = { url: mcpUrl, headers: { "X-Tomrade-Run": token }, exposure: "direct", timeout: 600 };
+  return `const server = ${JSON.stringify(server)};
+const eventUrl = ${JSON.stringify(eventUrl)};
+const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
+const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
+
+export default function (pi) {
+  pi.registerMcpServer("tomrade", server);
+  let sessionId;
+  const post = (payload) => fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, ...payload }), signal: AbortSignal.timeout(5000) })
+    .then((response) => response.json()).catch(() => ({}));
+  pi.on("session_start", async (_event, ctx) => {
+    sessionId = ctx.sessionManager.getSessionId();
+    await post({ hook_event_name: "SessionStart" });
+  });
+  pi.on("agent_start", () => { void post({ hook_event_name: "UserPromptSubmit" }); });
+  pi.on("tool_call", async (event) => {
+    const reply = await post({ hook_event_name: "PreToolUse", tool_name: names[event.toolName] ?? event.toolName, tool_input: event.input });
+    const decision = reply.hookSpecificOutput;
+    if (decision?.permissionDecision === "deny") return { block: true, reason: decision.permissionDecisionReason };
+  });
+  pi.on("tool_result", async (event) => {
+    const text = textOf(event.content);
+    const reply = await post({ hook_event_name: event.isError ? "PostToolUseFailure" : "PostToolUse", tool_name: names[event.toolName] ?? event.toolName,
+      tool_input: event.input, ...(event.isError ? { tool_error: text } : { tool_output: text }) });
+    if (reply.additionalContext) return { content: [...event.content, { type: "text", text: reply.additionalContext }] };
+  });
+  pi.on("agent_end", (event) => {
+    const last = [...event.messages].reverse().find((message) => message.role === "assistant");
+    if (last?.stopReason === "error") void post({ hook_event_name: "StopFailure", error_message: last.errorMessage });
+    else if (last) void post({ hook_event_name: "Stop", last_assistant_message: textOf(last.content) });
+  });
+  pi.on("session_shutdown", async (event) => {
+    if (event.reason === "quit") await post({ hook_event_name: "SessionEnd", reason: "exit" });
+  });
+}
+`;
 }

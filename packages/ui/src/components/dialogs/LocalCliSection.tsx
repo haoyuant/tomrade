@@ -155,7 +155,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
                     </button>
                   </>
                 )}
-                {step === "signIn" && tx(engine.id === "claude-code" ? "localCli.stepSignInClaude" : "localCli.stepSignIn", { command: code(agent.signIn) })}
+                {step === "signIn" && tx(agent.signInRuns ? "localCli.stepSignInRun" : "localCli.stepSignIn", { command: code(agent.signIn) })}
                 {step === "verify" && tx("localCli.stepVerify", { command: code(`${cli.name} --version`) })}
                 {step === "recheck" && t("localCli.stepRecheck")}
                 {step === "locate" && tx("localCli.stepLocate", { command: code(`${windows ? "where" : "which"} ${cli.name}`) })}

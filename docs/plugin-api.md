@@ -375,7 +375,7 @@ contracts:
 
 | Contract | Registry | Rows that fill it |
 |---|---|---|
-| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex` |
+| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex`, `engine-pi` |
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 
@@ -516,7 +516,7 @@ nothing about what may be read. `promptSections(input, io, { filesIndex: false }
 leaves it out of the per-turn text, which is what an engine asks for when its
 session prompt already carries it, a user message being paid for again every turn
 while a system prompt is cached. `sessionSystem(input, agentName)`, exported from
-`@tomradex/engine-claude-code`, is that prompt for Claude Code and Codex; `digest`
+`@tomradex/engine-claude-code`, is that prompt for Claude Code, Codex and Pi; `digest`
 is how a long-running session notices the index it opened with has gone stale. A
 CLI agent gets no system prompt from Tomrade at all, so `agent/prepare-brief`
 (`{ projectId, itemId, filesIndex? }`) is where the same context enters the brief
@@ -599,10 +599,12 @@ engine that declares `literal: true` (no model, like the scripted one): a model
 engine reads the reply with the waiting question in its prompt and decides
 whether it is the answer or an instruction that moves on. Every tool call an engine makes is
 run-bound: the oplog rows it produces carry the `run_id`, which is what makes
-"Changed 15 items · Revert" one click. A CLI agent (Claude Code, Codex) is an
+"Changed 15 items · Revert" one click. A CLI agent (Claude Code, Codex, Pi) is an
 engine like any other: it gets the tools over MCP with a per-run token
 (`ctx.mcp.bindRun`), so the ledger, the policies and the revert apply to it
-unchanged. A binding may also carry `event(payload)`: whatever is POSTed to
+unchanged. Pi has no MCP flag, so `engine-pi` (and a terminal pi session) loads a
+generated session-only extension that registers the server instead; the user's
+own `mcp.json` is never written. A binding may also carry `event(payload)`: whatever is POSTed to
 `/sessions/<token>/event` on the MCP server — a coding agent's hooks reporting
 it started, stopped or is waiting — reaches the binding that owns the token.
 Hooks a repository commits for every developer carry no token; they post to
@@ -611,7 +613,7 @@ and `session_id` the payload carries.
 
 An engine declares **capabilities**: `backlog` (the default) talks to the app
 through its tools; `code` also edits files and runs commands in a repository.
-Only a local coding agent (Claude Code, Codex) declares `code`, and only such
+Only a local coding agent (Claude Code, Codex, Pi) declares `code`, and only such
 an engine is offered when a ticket is started — the in-app loop never
 implements a ticket. A thread started from a ticket carries `itemId` and
 `branch`; its turns arrive with `purpose: "code"` and a `ticket`, run in a

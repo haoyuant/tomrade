@@ -580,6 +580,48 @@ describe("starting a ticket", () => {
     expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
   });
 
+  it("opens a terminal pi session whose extension carries the MCP server and reports like Claude's hooks", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    await ctx.plugin({ name: "fake-pi", inject: ["agent"], apply: (c: Context) => void c.agent.engine({ ...fakeCodeEngine([]), id: "pi", title: "Pi", author: "ai:pi" }) });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    const item = ticket("Pi terminal work");
+    const result = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "pi", options: { effort: "high" } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command).toMatch(/^pi --thinking high -e ".*pi-extension\.ts" "\$\(cat ".*prompt\.md"\)"$/);
+
+    // Load the extension the way pi does, against a stand-in for pi's API; its reports reach the real event endpoint.
+    const source = fs.readFileSync(path.join(codeLink.sessionDir(result.sessionId), "pi-extension.ts"), "utf8");
+    const servers: Record<string, { url: string; headers: Record<string, string>; exposure: string }> = {};
+    const on: Record<string, (event: unknown, ctx?: unknown) => Promise<unknown> | unknown> = {};
+    (await import(/* @vite-ignore */ `data:text/javascript,${encodeURIComponent(source)}`)).default({
+      registerMcpServer: (name: string, config: (typeof servers)[string]) => { servers[name] = config; },
+      on: (event: string, handler: (typeof on)[string]) => { on[event] = handler; }
+    });
+    expect(servers.tomrade).toMatchObject({ url: ctx.mcp.urlFor(project.id), exposure: "direct" });
+    expect(servers.tomrade.headers["X-Tomrade-Run"]).toBe(codeLink.sessions.token(result.sessionId));
+    const session = () => codeLink.sessionsOf(project.id, item.id)[0];
+    await on.session_start!({ type: "session_start", reason: "startup" }, { sessionManager: { getSessionId: () => "pi-abc" } });
+    expect(session()).toMatchObject({ state: "running", externalId: "pi-abc", mode: "terminal" });
+    expect(await on.tool_call!({ toolName: "bash", input: { command: "flutter create ." } })).toBeUndefined();
+    expect(session()).toMatchObject({ state: "running", activity: "Bash · flutter create ." });
+    await on.tool_result!({ toolName: "bash", input: { command: "flutter create ." }, content: [{ type: "text", text: "ok" }], isError: false });
+    expect(session().activity).toBeNull();
+    on.agent_end!({ messages: [{ role: "assistant", content: [{ type: "text", text: "Scaffold in place.\n\nNext: CI." }], stopReason: "stop" }] });
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", summary: "Scaffold in place." }));
+    await on.session_shutdown!({ type: "session_shutdown", reason: "quit" });
+    expect(session().state).toBe("ended");
+
+    // Continuing resumes the pi session it heard about.
+    const again = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "pi" });
+    expect(again.ok ? again.command : "").toContain("--session-id pi-abc");
+  });
+
   it("carries the knobs picked at Start onto the ticket's thread, where the turn and the panel read them", async () => {
     const world = await machine(codeRepo());
     const { codeLink, project, agent } = world;

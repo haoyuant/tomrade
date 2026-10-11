@@ -40,7 +40,7 @@ export const localCli = {
     stepInstall: "Install: {{command}}",
     stepInstallOr: "or {{command}}",
     stepSignIn: "Sign in: {{command}}",
-    stepSignInClaude: "Sign in: run {{command}} and follow the prompts",
+    stepSignInRun: "Sign in: run {{command}} and follow the prompts",
     stepVerify: "Check it in a terminal: {{command}}",
     stepRecheck: "Come back here and click Check again — no restart needed.",
     stepLocate: "Still not found? {{command}} prints where it is; put that path under CLI path.",
@@ -51,7 +51,7 @@ export const localCli = {
     notReady: "{{title}} isn't ready: {{state}}.",
     configure: "Set up",
 
-    whatIsLocal: "Claude Code and Codex are coding agents that run on your computer. Start hands them a ticket and they work on it in your repository — install and sign in to one of them first.",
+    whatIsLocal: "Claude Code, Codex and Pi are coding agents that run on your computer. Start hands them a ticket and they work on it in your repository — install and sign in to one of them first.",
     repairLine: "{{title}}: found, but it won't run",
     wslLine: "{{title}}: installed only inside WSL, which Tomrade on Windows can't use",
     setUpLocal: "Set up a local agent"
@@ -97,7 +97,7 @@ export const localCli = {
     stepInstall: "安装：{{command}}",
     stepInstallOr: "或 {{command}}",
     stepSignIn: "登录：{{command}}",
-    stepSignInClaude: "登录：运行 {{command}}，按提示登录",
+    stepSignInRun: "登录：运行 {{command}}，按提示登录",
     stepVerify: "在终端验证：{{command}}",
     stepRecheck: "回到这里点“重新检测”，不用重启 Tomrade。",
     stepLocate: "仍检测不到：用 {{command}} 查到路径，填入“CLI 路径”。",
@@ -108,7 +108,7 @@ export const localCli = {
     notReady: "{{title}} 未就绪：{{state}}。",
     configure: "去配置",
 
-    whatIsLocal: "Claude Code 和 Codex 是运行在你电脑上的编程 agent。点“开始”后，Tomrade 把 ticket 交给它们，由它们在你的仓库里完成工作——先安装并登录其中一个。",
+    whatIsLocal: "Claude Code、Codex 和 Pi 是运行在你电脑上的编程 agent。点“开始”后，Tomrade 把 ticket 交给它们，由它们在你的仓库里完成工作——先安装并登录其中一个。",
     repairLine: "{{title}}：找到了但无法运行",
     wslLine: "{{title}}：只装在 WSL 中，Windows 版 Tomrade 用不了",
     setUpLocal: "配置本地 agent"

@@ -2,7 +2,7 @@ export const mcpServers = {
   en: {
     label: "MCP servers",
     lede:
-      "Connect external MCP servers and their tools join Tomrade's own: the assistant can call them, and so can Claude Code and Codex through Tomrade's MCP endpoint. Every call passes the same policies. Commands, environment variables and headers stay on this machine.",
+      "Connect external MCP servers and their tools join Tomrade's own: the assistant can call them, and so can Claude Code, Codex and Pi through Tomrade's MCP endpoint. Every call passes the same policies. Commands, environment variables and headers stay on this machine.",
     connectedOfTotal: "{{connected}} of {{total}} connected",
     empty: "No servers yet. Add one, or paste the mcpServers JSON from a server's README.",
     add: "Add server",
@@ -73,7 +73,7 @@ export const mcpServers = {
   zh: {
     label: "MCP 服务器",
     lede:
-      "连接外部 MCP 服务器后，它的工具会和 Tomrade 自带的工具放在一起：助手可以调用，Claude Code 和 Codex 也能通过 Tomrade 的 MCP 端点调用。每次调用都经过同样的策略检查。命令、环境变量和请求头只保存在这台机器上。",
+      "连接外部 MCP 服务器后，它的工具会和 Tomrade 自带的工具放在一起：助手可以调用，Claude Code、Codex 和 Pi 也能通过 Tomrade 的 MCP 端点调用。每次调用都经过同样的策略检查。命令、环境变量和请求头只保存在这台机器上。",
     connectedOfTotal: "已连接 {{connected}} / {{total}}",
     empty: "还没有服务器。可以手动添加，也可以粘贴服务器 README 里的 mcpServers JSON。",
     add: "添加服务器",
