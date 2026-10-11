@@ -9,6 +9,8 @@ export const TerminalSettings = z.object({
   terminal: z.string().default("Terminal"),
   claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
   codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"'),
+  /** Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks. */
+  piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"'),
   /** Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in. */
   otherCommand: z.string().default("")
 });
@@ -42,6 +44,9 @@ export function optionFlags(engine: string, options: unknown): string {
   } else if (engine === "codex") {
     if (model) flags.push(`-m ${bare(model)}`);
     if (effort) flags.push(`-c model_reasoning_effort=${bare(effort)}`);
+  } else if (engine === "pi") {
+    if (model) flags.push(`--model ${bare(model)}`);
+    if (effort) flags.push(`--thinking ${bare(effort)}`);
   }
   return flags.join(" ");
 }

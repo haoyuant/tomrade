@@ -29,7 +29,7 @@ export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDe
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
 export { DEFAULT_BRANCH_TEMPLATE, branchFor, keysInText, parseBranch, slugify } from "./keys.js";
 export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult } from "./start.js";
-export { Sessions, HOOK_EVENTS, describeTool, hooksSettings, sessionContext, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
+export { Sessions, HOOK_EVENTS, describeTool, hooksSettings, piExtension, sessionContext, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
 export { TerminalSettings, fillTemplate, launchTerminal, optionFlags, withOptions } from "./terminal.js";
 export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt } from "./prompts.js";
 export { PLAYBOOKS } from "./playbooks.js";

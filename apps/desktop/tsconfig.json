@@ -48,6 +48,9 @@
       "path": "../../packages/engine-codex"
     },
     {
+      "path": "../../packages/engine-pi"
+    },
+    {
       "path": "../../packages/engine-loop"
     },
     {

@@ -40,6 +40,7 @@
     "@tomradex/desktop-surface": "workspace:*",
     "@tomradex/engine-claude-code": "workspace:*",
     "@tomradex/engine-codex": "workspace:*",
+    "@tomradex/engine-pi": "workspace:*",
     "@tomradex/engine-loop": "workspace:*",
     "@tomradex/engine-scripted": "workspace:*",
     "@tomradex/extensions": "workspace:*",

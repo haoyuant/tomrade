@@ -173,7 +173,7 @@ export function compareUrl(remote: string, defaultBranch: string, branch: string
 const SETTINGS_SECTION = {
   id: "codeLink",
   title: "Code link",
-  description: "Which terminal opens a ticket, and how Claude Code or Codex is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
+  description: "Which terminal opens a ticket, and how Claude Code, Codex or Pi is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
   schema: TerminalSettings,
   defaults: TerminalSettings.parse({}),
   order: 30
@@ -1223,7 +1223,7 @@ export class CodeLink extends Service {
     if (!session.threadId) return;
     const agent = this.ctx.get("agent");
     if (!agent?.store.thread(session.projectId, session.threadId)) return;
-    const who = session.agent === "claude-code" ? "Claude Code" : session.agent === "codex" ? "Codex" : session.agent;
+    const who = session.agent === "claude-code" ? "Claude Code" : session.agent === "codex" ? "Codex" : session.agent === "pi" ? "Pi" : session.agent;
     const text = moment.kind === "said" ? `${who}: ${moment.text}` : moment.kind === "failed" ? `${who} stopped: ${moment.text}` : `${who} session ended${moment.text ? ` (${moment.text})` : ""}.`;
     const message = agent.store.appendMessage(session.projectId, session.threadId, "system", { type: "note", text }, null);
     this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });

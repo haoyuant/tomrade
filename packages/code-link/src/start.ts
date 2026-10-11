@@ -13,7 +13,7 @@ import { listDecisions } from "./decisions.js";
 import { branchFor } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
-import type { Sessions } from "./sessions.js";
+import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, withOptions } from "./terminal.js";
 import { githubHttps, usesTomradeCredential, withGithubCredential } from "./credentials.js";
@@ -195,7 +195,7 @@ export class Starter {
       thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}`, surface });
     }
     if (engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
-      if (opts.options !== undefined) agent.setOptions(projectId, thread.id, opts.options);
+      if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
       if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
     }
 
@@ -252,10 +252,11 @@ export class Starter {
   }
 
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */
-  private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: { prompt: string; mcpConfig: string; mcpUrl: string; token: string; settings: string }, cwd: string, options: unknown): string {
-    const template = engineId === "codex" ? settings.codexCommand : engineId === "other" ? settings.otherCommand : settings.claudeCommand;
-    const resume = session.externalId ? (engineId === "codex" ? `resume ${session.externalId}` : engineId === "other" ? session.externalId : `--resume ${session.externalId}`) : "";
-    return fillTemplate(withOptions(template, optionFlags(engineId, options)), { cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, resume });
+  private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown): string {
+    const template = engineId === "codex" ? settings.codexCommand : engineId === "pi" ? settings.piCommand : engineId === "other" ? settings.otherCommand : settings.claudeCommand;
+    const id = session.externalId;
+    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
+    return fillTemplate(withOptions(template, optionFlags(engineId, options)), { cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension, resume });
   }
 
   /**
@@ -315,7 +316,7 @@ export class Starter {
   /** A local coding agent that is installed and ready; the in-app model never qualifies. */
   async pickEngine(agent: Agent, wanted?: string): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
     const candidates = agent.codeEngines().filter((e) => !wanted || e.id === wanted);
-    if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code or Codex, then try again" };
+    if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code, Codex or Pi, then try again" };
     const reasons: string[] = [];
     for (const engine of candidates) {
       const state = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
