@@ -29,6 +29,8 @@ describe("get_item tool", () => {
     const off = ctx.items.files({ getVersion: async () => null, describe });
     expect(await run("get_item", { id: linked.id })).toMatchObject({ id: linked.id, attachments: [{ fileId: shot, path: "Web/attachments/TOM-1/shot.png", localPath: "/tmp/shot.png" }] });
     expect(asked).toEqual([[shot, gone]]);
+    // a brief names the ticket by key, and the key answers the same
+    expect(await run("get_item", { id: linked.key })).toMatchObject({ id: linked.id, attachments: [{ fileId: shot }] });
     expect(await run("get_item", { id: plain.id })).not.toHaveProperty("attachments");
     off();
 
