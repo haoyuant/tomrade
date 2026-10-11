@@ -1014,10 +1014,12 @@ are optional too: a backend without them lists everything and cannot search.
 with `@tomradex/storage-github`.
 
 The project's own repository (a `dedicated` folder) may hold the files in a
-folder of it, never at its root, where `.tomrade/` lives: `bind` throws
-`ProjectRepositoryError` for that target, and a `createGitBackend` store bound
-there before the project took the repository reports the same error instead of
-syncing. A backend that is not built on `createGitBackend` opts in by
+folder of it, but not at its root, where `.tomrade/` lives, nor in `files/`:
+the project's checkout pulls what Files publishes, and there it would land in
+the store's own working tree, where two repositories would commit the same
+files (local-only ones included). `bind` throws `ProjectRepositoryError` for
+such a target, and a `createGitBackend` store bound there earlier reports the
+same error instead of syncing. Another branch of the same repository is fine. A backend that is not built on `createGitBackend` opts in by
 implementing `repository(config)` and asking `projectRepository()` from its
 open options before each sync.
 

@@ -141,10 +141,12 @@ const repositoryKey = (url: string): string => {
   return bare.replace(/\/+$/, "").replace(/\.git$/, "").toLowerCase();
 };
 
-/** Whether a target is the root of the project's own repository, where `.tomrade/` lives. */
-export function sharesProjectRoot(target: { url: string; branch: string; directory?: string }, project: ProjectRepository | null): boolean {
-  if (!project || remoteDirectory(target.directory)) return false;
-  return (target.branch || "main") === project.branch && repositoryKey(target.url) === repositoryKey(project.url);
+/** Whether a target lands on the project's own checkout: its root, or the folder that checkout keeps this store in. */
+export function collidesWithProject(target: { url: string; branch: string; directory?: string }, project: ProjectRepository | null): boolean {
+  if (!project || (target.branch || "main") !== project.branch || repositoryKey(target.url) !== repositoryKey(project.url)) return false;
+  const directory = remoteDirectory(target.directory);
+  // Case-insensitive: on a default macOS or Windows volume `Files/` is the same folder.
+  return !directory || directory.split("/")[0]!.toLowerCase() === project.folder.toLowerCase();
 }
 
 interface IndexEntry {

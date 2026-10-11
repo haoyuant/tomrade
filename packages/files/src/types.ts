@@ -246,7 +246,7 @@ export interface OpenStoreOptions<C> {
   onChange(): void;
   /** What the service was configured with; a backend takes what applies to it. */
   env: StoreEnv;
-  /** The project's own repository, asked on every sync; a backend sharing through git keeps out of its root. */
+  /** The project's own repository, asked on every sync; a backend sharing through git keeps out of its root and the store's folder. */
   projectRepository?(): Promise<ProjectRepository | null>;
 }
 
@@ -254,6 +254,8 @@ export interface OpenStoreOptions<C> {
 export interface ProjectRepository {
   url: string;
   branch: string;
+  /** The top-level folder its checkout keeps the files store in. */
+  folder: string;
 }
 
 export interface StoreEnv {
@@ -340,10 +342,14 @@ export class FileChangedError extends Error {
   }
 }
 
-/** At the root of the project's own repository, Files would take `.tomrade/` and copy itself into the project's folder. */
+/**
+ * The project's own checkout pulls whatever Files publishes there: at the root
+ * Files would take `.tomrade/`, and in the store's own folder two repositories
+ * would commit the same files, local-only ones included.
+ */
 export class ProjectRepositoryError extends Error {
-  constructor() {
-    super("This repository holds the project itself: share Files through a folder in it, such as project-files, or through another repository");
+  constructor(public readonly folder: string) {
+    super(`This repository holds the project itself: share Files through a folder in it other than ${folder}/, such as project-files, or through another branch or repository`);
     this.name = "ProjectRepositoryError";
   }
 }

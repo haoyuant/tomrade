@@ -9,6 +9,7 @@ import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
 import { Files, ProjectRepositoryError, createGitBackend } from "@tomradex/files";
+import { collidesWithProject } from "../src/git-sync.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-sync-svc-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -34,9 +35,9 @@ async function machine(extra: unknown[] = []) {
 const folderBackend = createGitBackend({
   id: "scoped-folder",
   title: "A scoped folder",
-  configSchema: z.object({ path: z.string().min(1), directory: z.string() }),
-  defaults: { path: "", directory: "" },
-  remote: (c) => ({ url: c.path, branch: "main", directory: c.directory })
+  configSchema: z.object({ path: z.string().min(1), directory: z.string(), branch: z.string().default("main") }),
+  defaults: { path: "", directory: "", branch: "main" },
+  remote: (c) => ({ url: c.path, branch: c.branch, directory: c.directory })
 });
 
 function git(dir: string, ...args: string[]): string {
@@ -279,7 +280,22 @@ describe("the project's own repository", { timeout: 60_000 }, () => {
     return remote;
   };
 
-  it("refuses its root before saving, and shares a folder in it", async () => {
+  it("knows the repository however its URL is spelled, and only its root and the store's folder collide", () => {
+    const project = { url: "https://github.com/acme/Project.git", branch: "main", folder: "files" };
+    const at = (url: string, directory = "", branch = "main") => collidesWithProject({ url, branch, directory }, project);
+    expect(at("https://x-access-token:secret@github.com/acme/project")).toBe(true);
+    expect(at("git@github.com:acme/project.git")).toBe(true);
+    expect(at("ssh://git@github.com/acme/project.git/")).toBe(true);
+    expect(at("https://github.com/acme/project.git", "files")).toBe(true);
+    expect(at("https://github.com/acme/project.git", "Files/docs")).toBe(true);
+    expect(at("https://github.com/acme/project.git", "project-files")).toBe(false);
+    expect(at("https://github.com/acme/project.git", "docs/files")).toBe(false);
+    expect(at("https://github.com/acme/project.git", "", "files")).toBe(false);
+    expect(at("https://github.com/acme/other.git")).toBe(false);
+    expect(collidesWithProject({ url: project.url, branch: "main" }, null)).toBe(false);
+  });
+
+  it("refuses its root and the store's folder before saving, and shares another folder in it", async () => {
     const { ctx, project } = await machine([storageGit]);
     const id = project.id;
     try {
@@ -289,6 +305,8 @@ describe("the project's own repository", { timeout: 60_000 }, () => {
       await ctx.files.write(id, "notes.md", "hello\n");
       await ctx.storage.bind(id, "git", { remote, branch: "main" });
       await expect(ctx.files.bind(id, "scoped-folder", { path: `${remote}/`, directory: "" })).rejects.toThrow(ProjectRepositoryError);
+      await expect(ctx.files.bind(id, "scoped-folder", { path: remote, directory: "files" })).rejects.toThrow(/other than files\//);
+      await expect(ctx.files.bind(id, "scoped-folder", { path: remote, directory: "Files/docs" })).rejects.toThrow(ProjectRepositoryError);
       expect(ctx.files.remoteOf(id)).toBeNull();
       expect(git(remote, "ls-tree", "--name-only", "main").split("\n")).toEqual([".tomrade"]);
 
@@ -296,6 +314,23 @@ describe("the project's own repository", { timeout: 60_000 }, () => {
       await ctx.files.bind(id, "scoped-folder", { path: remote, directory: "project-files" });
       expect((await ctx.files.sync(id)).state).toBe("synced");
       expect(git(remote, "show", "main:project-files/notes.md")).toBe("hello");
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("shares the root of another branch of it", async () => {
+    const { ctx, project } = await machine([storageGit]);
+    const id = project.id;
+    try {
+      ctx.plugin({ name: "scoped-folder-backend", inject: ["files"], apply: (c) => void c.files.register(folderBackend) });
+      await settle();
+      const remote = bare();
+      await ctx.files.write(id, "notes.md", "hello\n");
+      await ctx.storage.bind(id, "git", { remote, branch: "main" });
+      expect((await ctx.files.bind(id, "scoped-folder", { path: remote, directory: "", branch: "files" })).state).toBe("synced");
+      expect(git(remote, "show", "files:notes.md")).toBe("hello");
+      expect(git(remote, "ls-tree", "--name-only", "main").split("\n")).not.toContain("notes.md");
     } finally {
       await ctx.fiber.dispose();
     }

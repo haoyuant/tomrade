@@ -5,7 +5,7 @@ import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
 import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
-import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, sharesProjectRoot, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
 import {
   FileChangedError,
@@ -58,7 +58,7 @@ export interface GitStoreOptions {
   remote: (() => Promise<GitRemoteTarget> | GitRemoteTarget) | null;
   /** Bring the remote into being before the first push. */
   ensureRemote?: () => Promise<void>;
-  /** The repository holding the project itself; its root is never shared. */
+  /** The repository holding the project itself; neither its root nor the store's own folder in it is shared. */
   projectRepository?: () => Promise<ProjectRepository | null>;
   /** Non-secret, for status lines; the folder when null. */
   location: string | null;
@@ -1000,7 +1000,8 @@ export class GitFileStore implements FileStore {
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
       if (separateWorlds(boundDirectory(this.dir), remoteDirectory(remote.directory))) throw new Error(DIRECTORY_CHANGED);
-      if (sharesProjectRoot(remote, (await this.opts.projectRepository?.()) ?? null)) throw new ProjectRepositoryError();
+      const project = (await this.opts.projectRepository?.()) ?? null;
+      if (collidesWithProject(remote, project)) throw new ProjectRepositoryError(project!.folder);
       if (this.opts.ensureRemote && !this.ensured) {
         await this.opts.ensureRemote();
         this.ensured = true;

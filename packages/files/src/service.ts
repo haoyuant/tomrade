@@ -21,7 +21,7 @@ import type { UndoRecord } from "@tomradex/domain";
 import type {} from "./channels.js";
 import { createGitBackend } from "./git-backend.js";
 import { BINARY_LIMIT, GitFileStore, normalizeRel } from "./git-store.js";
-import { DEFAULT_AGENT_POLICY, listingAt, remoteDirectory, sharesProjectRoot } from "./git-sync.js";
+import { DEFAULT_AGENT_POLICY, collidesWithProject, listingAt, remoteDirectory } from "./git-sync.js";
 import { buildAgentIndex, type AgentIndex } from "./agent-index.js";
 import { gitRunner } from "@tomradex/storage";
 import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
@@ -443,11 +443,11 @@ export class Files extends Service {
     }
   }
 
-  /** The repository Tomrade drives for the project itself: Files may share a folder in it, never its root. */
+  /** The repository Tomrade drives for the project itself: Files may share a folder in it, never its root or the store's own folder. */
   private async projectRepository(projectId: string): Promise<ProjectRepository | null> {
     if (this.ctx.storage.entry(projectId)?.git !== "dedicated") return null;
     const { origin } = await this.ctx.storage.info(projectId);
-    return origin?.url && origin.branch ? { url: origin.url, branch: origin.branch } : null;
+    return origin?.url && origin.branch ? { url: origin.url, branch: origin.branch, folder: this.config.folder } : null;
   }
 
   /** In a repository Tomrade drives, the files keep a repository of their own; the outer one must not swallow it. */
@@ -1029,7 +1029,7 @@ export class Files extends Service {
     const config = backend.configSchema.parse({ ...(backend.defaults as object), ...((rawConfig as object) ?? {}) }) as Record<string, unknown>;
     if (!this.dirFor(projectId)) throw new FilesUnavailableError(projectId, "the project has no folder yet");
     const target = await backend.repository?.(config);
-    if (target && sharesProjectRoot(target, await this.projectRepository(projectId))) throw new ProjectRepositoryError();
+    if (target && collidesWithProject(target, await this.projectRepository(projectId))) throw new ProjectRepositoryError(this.config.folder);
     const previous = this.remoteOf(projectId);
     this.remotes.set(projectId, backendId, config);
     const attempted = this.remoteKey(projectId);
