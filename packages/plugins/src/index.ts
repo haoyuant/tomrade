@@ -3,6 +3,7 @@ import type {} from "cordis";
 export { Plugins, Plugins as default } from "./manager.js";
 export {
   RequiredModuleError,
+  type ContractSpec,
   type ModuleSpec,
   type ModuleView,
   type PluginRow,

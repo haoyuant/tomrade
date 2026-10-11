@@ -2040,6 +2040,17 @@ button.kref { cursor: pointer; }
 .plug-tabs .plug-count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--surface); color: var(--fg); font-size: var(--text-xs); }
 .plug-ext + .plug-ext { margin-top: var(--space-2); }
 .plug-ext-reach { padding: 4px var(--space-3) 0 calc(var(--space-3) + 27px); }
+.plug-search { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: text; }
+.plug-search:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.plug-search .ico { color: var(--meta); flex-shrink: 0; }
+.plug-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 14px; outline: none; }
+.plug-search input::placeholder { color: var(--meta); }
+.plug-group + .plug-group { margin-top: var(--space-5); }
+.plug-group-head { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-1); }
+.plug-group-head .eyebrow { margin: 0; }
+.plug-group-count { margin-left: auto; }
+.plug-group-lede { margin: 0 0 var(--space-2); }
+.plug-group-head + .stack-2 { margin-top: var(--space-2); }
 .plug-reach li, .plug-findings li { font-size: 13px; color: var(--fg-2); }
 .plug-findings li[data-severity="critical"], .plug-findings li[data-severity="high"] { color: var(--danger); }
 .plug-listing { width: 100%; cursor: pointer; font: inherit; color: inherit; text-align: left; }

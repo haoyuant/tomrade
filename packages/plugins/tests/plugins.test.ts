@@ -1,6 +1,6 @@
 import { Context, Service, type Plugin } from "cordis";
 import { beforeEach, describe, expect, it } from "vitest";
-import { Plugins, RequiredModuleError, type ModuleSpec, type PluginRow } from "@tomradex/plugins";
+import { Plugins, RequiredModuleError, type ContractSpec, type ModuleSpec, type PluginRow } from "@tomradex/plugins";
 
 /** Nested fibers activate a microtask after their dependencies; this lets them. */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -11,6 +11,7 @@ declare module "cordis" {
     ledger: Ledger;
     notes: Notes;
     reader: Reader;
+    shelf: Shelf;
   }
 }
 
@@ -44,6 +45,23 @@ class Reader extends Service {
   }
 }
 
+/** A registry, shaped like `ctx.agent.engine`: a registration is an effect on the caller's fiber. */
+class Shelf extends Service {
+  static provide = "shelf";
+  private entries = new Set<string>();
+  constructor(ctx: Context) {
+    super(ctx, "shelf");
+  }
+  register(id: string) {
+    return this.ctx.effect(() => {
+      this.entries.add(id);
+      return () => this.entries.delete(id);
+    }, `shelf.register(${id})`);
+  }
+}
+
+const shelved = { name: "shelved", inject: ["shelf"], apply: (ctx: Context) => void ctx.shelf.register("a") };
+
 /** One row, two service keys, reached through a nested plugin — the shape @tomradex/boards has. */
 const pair = {
   name: "pair",
@@ -67,7 +85,9 @@ const MODULES: ModuleSpec[] = [
   { id: "reader", title: "Reader" }
 ];
 
-const CATALOGUE: Record<string, Plugin> = { store: Store, ledger: Ledger, pair, bystander };
+const CONTRACTS: ContractSpec[] = [{ id: "shelf", title: "Shelves", registry: "shelf.register" }];
+
+const CATALOGUE: Record<string, Plugin> = { store: Store, ledger: Ledger, pair, bystander, shelf: Shelf, shelved };
 
 interface Harness {
   ctx: Context;
@@ -76,7 +96,7 @@ interface Harness {
   failures: unknown[];
 }
 
-async function boot(rows: PluginRow[], modules: ModuleSpec[] = MODULES): Promise<Harness> {
+async function boot(rows: PluginRow[], modules: ModuleSpec[] = MODULES, contracts: ContractSpec[] = CONTRACTS): Promise<Harness> {
   const ctx = new Context();
   const failures: unknown[] = [];
   ctx.logger.exporter({
@@ -88,6 +108,7 @@ async function boot(rows: PluginRow[], modules: ModuleSpec[] = MODULES): Promise
   await ctx.plugin(Plugins, {
     rows,
     modules,
+    contracts,
     resolve: async ({ name }) => {
       const plugin = CATALOGUE[name];
       if (!plugin) throw new Error(`Cannot find package '${name}'`);
@@ -314,5 +335,34 @@ describe("the snapshot", () => {
     expect(viewOf(h, "bystander").state).toBe("disabled");
     await h.ctx.plugins.setEnabled("bystander", true);
     expect(viewOf(h, "bystander").state).toBe("active");
+  });
+});
+
+describe("contracts", () => {
+  const rows = (): PluginRow[] => [
+    { id: "store", name: "store" },
+    { id: "ledger", name: "ledger" },
+    { id: "shelf", name: "shelf" },
+    { id: "shelved", name: "shelved" },
+    { id: "declared", name: "bystander", implements: ["shelf"], disabled: true }
+  ];
+
+  it("credits a running row with the registry it registered into, undeclared", async () => {
+    const h = await boot(rows());
+    expect(viewOf(h, "shelved").implements).toEqual(["shelf"]);
+    expect(viewOf(h, "shelf").implements).toEqual([]);
+    expect(h.ctx.plugins.snapshot().contracts).toEqual(CONTRACTS);
+  });
+
+  it("keeps a switched-off row in the contract its row declares", async () => {
+    const h = await boot(rows());
+    expect(viewOf(h, "declared").implements).toEqual(["shelf"]);
+    await h.ctx.plugins.setEnabled("shelved", false);
+    expect(viewOf(h, "shelved").implements).toEqual([]);
+  });
+
+  it("ignores a declaration naming no contract of the composition", async () => {
+    const h = await boot([{ id: "store", name: "store", implements: ["nothing"] }]);
+    expect(viewOf(h, "store").implements).toEqual([]);
   });
 });

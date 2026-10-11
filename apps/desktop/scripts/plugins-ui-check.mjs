@@ -119,6 +119,51 @@ const run = async () => {
   check("confirming loads exactly that build", view("local/notes")?.state === "active" && ctx.tools.has("notes_count_open"), JSON.stringify(view("local/notes")));
   check("and the dialog closes", (await $(`!!document.querySelector('[data-testid="confirm-build"]')`)) === false);
 
+  // Rows sit under the contract they fill; a search narrows rows and extensions alike.
+  const search = (text) =>
+    $(`(() => {
+      const input = document.querySelector('[data-testid="plugins-search"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(text)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`);
+  const rowIds = (scope = ".dlg-body") => $(`[...document.querySelectorAll('${scope} .cfg-row[data-id]')].map(r => r.dataset.id).join()`);
+  check("engines are grouped under their contract, the switched-off one too", (await rowIds('.plug-group[data-contract="engine"]')) === "engine-loop,engine-scripted,engine-claude-code,engine-codex");
+  check("destinations under theirs", (await rowIds('.plug-group[data-contract="storage"]')) === "storage-git,storage-github");
+  check("and every other row under one heading", (await rowIds('.plug-group[data-contract=""]')).split(",").includes("db"));
+  await $(`document.querySelector('.plug-group[data-contract="engine"]').scrollIntoView({ block: 'start' });true`);
+  await sleep(300);
+  await shot("30-plugins-groups");
+  await search("github");
+  await sleep(300);
+  check("a search narrows the list to the rows that match", (await rowIds()) === "storage-github,files-github", await rowIds());
+  check("and leaves the module table out of the way", (await $(`!!document.querySelector('.dlg-body .tok-table')`)) === false);
+  await search("counter");
+  await sleep(300);
+  check("it finds an extension by its title", (await $(`[...document.querySelectorAll('[data-testid="extensions"] .plug-ext[data-id]')].map(r => r.dataset.id).join()`)) === "someone/counter");
+  await search("nothing-called-this");
+  await sleep(300);
+  check("and says so when nothing matches", /No plugin matches “nothing-called-this”/.test(await $(`document.querySelector('.dlg-body').textContent`)));
+
+  // Assistant lists only the engines that are running, and says where the rest are.
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === 'Assistant')`);
+  await sleep(700);
+  check("the Assistant pane names the engine that is switched off", (await $(`document.querySelector('[data-testid="more-engines"]')?.textContent ?? ''`)).includes("engine-scripted"));
+  await $(`document.querySelector('[data-testid="more-engines"]').scrollIntoView({ block: 'center' });true`);
+  await sleep(300);
+  await shot("30-assistant-more-engines");
+  await press(`document.querySelector('[data-testid="more-engines"] .link-btn')`);
+  await sleep(700);
+  check("its link opens Plugins already searching for engines", (await $(`document.querySelector('[data-testid="plugins-search"]')?.value`)) === "engine" && (await $(`document.querySelector('.dlg-nav .side-row[aria-current="true"]')?.textContent.trim()`)) === "Manage plugins");
+  check("opened at the top, where the search box is", (await $(`document.querySelector('.dlg-body').scrollTop`)) === 0);
+  check("which shows the engines and nothing else", (await rowIds()) === "engine-loop,engine-scripted,engine-claude-code,engine-codex", await rowIds());
+  await shot("30-plugins-engines");
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === 'Assistant')`);
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === 'Manage plugins')`);
+  await sleep(500);
+  check("coming back by the menu opens it unfiltered", (await $(`document.querySelector('[data-testid="plugins-search"]')?.value`)) === "");
+
   await tab("mine");
   await sleep(900);
   check("My plugins lists the studio workspace", (await $(`!!document.querySelector('[data-testid="workspaces"] [data-id="local/notes"]')`)) === true);

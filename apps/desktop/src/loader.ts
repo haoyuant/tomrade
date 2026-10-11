@@ -6,7 +6,7 @@ import { Document, isMap, isSeq, parse, parseDocument } from "yaml";
 import { adaptSdkPlugin, builtinIdentity, identityOf } from "@tomradex/extensions";
 import { dataDirFor } from "@tomradex/plugin-kit";
 import { MANIFEST_FILE, isSdkPlugin, parseManifest } from "@tomradex/plugin-sdk";
-import type { ModuleSpec, PluginRow } from "@tomradex/plugins";
+import type { ContractSpec, ModuleSpec, PluginRow } from "@tomradex/plugins";
 
 export type { PluginRow };
 
@@ -35,10 +35,22 @@ function modulesOf(raw: unknown, file: string): ModuleSpec[] {
   });
 }
 
-/** The whole composition: the rows to load, and the capabilities they may not leave unfilled. */
-export function readConfig(file: string): { rows: PluginPatch[]; modules: ModuleSpec[] } {
+function contractsOf(raw: unknown, file: string): ContractSpec[] {
+  const contracts = isRecord(raw) ? raw.contracts : undefined;
+  if (contracts === undefined) return [];
+  if (!Array.isArray(contracts)) throw new Error(`${file}: expected "contracts" to be a list`);
+  return contracts.map((contract, i) => {
+    if (!isRecord(contract) || typeof contract.id !== "string" || typeof contract.title !== "string" || typeof contract.registry !== "string") {
+      throw new Error(`${file}: contracts[${i}] needs a string id, title and registry`);
+    }
+    return { id: contract.id, title: contract.title, registry: contract.registry };
+  });
+}
+
+/** The whole composition: the rows to load, the capabilities they may not leave unfilled, and the registries they plug into. */
+export function readConfig(file: string): { rows: PluginPatch[]; modules: ModuleSpec[]; contracts: ContractSpec[] } {
   const raw: unknown = parse(fs.readFileSync(file, "utf8"));
-  return { rows: rowsOf(raw, file), modules: modulesOf(raw, file) };
+  return { rows: rowsOf(raw, file), modules: modulesOf(raw, file), contracts: contractsOf(raw, file) };
 }
 
 export function readRows(file: string): PluginPatch[] {

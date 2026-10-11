@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { ModuleView, PluginView } from "@tomradex/plugins";
+import type { ContractSpec, ModuleView, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
-import { SectionHead, Tag } from "~/components/ui/atoms";
+import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useAddFolder, useInstallFile, useUpdates } from "~/lib/plugins";
 import { usePlugins, useSetPluginEnabled } from "~/lib/queries";
@@ -37,6 +37,26 @@ function useDetailOf(plugin: PluginView): string {
   if (plugin.provides.length) parts.push(t("pluginsPanel.provides", { list: plugin.provides.join(", ") }));
   if (plugin.injects.length) parts.push(t("pluginsPanel.needs", { list: plugin.injects.join(", ") }));
   return parts.length ? parts.join(" · ") : t("pluginsPanel.addsNothing");
+}
+
+/** Contracts the app ships, in the reader's language; one a patch adds keeps the title it was given. */
+const CONTRACT_TEXT: Record<string, [MessageKey, MessageKey]> = {
+  engine: ["pluginsPanel.contractEngine", "pluginsPanel.contractEngineLede"],
+  storage: ["pluginsPanel.contractStorage", "pluginsPanel.contractStorageLede"],
+  files: ["pluginsPanel.contractFiles", "pluginsPanel.contractFilesLede"]
+};
+
+function useContractTitle(): (contract: ContractSpec) => string {
+  const { t } = useI18n();
+  return (contract) => (CONTRACT_TEXT[contract.id] ? t(CONTRACT_TEXT[contract.id]![0]) : contract.title);
+}
+
+/** Every word has to appear somewhere a person might know the plugin by. */
+function matches(plugin: PluginView, words: string[], contractText: (id: string) => string): boolean {
+  if (!words.length) return true;
+  const ext = plugin.extension;
+  const haystack = [plugin.id, plugin.name, ext?.title, ext?.description, ...plugin.provides, ...plugin.implements.map(contractText)].join(" ").toLowerCase();
+  return words.every((word) => haystack.includes(word));
 }
 
 function ModuleTable({ modules }: { modules: ModuleView[] }) {
@@ -141,7 +161,7 @@ type Tab = "installed" | "browse" | "updates" | "mine";
  * from the same menu as the cards these plugins draw, so a second overlay on
  * top of the first bought nothing.
  */
-export function PluginsPanel({ onLeave }: { onLeave?: () => void }) {
+export function PluginsPanel({ onLeave, query }: { onLeave?: () => void; /** Opens Installed already searching for this. */ query?: string }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("installed");
   const updates = useUpdates();
@@ -162,7 +182,7 @@ export function PluginsPanel({ onLeave }: { onLeave?: () => void }) {
           </button>
         ))}
       </div>
-      {tab === "installed" && <InstalledTab />}
+      {tab === "installed" && <InstalledTab initialQuery={query} />}
       {tab === "browse" && <BrowseTab />}
       {tab === "updates" && <UpdatesTab />}
       {tab === "mine" && <MineTab onLeave={onLeave} />}
@@ -170,8 +190,10 @@ export function PluginsPanel({ onLeave }: { onLeave?: () => void }) {
   );
 }
 
-function InstalledTab() {
+function InstalledTab({ initialQuery }: { initialQuery?: string }) {
   const { t } = useI18n();
+  const contractTitle = useContractTitle();
+  const [query, setQuery] = useState(initialQuery ?? "");
   const toast = useToast();
   const plugins = usePlugins();
   const setEnabled = useSetPluginEnabled();
@@ -181,11 +203,26 @@ function InstalledTab() {
   const [installError, setInstallError] = useState<string | null>(null);
 
   const all = plugins.data?.plugins ?? [];
+  const contracts = plugins.data?.contracts ?? [];
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const contractText = (id: string) => {
+    const contract = contracts.find((c) => c.id === id);
+    return contract ? `${contract.id} ${contract.registry} ${contract.title} ${contractTitle(contract)}` : id;
+  };
+  const shown = all.filter((p) => matches(p, words, contractText));
   const rows = all.filter((p) => !p.extension);
-  const extensions = all.filter((p) => p.extension);
+  const shownRows = shown.filter((p) => !p.extension);
+  const extensions = shown.filter((p) => p.extension);
   const modules = plugins.data?.modules ?? [];
   const running = rows.filter((p) => p.state === "active").length;
   const unfilled = modules.filter((m) => m.required && !m.providers.length);
+  const showExtensions = !words.length || extensions.length > 0;
+  const showInstalled = !words.length || shownRows.length > 0;
+  // A row sits under the first contract it fills, so each switch is drawn once.
+  const groups = [
+    ...contracts.map((contract) => ({ contract, rows: shownRows.filter((p) => p.implements[0] === contract.id) })),
+    { contract: undefined, rows: shownRows.filter((p) => !p.implements.length) }
+  ].filter((group) => group.rows.length);
 
   const toggle = (id: string, enabled: boolean) => {
     setRefused(null);
@@ -218,59 +255,102 @@ function InstalledTab() {
     });
   };
 
+  const row = (plugin: PluginView) => (
+    <PluginRow
+      key={plugin.id}
+      plugin={plugin}
+      busy={setEnabled.isPending}
+      error={refused?.id === plugin.id ? refused.message : undefined}
+      onToggle={(enabled) => toggle(plugin.id, enabled)}
+    />
+  );
+
   return (
     <>
-      <SectionHead
-        title={t("plugins.extensionsTitle")}
-        aside={
-          <div className="row" style={{ gap: "var(--space-2)" }}>
-            <button type="button" className="btn btn-secondary" onClick={() => void fromFile()} disabled={installFile.isPending} data-testid="install-file">
-              <Icon name="i-file" size={13} /> {t("plugins.installFile")}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => void fromFolder()} disabled={addFolder.isPending} data-testid="load-folder">
-              <Icon name="i-folder" size={13} /> {t("plugins.loadFolder")}
-            </button>
-          </div>
-        }
-      >
-        {t("plugins.extensionsLede")}
-      </SectionHead>
-      {installError && <p className="meta-txt" style={{ color: "var(--danger)", whiteSpace: "pre-wrap" }}>{installError}</p>}
-      <div className="stack-2" data-testid="extensions">
-        {extensions.map((plugin) => (
-          <ExtensionRow key={plugin.id} plugin={plugin} />
-        ))}
-      </div>
-      {!extensions.length && <p className="meta-txt">{t("plugins.noExtensions")}</p>}
+      <label className="plug-search">
+        <Icon className="ico" name="i-search" size={13} />
+        <input
+          type="search"
+          value={query}
+          placeholder={t("pluginsPanel.searchPlaceholder")}
+          aria-label={t("pluginsPanel.searchLabel")}
+          onChange={(e) => setQuery(e.target.value)}
+          data-testid="plugins-search"
+        />
+      </label>
+      {words.length > 0 && !shown.length && <p className="meta-txt">{t("pluginsPanel.noMatch", { query: query.trim() })}</p>}
 
-      <hr className="rule" />
-      <SectionHead title={t("pluginsPanel.modulesTitle")}>{t("pluginsPanel.modulesLede")}</SectionHead>
-      <ModuleTable modules={modules} />
-      {unfilled.length > 0 && (
-        <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
-          {t("pluginsPanel.nothingProvides", {
-            list: unfilled.map((m) => m.title).join(", "),
-            pronoun: t(unfilled.length > 1 ? "pluginsPanel.pronounThem" : "pluginsPanel.pronounIt")
-          })}
-        </p>
+      {/* While searching, a section shows only when something in it matches. */}
+      {showExtensions && (
+        <>
+          <SectionHead
+            title={t("plugins.extensionsTitle")}
+            aside={
+              <div className="row" style={{ gap: "var(--space-2)" }}>
+                <button type="button" className="btn btn-secondary" onClick={() => void fromFile()} disabled={installFile.isPending} data-testid="install-file">
+                  <Icon name="i-file" size={13} /> {t("plugins.installFile")}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => void fromFolder()} disabled={addFolder.isPending} data-testid="load-folder">
+                  <Icon name="i-folder" size={13} /> {t("plugins.loadFolder")}
+                </button>
+              </div>
+            }
+          >
+            {t("plugins.extensionsLede")}
+          </SectionHead>
+          {installError && <p className="meta-txt" style={{ color: "var(--danger)", whiteSpace: "pre-wrap" }}>{installError}</p>}
+          <div className="stack-2" data-testid="extensions">
+            {extensions.map((plugin) => (
+              <ExtensionRow key={plugin.id} plugin={plugin} />
+            ))}
+          </div>
+          {!extensions.length && <p className="meta-txt">{t("plugins.noExtensions")}</p>}
+        </>
       )}
 
-      <hr className="rule" />
-      {/* `.tag` is a flex box, so whitespace between elements would be dropped: one string. */}
-      <SectionHead title={t("pluginsPanel.installedTitle")} aside={<Tag tone="neutral">{t("pluginsPanel.runningOfTotal", { running, total: rows.length })}</Tag>}>
-        {t("pluginsPanel.installedLede")}
-      </SectionHead>
-      <div>
-        {rows.map((plugin) => (
-          <PluginRow
-            key={plugin.id}
-            plugin={plugin}
-            busy={setEnabled.isPending}
-            error={refused?.id === plugin.id ? refused.message : undefined}
-            onToggle={(enabled) => toggle(plugin.id, enabled)}
-          />
-        ))}
-      </div>
+      {/* A search is after a plugin, and the table answers a different question. */}
+      {!words.length && (
+        <>
+          <hr className="rule" />
+          <SectionHead title={t("pluginsPanel.modulesTitle")}>{t("pluginsPanel.modulesLede")}</SectionHead>
+          <ModuleTable modules={modules} />
+          {unfilled.length > 0 && (
+            <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
+              {t("pluginsPanel.nothingProvides", {
+                list: unfilled.map((m) => m.title).join(", "),
+                pronoun: t(unfilled.length > 1 ? "pluginsPanel.pronounThem" : "pluginsPanel.pronounIt")
+              })}
+            </p>
+          )}
+        </>
+      )}
+
+      {showInstalled && (
+        <>
+          {showExtensions && <hr className="rule" />}
+          {/* `.tag` is a flex box, so whitespace between elements would be dropped: one string. */}
+          <SectionHead title={t("pluginsPanel.installedTitle")} aside={<Tag tone="neutral">{t("pluginsPanel.runningOfTotal", { running, total: rows.length })}</Tag>}>
+            {t("pluginsPanel.installedLede")}
+          </SectionHead>
+          {groups.map(({ contract, rows: members }) => (
+            <section key={contract?.id ?? ""} className="plug-group" data-contract={contract?.id ?? ""}>
+              <div className="plug-group-head">
+                <Eyebrow>{contract ? contractTitle(contract) : t("pluginsPanel.otherPlugins")}</Eyebrow>
+                {contract && (
+                  <span className="meta-txt mono" title={t("pluginsPanel.contractWhy", { registry: contract.registry })}>
+                    {contract.registry}
+                  </span>
+                )}
+                <span className="meta-txt plug-group-count">
+                  {t("pluginsPanel.runningOfTotal", { running: members.filter((p) => p.state === "active").length, total: members.length })}
+                </span>
+              </div>
+              {contract && CONTRACT_TEXT[contract.id] && <p className="meta-txt dense plug-group-lede">{t(CONTRACT_TEXT[contract.id]![1])}</p>}
+              <div className="stack-2">{members.map(row)}</div>
+            </section>
+          ))}
+        </>
+      )}
       {!rows.length && <p className="meta-txt">{t("pluginsPanel.emptyRows")}</p>}
     </>
   );

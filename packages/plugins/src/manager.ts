@@ -1,4 +1,4 @@
-import { Context, Service, type Fiber } from "cordis";
+import { Context, Service, type EffectMeta, type Fiber } from "cordis";
 import type {} from "@tomradex/ipc";
 import {
   RequiredModuleError,
@@ -128,7 +128,7 @@ export class Plugins extends Service {
   }
 
   snapshot(): PluginsSnapshot {
-    return { modules: this.modules(), plugins: this.list() };
+    return { modules: this.modules(), contracts: this.config.contracts ?? [], plugins: this.list() };
   }
 
   list(): PluginView[] {
@@ -347,7 +347,7 @@ export class Plugins extends Service {
   private describe(row: PluginRow, provides: string[], holds: string[]): PluginView {
     const fiber = this.fibers.get(row.id);
     const error = this.errors.get(row.id);
-    const base: Omit<PluginView, "state"> = { id: row.id, name: row.name, config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds };
+    const base: Omit<PluginView, "state"> = { id: row.id, name: row.name, config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds, implements: this.contractsOf(row, fiber) };
     const store = this.config.extensions;
     if (store?.has(row.id)) {
       try {
@@ -385,6 +385,26 @@ export class Plugins extends Service {
       if (id) out.set(impl.name, [...(out.get(impl.name) ?? []), id]);
     }
     return out;
+  }
+
+  /**
+   * Declared on the row, because a switched-off row registers nothing — and a
+   * disabled engine is the one someone opens this pane to find. A running row
+   * is also credited with every registry its effects are labelled with.
+   */
+  private contractsOf(row: PluginRow, fiber: Fiber | undefined): string[] {
+    const labels: string[] = [];
+    const walk = (effects: EffectMeta[]) => {
+      for (const effect of effects) {
+        labels.push(effect.label);
+        walk(effect.children);
+      }
+    };
+    if (fiber && !row.disabled) walk(fiber.getEffects());
+    const declared = new Set(row.implements ?? []);
+    return (this.config.contracts ?? [])
+      .filter((c) => declared.has(c.id) || labels.some((label) => label.startsWith(`${c.registry}(`)))
+      .map((c) => c.id);
   }
 
   /** Walk out of nested fibers until one of them is a row of the composition. */

@@ -359,6 +359,39 @@ what it provided. Nothing here makes a plugin safe — `write-policy` provides n
 service, holds no module, and is therefore switchable, which is the same thing
 the contract says about removing its row by hand.
 
+## Contracts
+
+A **contract** is a registry plugins plug into, named by the call that does it.
+Its members are interchangeable — any engine can conduct a thread, any
+destination can take a project's folder — and the Plugins pane groups its rows
+by them. The composition declares them beside its modules:
+
+```yaml
+contracts:
+  - id: engine
+    title: Engines
+    registry: agent.engine
+```
+
+| Contract | Registry | Rows that fill it |
+|---|---|---|
+| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex` |
+| `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
+| `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
+
+Unlike a module's, membership **is** declared, on the row: `implements:
+[engine]`. A row switched off registers nothing, and a disabled engine is
+exactly the one a person opens the pane to find. A running row is credited as
+well with every registry its effects are labelled with — a registration made
+through `this.ctx.effect(…, "agent.engine(codex)")` counts — so a patched-in
+row groups correctly without the line. `ctx.plugins.list()` returns both as
+`implements`, and `test:plugins` fails when a running row registers into a
+contract its row does not declare, or declares one it never fills.
+
+A registry that wants a contract of its own labels its registering effect
+`<service>.<call>(<id>)`, as the three above do, and the composition adds a row
+under `contracts`.
+
 ## The agent
 
 `ctx.agent` is the platform every conductor runs on. It owns the threads, the

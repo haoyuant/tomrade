@@ -18,7 +18,7 @@ import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCacheDir, useHubInfo, useMcpUrl, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { useCacheDir, useHubInfo, useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
 import { reveal } from "~/lib/shell";
 
@@ -257,6 +257,12 @@ export function SettingsDialog({
   const providers = useStorageProviders();
   const { preference, customThemes, automation, setAutomation, createCustomTheme, deleteCustomTheme } = useTheme();
   const [active, setActive] = useState("appearance");
+  // Set only by a pane that sends the person to find a plugin; any other way in opens the list unfiltered.
+  const [pluginsQuery, setPluginsQuery] = useState<string>();
+  const go = (id: string, query?: string) => {
+    setPluginsQuery(query);
+    setActive(id);
+  };
   const [editingTheme, setEditingTheme] = useState<string | null>(null);
   const [themeDraft, setThemeDraft] = useState({ name: "", icon: "i-sliders" as CustomTheme["icon"] });
   const openThemeEditor = (theme: CustomTheme) => {
@@ -267,7 +273,7 @@ export function SettingsDialog({
 
   // The palette sends you straight to a pane; ⌘, leaves you on the last one.
   useEffect(() => {
-    if (open && pane) setActive(pane);
+    if (open && pane) go(pane);
   }, [open, pane]);
   // A destination's account is asked for where it is used — in a project's own
   // settings — so the section behind it is storage, not a screen. Whoever claims
@@ -394,6 +400,7 @@ export function SettingsDialog({
             // A profile or an engine override can change what an engine's row shows (readiness, its Model
             // choices) — stale beyond useEngines' own staleTime otherwise, so a save here refreshes it right away.
             onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: agentKeys.engines }) })}
+            onFindEngines={() => go("plugins", "engine")}
           />
         ) : null
     },
@@ -496,7 +503,7 @@ export function SettingsDialog({
         )
       })
     ),
-    { id: "plugins", label: t("settingsDialog.manageLabel"), icon: "i-plug", group: "plugins", render: () => <PluginsPanel onLeave={() => onOpenChange(false)} /> }
+    { id: "plugins", label: t("settingsDialog.manageLabel"), icon: "i-plug", group: "plugins", render: () => <PluginsPanel query={pluginsQuery} onLeave={() => onOpenChange(false)} /> }
   ];
 
   // A plugin switched off takes its pane with it, so the menu falls back rather than emptying the body.
@@ -505,7 +512,7 @@ export function SettingsDialog({
     panes
       .filter((p) => p.group === group)
       .map((p) => (
-        <button key={p.id} type="button" className="side-row" aria-current={p.id === current.id} onClick={() => setActive(p.id)}>
+        <button key={p.id} type="button" className="side-row" aria-current={p.id === current.id} onClick={() => go(p.id)}>
           <Icon className="ico" name={p.icon} size={14} />
           <span className="side-name">{p.label}</span>
         </button>
@@ -525,7 +532,8 @@ export function SettingsDialog({
             {rows("plugins")}
           </div>
         </nav>
-        <DialogBody>{current.render()}</DialogBody>
+        {/* Keyed so every pane opens at its top, not at the scroll offset of the one before. */}
+        <DialogBody key={current.id}>{current.render()}</DialogBody>
       </div>
       <DialogFoot>
         <button type="button" className="btn btn-secondary" onClick={() => onOpenChange(false)}>
@@ -550,9 +558,21 @@ const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
 const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
-function AssistantPane({ settings, onSave, scope }: { settings: AppSettings; onSave: (next: AppSettings) => void; scope?: "machine" | "user" }) {
-  const { t } = useI18n();
+function AssistantPane({
+  settings,
+  onSave,
+  onFindEngines,
+  scope
+}: {
+  settings: AppSettings;
+  onSave: (next: AppSettings) => void;
+  onFindEngines: () => void;
+  scope?: "machine" | "user";
+}) {
+  const { t, tx } = useI18n();
   const engines = useEngines();
+  // An engine whose plugin is off is missing from the list above, not greyed out in it.
+  const enginesOff = (usePlugins().data?.plugins ?? []).filter((p) => p.implements.includes("engine") && p.state === "disabled");
   const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
@@ -661,6 +681,14 @@ function AssistantPane({ settings, onSave, scope }: { settings: AppSettings; onS
           ))}
         </div>
         <p className="meta-txt">{t("settingsDialog.engineListNote")}</p>
+        <p className="meta-txt" data-testid="more-engines">
+          {enginesOff.length
+            ? tx("settingsDialog.moreEnginesOff", { list: <span className="mono">{enginesOff.map((p) => p.id).join(", ")}</span> })
+            : t("settingsDialog.moreEngines")}{" "}
+          <button type="button" className="link-btn" onClick={onFindEngines}>
+            {t("settingsDialog.moreEnginesLink")}
+          </button>
+        </p>
         <div className="field">
           <label htmlFor="stConfirm">{t("settingsDialog.confirmWritesLabel")}</label>
           <input

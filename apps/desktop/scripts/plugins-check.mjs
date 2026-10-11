@@ -102,6 +102,21 @@ const run = async () => {
   await ctx.mcpClient.settled();
   check("switching it back on reconnects from the saved settings", ctx.tools.has("fx__echo"));
 
+  // Contracts: declared on the row so a switched-off one still groups, and
+  // held to what the running rows actually register.
+  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files");
+  check("a switched-off engine still counts as an engine", view("engine-scripted")?.state === "disabled" && view("engine-scripted")?.implements.join() === "engine");
+  await ctx.plugins.setEnabled("engine-scripted", true);
+  const declared = new Map(ctx.plugins.rows().map((r) => [r.id, r.implements ?? []]));
+  for (const row of ctx.plugins.rows()) row.implements = [];
+  const drift = ctx.plugins
+    .list()
+    .filter((p) => p.implements.join() !== declared.get(p.id).join())
+    .map((p) => `${p.id} declares [${declared.get(p.id)}] but registers [${p.implements}]`);
+  for (const row of ctx.plugins.rows()) row.implements = declared.get(row.id);
+  await ctx.plugins.setEnabled("engine-scripted", false);
+  check("every row declares exactly the contracts it registers into", ctx.plugins.list().every((p) => p.state !== "pending") && !drift.length, drift.join("; "));
+
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
   app.exit(failed.length ? 1 : 0);

@@ -75,6 +75,23 @@ modules:
   - id: pet
     title: Pet
 
+# A contract is a registry plugins plug into, named by the call that does it;
+# its members are interchangeable, and the Plugins pane groups them by it.
+# Unlike a module's, membership is declared on the row (`implements`): a row
+# switched off registers nothing, and a disabled engine is exactly the one
+# someone opens the pane to find. A running row is credited with what it
+# registers as well.
+contracts:
+  - id: engine
+    title: Engines
+    registry: agent.engine
+  - id: storage
+    title: Destinations
+    registry: storage.register
+  - id: files
+    title: File sharing
+    registry: files.register
+
 plugins:
   - id: archify
     name: "@tomradex/archify"
@@ -137,9 +154,11 @@ plugins:
   # Remote transports for a project's own repository: any git URL…
   - id: storage-git
     name: "@tomradex/storage-git"
+    implements: [storage]
   # …and GitHub as a hosting choice on top: find a repository, make one.
   - id: storage-github
     name: "@tomradex/storage-github"
+    implements: [storage]
   # The code repositories workstreams stand for: shared identity in the project,
   # this machine's checkout in the catalog, a worktree per agent thread.
   - id: repos
@@ -158,14 +177,18 @@ plugins:
   # Engines are conductors; several can be installed, a thread picks one.
   - id: engine-loop
     name: "@tomradex/engine-loop"
+    implements: [engine]
   # Off until switched on in Settings → Manage plugins: a menu of workflows, no model.
   - id: engine-scripted
     name: "@tomradex/engine-scripted"
+    implements: [engine]
     disabled: true
   - id: engine-claude-code
     name: "@tomradex/engine-claude-code"
+    implements: [engine]
   - id: engine-codex
     name: "@tomradex/engine-codex"
+    implements: [engine]
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"
@@ -185,9 +208,11 @@ plugins:
   # only versioned references, which read as unavailable without it.
   - id: files
     name: "@tomradex/files"
+    implements: [files]
   # …and GitHub as where those files are shared: find a repository, make one.
   - id: files-github
     name: "@tomradex/files-github"
+    implements: [files]
   # The files read as notes: wiki links and backlinks, tags, ranked full-text
   # search, links kept when a note moves. Optional — Files is the same without it.
   - id: notes
