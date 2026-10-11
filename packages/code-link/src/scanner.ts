@@ -44,7 +44,9 @@ export interface ScannedBranch {
   keyNums: number[];
   ahead: number;
   behind: number;
-  /** The head is an ancestor of the default branch. */
+  /** Nothing ahead: the head is already in the default branch. */
+  contained: boolean;
+  /** A merge commit brought the head into the default branch. */
   merged: boolean;
   local: boolean;
   remote: boolean;
@@ -119,7 +121,7 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     const seen = byName.get(name);
     if (!seen) {
       const keyNum = parseBranch(name, opts.prefix);
-      byName.set(name, { name, sha, committedAt, keyNum, keyNums: keyNum === null ? [] : [keyNum], ahead: 0, behind: 0, merged: false, local, remote: !local });
+      byName.set(name, { name, sha, committedAt, keyNum, keyNums: keyNum === null ? [] : [keyNum], ahead: 0, behind: 0, contained: false, merged: false, local, remote: !local });
       continue;
     }
     // The same branch here and on the remote: the newer head is where the work is.
@@ -130,18 +132,25 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
 
   const branches = [...byName.values()];
   if (defaultRef) {
+    let mainline: Set<string> | null = null;
     for (const b of branches) {
       const counts = await run(["rev-list", "--left-right", "--count", `${b.sha}...${defaultRef}`]);
       if (counts.code === 0) {
         const [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number);
         b.ahead = ahead || 0;
         b.behind = behind || 0;
+        b.contained = b.ahead === 0;
       }
-      // A fresh ticket branch points at the current default commit, so it is
-      // technically an ancestor without having delivered any work. Treat that
-      // as unmerged; a later scan sees a real merge commit or the default-log
-      // key evidence instead.
-      b.merged = (b.ahead > 0 || b.behind > 0) && (await run(["merge-base", "--is-ancestor", b.sha, defaultRef])).code === 0;
+      // A fresh ticket branch is contained too: it was cut from a default
+      // commit, and it stays an ancestor once the default moves on — another
+      // merge, or Tomrade's own data commits in a repository that also holds
+      // the project. Only a merge commit brings a head in off the default's
+      // first-parent line; a fast-forward or squash is read from links and
+      // commit keys instead.
+      if (b.contained && b.behind > 0) {
+        mainline ??= new Set((await run(["rev-list", "--first-parent", defaultRef])).stdout.split("\n").map((s) => s.trim()).filter(Boolean));
+        b.merged = !mainline.has(b.sha);
+      }
       // Work started outside Tomrade does not necessarily follow the branch
       // template. Commit keys are the cheap, local fallback: no model call and
       // no forge API are needed to discover it.
