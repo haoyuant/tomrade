@@ -44,6 +44,41 @@ interface Stash {
 const stashes = new Map<string, Stash>();
 const stashKey = (projectId: string, itemId: string) => `${projectId}:${itemId}`;
 
+/**
+ * The same edit kept on disk as it is typed, so a reload, a quit or a crash
+ * leaves it to be picked up. Attachments too big for storage stay behind; the
+ * text never does.
+ */
+const STORED = "tomrade.bodyDraft.";
+const stored = {
+  read(key: string): Stash | undefined {
+    try {
+      const raw = localStorage.getItem(STORED + key);
+      return raw ? (JSON.parse(raw) as Stash) : undefined;
+    } catch {
+      return undefined;
+    }
+  },
+  write(key: string, stash: Stash): void {
+    try {
+      localStorage.setItem(STORED + key, JSON.stringify(stash));
+    } catch {
+      try {
+        localStorage.setItem(STORED + key, JSON.stringify({ ...stash, drafts: [] }));
+      } catch {
+        // storage refused even the text; the in-memory stash still covers a reopen
+      }
+    }
+  },
+  clear(key: string): void {
+    try {
+      localStorage.removeItem(STORED + key);
+    } catch {
+      // nothing to clear when storage is unavailable
+    }
+  }
+};
+
 const srcOf = (content: FileContent | null | undefined): string | null | undefined => {
   if (content === undefined) return undefined;
   if (!content || content.truncated || !content.mime.startsWith("image/")) return null;
@@ -76,7 +111,7 @@ const nameOf = (file: File, fallback: string): string => {
  * leaves no file behind.
  */
 export function IssueBody({ item, write, className }: FieldProps & { className: string }) {
-  const [editing, setEditing] = useState(() => stashes.has(stashKey(item.projectId, item.id)));
+  const [editing, setEditing] = useState(() => stashes.has(stashKey(item.projectId, item.id)) || !!stored.read(stashKey(item.projectId, item.id)));
   return editing ? (
     <BodyEditor item={item} write={write} className={className} onDone={() => setEditing(false)} />
   ) : (
@@ -176,7 +211,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
   const toast = useToast();
   const qc = useQueryClient();
   const key = stashKey(item.projectId, item.id);
-  const [restored] = useState(() => stashes.get(key));
+  const [restored] = useState(() => stashes.get(key) ?? stored.read(key));
   /** The body this edit started from: a body that is no longer it was changed by somebody else meanwhile. */
   const base = useRef(restored?.base ?? item.body ?? "");
   const drafts = useRef(new Map<string, Draft>(restored?.drafts.map((d) => [d.id, d])));
@@ -195,19 +230,34 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [preview, setPreview] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const changed = (item.body ?? "") !== base.current;
 
   const text = () => doc.current?.toString() ?? restored?.text ?? base.current;
   const linked = (body: string) => [...drafts.current.values()].filter((d) => body.includes(`${DRAFT_LINK}${d.id}`));
   const dirty = () => text().trim() !== base.current.trim();
 
-  const close = () => {
+  const snapshot = (): Stash => ({ text: text(), base: base.current, drafts: linked(text()), uploaded: [...uploaded.current] });
+
+  const persist = () => {
+    clearTimeout(persistTimer.current);
+    if (done.current) return;
+    if (dirty()) stored.write(key, snapshot());
+    else stored.clear(key);
+  };
+
+  /** `keep` leaves the stored draft for the next open: a save that could not land is still an edit in progress. */
+  const close = (keep = false) => {
     done.current = true;
+    clearTimeout(persistTimer.current);
+    if (!keep) stored.clear(key);
     onDone();
   };
 
   const stash = () => {
-    stashes.set(key, { text: text(), base: base.current, drafts: linked(text()), uploaded: [...uploaded.current] });
+    stashes.set(key, snapshot());
+    stored.write(key, snapshot());
     toast({ body: tx("fields.bodyStashedToast", { key: <span className="num">{latest.current.key}</span> }) });
   };
 
@@ -217,7 +267,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
     if (!opts.force && (latest.current.body ?? "") !== base.current) {
       if (opts.leaving) {
         stash();
-        close();
+        close(true);
       }
       return;
     }
@@ -286,6 +336,8 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
   addRef.current = addFiles;
   const commitRef = useRef(commit);
   commitRef.current = commit;
+  const persistRef = useRef(persist);
+  persistRef.current = persist;
 
   useEffect(() => {
     if (!host.current) return;
@@ -306,6 +358,10 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
           EditorView.contentAttributes.of({ "aria-label": t("fields.issueDescriptionAria") }),
           EditorView.updateListener.of((update) => {
             doc.current = update.state.doc;
+            if (update.docChanged) {
+              clearTimeout(persistTimer.current);
+              persistTimer.current = setTimeout(() => persistRef.current(), 400);
+            }
           }),
           EditorView.domEventHandlers({
             paste: (event) => {
@@ -341,9 +397,17 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
   useEffect(() => {
     mounted.current = true;
     stashes.delete(key);
+    // a reload or quit gives no time to save; what is on disk then is the edit as typed
+    const onUnload = () => persistRef.current();
+    window.addEventListener("beforeunload", onUnload);
     return () => {
+      window.removeEventListener("beforeunload", onUnload);
       mounted.current = false;
-      if (!done.current && dirty()) void commitRef.current({ leaving: true });
+      persistRef.current();
+      // StrictMode unmounts and remounts at once; only an editor that stayed gone saves on its way out
+      setTimeout(() => {
+        if (!mounted.current && !done.current && dirty()) void commitRef.current({ leaving: true });
+      }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -359,7 +423,9 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      discard();
+      // an edit is not thrown away by one stray key: the first Escape asks, the second discards
+      if (!dirty() || confirmingDiscard) discard();
+      else setConfirmingDiscard(true);
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       void commit();
@@ -418,6 +484,36 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
           }}
         />
       </div>
+      {confirmingDiscard && (
+        <div className="body-editor-changed" role="alert">
+          <Icon name="i-warn" size={14} />
+          <span>{t("fields.bodyDiscardConfirm")}</span>
+          <Spacer />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setConfirmingDiscard(false);
+              view.current?.focus();
+            }}
+          >
+            {t("fields.bodyKeepEditing")}
+          </button>
+          <button type="button" className="btn btn-ghost is-danger" onClick={discard}>
+            {t("fields.bodyDiscard")}
+          </button>
+        </div>
+      )}
+      {restored && !changed && !confirmingDiscard && (
+        <div className="body-editor-changed is-restored" role="status">
+          <Icon name="i-info" size={14} />
+          <span>{t("fields.bodyRestoredNotice")}</span>
+          <Spacer />
+          <button type="button" className="btn btn-ghost" onClick={discard}>
+            {t("fields.bodyDiscardDraft")}
+          </button>
+        </div>
+      )}
       {changed && !saving && (
         <div className="body-editor-changed" role="alert">
           <Icon name="i-warn" size={14} />
