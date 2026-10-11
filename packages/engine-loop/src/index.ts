@@ -218,7 +218,7 @@ export function createLoopEngine(ctx: Context): Engine {
           }
           return {
             stop: "error",
-            error: `The model reached its output limit (${options.maxTokens} tokens) ${collected.text.trim() ? "mid-answer" : "before answering"}. Ask for something smaller, or raise the Loop engine's maxTokens.`,
+            error: `The model reached its output limit (${options.maxTokens} tokens) ${collected.text.trim() ? "mid-answer" : "before answering"}. Ask for something smaller, or pick a lower effort for this thread.`,
             usage
           };
         }

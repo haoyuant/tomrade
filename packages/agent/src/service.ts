@@ -225,6 +225,10 @@ interface RunCtx {
   entries: LedgerEntry[];
   io: TurnIO;
   wio: WorkflowIO;
+  /** Text streamed since the engine last kept a block — what a stop or a timeout would otherwise throw away. */
+  partial: { text: string };
+  /** Whether the wall clock, not the person, ended the run, and what the clock allowed. */
+  clock: { timedOut: boolean; limitMs: number };
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -921,7 +925,9 @@ export class Agent extends Service {
     const abort = new AbortController();
     // The wall clock bounds the agent, not the person: it stops while a permission question waits.
     const wall = { left: thread.itemId ? this.config.codeMaxWallMs : this.config.maxWallMs, since: Date.now(), timer: undefined as NodeJS.Timeout | undefined };
-    const runClock = () => { wall.since = Date.now(); wall.timer = setTimeout(() => abort.abort(), Math.max(0, wall.left)); };
+    const clock = { timedOut: false, limitMs: wall.left };
+    const partial = { text: "" };
+    const runClock = () => { wall.since = Date.now(); wall.timer = setTimeout(() => { clock.timedOut = true; abort.abort(); }, Math.max(0, wall.left)); };
     const holdClock = () => { clearTimeout(wall.timer); wall.left -= Date.now() - wall.since; };
     runClock();
     abort.signal.addEventListener("abort", () => clearTimeout(wall.timer));
@@ -935,7 +941,11 @@ export class Agent extends Service {
       waivers: this.store.waivers(thread.projectId, thread.id),
       scratch: new Map()
     };
-    const emit = (block: Block) => void this.appendAndBroadcast(thread.projectId, thread.id, block.type === "note" ? "system" : "agent", block, run.id);
+    const emit = (block: Block) => {
+      // the engine kept what it streamed; nothing is left to rescue
+      if (block.type === "text") partial.text = "";
+      this.appendAndBroadcast(thread.projectId, thread.id, block.type === "note" ? "system" : "agent", block, run.id);
+    };
     const startedAt = performance.now();
     // Engines report authoritative counters when they have them; between reports the streamed text is a
     // conservative estimate of the reply, and every event carries the latest figure so the live line never blanks.
@@ -1018,6 +1028,7 @@ export class Agent extends Service {
       permissionMode: (mode) => { handle.scratch.set("permissionMode", mode); this.broadcast(thread.id, { type: "permission-mode", mode }); },
       requestPermission,
       delta: (text) => {
+        partial.text += text;
         streamedSinceReport += text.length;
         this.broadcast(thread.id, { type: "delta", runId: run.id, text });
         progress({});
@@ -1039,7 +1050,7 @@ export class Agent extends Service {
       signal: abort.signal,
       resume: this.store.external(thread.projectId, thread.id)[engine.id]
     };
-    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle } };
+    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock };
   }
 
   /** The ticket a code thread implements, as the engine should hear about it. */
@@ -1231,6 +1242,18 @@ export class Agent extends Service {
     rc.abort.abort();
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
+    // A run cut short keeps what it had already said, marked as unfinished, and says why it ended.
+    if ((result.stop === "cancelled" || result.stop === "error") && rc.partial.text.trim()) {
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "text", text: `${rc.partial.text.trim()} …` }, rc.run.id);
+    }
+    if (result.stop === "cancelled") {
+      const minutes = Math.round(rc.clock.limitMs / 60_000);
+      const why = rc.clock.timedOut ? `Stopped: the run reached its time limit (${minutes >= 1 ? `${minutes} min` : `${Math.round(rc.clock.limitMs / 1000)} s`}).` : "Stopped.";
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: why }, rc.run.id);
+    }
+    if (result.stop === "budget") {
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: "Stopped after its step budget for one turn — say “continue” to pick up from here." }, rc.run.id);
+    }
     if (result.stop === "error") {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: result.error ?? "The engine stopped without an error message." }, rc.run.id);
     }

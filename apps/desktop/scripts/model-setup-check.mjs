@@ -2,7 +2,8 @@
  * Model setup regression: a wrong API key shows when the profile is saved,
  * not in the first conversation, and a model error in the conversation says
  * what to do about it. A local stand-in for an OpenAI-compatible endpoint
- * refuses any key but "good", and fails the message "second" once with a 503.
+ * refuses any key but "good", and answers the message "second" with a 503
+ * three times running, so it outlasts the adapter's retries.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:model-setup
@@ -26,13 +27,14 @@ const check = (name, cond, detail) => {
   if (!cond && detail !== undefined) console.log(`  saw ${JSON.stringify(detail)}`);
 };
 
-let failedOnce = false;
+// the "second" message fails three times running — the first try and both retries — then answers
+let failures = 0;
 const endpoint = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     if (req.headers.authorization !== "Bearer good") return res.writeHead(401, { "content-type": "application/json" }).end('{"error":{"message":"Authentication Fails, Your api key is invalid"}}');
-    if (body.includes("second") && !failedOnce && (failedOnce = true)) return res.writeHead(503, { "content-type": "application/json" }).end('{"error":{"message":"Service Unavailable"}}');
+    if (body.includes("second") && failures < 3 && ++failures) return res.writeHead(503, { "content-type": "application/json" }).end('{"error":{"message":"Service Unavailable"}}');
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
   });
@@ -93,7 +95,8 @@ const run = async () => {
   await sleep(2000);
   check("a working profile answers", (await $(`document.querySelector('.ai-scroll')?.textContent ?? ''`)).includes("pong"));
   await send("second");
-  await sleep(2500);
+  // the adapter waits 1 s and then 3 s between its tries before the error surfaces
+  await sleep(6500);
   check("a 503 reads as the service's own error, not raw JSON", (await $(`document.querySelector('.ai-error p')?.textContent ?? ''`)) === "The model service had an error of its own.");
   check("with the raw message kept under Details", (await $(`document.querySelector('.ai-error details code')?.textContent ?? ''`)).includes("503"));
   await press(`document.querySelector('.ai-error') && ${button("Try again")}`);
