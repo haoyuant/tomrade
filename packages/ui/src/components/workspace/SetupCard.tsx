@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { EngineView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { useEngines } from "~/lib/agent";
 import { useI18n } from "~/lib/i18n";
-import { LOCAL_AGENTS, engineStatus } from "~/lib/localCli";
+import { LOCAL_AGENTS, engineStatus, useRecheckEngines } from "~/lib/localCli";
 import { useSeen } from "~/lib/onboarding";
 import { useSettings } from "~/lib/queries";
 
@@ -16,12 +16,27 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
   const { t, tx } = useI18n();
   const { seen } = useSeen();
   const engines = useEngines();
+  const recheck = useRecheckEngines();
   const settings = useSettings();
   // A model saved in Settings is the most likely fix; look again as soon as it lands.
   const refetch = engines.refetch;
   useEffect(() => {
     void refetch();
   }, [settings.data, refetch]);
+  // Back from a terminal where a CLI was just installed or signed in to: look again, past the probe cache,
+  // at most every few seconds and only while a local agent is still missing.
+  const missingLocal = useRef(false);
+  const lastLook = useRef(0);
+  const look = recheck.mutate;
+  useEffect(() => {
+    const onFocus = () => {
+      if (!missingLocal.current || Date.now() - lastLook.current < 5000) return;
+      lastLook.current = Date.now();
+      look();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [look]);
 
   const all = engines.data;
   if (!all) return null;
@@ -29,6 +44,7 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
   const model = all.find((e) => e.id === "loop");
   const locals = all.filter((e) => e.id in LOCAL_AGENTS);
   const localReady = locals.filter((e) => e.ok);
+  missingLocal.current = locals.length > 0 && localReady.length === 0;
   if ((!model || model.ok) && (!locals.length || localReady.length)) return null;
   // Never marked: only a check's "*" puts it away, and never with nothing ready.
   if (!noneReady && seen("setup-required")) return null;
@@ -79,9 +95,15 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
                       {fix(e)}
                     </span>
                   ))}
-                  <button type="button" className="btn btn-secondary setup-action" data-testid="setup-local" onClick={() => onOpenSettings(locals[0].id)}>
-                    {t("localCli.setUpLocal")}
-                  </button>
+                  <span className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" className="btn btn-secondary setup-action" data-testid="setup-local" onClick={() => onOpenSettings(locals[0].id)}>
+                      {t("localCli.setUpLocal")}
+                    </button>
+                    {/* installed or signed in a moment ago: look again now, past the probe cache */}
+                    <button type="button" className="btn btn-ghost setup-action" data-testid="setup-recheck" disabled={recheck.isPending} onClick={() => recheck.mutate()}>
+                      <Icon name="i-sync" size={12} /> {recheck.isPending ? t("localCli.rechecking") : t("localCli.recheck")}
+                    </button>
+                  </span>
                 </>
               )}
             </div>
