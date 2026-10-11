@@ -181,7 +181,21 @@ const SETTINGS_SECTION = {
   description: "Which terminal opens a ticket, and how Claude Code, Codex or Pi is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
   schema: TerminalSettings,
   defaults: TerminalSettings.parse({}),
-  order: 30
+  order: 30,
+  words: {
+    zh: {
+      title: "代码关联",
+      description: "用哪个终端打开工作项，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
+      fields: {
+        terminal: { title: "终端应用", description: "Terminal、iTerm、Warp、Ghostty……凡是 `open -a` 能打开的都行。填 none 则只准备好命令，供你复制。" },
+        claudeCommand: { title: "Claude Code 命令" },
+        codexCommand: { title: "Codex 命令" },
+        piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
+        workbuddyCommand: { title: "WorkBuddy 命令" },
+        otherCommand: { title: "其他智能体命令", description: "其他带 MCP 客户端的命令行智能体，比如 Gemini CLI、OpenCode、aider……留空表示没有设置。会自动填入 {mcpUrl}、{token}（也在 $TOMRADE_MCP_TOKEN 里）、{prompt} 和 {resume}（会话 id 本身）。" }
+      }
+    }
+  }
 };
 
 /**

@@ -16,7 +16,7 @@ import { McpServersPane } from "./McpServersPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
-import { SchemaField, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
+import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useCacheDir, useHubInfo, useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
@@ -24,6 +24,7 @@ import { cssColorToHex, useTheme } from "~/lib/theme";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { openExternal, reveal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
+import { readableError } from "~/lib/toast";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -78,7 +79,7 @@ function ThemePreview({ customThemes }: { customThemes: CustomTheme[] }) {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["theme", "customThemes", "language", "models", "agent", "mcpServers", "updates", "onboarding"]);
+const HAND_DRAWN = new Set(["theme", "themeAutomation", "customThemes", "language", "models", "agent", "mcpServers", "updates", "onboarding"]);
 
 /** Whether a section stays on this machine or follows the Hub folder — said on every card, so nobody has to guess. */
 function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
@@ -93,16 +94,46 @@ function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
   );
 }
 
-/** A plugin's settings pane. Edits commit as they are made and fall back to the stored value if refused. */
-function PluginPane({ section, stored, onCommit, children }: { section: SettingsSectionView; stored: unknown; onCommit: (next: unknown, revert: () => void) => void; children?: ReactNode }) {
+/**
+ * A plugin's settings pane. A typed field saves when it is left, a pick at
+ * once. A value that would be refused stays as typed, with the reason under
+ * it, instead of springing back to what was stored.
+ */
+function PluginPane({ section, stored, onSave, children }: { section: SettingsSectionView; stored: unknown; onSave: (next: unknown) => Promise<unknown>; children?: ReactNode }) {
+  const { t } = useI18n();
   const [value, setValue] = useState<unknown>(stored);
-  useEffect(() => setValue(stored), [stored]);
+  const [problems, setProblems] = useState<Record<string, string>>({});
+  // A field still being put right keeps what was typed; otherwise the pane follows the stored value.
+  const unsettled = Object.keys(problems).length > 0;
+  useEffect(() => {
+    if (!unsettled) setValue(stored);
+  }, [stored]); // eslint-disable-line react-hooks/exhaustive-deps
   const schema = section.schema as JsonSchema;
-  const commit = (next: unknown) => {
-    setValue(next);
-    onCommit(next, () => setValue(stored));
-  };
   const fields = fieldsOf(schema);
+  const record = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+  const setProblem = (key: string, problem: string | null) =>
+    setProblems((all) => {
+      const { [key]: _, ...rest } = all;
+      return problem ? { ...rest, [key]: problem } : rest;
+    });
+
+  const change = (name: string | null, next: unknown) => {
+    setValue((current: unknown) => (name === null ? next : { ...record(current), [name]: next }));
+    setProblem(name ?? "", null);
+  };
+  const commit = (name: string | null, field: JsonSchema, next: unknown) => {
+    const key = name ?? "";
+    const problem = problemOf(field, next, t);
+    if (problem) return setProblem(key, problem);
+    // other fields still wrong go out as stored, so one bad field cannot sink another's save
+    const others = Object.fromEntries(Object.keys(problems).filter((k) => k !== key && k !== "").map((k) => [k, record(stored)[k]]));
+    const payload = name === null ? next : { ...record(value), ...others, [name]: next };
+    if (JSON.stringify(payload) === JSON.stringify(stored)) return setProblem(key, null);
+    onSave(payload).then(
+      () => setProblem(key, null),
+      (err: unknown) => setProblem(key, t("common.notSaved", { reason: readableError(err) }))
+    );
+  };
   return (
     <>
       <SectionHead title={section.title} aside={<ScopeTag scope={section.scope} />}>
@@ -116,12 +147,14 @@ function PluginPane({ section, stored, onCommit, children }: { section: Settings
               id={section.id}
               name={name}
               schema={field}
-              value={(value as Record<string, unknown> | undefined)?.[name]}
-              onChange={(v) => commit({ ...(value as Record<string, unknown>), [name]: v })}
+              value={record(value)[name]}
+              error={problems[name]}
+              onChange={(v) => change(name, v)}
+              onCommit={(v) => commit(name, field, v)}
             />
           ))
         ) : (
-          <SchemaField id={section.id} name={section.id} schema={schema} value={value} onChange={commit} />
+          <SchemaField id={section.id} name={section.id} schema={schema} value={value} error={problems[""]} onChange={(v) => change(null, v)} onCommit={(v) => commit(null, schema, v)} />
         )}
       </div>
       {children}
@@ -154,9 +187,9 @@ function FontEditor({ name, value, disabled, onChange }: { name: ThemeTypography
   </label>;
 }
 
-const AUTOMATION_MODES: { value: ThemeAutomation["mode"]; label: string; icon: IconId }[] = [
-  { value: "none", label: "None", icon: "i-stop" }, { value: "system", label: "System", icon: "i-monitor" },
-  { value: "schedule", label: "Schedule", icon: "i-clock" }, { value: "shuffle", label: "Shuffle", icon: "i-branch" }
+const AUTOMATION_MODES: { value: ThemeAutomation["mode"]; label: MessageKey; icon: IconId }[] = [
+  { value: "none", label: "settingsDialog.automationNone", icon: "i-stop" }, { value: "system", label: "settingsDialog.automationSystem", icon: "i-monitor" },
+  { value: "schedule", label: "settingsDialog.automationSchedule", icon: "i-clock" }, { value: "shuffle", label: "settingsDialog.automationShuffle", icon: "i-branch" }
 ];
 const CUSTOM_ICONS: CustomTheme["icon"][] = ["i-sun", "i-moon", "i-leaf", "i-tag", "i-bug", "i-board", "i-stack", "i-sliders"];
 function ThemeChoices({ themes, value, onChange }: { themes: CustomTheme[]; value: Exclude<ThemePreference, "system">; onChange: (value: Exclude<ThemePreference, "system">) => void }) {
@@ -168,11 +201,14 @@ function ThemeChoices({ themes, value, onChange }: { themes: CustomTheme[]; valu
 }
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 function ScheduleTime({ value, label, onCommit }: { value: string; label: string; onCommit: (next: string) => void }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const valid = TIME.test(draft);
+  // a time that is not one stays as typed, and says so, rather than being dropped on blur
   return <input type="text" inputMode="numeric" maxLength={5} placeholder="09:00" aria-label={label} aria-invalid={!valid}
-    className="field-input schedule-time" value={draft} onChange={event => setDraft(event.target.value)} onBlur={() => valid && onCommit(draft)} />;
+    title={valid ? undefined : t("settingsDialog.scheduleTimeError")}
+    className="field-input schedule-time" value={draft} onChange={event => setDraft(event.target.value)} onBlur={() => valid && draft !== value && onCommit(draft)} />;
 }
 function RefreshFrequency({ value, onCommit }: { value: number; onCommit: (next: number) => void }) {
   const { t } = useI18n();
@@ -198,10 +234,11 @@ function RefreshFrequency({ value, onCommit }: { value: number; onCommit: (next:
   </label>;
 }
 function ThemeIconMenu({ value, onChange }: { value: CustomTheme["icon"]; onChange: (icon: CustomTheme["icon"]) => void }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return <div className="theme-icon-menu">
-    <button type="button" className="icon-btn" aria-label="Choose theme icon" aria-expanded={open} onClick={() => setOpen(!open)}><Icon name={value ?? "i-sliders"} size={14} /></button>
-    {open && <div className="theme-icon-options" role="listbox" aria-label="Theme icons">
+    <button type="button" className="icon-btn" aria-label={t("settingsDialog.chooseThemeIcon")} aria-expanded={open} onClick={() => setOpen(!open)}><Icon name={value ?? "i-sliders"} size={14} /></button>
+    {open && <div className="theme-icon-options" role="listbox" aria-label={t("settingsDialog.themeIcons")}>
       {CUSTOM_ICONS.map(icon => <button type="button" key={icon} className="icon-btn" aria-label={icon} aria-selected={(value ?? "i-sliders") === icon}
         onClick={() => { onChange(icon); setOpen(false); }}><Icon name={icon} size={14} /></button>)}
     </div>}
@@ -212,18 +249,18 @@ function ThemeAutomationPanel({ automation, themes, onChange }: { automation: Th
   return <div className="theme-automation">
     <div className="theme-automation-row"><h3 className="appearance-group-title">{t("settingsDialog.themeSwitchMode")}</h3><div className="theme-switch" role="group" aria-label={t("settingsDialog.themeSwitchMode")}>
       {AUTOMATION_MODES.map(mode => <button key={mode.value} type="button" className="theme-seg" aria-pressed={automation.mode === mode.value}
-        onClick={() => onChange({ ...automation, mode: mode.value })}><Icon name={mode.icon} size={13} />{mode.label}</button>)}
+        onClick={() => onChange({ ...automation, mode: mode.value })}><Icon name={mode.icon} size={13} />{t(mode.label)}</button>)}
     </div></div>
     {automation.mode === "schedule" && <div className="automation-detail schedule-config">
-      <div className="automation-detail-head"><div><span className="eyebrow">Schedule</span><p>Choose a theme for each local time range.</p></div><label>Default <ThemeChoices themes={themes} value={automation.defaultTheme} onChange={defaultTheme => onChange({ ...automation, defaultTheme })} /></label></div>
-      <div className="schedule-columns"><span>From</span><span>Until</span><span>Theme</span><span /></div>
+      <div className="automation-detail-head"><div><span className="eyebrow">{t("settingsDialog.scheduleEyebrow")}</span><p>{t("settingsDialog.scheduleLede")}</p></div><label>{t("settingsDialog.scheduleDefault")} <ThemeChoices themes={themes} value={automation.defaultTheme} onChange={defaultTheme => onChange({ ...automation, defaultTheme })} /></label></div>
+      <div className="schedule-columns"><span>{t("settingsDialog.scheduleFrom")}</span><span>{t("settingsDialog.scheduleUntil")}</span><span>{t("settingsDialog.scheduleTheme")}</span><span /></div>
       {automation.schedule.map((rule, index) => <div className="schedule-row" key={`${rule.start}-${index}`}>
-        <ScheduleTime label="Start time" value={rule.start} onCommit={start => onChange({ ...automation, schedule: automation.schedule.map((entry, i) => i === index ? { ...entry, start } : entry) })} />
-        <ScheduleTime label="End time" value={rule.end ?? "23:59"} onCommit={end => onChange({ ...automation, schedule: automation.schedule.map((entry, i) => i === index ? { ...entry, end } : entry) })} />
+        <ScheduleTime label={t("settingsDialog.scheduleStart")} value={rule.start} onCommit={start => onChange({ ...automation, schedule: automation.schedule.map((entry, i) => i === index ? { ...entry, start } : entry) })} />
+        <ScheduleTime label={t("settingsDialog.scheduleEnd")} value={rule.end ?? "23:59"} onCommit={end => onChange({ ...automation, schedule: automation.schedule.map((entry, i) => i === index ? { ...entry, end } : entry) })} />
         <ThemeChoices themes={themes} value={rule.theme} onChange={theme => onChange({ ...automation, schedule: automation.schedule.map((entry, i) => i === index ? { ...entry, theme } : entry) })} />
-        <button type="button" className="icon-btn" aria-label="Remove schedule" onClick={() => onChange({ ...automation, schedule: automation.schedule.filter((_, i) => i !== index) })}><Icon name="i-trash" size={13} /></button>
+        <button type="button" className="icon-btn" aria-label={t("settingsDialog.scheduleRemove")} onClick={() => onChange({ ...automation, schedule: automation.schedule.filter((_, i) => i !== index) })}><Icon name="i-trash" size={13} /></button>
       </div>)}
-      {automation.schedule.length < 24 && <button type="button" className="btn schedule-add" onClick={() => onChange({ ...automation, schedule: [...automation.schedule, { start: "09:00", end: "17:00", theme: automation.defaultTheme }] })}><Icon name="i-plus" size={13} /> Add time range</button>}
+      {automation.schedule.length < 24 && <button type="button" className="btn schedule-add" onClick={() => onChange({ ...automation, schedule: [...automation.schedule, { start: "09:00", end: "17:00", theme: automation.defaultTheme }] })}><Icon name="i-plus" size={13} /> {t("settingsDialog.scheduleAdd")}</button>}
     </div>}
     {automation.mode === "shuffle" && <div className="automation-detail"><RefreshFrequency value={automation.shuffleMinutes}
       onCommit={shuffleMinutes => onChange({ ...automation, shuffleMinutes })} /></div>}
@@ -252,10 +289,10 @@ export function SettingsDialog({
   /** With the assistant pane: the engine row to unfold and bring into view. */
   engine?: string;
 }) {
-  const { t, tx } = useI18n();
+  const { t, tx, locale } = useI18n();
   const qc = useQueryClient();
   const settings = useSettings();
-  const sections = useSettingsSections();
+  const sections = useSettingsSections(locale);
   const save = useSaveSettings();
   const mcp = useMcpUrl();
   const cacheDir = useCacheDir();
@@ -305,7 +342,19 @@ export function SettingsDialog({
     ["settingsDialog.tokenMetadata", "meta", "settingsDialog.tokenMetadataWhere"],
     ["settingsDialog.tokenBorder", "border", "settingsDialog.tokenBorderWhere"],
     ["settingsDialog.tokenAccent", "accent", "settingsDialog.tokenAccentWhere"],
-    ...(["fg-2", "border-soft", "accent-on", "accent-light", "accent-active", "success", "warn", "danger", "tag-bg-faint", "tag-bg-soft", "tag-bg-base", "tag-bg-strong", "tag-fg"] as ThemeTokenName[]).map((token): [MessageKey, ThemeTokenName, MessageKey] => [token as MessageKey, token, "settingsDialog.tokenAccentWhere" as MessageKey])
+    ["settingsDialog.tokenFg2", "fg-2", "settingsDialog.tokenFg2Where"],
+    ["settingsDialog.tokenBorderSoft", "border-soft", "settingsDialog.tokenBorderSoftWhere"],
+    ["settingsDialog.tokenAccentOn", "accent-on", "settingsDialog.tokenAccentOnWhere"],
+    ["settingsDialog.tokenAccentLight", "accent-light", "settingsDialog.tokenAccentLightWhere"],
+    ["settingsDialog.tokenAccentActive", "accent-active", "settingsDialog.tokenAccentActiveWhere"],
+    ["settingsDialog.tokenSuccess", "success", "settingsDialog.tokenSuccessWhere"],
+    ["settingsDialog.tokenWarn", "warn", "settingsDialog.tokenWarnWhere"],
+    ["settingsDialog.tokenDanger", "danger", "settingsDialog.tokenDangerWhere"],
+    ["settingsDialog.tokenTagFaint", "tag-bg-faint", "settingsDialog.tokenTagFaintWhere"],
+    ["settingsDialog.tokenTagSoft", "tag-bg-soft", "settingsDialog.tokenTagSoftWhere"],
+    ["settingsDialog.tokenTagBase", "tag-bg-base", "settingsDialog.tokenTagBaseWhere"],
+    ["settingsDialog.tokenTagStrong", "tag-bg-strong", "settingsDialog.tokenTagStrongWhere"],
+    ["settingsDialog.tokenTagFg", "tag-fg", "settingsDialog.tokenTagFgWhere"]
   ];
 
   const panes: Pane[] = [
@@ -320,7 +369,7 @@ export function SettingsDialog({
             {t("settingsDialog.appearanceLede")}
           </SectionHead>
           <div className="appearance-theme-heading"><h3 className="appearance-group-title">{t("settingsDialog.themeSelectionTitle")}</h3><div className="theme-selection-row"><ThemeSwitch selectedEditor={
-            selectedCustom && editingTheme === selectedCustom.id && <div className="theme-custom-controls" role="group" aria-label="Edit theme"
+            selectedCustom && editingTheme === selectedCustom.id && <div className="theme-custom-controls" role="group" aria-label={t("settingsDialog.editTheme")}
               onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setEditingTheme(null); } }}>
               <ThemeIconMenu value={themeDraft.icon} onChange={icon => setThemeDraft(draft => ({ ...draft, icon }))} />
               <label className="token-theme-name"><input className="field-input" aria-label={t("settingsDialog.themeNameLabel")} value={themeDraft.name} maxLength={64}
@@ -330,11 +379,11 @@ export function SettingsDialog({
                 save.mutate({ ...settings.data, customThemes: customThemes.map(theme => theme.id === selectedCustom.id ? { ...theme, name: themeDraft.name.trim(), icon: themeDraft.icon } : theme) },
                   { onSuccess: () => setEditingTheme(null) });
               }}>{t("common.save")}</button>
-              <button type="button" className="icon-btn danger" aria-label="Delete theme" title="Delete theme" onClick={() => { deleteCustomTheme(selectedCustom.id); setEditingTheme(null); }}><Icon name="i-trash" size={14} /></button>
+              <button type="button" className="icon-btn danger" aria-label={t("settingsDialog.deleteTheme")} title={t("settingsDialog.deleteTheme")} onClick={() => { deleteCustomTheme(selectedCustom.id); setEditingTheme(null); }}><Icon name="i-trash" size={14} /></button>
             </div>
           } /><div className="theme-selection-actions">
-            {selectedCustom && <button type="button" className="icon-btn" aria-label="Edit theme" title="Edit theme" onClick={() => openThemeEditor(selectedCustom)}><Icon name="i-pen" size={14} /></button>}
-            <button type="button" className="icon-btn" aria-label="Create custom theme" title="Create custom theme" onClick={() => createCustomTheme(openThemeEditor)}><Icon name="i-plus" size={14} /></button>
+            {selectedCustom && <button type="button" className="icon-btn" aria-label={t("settingsDialog.editTheme")} title={t("settingsDialog.editTheme")} onClick={() => openThemeEditor(selectedCustom)}><Icon name="i-pen" size={14} /></button>}
+            <button type="button" className="icon-btn" aria-label={t("settingsDialog.createTheme")} title={t("settingsDialog.createTheme")} onClick={() => createCustomTheme(openThemeEditor)}><Icon name="i-plus" size={14} /></button>
           </div></div></div>
           <ThemePreview customThemes={customThemes} />
           <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />
@@ -350,7 +399,7 @@ export function SettingsDialog({
                   <th>{t("settingsDialog.colRole")}</th>
                   <th>{t("settingsDialog.colToken")}</th>
                   <th>{t("settingsDialog.colWhere")}</th>
-                  <th>Value</th>
+                  <th>{t("settingsDialog.colValue")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -503,7 +552,7 @@ export function SettingsDialog({
           <PluginPane
             section={section}
             stored={settings.data?.[section.id]}
-            onCommit={(next, revert) => settings.data && save.mutate({ ...settings.data, [section.id]: next }, { onError: revert })}
+            onSave={(next) => (settings.data ? save.mutateAsync({ ...settings.data, [section.id]: next }) : Promise.resolve())}
           >
             {PANE_EXTRAS[section.id]?.()}
           </PluginPane>

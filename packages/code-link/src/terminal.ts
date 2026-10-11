@@ -5,16 +5,13 @@ import { z } from "zod";
 
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
-  /** Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows; "none" only prepares the command for copying. */
-  terminal: z.string().default("Terminal"),
-  claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
-  codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"'),
-  /** Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks. */
-  piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"'),
+  terminal: z.string().default("Terminal").meta({ title: "Terminal app" }).describe('Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows. "none" only prepares the command for copying.'),
+  claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command" }),
+  codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command" }),
+  piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command" }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
   /** WorkBuddy's CLI takes Claude Code's flags and posts Claude-shaped hooks. */
-  workbuddyCommand: z.string().default('codebuddy {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"'),
-  /** Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in. */
-  otherCommand: z.string().default("")
+  workbuddyCommand: z.string().default('codebuddy {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "WorkBuddy command" }),
+  otherCommand: z.string().default("").meta({ title: "Other agent command" }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
 

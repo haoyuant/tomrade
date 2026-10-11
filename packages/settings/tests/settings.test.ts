@@ -65,6 +65,38 @@ describe("settings", () => {
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
 
+  it("a card speaks the asked-for language, falls back to the declaration, and a refusal names the field", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file(), locale: "zh-CN" }]] });
+    await ctx.plugin({
+      name: "demo",
+      inject: ["settings"],
+      apply(ctx) {
+        ctx.settings.register({
+          id: "demo",
+          title: "Demo",
+          description: "English description",
+          schema: z.object({ size: z.number().int().max(10).meta({ title: "Size" }), mode: z.enum(["ask", "off"]).meta({ title: "Mode" }) }),
+          defaults: { size: 1, mode: "ask" },
+          words: {
+            en: { fields: { mode: { options: { ask: "Ask each time", off: "Off" } } } },
+            zh: { title: "演示", fields: { size: { title: "大小" }, mode: { options: { ask: "每次询问" } } } }
+          }
+        });
+      }
+    });
+    const card = (locale?: "en" | "zh") => ctx.settings.sections(locale).find((s) => s.id === "demo")!;
+    const field = (locale: "en" | "zh" | undefined, name: string) => (card(locale).schema.properties as Record<string, Record<string, unknown>>)[name];
+    // the system locale decides when the person has not chosen
+    expect(card().title).toBe("演示");
+    expect(card("zh").description).toBe("English description");
+    expect(field("zh", "size").title).toBe("大小");
+    expect(field("zh", "mode").enumLabels).toEqual({ ask: "每次询问", off: "Off" });
+    expect(card("en").title).toBe("Demo");
+    expect(field("en", "size").title).toBe("Size");
+    expect(field("en", "mode").enumLabels).toEqual({ ask: "Ask each time", off: "Off" });
+    expect(() => ctx.settings.set({ ...ctx.settings.get(), demo: { size: 25, mode: "ask" } })).toThrow(/^demo\.size: Too big/);
+  });
+
   it("user-scope sections follow the Hub folder; secrets and machine sections stay put", async () => {
     const hubDir = path.join(dir, `hub-${n++}`);
     const machineFile = file();

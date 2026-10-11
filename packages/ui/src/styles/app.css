@@ -1513,7 +1513,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .shuffle-frequency { display: flex; align-items: center; gap: var(--space-3); color: var(--muted); font-size: var(--text-sm); }
 .shuffle-frequency .field-input { width: 96px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .shuffle-frequency .field-input[aria-invalid="true"] { border-color: var(--danger); }
-.frequency-error { color: var(--danger); font-size: var(--text-xs); }
+.frequency-error, .field-error { color: var(--danger); font-size: var(--text-xs); }
 .automation-detail .field-input, .automation-detail select { min-width: 0; min-height: 34px; padding: 6px var(--space-2); color: var(--fg); font-size: var(--text-sm); line-height: var(--leading-tight); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); box-shadow: inset 0 0 0 1px transparent; }
 .automation-detail .field-input:focus, .automation-detail select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
 .schedule-time { font-family: var(--font-mono); font-size: var(--text-sm); }

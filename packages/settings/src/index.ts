@@ -23,6 +23,13 @@ export type SettingsScope = "machine" | "user";
  */
 export type SettingsAccess = "write" | "read" | "none";
 
+/** A section's card in one language. Fields left out keep the declaration's words. */
+export interface SectionWords {
+  title?: string;
+  description?: string;
+  fields?: Record<string, { title?: string; description?: string; options?: Record<string, string> }>;
+}
+
 export interface SettingsSection<T = unknown> {
   id: string;
   title: string;
@@ -33,9 +40,18 @@ export interface SettingsSection<T = unknown> {
   order?: number;
   scope?: SettingsScope;
   agent?: SettingsAccess;
+  /**
+   * What the card says per language. The declaration's own words are English
+   * and are what an agent reads; `en` here only adds what the schema cannot
+   * say, such as labels for enum options. Another language falls back to `en`.
+   */
+  words?: Partial<Record<Locale, SectionWords>>;
 }
 
-/** What the renderer gets: the schema as JSON Schema, so a card can be drawn without the plugin's code. */
+/**
+ * What the renderer gets: the schema as JSON Schema, so a card can be drawn
+ * without the plugin's code. Option labels ride along as `enumLabels`.
+ */
 export interface SettingsSectionView {
   id: string;
   title: string;
@@ -58,7 +74,7 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "settings.get": () => AppSettings;
     "settings.set": (next: AppSettings) => AppSettings;
-    "settings.sections": () => SettingsSectionView[];
+    "settings.sections": (locale?: Locale) => SettingsSectionView[];
   }
   interface Broadcasts {
     /** Changed from somewhere other than this window's own save: an agent, another machine. */
@@ -138,6 +154,34 @@ const THEME_AUTOMATION: SettingsSection<unknown> = {
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** A refused value names the field and why, rather than a dump of every issue. */
+function parseSection<T>(section: SettingsSection<T>, value: unknown): T {
+  const parsed = section.schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  const issue = parsed.error.issues[0]!;
+  throw new Error(`${[section.id, ...issue.path].join(".")}: ${issue.message}`);
+}
+
+function cardOf(section: SettingsSection, scope: SettingsScope, locale: Locale): SettingsSectionView {
+  const schema = z.toJSONSchema(section.schema) as Record<string, unknown>;
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  let title = section.title;
+  let description = section.description;
+  for (const words of locale === "en" ? [section.words?.en] : [section.words?.en, section.words?.[locale]]) {
+    if (!words) continue;
+    title = words.title ?? title;
+    description = words.description ?? description;
+    for (const [name, field] of Object.entries(words.fields ?? {})) {
+      const property = properties[name];
+      if (!isRecord(property)) continue;
+      if (field.title) property.title = field.title;
+      if (field.description) property.description = field.description;
+      if (field.options) property.enumLabels = { ...(isRecord(property.enumLabels) ? property.enumLabels : {}), ...field.options };
+    }
+  }
+  return { id: section.id, title, description, order: section.order ?? 100, scope, schema };
+}
 
 const readJson = (file: string): unknown => {
   try {
@@ -226,7 +270,7 @@ export class Settings extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
       ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));
-      ctx.ipc.handle("settings.sections", () => ctx.settings.sections());
+      ctx.ipc.handle("settings.sections", (locale) => ctx.settings.sections(locale === "en" || locale === "zh" ? locale : undefined));
       ctx.on("settings/changed", (next) => ctx.ipc.send("settings.changed", next));
     });
     this.home.inject(["tools", "db", "oplog", "hub"], (ctx) => agentAccess(ctx));
@@ -274,9 +318,10 @@ export class Settings extends Service {
     }, `settings.register(${section.id})`);
   }
 
-  sections(): SettingsSectionView[] {
+  /** The cards, in the renderer's language when it says, else the person's. */
+  sections(locale: Locale = this.locale()): SettingsSectionView[] {
     return [...this.registry.values()]
-      .map((s) => ({ id: s.id, title: s.title, description: s.description, order: s.order ?? 100, scope: this.scopeOf(s), schema: z.toJSONSchema(s.schema) as Record<string, unknown> }))
+      .map((s) => cardOf(s, this.scopeOf(s), locale))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   }
 
@@ -310,7 +355,7 @@ export class Settings extends Service {
     let userTouched = false;
     for (const [id, value] of Object.entries(next)) {
       const section = this.registry.get(id);
-      const parsed = section ? section.schema.parse(value) : value;
+      const parsed = section ? parseSection(section, value) : value;
       if (section && (this.userFile || this.userStore) && this.scopeOf(section) === "user") {
         if (JSON.stringify(this.user.sections[id]?.value) !== JSON.stringify(parsed)) {
           this.user.sections[id] = { value: parsed, updatedAt: now };
