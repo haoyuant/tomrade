@@ -954,6 +954,11 @@ const run = async () => {
   check("the assistant panel is docked", (await $(`!!document.querySelector('.ai')`)) === true);
   check("the engine chip names the conductor", (await $(`(document.querySelector('.ai-knobs .chip-btn:not(.ai-ws)')?.textContent ?? '').trim().length > 0`)) === true);
   check("an empty thread introduces the agent", (await $(`!!document.querySelector('.ai-scroll .turn-ai, .ai-scroll .agent-empty')`)) === true);
+  // The seeded project has a backlog, so starting one from a product idea is not offered.
+  check(
+    "an empty thread suggests what to try, without the idea starter once a backlog exists",
+    (await $(`[...document.querySelectorAll('.starters .starter')].map(b => b.textContent).join('|')`)) === "What should I work on next?|Tidy up the backlog|Add a ticket…|Write a document…"
+  );
   check("the embedded pet stage sits immediately above the composer", (await $(`document.querySelector('.ai-foot > .pet-stage + .ai-composer') !== null`)) === true);
   check("the embedded pet exposes its task state", (await $(`document.querySelector('.pet-stage')?.dataset.petState`)) === "idle");
   // The workstream is a chip beside the engine's, opening a menu — not a form field.
@@ -969,6 +974,7 @@ const run = async () => {
   check("with no checkout here, the panel says the agent cannot run", (await $(`document.querySelector('.ai-workdir.is-problem')?.textContent ?? ''`)).includes("No local checkout"));
   await typeInto(".ai-input", "hello");
   await sleep(200);
+  check("the suggestions step aside once something is typed", (await $(`document.querySelector('.starters') === null`)) === true);
   check("and holds the message until one is set", (await $(`document.querySelector('.ai-send')?.disabled`)) === true);
   check("saying why on the control itself", (await $(`document.querySelector('.ai-send')?.title ?? ''`)).startsWith("No local checkout for"));
   await shot("18-assistant-workstream");
