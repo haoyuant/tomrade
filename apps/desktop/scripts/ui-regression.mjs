@@ -571,9 +571,39 @@ const run = async () => {
   await sleep(600);
   await win.webContents.insertText(" Not kept.");
   await bodyKey("Escape");
+  await sleep(400);
+  check("Escape on an edited description asks before discarding", (await $(`!!document.querySelector("${EDITOR} .body-editor-changed[role=alert]")`)) === true && open().body === savedBody);
+  await bodyKey("Escape");
   await sleep(600);
-  check("Escape discards a description edit", open().body === savedBody && (await $(`!!document.querySelector("${EDITOR}")`)) === false);
+  check("a second Escape discards the edit", open().body === savedBody && (await $(`!!document.querySelector("${EDITOR}")`)) === false);
   check("…without closing the pane around it", (await $(`!!document.querySelector('.detail')`)) === true);
+
+  // an edit in progress is on disk as it is typed, so a quit or a crash leaves it to pick up
+  const draftKey = `tomrade.bodyDraft.${project.id}:${opened.id}`;
+  await press(`document.querySelector("${BODY} p")`);
+  await sleep(600);
+  await win.webContents.insertText(" Kept on disk.");
+  await sleep(800);
+  check("an edit in progress is kept on disk as it is typed", (await $(`JSON.parse(localStorage.getItem(${JSON.stringify(draftKey)}) ?? "{}").text ?? ""`)).endsWith(" Kept on disk."));
+  await bodyKey("Escape");
+  await sleep(300);
+  await bodyKey("Escape");
+  await sleep(600);
+  check("discarding the edit drops that copy too", (await $(`localStorage.getItem(${JSON.stringify(draftKey)})`)) === null);
+  // what a crash leaves behind: the draft on disk and nothing written
+  await $(`localStorage.setItem(${JSON.stringify(draftKey)}, ${JSON.stringify(JSON.stringify({ text: `${savedBody} Left by a crash.`, base: savedBody, drafts: [], uploaded: [] }))});true`);
+  await $(`location.reload();true`);
+  await sleep(3200);
+  if (!(await $(`!!document.querySelector('.detail')`))) {
+    await $(`[...document.querySelectorAll('.card')].find((c) => c.querySelector('.card-id')?.textContent === ${JSON.stringify(openKey)})?.click();true`);
+    await sleep(900);
+  }
+  check("reopening the ticket picks the draft up in the editor", (await $(`[...document.querySelectorAll("${EDITOR} .cm-line")].map(l => l.textContent).join(' ').includes("Left by a crash.")`)) === true);
+  check("…says it is an edit not yet saved", (await $(`!!document.querySelector("${EDITOR} .body-editor-changed.is-restored")`)) === true);
+  check("…and wrote nothing meanwhile", open().body === savedBody);
+  await press(`document.querySelector("${EDITOR} .is-restored .btn")`);
+  await sleep(600);
+  check("Discard it drops the draft for good", open().body === savedBody && (await $(`!document.querySelector("${EDITOR}") && localStorage.getItem(${JSON.stringify(draftKey)}) === null`)) === true);
 
   // an agent writes the body while it is open: the save is refused, the pane
   // re-reads, and the editor asks instead of writing over the agent's text

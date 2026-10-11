@@ -1129,6 +1129,8 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
   border: 1px solid var(--warn); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--fg-2);
 }
 .body-editor-changed > .ico { color: var(--warn); flex-shrink: 0; }
+.body-editor-changed.is-restored { border-color: var(--border); }
+.body-editor-changed.is-restored > .ico { color: var(--meta); }
 .body-editor-foot { color: var(--meta); }
 
 /* ─── AI panel ───────────────────────────────────────────────────────── */
