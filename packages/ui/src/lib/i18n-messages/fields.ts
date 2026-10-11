@@ -108,8 +108,8 @@ export const fields = {
   },
   zh: {
     humanTakeover: "人工接手",
-    takeoverReady: "Agent 已停止，可以继续人工处理本次交付。",
-    takeoverNoRun: "当前没有运行中的 Agent，可以继续人工处理本次交付。",
+    takeoverReady: "智能体已停止，可以继续人工处理这次交付。",
+    takeoverNoRun: "现在没有运行中的智能体，可以继续人工处理这次交付。",
     taskTemplate: "任务模板",
     taskBrief: "说明与验收标准",
     manualTemplate: "普通事务 / 人工处理",
