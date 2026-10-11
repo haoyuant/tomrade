@@ -21,6 +21,7 @@
     "test:notes": "electron scripts/notes-check.mjs",
     "test:agent-panel": "electron scripts/agent-panel-check.mjs",
     "test:restore": "electron scripts/restore-check.mjs",
+    "test:updates": "electron scripts/updates-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
     "package": "node scripts/package.mjs"
@@ -68,6 +69,7 @@
     "@tomradex/tools": "workspace:*",
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
+    "electron-updater": "6.8.10",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },

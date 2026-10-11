@@ -1,10 +1,11 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
 
 const SITE = "https://tomrade.com";
 
@@ -23,7 +24,7 @@ export function AboutPane() {
   const { t, locale } = useI18n();
   const toast = useToast();
   const about = useQuery({ queryKey: ["about"], queryFn: () => invoke("shell.about"), staleTime: Infinity, retry: false });
-  const update = useMutation({ mutationFn: () => invoke("shell.checkForUpdate") });
+  const updates = useUpdateStatus();
   const info = about.data;
   const date = (iso: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
   const site = locale === "zh" ? `${SITE}/zh/` : `${SITE}/`;
@@ -45,36 +46,15 @@ export function AboutPane() {
         </div>
       </div>
 
-      {info && (
-        <div className="panel about-update">
-          {!info.packaged ? (
+      {updates.data && updates.data.blocked !== "checkout" ? (
+        <UpdatePanel status={updates.data} site={site} />
+      ) : (
+        info &&
+        !info.packaged && (
+          <div className="panel about-update">
             <p className="meta-txt">{t("about.checkoutNote")}</p>
-          ) : (
-            <>
-              <p className="about-update-state" role="status">
-                {update.isPending
-                  ? t("about.checking")
-                  : update.isError
-                    ? t("about.updateFailed")
-                    : update.data?.newer
-                      ? `${t("about.updateAvailable", { version: update.data.latest })}${update.data.date ? ` ${t("about.updateDate", { date: date(update.data.date) })}` : ""}`
-                      : update.data
-                        ? t("about.upToDate", { version: update.data.latest })
-                        : null}
-              </p>
-              {update.data?.newer ? (
-                <button type="button" className="btn btn-primary" onClick={() => openExternal(`${site}download/`)}>
-                  <Icon name="i-download" size={13} />
-                  {t("about.download")}
-                </button>
-              ) : (
-                <button type="button" className="btn btn-secondary" disabled={update.isPending} onClick={() => update.mutate()}>
-                  {update.isPending ? t("about.checking") : t("about.checkUpdates")}
-                </button>
-              )}
-            </>
-          )}
-        </div>
+          </div>
+        )
       )}
 
       <hr className="rule" />
@@ -152,5 +132,110 @@ export function AboutPane() {
       </p>
       <p className="meta-txt">Copyright © Tomrade</p>
     </>
+  );
+}
+
+/** Where this build stands against the feed, what to do about it, and how it should ask. */
+function UpdatePanel({ status, site }: { status: UpdateStatus; site: string }) {
+  const { t, locale } = useI18n();
+  const { check, download, install, moveToApplications } = useUpdateActions();
+  const [prefs, setPrefs] = useUpdatePrefs();
+  useUpdatesOnScreen();
+  const phase = status.phase;
+  // What is downloaded belongs to the channel it came from.
+  const channelLocked = phase.kind === "downloading" || phase.kind === "ready";
+  const date = (iso: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
+
+  if (status.blocked) {
+    return (
+      <div className="panel about-update" data-blocked={status.blocked}>
+        <div className="about-update-head">
+          <p className="about-update-state">{t(status.blocked === "location" ? "about.moveNote" : "about.unsupportedNote")}</p>
+          {status.blocked === "location" && (
+            <button type="button" className="btn btn-secondary" disabled={moveToApplications.isPending} onClick={() => moveToApplications.mutate()}>
+              {t("about.move")}
+            </button>
+          )}
+          {status.blocked === "unsupported" && (
+            <button type="button" className="btn btn-secondary" onClick={() => openExternal(`${site}download/`)}>
+              <Icon name="i-download" size={13} />
+              {t("about.downloads")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const line =
+    phase.kind === "checking"
+      ? t("about.checking")
+      : phase.kind === "current"
+        ? t(phase.latest === status.version ? "about.upToDate" : "about.upToDateAhead", { version: phase.latest })
+        : phase.kind === "available"
+          ? `${t("about.updateAvailable", { version: phase.version })}${phase.date ? ` ${t("about.updateDate", { date: date(phase.date) })}` : ""}`
+          : phase.kind === "downloading"
+            ? phase.percent >= 100
+              ? t("about.preparing", { version: phase.version })
+              : t("about.downloading", { version: phase.version, percent: Math.round(phase.percent) })
+            : phase.kind === "ready"
+              ? t("about.ready", { version: phase.version })
+              : phase.kind === "failed"
+                ? t("about.updateFailed")
+                : null;
+
+  return (
+    <div className="panel about-update" data-phase={phase.kind}>
+      <div className="about-update-head">
+        <p className="about-update-state" role="status">
+          {line}
+        </p>
+        {phase.kind === "available" ? (
+          <button type="button" className="btn btn-primary" disabled={download.isPending} onClick={() => download.mutate()}>
+            <Icon name="i-download" size={13} />
+            {t("about.download")}
+          </button>
+        ) : phase.kind === "ready" ? (
+          <button type="button" className="btn btn-primary" disabled={install.isPending} onClick={() => install.mutate()}>
+            {t("about.restart")}
+          </button>
+        ) : phase.kind === "downloading" ? null : (
+          <button type="button" className="btn btn-secondary" disabled={phase.kind === "checking"} onClick={() => check.mutate()}>
+            {phase.kind === "checking" ? t("about.checking") : t("about.checkUpdates")}
+          </button>
+        )}
+      </div>
+      {phase.kind === "downloading" && (
+        <div className="about-update-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(phase.percent)}>
+          <span style={{ width: `${phase.percent}%` }} />
+        </div>
+      )}
+      {phase.kind === "failed" && <p className="meta-txt about-update-error">{phase.message.split("\n")[0]}</p>}
+      {prefs && (
+        <div className="about-update-prefs">
+          <div className="about-update-pref" data-pref="autoCheck">
+            <div>
+              <div className="about-update-pref-name">{t("about.autoCheck")}</div>
+              <p className="meta-txt">{t("about.autoCheckNote")}</p>
+            </div>
+            <button type="button" className="switch" role="switch" aria-checked={prefs.autoCheck} aria-label={t("about.autoCheck")} onClick={() => setPrefs({ autoCheck: !prefs.autoCheck })} />
+          </div>
+          <div className="about-update-pref" data-pref="channel">
+            <div>
+              <div className="about-update-pref-name">{t("about.channel")}</div>
+              <p className="meta-txt">{t(channelLocked ? "about.channelLocked" : "about.channelNote")}</p>
+            </div>
+            <div className="seg" role="group" aria-label={t("about.channel")}>
+              <button type="button" aria-pressed={prefs.channel === "stable"} disabled={channelLocked} onClick={() => setPrefs({ channel: "stable" })}>
+                {t("about.stable")}
+              </button>
+              <button type="button" aria-pressed={prefs.channel === "beta"} disabled={channelLocked} onClick={() => setPrefs({ channel: "beta" })}>
+                {t("about.beta")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

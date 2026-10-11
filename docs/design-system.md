@@ -282,3 +282,11 @@ gear opens the project's sheet where one nobody can find the folder of is
 removed from the catalog after one confirmation (Cancel focused, Cancel goes
 back) and stays removed, a located folder becomes the project and its arrival
 is announced, and the Hub pane lists the same — 47 checks.
+`test:updates` (`scripts/updates-check.mjs`) points the updater at a feed served
+from the check itself: a newer release is announced by a notice and not
+downloaded, Later keeps it away, the About pane says the same with Download and
+both settings, turning automatic checks off stops the asking, Beta asks its own
+feed and forgets Stable's answer, a missing feed is reported with its reason, an
+older build on the feed is never offered, turning checks back on asks at once,
+and no notice is stacked over the open About pane — 26 checks. The restart
+itself only runs in an installed build (docs/releasing.md).

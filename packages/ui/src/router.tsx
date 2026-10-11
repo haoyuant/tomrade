@@ -11,6 +11,7 @@ import { ThemeProvider } from "~/lib/theme";
 import { ToastProvider } from "~/lib/toast";
 import { AccountGate } from "~/components/dialogs/AccountPanel";
 import { PendingBuildWatcher } from "~/components/dialogs/plugins/ConfirmBuildDialog";
+import { UpdateNotice } from "~/components/dialogs/UpdateNotice";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -20,6 +21,7 @@ const rootRoute = createRootRoute({
           <IconSprite />
           <AccountGate><Outlet /></AccountGate>
           <PendingBuildWatcher />
+          <UpdateNotice />
         </ToastProvider>
       </ThemeProvider>
     </I18nProvider>

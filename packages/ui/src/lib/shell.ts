@@ -16,12 +16,6 @@ export interface AboutInfo {
   userData: string;
 }
 
-export interface UpdateCheck {
-  latest: string;
-  date: string | null;
-  newer: boolean;
-}
-
 /**
  * Channels the desktop shell implements (`apps/desktop/src/shell.ts`), declared
  * here because the renderer is their only caller and the shell is not a package
@@ -35,8 +29,6 @@ declare module "@tomradex/ipc" {
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
     "shell.about": () => AboutInfo;
-    /** Throws when the download host cannot be reached. */
-    "shell.checkForUpdate": () => UpdateCheck;
   }
 }
 

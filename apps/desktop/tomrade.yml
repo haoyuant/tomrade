@@ -195,6 +195,10 @@ plugins:
     name: ./dist/ipc.js
   - id: shell
     name: ./dist/shell.js
+  # Asks download.tomrade.com for a newer release, announces it, and downloads
+  # and installs only when the person says so. A checkout updates with git.
+  - id: updater
+    name: ./dist/updater.js
   # Generic native host for feature-owned auxiliary windows. The host owns
   # Electron mechanics; a feature plugin owns whether its surface exists.
   - id: desktop-surfaces

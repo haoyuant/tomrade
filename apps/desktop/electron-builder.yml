@@ -15,6 +15,16 @@ artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 directories:
   output: release
   buildResources: assets
+# Where an installed build asks for updates (src/updater.ts). Each build writes
+# its channel's manifest beside the installers, and the website's mirror copies
+# both to R2. A release writes latest*.yml and beta*.yml, so the beta channel
+# gets releases too; v1.2.0-beta.1 writes only beta*.yml (and alpha*.yml).
+publish:
+  provider: generic
+  url: https://download.tomrade.com
+  # Otherwise named after the package, @tomrade/desktop.
+  updaterCacheDirName: tomrade-updater
+generateUpdatesFilesForAllChannels: true
 # Off on purpose: Plugin Studio runs agent-written code in a Node child with the
 # permission model on, and that child — and esbuild's native binary — must be
 # real files it can be allowed to read.

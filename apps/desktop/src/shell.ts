@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
-import { aboutInfo, checkForUpdate, type AboutInfo, type UpdateCheck } from "./about.js";
+import { aboutInfo, type AboutInfo } from "./about.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -19,8 +19,6 @@ declare module "@tomradex/ipc" {
     "shell.openExternal": (url: string) => void;
     /** Which build this is and what it runs on, for the About pane. */
     "shell.about": () => AboutInfo;
-    /** Asks the download host for the latest release. Throws when it cannot be reached. */
-    "shell.checkForUpdate": () => UpdateCheck;
   }
 }
 
@@ -65,7 +63,6 @@ export const shell = {
     });
 
     ctx.ipc.handle("shell.about", () => aboutInfo(repoRoot));
-    ctx.ipc.handle("shell.checkForUpdate", () => checkForUpdate());
   }
 };
 
