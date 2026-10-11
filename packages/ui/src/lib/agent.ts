@@ -17,8 +17,10 @@ export const agentKeys = {
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agentKeys.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
+// Events only patch the thread on screen, so a cached one missed whatever its run did meanwhile
+// (even finishing, which left the panel "working" for good): always refetch when it comes back into view.
 export const useAgentThread = (projectId: string, threadId: string | null) =>
-  useQuery({ queryKey: agentKeys.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId });
+  useQuery({ queryKey: agentKeys.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId, staleTime: 0 });
 
 /**
  * The playbooks a ticket of this work type can run as its method — the built-in
