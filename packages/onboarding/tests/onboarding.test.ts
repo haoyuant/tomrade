@@ -1,0 +1,95 @@
+/**
+ * A first run opens on the sample project: the tour as tickets on a learning
+ * path, a small backlog to practise on, written in the person's language. Its
+ * seed is how it began — nothing in History, nothing to undo — and it is this
+ * machine's own, never in the account's catalog.
+ */
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { ARTIFACT_DIR, Storage, readHubManifest, readLogs } from "@tomradex/storage";
+import { Onboarding, PATH, SAMPLE } from "@tomradex/onboarding";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-onboarding-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+const tmp = (name: string) => fs.mkdtempSync(path.join(root, `${name}-`));
+
+const QUIET = { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0, autoRestore: false };
+
+describe("the sample project", () => {
+  it("is what a first run opens on, written in the person's language", async () => {
+    const { ctx, project, items, boards, views, hub } = await fresh({ firstRun: "none", plugins: [[Onboarding, { locale: "zh-CN" }]] });
+    const words = SAMPLE.zh;
+    expect(ctx.projects.list()).toHaveLength(1);
+    expect(project).toMatchObject({ name: words.name, sample: true });
+    expect(hub.catalog.project(project.id)).toMatchObject({ seed: true, sample: true });
+
+    const [tour, example] = boards.list(project.id);
+    expect([tour.name, example.name]).toEqual([words.tour, words.example]);
+    expect(views.listForProject(project.id).map((v) => v.name)).toEqual(["看板", "最近更新", words.path]);
+    const path_ = views.listForProject(project.id).find((v) => v.name === words.path)!;
+    expect(path_).toMatchObject({ layout: "graph", query: { graph: "deps", filter: [{ field: "board", op: "in", values: [tour.id] }] } });
+
+    const tickets = items.list({ projectId: project.id, boardId: tour.id });
+    expect(tickets.map((i) => i.title)).toEqual(words.tickets.map((t) => t.title));
+    expect(tickets.every((i) => i.status === "todo" && i.workType === "general")).toBe(true);
+    expect(items.list({ projectId: project.id, boardId: example.id }).map((i) => i.title)).toEqual(words.examples.map((t) => t.title));
+
+    const byKey = new Map(words.tickets.map((t) => [t.key, tickets.find((x) => x.title === t.title)!]));
+    for (const [from, to] of PATH) expect(byKey.get(from)!.blocks).toContain(byKey.get(to)!.id);
+  });
+
+  it("leaves nothing in History: the seed is how it began, not something to undo", async () => {
+    const { ctx, project, db } = await fresh({ firstRun: "none", plugins: [Onboarding] });
+    expect(project.name).toBe(SAMPLE.en.name);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM oplog").get()).toEqual({ n: 0 });
+    expect(await ctx.oplog.undo(project.id)).toBeNull();
+  });
+
+  it("seeds nothing when the machine already has a project", async () => {
+    const { ctx, project } = await fresh({ plugins: [Onboarding] });
+    expect(ctx.projects.list().map((p) => p.name)).toEqual(["Default Project"]);
+    expect(project.sample).toBeUndefined();
+  });
+
+  it("can be made again after it was deleted", async () => {
+    const { ctx, project } = await fresh({ firstRun: "none", plugins: [Onboarding] });
+    ctx.projects.remove(project.id);
+    const again = ctx.onboarding.createSample("zh");
+    expect(ctx.projects.list()).toEqual([expect.objectContaining({ id: again.id, name: SAMPLE.zh.name, sample: true })]);
+  });
+
+  it("gets its folder with the seed in the snapshot and none of it in the log, and stays out of the account's catalog", async () => {
+    const hubDir = tmp("hub");
+    const { ctx, project, hub, items, board } = await fresh({ hubDir, firstRun: "none", plugins: [[Storage, QUIET], Onboarding] });
+    await settle();
+    await ctx.storage.ready;
+    const dir = hub.catalog.project(project.id)!.dir!;
+    expect(fs.existsSync(path.join(dir, ARTIFACT_DIR))).toBe(true);
+    expect(readLogs(dir).flatMap((l) => l.lines)).toEqual([]);
+
+    // Used, it is still only this machine's.
+    items.create({ projectId: project.id, boardId: board.id, title: "Mine now", by: "human" });
+    expect(readLogs(dir).flatMap((l) => l.lines)).toHaveLength(1);
+    await ctx.storage.writeHub();
+    expect(readHubManifest(hubDir)?.projects ?? []).toEqual([]);
+    // Nor does a Hub folder kept in git: its folder is ignored there.
+    expect(fs.readFileSync(path.join(hubDir, ".gitignore"), "utf8").split("\n")).toContain(`${path.relative(hubDir, dir)}/`);
+  });
+
+  it("registers the seen-hints as the person's settings, and the playbook that explains the app", async () => {
+    const { ctx } = await fresh({
+      firstRun: "none",
+      plugins: [Tools, [Settings, { path: path.join(tmp("settings"), `${crypto.randomUUID()}.json`) }], Agent, Onboarding]
+    });
+    expect(ctx.settings.sections().find((s) => s.id === "onboarding")).toMatchObject({ scope: "user" });
+    expect(ctx.settings.get().onboarding).toEqual({ seen: [] });
+    expect(ctx.agent.playbookIndex().map((p) => p.id)).toContain("app.guide");
+  });
+});

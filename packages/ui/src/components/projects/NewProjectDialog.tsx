@@ -26,7 +26,7 @@ const joinPath = (base: string, ...parts: string[]) => {
 };
 
 export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { t, tx } = useI18n();
+  const { t, tx, locale } = useI18n();
   const create = useCreateProject();
   const hub = useHubInfo();
   const navigate = useNavigate();
@@ -59,7 +59,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
     const trimmed = name.trim();
     if (!trimmed) return setError(true);
     create.mutate(
-      { input: { name: trimmed, description: description.trim() || null, keyPrefix: prefix || undefined }, dir: dir.trim() || undefined },
+      { input: { name: trimmed, description: description.trim() || null, keyPrefix: prefix || undefined, locale }, dir: dir.trim() || undefined },
       {
         onSuccess: (project) => {
           onOpenChange(false);
@@ -154,10 +154,10 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
         <div>
           <Eyebrow>{t("newProjectDialog.createdWithProject")}</Eyebrow>
           <ul className="dash" style={{ marginTop: "var(--space-2)" }}>
-            <li>{tx("newProjectDialog.mainBoardBullet", { main: <span className="num">Main</span> })}</li>
+            <li>{tx("newProjectDialog.mainBoardBullet", { main: <span className="num">{t("newProjectDialog.mainName")}</span> })}</li>
             <li>
               {tx("newProjectDialog.defaultViewsBullet", {
-                views: <span className="num">Board · Table · Epics · Dependencies</span>
+                views: <span className="num">{t("newProjectDialog.defaultViewNames")}</span>
               })}
             </li>
           </ul>

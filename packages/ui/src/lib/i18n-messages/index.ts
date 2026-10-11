@@ -11,6 +11,7 @@ import { detailPane } from "./detailPane";
 import { fields } from "./fields";
 import { files } from "./files";
 import { notes } from "./notes";
+import { onboarding } from "./onboarding";
 import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
@@ -88,6 +89,7 @@ export const en = {
   detailPane: detailPane.en,
   fields: fields.en,
   agentPanel: agentPanel.en,
+  onboarding: onboarding.en,
   codeLink: codeLink.en,
   files: files.en,
   notes: notes.en,
@@ -139,6 +141,7 @@ export const zh: typeof en = {
   detailPane: detailPane.zh,
   fields: fields.zh,
   agentPanel: agentPanel.zh,
+  onboarding: onboarding.zh,
   codeLink: codeLink.zh,
   files: files.zh,
   notes: notes.zh,

@@ -1191,9 +1191,10 @@ export class Storage extends Service {
   }
 
   /**
-   * The Default Project a first run made and nobody has touched: this
-   * machine's placeholder, not one of the account's projects. Any row of
-   * history, an issue or plugin data ends that for good.
+   * The project a first run made and nobody has touched: this machine's
+   * placeholder, not one of the account's projects. Any row of history, an
+   * issue or plugin data ends that for good — except the sample's own issues,
+   * which it was seeded with; its seed leaves no history behind.
    */
   private isPristineSeed(entry: CatalogProject): boolean {
     if (!entry.seed) return false;
@@ -1207,7 +1208,7 @@ export class Storage extends Service {
         return false;
       }
     };
-    const touched = holds("oplog") || holds("items") || pool.registrations("project").some((r) => Object.keys(r.tables).some(holds));
+    const touched = holds("oplog") || (!entry.sample && holds("items")) || pool.registrations("project").some((r) => Object.keys(r.tables).some(holds));
     if (touched) this.hub.catalog.patchProject(entry.id, { seed: false });
     return !touched;
   }
@@ -1321,8 +1322,15 @@ export class Storage extends Service {
     const current = this.hubBackend?.read() ?? (dir ? readHubManifest(dir) : null) ?? emptyHub();
     const mine: HubManifest = { v: 1, projects: [], repos: [], removed: [...this.tombstones].map(([id, at]) => ({ id, at })) };
     const ignores = new Set<string>(["repos/", "worktrees/", "*.tmp", ".DS_Store"]);
+    const ignore = (projectDir: string | null) => {
+      if (this.hubBackend || !dir || !projectDir) return;
+      const rel = path.relative(dir, projectDir);
+      if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) ignores.add(rel.split(path.sep).join("/") + "/");
+    };
     for (const entry of this.hub.catalog.projects()) {
-      if (this.isPristineSeed(entry)) continue;
+      // The sample is this machine's: a Hub repository must not carry it either.
+      if (entry.sample) ignore(entry.dir);
+      if (entry.sample || this.isPristineSeed(entry)) continue;
       let origin: { url: string | null; branch: string | null } | null = null;
       if (entry.dir && entry.git !== "none") {
         try {
@@ -1332,10 +1340,7 @@ export class Storage extends Service {
           origin = null;
         }
         // A project with a repository of its own inside the Hub folder is not the Hub repository's to track.
-        if (!this.hubBackend && dir && entry.git === "dedicated") {
-          const rel = path.relative(dir, entry.dir);
-          if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) ignores.add(rel.split(path.sep).join("/") + "/");
-        }
+        if (entry.git === "dedicated") ignore(entry.dir);
       }
       mine.projects.push(hubProjectOf(entry, origin, current.projects.find((p) => p.id === entry.id)?.updatedAt ?? now));
     }
@@ -1354,7 +1359,7 @@ export class Storage extends Service {
     else if (dir) writeHubManifest(dir, merged);
     if (this.hubBackend || !dir) return merged;
     const ignoreFile = path.join(dir, ".gitignore");
-    const body = ["# Written by Tomrade: projects with a repository of their own, agent worktrees, cloned code.", ...[...ignores].sort(), ""].join("\n");
+    const body = ["# Written by Tomrade: projects with a repository of their own, the sample project, agent worktrees, cloned code.", ...[...ignores].sort(), ""].join("\n");
     try {
       if (fs.readFileSync(ignoreFile, "utf8") !== body) fs.writeFileSync(ignoreFile, body, "utf8");
     } catch {

@@ -63,6 +63,7 @@
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "@tomradex/mcp-client": "workspace:*",
+    "@tomradex/onboarding": "workspace:*",
     "@tomradex/oplog": "workspace:*",
     "@tomradex/pet": "workspace:*",
     "@tomradex/plugin-kit": "workspace:*",

@@ -276,7 +276,7 @@ the new one boots with nothing but the Hub catalog. Every project in the
 catalog shows on the home screen at once — restoring (step and running rule),
 waiting, offline, not published yet, needing an account, never backed up —
 the backed-up ones come back with every issue unprompted, the untouched first-run
-Default Project makes way and never reaches the catalog, Retry lands where it
+sample project makes way and never reaches the catalog, Retry lands where it
 was, connecting the account in place resumes the restore by itself, the card's
 gear opens the project's sheet where one nobody can find the folder of is
 removed from the catalog after one confirmation (Cancel focused, Cancel goes
@@ -290,3 +290,14 @@ feed and forgets Stable's answer, a missing feed is reported with its reason, an
 older build on the feed is never offered, turning checks back on asks at once,
 and no notice is stacked over the open About pane — 26 checks. The restart
 itself only runs in an installed build (docs/releasing.md).
+`test:onboarding` (`scripts/onboarding-check.mjs`) is a first run left alone:
+the app opens on the sample project and nothing else, its seed absent from
+History and from the account's catalog; its Learning path view draws as a
+graph; the assistant's setup card says what is ready and what is missing and
+stays put away once hidden; a run's first changes carry the hint about undoing
+them, Start and the first dependency elsewhere are pointed out once each, and
+all of it stays seen across a reload; deleted, the sample is offered again,
+comes back in Chinese, and its offer can be put away for good — 31 checks. The other checks set
+`onboarding.seen: ["*"]` before the page loads, so no hint stands in their way,
+and `TOMRADE_UI_WORK` gives `test:ui` a folder of its own when two checkouts run
+it at once.

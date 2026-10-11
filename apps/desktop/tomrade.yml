@@ -110,6 +110,15 @@ plugins:
     config:
       legacyPath: "${userData}/tomrade.db"
       backupsDir: "${userData}/backups"
+      # The first project is the onboarding row's sample, not an empty one.
+      firstRun: none
+  # A first run opens on the sample project, written in the system's language;
+  # also the seen-hints the person carries between machines, and the playbook
+  # the assistant explains Tomrade from.
+  - id: onboarding
+    name: "@tomradex/onboarding"
+    config:
+      locale: "${locale}"
   - id: settings
     name: "@tomradex/settings"
     config:

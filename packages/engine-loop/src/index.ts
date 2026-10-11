@@ -144,8 +144,9 @@ export function createLoopEngine(ctx: Context): Engine {
     options: LoopOptions,
     available: async () => {
       const llm = ctx.get("llm");
-      if (!llm) return { ok: false, reason: "No language model plugin is loaded" };
-      return llm.ready();
+      if (!llm) return { ok: false, reason: "No language model plugin is loaded", need: "service" };
+      const state = llm.ready();
+      return state.ok ? state : { ...state, need: "model" };
     },
     picks: () => {
       const profiles = ctx.get("llm")?.profiles() ?? [];

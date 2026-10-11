@@ -7,6 +7,7 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/mcp";
+import type {} from "@tomradex/onboarding";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";

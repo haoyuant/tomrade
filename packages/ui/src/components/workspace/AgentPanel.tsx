@@ -2,7 +2,9 @@ import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } fr
 import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
+import { Hint } from "~/components/ui/hint";
 import { PetStage } from "./PetStage";
+import { SetupCard } from "./SetupCard";
 import { AgentMedia } from "./AgentMedia";
 import { AgentAttachment, readAttachment } from "./AgentAttachment";
 import { useQuery } from "@tanstack/react-query";
@@ -179,7 +181,7 @@ function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "
   );
 }
 
-function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onRevert: (runId: string) => void; busy: boolean }) {
+function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy, hint }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onRevert: (runId: string) => void; busy: boolean; hint?: boolean }) {
   const { t } = useI18n();
   const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null,
     run.endedAt != null ? `${Math.round((run.endedAt - run.startedAt) / 1000)}s` : null,
@@ -213,6 +215,7 @@ function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy }: { block: Bl
       </details>
     )}
     {meta && <div className="rf-meta run-metrics num">{meta}</div>}
+    {hint && !run?.reverted && <Hint id="hint.revert">{t("onboarding.revertHint")}</Hint>}
     </div>
   );
 }
@@ -226,7 +229,7 @@ function RunMetrics({ run }: { run: RunView | undefined }) {
   return <p className="meta-txt num" style={{ margin: "8px 0 0 22px" }}>{elapsed}{usage ? ` · ${usage}` : ""}{timings ? ` · ${timings}` : ""}</p>;
 }
 
-function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean }) {
+function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -259,7 +262,7 @@ function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onReve
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
-      <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} />
+      <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
     ) : b.type === "error" ? (
       <p className="ai-error">{b.text}</p>
     ) : b.type === "status" ? (
@@ -364,7 +367,10 @@ export function AgentPanel({
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
   // engine creates the thread right there instead of doing silently nothing.
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
-  const defaultEngine = agentSettings?.defaultEngine ?? "loop";
+  const usable = (id: string) => !!engines.data?.some((e) => e.id === id && e.ok);
+  // The settings' engine may not run here yet — no model, say — while another does: a new thread takes the one that can answer.
+  const configuredEngine = agentSettings?.defaultEngine ?? "loop";
+  const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && e.capabilities.includes("backlog"))?.id ?? configuredEngine);
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
   const engine = engines.data?.find((e) => e.id === currentEngineId);
   const permissionModes = detail.data?.thread.itemId ? engine?.permissionModes : undefined;
@@ -484,6 +490,7 @@ export function AgentPanel({
     try {
       let target = threadId;
       if (!target) target = (await openThread({ boardId })).id;
+      else if (detail.data?.messages.length === 0 && !usable(currentEngineId) && usable(defaultEngine)) await setEngine.mutateAsync({ threadId: target, engineId: defaultEngine });
       pickThread(target);
       const refs = await Promise.all(attachments.map(async file => invoke("agent.media.upload", projectId, target!, {
         name: file.name, mime: file.type, base64: await readAttachment(file)
@@ -496,6 +503,8 @@ export function AgentPanel({
 
   // Hidden once anything is typed or attached, so a click never overwrites the user's own words.
   const empty = threadId ? detail.data?.messages.length === 0 : true;
+  // The hint about undoing rides on the newest set of changes only.
+  const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
   const starters =
     empty && itemsQ.data && !detail.data?.thread.itemId && !busy && !draft && !attachments.length
       ? STARTERS[itemsQ.data.length ? "backlog" : "fresh"]
@@ -590,19 +599,7 @@ export function AgentPanel({
       </div>
 
       <div className="ai-scroll" ref={scroll} role="log" aria-live="polite" aria-busy={busy}>
-        {noEngineReady && (
-          <div className="agent-empty">
-            <p>{t("agentPanel.giveABrain")}</p>
-            <button type="button" className="btn btn-secondary" onClick={onOpenSettings}>
-              {t("agentPanel.connectModelApi")}
-            </button>
-            <ul className="dash">
-              {(engines.data ?? []).filter((e) => !e.ok).map((e) => (
-                <li key={e.id}>{t("agentPanel.engineReasonLine", { title: e.title, reason: e.reason ?? "" })}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {(noEngineReady || (empty && !detail.data?.thread.itemId)) && <SetupCard onOpenSettings={onOpenSettings} />}
         {empty && !noEngineReady && (
           <div className="turn turn-ai">
             <div className="turn-mark">
@@ -624,7 +621,7 @@ export function AgentPanel({
           </div>
         )}
         {(detail.data?.messages ?? []).map((m) => (
-          <Row key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} />
+          <Row key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={doAnswer} onRevert={(runId) => revert.mutate(runId)} busy={busy} hint={m.id === lastChangesId} />
         ))}
         {live?.text && (
           <div className="turn turn-ai">

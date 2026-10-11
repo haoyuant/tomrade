@@ -25,6 +25,8 @@ export interface FreshOptions {
   hubDir?: string;
   /** A pre-P0 single database to split on boot. */
   legacyPath?: string;
+  /** "none" leaves the first project to a plugin in `plugins`, as the app leaves it to onboarding. */
+  firstRun?: "default" | "none";
 }
 
 /** Nested fibers activate a microtask after their dependencies; this lets them. */
@@ -43,7 +45,7 @@ export async function fresh(opts: FreshOptions = {}) {
   await ctx.plugin(Fields);
   await ctx.plugin(Items);
   await ctx.plugin(boards);
-  await ctx.plugin(Projects, { legacyPath: opts.legacyPath, backupsDir: opts.cacheDir ? `${opts.cacheDir}/backups` : undefined });
+  await ctx.plugin(Projects, { legacyPath: opts.legacyPath, backupsDir: opts.cacheDir ? `${opts.cacheDir}/backups` : undefined, firstRun: opts.firstRun });
   for (const [i, entry] of (opts.plugins ?? []).entries()) {
     const [plugin, config] = Array.isArray(entry) ? entry : [entry, undefined];
     await ctx.plugin((isSdkPlugin(plugin) ? sdk(plugin, { id: `sdk-${i}` }) : plugin) as Plugin<unknown>, config);

@@ -192,6 +192,8 @@ export interface Project {
   /** Prefix of the human issue key, e.g. 'TOM' in TOM-142. */
   keyPrefix: string;
   archived: boolean;
+  /** The tour a first run opens with: this machine's own, never in the account's catalog. */
+  sample?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -200,6 +202,8 @@ export interface CreateProjectInput {
   name: string;
   description?: string | null;
   keyPrefix?: string;
+  /** The language the seeded workstream and views are named in: "en" (the default) or "zh". */
+  locale?: string;
 }
 
 export type ProjectPatch = Partial<Pick<Project, "name" | "description" | "archived">>;
