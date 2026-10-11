@@ -23,7 +23,7 @@ import { writeConnectFiles } from "./connect.js";
 import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential } from "./credentials.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
-import { scanRepo, type ScanResult } from "./scanner.js";
+import { scanRepo, type ScanResult, type ScannedBranch } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
@@ -160,6 +160,9 @@ export function primaryOf(links: CodeLinkView[]): CodeLinkView | null {
 }
 
 const signature = (kind: string, to: string | null, reason: string): string => `${kind}|${to ?? ""}|${reason}`;
+
+/** A merge commit shows in the scan itself; a fast-forward only as the head this link last saw ahead of the default branch now sitting inside it. */
+const landed = (b: ScannedBranch, was: CodeLinkView | undefined): boolean => b.merged || (b.contained && !!was && was.headSha === b.sha && was.ahead > 0);
 
 /** A GitHub remote's compare page for a branch, or null for another host. */
 export function compareUrl(remote: string, defaultBranch: string, branch: string): string | null {
@@ -814,21 +817,22 @@ export class CodeLink extends Service {
         const current = active ? sameBranch.find((link) => link.delivery === active.sequence) : undefined;
         const unchangedHistory = !current ? sameBranch.find((link) => link.headSha === b.sha) : undefined;
         const target = current ?? unchangedHistory;
+        const merged = landed(b, target);
         const link = target
           ? this.store.patchLink(projectId, target.id, {
               headSha: b.sha,
               headAt: b.committedAt,
               ahead: b.ahead,
               behind: b.behind,
-              mergedSha: b.merged ? (target.mergedSha ?? result.defaultSha) : undefined,
+              mergedSha: merged ? (target.mergedSha ?? result.defaultSha) : undefined,
               lastSeenAt: now
             })
           : this.store.upsertLink(
               projectId,
               { itemId: item.id, repoId: repo.id, branch: b.name },
-              { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, lastSeenAt: now }
+              { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: merged ? result.defaultSha : undefined, lastSeenAt: now }
             );
-        if (b.merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
+        if (merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
         if (link.delivery === this.store.activeDelivery(projectId, item.id)?.sequence) seen.add(link.id);
         touched.add(item.id);
         links += 1;
@@ -842,7 +846,8 @@ export class CodeLink extends Service {
       if (l.source !== "manual" || seen.has(l.id) || !l.branch) continue;
       const b = result.branches.find((x) => x.name === l.branch);
       if (!b) continue;
-      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: b.merged ? result.defaultSha : undefined, ...(b.merged && l.prState === "open" ? { prState: "merged" } : {}), lastSeenAt: now });
+      const merged = landed(b, l);
+      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: merged ? result.defaultSha : undefined, ...(merged && l.prState === "open" ? { prState: "merged" } : {}), lastSeenAt: now });
       seen.add(l.id);
     }
 
