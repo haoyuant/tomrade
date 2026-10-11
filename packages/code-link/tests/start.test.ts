@@ -448,6 +448,42 @@ describe("starting a ticket", () => {
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "stuck" })]));
   });
 
+  it("does not answer the agent's open question with Continue, and points at the conversation instead", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    agent.engine({
+      id: "asker",
+      title: "Asking agent",
+      author: "ai:asker",
+      capabilities: ["code"],
+      available: async () => ({ ok: true }),
+      async turn(_input, io) {
+        const result = await io.tools.execute("ask_user", { question: "Postgres or SQLite?", options: ["Postgres", "SQLite"] });
+        return { stop: (result as { suspended?: boolean })?.suspended === false ? "end" : "asked" };
+      }
+    });
+    const item = ticket("Pick a database");
+    const first = await codeLink.start(project.id, item.id, { mode: "run", engine: "asker" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await untilRunsSettle(agent);
+    expect(agent.store.pending(project.id, first.threadId)?.question.text).toBe("Postgres or SQLite?");
+    const said = () => agent.store.messages(project.id, first.threadId).filter((m) => m.role === "user").length;
+    const before = said();
+
+    // Continue: nothing is sent — a message would count as the answer — and the question is handed back.
+    const again = await codeLink.start(project.id, item.id, { mode: "run", engine: "asker" });
+    expect(again).toMatchObject({ ok: true, continued: true, threadId: first.threadId, waitingOn: "Postgres or SQLite?" });
+    expect(said()).toBe(before);
+    expect(agent.store.pending(project.id, first.threadId)?.question.text).toBe("Postgres or SQLite?");
+
+    // The Code section's Continue and its Conversation row both bring the conversation up.
+    expect(await ctx.contributions.run("code-link.start-run", { projectId: project.id, itemId: item.id })).toMatchObject({ showThread: first.threadId, toast: expect.stringContaining("Postgres or SQLite?") });
+    expect(await ctx.contributions.run("code-link.open-thread", { projectId: project.id, itemId: item.id })).toEqual({ showThread: first.threadId });
+    const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!;
+    expect(section.rows.find((r) => r.label === "Conversation")).toMatchObject({ command: "code-link.open-thread" });
+  });
+
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;

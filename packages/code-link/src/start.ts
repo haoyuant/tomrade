@@ -54,6 +54,8 @@ export type StartResult =
       launched: boolean;
       /** Headless mode: the run that was started. */
       runId?: string;
+      /** Headless mode: the thread waits on the person's answer to this, so nothing was sent — show it instead. */
+      waitingOn?: string;
       /** Conditions that do not prevent local work, but constrain what the agent may do. */
       warnings?: string[];
     };
@@ -183,18 +185,21 @@ export class Starter {
     let continued = false;
     let thread = previous;
     let branch = previous?.branch ?? links[0]?.branch ?? "";
+    // An open question takes any message as its answer, and switching engines would drop it: the thread
+    // is left as it is and the question handed back, for the person to answer in the conversation.
+    const asked = thread && opts.mode === "run" && !agent.activeRuns().some((a) => a.thread.id === thread!.id) ? agent.store.pending(projectId, thread.id)?.question : undefined;
     if (thread) {
       continued = true;
       if (thread.surface !== surface) {
         agent.store.touchThread(projectId, thread.id, { surface });
         thread = agent.store.thread(projectId, thread.id)!;
       }
-      if (engineId !== "other" && thread.engine !== engineId && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engineId);
+      if (!asked && engineId !== "other" && thread.engine !== engineId && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engineId);
     } else {
       branch = plannedBranch;
       thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}`, surface });
     }
-    if (engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
+    if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
       if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
       if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
     }
@@ -234,6 +239,10 @@ export class Starter {
     const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
 
     if (opts.mode === "run") {
+      if (asked) {
+        this.host.notify(projectId);
+        return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, ...(warnings.length ? { warnings } : {}) };
+      }
       const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prompt }).runId;
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);

@@ -84,7 +84,10 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
     [sessions.data, active]
   );
   const threadId = latest?.threadId ?? (threads.data ?? []).find((thread) => thread.itemId === item.id && !thread.archived)?.id ?? null;
-  const thread = useAgentThread(projectId, threadId).data?.thread ?? null;
+  const threadDetail = useAgentThread(projectId, threadId).data;
+  const thread = threadDetail?.thread ?? null;
+  // The agent asked something and waits: answering it is the way on, not another Start.
+  const asked = threadDetail?.pending && threadDetail.pending.kind !== "permission" ? threadDetail.pending.question.text : null;
 
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
   const otherCommand = ((settings.data?.codeLink as { otherCommand?: string } | undefined)?.otherCommand ?? "").trim();
@@ -181,7 +184,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
           const vars = { key: item.key, branch: result.branch };
           const warning = result.warnings?.join("\n");
           if (result.mode === "run") {
-            const started = t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars);
+            const started = result.waitingOn ? t("codeLink.waitingToast", { question: result.waitingOn }) : t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars);
             toast({ body: warning ? `${started}\n${warning}` : started });
             showThread(result.threadId);
           } else if (result.launched) {
@@ -306,6 +309,13 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
             </Field>
           )}
 
+          {asked && mode === "run" && (
+            <div className="start-asked" role="status" data-testid="start-asked">
+              <p className="meta-txt">{t("codeLink.askedLede")}</p>
+              <blockquote>{asked}</blockquote>
+            </div>
+          )}
+
           {error && (
             <p role="alert" className="meta-txt" style={{ color: "var(--danger)" }} data-testid="start-error">
               {error.message}
@@ -324,9 +334,23 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
         <DialogClose asChild>
           <button type="button" className="btn btn-secondary">{t("common.cancel")}</button>
         </DialogClose>
-        <button type="button" className="btn btn-primary" data-testid="start-confirm" disabled={busy || !engineId || !ready} onClick={() => submit()}>
-          {start.isPending ? t("codeLink.starting") : t(continuing ? "codeLink.continueAction" : waitsOn.length ? "codeLink.startAnyway" : "codeLink.startAction")}
-        </button>
+        {asked && mode === "run" && threadId ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            data-testid="start-open-thread"
+            onClick={() => {
+              onClose();
+              showThread(threadId);
+            }}
+          >
+            {t("codeLink.openConversation")}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-primary" data-testid="start-confirm" disabled={busy || !engineId || !ready} onClick={() => submit()}>
+            {start.isPending ? t("codeLink.starting") : t(continuing ? "codeLink.continueAction" : waitsOn.length ? "codeLink.startAnyway" : "codeLink.startAction")}
+          </button>
+        )}
       </DialogFoot>
     </Dialog>
   );

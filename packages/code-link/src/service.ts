@@ -1054,6 +1054,7 @@ export class CodeLink extends Service {
             value: `${live.state}${live.state === "waiting" ? " for you" : ""} · ${where}${doing ? ` · ${doing}` : ""} · last signal ${when}`
           });
           if (live.state !== "running") rows.push({ label: "Continue", icon: "i-send", value: live.mode === "terminal" ? "Continue in terminal" : "Continue here", command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
+          if (live.threadId) rows.push({ label: "Conversation", icon: "i-panel", value: live.state === "waiting" ? "Open it — it is waiting for you" : "Open it in the assistant", command: "code-link.open-thread" });
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
         if (worktree) rows.push({ label: "Worktree", icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
@@ -1133,7 +1134,9 @@ export class CodeLink extends Service {
       const warning = result.warnings?.join("\n");
       const where = result.branch ? ` on ${result.branch}` : "";
       if (result.mode === "terminal") return { toast: `${result.launched ? `${result.continued ? "Continuing" : "Started"}${where} — your terminal has it` : `Run this in a terminal:\n${result.command}`}${warning ? `\n${warning}` : ""}` };
-      return { toast: `${result.continued ? "Continuing" : "Started"}${where}${warning ? `\n${warning}` : ""}` };
+      // a run here is followed in its conversation, which opens with it
+      if (result.waitingOn) return { toast: `It is waiting for your answer: ${result.waitingOn}`, showThread: result.threadId };
+      return { toast: `${result.continued ? "Continuing" : "Started"}${where}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
     };
     ctx.contributions.command({ id: "code-link.start-run", title: "Start ticket here", group: "Code", run: startCommand("run") });
     ctx.contributions.command({ id: "code-link.start-terminal", title: "Open ticket in terminal", group: "Code", run: startCommand("terminal") });
@@ -1145,6 +1148,17 @@ export class CodeLink extends Service {
         if (!projectId || !itemId) return { toast: "Select a ticket first" };
         const r = await this.openPr(projectId, itemId);
         return { toast: r.message };
+      }
+    });
+    ctx.contributions.command({
+      id: "code-link.open-thread",
+      title: "Open the ticket's conversation",
+      group: "Code",
+      run: ({ projectId, itemId }) => {
+        if (!projectId || !itemId) return { toast: "Select a ticket first" };
+        const sessions = this.store.sessions(projectId, { itemId }).filter((s) => s.threadId);
+        const threadId = (sessions.find((s) => s.state !== "ended") ?? sessions[0])?.threadId ?? this.store.links(projectId, itemId).find((l) => l.threadId)?.threadId;
+        return threadId ? { showThread: threadId } : { toast: "This ticket has no conversation yet — start it first" };
       }
     });
     ctx.contributions.command({

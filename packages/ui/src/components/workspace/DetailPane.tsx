@@ -25,6 +25,7 @@ import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries
 import { openExternal } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
+import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
 function LockBar() {
@@ -63,8 +64,12 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
   const sections = useSections(projectId, itemId);
   const runCommand = useRunCommand(projectId);
   const toast = useToast();
+  const dock = useOptionalAgentDock();
   const run = (id: string) =>
-    runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast(errorSpec(e)) });
+    runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => {
+        if (r.toast) toast({ body: r.toast });
+        if (r.showThread) dock?.showThread(r.showThread);
+      }, onError: (e) => toast(errorSpec(e)) });
   return (
     <>
       {(sections.data ?? []).map((s) => {

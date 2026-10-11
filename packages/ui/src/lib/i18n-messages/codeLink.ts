@@ -1,5 +1,8 @@
 export const codeLink = {
   en: {
+    waitingToast: "It is waiting for your answer: {{question}}",
+    askedLede: "The agent asked something and is waiting for your answer — answer it in the conversation:",
+    openConversation: "Open the conversation",
     start: "Start",
     continue: "Continue",
     startHere: "Run here",
@@ -54,6 +57,9 @@ export const codeLink = {
     rescanned: "Scanned {{scanned}}/{{repos}} repositories · {{moved}} moved"
   },
   zh: {
+    waitingToast: "它在等你回答：{{question}}",
+    askedLede: "代理问了一个问题，正在等你回答——请在对话里回答：",
+    openConversation: "打开对话",
     start: "开始",
     continue: "继续",
     startHere: "在这里跑",

@@ -14,6 +14,7 @@ import { useNoteActions } from "~/components/files/useNoteActions";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
+import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -40,6 +41,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const { t } = useI18n();
   const { setPreference } = useTheme();
   const toast = useToast();
+  const dock = useOptionalAgentDock();
   const commands = useCommands();
   const runCommand = useRunCommand(ws.project.id);
   const [search, setSearch] = useState("");
@@ -71,7 +73,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const runPlugin = (id: string) =>
     runCommand.mutate(
       { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: ws.selectedId } },
-      { onSuccess: (r) => r.toast && toast({ body: r.toast }), onError: (e) => toast(errorSpec(e)) }
+      { onSuccess: (r) => {
+        if (r.toast) toast({ body: r.toast });
+        if (r.showThread) dock?.showThread(r.showThread);
+      }, onError: (e) => toast(errorSpec(e)) }
     );
 
   const actionRows = [
