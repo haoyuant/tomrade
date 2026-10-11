@@ -122,19 +122,32 @@ function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: 
   const { openFile } = useWorkspace();
   const toast = useToast();
   const resolveAll = useResolveAllConflicts(projectId);
-  const all = (choice: ConflictChoice) => resolveAll.mutate(choice, { onError: (error) => toast(errorSpec(error)) });
+  // every file at once, and synced straight away: said out loud before it happens
+  const [confirming, setConfirming] = useState<ConflictChoice | null>(null);
+  const all = (choice: ConflictChoice) => resolveAll.mutate(choice, { onSuccess: () => setConfirming(null), onError: (error) => toast(errorSpec(error)) });
   return (
     <div className="stack-3 files-conflict-list" data-testid="conflict-list">
       <div className="dangerbar">
         <Icon className="b-mark" name="i-warn" size={15} />
         <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>{conflicts.length === 1 ? t("files.conflictOne") : t("files.conflictMany", { n: conflicts.length })}</p>
-        <button type="button" className="btn btn-ghost" disabled={resolveAll.isPending} onClick={() => all("ours")}>
+        <button type="button" className="btn btn-ghost" disabled={resolveAll.isPending} aria-expanded={confirming === "ours"} onClick={() => setConfirming("ours")}>
           {t("files.keepAllMine")}
         </button>
-        <button type="button" className="btn btn-ghost" disabled={resolveAll.isPending} onClick={() => all("theirs")}>
+        <button type="button" className="btn btn-ghost" disabled={resolveAll.isPending} aria-expanded={confirming === "theirs"} onClick={() => setConfirming("theirs")}>
           {t("files.keepAllTheirs")}
         </button>
       </div>
+      {confirming && (
+        <div className="row files-conflict-confirm" role="alert" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
+          <p className="meta-txt" style={{ margin: 0, flex: 1 }}>{t(confirming === "ours" ? "files.keepAllMineConfirm" : "files.keepAllTheirsConfirm", { n: conflicts.length })}</p>
+          <button type="button" className="btn btn-danger" disabled={resolveAll.isPending} onClick={() => all(confirming)}>
+            {t(confirming === "ours" ? "files.keepAllMine" : "files.keepAllTheirs")}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(null)}>
+            {t("common.cancel")}
+          </button>
+        </div>
+      )}
       <div className="stack-1">
         {conflicts.map((c) => (
           <button key={c.path} type="button" className="menu-row" data-file={c.path} onClick={() => openFile(c.path)}>

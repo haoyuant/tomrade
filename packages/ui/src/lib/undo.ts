@@ -14,8 +14,9 @@ export function useToastUndo(projectId: string) {
   const undo = useUndo(projectId);
   const toast = useToast();
   const { t } = useI18n();
-  return (target: { id: string; stamp: number }) =>
-    undo.mutate(target, {
+  // a delete leaves no stamp to aim at — nothing can change a thing that is gone — so its newest write is it
+  return (target: { id: string; stamp?: number }) =>
+    undo.mutate(target.stamp === undefined ? target.id : { id: target.id, stamp: target.stamp }, {
       onSuccess: (step) => toast({ body: step ? step.summary : t("toast.nothingToUndo") }),
       onError: (err) => toast({ body: messageOf(err).includes(STALE_UNDO) ? t("toast.changedSince") : messageOf(err) })
     });

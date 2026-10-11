@@ -1,5 +1,6 @@
 export const titleBar = {
   en: {
+    lastViewTitle: "A project keeps at least one view",
     projectsHome: "Projects home",
     projectsLabel: "Projects",
     switchProjectTitle: "Switch project — ⌘P",
@@ -37,6 +38,7 @@ export const titleBar = {
     deletedViewToast: "Deleted {{name}}"
   },
   zh: {
+    lastViewTitle: "项目至少要保留一个视图",
     projectsHome: "项目主页",
     projectsLabel: "项目",
     switchProjectTitle: "切换项目 — ⌘P",

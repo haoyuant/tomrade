@@ -10,6 +10,7 @@ import { useI18n } from "~/lib/i18n";
 import { useRemoveView, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
+import { useToastUndo } from "~/lib/undo";
 
 /**
  * Home *leaves* the project, the switcher *rebinds* it in place — two jobs, so
@@ -197,11 +198,15 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
   const [menuOpen, setMenuOpen] = useState(false);
   const [editRequest, setEditRequest] = useState(0);
 
-  const deleteView = () =>
-    remove.mutate(ws.view.id, {
-      onSuccess: () => toast({ body: tx("titleBar.deletedViewToast", { name: <span className="num">{ws.view.name}</span> }) }),
+  const undoWrite = useToastUndo(ws.project.id);
+  const lastView = ws.views.length <= 1;
+  const deleteView = () => {
+    const view = ws.view;
+    remove.mutate(view.id, {
+      onSuccess: () => toast({ body: tx("titleBar.deletedViewToast", { name: <span className="num">{view.name}</span> }), onUndo: () => undoWrite({ id: view.id }) }),
       onError: (err) => toast(errorSpec(err))
     });
+  };
 
   return (
     <div className="board-head view-head">
@@ -295,7 +300,7 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
             onSelect={() => ws.saveAsNewView(t("titleBar.copyName", { name: ws.view.name }))}
           />
           <div className="menu-foot">
-            <MenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("titleBar.deleteView")} onSelect={deleteView} />
+            <MenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("titleBar.deleteView")} onSelect={deleteView} disabled={lastView} title={lastView ? t("titleBar.lastViewTitle") : undefined} />
           </div>
         </Menu>
       </div>

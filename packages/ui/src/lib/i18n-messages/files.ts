@@ -1,5 +1,7 @@
 export const files = {
   en: {
+    keepAllMineConfirm: "Keep your version of all {{n}} files? The other versions are replaced, and synced right away.",
+    keepAllTheirsConfirm: "Take the other version of all {{n}} files? Your versions are replaced, and synced right away.",
     eyebrow: "Files",
     railLabel: "Files",
     home: "Files",
@@ -191,6 +193,8 @@ export const files = {
     travelNote: "The remote travels with the project — a teammate who clones it gets these files. The account above stays on this machine."
   },
   zh: {
+    keepAllMineConfirm: "这 {{n}} 个文件全部保留你的版本？另一方的版本会被替换，并立即同步。",
+    keepAllTheirsConfirm: "这 {{n}} 个文件全部采用另一方的版本？你的版本会被替换，并立即同步。",
     eyebrow: "文件",
     railLabel: "文件",
     home: "文件",
