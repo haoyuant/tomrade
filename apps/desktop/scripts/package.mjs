@@ -21,4 +21,7 @@ run("pnpm", ["build:backend"]);
 run("pnpm", ["--filter", "@tomradex/ui", "build"]);
 fs.rmSync(path.join(desktop, "ui"), { recursive: true, force: true });
 fs.cpSync(path.join(root, "packages/ui/dist"), path.join(desktop, "ui"), { recursive: true });
-run("pnpm", ["exec", "electron-builder", ...process.argv.slice(2).filter((a) => a !== "--")], desktop);
+// The About pane names the build; extraMetadata lands in the packaged package.json.
+const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const stamp = [`-c.extraMetadata.commit=${commit}`, `-c.extraMetadata.builtAt=${new Date().toISOString()}`];
+run("pnpm", ["exec", "electron-builder", ...stamp, ...process.argv.slice(2).filter((a) => a !== "--")], desktop);

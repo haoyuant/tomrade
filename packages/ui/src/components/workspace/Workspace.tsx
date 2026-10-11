@@ -297,6 +297,7 @@ export function Workspace() {
           openHistory: () => setHistory(true),
           openSettings: () => setSettings(""),
           openPlugins: () => setSettings("plugins"),
+          openAbout: () => setSettings("about"),
           openViewSettings: () => setViewSettings(true),
           openFields: () => openFields(),
           openProjectSettings,

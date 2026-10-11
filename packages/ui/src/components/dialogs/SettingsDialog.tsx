@@ -9,6 +9,7 @@ import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
+import { AboutPane } from "./AboutPane";
 import { HubPane } from "./HubPane";
 import { McpServersPane } from "./McpServersPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
@@ -477,6 +478,7 @@ export function SettingsDialog({
         </>
       )
     },
+    { id: "about", label: t("about.label"), icon: "i-info", group: "app", render: () => <AboutPane /> },
     ...pluginSections.map(
       (section): Pane => ({
         id: section.id,

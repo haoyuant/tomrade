@@ -2025,3 +2025,19 @@ button.kref { cursor: pointer; }
 .plug-facts { margin: 0; }
 .tag.risk-high { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); border-radius: var(--radius-sm); padding: 1px 7px; }
 .btn.btn-xs { padding: 2px 8px; font-size: var(--text-xs); min-height: 0; }
+
+/* settings · about */
+.about-hero { display: flex; align-items: center; gap: var(--space-5); margin-top: var(--space-5); }
+.about-logo { width: 64px; height: 64px; border-radius: var(--radius-lg); flex-shrink: 0; }
+.about-id { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.about-name { font-family: var(--font-display); font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--fg); }
+.about-version { display: flex; align-items: center; gap: var(--space-2); font-size: 14px; color: var(--fg-2); }
+.about-update { display: flex; align-items: center; gap: var(--space-3); }
+.about-update .about-update-state { flex: 1; min-width: 0; margin: 0; font-size: var(--text-sm); color: var(--fg-2); }
+.about-update .btn { margin-left: auto; flex-shrink: 0; }
+.about-facts { margin: var(--space-3) 0 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.about-facts .field-row { grid-template-columns: 112px 1fr; }
+.about-facts .field-row:first-child { border-top: 0; }
+.about-path { min-width: 0; overflow-wrap: anywhere; }
+.about-note { flex-basis: 100%; }
+.about-license { margin-top: var(--space-4); }

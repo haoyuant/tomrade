@@ -52,6 +52,8 @@ export const ICON_IDS = [
   "i-folder",
   "i-file",
   "i-upload",
+  "i-download",
+  "i-info",
   "i-copy",
   "i-cut",
   "i-paste",
@@ -124,6 +126,8 @@ export function IconSprite() {
         <symbol id="i-terminal" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="1.6" y="2.4" width="10.8" height="9.2" rx="1.2"/><path d="M4 5.4 6 7.2 4 9M7.6 9h2.6"/></g></symbol>
         <symbol id="i-file" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M3.4 1.8h4.9l3.3 3.3v7.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1Z"/><path d="M8.3 1.8v3.3h3.3"/></g></symbol>
         <symbol id="i-upload" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 9.4V2.4M4.3 5.1 7 2.4l2.7 2.7"/><path d="M2.2 9.6v1.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V9.6"/></g></symbol>
+        <symbol id="i-download" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 2.4v7M4.3 6.7 7 9.4l2.7-2.7"/><path d="M2.2 9.6v1.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V9.6"/></g></symbol>
+        <symbol id="i-info" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.4"/><path d="M7 6.3v3.6M7 4.2v.1"/></g></symbol>
         <symbol id="i-folder" viewBox="0 0 14 14"><path d="M1.8 3.6a1 1 0 0 1 1-1h2.7l1.3 1.4h4.4a1 1 0 0 1 1 1v5.6a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></symbol>
         <symbol id="i-copy" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><rect x="4.6" y="4.6" width="7.4" height="7.4" rx="1"/><path d="M2.4 9.4V2.4a1 1 0 0 1 1-1h7"/></g></symbol>
         {/* notes: a link between two of them, a day */}

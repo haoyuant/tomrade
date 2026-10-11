@@ -1,0 +1,72 @@
+export const about = {
+  en: {
+    label: "About",
+    title: "About Tomrade",
+    lede: "Which build this is and what it runs on. Copy the details into a bug report and nothing has to be guessed.",
+    tagline: "Tasks, notes and agents, in one folder you own.",
+    versionLine: "Version {{version}}",
+    checkout: "Checkout",
+    checkoutNote: "Running from a checkout — it updates with git, not from releases.",
+
+    checkUpdates: "Check for updates",
+    checking: "Checking…",
+    upToDate: "You're up to date — {{version}} is the latest release.",
+    updateAvailable: "Tomrade {{version}} is available.",
+    updateDate: "Released {{date}}.",
+    download: "Download",
+    updateFailed: "Couldn't reach download.tomrade.com. Check the connection and try again.",
+
+    detailsTitle: "Details",
+    version: "Version",
+    build: "Build",
+    built: "built {{date}}",
+    system: "System",
+    appData: "App data",
+    appDataNote: "Settings for this machine, caches and logs. Your projects live in the Hub folder.",
+    reveal: "Reveal",
+    copy: "Copy details",
+    copied: "Details copied",
+    unavailable: "Build details come from the desktop app and aren't available here.",
+
+    linksTitle: "Links",
+    website: "Website",
+    downloads: "All downloads",
+    licenseTitle: "License",
+    license: "Tomrade is licensed under the Business Source License 1.1. Each version becomes Apache 2.0 two years after it is released; the plugin SDK is Apache 2.0 already."
+  },
+  zh: {
+    label: "关于",
+    title: "关于 Tomrade",
+    lede: "当前是哪个版本、运行在什么环境上。反馈问题时把详情复制过去，就不用再猜。",
+    tagline: "任务、笔记和 Agent，都在你自己的文件夹里。",
+    versionLine: "版本 {{version}}",
+    checkout: "源码运行",
+    checkoutNote: "当前从源码检出运行——通过 git 更新，不走正式发布。",
+
+    checkUpdates: "检查更新",
+    checking: "正在检查…",
+    upToDate: "已是最新——{{version}} 就是最新发布的版本。",
+    updateAvailable: "Tomrade {{version}} 已发布。",
+    updateDate: "发布于 {{date}}。",
+    download: "下载",
+    updateFailed: "无法连接 download.tomrade.com，请检查网络后重试。",
+
+    detailsTitle: "详情",
+    version: "版本",
+    build: "构建",
+    built: "构建于 {{date}}",
+    system: "系统",
+    appData: "应用数据",
+    appDataNote: "本机设置、缓存和日志。项目本身保存在 Hub 文件夹里。",
+    reveal: "在访达中显示",
+    copy: "复制详情",
+    copied: "已复制详情",
+    unavailable: "构建详情来自桌面应用，这里无法显示。",
+
+    linksTitle: "链接",
+    website: "官网",
+    downloads: "全部下载",
+    licenseTitle: "许可",
+    license: "Tomrade 采用 Business Source License 1.1 许可。每个版本发布两年后转为 Apache 2.0；插件 SDK 现在就是 Apache 2.0。"
+  }
+};
