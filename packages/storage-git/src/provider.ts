@@ -18,6 +18,7 @@ export interface RemoteProviderOptions<C> {
   toRemote(config: C): Promise<RemoteTarget> | RemoteTarget;
   /** Bring the destination into existence — create the repository, say. */
   ensureRemote?(config: C): Promise<void>;
+  visibility?: StorageProvider<C>["visibility"];
   browse?(): Promise<{ label: string; config: C }[]>;
 }
 
@@ -39,6 +40,7 @@ export function createRemoteProvider<C>(opts: RemoteProviderOptions<C>): Storage
     connection: opts.connection,
     credential: opts.credential,
     toRemote: opts.toRemote,
-    ensureRemote: opts.ensureRemote
+    ensureRemote: opts.ensureRemote,
+    visibility: opts.visibility
   };
 }

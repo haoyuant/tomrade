@@ -60,6 +60,8 @@ export const storageGithub = {
             await api.create(c.owner, c.repo);
           },
 
+          visibility: (c) => api.visibility(c.owner, c.repo),
+
           async browse() {
             const repos = await ctx.github.repositories();
             return repos.map((r) => ({

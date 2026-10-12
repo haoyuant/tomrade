@@ -60,6 +60,17 @@ export function generalBrief(ticket: { key: string; title: string; body?: string
 /** Past this a rules file is cut, so a long one cannot crowd out the work. */
 export const RULES_MAX_CHARS = 8000;
 
+/** Claude Code keeps 2048 characters of a server's instructions; longer rules go by tool instead. */
+export const RULES_INSTRUCTIONS_MAX = 1200;
+
+/** The rules as an agent Tomrade did not start reads them when it connects over MCP. */
+export function rulesInstructions(rules: string): string {
+  const inline = `${rulesSection(rules)}\nThey can change while you work; get_project_rules reads them again.`;
+  return inline.length <= RULES_INSTRUCTIONS_MAX
+    ? inline
+    : "This project has rules the person set for every agent working in it: call get_project_rules before you start and follow them throughout.";
+}
+
 /** The person's rules for every agent in the project, worded the same for every engine. */
 export const rulesSection = (rules: string): string =>
   "Project rules — the person set these for every agent working in this project; follow them throughout. A repository's CLAUDE.md or AGENTS.md still decides how code is written there; these decide everything else:\n" +

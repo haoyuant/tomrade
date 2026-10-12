@@ -6,6 +6,9 @@ import type { AppSettings } from "@tomradex/domain";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import { agentAccess } from "./agent.js";
+import { mapSecrets, mapStrings, SEALED, type SecretCipher } from "./secrets.js";
+
+export { mapSecrets, SEALED, type SecretCipher } from "./secrets.js";
 
 /**
  * `machine` settings stay on this machine — credentials, paths, binaries.
@@ -75,6 +78,7 @@ declare module "@tomradex/ipc" {
     "settings.get": () => AppSettings;
     "settings.set": (next: AppSettings) => AppSettings;
     "settings.sections": (locale?: Locale) => SettingsSectionView[];
+    "settings.secretStorage": () => SecretStorage;
   }
   interface Broadcasts {
     /** Changed from somewhere other than this window's own save: an agent, another machine. */
@@ -86,8 +90,13 @@ export const SettingsConfig = z.object({
   /** The machine file. */
   path: z.string(),
   /** The system's locale, for a language preference of "system". */
-  locale: z.string().optional()
+  locale: z.string().optional(),
+  /** Seals the machine file's secrets. Without one, or while it is unavailable, they stay plain text. */
+  cipher: z.custom<SecretCipher>((v) => !!v && typeof (v as SecretCipher).encrypt === "function").optional()
 });
+
+/** Where this machine's API keys and tokens rest: encrypted by the OS keychain, or as plain text in settings.json. */
+export type SecretStorage = "keychain" | "plaintext";
 
 /** The languages the app speaks. */
 export type Locale = "en" | "zh";
@@ -191,10 +200,11 @@ const readJson = (file: string): unknown => {
   }
 };
 
-const writeJson = (file: string, value: unknown): void => {
+const writeJson = (file: string, value: unknown, mode?: number): void => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
+  if (mode !== undefined) fs.chmodSync(tmp, mode);
   fs.renameSync(tmp, file);
 };
 
@@ -217,6 +227,8 @@ export class Settings extends Service {
   private user: UserSettingsFile = { v: 1, sections: {} };
   private userFile: string | null = null;
   private userStore: UserSettingsStore | null = null;
+  /** Sealed values this run couldn't open, by where they sit: written back as they were until that field is set again. */
+  private unopened = new Map<string, string>();
 
   /** Only registered, validated user sections may cross the cloud boundary. */
   exportUser(): UserSettingsFile {
@@ -262,7 +274,7 @@ export class Settings extends Service {
 
   [Service.init]() {
     const raw = readJson(this.config.path);
-    if (isRecord(raw)) this.stored = raw;
+    if (isRecord(raw)) this.stored = this.open(raw);
     this.register(THEME);
     this.register(THEME_AUTOMATION);
     this.register(CUSTOM_THEMES);
@@ -271,6 +283,7 @@ export class Settings extends Service {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
       ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));
       ctx.ipc.handle("settings.sections", (locale) => ctx.settings.sections(locale === "en" || locale === "zh" ? locale : undefined));
+      ctx.ipc.handle("settings.secretStorage", () => ctx.settings.secretStorage());
       ctx.on("settings/changed", (next) => ctx.ipc.send("settings.changed", next));
     });
     this.home.inject(["tools", "db", "oplog", "hub"], (ctx) => agentAccess(ctx));
@@ -368,11 +381,52 @@ export class Settings extends Service {
       }
     }
     this.stored = stored;
-    writeJson(this.config.path, stored);
+    this.persistMachine();
     if (userTouched) this.persistUser();
     const current = this.get();
     this.home.emit("settings/changed", current, previous);
     return current;
+  }
+
+  secretStorage(): SecretStorage {
+    return this.config.cipher?.available() ? "keychain" : "plaintext";
+  }
+
+  /** The machine file as stored, opened: sealed values decrypted, and plain ones sealed straight away when they can be. */
+  private open(raw: Record<string, unknown>): Record<string, unknown> {
+    const cipher = this.secretStorage() === "keychain" ? this.config.cipher! : null;
+    const opened = mapStrings(raw, (text, at) => {
+      if (!text.startsWith(SEALED)) return text;
+      try {
+        if (cipher) return cipher.decrypt(Buffer.from(text.slice(SEALED.length), "base64"));
+      } catch {
+        // a reset or different keychain: the value is lost to this machine, but not overwritten
+      }
+      this.unopened.set(at, text);
+      return "";
+    }) as Record<string, unknown>;
+    if (this.unopened.size) this.home.logger.warn(`${this.unopened.size} saved key(s) or token(s) in ${this.config.path} can't be decrypted on this system; enter them again`);
+    let plain = false;
+    mapSecrets(opened, (secret) => (plain ||= secret !== ""));
+    try {
+      if (cipher && plain) writeJson(this.config.path, this.sealed(opened, cipher), 0o600);
+      else if (fs.statSync(this.config.path).mode & 0o077) fs.chmodSync(this.config.path, 0o600);
+    } catch (e) {
+      this.home.logger.warn(`couldn't secure ${this.config.path}: ${(e as Error).message}`);
+    }
+    return opened;
+  }
+
+  private sealed(value: Record<string, unknown>, cipher: SecretCipher | null): unknown {
+    return mapSecrets(value, (secret, at) => {
+      if (!secret) return this.unopened.get(at) ?? secret;
+      this.unopened.delete(at);
+      return cipher ? SEALED + cipher.encrypt(secret).toString("base64") : secret;
+    });
+  }
+
+  private persistMachine(): void {
+    writeJson(this.config.path, this.sealed(this.stored, this.secretStorage() === "keychain" ? this.config.cipher! : null), 0o600);
   }
 
   /** The user-scope file as another machine may have written it, folded in: the later stamp wins per section. */

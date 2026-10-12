@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { StorageProviderView, SyncState } from "@tomradex/storage";
+import type { StorageInfo, StorageProviderView, SyncState } from "@tomradex/storage";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
@@ -44,6 +44,13 @@ function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: str
 const NAMESPACE_LABEL: Partial<Record<string, MessageKey>> = { agent: "storageBlock.exportAgent", code_link: "storageBlock.exportCodeLink" };
 /** A namespace nobody named yet still reads as words, not an identifier. */
 const humanize = (namespace: string) => namespace.replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+const useNamespaceLabel = () => {
+  const { t } = useI18n();
+  return (namespace: string) => {
+    const key = NAMESPACE_LABEL[namespace];
+    return key ? t(key) : humanize(namespace);
+  };
+};
 
 /**
  * The project's folder is the truth; this block says where it is, who drives
@@ -53,6 +60,7 @@ const humanize = (namespace: string) => namespace.replace(/[_-]+/g, " ").replace
 export function StorageBlock({ projectId }: { projectId: string }) {
   const { t, tx } = useI18n();
   const STATE = stateOf(t);
+  const labelOf = useNamespaceLabel();
   const info = useStorageInfo(projectId);
   const status = useStorageStatus(projectId);
   const setFolder = useSetFolder(projectId);
@@ -100,6 +108,9 @@ export function StorageBlock({ projectId }: { projectId: string }) {
     const next = on ? [...new Set([...current, namespace])] : current.filter((n) => n !== namespace);
     setExports.mutate(next, { onError: (error) => toast({ body: message(error) }) });
   };
+  const closed = info.data?.visibility === "public";
+  const privates = (info.data?.exportable ?? []).filter((e) => e.private);
+  const privateTicked = privates.filter((e) => info.data!.exports.includes(e.namespace));
 
   return (
     <div className="storage-block project-settings-body">
@@ -147,7 +158,12 @@ export function StorageBlock({ projectId }: { projectId: string }) {
       </div>
 
       {/* ── the remote ────────────────────────────────────────────────── */}
-      {dir && (git === "shared" ? <SharedRemoteNote /> : <RemoteSection projectId={projectId} bound={info.data?.remote ?? null} location={status.data?.location ?? null} disabled={busy} />)}
+      {dir &&
+        (git === "shared" ? (
+          <SharedRemoteNote />
+        ) : (
+          <RemoteSection projectId={projectId} bound={info.data?.remote ?? null} location={status.data?.location ?? null} disabled={busy} info={info.data ?? null} onToggle={toggleExport} />
+        ))}
 
       {/* ── what travels ──────────────────────────────────────────────── */}
       {(info.data?.exportable.length ?? 0) > 0 && (
@@ -156,11 +172,12 @@ export function StorageBlock({ projectId }: { projectId: string }) {
           <div className="stack-2" style={{ marginTop: "var(--space-2)" }}>
             {info.data!.exportable.map((entry) => {
               const on = info.data!.exports.includes(entry.namespace);
-              const key = NAMESPACE_LABEL[entry.namespace];
+              // A public remote never gets a private namespace, so it is not a choice there.
+              const locked = busy || (entry.private && closed);
               return (
-                <label key={entry.namespace} className="cfg-row stg-export" style={{ cursor: busy ? "default" : "pointer" }} data-namespace={entry.namespace}>
-                  <input type="checkbox" checked={on} disabled={busy} onChange={(e) => toggleExport(entry.namespace, e.target.checked)} />
-                  <span className="cfg-name">{key ? t(key) : humanize(entry.namespace)}</span>
+                <label key={entry.namespace} className="cfg-row stg-export" style={{ cursor: locked ? "default" : "pointer" }} data-namespace={entry.namespace}>
+                  <input type="checkbox" checked={on} disabled={locked} onChange={(e) => toggleExport(entry.namespace, e.target.checked)} />
+                  <span className="cfg-name">{labelOf(entry.namespace)}</span>
                   <span className="meta-txt num">{entry.tables.length}</span>
                 </label>
               );
@@ -169,6 +186,18 @@ export function StorageBlock({ projectId }: { projectId: string }) {
           <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
             {git === "shared" ? t("storageBlock.travelsNoteShared") : t("storageBlock.travelsNote")}
           </p>
+          {closed && privates.length > 0 ? (
+            <p className="meta-txt dense stg-private-note" data-visibility="public" style={{ marginTop: "var(--space-2)" }}>
+              {t("storageBlock.travelsPublicNote", { what: privates.map((e) => labelOf(e.namespace)).join(", ") })}
+            </p>
+          ) : (
+            git !== "none" &&
+            privateTicked.length > 0 && (
+              <p className="meta-txt dense stg-private-note" style={{ marginTop: "var(--space-2)" }}>
+                {t("storageBlock.travelsPrivateNote", { what: privateTicked.map((e) => labelOf(e.namespace)).join(", ") })}
+              </p>
+            )
+          )}
         </div>
       )}
 
@@ -238,14 +267,20 @@ function RemoteSection({
   projectId,
   bound,
   location,
-  disabled
+  disabled,
+  info,
+  onToggle
 }: {
   projectId: string;
   bound: { provider: string; config: Record<string, unknown> } | null;
   location: string | null;
   disabled: boolean;
+  info: StorageInfo | null;
+  onToggle: (namespace: string, on: boolean) => void;
 }) {
   const { t, tx } = useI18n();
+  const labelOf = useNamespaceLabel();
+  const privates = (info?.exportable ?? []).filter((e) => e.private);
   const providers = useStorageProviders();
   const bind = useBindStorage(projectId);
   const unbind = useUnbindStorage(projectId);
@@ -312,6 +347,14 @@ function RemoteSection({
           <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
             {t("storageBlock.remoteBoundNote")}
           </p>
+          {info?.visibility === "public" && privates.length > 0 && (
+            <div className="dangerbar stg-public" style={{ marginTop: "var(--space-3)" }}>
+              <Icon className="b-mark" name="i-warn" size={15} />
+              <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
+                {t("storageBlock.travelsPublicNote", { what: privates.map((e) => labelOf(e.namespace)).join(", ") })}
+              </p>
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -346,6 +389,16 @@ function RemoteSection({
                   />
                 ))}
                 {provider.connection && <p className="meta-txt dense">{t("storageBlock.travelWithProjectNote")}</p>}
+                {/* Said before anything is pushed: conversations go too, unless unticked here. */}
+                {privates.map((entry) => (
+                  <div key={entry.namespace} className="stack-1 stg-include" data-namespace={entry.namespace}>
+                    <label className="cfg-row" style={{ cursor: busy ? "default" : "pointer" }}>
+                      <input type="checkbox" checked={info!.exports.includes(entry.namespace)} disabled={busy} onChange={(e) => onToggle(entry.namespace, e.target.checked)} />
+                      <span className="cfg-name">{t("storageBlock.includePrivate", { what: labelOf(entry.namespace) })}</span>
+                    </label>
+                    <p className="meta-txt dense">{t("storageBlock.includePrivateNote")}</p>
+                  </div>
+                ))}
               </div>
             </>
           )}

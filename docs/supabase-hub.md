@@ -195,6 +195,29 @@ The desktop rejects secret/service-role keys and remote HTTP URLs. Sessions are
 never sent to the renderer or stored as plaintext JSON. If the OS keychain is
 unavailable (including Linux `basic_text`), secure persistence fails explicitly.
 
+## Deleting an account
+
+Settings → Hub → **Delete account…** deletes the signed-in account once its
+password checks out. It calls `public.tomrade_delete_account()` from
+`supabase/migrations/202610120001_delete_account.sql`, which prod gets only
+when you run `supabase db push` yourself. Push it before releasing an app
+that has the button: until then, deletion fails with PostgREST's PGRST202
+(function not found).
+
+- The function deletes the caller's `auth.users` row. The Hub tables, the
+  publisher profile and reports cascade; `auth.sessions` and identities go
+  with the user.
+- Plugins the person published stay listed; their `owner_id` and
+  `submitted_by` become null. Storage refuses to delete a user who still owns
+  objects, so their package files are handed to no one first
+  (`owner`/`owner_id` set to null) and keep being served.
+- An access token already issued stays valid until it expires. The app drops
+  its own copy right away.
+- On the machine, the stored session is removed and `hub-cloud.json` is reset
+  to an unowned local Hub. The account's entry leaves `accounts.json`.
+  Project folders stay. The next account to sign in there takes them over, as
+  on a first run.
+
 ## Verification
 
 `pnpm test` includes the real migration executed in PGlite's PostgreSQL runtime:
@@ -205,3 +228,29 @@ encrypted-session adapter has its own persistence tests.
 
 These checks do not replace live Auth/email testing or application of the
 migration to the deployment. No live project is touched by the test suite.
+
+## Auth log retention
+
+Supabase Auth writes a row to `auth.audit_log_entries` for every sign-in,
+sign-out, token refresh and password change, including the IP address. Its own
+cleanup removes revoked refresh tokens and expired sessions, but nothing ever
+removes audit rows. `supabase/migrations/202610120002_auth_audit_retention.sql`
+enables `pg_cron` and schedules the job `tomrade-auth-audit-retention` daily at
+03:17 UTC. The job deletes audit rows older than 90 days, the period the
+privacy policy states.
+
+- **Apply:** run `supabase db push` with the other migrations (see
+  [Configure a deployment](#configure-a-deployment)). Applying it twice still
+  leaves one job.
+- **Verify:** in the SQL Editor, run
+  `select jobname, schedule, username, command from cron.job;`. After 03:17 UTC,
+  check
+  `select status, return_message from cron.job_run_details order by start_time desc limit 1;`.
+  It should show `succeeded` and `DELETE <n>`.
+- **Why it works:** after Supabase's April 2025 restrictions, `postgres` still
+  holds DELETE on auth tables; only `auth.schema_migrations` was revoked. A job
+  runs as the role that scheduled it.
+- **The alternative:** Authentication → Configuration → Audit Logs → turn off
+  writing audit logs to the database. Then the only copy is the dashboard's log
+  storage, which keeps auth audit logs for 1 hour on Free, 7 days on Pro and
+  28 days on Team. That is too short to look into abuse on Free.

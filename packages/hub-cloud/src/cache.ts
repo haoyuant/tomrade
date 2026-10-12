@@ -20,7 +20,9 @@ const State = z.object({
   records: z.array(RecordSchema), outbox: z.array(MutationSchema),
   observed: z.record(z.string(), z.string()), conflicts: z.array(RecordSchema),
   migrated: z.boolean(), lastSyncAt: z.number().nullable(),
-  offlineAccess: z.boolean().default(false)
+  offlineAccess: z.boolean().default(false),
+  /** The terms version agreed to here, kept until the account carries it too. */
+  terms: z.string().nullable().default(null)
 });
 export type CacheState = z.infer<typeof State>;
 export const recordKey = (r: { kind: Kind; key: string }) => `${r.kind}:${r.key}`;
@@ -31,14 +33,21 @@ function canonical(v: unknown): unknown {
   return v;
 }
 
+const empty = (endpoint: string): CacheState => ({
+  v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, terms: null
+});
+
 /** A durable outbox, outside the disposable SQLite caches. No credentials or project rows. */
 export class CloudCache {
   data: CacheState;
-  constructor(private readonly file: string, endpoint: string) {
-    this.data = fs.existsSync(file) ? State.parse(JSON.parse(fs.readFileSync(file, "utf8"))) : {
-      v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false
-    };
+  constructor(private readonly file: string, private readonly endpoint: string) {
+    this.data = fs.existsSync(file) ? State.parse(JSON.parse(fs.readFileSync(file, "utf8"))) : empty(endpoint);
     if (this.data.endpoint !== endpoint) throw new Error("This local Hub belongs to another Supabase project. Use a separate TOMRADE_USER_DATA directory.");
+  }
+  /** The account is gone: this local Hub belongs to nobody, and the next account starts it afresh from what is on this machine. */
+  release(): void {
+    this.data = empty(this.endpoint);
+    this.save();
   }
   save(): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });

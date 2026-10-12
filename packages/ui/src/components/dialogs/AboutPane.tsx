@@ -3,11 +3,10 @@ import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
+import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
-
-const SITE = "https://tomrade.com";
 
 /** Plain text, the way a bug report wants it: one fact per line, nothing localized. */
 function details(info: AboutInfo): string {
@@ -27,7 +26,7 @@ export function AboutPane() {
   const updates = useUpdateStatus();
   const info = about.data;
   const date = (iso: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
-  const site = locale === "zh" ? `${SITE}/zh/` : `${SITE}/`;
+  const site = siteUrl(locale);
 
   const copy = () => info && void navigator.clipboard?.writeText(details(info)).then(() => toast({ body: t("about.copied") }));
 
@@ -125,6 +124,12 @@ export function AboutPane() {
         <button type="button" className="btn btn-ghost" onClick={() => openExternal(`${site}download/`)}>
           <Icon name="i-download" size={13} />
           {t("about.downloads")}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => openExternal(legalUrl("terms", locale))}>
+          {t("legal.terms")}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => openExternal(legalUrl("privacy", locale))}>
+          {t("legal.privacy")}
         </button>
       </div>
       <p className="meta-txt about-license">

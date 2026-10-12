@@ -51,6 +51,8 @@ export function investigationTools(host: InvestigationHost) {
     defineTool({
       name: "doctor_read_log",
       surface: "doctor",
+      // Nothing of the person's setup or work changes, so an MCP agent may call it without asking.
+      readOnly: true,
       title: "Read a log the troubleshooter may read",
       description: "Read more of a log that belongs to this troubleshooting: Tomrade's own, or the failing agent's. Without `source` it lists the sources. Keys, the home folder and email addresses come back masked.",
       input: z.object({ source: z.string().optional(), lines: z.number().int().min(10).max(LOG_LINES).optional() }),
@@ -67,6 +69,7 @@ export function investigationTools(host: InvestigationHost) {
     defineTool({
       name: "doctor_check_again",
       surface: "doctor",
+      readOnly: true,
       title: "Run the troubleshooting checks again",
       description: "Check everything again — the agent, its sign-in, the models, a real test turn — and get the results. Takes up to a minute and a half; use it to see whether something changed.",
       input: z.object({}),
@@ -79,6 +82,7 @@ export function investigationTools(host: InvestigationHost) {
     defineTool({
       name: "doctor_conclude",
       surface: "doctor",
+      readOnly: true,
       title: "Say what the problem is",
       description: "Record what you found: the cause, why, how sure you are, and which buttons to offer the person. Call it once, when you know enough; then tell the person the same in two or three short sentences.",
       input: Conclusion,

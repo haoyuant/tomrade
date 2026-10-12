@@ -123,8 +123,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       input: z.object({ text: z.string().min(1).max(280), key: z.string().optional(), projectId: z.string().optional() }),
       execute: (args, inv) => {
         const projectId = requireProjectId("note_progress", args.projectId, inv);
-        const { item, session } = subject("note_progress", projectId, args.key, inv);
-        if (!session) throw new Error(`note_progress: no live coding session on ${item.key}`);
+        const { item, session: bound } = subject("note_progress", projectId, args.key, inv);
+        // A terminal session with hooks but no token is found by the ticket it claimed.
+        const session = bound ?? host.store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.threadId === null) ?? null;
+        if (!session) throw new Error(`note_progress: Tomrade is not tracking a session on ${item.key} — skip the note`);
         host.noteProgress(projectId, session.id, args.text.trim());
         return { ok: true, key: item.key };
       }
@@ -204,6 +206,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       description:
         "The cross-cutting decisions on record for this project (stack, state management, routing, persistence, deployment…), from .tomrade/docs/decisions/. Pass `area` to ask whether one area is settled — the pre-flight before touching it.",
       input: z.object({ area: z.string().optional(), projectId: z.string().optional() }),
+      readOnly: true,
       execute: ({ area, projectId: given }, inv) => {
         const projectId = requireProjectId("list_decisions", given, inv);
         const decisions = listDecisions(decisionsRoot("list_decisions", projectId));

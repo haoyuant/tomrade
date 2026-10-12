@@ -91,6 +91,14 @@ export class AccountFolders {
     return known ? known.folder : this.name(registry, user.email);
   }
 
+  /** A deleted account owns no folder any more; whoever signs in there next takes it. */
+  forget(userId: string): void {
+    const registry = this.read();
+    if (!registry.accounts[userId]) return;
+    delete registry.accounts[userId];
+    this.write(registry);
+  }
+
   /** Open `folder` at the next start, as the user's. */
   activate(user: { id: string; email: string }, folder: string | null): void {
     const registry = this.read();

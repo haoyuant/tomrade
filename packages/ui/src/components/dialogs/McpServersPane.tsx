@@ -5,6 +5,7 @@ import { SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useMcpServers, useParseMcpConfig, useReconnectMcpServer, useTestMcpServer } from "~/lib/mcpClient";
 import { useSaveSettings, useSettings } from "~/lib/queries";
+import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { cn } from "~/lib/utils";
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,23}$/;
@@ -95,6 +96,7 @@ function ServerForm({ initial, taken, busy, onSave, onCancel }: { initial?: McpS
         <input id={`mcp-${key}`} className="input mono" placeholder={placeholder} value={draft[key] as string} onChange={(e) => set({ [key]: e.target.value })} />
       )}
       {hint && <span className="meta-txt">{t(hint)}</span>}
+      {(key === "env" || key === "headers") && <PlainSecretNote />}
     </div>
   );
   return (

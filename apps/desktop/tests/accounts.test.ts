@@ -60,3 +60,17 @@ it("lets a folder belong to one account at a time", () => {
   expect(folders.elsewhere(ada.id, "x")).toBe(false);
   expect(folders.folderFor(ada)).not.toBeNull();
 });
+
+it("forgets a deleted account, so its folder goes to whoever signs in there next", () => {
+  const { folders } = machine();
+  folders.claim(ada, null);
+  const folder = folders.folderFor(bea);
+  folders.activate(bea, folder);
+  folders.forget(bea.id);
+  expect(folders.elsewhere(bea.id, null)).toBe(false);
+  expect(folders.active).toBe(folder);
+  expect(folders.folderFor(ada)).toBeNull();
+  folders.forget(ada.id);
+  folders.claim(bea, null);
+  expect(folders.folderFor(bea)).toBeNull();
+});

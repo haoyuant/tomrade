@@ -137,6 +137,8 @@ export interface ExportOptions {
   at?: number;
   /** `<namespace>/<table>` this machine has never seen: left out, so an empty copy here never stands in for the real one elsewhere. */
   withhold?: string[];
+  /** Tables of plugins not registered here, as the folder last had them: written back unchanged rather than dropped. */
+  carry?: ProjectState["plugins"];
 }
 
 export function exportState(db: StateDb, projectId: string, opts: ExportOptions = {}): ProjectState {
@@ -165,6 +167,9 @@ export function exportState(db: StateDb, projectId: string, opts: ExportOptions 
       const rows = db.prepare(`SELECT ${columns.join(", ")} FROM ${table} ORDER BY ${spec.export.order}`).all() as Record<string, unknown>[];
       (plugins[reg.namespace] ??= {})[table] = rows.map((r) => pick(r, columns));
     }
+  }
+  for (const [namespace, byTable] of Object.entries(opts.carry ?? {})) {
+    if (!plugins[namespace] && Object.keys(byTable).length) plugins[namespace] = byTable;
   }
   const manifest: ProjectManifest = {
     v: 2,
@@ -439,7 +444,12 @@ export function readClone(dir: string): { state: ProjectState; fill: Map<string,
  * through `write()` and lands no oplog rows. Plugin tables named in the
  * artifact are replaced too; those the artifact lacks are left alone.
  */
-export function importState(db: StateDb, state: ProjectState, opts: { registrations?: PluginRegistration[] } = {}): void {
+/**
+ * `additive`: namespaces whose rows join this machine's instead of replacing
+ * them — ones that did not travel here until now, so what is only here is not
+ * a deletion.
+ */
+export function importState(db: StateDb, state: ProjectState, opts: { registrations?: PluginRegistration[]; additive?: string[] } = {}): void {
   const projectId = projectIdOf(state);
   db.transaction(() => {
     // Each sweep scopes through a table a later one empties, so dependents go first.
@@ -481,27 +491,36 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
     // The counter is derived, never merged: past every key anyone has minted, and never below where it was.
     db.prepare("UPDATE projects SET next_key_num = MAX(next_key_num, COALESCE((SELECT MAX(key_num) FROM items WHERE project_id = @projectId), 0) + 1) WHERE id = @projectId").run({ projectId });
 
-    const declared = new Map((opts.registrations ?? []).filter((r) => r.scope === "project").map((r) => [r.namespace, r]));
-    for (const [ns, tables] of Object.entries(state.plugins ?? {})) {
-      const reg = declared.get(ns);
-      if (!reg) continue; // a plugin this machine lacks: its files ride along untouched
-      for (const [table, rows] of Object.entries(tables)) {
-        // A table can become machine-local in a newer plugin version. An old
-        // artifact may still name it; its stale copy must never replace this
-        // machine's live state.
-        if (!reg.tables[table]?.export) continue;
-        let columns: string[];
-        try {
-          columns = columnsOf(db, table);
-        } catch {
-          continue;
-        }
-        db.prepare(`DELETE FROM ${table}`).run();
-        if (!rows.length) continue;
-        const cols = columns.filter((c) => rows.some((r) => c in r));
-        const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((c) => `@${c}`).join(", ")})`);
-        for (const row of rows) stmt.run(pick(row, cols));
-      }
-    }
+    writePlugins(db, state.plugins ?? {}, opts.registrations ?? [], opts.additive ?? []);
   });
+}
+
+/** Replace the tables of the plugins registered here with the given rows; the rest are not this machine's to read. */
+export function importPlugins(db: StateDb, plugins: ProjectState["plugins"], registrations: PluginRegistration[]): void {
+  db.transaction(() => writePlugins(db, plugins, registrations));
+}
+
+function writePlugins(db: StateDb, plugins: ProjectState["plugins"], registrations: PluginRegistration[], additive: string[] = []): void {
+  const declared = new Map(registrations.filter((r) => r.scope === "project").map((r) => [r.namespace, r]));
+  for (const [ns, tables] of Object.entries(plugins ?? {})) {
+    const reg = declared.get(ns);
+    if (!reg) continue; // a plugin this machine lacks: its files ride along untouched
+    for (const [table, rows] of Object.entries(tables)) {
+      // A table can become machine-local in a newer plugin version. An old
+      // artifact may still name it; its stale copy must never replace this
+      // machine's live state.
+      if (!reg.tables[table]?.export) continue;
+      let columns: string[];
+      try {
+        columns = columnsOf(db, table);
+      } catch {
+        continue;
+      }
+      if (!additive.includes(ns)) db.prepare(`DELETE FROM ${table}`).run();
+      if (!rows.length) continue;
+      const cols = columns.filter((c) => rows.some((r) => c in r));
+      const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((c) => `@${c}`).join(", ")})`);
+      for (const row of rows) stmt.run(pick(row, cols));
+    }
+  }
 }

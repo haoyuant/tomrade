@@ -20,8 +20,11 @@ export interface PluginTableSpec {
    * data about it — a binding every machine needs before it can do anything —
    * so they travel whether or not the user ticked the namespace, even inside
    * a code checkout, and the namespace is not offered as a choice.
+   * `private` is for rows meant only for the people the project is shared
+   * with — conversations, say: their namespace never travels to a remote
+   * known to be public. Not for `always` tables.
    */
-  export: { order: string; appendOnly?: boolean; always?: boolean } | false;
+  export: { order: string; appendOnly?: boolean; always?: boolean; private?: boolean } | false;
 }
 
 export type PluginScope = "project" | "hub";
