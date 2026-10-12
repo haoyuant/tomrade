@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
 import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
@@ -5,6 +8,8 @@ import type {} from "@tomradex/llm";
 import { CodexOptions, createCodexCliEngine, migrateLegacyModel } from "./legacy.js";
 import { CodexRuntime } from "./app-server.js";
 import { codexLentModel } from "./lend.js";
+
+const codexHome = () => process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
 
 export function createCodexEngine(ctx: Context): Engine {
   const baseline = createCodexCliEngine(ctx);
@@ -17,6 +22,16 @@ export function createCodexEngine(ctx: Context): Engine {
       { value: "full-access", label: "Full access" }, { value: "workspace", label: "Workspace" },
       { value: "read-only", label: "Read only" }, { value: "local", label: "Local rules" }
     ] },
+    diagnostics: {
+      // Codex writes its own log under CODEX_HOME; config.toml says which model and provider it was told to use.
+      logs: () => ["codex-tui.log", "codex-login.log"].map((name) => path.join(codexHome(), "log", name)).filter((file) => fs.existsSync(file)),
+      facts: () => {
+        let config = "";
+        try { config = fs.readFileSync(path.join(codexHome(), "config.toml"), "utf8"); } catch {}
+        const value = (key: string) => new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, "m").exec(config)?.[1];
+        return { model: value("model") ?? "default", provider: value("model_provider") ?? "default" };
+      }
+    },
     async turn(input, io) {
       const options = CodexOptions.parse(input.options ?? {});
       if (options.transport === "cli") return baseline.turn(input, io);

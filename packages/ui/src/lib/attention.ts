@@ -37,11 +37,11 @@ export function useAttention(): AttentionEntry[] {
 }
 
 // A clicked notification may name another project: it waits here until that project's shell mounts.
-let waiting: AttentionEntry | null = null;
+let waiting: Pick<AttentionEntry, "projectId" | "threadId" | "itemId"> | null = null;
 const listeners = new Set<() => void>();
 
 /** The entry a clicked notification asked to show, once, if it belongs to this project. */
-export function takeOpenRequest(projectId: string): AttentionEntry | null {
+export function takeOpenRequest(projectId: string): Pick<AttentionEntry, "projectId" | "threadId" | "itemId"> | null {
   if (waiting?.projectId !== projectId) return null;
   const entry = waiting;
   waiting = null;
@@ -54,10 +54,10 @@ export function onOpenRequest(listener: () => void): () => void {
 }
 
 /** Brings up the entry's project, whose shell then opens the conversation (or the ticket). */
-export function useOpenAttention(): (entry: AttentionEntry) => void {
+export function useOpenAttention(): (entry: Pick<AttentionEntry, "projectId" | "threadId" | "itemId">) => void {
   const navigate = useNavigate();
   return useCallback(
-    (entry: AttentionEntry) => {
+    (entry: Pick<AttentionEntry, "projectId" | "threadId" | "itemId">) => {
       waiting = entry;
       if (!window.location.hash.startsWith(`#/p/${entry.projectId}`)) void navigate({ to: "/p/$projectId", params: { projectId: entry.projectId } });
       for (const listener of listeners) listener();

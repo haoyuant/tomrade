@@ -684,6 +684,52 @@ emits `agent/limit-lifted` so the person can be told. Whoever continues the
 thread first ends the wait; `ctx.agent.park()` / `unpark()` let a plugin do
 the same for work Tomrade cannot type into, such as a terminal session.
 
+### The troubleshooter
+
+`@tomradex/doctor` (`ctx.doctor`) looks into a failure when someone asks it to.
+They ask from **Troubleshoot** under a failed turn, from the bottom bar, or
+from the palette. Its own engine, `doctor`, runs the troubleshooting threads
+(`surface: "doctor"`, listed in the panel beside the assistant's). The engine
+declares no capabilities, and an engine with none conducts only the threads its
+plugin opens, so no picker, Start dialog or setup check counts it.
+
+Each turn does these things in order:
+
+- It runs the checks and posts a `checklist` card (`ChecklistCard`), which the
+  panel redraws as each row settles.
+- It runs one real **test turn** on the failing engine, in a `probe` thread
+  that nobody sees and that is deleted afterwards.
+- It matches the known issues against what it found.
+- It ends with `finding` cards (`FindingCard`): a headline, how sure it is,
+  and `CardAction` buttons — `install`, `sign-in`, `settings`, `retry-with`
+  (move a thread to another ready agent and send its last message again),
+  `say` and `report`. The backend writes every label; the panel knows the
+  verbs, so a plugin never ships UI for them.
+
+An engine tells the troubleshooter about itself through
+`Engine.diagnostics`. Only these are read; no agent gets any other file.
+
+- `logs()`: the agent's own log files, newest first. A report carries their tail.
+- `facts()`: short strings that tell one setup from another (edition, endpoint,
+  models offered). An ACP agent declares them on its `AcpAgent`, and the
+  conductor adds the models it offers.
+
+A plugin adds its own checks with `ctx.doctor.check({ id, title, applies?, run })`
+and known problems with `ctx.doctor.issue(KnownIssue)`.
+
+A known issue is data only. It is matched by engine, by a pattern in the
+error, or by a fact. It has a `fixedIn` release, from which it stops matching.
+What it offers can only name the verbs above, so a catalog fetched later can
+explain and point, but never run anything.
+
+`ctx.doctor.report()` builds the text the person reads, section by section,
+before anything is sent. Keys, the home folder's name and email addresses are
+masked, and the failed conversation is left out unless ticked.
+`ctx.doctor.send()` writes the report to the outbox first, then submits it
+through the signed-in account (`tomrade_submit_diagnostic_report`). A report
+that can't go now is retried while the app runs. The maintainer reads the
+reports with `tomrade-store diag`.
+
 ## Events
 
 Events are the policy layer. `emit` announces; `waterfall` decides — a listener
@@ -1395,7 +1441,10 @@ that takes longer than two seconds is left out too — commands get a minute.
 Commands appear in the palette under their group and run in the main process
 with the current `{ projectId, boardId, viewId, itemId }`. Badges are computed
 on every board refresh over the project's items. Status items render in the
-status bar; sections in the detail pane and the issue sheet. Registering or
+status bar; one that names a `command` runs it when clicked, its result
+handled as the palette handles it (a `showThread` with a `projectId` opens that
+project first, so it works from the projects home too); sections in the
+detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
 refetches. A section row may carry `href` — its value opens that link in the
 browser — or `command`, the id of a palette command the value runs with the

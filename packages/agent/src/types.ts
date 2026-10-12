@@ -40,7 +40,45 @@ export interface ThreadMessage {
   at: number;
 }
 
-export type ThreadSurface = "assistant" | "code";
+/**
+ * Who owns a thread. `doctor`: a troubleshooting conversation, listed in the
+ * panel beside the assistant's. `probe`: a one-turn test the troubleshooter
+ * runs on an engine and deletes, never listed.
+ */
+export type ThreadSurface = "assistant" | "code" | "doctor" | "probe";
+
+/** The threads the assistant panel lists. */
+export const PANEL_SURFACES: ThreadSurface[] = ["assistant", "doctor"];
+
+/** A `checklist` card: what was looked at, each row's state as it goes. */
+export interface ChecklistCard {
+  rows: { id: string; title: string; state: "pending" | "running" | "ok" | "warn" | "fail" | "skip"; line?: string }[];
+}
+
+/**
+ * What a person can do about a finding, drawn as a button. The backend words
+ * the label; the panel knows the verbs, so no plugin ships UI code for them.
+ */
+export type CardAction =
+  /** Runs the engine's declared install or sign-in command in a terminal. */
+  | { kind: "install" | "sign-in"; engineId: string; label: string }
+  /** Opens settings: the engine's own row, or model settings without one. */
+  | { kind: "settings"; engineId?: string; label: string }
+  /** Moves that thread to another ready agent and sends its last message again. */
+  | { kind: "retry-with"; threadId: string; exclude?: string; label: string }
+  /** Says this in the card's own thread. */
+  | { kind: "say"; text: string; label: string }
+  /** Opens the report about this thread, to read and send to Tomrade's developer. */
+  | { kind: "report"; label: string };
+
+/** A `finding` card: one thing found, how sure, and what to do about it. */
+export interface FindingCard {
+  tone: "ok" | "warn" | "fail";
+  headline: string;
+  body?: string;
+  confidence?: "high" | "medium" | "low";
+  actions: CardAction[];
+}
 
 export interface ThreadSummary {
   execution?: GeneralExecution | null;
@@ -379,7 +417,20 @@ export interface Engine {
   terminalOnly?: boolean;
   /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
   usesModels?: boolean;
+  /** What the troubleshooter may read about this engine beyond `available()`. */
+  diagnostics?: EngineDiagnostics;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
+}
+
+/**
+ * An engine's own evidence, for the troubleshooter and a report. Only what is
+ * named here is read: an agent investigating a failure gets no other files.
+ */
+export interface EngineDiagnostics {
+  /** The agent's own log files, newest first; their tails go into a report. */
+  logs?(): string[] | Promise<string[]>;
+  /** Short facts that tell one setup from another — edition, endpoint, models offered. */
+  facts?(): Record<string, string> | Promise<Record<string, string>>;
 }
 
 /** One quick-pick knob: "model" and "effort" keys get localized group labels; other keys show `title`. */

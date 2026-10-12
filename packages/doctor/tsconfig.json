@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../agent" },
+    { "path": "../contributions" },
+    { "path": "../ipc" },
+    { "path": "../llm" },
+    { "path": "../mcp" },
+    { "path": "../projects" },
+    { "path": "../settings" }
+  ]
+}

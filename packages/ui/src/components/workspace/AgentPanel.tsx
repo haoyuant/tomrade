@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AgentSettings, Block, EnginePick, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
+import type { AgentSettings, Block, CardAction, CardView, ChecklistCard, EnginePick, EngineView, FindingCard, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import { modelErrorKind, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
@@ -13,12 +13,15 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
+import { conducts, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
 import { permissionLabel as permissionName } from "~/lib/codeLink";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
+import { useErrorToast, useToast } from "~/lib/toast";
+import { ReportDialog } from "~/components/dialogs/ReportDialog";
+import { ChecklistBlock, FindingBlock } from "./DoctorCards";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -246,7 +249,7 @@ function RunMetrics({ run }: { run: RunView | undefined }) {
  * or settings for an agent with an account of its own. Meanwhile another ready
  * agent can take the same message, so a broken one never leaves the person stuck.
  */
-function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, onRetryWith }: {
+function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, onRetryWith, onTroubleshoot }: {
   text: string;
   details?: string;
   /** The engine whose turn failed, when the run says. */
@@ -256,6 +259,8 @@ function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, on
   onOpenSettings: (engineId?: string) => void;
   onRetry?: () => void;
   onRetryWith?: (engineId: string) => void;
+  /** Opens a troubleshooting thread about this failure. */
+  onTroubleshoot?: () => void;
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -283,8 +288,13 @@ function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, on
           </button>
         </details>
       )}
-      {(fixable || onRetry || retryWith) && (
+      {(fixable || onRetry || retryWith || onTroubleshoot) && (
         <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+          {onTroubleshoot && (
+            <button type="button" className="btn btn-ghost" onClick={onTroubleshoot}>
+              <Icon name="i-bug" size={12} /> {t("agentPanel.troubleshoot")}
+            </button>
+          )}
           {fixable && !own && (
             <button type="button" className="btn btn-ghost" onClick={() => onOpenSettings()}>
               {t("agentPanel.openModelSettings")}
@@ -327,7 +337,7 @@ function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, on
 
 const TranscriptRow = memo(Row);
 
-function Row({ projectId, m, runs, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; busy: boolean; hint?: boolean }) {
+function Row({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -358,6 +368,11 @@ function Row({ projectId, m, runs, engines, retryEngines, pending, byKey, onOpen
       <Trace block={b} />
     ) : b.type === "question" ? (
       <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} />
+    ) : b.type === "card" && b.schema === "checklist" ? (
+      // the stream holds the card as it was first posted; the live one ticks as checks finish
+      <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />
+    ) : b.type === "card" && b.schema === "finding" ? (
+      <FindingBlock card={b.data as FindingCard} engines={retryEngines} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
@@ -371,6 +386,7 @@ function Row({ projectId, m, runs, engines, retryEngines, pending, byKey, onOpen
         onOpenSettings={onOpenSettings}
         onRetry={onRetry}
         onRetryWith={onRetryWith}
+        onTroubleshoot={onTroubleshoot}
       />
     ) : b.type === "status" ? (
       <p className="ai-pending">{b.text}</p>
@@ -484,6 +500,10 @@ export function AgentPanel({
   const pending = detail.data?.pending ?? null;
   // Stable between renders, so a streamed reply re-renders its own line and not every row above it.
   const runs = useMemo(() => new Map((detail.data?.runs ?? []).map((r) => [r.id, r])), [detail.data?.runs]);
+  const cards = useMemo(() => new Map((detail.data?.cards ?? []).map((c) => [c.id, c])), [detail.data?.cards]);
+  // A troubleshooting thread runs on the troubleshooter's own engine; a new thread from it goes back to the default.
+  const doctorThread = detail.data?.thread.surface === "doctor";
+  const [reportFor, setReportFor] = useState<string | null>(null);
   const byKey = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.key, i])), [itemsQ.data]);
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
   // engine creates the thread right there instead of doing silently nothing.
@@ -501,7 +521,7 @@ export function AgentPanel({
     const choice = permissionModes?.choices.find((c) => c.value === value);
     return choice ? permissionName(t, choice) : value;
   };
-  const noEngineReady = engines.data ? !engines.data.some((e) => e.ok && !e.terminalOnly) : false;
+  const noEngineReady = engines.data ? !engines.data.some((e) => e.ok && !e.terminalOnly && conducts(e)) : false;
 
   // Quick picks: with a thread they are that thread's overrides (what Start chose), layered over the engine's
   // global options — the same knobs settings edits; without one they edit the global options a new thread would get.
@@ -515,7 +535,7 @@ export function AgentPanel({
   // resetting to the settings default. With no thread there is nothing to carry, so the chips' own
   // value (the default engine) is what the thread gets.
   const openThread = (args: { engine?: string; boardId?: string | null } = {}) =>
-    newThread.mutateAsync({ engine: args.engine ?? currentEngineId, boardId: args.boardId === undefined ? boardId : args.boardId, options: threadOptions });
+    newThread.mutateAsync({ engine: args.engine ?? (doctorThread ? defaultEngine : currentEngineId), boardId: args.boardId === undefined ? boardId : args.boardId, options: doctorThread ? {} : threadOptions });
   const chooseBoard = (next: string | null) => {
     if (busy || next === pickedBoardId) return;
     if (threadId) setWorkstream.mutate({ threadId, boardId: next });
@@ -674,6 +694,36 @@ export function AgentPanel({
   const answerRow = useCallback((questionId: string, value: string | string[]) => latest.current.doAnswer(questionId, value), []);
   const revertRow = useCallback((runId: string) => latest.current.revert(runId), []);
   const settingsRow = useCallback((engineId?: string) => latest.current.onOpenSettings(engineId), []);
+  const reportError = useErrorToast();
+  const toast = useToast();
+  const setupInTerminal = useSetupInTerminal();
+  // Only with the troubleshooter plugin on; it opens its own thread about the failure.
+  const canTroubleshoot = !!engines.data?.some((e) => e.id === "doctor") && !doctorThread;
+  const troubleshoot = (failedThread: string, runId: string | null) =>
+    void invoke("doctor.start", projectId, { threadId: failedThread, ...(runId ? { runId } : {}) }).then(({ threadId: id }) => pickThread(id), reportError);
+  // What a finding's buttons do: the backend worded them, the verbs are the panel's.
+  const cardAction = async (action: CardAction, inThread: string, engineId?: string) => {
+    try {
+      if (action.kind === "install" || action.kind === "sign-in") {
+        const started = await setupInTerminal.mutateAsync({ engineId: action.engineId, step: action.kind === "install" ? "install" : "signIn" });
+        toast({ body: started.launched ? t("doctor.inTerminal") : t("agentPanel.signInManual", { command: started.command }) });
+      } else if (action.kind === "settings") onOpenSettings(action.engineId);
+      else if (action.kind === "report") setReportFor(inThread);
+      else if (action.kind === "say") { if (!busy) await send.mutateAsync({ threadId: inThread, text: action.text }); }
+      else if (action.kind === "retry-with" && engineId) {
+        const target = await invoke("agent.thread", projectId, action.threadId);
+        const asked = [...target.messages].reverse().find((m) => m.role === "user" && m.block.type === "text")?.block;
+        await setEngine.mutateAsync({ threadId: action.threadId, engineId });
+        pickThread(action.threadId);
+        if (asked?.type === "text") await send.mutateAsync({ threadId: action.threadId, text: asked.text });
+      }
+    } catch (error) {
+      reportError(error);
+    }
+  };
+  const actions = useRef({ cardAction, troubleshoot });
+  actions.current = { cardAction, troubleshoot };
+  const cardActionRow = useCallback((action: CardAction, inThread: string, engineId?: string) => void actions.current.cardAction(action, inThread, engineId), []);
   // Another agent takes the failed message: the thread moves to it, then the message goes again.
   const retryWith = async (engineId: string) => {
     if (!threadId || !lastAsked || busy) return;
@@ -683,7 +733,7 @@ export function AgentPanel({
   // A ticket's coding thread stays with agents that can code.
   const needsCode = !!detail.data?.thread.itemId && !!engine?.capabilities.includes("code");
   const retryEngines = useMemo(
-    () => (engines.data ?? []).filter((e) => e.ok && !e.terminalOnly && (!needsCode || e.capabilities.includes("code"))),
+    () => (engines.data ?? []).filter((e) => e.ok && !e.terminalOnly && conducts(e) && (!needsCode || e.capabilities.includes("code"))),
     [engines.data, needsCode]
   );
 
@@ -850,6 +900,9 @@ export function AgentPanel({
             // only the newest failure, and only while nothing runs: try the last message again
             onRetry={m.id === lastErrorId && lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
             onRetryWith={m.id === lastErrorId && lastAsked && !busy && threadId ? (engineId) => void retryWith(engineId) : undefined}
+            onTroubleshoot={m.id === lastErrorId && canTroubleshoot && !busy ? () => actions.current.troubleshoot(m.threadId, m.runId) : undefined}
+            onCardAction={cardActionRow}
+            cards={cards}
             busy={busy}
             hint={m.id === lastChangesId}
           />
@@ -883,7 +936,7 @@ export function AgentPanel({
             ref={composer}
             className="ai-input"
             rows={1}
-            placeholder={pending ? t("agentPanel.answerPlaceholder") : t("agentPanel.messagePlaceholder")}
+            placeholder={pending ? t("agentPanel.answerPlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -994,6 +1047,10 @@ export function AgentPanel({
             />
             <MenuRadioItem checked={ctxMode === "off"} name={t("agentPanel.contextOff")} onSelect={() => setCtxMode("off")} />
           </Menu>
+          {doctorThread ? (
+            // the troubleshooter conducts its own threads; nothing to switch to here
+            <span className="tag" title={t("agentPanel.whoConducts")}>{engine?.title ?? currentEngineId}</span>
+          ) : (
           <Menu
             label={t("agentPanel.engineLabel")}
             align="end"
@@ -1009,7 +1066,7 @@ export function AgentPanel({
           >
             <MenuHead title={t("agentPanel.whoDoesWork")} />
             {/* An engine that is not set up, or fails its check, cannot conduct: it is greyed and leads to its Settings row. */}
-            {[...(engines.data ?? [])].filter((e) => !e.terminalOnly).sort((a, b) => Number(b.ok) - Number(a.ok)).map((e) => (
+            {[...(engines.data ?? [])].filter((e) => !e.terminalOnly && conducts(e)).sort((a, b) => Number(b.ok) - Number(a.ok)).map((e) => (
               <MenuRadioItem
                 key={e.id}
                 checked={e.id === currentEngineId}
@@ -1027,6 +1084,7 @@ export function AgentPanel({
             ))}
             <MenuActionItem icon={<Icon name="i-gear" size={13} />} name={t("agentPanel.manageModelsEngines")} onSelect={() => onOpenSettings()} />
           </Menu>
+          )}
           {permissionModes && (
             <Menu label={t("agentPanel.permissions")} align="end" trigger={
               <button type="button" className="tag chip-btn" aria-label={t("agentPanel.permissions")} disabled={setPermissionMode.isPending}>
@@ -1072,6 +1130,7 @@ export function AgentPanel({
           })}
         </div>
       </div>
+      <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>
   );
 }

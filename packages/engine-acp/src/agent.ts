@@ -68,6 +68,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   signIn?: string;
   /** A run that tells whether the agent can work yet; it may also fill in the model list. */
   probe?: { args: string[]; says(output: string, catalog: Catalog): boolean | null; reason: string; need?: EngineNeed };
+  /** The agent's own logs and setup facts, for the troubleshooter; the models it offers are added to the facts. */
+  diagnostics?: { logs?(): string[]; facts?(catalog: Catalog): Record<string, string> };
 }
 
 export const PERMISSION_CHOICES = {

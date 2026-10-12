@@ -328,6 +328,8 @@ export const attention = {
       if (event.type === "pending" || event.type === "done") schedule();
     });
     ctx.on("agent/run-ended", (run, thread) => {
+      // The troubleshooter's test turn: its thread is gone already, and nobody waits on it.
+      if (thread.surface === "probe") return;
       const who = thread.itemId ? engineTitle(thread.engine) : null;
       teller.ended(
         { key: `thread:${thread.id}`, projectId: thread.projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(thread.projectId, thread.itemId), who, text: null },

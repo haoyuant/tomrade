@@ -14,6 +14,8 @@ export interface CommandResult {
   toast?: string;
   /** A conversation the renderer should bring up in the assistant panel. */
   showThread?: string;
+  /** The project that conversation lives in, when the command ran without one (the projects home). */
+  projectId?: string;
   /** Starting the scoped ticket stopped on something the Start dialog can fix: open it there, in this mode. */
   startDialog?: "run" | "terminal";
 }
@@ -59,12 +61,18 @@ export interface StatusItem {
   text(scope: { projectId?: string }): string | null | Promise<string | null>;
   /** A renderer surface the item opens when clicked, by name ("code-inbox"); absent, the item is plain text. */
   opens?: string;
+  /** A command the item runs when clicked, its result handled as the palette handles it. */
+  command?: string;
+  /** Hover text. */
+  title?: Words;
 }
 
 export interface StatusItemView {
   id: string;
   text: string;
   opens?: string;
+  command?: string;
+  title?: string;
 }
 
 export interface GraphEdge {
@@ -269,8 +277,8 @@ export class Contributions extends Service {
   }
 
   async statusItems(scope: { projectId?: string }): Promise<StatusItemView[]> {
-    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
-    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}) }] : []));
+    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, command: s.command, title: said(s.title), text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
+    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}), ...(t.command ? { command: t.command } : {}), ...(t.title ? { title: t.title } : {}) }] : []));
   }
 
   graphs(): GraphInfo[] {

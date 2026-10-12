@@ -3,7 +3,7 @@ import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tom
 import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
 import { useQueryClient } from "@tanstack/react-query";
-import { agentKeys, useEngines, usePlaybooks } from "~/lib/agent";
+import { agentKeys, conducts, useEngines, usePlaybooks } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomradex/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -747,7 +747,7 @@ function AssistantPane({
       <SectionHead title={t("settingsDialog.enginesTitle")}>{t("settingsDialog.enginesLede")}</SectionHead>
       <div className="panel stack-3">
         <div className="eng-list" role="radiogroup" aria-label={t("settingsDialog.defaultEngineLabel")}>
-          {(engines.data ?? []).map((e) => (
+          {(engines.data ?? []).filter(conducts).map((e) => (
             <EngineRow
               key={e.id}
               engine={e}

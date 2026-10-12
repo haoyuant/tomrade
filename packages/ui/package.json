@@ -56,6 +56,7 @@
     "@tomradex/community": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
+    "@tomradex/doctor": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/files": "workspace:*",
     "@tomradex/ipc": "workspace:*",

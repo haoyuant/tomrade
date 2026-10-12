@@ -59,6 +59,9 @@ importers:
       '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../../packages/desktop-surface
+      '@tomradex/doctor':
+        specifier: workspace:*
+        version: link:../../packages/doctor
       '@tomradex/engine-acp':
         specifier: workspace:*
         version: link:../../packages/engine-acp
@@ -554,6 +557,43 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/doctor:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@tomradex/projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -2004,6 +2044,9 @@ importers:
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
+      '@tomradex/doctor':
+        specifier: workspace:*
+        version: link:../doctor
       '@tomradex/files':
         specifier: workspace:*
         version: link:../files

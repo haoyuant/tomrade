@@ -3,6 +3,8 @@ import type { Db, ProjectDb } from "@tomradex/db";
 import type { Author } from "@tomradex/domain";
 import type { Block, CardView, GeneralExecution, ParkView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
 
+const SURFACES: ThreadSurface[] = ["assistant", "code", "doctor", "probe"];
+
 interface ParkedRow {
   thread_id: string;
   run_id: string | null;
@@ -199,7 +201,7 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   branch: r.branch ?? null,
   title: r.title,
   engine: r.engine,
-  surface: r.surface === "code" ? "code" : "assistant",
+  surface: SURFACES.includes(r.surface as ThreadSurface) ? (r.surface as ThreadSurface) : "assistant",
   permissionMode: r.permission_mode,
   options: r.options_json ? JSON.parse(r.options_json) : null,
   archived: r.archived === 1,
@@ -252,16 +254,18 @@ export class AgentStore {
     return this.pool.for(projectId);
   }
 
-  threads(projectId: string, surface: ThreadSurface | null = "assistant"): ThreadSummary[] {
-    const rows = surface
-      ? (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface = ? AND archived = 0 ORDER BY updated_at DESC").all(projectId, surface) as ThreadRow[])
+  threads(projectId: string, surface: ThreadSurface | ThreadSurface[] | null = "assistant"): ThreadSummary[] {
+    const surfaces = surface === null ? null : [surface].flat();
+    const rows = surfaces
+      ? (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 0 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[])
       : (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND archived = 0 ORDER BY updated_at DESC").all(projectId) as ThreadRow[]);
     return rows.map(toThread);
   }
 
   /** Put away, newest first — so a conversation archived by mistake can be found and brought back. */
-  archivedThreads(projectId: string, surface: ThreadSurface = "assistant"): ThreadSummary[] {
-    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface = ? AND archived = 1 ORDER BY updated_at DESC").all(projectId, surface) as ThreadRow[]).map(toThread);
+  archivedThreads(projectId: string, surface: ThreadSurface | ThreadSurface[] = "assistant"): ThreadSummary[] {
+    const surfaces = [surface].flat();
+    return (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 1 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[]).map(toThread);
   }
 
   setArchived(projectId: string, id: string, archived: boolean): void {
