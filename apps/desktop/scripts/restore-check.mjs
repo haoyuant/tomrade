@@ -187,7 +187,8 @@ async function run() {
   await shot("restore-03-sheet");
   await click(".restore-sheet .restore-sheet-remove");
   check("removing asks first", await wait(() => has(".restore-sheet .restore-remove-confirm"), "the remove face"));
-  check("with Cancel holding the focus", await $(`document.activeElement?.textContent?.trim() === 'Cancel'`));
+  // the sheet hands focus to Cancel a frame after the face appears
+  check("with Cancel holding the focus", await wait(() => $(`document.activeElement?.textContent?.trim() === 'Cancel'`), "Cancel to take the focus", 20));
   check("and says nothing is deleted", /Nothing is deleted/.test((await text(".restore-sheet .dangerbar")) ?? ""));
   await shot("restore-04-remove");
   await $(`document.activeElement.click(); true`);
