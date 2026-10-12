@@ -206,6 +206,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       description:
         "The cross-cutting decisions on record for this project (stack, state management, routing, persistence, deployment…), from .tomrade/docs/decisions/. Pass `area` to ask whether one area is settled — the pre-flight before touching it.",
       input: z.object({ area: z.string().optional(), projectId: z.string().optional() }),
+      readOnly: true,
       execute: ({ area, projectId: given }, inv) => {
         const projectId = requireProjectId("list_decisions", given, inv);
         const decisions = listDecisions(decisionsRoot("list_decisions", projectId));

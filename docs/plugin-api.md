@@ -665,8 +665,13 @@ session renders for its own project (Claude Code lists it as
 `/tomrade:<name>`); Code link's `sync` is the one that brings a session's work
 back — matching it to tickets by key or search, then linking code, moving
 status and filing follow-ups, with unmatched work left alone.
-`ctx.mcp.instruct(render)` adds a paragraph to the instructions a client reads
-on connect; run-bound sessions skip them, since their run already has a brief.
+`ctx.mcp.instruct(render, { order })` adds a paragraph to the instructions a
+client reads on connect, lowest `order` first (Claude Code keeps 2048
+characters); run-bound sessions skip them, since their run already has a brief.
+The project's rules travel this way, first: inline when short, otherwise as a
+pointer to `get_project_rules`. Codex files instructions as notes on the
+server's tools rather than orders, so Connect's AGENTS.md section has it call
+`get_project_rules` before its first reply.
 
 An engine declares **capabilities**: `backlog` (the default) talks to the app
 through its tools; `code` also edits files and runs commands in a repository.
@@ -794,7 +799,9 @@ surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
 There is no per-surface code to write. The one exception is `mcp: false`: the
 MCP server (any local client, Claude Code and Codex included) never lists or runs
-such a tool, so only engines in this process reach it — the shell is one. A tool may return a string as well as a
+such a tool, so only engines in this process reach it — the shell is one.
+`readOnly: true` marks a tool that only reads; MCP lists it with `readOnlyHint`,
+which lets Codex run it without asking. A tool may return a string as well as a
 value: the MCP server passes a string through as the result text and serialises
 anything else as compact JSON, so a tool whose answer is already prose spends no
 context on quoting and indentation.

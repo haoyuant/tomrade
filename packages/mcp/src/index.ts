@@ -111,7 +111,7 @@ export class Mcp extends Service {
   private bindings = new Map<string, RunBinding>();
   private eventListeners = new Set<(payload: unknown) => void>();
   private prompts = new Map<string, McpPrompt>();
-  private instructions = new Set<(scope: McpScope) => string | null>();
+  private instructions = new Map<(scope: McpScope) => string | null, number>();
 
   constructor(
     ctx: Context,
@@ -248,11 +248,12 @@ export class Mcp extends Service {
   /**
    * Add a paragraph to the instructions a client reads when it connects. Only
    * sessions without a run token get them: a run Tomrade started already has
-   * its brief.
+   * its brief. Lower `order` comes first — Claude Code keeps only the first
+   * 2048 characters.
    */
-  instruct(render: (scope: McpScope) => string | null): () => void {
+  instruct(render: (scope: McpScope) => string | null, options: { order?: number } = {}): () => void {
     return this.ctx.effect(() => {
-      this.instructions.add(render);
+      this.instructions.set(render, options.order ?? 0);
       return () => this.instructions.delete(render);
     }, "mcp.instruct");
   }
@@ -269,12 +270,14 @@ export class Mcp extends Service {
 
   private session(token?: string, projectId?: string): McpServer {
     const scope: McpScope = projectId ? { projectId } : {};
-    const instructions = token ? "" : [...this.instructions].map((render) => paragraph(render, scope)).filter(Boolean).join("\n\n");
+    const ordered = [...this.instructions].sort((a, b) => a[1] - b[1]).map(([render]) => render);
+    const instructions = token ? "" : ordered.map((render) => paragraph(render, scope)).filter(Boolean).join("\n\n");
     const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION }, instructions ? { instructions } : undefined);
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
     for (const tool of tools.served()) {
-      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args, extra) => {
+      const annotations = tool.readOnly ? { readOnlyHint: true } : undefined;
+      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input, annotations }, async (args, extra) => {
         try {
           if (token) {
             const binding = this.bindings.get(token);

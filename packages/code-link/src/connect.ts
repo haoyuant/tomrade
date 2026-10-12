@@ -17,14 +17,20 @@ const SECTION_START = "## Tomrade";
 const CODEX_START = "# BEGIN TOMRADE MCP";
 const CODEX_END = "# END TOMRADE MCP";
 
-/** The CLAUDE.md section that tells any coding agent how this repository and Tomrade stay in step — when the work has a ticket at all. */
-export function tomradeSection(input: ConnectInput): string {
+/**
+ * The CLAUDE.md section that tells any coding agent how this repository and
+ * Tomrade stay in step — when the work has a ticket at all. Claude Code reads
+ * the project's rules in the MCP server's instructions; agents that read
+ * AGENTS.md (Codex) take those for tool notes, so `fetchRules` has them ask.
+ */
+export function tomradeSection(input: ConnectInput, options: { fetchRules?: boolean } = {}): string {
   const example = `${input.prefix}-42`;
   return [
     SECTION_START,
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code, \`.codex/config.toml\` for Codex).`,
     "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
+    ...(options.fetchRules ? ["Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules` and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
     "",
     `### When the work is a ticket (the user or the branch names a key such as \`${example}\`)`,
     "",
@@ -124,11 +130,10 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
     changed.push(".codex/config.toml");
   }
 
-  const section = tomradeSection(input);
   for (const name of ["CLAUDE.md", "AGENTS.md"]) {
     const file = path.join(root, name);
     const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    const body = withTomradeSection(existing, input.projectName, section);
+    const body = withTomradeSection(existing, input.projectName, tomradeSection(input, { fetchRules: name === "AGENTS.md" }));
     if (body !== existing) {
       fs.writeFileSync(file, body);
       changed.push(name);

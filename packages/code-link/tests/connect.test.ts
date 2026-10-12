@@ -99,6 +99,9 @@ describe("connecting a repository", () => {
     expect(claude).toContain("inspect the complete diff");
     expect(claude).toContain("## Layout\n\nkeep me");
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
+    // Codex takes MCP instructions for tool notes, so AGENTS.md has it fetch the rules; Claude Code reads them from the instructions.
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain("Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules`");
+    expect(claude).not.toContain("get_project_rules");
     const skill = fs.readFileSync(path.join(dir, ".agents", "skills", "tomrade-sync", "SKILL.md"), "utf8");
     expect(skill).toMatch(/^---\nname: tomrade-sync\ndescription: "Bring .*\(project \\"App\\"\).*"\n---\n/);
     expect(skill).toContain("ticket keys look like APP-42");
@@ -199,6 +202,8 @@ describe("syncing a session back", () => {
       await client.close();
     }
 
+    expect(client.getInstructions()).not.toContain("Project rules");
+
     const bare = new Client({ name: "bare", version: "0" });
     try {
       await bare.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
@@ -206,6 +211,39 @@ describe("syncing a session back", () => {
       expect(text).toContain("call list_projects and pass projectId");
     } finally {
       await bare.close();
+    }
+  });
+
+  it("hands the project's rules to an agent Tomrade did not start, ahead of everything else", async () => {
+    const { ctx, project } = await machine();
+    const connect = async () => {
+      const client = new Client({ name: "cli", version: "0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.urlFor(project.id)!)));
+      return client;
+    };
+    ctx.agent.setRules(project.id, "- Write tickets in Chinese\n- Never touch billing");
+    let client = await connect();
+    try {
+      const instructions = client.getInstructions()!;
+      expect(instructions.startsWith("Project rules")).toBe(true);
+      expect(instructions).toContain("- Write tickets in Chinese\n- Never touch billing");
+      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("never ask the user to open a ticket"));
+      const read = await client.callTool({ name: "get_project_rules", arguments: {} });
+      expect(JSON.parse((read.content as { text: string }[])[0]!.text)).toEqual({ rules: "- Write tickets in Chinese\n- Never touch billing" });
+    } finally {
+      await client.close();
+    }
+
+    // Too long to inline within Claude Code's 2048 characters: a pointer to the tool instead.
+    ctx.agent.setRules(project.id, Array.from({ length: 40 }, (_, i) => `- Rule number ${i} about how to work here`).join("\n"));
+    client = await connect();
+    try {
+      const instructions = client.getInstructions()!;
+      expect(instructions).toContain("call get_project_rules before you start");
+      expect(instructions).not.toContain("Rule number 0");
+      expect(instructions.length).toBeLessThan(2048);
+    } finally {
+      await client.close();
     }
   });
 });
