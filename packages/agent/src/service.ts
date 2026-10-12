@@ -1162,7 +1162,10 @@ export class Agent extends Service {
       return request;
     };
     const tools = {
-      describe: () => this.ctx.tools.describe().filter((tool) => engine.literal || !this.workflows.get(tool.name)?.literal),
+      describe: () => this.ctx.tools.describe().filter((tool) => {
+        const surface = this.ctx.tools.get(tool.name)?.surface;
+        return (!surface || surface === thread.surface) && (engine.literal || !this.workflows.get(tool.name)?.literal);
+      }),
       execute: async (name: string, args: unknown): Promise<unknown> => {
         const t0 = Date.now();
         progress({ activity: name });

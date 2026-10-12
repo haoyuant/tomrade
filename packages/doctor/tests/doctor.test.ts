@@ -175,3 +175,74 @@ describe("the troubleshooter", () => {
     expect(models?.state).toBe("warn");
   });
 });
+
+describe("an agent looking into it", () => {
+  it("is another ready agent, briefed with the evidence, held to the troubleshooting tools, and its conclusion becomes a card", async () => {
+    const { ctx, project } = await boot();
+    const seen: { text: string; tools: string[]; resume?: string; refused?: string; sources?: unknown }[] = [];
+    ctx.agent.engine({
+      id: "helper",
+      title: "Helper",
+      author: "ai:helper",
+      available: async () => ({ ok: true }),
+      async turn(input, io) {
+        const entry: (typeof seen)[number] = { text: input.input.kind === "text" ? input.input.text : "", tools: io.tools.describe().map((t) => t.name), resume: io.resume };
+        seen.push(entry);
+        entry.sources = await io.tools.execute("doctor_read_log", {});
+        await io.tools.execute("list_items", {}).catch((error: Error) => { entry.refused = error.message; });
+        if (seen.length === 1) {
+          await io.tools.execute("doctor_conclude", { headline: "Acme signs in against the wrong endpoint", explanation: "Its internal edition needs the internal environment.", confidence: "medium", offer: ["retry-with", "sign-in"] });
+        }
+        io.emit({ type: "text", text: "Here is what I found." });
+        return { stop: "end", resume: "session-1" };
+      }
+    });
+    const failing = ctx.agent.newThread(project.id, "acme");
+    await settled(ctx, project.id, ctx.agent.send(project.id, failing.id, { kind: "text", text: "hello" }).runId);
+    const thread = ctx.doctor.start(project.id, { threadId: failing.id });
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+
+    const cards = () => ctx.agent.store.messages(project.id, thread.id).flatMap((m) => (m.block.type === "card" && m.block.schema === "finding" ? [m.block.data as FindingCard] : []));
+    const offer = cards().at(-1)!.actions.find((a) => a.kind === "investigate");
+    expect(offer).toMatchObject({ kind: "investigate", engineIds: ["helper"] });
+
+    ctx.doctor.investigate(project.id, thread.id, "helper");
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id).at(-1)!.id, 15_000);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.text).toContain("status code 401");
+    expect(seen[0]!.text).toContain("edition: ioa");
+    expect(seen[0]!.text).toContain("Helper, please look into this.");
+    expect(seen[0]!.text).not.toContain(os.homedir());
+    expect(seen[0]!.tools.every((name) => ["doctor_read_log", "doctor_check_again", "doctor_conclude", "ask_user", "web_search", "web_fetch"].includes(name))).toBe(true);
+    expect(seen[0]!.tools).toContain("doctor_conclude");
+    expect(seen[0]!.refused).toMatch(/not available while troubleshooting/);
+    expect(seen[0]!.sources).toEqual({ sources: expect.arrayContaining(["acme/acme.log"]) });
+
+    const conclusion = cards().at(-1)!;
+    expect(conclusion).toMatchObject({ headline: "Acme signs in against the wrong endpoint", confidence: "medium" });
+    expect(conclusion.actions.map((a) => a.kind)).toEqual(["retry-with", "sign-in", "report"]);
+    expect(ctx.agent.store.thread(project.id, thread.id)?.options).toMatchObject({ investigator: "helper" });
+    expect(ctx.doctor.report(project.id, thread.id).sections.find((s) => s.id === "checks")?.text).toContain("Acme signs in against the wrong endpoint");
+
+    // The person answers: the same agent carries on in its own session, without the brief again.
+    await settled(ctx, project.id, ctx.agent.send(project.id, thread.id, { kind: "text", text: "It is the internal edition." }).runId, 15_000);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]!.resume).toBe("session-1");
+    expect(seen[1]!.text).toBe("It is the internal edition.");
+  });
+
+  it("keeps its tools out of every other conversation", async () => {
+    const { ctx, project } = await boot();
+    let listed: string[] = [];
+    ctx.agent.engine({ id: "plain", title: "Plain", author: "ai:plain", available: async () => ({ ok: true }), async turn(_input, io) { listed = io.tools.describe().map((t) => t.name); return { stop: "end" }; } });
+    const thread = ctx.agent.newThread(project.id, "plain");
+    await settled(ctx, project.id, ctx.agent.send(project.id, thread.id, { kind: "text", text: "hi" }).runId);
+    expect(listed).toContain("ask_user");
+    expect(listed.filter((name) => name.startsWith("doctor_"))).toEqual([]);
+  });
+
+  it("never runs its tools outside a troubleshooting conversation", async () => {
+    const { ctx } = await boot();
+    await expect(ctx.tools.execute("doctor_read_log", {}, { by: "ai:mcp" })).rejects.toThrow(/only inside a troubleshooting conversation/);
+  });
+});

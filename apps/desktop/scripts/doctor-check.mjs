@@ -3,7 +3,8 @@
  * Troubleshoot; the troubleshooting thread ticks a checklist, runs a test turn,
  * names the known issue and offers what to do; the report shows exactly what
  * would be sent (no conversation unless ticked) and waits in the outbox when
- * it can't go; the bottom bar starts one too; the troubleshooter is never
+ * it can't go; another agent, picked by the person, looks into it with only
+ * the troubleshooting tools and concludes on a card; the bottom bar starts one too; the troubleshooter is never
  * offered as an agent; and a packaged build's log now lands in a file.
  *
  *   pnpm build:backend && pnpm dev:ui   then
@@ -28,12 +29,26 @@ const check = (name, cond, detail) => {
   if (!cond && detail !== undefined) console.log(`  saw ${JSON.stringify(detail)}`);
 };
 
-// A model service that answers every request with "pong".
+// A model service: asked to investigate (it is offered doctor_conclude), it concludes, then says so; anything else gets "pong".
+const investigation = { tools: null, brief: "" };
+const sse = (chunks) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n";
 const endpoint = http.createServer((req, res) => {
-  req.resume();
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
   req.on("end", () => {
+    let request = {};
+    try { request = JSON.parse(body); } catch {}
+    const tools = (request.tools ?? []).map((t) => t.function?.name);
+    const answered = (request.messages ?? []).some((m) => m.role === "tool");
     res.writeHead(200, { "content-type": "text/event-stream" });
-    res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+    if (tools.includes("doctor_conclude") && !answered) {
+      investigation.tools = tools;
+      investigation.brief = JSON.stringify(request.messages ?? []);
+      const args = JSON.stringify({ headline: "Refusing signs in against the internal endpoint", explanation: "Its models end in -ioa: the internal edition.", confidence: "medium", offer: ["retry-with"] });
+      return res.end(sse([{ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "doctor_conclude", arguments: args } }] }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: "tool_calls" }] }]));
+    }
+    const text = tools.includes("doctor_conclude") ? "It is the internal edition; carry on with another agent." : "pong";
+    res.end(sse([{ choices: [{ delta: { content: text }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: "stop" }] }]));
   });
 });
 const agentLog = path.join(work, "refusing.log");
@@ -156,6 +171,21 @@ const run = async () => {
   check("in the outbox, without the conversation", outbox.length === 1 && !fs.readFileSync(path.join(work, "doctor", "outbox", outbox[0]), "utf8").includes("my secret plan"), outbox);
   await press(button("Done"));
   await sleep(500);
+
+  // ── another agent looks into it, with only the troubleshooting tools ──
+  await press(button("Let an agent look into it"));
+  await sleep(500);
+  const menu = await $(`({ note: document.querySelector('[role="menu"] .menu-note')?.textContent ?? '', names: [...document.querySelectorAll('[role="menu"] .m-name')].map((n) => n.textContent) })`);
+  check("before anyone looks, it says what they read and where it goes", /model provider/.test(menu.note), menu.note);
+  check("the agent that failed is not offered to look into itself", menu.names.includes("Tomrade loop") && !menu.names.includes("Refusing") && !menu.names.includes("Troubleshooter"), menu.names);
+  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.textContent.includes("Tomrade loop"))`);
+  const concluded = await waitFor(`[...document.querySelectorAll('.finding-head span')].some((s) => s.textContent === 'Refusing signs in against the internal endpoint')`, 20_000);
+  check("it concludes on a card of its own", concluded);
+  check("having been handed the error, the checks and the facts", investigation.brief.includes("status code 401") && investigation.brief.includes("edition: ioa"), investigation.brief.slice(0, 300));
+  const allowed = ["doctor_read_log", "doctor_check_again", "doctor_conclude", "ask_user", "web_search", "web_fetch"];
+  check("and only the troubleshooting tools", Array.isArray(investigation.tools) && investigation.tools.length > 0 && investigation.tools.every((n) => allowed.includes(n)), investigation.tools);
+  check("the thread says who is looking into it", (await $(`[...document.querySelectorAll('.tag')].some((t) => t.textContent.trim() === 'Troubleshooter · Tomrade loop')`)));
+  await shot("investigated");
 
   // ── carry on with another agent ──────────────────────────────────────
   await press(button("Continue with another agent"));

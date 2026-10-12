@@ -736,6 +736,35 @@ error, or by a fact. It has a `fixedIn` release, from which it stops matching.
 What it offers can only name the verbs above, so a catalog fetched later can
 explain and point, but never run anything.
 
+When something is left to explain, the last card offers **Let an agent look
+into it**. The offer lists the other ready agents, never the one that failed,
+and says before anyone is picked that what the agent reads goes to its model
+provider. The picked agent is remembered on the thread (`investigator`), and
+from then on the person talks to it there.
+
+The troubleshooter hands each turn to that agent's own engine with these
+changes:
+
+- The first message is a brief: the job, the house rules, the error, the
+  checks, the facts and the log excerpts.
+- The agent works as a backlog turn.
+- It holds only the investigation's tools:
+  - `doctor_read_log` reads only declared logs.
+  - `doctor_check_again` runs the checks and a test turn.
+  - `doctor_conclude` records the cause, how sure, and which verbs to offer.
+  - `ask_user`, `web_search` and `web_fetch`.
+
+  Any other tool is refused.
+- The agent's session id is kept per troubleshooting thread, so it carries on
+  from where it stopped. *Check again* still checks.
+
+The conclusion becomes a `finding` card and joins the report.
+
+A tool can be kept to one kind of conversation with `ToolDefinition.surface`.
+The in-process agent then lists it only on threads of that surface. The MCP
+server still serves it, so a local agent investigating can call it, and the
+tool refuses calls from anywhere else.
+
 `ctx.doctor.report()` builds the text the person reads, section by section,
 before anything is sent. Keys, the home folder's name and email addresses are
 masked, and the failed conversation is left out unless ticked.

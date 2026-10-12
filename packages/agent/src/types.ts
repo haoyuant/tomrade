@@ -69,7 +69,9 @@ export type CardAction =
   /** Says this in the card's own thread. */
   | { kind: "say"; text: string; label: string }
   /** Opens the report about this thread, to read and send to Tomrade's developer. */
-  | { kind: "report"; label: string };
+  | { kind: "report"; label: string }
+  /** Lets one of these agents look into it; `note` says what it will read and where that goes. */
+  | { kind: "investigate"; engineIds: string[]; note: string; label: string };
 
 /** A `finding` card: one thing found, how sure, and what to do about it. */
 export interface FindingCard {

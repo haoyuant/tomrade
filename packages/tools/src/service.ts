@@ -60,6 +60,12 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   mcp?: boolean;
   /** True when the tool only reads: MCP clients such as Codex then run it without asking (`readOnlyHint`). */
   readOnly?: boolean;
+  /**
+   * Listed to an in-process agent only on threads of this surface (the
+   * troubleshooter's tools: "doctor"), so no other conversation carries it.
+   * The MCP server still serves it; the tool refuses calls from elsewhere.
+   */
+  surface?: string;
   /** How to undo this tool's non-oplog effects; undoRun calls it for ledger entries whose tool declares one. */
   revert?(args: z.output<S>, result: unknown, invocation: ToolInvocation): void | Promise<void>;
 }
