@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import type { Context } from "cordis";
 import type { Agent, Engine } from "@tomradex/agent";
+import { rulesSection } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/items";
@@ -259,6 +260,9 @@ export class Starter {
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local)
       : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local });
     const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
+    // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
+    const rules = agent.rules(projectId);
+    const terminalPrompt = rules ? `${prompt}\n\n${rulesSection(rules)}` : prompt;
 
     if (opts.mode === "run") {
       if (asked) {
@@ -271,7 +275,7 @@ export class Starter {
       return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, ...(warnings.length ? { warnings } : {}) };
     }
 
-    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), prompt);
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), terminalPrompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId));
     const settings = ctx.settings.config.path;

@@ -32,6 +32,7 @@
     "test:attention": "electron scripts/attention-check.mjs",
     "test:repo-setup": "electron scripts/repo-setup-check.mjs",
     "test:usage": "electron scripts/usage-check.mjs",
+    "test:rules": "electron scripts/rules-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",

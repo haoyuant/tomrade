@@ -205,6 +205,8 @@ export interface TurnInput {
    * says nothing about what may be read — every path reads either way.
    */
   filesIndex?: { markdown: string; digest: string };
+  /** The project's rules, as the person wrote them: every engine follows them. */
+  rules?: string;
   /** Ephemeral subprocess credentials supplied by plugins; never persist or include in prompts. */
   env?: Record<string, string>;
   workdir?: { remote: string; branch: string; worktree: string | null };
@@ -479,6 +481,8 @@ declare module "cordis" {
     "agent/parked"(park: ParkView, thread: ThreadSummary): void;
     /** A parked thread's limit lifted and nobody continues it on its own: the person may. */
     "agent/limit-lifted"(park: ParkView, thread: ThreadSummary): void;
+    /** A project's rules file was written through Tomrade. */
+    "agent/rules-changed"(projectId: string): void;
   }
 }
 

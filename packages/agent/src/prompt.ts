@@ -57,6 +57,14 @@ export function generalBrief(ticket: { key: string; title: string; body?: string
 }
 
 /** The one line that starts (or resumes) a General delivery. */
+/** Past this a rules file is cut, so a long one cannot crowd out the work. */
+export const RULES_MAX_CHARS = 8000;
+
+/** The person's rules for every agent in the project, worded the same for every engine. */
+export const rulesSection = (rules: string): string =>
+  "Project rules — the person set these for every agent working in this project; follow them throughout. A repository's CLAUDE.md or AGENTS.md still decides how code is written there; these decide everything else:\n" +
+  rules.trim().slice(0, RULES_MAX_CHARS);
+
 export const generalOpener = (ticket: { key: string; title: string }, continued: boolean): string =>
   `${continued ? "Continue" : "Work on"} ${ticket.key}: ${ticket.title}. Follow the selected delivery playbook and submit results for review.`;
 
@@ -67,7 +75,7 @@ export const playbookSection = (playbook: GeneralExecution["playbook"]): string 
  * system prompt from Tomrade, only this file and the MCP tools, so the ticket,
  * the protocol and the playbook all travel in it.
  */
-export function generalPrompt(input: { ticket: { key: string; title: string; body?: string | null; waitsOn?: OpenDependency[] }; cwd: string; playbook: GeneralExecution["playbook"]; continued: boolean; filesIndex?: string }): string {
+export function generalPrompt(input: { ticket: { key: string; title: string; body?: string | null; waitsOn?: OpenDependency[] }; cwd: string; playbook: GeneralExecution["playbook"]; continued: boolean; filesIndex?: string; rules?: string }): string {
   return [
     generalOpener(input.ticket, input.continued),
     "",
@@ -75,6 +83,7 @@ export function generalPrompt(input: { ticket: { key: string; title: string; bod
     "",
     playbookSection(input.playbook),
     "",
+    ...(input.rules ? [rulesSection(input.rules), ""] : []),
     ...(input.filesIndex ? [input.filesIndex, ""] : []),
     "Tomrade's tools reach you over MCP (server `tomrade`); the tools named above are there."
   ].join("\n");
@@ -94,6 +103,7 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
       `This conversation belongs to the project "${input.project.name}" (its keys look like ${input.project.keyPrefix}-1). Every tool works in it and only in it, so leave projectId out of tool calls; an empty backlog means the project is new, not that you are in the wrong place. Other projects are out of reach: if the user means one, tell them to open it.`
     );
   }
+  if (input.rules) parts.push(rulesSection(input.rules));
   const media = input.messages.filter(m => m.block.type === "media").slice(-8);
   if (media.length) parts.push("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
     if (m.block.type !== "media") return "";

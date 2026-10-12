@@ -1,5 +1,6 @@
 import { about } from "./about";
 import { usage } from "./usage";
+import { projectRules } from "./projectRules";
 import { agentPanel } from "./agentPanel";
 import { board } from "./board";
 import { card } from "./card";
@@ -55,6 +56,7 @@ export const en = {
   settingsDialog: settingsDialog.en,
   about: about.en,
   usage: usage.en,
+  projectRules: projectRules.en,
   playbooks: playbooks.en,
   pluginsPanel: pluginsPanel.en,
   plugins: plugins.en,
@@ -111,6 +113,7 @@ export const zh: typeof en = {
   settingsDialog: settingsDialog.zh,
   about: about.zh,
   usage: usage.zh,
+  projectRules: projectRules.zh,
   playbooks: playbooks.zh,
   pluginsPanel: pluginsPanel.zh,
   plugins: plugins.zh,

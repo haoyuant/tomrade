@@ -669,6 +669,8 @@ describe("starting a ticket", () => {
     const { Mcp } = await import("@tomradex/mcp");
     await ctx.plugin(Mcp, { port: 0 });
     await settle();
+    // a terminal agent gets no system prompt from Tomrade: the project's rules travel in its first prompt
+    ctx.agent.setRules(project.id, "- Commit messages in English");
     const result = await codeLink.start(project.id, item.id, { mode: "terminal" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -684,6 +686,7 @@ describe("starting a ticket", () => {
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`Implement ${item.key}`);
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`this run owns exactly ${item.key}`);
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain("inspect the full diff");
+    expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toMatch(/Project rules — [^\n]*\n- Commit messages in English$/);
     expect(fs.existsSync(path.join(dir, "run.command"))).toBe(true);
 
     // The native MCP client goes through the session binding, not the plain
