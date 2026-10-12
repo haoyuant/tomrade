@@ -5,6 +5,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
 import type { ThreadSummary } from "@tomradex/agent";
+import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
 import type { Badge, SectionRow } from "@tomradex/contributions";
@@ -250,6 +251,12 @@ export class CodeLink extends Service {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
+      // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
+      onLimit: (session, until) => {
+        const agent = this.ctx.get("agent");
+        const park = session.threadId && agent ? agent.park(session.projectId, session.threadId, { until, resume: false, note: false }) : null;
+        return this.limitedWords(park?.until ?? until ?? Date.now() + 15 * 60_000, park?.known ?? until !== null, false);
+      },
       // A pass already running still saw this session as active.
       onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${message(err)}`))
     });
@@ -384,12 +391,13 @@ export class CodeLink extends Service {
           this.sessions.blockCredentials(thread.projectId, session.id, run.error, { ...(externalId ? { externalId } : {}) });
           return;
         }
-        // a run that failed is stuck until someone looks, not idle
+        // a run that failed is stuck until someone looks, not idle — unless it only waits for a limit Tomrade will see out
+        const park = run.error ? ctx.agent.parked(thread.projectId, thread.id) : null;
         this.sessions.touch(thread.projectId, session.id, {
-          state: run.stop === "asked" ? "waiting" : run.error ? "error" : "idle",
+          state: run.stop === "asked" ? "waiting" : park?.resume ? "idle" : run.error ? "error" : "idle",
           activity: null,
           ...(externalId ? { externalId } : {}),
-          ...(run.error ? { summary: `stopped: ${run.error.slice(0, 200)}` } : {})
+          ...(park ? { summary: this.limitedWords(park.until, park.known, park.resume) } : run.error ? { summary: `stopped: ${run.error.slice(0, 200)}` } : {})
         });
       });
     });
@@ -1046,6 +1054,11 @@ export class CodeLink extends Service {
   // ── contributions ──────────────────────────────────────────────────────────
 
   /** The words the backend writes for the person, in their language at the moment they are written. */
+  private limitedWords(until: number, known: boolean, resumes: boolean): string {
+    const locale = this.ctx.settings.locale?.() ?? "en";
+    return CODE_WORDS[locale].limited(untilLabel(until, locale), known, resumes);
+  }
+
   private words(): CodeWords {
     return CODE_WORDS[this.ctx.settings.locale?.() ?? "en"];
   }

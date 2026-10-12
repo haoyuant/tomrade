@@ -94,7 +94,9 @@ const WORDS = {
     question: "{who} is asking you something",
     waiting: "{who} is waiting for you",
     stuck: "{who} stopped",
-    finished: "{who} finished"
+    finished: "{who} finished",
+    lifted: "{who} can go on",
+    liftedBody: "The usage limit has lifted."
   },
   zh: {
     assistant: "助手",
@@ -102,7 +104,9 @@ const WORDS = {
     question: "{who} 在问你问题",
     waiting: "{who} 在等你",
     stuck: "{who} 停下了",
-    finished: "{who} 完成了"
+    finished: "{who} 完成了",
+    lifted: "{who} 可以继续了",
+    liftedBody: "用量限制已经解除。"
   }
 } as const;
 type Words = (typeof WORDS)[keyof typeof WORDS];
@@ -184,6 +188,14 @@ export class Teller {
     if (!prefs.enabled || !prefs.finished || this.options.focused()) return;
     const w = this.options.words();
     this.options.tell({ title: this.titleOf(entry.itemKey, w.finished, entry.who), body: clip(last) ?? "", entry: { ...entry, kind: "waiting", since: now } });
+  }
+
+  /** A usage limit lifted on a conversation nobody continues on its own: the person may now. */
+  lifted(entry: Omit<AttentionEntry, "kind" | "since">): void {
+    const prefs = this.options.prefs();
+    if (!prefs.enabled || !prefs.waiting || this.options.focused()) return;
+    const w = this.options.words();
+    this.options.tell({ title: this.titleOf(entry.itemKey, w.lifted, entry.who), body: w.liftedBody, entry: { ...entry, kind: "waiting", since: Date.now() } });
   }
 
   dispose(): void {
@@ -323,6 +335,10 @@ export const attention = {
         run.status === "done" ? lastSaid(thread, run.id) : null
       );
       schedule();
+    });
+    ctx.on("agent/limit-lifted", (_park, thread) => {
+      const who = thread.itemId ? engineTitle(thread.engine) : null;
+      teller.lifted({ key: `thread:${thread.id}`, projectId: thread.projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(thread.projectId, thread.itemId), who, text: null });
     });
     ctx.on("codeLink/changed", schedule);
     ctx.on("db/opened", schedule);

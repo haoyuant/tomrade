@@ -169,6 +169,18 @@ export const agoLabel = (ts: number, now = Date.now()) => {
 /** Money as a run reports it: cents once it is a dollar or more, a tenth of a cent below. */
 export const usd = (v: number): string => (v >= 1 ? `$${v.toFixed(2)}` : v > 0 && v < 0.001 ? "<$0.001" : `$${v.toFixed(3)}`);
 
+/** A time ahead, as a clock reads it: "20:00", "tomorrow 09:00", "Oct 15 09:00". */
+export function clockLabel(ts: number, now = Date.now()): string {
+  const d = new Date(ts);
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  const n = new Date(now);
+  if (day(d) === day(n)) return time;
+  const zh = currentLocale === "zh";
+  if (day(d) === day(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1))) return zh ? `明天 ${time}` : `tomorrow ${time}`;
+  return zh ? `${d.getMonth() + 1}月${d.getDate()}日 ${time}` : `${d.toLocaleString("en", { month: "short" })} ${d.getDate()} ${time}`;
+}
+
 /** Short relative time, the same string the card prints and recency sorts on. */
 export function timeAgo(ts: number, now = Date.now()): string {
   const mins = Math.max(0, Math.round((now - ts) / 60000));

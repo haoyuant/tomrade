@@ -90,6 +90,7 @@ const en = {
   cmdConnect: "Connect repository to coding agents",
   cmdRescan: "Rescan repositories",
   needsApproval: "needs your approval",
+  limited: (when: string, known: boolean, resumes: boolean) => `usage limit — ${known ? "lifts at" : "next try at"} ${when}${resumes ? "; continues then" : ""}`,
   askingYou: "asking you something"
 };
 
@@ -175,6 +176,7 @@ const zh: CodeWords = {
   cmdConnect: "把仓库连接到编码智能体",
   cmdRescan: "重新扫描仓库",
   needsApproval: "需要你批准",
+  limited: (when: string, known: boolean, resumes: boolean) => `用量到了上限，${when} ${known ? "解除" : "再试"}${resumes ? "，届时自动继续" : ""}`,
   askingYou: "在问你问题"
 };
 

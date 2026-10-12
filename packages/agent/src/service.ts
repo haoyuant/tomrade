@@ -31,6 +31,7 @@ import {
   type FocusRef,
   type GeneralExecution,
   type OpenDependency,
+  type ParkView,
   type PendingView,
   type Playbook,
   type PlaybookIndexEntry,
@@ -48,6 +49,7 @@ import {
   type WorkflowSpec
 } from "./types.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
+import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 export interface WorkdirStatus {
@@ -222,6 +224,8 @@ export interface AgentSettings {
   defaultEngine: string;
   /** A plan pauses for confirmation when it would write more items than this; 0 = never pause. */
   confirmWritesOver: number;
+  /** A run stopped by a usage limit is continued once the limit lifts. */
+  resumeAfterLimit: boolean;
   engines: Record<string, unknown>;
   /** Per-playbook-id: which source wins when several carry the same id. Absent = most specific wins. */
   playbookChoices: Record<string, PlaybookSource>;
@@ -234,10 +238,11 @@ export const AGENT_SECTION: SettingsSection<AgentSettings> = {
   schema: z.object({
     defaultEngine: z.string().default("loop"),
     confirmWritesOver: z.number().int().min(0).default(0),
+    resumeAfterLimit: z.boolean().default(true),
     engines: z.record(z.string(), z.unknown()).default({}),
     playbookChoices: z.record(z.string(), z.enum(["plugin", "user", "project"])).default({})
   }),
-  defaults: { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} },
+  defaults: { defaultEngine: "loop", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} },
   order: 11
 };
 
@@ -259,6 +264,12 @@ interface RunCtx {
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
+const LIMIT_RETRY_MS = 15 * 60_000;
+const LIMIT_TRIES = 3;
+/** Limits lift on the provider's clock, not this one. */
+const LIMIT_SLACK_MS = 30_000;
 
 const summarize = (value: unknown): string => {
   if (value == null) return "done";
@@ -296,6 +307,10 @@ export class Agent extends Service {
   private shownThread: string | null = null;
   private activeById = new Map<string, RunCtx>();
   private mediaStore?: AgentMediaStore;
+  private parkTimers = new Map<string, NodeJS.Timeout>();
+  /** A run Tomrade started because a limit lifted, and how many limited runs came before it. */
+  private limitTries = new Map<string, number>();
+  private resuming = new Map<string, number>();
 
   constructor(
     ctx: Context,
@@ -312,6 +327,12 @@ export class Agent extends Service {
     // every project file that is open now and in each one opened later.
     for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId, this.words().interrupted);
     this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId, this.words().interrupted));
+    for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
+    this.ctx.on("db/opened", (projectId) => this.armParked(projectId));
+    this.ctx.effect(() => () => {
+      for (const timer of this.parkTimers.values()) clearTimeout(timer);
+      this.parkTimers.clear();
+    }, "agent limit timers");
     this.ctx.settings.register(AGENT_SECTION);
     // Closing a General ticket on the person's word is fine; closing one an agent worked on is that work's review.
     this.ctx.on("write/pre-commit", (intent, next) => {
@@ -339,7 +360,8 @@ export class Agent extends Service {
       // the panel's list says which conversations are working right now
       ctx.ipc.handle("agent.threads", (projectId) => {
         const running = new Set(ctx.agent.activeRuns().map((a) => a.thread.id));
-        return ctx.agent.store.threads(projectId).map((th) => (running.has(th.id) ? { ...th, running: true } : th));
+        const parked = new Map(ctx.agent.store.allParked(projectId).map((p) => [p.threadId, p.until]));
+        return ctx.agent.store.threads(projectId).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.usage", () => ctx.agent.usage());
@@ -942,8 +964,13 @@ export class Agent extends Service {
     if (input.kind === "text") input = { ...input, attachments };
     this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
     if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
+    // whoever continues a parked thread, the wait is over; only Tomrade's own retry counts toward giving up
+    const tries = this.resuming.get(threadId);
+    this.resuming.delete(threadId);
+    this.clearPark(projectId, threadId);
 
     const run = this.store.beginRun(projectId, threadId, engine.id);
+    if (tries !== undefined) this.limitTries.set(run.id, tries);
     const rc = this.makeRunCtx(run, thread, engine);
     this.activeByThread.set(threadId, rc);
     this.activeById.set(run.id, rc);
@@ -1345,9 +1372,87 @@ export class Agent extends Service {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "changes", runId: rc.run.id, count: changes, items: [...this.store.changedEntities(rc.projectId, rc.run.id), ...elsewhere] }, rc.run.id);
     }
     const status = result.stop === "asked" ? "asked" : result.stop === "cancelled" ? "cancelled" : result.stop === "error" ? "error" : "done";
+    const tries = this.limitTries.get(rc.run.id) ?? 0;
+    this.limitTries.delete(rc.run.id);
+    const limit = status === "error" && (result.limit || looksRateLimited(result.error)) ? { until: result.limit?.until ?? resetTime(result.error) } : null;
+    const park = limit ? this.park(rc.projectId, rc.threadId, { until: limit.until, runId: rc.run.id, attempt: tries + 1 }) : null;
     const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
     this.broadcast(rc.threadId, { type: "done", run });
-    this.ctx.emit("agent/run-ended", run, this.store.thread(rc.projectId, rc.threadId) ?? rc.thread);
+    const thread = this.store.thread(rc.projectId, rc.threadId) ?? rc.thread;
+    if (park) this.ctx.emit("agent/parked", park, thread);
+    this.ctx.emit("agent/run-ended", run, thread);
+  }
+
+  /** The thread waiting for a usage limit to lift, if it is. */
+  parked(projectId: string, threadId: string): ParkView | null {
+    return this.store.parked(projectId, threadId);
+  }
+
+  /**
+   * Holds a thread until a usage limit lifts: the conversation says so, and at
+   * `until` Tomrade continues it — or, when it cannot (a terminal session, the
+   * setting off, too many limited runs in a row), says the person can.
+   */
+  park(projectId: string, threadId: string, limit: { until: number | null; runId?: string | null; attempt?: number; resume?: boolean; /** A terminal session's thread holds no conversation to write into. */ note?: boolean }): ParkView {
+    const attempt = limit.attempt ?? (this.store.parked(projectId, threadId)?.attempt ?? 0) + 1;
+    const park: ParkView = {
+      threadId,
+      runId: limit.runId ?? null,
+      until: limit.until ?? Date.now() + LIMIT_RETRY_MS,
+      known: limit.until !== null,
+      resume: (limit.resume ?? true) && this.settingsOf().resumeAfterLimit !== false && attempt <= LIMIT_TRIES,
+      attempt
+    };
+    this.store.park(projectId, park);
+    this.armPark(projectId, park);
+    if (limit.note === false) return park;
+    const w = this.words();
+    const locale = (this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
+    const said = attempt > LIMIT_TRIES && (limit.resume ?? true) ? w.limitGaveUp(LIMIT_TRIES) : w.limited(untilLabel(park.until, locale), park.known, park.resume);
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: said }, park.runId);
+    return park;
+  }
+
+  /** Someone continued the thread another way — a terminal session resumed by hand. */
+  unpark(projectId: string, threadId: string): void {
+    if (this.parkTimers.has(threadId) || this.store.parked(projectId, threadId)) this.clearPark(projectId, threadId);
+  }
+
+  private clearPark(projectId: string, threadId: string): void {
+    clearTimeout(this.parkTimers.get(threadId));
+    this.parkTimers.delete(threadId);
+    this.store.unpark(projectId, threadId);
+  }
+
+  private armParked(projectId: string): void {
+    for (const park of this.store.allParked(projectId)) this.armPark(projectId, park);
+  }
+
+  private armPark(projectId: string, park: ParkView): void {
+    clearTimeout(this.parkTimers.get(park.threadId));
+    const delay = Math.max(0, park.until - Date.now()) + LIMIT_SLACK_MS;
+    this.parkTimers.set(park.threadId, setTimeout(() => this.liftPark(projectId, park.threadId), delay));
+  }
+
+  private liftPark(projectId: string, threadId: string): void {
+    this.parkTimers.delete(threadId);
+    if (!this.ctx.db.openIds().includes(projectId)) return;
+    const park = this.store.parked(projectId, threadId);
+    if (!park) return;
+    this.store.unpark(projectId, threadId);
+    const thread = this.store.thread(projectId, threadId);
+    if (!thread || this.activeByThread.has(threadId)) return;
+    if (park.resume && this.settingsOf().resumeAfterLimit !== false) {
+      this.resuming.set(threadId, park.attempt);
+      try {
+        this.send(projectId, threadId, { kind: "text", text: this.words().continueAfterLimit });
+        return;
+      } catch (err) {
+        this.resuming.delete(threadId);
+        this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: message(err) }, null);
+      }
+    }
+    this.ctx.emit("agent/limit-lifted", { ...park, resume: false }, thread);
   }
 
   private appendAndBroadcast(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {

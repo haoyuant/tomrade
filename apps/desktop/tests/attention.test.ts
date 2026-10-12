@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("electron", () => ({ app: {}, BrowserWindow: {}, Notification: {} }));
 import { NOTIFICATIONS_SECTION, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 
-const WORDS = { assistant: "The assistant", permission: "{who} needs your approval", question: "{who} is asking you something", waiting: "{who} is waiting for you", stuck: "{who} stopped", finished: "{who} finished" };
+const WORDS = { assistant: "The assistant", permission: "{who} needs your approval", question: "{who} is asking you something", waiting: "{who} is waiting for you", stuck: "{who} stopped", finished: "{who} finished", lifted: "{who} can go on", liftedBody: "The usage limit has lifted." };
 
 function setup(overrides: Partial<NotificationPrefs> = {}) {
   const told: AttentionNote[] = [];
@@ -105,4 +105,13 @@ it("tells a failed run once: by its session's entry when there is one, else on i
     ["thread:b", "stopped: exit 1"],
     ["thread:a", "LLM request failed 401"]
   ]);
+});
+
+it("says a conversation can go on once its usage limit lifts, unless waits are switched off", () => {
+  const { teller, told, state } = setup();
+  const entry = { key: "thread:t", projectId: "p", threadId: "t", itemId: "i", itemKey: "TOM-9", who: "Claude Code", text: null };
+  teller.lifted(entry);
+  state.prefs = { ...state.prefs, waiting: false };
+  teller.lifted(entry);
+  expect(told.map((n) => [n.title, n.body])).toEqual([["TOM-9 · Claude Code can go on", "The usage limit has lifted."]]);
 });

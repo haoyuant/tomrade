@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type { Author } from "@tomradex/domain";
-import type { Block, CardView, GeneralExecution, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
+import type { Block, CardView, GeneralExecution, ParkView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
+
+interface ParkedRow {
+  thread_id: string;
+  run_id: string | null;
+  until: number;
+  known: number;
+  resume: number;
+  attempt: number;
+}
+
+const toPark = (r: ParkedRow): ParkView => ({ threadId: r.thread_id, runId: r.run_id, until: r.until, known: !!r.known, resume: !!r.resume, attempt: r.attempt });
 
 export const MIGRATIONS = [
   {
@@ -106,7 +117,20 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   { version: 8, up: "ALTER TABLE plugin_agent_threads ADD COLUMN execution_json TEXT" },
   { version: 9, up: "ALTER TABLE plugin_agent_runs ADD COLUMN execution_json TEXT" },
   { version: 10, up: "ALTER TABLE plugin_agent_runs ADD COLUMN playbooks_json TEXT NOT NULL DEFAULT '[]'" },
-  { version: 11, up: "ALTER TABLE plugin_agent_threads ADD COLUMN options_json TEXT" }
+  { version: 11, up: "ALTER TABLE plugin_agent_threads ADD COLUMN options_json TEXT" },
+  {
+    // A thread that hit a usage limit, until it lifts.
+    version: 12,
+    up: `CREATE TABLE IF NOT EXISTS plugin_agent_parked (
+  thread_id  TEXT PRIMARY KEY,
+  run_id     TEXT,
+  until      INTEGER NOT NULL,
+  known      INTEGER NOT NULL,
+  resume     INTEGER NOT NULL,
+  attempt    INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+)`
+  }
 ];
 
 interface ThreadRow {
@@ -215,7 +239,9 @@ export const TABLES = {
   plugin_agent_ledger: { project: { via: "run_id", table: "plugin_agent_runs" }, export: { order: "run_id, seq", appendOnly: true } },
   plugin_agent_cards: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
   plugin_agent_pending: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
-  plugin_agent_briefs: { project: "project_id", export: { order: "project_id" } }
+  plugin_agent_briefs: { project: "project_id", export: { order: "project_id" } },
+  // this machine's clock continues a parked thread; another machine would continue it twice
+  plugin_agent_parked: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false }
 } as const;
 
 /** Threads live in their project's file, so every read and write names the project first. */
@@ -496,6 +522,25 @@ export class AgentStore {
 
   clearPending(projectId: string, threadId: string): void {
     this.db(projectId).prepare("DELETE FROM plugin_agent_pending WHERE thread_id = ?").run(threadId);
+  }
+
+  parked(projectId: string, threadId: string): ParkView | null {
+    const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_parked WHERE thread_id = ?").get(threadId) as ParkedRow | undefined;
+    return row ? toPark(row) : null;
+  }
+
+  allParked(projectId: string): ParkView[] {
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_parked ORDER BY until ASC").all() as ParkedRow[]).map(toPark);
+  }
+
+  park(projectId: string, park: ParkView): void {
+    this.db(projectId)
+      .prepare("INSERT OR REPLACE INTO plugin_agent_parked (thread_id, run_id, until, known, resume, attempt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(park.threadId, park.runId, park.until, park.known ? 1 : 0, park.resume ? 1 : 0, park.attempt, Date.now());
+  }
+
+  unpark(projectId: string, threadId: string): boolean {
+    return this.db(projectId).prepare("DELETE FROM plugin_agent_parked WHERE thread_id = ?").run(threadId).changes > 0;
   }
 
   brief(projectId: string): string | null {

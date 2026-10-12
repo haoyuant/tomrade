@@ -6,6 +6,7 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
+import { looksRateLimited, resetTime } from "@tomradex/agent";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import type { CodeLinkStore, SessionState, SessionView } from "./store.js";
 
@@ -27,6 +28,10 @@ interface HookPayload {
   notification_type?: string;
   message?: string;
   last_assistant_message?: string;
+  /** StopFailure: what kind of failure ("rate_limit", "authentication_failed"…) and its detail. */
+  error?: string;
+  error_details?: string;
+  /** The same, as Pi's bridge names them. */
   error_type?: string;
   error_message?: string;
   reason?: string;
@@ -53,6 +58,8 @@ export interface SessionsOptions {
   onMoment?(session: SessionView, moment: SessionMoment): void;
   /** The process is over; code evidence may have changed while it was still counted as active. */
   onEnd?(session: SessionView): void;
+  /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
+  onLimit?(session: SessionView, until: number | null): string;
 }
 
 export interface SessionFiles {
@@ -261,6 +268,8 @@ export class Sessions {
       case "SessionStart":
       case "UserPromptSubmit":
         Object.assign(patch, { state: "running", activity: null });
+        // the person went on by hand: a limit it waited for is no longer anyone's to announce
+        if (session.threadId) this.ctx.get("agent")?.unpark(projectId, session.threadId);
         break;
       case "PreToolUse":
         Object.assign(patch, { state: "running", activity: p.tool_name ? describeTool(p.tool_name, p.tool_input) : null });
@@ -286,9 +295,12 @@ export class Sessions {
         break;
       }
       case "StopFailure": {
-        const why = [p.error_type, firstLine(p.error_message, 160)].filter(Boolean).join(" — ");
-        Object.assign(patch, { state: "error", activity: null, summary: `stopped: ${why || "unknown error"}` });
-        moment = { kind: "failed", text: why || "unknown error" };
+        const kind = p.error ?? p.error_type;
+        const detail = p.error_details ?? p.error_message ?? p.last_assistant_message;
+        const why = [kind, firstLine(detail, 160)].filter(Boolean).join(" — ");
+        const limited = kind === "rate_limit" || looksRateLimited(detail) ? this.options.onLimit?.(session, resetTime(detail)) : undefined;
+        Object.assign(patch, { state: "error", activity: null, summary: limited ?? `stopped: ${why || "unknown error"}` });
+        moment = { kind: "failed", text: limited ?? (why || "unknown error") };
         break;
       }
       case "SessionEnd":
