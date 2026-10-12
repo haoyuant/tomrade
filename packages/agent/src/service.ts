@@ -18,7 +18,7 @@ import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
-import { generalOpener, generalPrompt } from "./prompt.js";
+import { RULES_MAX_CHARS, generalOpener, generalPrompt } from "./prompt.js";
 import {
   isSuspended,
   type AgentEvent,
@@ -174,6 +174,9 @@ declare module "@tomradex/ipc" {
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
     "agent.usage": () => UsageSummary;
+    /** The project's rules for every agent, as the person wrote them; empty when there are none. */
+    "agent.rules": (projectId: string) => { body: string; file: string | null };
+    "agent.setRules": (projectId: string, body: string) => { body: string; file: string | null };
     "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
@@ -365,6 +368,11 @@ export class Agent extends Service {
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.usage", () => ctx.agent.usage());
+      ctx.ipc.handle("agent.rules", (projectId) => ({ body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) }));
+      ctx.ipc.handle("agent.setRules", (projectId, body) => {
+        ctx.agent.setRules(projectId, body);
+        return { body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) };
+      });
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.startGeneral", (projectId, itemId, opts) => ctx.agent.startGeneral(projectId, itemId, opts));
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
@@ -638,6 +646,38 @@ export class Agent extends Service {
     return { today: sum(today), week: sum(week) };
   }
 
+  /** `<project folder>/.tomrade/rules.md`: text beside the project's playbooks and decisions, travelling with it. */
+  rulesFile(projectId: string): string | null {
+    const dir = (this.ctx.get("storage") as { artifactDirFor(projectId: string): string | null } | undefined)?.artifactDirFor(projectId);
+    return typeof dir === "string" ? path.join(dir, "rules.md") : null;
+  }
+
+  /** The project's rules for every agent, as the person wrote them; null when there are none. */
+  rules(projectId: string): string | null {
+    const file = this.rulesFile(projectId);
+    try {
+      const body = file ? fs.readFileSync(file, "utf8").trim() : "";
+      return body || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Empty removes the file. Rules are the person's: only their edit, or a rule they confirmed, lands here. */
+  setRules(projectId: string, body: string): void {
+    const text = body.replace(/\r\n/g, "\n").trim();
+    if (text.length > RULES_MAX_CHARS) throw new Error(`Rules are kept under ${RULES_MAX_CHARS} characters — every run reads them; trim some first`);
+    const file = this.rulesFile(projectId);
+    if (!file) throw new Error("This project has no folder to keep its rules in");
+    if (text) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${text}\n`, "utf8");
+    } else {
+      fs.rmSync(file, { force: true });
+    }
+    this.ctx.emit("agent/rules-changed", projectId);
+  }
+
   settingsOf(): AgentSettings {
     return (this.ctx.settings.get().agent as AgentSettings | undefined) ?? AGENT_SECTION.defaults;
   }
@@ -796,7 +836,8 @@ export class Agent extends Service {
     // in-app turn would be told has to travel in the brief itself.
     const context: { projectId: string; itemId: string; filesIndex?: string } = { projectId, itemId };
     await this.ctx.parallel("agent/prepare-brief", context);
-    const prompt = generalPrompt({ ticket, cwd: where.cwd, playbook: selected, continued, ...(context.filesIndex ? { filesIndex: context.filesIndex } : {}) });
+    const rules = this.rules(projectId);
+    const prompt = generalPrompt({ ticket, cwd: where.cwd, playbook: selected, continued, ...(context.filesIndex ? { filesIndex: context.filesIndex } : {}), ...(rules ? { rules } : {}) });
     return { preparation: { threadId: thread.id, continued, engine: engineId, cwd: where.cwd, playbook: selected, opener: generalOpener(ticket, continued), prompt }, item };
   }
 
@@ -1209,6 +1250,7 @@ export class Agent extends Service {
       const selectedMode = rc.thread.itemId && modes ? rc.thread.permissionMode ?? modes.default : undefined;
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
       const project = (this.ctx.get("projects") as { get(id: string): { name: string; keyPrefix: string } | null } | undefined)?.get(rc.projectId);
+      const rules = this.rules(rc.projectId);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
         projectId: rc.projectId,
@@ -1218,6 +1260,7 @@ export class Agent extends Service {
         permissionMode: selectedMode,
         ticket: this.ticketOf(rc.thread),
         input,
+        ...(rules ? { rules } : {}),
         messages: this.store.messages(rc.projectId, rc.threadId),
         cards: this.store.cards(rc.projectId, rc.threadId),
         brief: this.store.brief(rc.projectId),
@@ -1563,6 +1606,27 @@ export class Agent extends Service {
         execute: ({ body }, inv) => {
           this.store.setBrief(requireProjectId("update_project_brief", undefined, inv), body);
           return { ok: true };
+        }
+      })
+    );
+
+    this.ctx.tools.register(
+      defineTool({
+        name: "propose_rule",
+        title: "Propose a project rule",
+        description:
+          "When the user corrects how you work in a way that should hold for every agent in this project from now on (\"always write tickets in Chinese\", \"never touch the billing module\"), offer it as a project rule. The user confirms before anything is written; one short imperative sentence per rule. Not for one-off instructions, and not for facts about the product — those belong in the project brief.",
+        input: z.object({ rule: z.string().min(3).max(300).describe("One short imperative sentence.") }),
+        execute: async ({ rule }, inv) => {
+          const projectId = requireProjectId("propose_rule", undefined, inv);
+          if (!inv.ask) throw new Error("Nobody here can confirm a rule. Tell the user they can add it in Project settings → Rules.");
+          const w = this.words();
+          const line = rule.replace(/\s+/g, " ").trim().replace(/^[-*]\s*/, "");
+          const answer = await inv.ask(w.proposeRule(line), [w.addRule, w.skipRule]);
+          if (answer !== w.addRule) return { added: false, note: "The user did not add it. Follow it for this conversation only if they asked you to." };
+          const current = this.rules(projectId);
+          this.setRules(projectId, current ? `${current}\n- ${line}` : `- ${line}`);
+          return { added: true, file: this.rulesFile(projectId) };
         }
       })
     );

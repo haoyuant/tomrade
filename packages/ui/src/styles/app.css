@@ -854,6 +854,7 @@ strong { font-weight: var(--font-weight-medium); }
 .start-problem-detail { margin: 0; overflow-wrap: anywhere; }
 .gate-fix { display: grid; gap: var(--space-2); }
 .repo-workstreams { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--space-1); }
+.rules-input { width: 100%; min-height: 180px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.55; }
 .input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .textarea { resize: vertical; min-height: 72px; line-height: var(--leading-body); font-size: var(--text-base); }
 .field { display: flex; flex-direction: column; gap: 5px; }

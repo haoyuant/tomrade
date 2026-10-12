@@ -9,6 +9,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
 import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
+import { RulesBlock } from "./RulesBlock";
 import { StorageBlock } from "./StorageBlock";
 import { errorSpec, useToast } from "~/lib/toast";
 import { shortcut } from "~/lib/keys";
@@ -134,7 +135,7 @@ export function ProjectSettingsDialog({
   );
 }
 
-type ProjectSettingsPane = "overview" | "storage" | "repositories" | "files" | "lifecycle";
+type ProjectSettingsPane = "overview" | "rules" | "storage" | "repositories" | "files" | "lifecycle";
 
 interface ProjectPane {
   id: ProjectSettingsPane;
@@ -218,6 +219,12 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
           </div>
         </>
       )
+    },
+    {
+      id: "rules",
+      label: t("projectRules.label"),
+      icon: "i-pen",
+      render: () => <><SectionHead title={t("projectRules.label")}>{t("projectRules.lede")}</SectionHead><RulesBlock projectId={project.id} /></>
     },
     {
       id: "storage",
