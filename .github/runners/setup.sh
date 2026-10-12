@@ -3,16 +3,19 @@
 # (docs/releasing.md):
 #
 #   .github/runners/setup.sh arm64 haoyuant/tomrade
+#   .github/runners/setup.sh arm64 haoyuant/tomrade 2       # one more, beside it
 #   .github/runners/setup.sh linux haoyuant/tomrade         # a Docker container
 #   .github/runners/setup.sh arm64 haoyuant/tomrade-site
 #
-# gh must be signed in as an admin of the repository. Running it again replaces
-# that runner.
+# A number after the repository adds another Mac runner with the same labels,
+# so another job runs at the same time. gh must be signed in as an admin of the
+# repository. Running it again replaces that runner.
 set -euo pipefail
 
 VERSION=2.338.0
 kind=${1:?kind: arm64 or linux}
 repo=${2:?repository, like haoyuant/tomrade}
+instance=${3:+-$3}
 case $kind in
   arm64) sha=df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2 ;;
   linux) sha=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32 ;;
@@ -33,7 +36,7 @@ if [ "$kind" = linux ]; then
   exit 0
 fi
 
-dir="$HOME/actions-runners/${repo#*/}-mac-$kind"
+dir="$HOME/actions-runners/${repo#*/}-mac-$kind$instance"
 if [ -f "$dir/.service" ]; then
   (cd "$dir" && ./svc.sh stop && ./svc.sh uninstall) || true
 fi
@@ -43,7 +46,7 @@ curl -fsSL -o runner.tar.gz "https://github.com/actions/runner/releases/download
 echo "$sha  runner.tar.gz" | shasum -a 256 -c -
 tar xzf runner.tar.gz && rm runner.tar.gz
 ./config.sh --unattended --replace --url "https://github.com/$repo" --token "$token" \
-  --name "$(scutil --get LocalHostName)-mac-$kind"
+  --name "$(scutil --get LocalHostName)-mac-$kind$instance"
 # A LaunchAgent, so it runs while this user is logged in: codesign needs the
 # login session to reach a keychain.
 ./svc.sh install && ./svc.sh start
