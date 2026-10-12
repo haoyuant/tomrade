@@ -1683,7 +1683,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .panel + .panel { margin-top: var(--space-3); }
 /* ...but not when they are grid siblings — the margin would offset the
  * second card and defeat grid stretch, leaving mismatched heights. */
-.grid-2 > .panel + .panel, .grid-3 > .panel + .panel, .template-tickets > .panel + .panel { margin-top: 0; }
+.grid-2 > .panel + .panel, .grid-3 > .panel + .panel, .template-tickets > .panel + .panel, .template-gallery > .panel + .panel { margin-top: 0; }
 .sec-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-4); }
 .sec-title { font-size: var(--text-xl); line-height: var(--leading-tight); }
 .sec-lede { font-size: var(--text-base); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
