@@ -112,3 +112,49 @@ describe("items.query ↔ pure evaluator parity", () => {
     expect(s.items.query({ projectId: s.project.id, filter: [{ field: "ghost", op: "in", values: ["x"] }], sortBy: [{ field: "labels", dir: "asc" }] }).length).toBe(all);
   });
 });
+
+describe("derived fields", () => {
+  // stands in for a plugin's own table: a value for the items at priority 2 and up
+  const SCORE = { id: "score", name: "Score", names: { zh: "得分" }, values: "SELECT id AS item_id, key_num * 1.5 AS value FROM items WHERE priority >= 2", expr: "SELECT CASE WHEN i.priority >= 2 THEN i.key_num * 1.5 END" };
+
+  async function seeded() {
+    const s = await seed();
+    const off = s.fields.derive(SCORE);
+    const derived = s.fields.derivedValues(s.project.id);
+    // what the renderer holds: items read with their derived values
+    const all = s.items.list({ projectId: s.project.id }).map((i) => ({ ...i, fields: { ...i.fields, ...derived.get(i.id) } }));
+    const defs = new Map(s.fields.list(s.project.id).map((d) => [d.id, d]));
+    return { ...s, off, all, ctx: { ...s.ctx, defs } };
+  }
+
+  it("is listed as a read-only number nobody can write, rename or shadow", async () => {
+    const s = await seeded();
+    expect(s.fields.get(s.project.id, "score")).toMatchObject({ type: "number", readonly: true, builtin: true, derived: true, can: { filter: true, sort: true, group: false } });
+    expect(() => s.items.update(s.project.id, s.created[0].id, { fields: { score: 3 } }, "human")).toThrow(/computed/);
+    expect(() => s.fields.update(s.project.id, "score", { name: "Points" })).toThrow();
+    expect(() => s.fields.create({ projectId: s.project.id, name: "score", type: "number" })).toThrow(/built-in/);
+    expect(() => s.fields.derive(SCORE)).toThrow(/taken/);
+    s.off();
+    expect(s.fields.get(s.project.id, "score")).toBeNull();
+    expect(s.fields.derivedValues(s.project.id).size).toBe(0);
+  });
+
+  it("never rides on an item the items service hands back", async () => {
+    const s = await seeded();
+    expect(s.items.list({ projectId: s.project.id }).some((i) => "score" in i.fields)).toBe(false);
+    expect(s.all.filter((i) => typeof i.fields.score === "number").length).toBeGreaterThan(0);
+  });
+
+  for (const c of [
+    { name: "sort derived desc, empties last", sortBy: [{ field: "score", dir: "desc" }] as SortKey[], filter: [] as FilterClause[] },
+    { name: "sort derived asc", sortBy: [{ field: "score", dir: "asc" }] as SortKey[], filter: [] as FilterClause[] },
+    { name: "filter derived gte", sortBy: [] as SortKey[], filter: [{ field: "score", op: "gte", values: [4] }] as FilterClause[] }
+  ]) {
+    it(`agrees with the evaluator: ${c.name}`, async () => {
+      const s = await seeded();
+      const expected = evaluate(s.all, c.filter, c.sortBy, s.ctx);
+      expect(s.items.query({ projectId: s.project.id, filter: c.filter, sortBy: c.sortBy }).map((i) => i.id)).toEqual(expected);
+      if (c.filter.length) expect(expected.length).toBeLessThan(s.all.length);
+    });
+  }
+});

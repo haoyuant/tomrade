@@ -20,6 +20,7 @@
   "dependencies": {
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
+    "@tomradex/fields": "workspace:*",
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/llm": "workspace:*",

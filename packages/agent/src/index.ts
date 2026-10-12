@@ -2,7 +2,7 @@ import type {} from "cordis";
 export { attachedMedia, claudeMediaInput, codexMediaInput, publishNativeImage } from "./native-media.js";
 export { AgentMediaStore, MAX_MEDIA_BYTES, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 
-export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type GeneralPreparation, type GeneralStartOptions, type NewThreadOptions, type PlaybookRecommendation, type ThreadDetail, type WorkdirStatus } from "./service.js";
+export { Agent, AgentConfig, AGENT_SECTION, type AgentActivity, type AgentSettings, type EngineUsage, type UsageSummary, type GeneralPreparation, type GeneralStartOptions, type NewThreadOptions, type PlaybookRecommendation, type ThreadDetail, type WorkdirStatus } from "./service.js";
 export { Agent as default } from "./service.js";
 export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, type PlaybookVariants } from "./playbooks.js";

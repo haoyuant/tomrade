@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import type { Board, FieldDef, FieldValue, Item, ItemStatus, Patch, Priority } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
-import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket } from "~/lib/domain";
+import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket, usd } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { usePatchItem } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -599,6 +599,13 @@ function InlineValue({ value, kind, label, onSave }: { value: string; kind: "tex
  * patch through the same write path as a built-in, so the version, the oplog,
  * the lock policy and undo all apply unchanged.
  */
+/** A value a plugin computes — a ticket's spend — shown, never edited. */
+export function DerivedField({ item, def }: { item: Item; def: FieldDef }) {
+  const value = item.fields[def.id];
+  if (typeof value !== "number") return <span className="num tbl-dim">—</span>;
+  return <span className="num" data-derived={def.id}>{def.unit === "usd" ? usd(value) : value.toLocaleString()}</span>;
+}
+
 export function CustomField({ item, write, def }: FieldProps & { def: FieldDef }) {
   const { t, tx } = useI18n();
   const current = item.fields[def.id] ?? null;

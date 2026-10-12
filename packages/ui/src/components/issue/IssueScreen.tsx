@@ -15,6 +15,7 @@ import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";
 import {
   BoardField,
   CustomField,
+  DerivedField,
   DepsField,
   EpicField,
   IssueTitle,
@@ -197,6 +198,16 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
                     <span className="fs-k">{fieldLabel(def)}</span>
                     <span className="fs-v">
                       <CustomField item={item} write={write} def={def} />
+                    </span>
+                  </span>
+                ))}
+              {(fields.data ?? [])
+                .filter((f) => f.derived && typeof item.fields[f.id] === "number")
+                .map((def) => (
+                  <span className="fs-item" key={def.id} data-field={def.id}>
+                    <span className="fs-k">{fieldLabel(def)}</span>
+                    <span className="fs-v">
+                      <DerivedField item={item} def={def} />
                     </span>
                   </span>
                 ))}

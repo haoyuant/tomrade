@@ -7,6 +7,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import { DeliveryStore } from "@tomradex/db";
 import type {} from "@tomradex/hub";
+import type {} from "@tomradex/fields";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/ipc";
 import { writeContext } from "@tomradex/write";
@@ -73,6 +74,28 @@ const recommendationSchema = z.object({
   confidence: z.number().min(0).max(1),
   reason: z.string().min(1)
 });
+
+/** What one engine's runs added up to over a stretch of time, across every open project. */
+export interface EngineUsage {
+  engine: string;
+  title: string;
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Null when none of the runs said what it cost (Codex, the loop): tokens are all there is. */
+  costUsd: number | null;
+}
+
+export interface UsageSummary {
+  /** Since local midnight. */
+  today: EngineUsage[];
+  /** The last seven days, today included. */
+  week: EngineUsage[];
+}
+
+/** A ticket's spend: every run of every thread started from it. Both must agree — the board sorts on one, SQL on the other. */
+const COST_VALUES_SQL = "SELECT t.item_id AS item_id, SUM(r.cost_usd) AS value FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE t.item_id IS NOT NULL AND r.cost_usd IS NOT NULL GROUP BY t.item_id";
+const COST_EXPR_SQL = "SELECT SUM(r.cost_usd) FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE t.item_id = i.id";
 
 export interface ThreadDetail {
   thread: ThreadSummary;
@@ -148,6 +171,7 @@ declare module "@tomradex/ipc" {
     "agent.takeoverGeneral": (projectId: string, itemId: string) => { stopped: number };
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
+    "agent.usage": () => UsageSummary;
     "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
@@ -301,6 +325,7 @@ export class Agent extends Service {
     });
     this.migrateConversationRole();
     this.registerPlatformTools();
+    this.ctx.inject(["fields"], (ctx) => ctx.fields.derive({ id: "cost", name: "Cost", names: { zh: "花费" }, unit: "usd", values: COST_VALUES_SQL, expr: COST_EXPR_SQL }));
     this.loadUserPlaybooks();
     this.ctx.inject(["hub"], (ctx) => {
       if (ctx.hub.dir) this.migratePlaybooksIntoHub(ctx.hub.dir);
@@ -317,6 +342,7 @@ export class Agent extends Service {
         return ctx.agent.store.threads(projectId).map((th) => (running.has(th.id) ? { ...th, running: true } : th));
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
+      ctx.ipc.handle("agent.usage", () => ctx.agent.usage());
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.startGeneral", (projectId, itemId, opts) => ctx.agent.startGeneral(projectId, itemId, opts));
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
@@ -555,6 +581,39 @@ export class Agent extends Service {
       this.ctx.logger.warn(`project playbooks for ${projectId} failed to load: ${message(err)}`);
     }
     this.projectPlaybooks.set(projectId, new Map(loaded.map((pb) => [pb.id, pb])));
+  }
+
+  /** Runs and their tokens and spend, per engine, today and over the last week — what Tomrade itself recorded, nothing asked of a provider. */
+  usage(now = Date.now()): UsageSummary {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const today = midnight.getTime();
+    const week = today - 6 * 86_400_000;
+    const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
+    const sum = (since: number): EngineUsage[] => {
+      const by = new Map<string, EngineUsage>();
+      for (const projectId of this.ctx.db.openIds()) {
+        const rows = this.ctx.db
+          .for(projectId)
+          .prepare(
+            `SELECT engine, COUNT(*) AS runs, SUM(COALESCE(json_extract(usage_json, '$.inputTokens'), 0)) AS input, SUM(COALESCE(json_extract(usage_json, '$.outputTokens'), 0)) AS output, SUM(cost_usd) AS cost
+             FROM plugin_agent_runs WHERE started_at >= ? GROUP BY engine`
+          )
+          .all(since) as { engine: string; runs: number; input: number; output: number; cost: number | null }[];
+        for (const r of rows) {
+          const was = by.get(r.engine) ?? { engine: r.engine, title: titles.get(r.engine) ?? r.engine, runs: 0, inputTokens: 0, outputTokens: 0, costUsd: null };
+          by.set(r.engine, {
+            ...was,
+            runs: was.runs + r.runs,
+            inputTokens: was.inputTokens + (r.input ?? 0),
+            outputTokens: was.outputTokens + (r.output ?? 0),
+            costUsd: r.cost === null ? was.costUsd : (was.costUsd ?? 0) + r.cost
+          });
+        }
+      }
+      return [...by.values()].sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs);
+    };
+    return { today: sum(today), week: sum(week) };
   }
 
   settingsOf(): AgentSettings {
