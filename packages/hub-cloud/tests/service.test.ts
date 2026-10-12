@@ -6,7 +6,7 @@ import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import { Storage, readArtifact, readHubManifest } from "@tomradex/storage";
 import Settings from "@tomradex/settings";
-import { CloudHub, type LocalAccounts } from "../src/service.js";
+import { CloudHub, TERMS_VERSION, type LocalAccounts } from "../src/service.js";
 import type { CloudRecord, Mutation } from "../src/cache.js";
 import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@tomradex/domain";
 
@@ -16,7 +16,11 @@ const remote = vi.hoisted(() => ({
   /** Who the next sign-in or sign-up turns out to be; the owner when null. */
   as: null as { id: string; email: string } | null, confirm: false, signUps: 0, adopted: [] as unknown[],
   /** Emails asked for, with where their link lands. `taken` answers sign-up as for an existing address. */
-  mails: [] as { type: string; email: string; to?: string }[], taken: false, mailWait: 0
+  mails: [] as { type: string; email: string; to?: string }[], taken: false, mailWait: 0,
+  /** The account's user_metadata, what sign-up sent as metadata, and each metadata update in order. */
+  meta: {} as Record<string, unknown>, signUpData: null as Record<string, unknown> | null, metaUpdates: [] as Record<string, unknown>[],
+  /** Accounts deleted through the RPC. */
+  deleted: [] as string[]
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const mail = async (type: string, email: string, to?: string) => {
@@ -24,7 +28,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
     remote.mails.push({ type, email, to });
     return { data: {}, error: null };
   };
-  const user = () => ({ id: remote.userId, email: "user@example.test" });
+  const user = () => ({ id: remote.userId, email: "user@example.test", user_metadata: { ...remote.meta } });
   const session = () => { const u = remote.as ?? user(); return { access_token: `access-${u.id}`, refresh_token: `refresh-${u.id}`, user: u }; };
   return {
     auth: {
@@ -34,17 +38,29 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       signInWithPassword: async ({ password }: { password: string }) => password === "wrong"
         ? { data: { user: null, session: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }
         : { data: { user: session().user, session: session() }, error: null },
-      signUp: async ({ email, options }: { email: string; options?: { emailRedirectTo?: string } }) => {
+      signUp: async ({ email, options }: { email: string; options?: { emailRedirectTo?: string; data?: Record<string, unknown> } }) => {
         remote.signUps++;
+        remote.signUpData = options?.data ?? null;
         if (remote.taken) return { data: { user: { ...session().user, identities: [] }, session: null }, error: null };
         if (remote.confirm) remote.mails.push({ type: "signup", email, to: options?.emailRedirectTo });
         return { data: { user: session().user, session: remote.confirm ? null : session() }, error: null };
       },
       resend: async ({ type, email, options }: { type: string; email: string; options?: { emailRedirectTo?: string } }) => mail(type, email, options?.emailRedirectTo),
       resetPasswordForEmail: async (email: string, options?: { redirectTo?: string }) => mail("recovery", email, options?.redirectTo),
-      setSession: async (s: { user?: unknown }) => { remote.adopted.push(s); return { data: { session: s, user: s.user }, error: null }; }
+      setSession: async (s: { user?: unknown }) => { remote.adopted.push(s); return { data: { session: s, user: s.user }, error: null }; },
+      updateUser: async ({ data }: { data: Record<string, unknown> }) => {
+        if (remote.offline) return { data: { user: null }, error: { message: "fetch failed" } };
+        remote.metaUpdates.push(data);
+        remote.meta = { ...remote.meta, ...data };
+        return { data: { user: user() }, error: null };
+      }
     },
     rpc: async (name: string, args?: { p_mutation: Mutation }) => {
+      if (name === "tomrade_delete_account") {
+        if (remote.offline) return { data: null, error: { message: "TypeError: fetch failed" } };
+        remote.deleted.push((remote.as ?? user()).id);
+        return { data: null, error: null };
+      }
       if (remote.offline) return { data: null, error: { message: "offline" } };
       if (name === "tomrade_ensure_hub") return { data: remote.hubId, error: null };
       const op = args!.p_mutation;
@@ -73,6 +89,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = [];
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -231,12 +248,14 @@ it("signs out on this device when the server cannot be reached", async () => {
 function folders(elsewhere: string[] = []) {
   const opened: { user: { id: string; email: string }; session: { key: string; value: string } }[] = [];
   const claimed: { id: string; email: string }[] = [];
+  const forgotten: string[] = [];
   const accounts: LocalAccounts = {
     elsewhere: id => elsewhere.includes(id),
     claim: user => { claimed.push(user); },
-    open: async (user, session) => { opened.push({ user, session }); }
+    open: async (user, session) => { opened.push({ user, session }); },
+    forget: id => { forgotten.push(id); }
   };
-  return { accounts, opened, claimed };
+  return { accounts, opened, claimed, forgotten };
 }
 const other = { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "other@example.test" };
 
@@ -289,24 +308,24 @@ it("creates another account beside the owner's, and refuses before creating one 
   await cloud.signOut();
   remote.as = other;
   remote.confirm = true;
-  expect(await cloud.signUp(other.email, "long enough")).toEqual({ confirmationRequired: true });
+  expect(await cloud.signUp(other.email, "long enough", undefined, true)).toEqual({ confirmationRequired: true });
   expect(opened).toEqual([]);
   remote.confirm = false;
-  expect(await cloud.signUp(other.email, "long enough")).toEqual({ confirmationRequired: false });
+  expect(await cloud.signUp(other.email, "long enough", undefined, true)).toEqual({ confirmationRequired: false });
   expect(opened.map(o => o.user.id)).toEqual([other.id]);
 
   const alone = await machine();
   await alone.cloud.sync();
   await alone.cloud.signOut();
   const before = remote.signUps;
-  await expect(alone.cloud.signUp(other.email, "long enough")).rejects.toThrow(/^\[other_account\] .*user@example\.test/);
+  await expect(alone.cloud.signUp(other.email, "long enough", undefined, true)).rejects.toThrow(/^\[other_account\] .*user@example\.test/);
   expect(remote.signUps).toBe(before);
 });
 
 it("links confirmation and reset emails to the site's pages, in the reader's language", async () => {
   const { cloud } = await machine();
   remote.confirm = true;
-  expect(await cloud.signUp("new@example.test", "long enough", "zh")).toEqual({ confirmationRequired: true });
+  expect(await cloud.signUp("new@example.test", "long enough", "zh", true)).toEqual({ confirmationRequired: true });
   await cloud.resendConfirmation("new@example.test", "en");
   await cloud.resetPassword("new@example.test", "zh");
   expect(remote.mails).toEqual([
@@ -319,7 +338,7 @@ it("links confirmation and reset emails to the site's pages, in the reader's lan
 it("says so when sign-up meets an address that already has an account", async () => {
   const { cloud } = await machine();
   remote.taken = true;
-  await expect(cloud.signUp("user@example.test", "long enough")).rejects.toThrow(/^\[user_already_exists\] /);
+  await expect(cloud.signUp("user@example.test", "long enough", undefined, true)).rejects.toThrow(/^\[user_already_exists\] /);
   expect(remote.mails).toEqual([]);
 });
 
@@ -331,4 +350,77 @@ it("leads each failure with a code the sign-in form can translate", async () => 
   await expect(cloud.resetPassword("not an address")).rejects.toThrow(/^\[email_address_invalid\] /);
   remote.mailWait = 42;
   await expect(cloud.resendConfirmation("user@example.test")).rejects.toThrow(/^\[over_email_send_rate_limit\] .* 42 seconds/);
+});
+
+it("creates an account only with the terms agreed, and records which version on it", async () => {
+  const { cloud } = await machine();
+  remote.confirm = true;
+  await expect(cloud.signUp("new@example.test", "long enough")).rejects.toThrow(/^\[terms_required\] /);
+  expect(remote.signUps).toBe(0);
+  expect(await cloud.signUp("new@example.test", "long enough", "en", true)).toEqual({ confirmationRequired: true });
+  expect(remote.signUpData).toMatchObject({ terms_version: TERMS_VERSION, terms_accepted_at: expect.any(String) });
+});
+
+it("asks an account that never agreed, and records the agreement once, even after time offline", async () => {
+  const { cloud } = await machine();
+  await cloud.sync();
+  expect(cloud.info().terms).toEqual({ current: TERMS_VERSION, accepted: null });
+  expect(remote.metaUpdates).toEqual([]);
+
+  remote.offline = true;
+  expect((await cloud.acceptTerms()).terms.accepted).toBe(TERMS_VERSION);
+  expect(remote.metaUpdates).toEqual([]);
+  remote.offline = false;
+  await cloud.sync();
+  await cloud.sync();
+  expect(remote.metaUpdates).toEqual([{ terms_version: TERMS_VERSION, terms_accepted_at: expect.any(String) }]);
+  expect(cloud.info().terms.accepted).toBe(TERMS_VERSION);
+});
+
+it("records the terms ticked at sign-in, and never writes over a newer version agreed elsewhere", async () => {
+  const { cloud } = await machine();
+  await cloud.signIn("user@example.test", "password", true);
+  expect(remote.metaUpdates.map(m => m.terms_version)).toEqual([TERMS_VERSION]);
+
+  const later = { terms_version: "2999-01-01" };
+  remote.meta = later;
+  await cloud.signIn("user@example.test", "password", true);
+  await cloud.sync();
+  expect(remote.metaUpdates).toHaveLength(1);
+  expect(cloud.info().terms.accepted).toBe(later.terms_version);
+});
+
+it("deletes the account only with its password, and leaves this computer's projects to the next account", async () => {
+  const { accounts, forgotten } = folders();
+  const { cloud, ctx, project, dir } = await machine({ accounts });
+  await cloud.sync();
+  await expect(cloud.deleteAccount("wrong")).rejects.toThrow(/^\[invalid_credentials\] /);
+  expect(remote.deleted).toEqual([]);
+  expect(cloud.info().user?.id).toBe(remote.userId);
+
+  const info = await cloud.deleteAccount("password");
+  expect(remote.deleted).toEqual([remote.userId]);
+  expect(info).toMatchObject({ user: null, owner: null, hubId: null, offlineAccess: false });
+  expect(remote.forgotten).toContain("sb-example-auth-token");
+  expect(forgotten).toEqual([remote.userId]);
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, "hub-cloud.json"), "utf8"));
+  expect(saved).toMatchObject({ userId: null, hubId: null, email: null, records: [], conflicts: [], migrated: true });
+  expect(saved.outbox.map((op: Mutation) => op.kind)).toEqual(["preference"]);
+  expect(ctx.hub.catalog.project(project.id)).toBeTruthy();
+
+  // Whoever signs in next takes this local Hub, projects and all, as on a first run.
+  remote.as = other;
+  remote.requests = [];
+  await cloud.signIn(other.email, "password");
+  expect(cloud.cache.data.userId).toBe(other.id);
+  expect(remote.requests.some(op => op.kind === "project" && op.key === project.id)).toBe(true);
+});
+
+it("keeps the account when the server can't be reached", async () => {
+  const { cloud } = await machine();
+  await cloud.sync();
+  remote.offline = true;
+  await expect(cloud.deleteAccount("password")).rejects.toThrow(/^\[network\] /);
+  expect(cloud.info().user?.id).toBe(remote.userId);
+  expect(cloud.cache.data.userId).toBe(remote.userId);
 });

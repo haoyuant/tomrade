@@ -35,6 +35,7 @@ function accountsAt(userData: string, cipher: Cipher): LocalAccounts | undefined
   return {
     elsewhere: id => folders.elsewhere(id, here),
     claim: user => folders.claim(user, here),
+    forget: id => folders.forget(id),
     open: async (user, session) => {
       const folder = folders.folderFor(user);
       new EncryptedSessionStorage(path.join(folders.dirs(folder).userData, "account.enc"), cipher).setItem(session.key, session.value);

@@ -58,6 +58,8 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   execute(args: z.output<S>, invocation: ToolInvocation): unknown;
   /** False keeps the tool off the MCP server, so only engines in this process can call it — for what no outside client may reach, like a shell. */
   mcp?: boolean;
+  /** True when the tool only reads: MCP clients such as Codex then run it without asking (`readOnlyHint`). */
+  readOnly?: boolean;
   /**
    * Listed to an in-process agent only on threads of this surface (the
    * troubleshooter's tools: "doctor"), so no other conversation carries it.

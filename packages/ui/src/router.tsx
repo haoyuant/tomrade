@@ -12,6 +12,7 @@ import { ToastProvider } from "~/lib/toast";
 import { AccountGate } from "~/components/dialogs/AccountPanel";
 import { PendingBuildWatcher } from "~/components/dialogs/plugins/ConfirmBuildDialog";
 import { UpdateNotice } from "~/components/dialogs/UpdateNotice";
+import { TermsPrompt } from "~/components/dialogs/TermsPrompt";
 import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
 
@@ -22,6 +23,7 @@ const rootRoute = createRootRoute({
         <ToastProvider>
           <IconSprite />
           <AccountGate><Outlet /></AccountGate>
+          <TermsPrompt />
           <PendingBuildWatcher />
           <UpdateNotice />
           <AttentionOpener />

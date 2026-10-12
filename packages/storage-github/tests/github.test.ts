@@ -173,6 +173,34 @@ describe("the GitHub provider", () => {
     expect(await api.exists("me", "gone")).toBeNull();
   });
 
+  it("tells who can read a repository, with access to it and without", async () => {
+    // The token reaches only me/*; anyone may read a public repository.
+    const repos: Record<string, boolean> = { "me/secret": true, "me/open": false, "acme/elsewhere": false, "acme/hidden": true };
+    const asked: { route: string; signed: boolean }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
+        const route = url.replace("https://api.github.com/repos/", "");
+        const signed = !!init?.headers?.Authorization;
+        asked.push({ route, signed });
+        const status = route === "rate/limited" ? 403 : route in repos && (signed ? route.startsWith("me/") : !repos[route]) ? 200 : 404;
+        return { ok: status < 400, status, json: async () => ({ full_name: route, private: repos[route] }), text: async () => "" };
+      })
+    );
+    const api = new GitHub(() => "ghp_test");
+    expect(await api.visibility("me", "secret")).toBe("private");
+    expect(await api.visibility("me", "open")).toBe("public");
+    // An App not given the repository: an anonymous read still finds a public one, and only a public one.
+    expect(await api.visibility("acme", "elsewhere")).toBe("public");
+    expect(await api.visibility("acme", "hidden")).toBe("private");
+    expect(asked.filter((a) => a.route === "acme/elsewhere").map((a) => a.signed)).toEqual([true, false]);
+    const signedOut = new GitHub(() => "");
+    expect(await signedOut.visibility("me", "open")).toBe("public");
+    expect(await signedOut.visibility("me", "secret")).toBe("private");
+    // No answer is not an answer: a refused read leaves the caller to keep what it knew.
+    await expect(signedOut.visibility("rate", "limited")).rejects.toThrow(GitHubError);
+  });
+
   it("surfaces a GitHub message rather than a bare status", async () => {
     const api = new GitHub(() => "ghp_test");
     stubGitHub({ "GET /user": { status: 403, body: { message: "Bad credentials" } } });

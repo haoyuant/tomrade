@@ -76,6 +76,7 @@ export function registerTools(ctx: Context): void {
       description:
         `List backlog items, at most \`limit\` rows (default ${DEFAULT_LIST_LIMIT}; raise it for more). To find items about a topic, search with one or two distinctive words, then try synonyms (goal/target, sign-in/login): search matches title and body in any script, every word must appear, and when no item has them all the items with some of them come back instead, best matches first; a "quoted phrase" must appear contiguously. Filters (board, status, kind, priority, label, parent, filter clauses) narrow the set; sort keys only reorder it, so never repeat a search with another sort. Omit projectId to use the current project. Use count_items for totals and breakdowns; do not fetch rows merely to count them.`,
       input: listInput,
+      readOnly: true,
       execute: ({ limit = DEFAULT_LIST_LIMIT, ...args }, inv) => find("list_items", args, inv, { limit, widen: true }).items
     })
   );
@@ -87,6 +88,7 @@ export function registerTools(ctx: Context): void {
       description:
         "Answer backlog quantity questions in one call without listing rows. Returns the exact matched count plus breakdowns by kind, status, and workstream. Takes the same filters as list_items; a search here is strict (every word must appear). In Tomrade, `ticket` and `epic` are distinct item kinds; for 'how many tickets', pass kind: ticket.",
       input: readInput,
+      readOnly: true,
       execute(args, inv) {
         const { projectId, items } = find("count_items", args, inv);
         const boards = new Map(ctx.boards.list(projectId).map((board) => [board.id, board.name]));
@@ -110,6 +112,7 @@ export function registerTools(ctx: Context): void {
       title: "Get one item",
       description: "Fetch a single backlog item by id or key (TOM-12). The body is Markdown; files it links (tomrade-file://<fileId>) come back under attachments with their Files path.",
       input: z.object({ projectId: z.string().optional(), id: z.string().describe("The item's id, or its key such as TOM-12") }),
+      readOnly: true,
       async execute({ projectId, id }, inv) {
         const scope = requireProjectId("get_item", projectId, inv);
         // briefs name tickets by key, so an agent reaches for that first

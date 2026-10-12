@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { SEALED } from "@tomradex/settings";
 import { type Git } from "@tomradex/storage";
 
 const key = "credential.https://github.com.helper";
@@ -14,7 +15,10 @@ const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
  */
 const helperDir = (settings: string): string => path.join(path.dirname(settings), "bin");
 const helperPath = (settings: string): string => path.join(helperDir(settings), "tomrade-credential");
-/** The signed-in session's short-lived token, renewed by the app while it runs; the helper reads it before the settings' token. */
+/**
+ * The token git gets: the signed-in session's short-lived one, renewed by the app while it runs, else the
+ * personal access token, which settings.json keeps sealed by the OS keychain where only the app can open it.
+ */
 const tokenFile = (settings: string): string => path.join(path.dirname(settings), "github-token.json");
 
 const writeHelper = (file: string, content: string, mode: number): void => {
@@ -36,7 +40,7 @@ export function githubHttps(remote: string): boolean {
   }
 }
 
-/** Null takes it away, and the helper falls back to the settings' token. */
+/** Null takes it away, and the helper falls back to a plain-text token in settings, where the keychain can't seal it. */
 export function writeHelperToken(settings: string, grant: { token: string; expiresAt: number | null } | null): void {
   if (!grant) fs.rmSync(tokenFile(settings), { force: true });
   else writeHelper(tokenFile(settings), JSON.stringify(grant), 0o600);
@@ -110,7 +114,7 @@ export function writeGithubHelper(settings: string): string {
     '  }',
     '  let token;',
     `  try { const t = JSON.parse(fs.readFileSync(${JSON.stringify(path.resolve(tokenFile(settings)))}, "utf8")); if (typeof t.token === "string" && (!t.expiresAt || t.expiresAt > Date.now() + 30000)) token = t.token; } catch {}`,
-    `  if (token === undefined) token = JSON.parse(fs.readFileSync(${JSON.stringify(path.resolve(settings))}, "utf8")).github?.token;`,
+    `  if (token === undefined) { const t = JSON.parse(fs.readFileSync(${JSON.stringify(path.resolve(settings))}, "utf8")).github?.token; if (typeof t === "string" && !t.startsWith(${JSON.stringify(SEALED)})) token = t; }`,
     '  if (typeof token !== "string" || !token.trim() || /[\\r\\n\\0]/.test(token)) process.exit(action === "run" ? 1 : 0);',
     '  if (action === "run") {',
     '    const env = { ...process.env, GH_TOKEN: token.trim(), GITHUB_TOKEN: token.trim() };',

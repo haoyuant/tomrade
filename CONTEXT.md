@@ -16,6 +16,15 @@ _Avoid_: Attempt, cycle, round
 A branch and its pull request evidence within one delivery. A delivery may contain multiple code links.
 _Avoid_: Attachment, association
 
+**Sync back**:
+A session Tomrade did not start (the user's own Claude Code, Codex…) bringing
+its work into the backlog when the user asks — `/tomrade:sync` over MCP — or
+when the agent offers and the user agrees. Optional on both sides: work needs no
+ticket and a ticket needs no code, so unmatched work stays unmatched. Code moves
+a ticket only through code links; general work through its status or a
+submission. Nothing is closed without merge evidence or the person's word.
+_Avoid_: Import, report
+
 **Work type**:
 `coding` or `general`, independent of structural `kind` (`ticket` or `epic`).
 Coding links to repositories, branches and PRs. General requires none of those.

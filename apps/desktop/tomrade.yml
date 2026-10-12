@@ -143,8 +143,9 @@ plugins:
     name: "@tomradex/onboarding"
     config:
       locale: "${locale}"
+  # API keys and tokens rest in settings.json encrypted by the OS keychain.
   - id: settings
-    name: "@tomradex/settings"
+    name: ./dist/settings.js
     config:
       path: "${userData}/settings.json"
       locale: "${locale}"

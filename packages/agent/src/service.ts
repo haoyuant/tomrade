@@ -18,7 +18,7 @@ import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
-import { RULES_MAX_CHARS, generalOpener, generalPrompt } from "./prompt.js";
+import { RULES_MAX_CHARS, generalOpener, generalPrompt, rulesInstructions } from "./prompt.js";
 import {
   isSuspended,
   type AgentEvent,
@@ -361,6 +361,14 @@ export class Agent extends Service {
         this.migratePlaybooksIntoHub(dir);
         this.loadUserPlaybooks();
       });
+    });
+    // An agent Tomrade did not start reads the rules when it connects; the ones it starts hear them every turn.
+    this.ctx.inject(["mcp"], (ctx) => {
+      const mcp = ctx.get("mcp") as { instruct(render: (scope: { projectId?: string }) => string | null, options?: { order?: number }): () => void } | undefined;
+      mcp?.instruct(({ projectId }) => {
+        const rules = projectId ? this.rules(projectId) : null;
+        return rules ? rulesInstructions(rules) : null;
+      }, { order: -1 });
     });
     this.ctx.inject(["ipc"], (ctx) => {
       // the panel's list says which conversations are working right now
@@ -1622,6 +1630,17 @@ export class Agent extends Service {
           this.store.setBrief(requireProjectId("update_project_brief", undefined, inv), body);
           return { ok: true };
         }
+      })
+    );
+
+    this.ctx.tools.register(
+      defineTool({
+        name: "get_project_rules",
+        title: "Read the project rules",
+        description: "The rules the person set for every agent working in this project (Project settings → Rules). Follow them throughout; empty when there are none.",
+        input: z.object({ projectId: z.string().optional() }),
+        readOnly: true,
+        execute: ({ projectId }, inv) => ({ rules: this.rules(requireProjectId("get_project_rules", projectId, inv)) ?? "" })
       })
     );
 

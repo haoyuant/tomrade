@@ -93,8 +93,11 @@ export type SqlParams = unknown[] | Record<string, unknown>;
 export interface TableSpec {
   /** Project-scope tables: the column holding the project id, or a chain through another table. */
   project?: string | { via: string; table: string };
-  /** Exported tables travel in the project's folder; `false` keeps them on this machine. */
-  export: { order: string; appendOnly?: boolean; always?: boolean } | false;
+  /**
+   * Exported tables travel in the project's folder; `false` keeps them on this machine.
+   * `private` rows (conversations, say) never travel to a remote known to be public.
+   */
+  export: { order: string; appendOnly?: boolean; always?: boolean; private?: boolean } | false;
 }
 
 /**

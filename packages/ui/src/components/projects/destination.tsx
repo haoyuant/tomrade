@@ -12,6 +12,7 @@ import {
   useStorageConnection
 } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
+import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { readableError, useToast } from "~/lib/toast";
 
 /** The words of a failure, without the IPC wrapper or the class name. */
@@ -206,6 +207,7 @@ export function ConnectionPanel({ provider, api = storageRemoteApi }: { provider
           </button>
         </div>
         {prompt.help && <span className="meta-txt">{prompt.help}</span>}
+        <PlainSecretNote />
         {failure}
       </div>
       <div className="row" style={{ gap: "var(--space-2)" }}>

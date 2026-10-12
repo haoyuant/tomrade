@@ -27,6 +27,7 @@ import { openExternal, reveal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
 import { readableError } from "~/lib/toast";
 import { shortcut } from "~/lib/keys";
+import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { useSettingsSheet } from "~/lib/settingsHost";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
@@ -1054,6 +1055,7 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
       <div className="field">
         <label htmlFor="pfKey">{t("settingsDialog.apiKeyLabel")}</label>
         <input id="pfKey" className="input num" type="password" value={draft.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+        <PlainSecretNote />
         <span className="meta-txt">
           {t("settingsDialog.localEndpointNote")}
           {keyPage && (

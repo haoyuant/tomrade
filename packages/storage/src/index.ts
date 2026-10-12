@@ -46,6 +46,7 @@ export {
   type GitOrigin,
   type ProviderConnection,
   type RemoteTarget,
+  type RemoteVisibility,
   type StorageInfo,
   type StorageProvider,
   type StorageProviderView,

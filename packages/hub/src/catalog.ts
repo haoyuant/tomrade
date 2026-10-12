@@ -24,6 +24,9 @@ export const CatalogProject = z.object({
   git: z.enum(["dedicated", "shared", "none"]).default("none"),
   /** Only meaningful for a dedicated repository: where Tomrade pushes. */
   remote: RemoteRef.nullable().default(null),
+  /** Who can read that remote, as its provider said at `visibilityAt`; null until asked. */
+  visibility: z.enum(["public", "private", "unknown"]).nullable().default(null),
+  visibilityAt: z.number().nullable().default(null),
   /** Plugin namespaces whose tables travel in this project's folder. */
   exports: z.array(z.string()).default([]),
   /** In a shared checkout: commit the `.tomrade` subtree after publishing. Never push. */
@@ -35,6 +38,8 @@ export const CatalogProject = z.object({
   archived: z.boolean().default(false),
   /** Tables (`<namespace>/<table>`) a restore could not read: never exported from here until a snapshot carrying them arrives. */
   withheld: z.array(z.string()).default([]),
+  /** Plugin namespaces whose tables in the folder the cache has not taken in: their plugin was not loaded when the folder was read. */
+  unimported: z.array(z.string()).default([]),
   /** The first run's project, untouched so far: kept out of the account's catalog until someone uses it. */
   seed: z.boolean().default(false),
   /** The sample project: this machine's tour, never in the account's catalog however much it is used. */

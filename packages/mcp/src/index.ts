@@ -58,6 +58,32 @@ export interface RunBinding {
   event?(payload: unknown): unknown | Promise<unknown>;
 }
 
+/** Where a session stands: its project when it opened on `/mcp/<projectId>`, none on the bare endpoint. */
+export interface McpScope {
+  projectId?: string;
+}
+
+/**
+ * A prompt the client offers its user as a slash command — Claude Code lists
+ * it as `/tomrade:<name>`. Rendered when invoked, so it reads the project as
+ * it is then.
+ */
+export interface McpPrompt {
+  name: string;
+  title?: string;
+  description: string;
+  render(scope: McpScope): string;
+}
+
+/** One plugin's broken paragraph must not keep a client from connecting. */
+const paragraph = (render: (scope: McpScope) => string | null, scope: McpScope): string | null => {
+  try {
+    return render(scope);
+  } catch {
+    return null;
+  }
+};
+
 const sessionIdOf = (req: express.Request): string | undefined => {
   const header = req.headers["mcp-session-id"];
   if (typeof header === "string") return header;
@@ -70,8 +96,8 @@ const sessionIdOf = (req: express.Request): string | undefined => {
  * Every tool in the registry appears here under its own name (the server name
  * is the namespace), executed as ai:mcp through the same guarded path every
  * surface uses — or through a run's gateway when the session presented a run
- * token. Sessions read the registry when they open, so a plugin loaded later
- * is visible to the next one.
+ * token. Sessions read the registry, prompts and instructions when they open,
+ * so a plugin loaded later is visible to the next one.
  */
 export class Mcp extends Service {
   static provide = "mcp";
@@ -84,6 +110,8 @@ export class Mcp extends Service {
   private tools: Tools | null = null;
   private bindings = new Map<string, RunBinding>();
   private eventListeners = new Set<(payload: unknown) => void>();
+  private prompts = new Map<string, McpPrompt>();
+  private instructions = new Map<(scope: McpScope) => string | null, number>();
 
   constructor(
     ctx: Context,
@@ -207,6 +235,29 @@ export class Mcp extends Service {
     }, "mcp.onEvent");
   }
 
+  /** Offer a prompt to every session opened from now on. Reversible with the plugin that registered it. */
+  prompt(prompt: McpPrompt): () => void {
+    return this.ctx.effect(() => {
+      this.prompts.set(prompt.name, prompt);
+      return () => {
+        if (this.prompts.get(prompt.name) === prompt) this.prompts.delete(prompt.name);
+      };
+    }, `mcp.prompt(${prompt.name})`);
+  }
+
+  /**
+   * Add a paragraph to the instructions a client reads when it connects. Only
+   * sessions without a run token get them: a run Tomrade started already has
+   * its brief. Lower `order` comes first — Claude Code keeps only the first
+   * 2048 characters.
+   */
+  instruct(render: (scope: McpScope) => string | null, options: { order?: number } = {}): () => void {
+    return this.ctx.effect(() => {
+      this.instructions.set(render, options.order ?? 0);
+      return () => this.instructions.delete(render);
+    }, "mcp.instruct");
+  }
+
   /** Reversible: the token dies with the run (or the plugin) that registered it. */
   bindRun(token: string, binding: RunBinding): () => void {
     return this.ctx.effect(() => {
@@ -218,11 +269,15 @@ export class Mcp extends Service {
   }
 
   private session(token?: string, projectId?: string): McpServer {
-    const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION });
+    const scope: McpScope = projectId ? { projectId } : {};
+    const ordered = [...this.instructions].sort((a, b) => a[1] - b[1]).map(([render]) => render);
+    const instructions = token ? "" : ordered.map((render) => paragraph(render, scope)).filter(Boolean).join("\n\n");
+    const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION }, instructions ? { instructions } : undefined);
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
     for (const tool of tools.served()) {
-      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input }, async (args, extra) => {
+      const annotations = tool.readOnly ? { readOnlyHint: true } : undefined;
+      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input, annotations }, async (args, extra) => {
         try {
           if (token) {
             const binding = this.bindings.get(token);
@@ -234,6 +289,12 @@ export class Mcp extends Service {
           return errorResult(e);
         }
       });
+    }
+    for (const prompt of this.prompts.values()) {
+      server.registerPrompt(prompt.name, { title: prompt.title, description: prompt.description }, () => ({
+        description: prompt.description,
+        messages: [{ role: "user", content: { type: "text", text: prompt.render(scope) } }]
+      }));
     }
     return server;
   }

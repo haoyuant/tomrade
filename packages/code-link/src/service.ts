@@ -21,6 +21,7 @@ import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { writeConnectFiles } from "./connect.js";
+import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
@@ -322,6 +323,13 @@ export class CodeLink extends Service {
     this.home.inject(["mcp"], (ctx) => {
       // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
       ctx.mcp.onEvent((payload) => this.externalEvent(payload));
+      ctx.mcp.prompt({
+        name: SYNC_PROMPT,
+        title: "Sync with Tomrade",
+        description: "Bring this session's work back into the Tomrade backlog: match it to tickets, link code, update status, file follow-ups.",
+        render: ({ projectId }) => syncPrompt(this.syncScope(projectId))
+      });
+      ctx.mcp.instruct(({ projectId }) => syncInstructions(this.syncScope(projectId)));
       // Terminals the user still has open from before a restart keep calling with their tokens; bind those again.
       for (const projectId of this.ctx.db.openIds()) this.rebindSessions(projectId);
       ctx.on("db/opened", (projectId) => this.rebindSessions(projectId));
@@ -1336,6 +1344,12 @@ export class CodeLink extends Service {
   /** Per-session files (mcp.json, hooks settings, the prompt, the launch script) live in the Hub where the user can see them. */
   sessionDir(sessionId: string): string {
     return path.join(this.ctx.hub.dir ?? path.join(os.tmpdir(), "tomrade"), "sessions", sessionId);
+  }
+
+  private syncScope(projectId: string | undefined): SyncScope | null {
+    if (!projectId || !this.ctx.db.has(projectId)) return null;
+    const row = this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
+    return row ? { projectName: row.name, prefix: this.prefixOf(projectId) } : null;
   }
 
   private prefixOf(projectId: string): string {

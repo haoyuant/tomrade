@@ -4,6 +4,8 @@ import { useAccount } from "~/lib/account";
 import { invoke, messageOf } from "~/lib/api";
 import { useHubInfo } from "~/lib/queries";
 import { useI18n } from "~/lib/i18n";
+import { legalUrl } from "~/lib/legal";
+import { openExternal } from "~/lib/shell";
 import { AccountSunrise } from "./AccountSunrise";
 
 const MIN_PASSWORD = 8;
@@ -35,6 +37,19 @@ const copy = {
     resetNext: "Choose a new password on the page the link opens, then come back here and sign in with it.",
     backToSignIn: "Back to sign in",
     mailWait: (n: number) => `We emailed this address less than a minute ago. Check your inbox, or try again in ${n}s.`,
+    agree: (terms: ReactNode, privacy: ReactNode) => <>I agree to the {terms} and the {privacy}.</>,
+    terms: "Terms of Service", privacy: "Privacy Policy",
+    needAgree: "Tick this to agree to the Terms of Service and Privacy Policy first.",
+    deleteAccount: "Delete account…",
+    deleteTitle: "Delete your Tomrade account?",
+    deleteIntro: (email: ReactNode) => <>This deletes {email} for good. It can't be undone.</>,
+    deleteGoesLabel: "Deleted:",
+    deleteGoes: "the account, your synced preferences and project list, your plugin reports and your publisher profile.",
+    deleteStaysLabel: "Kept:",
+    deleteStays: "your projects on this computer and in their git remotes, and plugins you published (write to support@tomrade.com to take them down). The next account to sign in here takes over these projects.",
+    deletePassword: "Your password, to confirm",
+    deleteForever: "Delete account", deleting: "Deleting…", cancel: "Cancel",
+    wrongPassword: "That password isn't right.",
     errors: {
       invalid_credentials: "Wrong email or password.",
       email_not_confirmed: "Confirm your email first: open the link we sent you, then sign in.",
@@ -47,7 +62,8 @@ const copy = {
       email_address_not_authorized: "Tomrade can't send email to this address yet. Try again later.",
       signup_disabled: "New accounts can't be created right now.",
       network: "Can't reach the Tomrade server. Check your connection, then try again.",
-      other_account: "This computer's projects belong to another account. Sign in with that account."
+      other_account: "This computer's projects belong to another account. Sign in with that account.",
+      terms_required: "Tick the box to agree to the Terms of Service and Privacy Policy first."
     } as Record<string, string>
   },
   zh: {
@@ -74,6 +90,19 @@ const copy = {
     resetNext: "在链接打开的网页上设置新密码，然后回到这里用新密码登录。",
     backToSignIn: "返回登录",
     mailWait: (n: number) => `刚刚已经给这个邮箱发过邮件了。请先查收，或 ${n} 秒后再试。`,
+    agree: (terms: ReactNode, privacy: ReactNode) => <>我已阅读并同意{terms}和{privacy}。</>,
+    terms: "《用户条款》", privacy: "《隐私政策》",
+    needAgree: "请先勾选同意用户条款和隐私政策。",
+    deleteAccount: "注销账号…",
+    deleteTitle: "注销你的 Tomrade 账号？",
+    deleteIntro: (email: ReactNode) => <>{email} 将被永久注销，无法恢复。</>,
+    deleteGoesLabel: "删除：",
+    deleteGoes: "账号本身、同步的偏好设置和项目列表、你的插件举报和发布者资料。",
+    deleteStaysLabel: "保留：",
+    deleteStays: "这台电脑上的项目和它们的 git 远程仓库，以及你发布的插件（如需下架，请写信到 support@tomrade.com）。下一个在这里登录的账号会接管这些项目。",
+    deletePassword: "输入密码以确认",
+    deleteForever: "注销账号", deleting: "正在注销…", cancel: "取消",
+    wrongPassword: "密码不正确。",
     errors: {
       invalid_credentials: "邮箱或密码不正确。",
       email_not_confirmed: "请先确认邮箱：打开我们发给你的确认链接，然后再登录。",
@@ -86,12 +115,13 @@ const copy = {
       email_address_not_authorized: "暂时无法向这个邮箱发送邮件，请稍后再试。",
       signup_disabled: "目前暂不开放注册新账号。",
       network: "无法连接 Tomrade 服务器，请检查网络后重试。",
-      other_account: "这台电脑上的项目属于另一个账号，请使用那个账号登录。"
+      other_account: "这台电脑上的项目属于另一个账号，请使用那个账号登录。",
+      terms_required: "请先勾选同意用户条款和隐私政策。"
     } as Record<string, string>
   }
 };
 
-type Problem = { field: "email" | "password"; text: string };
+type Problem = { field: "email" | "password" | "terms"; text: string };
 /** Signed out, the panel is the sign-in form, a wait for the confirmation email, or a password reset request. */
 type Step = { kind: "form" } | { kind: "confirm"; email: string; password: string } | { kind: "reset"; sentTo: string | null };
 
@@ -115,10 +145,15 @@ function useCooldown() {
 export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const { locale } = useI18n();
   const t = copy[locale];
+  const legalLink = (doc: "terms" | "privacy") =>
+    <button type="button" className="link-btn" onClick={() => openExternal(legalUrl(doc, locale))}>{t[doc]}</button>;
   const account = useAccount();
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  /** The signed-in panel's confirmation before the account is deleted, with the password it asks for. */
+  const [deleting, setDeleting] = useState<{ password: string; problem: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -126,6 +161,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const cooldown = useCooldown();
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const agreeRef = useRef<HTMLInputElement>(null);
   const stepTitle = useRef<HTMLHeadingElement>(null);
   const Heading = entrance ? "h2" : "h3";
   const owner = account.data?.user ? null : account.data?.owner?.email ?? null;
@@ -163,7 +199,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   };
   const signIn = (address: string, secret: string, from: "form" | "confirm" | "return") => run(async () => {
     try {
-      await invoke("account.signIn", address, secret);
+      await invoke("account.signIn", address, secret, true);
       setStep({ kind: "form" });
     } catch (e) {
       if (codeOf(e) !== "email_not_confirmed") throw e;
@@ -200,10 +236,11 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
       : mode === "reset" ? null
       : !password ? { field: "password", text: t.needPassword }
       : mode === "signUp" && password.length < MIN_PASSWORD ? { field: "password", text: t.shortPassword }
+      : !agreed ? { field: "terms", text: t.needAgree }
       : null;
     setProblem(found);
     setNotice("");
-    if (found) (found.field === "email" ? emailRef : passwordRef).current?.focus();
+    if (found) ({ email: emailRef, password: passwordRef, terms: agreeRef })[found.field].current?.focus();
     return !found;
   }
   const emailField = <div className="field-group">
@@ -220,7 +257,34 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     </>}
     {account.isPending ? <p>{t.loading}</p> : account.error ? <>
       <p role="alert">{account.error.message}</p><button className="btn btn-secondary" onClick={() => void account.refetch()}>{t.retry}</button>
-    </> : account.data?.user ? <>
+    </> : account.data?.user && deleting ? <form className="account-step stack-3" noValidate aria-labelledby="account-delete-title" onSubmit={e => {
+      e.preventDefault();
+      if (!deleting.password) return;
+      const secret = deleting.password;
+      void run(async () => {
+        try {
+          await invoke("account.deleteAccount", secret);
+          setDeleting(null);
+        } catch (err) {
+          setDeleting({ password: "", problem: codeOf(err) === "invalid_credentials" ? t.wrongPassword : explain(err) });
+        }
+      });
+    }}>
+      <Heading id="account-delete-title" className="account-step__title">{t.deleteTitle}</Heading>
+      <p>{t.deleteIntro(<strong>{account.data.user.email}</strong>)}</p>
+      <p className="meta-txt"><strong>{t.deleteGoesLabel}</strong> {t.deleteGoes}</p>
+      <p className="meta-txt"><strong>{t.deleteStaysLabel}</strong> {t.deleteStays}</p>
+      <div className="field-group">
+        <label className="field">{t.deletePassword}<input className="input" type="password" autoComplete="current-password" autoFocus value={deleting.password}
+          aria-invalid={!!deleting.problem || undefined} aria-describedby={deleting.problem ? "account-delete-problem" : undefined}
+          onChange={e => setDeleting({ password: e.target.value, problem: null })} /></label>
+        {deleting.problem && <span id="account-delete-problem" className="field-note is-error" role="alert">{deleting.problem}</span>}
+      </div>
+      <div className="row account-step__actions">
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setDeleting(null)}>{t.cancel}</button>
+        <button className="btn btn-danger" disabled={busy || !deleting.password}>{busy ? t.deleting : t.deleteForever}</button>
+      </div>
+    </form> : account.data?.user ? <>
       <p>{account.data.user.email}</p>
       <p className="meta-txt">{t.pending}: {account.data.pending}</p>
       <div className="row" style={{ gap: "var(--space-2)" }}>
@@ -235,6 +299,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           <button className="btn btn-secondary" disabled={busy} onClick={() => void run(() => invoke("account.resolve", c.id, "cloud"))}>{t.cloud}</button>
         </div>
       </div>)}
+      <button type="button" className="link-btn is-danger account-delete" disabled={busy} onClick={() => { setNotice(""); setDeleting({ password: "", problem: null }); }}>{t.deleteAccount}</button>
     </> : switchingTo !== null ? <p role="status">{t.switching(switchingTo)}</p> : step.kind === "confirm" ? <section className="account-step stack-3" aria-labelledby="account-step-title">
       <Heading id="account-step-title" ref={stepTitle} tabIndex={-1} className="account-step__title">{t.checkEmail}</Heading>
       <p>{t.confirmSent(<strong>{step.email}</strong>)}</p>
@@ -280,6 +345,15 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           <button type="button" className="link-btn" onClick={() => { setStep({ kind: "reset", sentTo: null }); setProblem(null); setNotice(""); }}>{t.forgot}</button>
         </div>
       </div>
+      <div className="field-group">
+        <label className="account-agree">
+          <input ref={agreeRef} type="checkbox" checked={agreed}
+            aria-invalid={problem?.field === "terms" || undefined} aria-describedby={problem?.field === "terms" ? "account-problem" : undefined}
+            onChange={e => { setAgreed(e.target.checked); if (problem?.field === "terms") setProblem(null); }} />
+          <span>{t.agree(legalLink("terms"), legalLink("privacy"))}</span>
+        </label>
+        {problem?.field === "terms" && <span id="account-problem" className="field-note is-error" role="alert">{problem.text}</span>}
+      </div>
       {owner && email.trim() && email.trim().toLowerCase() !== owner.toLowerCase() && <p className="field-note">{t.otherAccount(owner)}</p>}
       <div className="row" style={{ gap: "var(--space-2)" }}>
         <button className="btn btn-primary" disabled={busy}>{busy ? t.busy : t.signIn}</button>
@@ -287,7 +361,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           if (!check("signUp")) return;
           const address = email.trim(), secret = password;
           void run(async () => {
-            const result = await invoke("account.signUp", address, secret, locale);
+            const result = await invoke("account.signUp", address, secret, locale, true);
             if (result.confirmationRequired) { cooldown.start(MAIL_INTERVAL); setStep({ kind: "confirm", email: address, password: secret }); }
           });
         }}>{t.signUp}</button>
