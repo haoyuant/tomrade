@@ -195,6 +195,29 @@ The desktop rejects secret/service-role keys and remote HTTP URLs. Sessions are
 never sent to the renderer or stored as plaintext JSON. If the OS keychain is
 unavailable (including Linux `basic_text`), secure persistence fails explicitly.
 
+## Deleting an account
+
+Settings → Hub → **Delete account…** deletes the signed-in account once its
+password checks out. It calls `public.tomrade_delete_account()` from
+`supabase/migrations/202610120001_delete_account.sql`, which prod gets only
+when you run `supabase db push` yourself. Push it before releasing an app
+that has the button: until then, deletion fails with PostgREST's PGRST202
+(function not found).
+
+- The function deletes the caller's `auth.users` row. The Hub tables, the
+  publisher profile and reports cascade; `auth.sessions` and identities go
+  with the user.
+- Plugins the person published stay listed; their `owner_id` and
+  `submitted_by` become null. Storage refuses to delete a user who still owns
+  objects, so their package files are handed to no one first
+  (`owner`/`owner_id` set to null) and keep being served.
+- An access token already issued stays valid until it expires. The app drops
+  its own copy right away.
+- On the machine, the stored session is removed and `hub-cloud.json` is reset
+  to an unowned local Hub. The account's entry leaves `accounts.json`.
+  Project folders stay. The next account to sign in there takes them over, as
+  on a first run.
+
 ## Verification
 
 `pnpm test` includes the real migration executed in PGlite's PostgreSQL runtime:

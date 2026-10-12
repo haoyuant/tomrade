@@ -752,6 +752,7 @@ strong { font-weight: var(--font-weight-medium); }
 .inbox-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
 .link-btn:hover { text-decoration: underline; }
+.link-btn.is-danger { color: var(--danger); }
 .card-body { min-width: 0; }
 .card-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .card-id { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
@@ -929,6 +930,7 @@ strong { font-weight: var(--font-weight-medium); }
 .account-agree input { margin-top: 3px; }
 .account-agree .link-btn { display: inline; text-align: inherit; }
 .terms-prompt-links { gap: var(--space-4); flex-wrap: wrap; }
+.account-delete { align-self: flex-start; font-size: var(--text-sm); }
 
 /* Checkboxes follow the switch, not the OS: the surface inside its ring when
    off, the accent with the mark cut in `--accent-on` when on. */
