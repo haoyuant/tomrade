@@ -278,6 +278,7 @@ export function Workspace() {
         onOpenPalette={() => setPalette(true)}
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
+        onOpenUsage={() => setSettings("usage")}
         onOpenHistory={() => setHistory(true)}
         historyBusy={busy !== null}
         projectMenuOpen={projectMenu}

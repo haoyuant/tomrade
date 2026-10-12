@@ -21,6 +21,7 @@ export function TitleBar({
   onOpenPalette,
   onNewIssue,
   onOpenSettings,
+  onOpenUsage,
   onOpenHistory,
   historyBusy = false,
   projectMenuOpen,
@@ -29,6 +30,7 @@ export function TitleBar({
   onOpenPalette: () => void;
   onNewIssue: () => void;
   onOpenSettings: () => void;
+  onOpenUsage: () => void;
   onOpenHistory: () => void;
   /** An undo, redo or rollback is running: the history control spins so a slow one never reads as nothing happening. */
   historyBusy?: boolean;
@@ -103,6 +105,9 @@ export function TitleBar({
         aria-busy={historyBusy}
       >
         <Icon name={historyBusy ? "i-sync" : "i-clock"} size={17} className={historyBusy ? "is-spinning" : undefined} />
+      </button>
+      <button type="button" className="btn btn-icon no-drag" onClick={onOpenUsage} title={t("usage.label")} aria-label={t("usage.label")} data-testid="titlebar-usage">
+        <Icon name="i-bars" size={17} />
       </button>
       <button type="button" className="btn btn-icon no-drag" onClick={onOpenSettings} title={t("titleBar.settingsTitle")} aria-label={t("titleBar.settingsAria")}>
         <Icon name="i-gear" size={17} />

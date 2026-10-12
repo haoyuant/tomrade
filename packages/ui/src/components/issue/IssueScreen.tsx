@@ -129,6 +129,19 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             {t("issueScreen.moveToButton", { status: STATUS[next].label })}
           </button>
         )}
+        <button
+          type="button"
+          className="btn btn-icon no-drag"
+          title={t("usage.label")}
+          aria-label={t("usage.label")}
+          data-testid="titlebar-usage"
+          onClick={() => {
+            setSettingsAt({ pane: "usage" });
+            setSettingsOpen(true);
+          }}
+        >
+          <Icon name="i-bars" size={17} />
+        </button>
         <button type="button" className="btn btn-icon no-drag" title={t("settingsDialog.dialogLabel")} aria-label={t("settingsDialog.dialogLabel")} onClick={() => setSettingsOpen(true)}>
           <Icon name="i-gear" size={17} />
         </button>
