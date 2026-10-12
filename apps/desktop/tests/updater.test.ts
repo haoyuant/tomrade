@@ -124,12 +124,10 @@ describe("updates", () => {
     expect((await updates.check()).phase).toEqual({ kind: "failed", message: "404" });
   });
 
-  it("checks 30 s after start and hourly, and a failing background check keeps what was known", async () => {
+  it("checks at start and hourly, and a failing background check keeps what was known", async () => {
     const { feed, updates } = setup();
     updates.configure({ autoCheck: true, channel: "stable" });
-    await vi.advanceTimersByTimeAsync(29_000);
-    expect(feed.checks).toBe(0);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(0);
     expect(feed.checks).toBe(1);
     expect(updates.status().phase.kind).toBe("available");
     feed.checkError = new Error("offline");
@@ -141,7 +139,7 @@ describe("updates", () => {
   it("checks on the timer without passing through 'checking'", async () => {
     const { feed, updates, seen } = setup();
     updates.configure({ autoCheck: true, channel: "stable" });
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(0);
     expect(feed.checks).toBe(1);
     expect(seen.map((s) => s.phase.kind)).toEqual(["available"]);
   });

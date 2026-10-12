@@ -84,17 +84,11 @@ const run = async () => {
   const switchOn = () => $(`document.querySelector('.about-update-pref[data-pref="autoCheck"] .switch')?.getAttribute('aria-checked')`);
   const channelShown = () => $(`document.querySelector('.about-update-pref[data-pref="channel"] button[aria-pressed="true"]')?.textContent.trim() ?? null`);
 
-  // ── at rest ─────────────────────────────────────────────────────────
+  // ── at launch: a newer release is announced, not fetched ────────────
   let s = await status();
   check("a build pointed at a feed can update itself", s.blocked === null, s);
-  check("and asks nothing before the first check is due", s.phase.kind === "idle" && asked.length === 0, { s, asked });
   check("checks are on and Stable is the channel by default", prefs()?.autoCheck === true && prefs()?.channel === "stable", prefs());
-
-  // ── a newer release is announced, not fetched ───────────────────────
-  await $(`window.tomrade.invoke('updates.check')`);
-  await sleep(1500);
-  s = await status();
-  check("a check finds the newer release on the Stable feed", s.phase.kind === "available" && s.phase.version === newer && asked.includes(stable), { s, asked });
+  check("the Stable feed is asked at launch and the newer release found", s.phase.kind === "available" && s.phase.version === newer && asked.includes(stable), { s, asked });
   const notice = (await toasts()).find((t) => t.includes(`Tomrade ${newer} is available`));
   await shot("updates-notice");
   check("a notice says so, with Download and Later", !!notice && !!(await $(`!!(${toastAction("Download")}) && !!(${toastAction("Later")})`)), await toasts());
