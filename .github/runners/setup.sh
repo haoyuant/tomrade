@@ -4,7 +4,6 @@
 #
 #   .github/runners/setup.sh arm64 haoyuant/tomrade
 #   .github/runners/setup.sh arm64 haoyuant/tomrade 2       # one more, beside it
-#   .github/runners/setup.sh linux haoyuant/tomrade         # a Docker container
 #   .github/runners/setup.sh arm64 haoyuant/tomrade-site
 #
 # A number after the repository adds another Mac runner with the same labels,
@@ -13,28 +12,14 @@
 set -euo pipefail
 
 VERSION=2.338.0
-kind=${1:?kind: arm64 or linux}
+kind=${1:?kind: arm64}
 repo=${2:?repository, like haoyuant/tomrade}
 instance=${3:+-$3}
 case $kind in
   arm64) sha=df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2 ;;
-  linux) sha=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32 ;;
   *) echo "Unknown kind: $kind" >&2; exit 1 ;;
 esac
 token=$(gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token)
-
-if [ "$kind" = linux ]; then
-  here=$(cd "$(dirname "$0")" && pwd)
-  image="tomrade-actions-runner:$VERSION"
-  container="actions-runner-${repo//\//-}"
-  docker build --platform linux/amd64 -t "$image" -f "$here/linux.Dockerfile" \
-    --build-arg RUNNER_VERSION="$VERSION" --build-arg RUNNER_SHA256="$sha" "$here"
-  docker rm -f "$container" > /dev/null 2>&1 || true
-  # Comes back whenever Docker Desktop starts.
-  docker run -d --init --platform linux/amd64 --restart unless-stopped --name "$container" \
-    -e REPO="$repo" -e TOKEN="$token" -e NAME="$(scutil --get LocalHostName)-linux" "$image"
-  exit 0
-fi
 
 dir="$HOME/actions-runners/${repo#*/}-mac-$kind$instance"
 if [ -f "$dir/.service" ]; then
