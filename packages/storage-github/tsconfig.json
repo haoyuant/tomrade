@@ -16,6 +16,9 @@
     },
     {
       "path": "../storage-git"
+    },
+    {
+      "path": "../github"
     }
   ]
 }

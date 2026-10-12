@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { fresh, settle } from "@tomradex/testkit";
+import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { Files } from "@tomradex/files";
@@ -18,7 +19,7 @@ async function machine() {
   const bag = await fresh({
     hubDir,
     plugins: [
-      [Settings, { path: path.join(hubDir, "settings.json") }],
+      [Settings, { path: path.join(hubDir, "settings.json") }], GitHubAccount,
       [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
       [Files, { watch: false, autoSyncMs: 0 }],
       filesGithub

@@ -38,14 +38,12 @@ export const credentialCommand = (settings: string): string => `!${quote(helperP
 
 export const withGithubCredential = (settings: string, command: string): string => `${quote(helperPath(settings))} run bash -c ${quote(command)}`;
 
-export async function githubEnvironment(git: Git, checkout: string, settings: string): Promise<Record<string, string>> {
+export async function githubEnvironment(git: Git, checkout: string, settings: string, token: () => Promise<string>): Promise<Record<string, string>> {
   if (!await usesTomradeCredential(git, checkout, settings)) return {};
   const origin = await git(["remote", "get-url", "origin"], { cwd: checkout, ok: true });
   if (!githubHttps(origin.stdout.trim())) return {};
-  try {
-    const token: unknown = JSON.parse(fs.readFileSync(settings, "utf8")).github?.token;
-    if (typeof token === "string" && token.trim() && !/[\r\n\0]/.test(token)) return { GH_TOKEN: token.trim(), GITHUB_TOKEN: token.trim() };
-  } catch {}
+  const value = (await token().catch(() => "")).trim();
+  if (value && !/[\r\n\0]/.test(value)) return { GH_TOKEN: value, GITHUB_TOKEN: value };
   throw new Error("Reconnect your GitHub account in Tomrade before continuing this checkout.");
 }
 
@@ -83,8 +81,12 @@ export async function migrateGithubCredential(git: Git, checkout: string, settin
   return true;
 }
 
-/** The helper reads settings for each request, so token rotation never leaves a stale secret in git config. */
-export async function installGithubCredential(git: Git, checkout: string, settings: string): Promise<void> {
+/**
+ * Write the helper beside the settings it reads. It reads them for each
+ * request, so token rotation never leaves a stale secret in git config; it is
+ * rewritten at every start, so a checkout that named it keeps the current one.
+ */
+export function writeGithubHelper(settings: string): string {
   const bin = helperDir(settings);
   fs.mkdirSync(bin, { recursive: true });
   const helper = helperPath(settings);
@@ -111,6 +113,12 @@ export async function installGithubCredential(git: Git, checkout: string, settin
     ''
   ].join("\n"), 0o600);
   writeHelper(helper, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${quote(process.execPath)} ${quote(source)} "$@"\n`, 0o700);
+  return credentialCommand(settings);
+}
+
+/** Point a checkout's own git at the helper, for the agents and terminals working in it. */
+export async function installGithubCredential(git: Git, checkout: string, settings: string): Promise<void> {
+  writeGithubHelper(settings);
 
   // Linked worktrees share this config. Use git's lock convention so nobody sees half a helper chain.
   const common = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: checkout });

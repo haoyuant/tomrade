@@ -4,11 +4,22 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { GIT_ENV, type Git } from "@tomradex/storage";
-import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/credentials.js";
-import { exec } from "../src/terminal.js";
+import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/helper.js";
+
+const exec = (command: string, args: string[], cwd: string, env: Record<string, string> = {}) =>
+  new Promise<string>((resolve, reject) => execFile(command, args, { cwd, env: { ...process.env, ...env } }, (error, stdout) => (error ? reject(error) : resolve(stdout))));
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-credentials-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+/** What the account reads: the token in the settings file, as it is now. */
+const token = (settings: string) => async () => {
+  try {
+    return String(JSON.parse(fs.readFileSync(settings, "utf8")).github?.token ?? "");
+  } catch {
+    return "";
+  }
+};
 
 async function fixture() {
   const dir = fs.mkdtempSync(path.join(root, "repo-"));
@@ -99,19 +110,19 @@ it("only offers the token for plain HTTPS github.com repository URLs", () => {
 it("passes gh credentials only to opted-in subprocesses and keeps terminal scripts free of tokens", async () => {
   const f = await fixture();
   await f.git(["remote", "add", "origin", "https://github.com/owner/repo"]);
-  expect(await githubEnvironment(f.git, f.dir, f.settings)).toEqual({});
+  expect(await githubEnvironment(f.git, f.dir, f.settings, token(f.settings))).toEqual({});
   await installGithubCredential(f.git, f.dir, f.settings);
-  expect(await githubEnvironment(f.git, f.dir, f.settings)).toEqual({ GH_TOKEN: "test-token-one", GITHUB_TOKEN: "test-token-one" });
+  expect(await githubEnvironment(f.git, f.dir, f.settings, token(f.settings))).toEqual({ GH_TOKEN: "test-token-one", GITHUB_TOKEN: "test-token-one" });
   const command = withGithubCredential(f.settings, 'test "$GH_TOKEN" = "test-token-two" && test "$GITHUB_TOKEN" = "$GH_TOKEN" && echo account-ready');
   fs.writeFileSync(f.settings, JSON.stringify({ github: { token: "test-token-two" } }));
   expect(await exec("bash", ["-c", command], f.dir)).toBe("account-ready\n");
   const scriptCommand = withGithubCredential(f.settings, "gh pr view");
   expect(scriptCommand).not.toContain("test-token");
-  expect(await exec("bash", ["-c", 'test "$GH_TOKEN" = "test-token-two" && echo account-ready'], f.dir, await githubEnvironment(f.git, f.dir, f.settings))).toBe("account-ready\n");
+  expect(await exec("bash", ["-c", 'test "$GH_TOKEN" = "test-token-two" && echo account-ready'], f.dir, await githubEnvironment(f.git, f.dir, f.settings, token(f.settings)))).toBe("account-ready\n");
   fs.writeFileSync(f.settings, "{}");
-  await expect(githubEnvironment(f.git, f.dir, f.settings)).rejects.toThrow("Reconnect");
+  await expect(githubEnvironment(f.git, f.dir, f.settings, token(f.settings))).rejects.toThrow("Reconnect");
   await f.git(["remote", "set-url", "origin", "https://example.com/owner/repo"]);
-  expect(await githubEnvironment(f.git, f.dir, f.settings)).toEqual({});
+  expect(await githubEnvironment(f.git, f.dir, f.settings, token(f.settings))).toEqual({});
 });
 
 it("moves an installed helper from the old Hub location to userData, once", async () => {

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
+import { GIT_ENV, GitFolder, cleanRemote, type Git } from "@tomradex/storage";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
@@ -161,6 +161,33 @@ interface IndexEntry {
  * exactly, and update-index changes only what is ours. Only the tip is
  * fetched: a monorepo's history stays where it is.
  */
+const transportKey = (url: string, branch: string, directory: string): string => createHash("sha256").update(JSON.stringify([url, branch, directory])).digest("hex");
+
+/**
+ * Remotes once carried the token in their URL, and the key was made from it.
+ * What was kept under such a key — the transport clone, the sync baseline —
+ * moves to the clean one, so the first sync after is not a first sync.
+ */
+function adoptCredentialedKey(local: string, target: { url: string; branch: string; directory?: string }, key: string): void {
+  const root = path.join(local, ".git", "files-sync");
+  const transport = path.join(root, "transport");
+  if (fs.existsSync(path.join(transport, key)) || !fs.existsSync(transport)) return;
+  for (const old of fs.readdirSync(transport)) {
+    let url: string | undefined;
+    try {
+      url = /\[remote "origin"\][^[]*?^\s*url\s*=\s*(\S+)/m.exec(fs.readFileSync(path.join(transport, old, ".git", "config"), "utf8"))?.[1];
+    } catch {
+      continue;
+    }
+    if (!url || url === cleanRemote(url) || cleanRemote(url) !== cleanRemote(target.url)) continue;
+    if (transportKey(url, target.branch, remoteDirectory(target.directory)) !== old) continue;
+    fs.renameSync(path.join(transport, old), path.join(transport, key));
+    const state = path.join(root, "targets", `${old}.json`);
+    if (fs.existsSync(state)) fs.renameSync(state, path.join(root, "targets", `${key}.json`));
+    return;
+  }
+}
+
 export class GitProjection {
   readonly dir: string;
   readonly folder: GitFolder;
@@ -171,9 +198,11 @@ export class GitProjection {
   constructor(private git: Git, private binary: string, local: string, readonly target: { url: string; branch: string; directory?: string }) {
     const directory = remoteDirectory(target.directory);
     this.prefix = directory ? `${directory}/` : "";
-    this.key = createHash("sha256").update(JSON.stringify([target.url, target.branch, directory])).digest("hex");
+    // Without the credential, so a token rotated or moved out of the URL is the same remote.
+    this.key = transportKey(cleanRemote(target.url), target.branch, directory);
     this.dir = path.join(local, ".git", "files-sync", "transport", this.key);
     this.folder = new GitFolder(git, this.dir);
+    adoptCredentialedKey(local, target, this.key);
   }
 
   private run(args: string[], ok = false) {

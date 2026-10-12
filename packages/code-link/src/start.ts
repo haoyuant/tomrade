@@ -16,7 +16,7 @@ import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureM
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
-import { githubHttps, usesTomradeCredential, withGithubCredential } from "./credentials.js";
+import { githubHttps } from "@tomradex/github";
 
 export type StartMode = "run" | "terminal";
 export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
@@ -278,8 +278,7 @@ export class Starter {
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), terminalPrompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId));
-    const settings = ctx.settings.config.path;
-    const command = githubHttps(repo.remote) && await usesTomradeCredential(this.host.git, where.cwd, settings) ? withGithubCredential(settings, baseCommand) : baseCommand;
+    const command = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd) ? ctx.github.wrap(baseCommand) : baseCommand;
     const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);

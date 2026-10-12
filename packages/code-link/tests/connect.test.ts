@@ -14,6 +14,7 @@ import { CodeLink, writeConnectFiles } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
+import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
@@ -51,7 +52,7 @@ async function machine() {
     hubDir,
     plugins: [
       Tools,
-      [Settings, { path: path.join(hubDir, "settings.json") }],
+      [Settings, { path: path.join(hubDir, "settings.json") }], GitHubAccount,
       [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
       Repos,
       Contributions,

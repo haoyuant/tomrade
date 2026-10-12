@@ -52,12 +52,28 @@ export interface Git {
 /** git itself takes this lock for a moment even on a "read" like `status`, to opportunistically refresh its index cache. */
 const isIndexLockContention = (stderr: string): boolean => /Unable to create '.*index\.lock': File exists/.test(stderr);
 
-export function gitRunner(binary: string, defaultCwd?: string): Git {
+/** A credential helper for one URL prefix, used by a single git command rather than written to any config. */
+export interface GitCredential {
+  url: string;
+  helper: string;
+}
+
+/**
+ * Command-line config that makes each helper the only one for its URL: the
+ * empty value first clears whatever the user's own config lists, so another
+ * account's stored password is never tried.
+ */
+export const credentialArgs = (credentials: GitCredential[]): string[] =>
+  credentials.flatMap((c) => ["-c", `credential.${c.url}.helper=`, "-c", `credential.${c.url}.helper=${c.helper}`]);
+
+/** `credentials` is asked before every command, so a connection made or dropped takes effect at once. */
+export function gitRunner(binary: string, defaultCwd?: string, credentials?: () => GitCredential[]): Git {
   return async (args, opts = {}) => {
     const cwd = opts.cwd ?? defaultCwd;
+    const argv = [...credentialArgs(credentials?.() ?? []), ...args];
     for (let attempt = 0; ; attempt++) {
       try {
-        const { stdout, stderr } = await exec(binary, args, { cwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
+        const { stdout, stderr } = await exec(binary, argv, { cwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
         return { stdout: stdout.toString(), stderr: stderr.toString(), code: 0 };
       } catch (error) {
         const e = error as { code?: number | string; stderr?: string | Buffer; stdout?: string | Buffer };
@@ -146,6 +162,19 @@ export class GitFolder {
   async remoteUrl(name = "origin"): Promise<string | null> {
     const r = await this.git(["remote", "get-url", name], { cwd: this.dir, ok: true });
     return r.code === 0 ? cleanRemote(r.stdout.trim()) : null;
+  }
+
+  /**
+   * Point origin at `url` when it names the same repository with a credential
+   * written into it, as remotes once were. A different repository is left
+   * alone. Returns whether it changed.
+   */
+  async dropRemoteCredential(url: string, name = "origin"): Promise<boolean> {
+    const r = await this.git(["remote", "get-url", name], { cwd: this.dir, ok: true });
+    const current = r.stdout.trim();
+    if (r.code !== 0 || current === url || cleanRemote(current) === current || cleanRemote(current) !== cleanRemote(url)) return false;
+    await this.git(["remote", "set-url", name, url], { cwd: this.dir });
+    return true;
   }
 
   async setRemote(url: string, name = "origin"): Promise<void> {

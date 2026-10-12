@@ -16,6 +16,7 @@ import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
 import { CodeLink, BOOTSTRAP_LABEL, sessionContext } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
+import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
@@ -95,7 +96,7 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
     hubDir,
     plugins: [
       Tools,
-      [Settings, { path: path.join(hubDir, "settings.json") }],
+      [Settings, { path: path.join(hubDir, "settings.json") }], GitHubAccount,
       [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
       [Repos, { gitBinary: opts.gitBinary ?? "git" }],
       Contributions,
@@ -131,8 +132,8 @@ it("offers the connected account for credential failures, reprobes after switchi
   fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = "fetch" ]; then echo 'Repository not found' >&2; exit 128; fi\nif [ "$1" = "ls-remote" ]; then\n  git config --local --get-all credential.https://github.com.helper | grep -q tomrade-credential && exit 0\n  echo 'Repository not found' >&2; exit 128\nfi\nexec git "$@"\n`, { mode: 0o755 });
   const world = await machine({ ...local, remote }, { gitBinary: binary });
   const { ctx, codeLink, project, repo, hubDir } = world;
-  const connection = vi.spyOn(ctx.storage, "connection").mockResolvedValue({ connected: true, label: "@right-account" });
-  fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ github: { token: "fake-project-token" } }));
+  const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
+  ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
   await ctx.repos.setCheckout(remote, local.checkout);
   await codeLink.scan(project.id);
   expect(await codeLink.githubCredentialAccount(project.id, repo!.id)).toBe("@right-account");
@@ -160,8 +161,8 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   git(["remote", "set-url", "origin", remote], local.checkout);
   const world = await machine({ ...local, remote });
   const { ctx, codeLink, project, hubDir } = world;
-  const connection = vi.spyOn(ctx.storage, "connection").mockResolvedValue({ connected: true, label: "@right-account" });
-  fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ github: { token: "fake-project-token" } }));
+  const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
+  ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
   // An upgrade left this checkout opted in, naming the helper's old Hub home.
   const legacy = path.join(hubDir, "old-hub", "bin", "tomrade-credential");
   git(["config", "--local", "--replace-all", "credential.https://github.com.helper", ""], local.checkout);
@@ -183,8 +184,8 @@ it("keeps an unsuccessful credential reprobe unreachable and does not offer acco
   const binary = path.join(root, `git-denied-${n++}`);
   fs.writeFileSync(binary, '#!/bin/sh\nif [ "$1" = "fetch" ] || [ "$1" = "ls-remote" ]; then echo "Repository not found" >&2; exit 128; fi\nexec git "$@"\n', { mode: 0o755 });
   const { ctx, codeLink, project, repo, hubDir } = await machine({ ...local, remote }, { gitBinary: binary });
-  const connection = vi.spyOn(ctx.storage, "connection").mockResolvedValue({ connected: true, label: "@account" });
-  fs.writeFileSync(path.join(hubDir, "settings.json"), JSON.stringify({ github: { token: "fake-token" } }));
+  const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@account" });
+  ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-token" } });
   await ctx.repos.setCheckout(remote, local.checkout);
   await codeLink.scan(project.id);
   expect(await codeLink.useGithubCredential(project.id, repo!.id)).toMatchObject({ remote: "unreachable", remoteDetail: "Repository not found" });

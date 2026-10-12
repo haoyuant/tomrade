@@ -171,6 +171,9 @@
     },
     {
       "path": "./apps/store-admin"
+    },
+    {
+      "path": "./packages/github"
     }
   ]
 }

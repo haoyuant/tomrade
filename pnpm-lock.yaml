@@ -101,6 +101,9 @@ importers:
       '@tomradex/files-github':
         specifier: workspace:*
         version: link:../../packages/files-github
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../../packages/github
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../../packages/hub
@@ -404,6 +407,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
@@ -453,6 +459,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
       '@tomradex/hub-cloud':
         specifier: workspace:*
         version: link:../hub-cloud
@@ -1021,12 +1030,37 @@ importers:
       '@tomradex/files':
         specifier: workspace:*
         version: link:../files
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
       '@tomradex/storage-github':
         specifier: workspace:*
         version: link:../storage-github
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/github:
+    dependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
@@ -1753,6 +1787,9 @@ importers:
 
   packages/storage-github:
     dependencies:
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { GitError } from "@tomradex/storage-git";
@@ -35,7 +36,7 @@ async function machine(token = "") {
   fs.mkdirSync(home, { recursive: true });
   const bag = await fresh({
     plugins: [
-      [Settings, { path: path.join(home, "settings.json") }],
+      [Settings, { path: path.join(home, "settings.json") }], GitHubAccount,
       [Storage, { gitBinary: fakeGit(home), snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }],
       storageGithub
     ],

@@ -1,5 +1,3 @@
-import type {} from "cordis";
-
 const BASE = "https://api.github.com";
 
 export class GitHubError extends Error {
@@ -23,10 +21,10 @@ export interface Repo {
 
 /** Thin REST client. Used only for discovery and creation; moving bytes is git's job. */
 export class GitHub {
-  constructor(private readonly token: () => string) {}
+  constructor(private readonly token: () => string | Promise<string>) {}
 
   private async call<T>(method: string, route: string, body?: unknown): Promise<T> {
-    const token = this.token();
+    const token = await this.token();
     if (!token) throw new GitHubError(401, "No GitHub token configured — add one in Settings → GitHub.");
     const res = await fetch(`${BASE}${route}`, {
       method,
@@ -62,7 +60,7 @@ export class GitHub {
   private known = new Map<string, string>();
 
   async whoami(): Promise<string> {
-    const token = this.token();
+    const token = await this.token();
     const hit = this.known.get(token);
     if (hit) return hit;
     const { login } = await this.login();

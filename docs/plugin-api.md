@@ -1044,6 +1044,7 @@ ctx.storage.register(createRemoteProvider({
   configSchema: z.object({ project: z.string() }),
   defaults: { project: "" },
   toRemote: (c) => ({ url: `https://git.acme.dev/${c.project}.git`, branch: "main" }),
+  credential: () => ({ url: "https://git.acme.dev", helper: "!acme-credential" }),
   async ensureRemote(c) { /* create it */ },
   async browse() { return [{ label: "acme/app", config: { project: "acme/app" } }]; }
 }));
@@ -1053,9 +1054,18 @@ ctx.storage.register(createRemoteProvider({
 provider ships no UI code; a `format: "password"` field is **refused at
 registration** — credentials belong in a `ctx.settings` section named in
 `settingsSection`, collected inline through `connection` where the remote is
-chosen. `browse()` and `draft(name)` remove typing. `@tomradex/storage-git`
+chosen. The URL `toRemote` returns never carries the secret: `credential()`
+names a git credential helper for a URL prefix, which Tomrade passes to each of
+its own git commands as `-c credential.<url>.helper=` (clearing the user's own
+helpers for that prefix) and then the helper — nothing is written to the
+folder's git config. Return null while no account is connected, and the user's
+own credentials (SSH keys, keychain) are used. A remote whose URL still names a
+credential for the same repository is cleaned whenever it is used.
+`browse()` and `draft(name)` remove typing. `@tomradex/storage-git`
 registers `git` (any URL); `@tomradex/storage-github` adds discovery and
-creation on top.
+creation on top, with the account and helper of `ctx.github`
+(`@tomradex/github`: `token()`, `api`, `connection`, `credential()`, and the
+per-checkout helper code links opt into).
 
 | Call | Does |
 |---|---|
@@ -1105,6 +1115,7 @@ ctx.files.register(createGitBackend({
   configSchema: z.object({ space: z.string() }), defaults: { space: "" },
   describe: (c) => `drive.acme.dev/${c.space}`,
   remote: (c) => ({ url: `https://drive.acme.dev/${c.space}.git`, branch: "main" }),
+  credential: () => ({ url: "https://drive.acme.dev", helper: "!acme-credential" }),
   async ensureRemote(c) { /* create it */ },
   async browse() { return [{ label: "acme/docs", config: { space: "acme/docs" } }]; }
 }));
@@ -1114,7 +1125,8 @@ ctx.files.register(createGitBackend({
 `ctx.storage` does: the config is per project and travels in the project's
 folder (`plugin_files_remotes`, exported `always` — it is not a What-travels
 choice), so a teammate who clones the project clones the files beside it. Credentials belong in a settings section named in
-`settingsSection`, collected inline through `connection`. `createGitBackend`
+`settingsSection`, collected inline through `connection`, and reach git through
+`credential()` exactly as a storage provider's do. `createGitBackend`
 is the git-backed store every remote backend builds on; a backend that keeps
 files some other way implements `FileStore` itself (`list`, `tree`, `read`,
 `readVersion`, `resolveVersion`, `locate`, `history`, `write`, `mkdir`, `move`,

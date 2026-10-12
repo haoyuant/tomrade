@@ -14,7 +14,7 @@ export interface GitHubAccess {
   /** Creates the public repository when it is not there yet. */
   ensureRepo(owner: string, name: string, description: string): Promise<void>;
   /** Where `git push` goes, and the extra git config that authenticates it without the token in argv. */
-  remote(owner: string, name: string): { url: string; env: Record<string, string> };
+  remote(owner: string, name: string): Promise<{ url: string; env: Record<string, string> }> | { url: string; env: Record<string, string> };
 }
 
 export class PublishRefused extends Error {
@@ -27,9 +27,9 @@ export class PublishRefused extends Error {
   }
 }
 
-export function githubAccess(token: () => string, fetchImpl: typeof fetch = fetch): GitHubAccess {
+export function githubAccess(token: () => string | Promise<string>, fetchImpl: typeof fetch = fetch): GitHubAccess {
   const call = async (method: string, route: string, body?: unknown) => {
-    const t = token();
+    const t = await token();
     if (!t) throw new PublishRefused("Connect GitHub first: Settings → GitHub, a token with the repo scope");
     const res = await fetchImpl(`https://api.github.com${route}`, {
       method,
@@ -55,8 +55,8 @@ export function githubAccess(token: () => string, fetchImpl: typeof fetch = fetc
       const created = await call("POST", "/user/repos", { name, description, private: false, has_wiki: false });
       if (!created.ok) throw new PublishRefused(`GitHub would not create ${owner}/${name} (${created.status})`);
     },
-    remote(owner, name) {
-      const basic = Buffer.from(`x-access-token:${token()}`).toString("base64");
+    async remote(owner, name) {
+      const basic = Buffer.from(`x-access-token:${await token()}`).toString("base64");
       return {
         url: `https://github.com/${owner}/${name}.git`,
         env: { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`, GIT_TERMINAL_PROMPT: "0" }
@@ -109,7 +109,7 @@ export async function prepareRelease(dir: string, publisher: string, github: Git
   const version = String(manifest.version);
   const tag = `v${version}`;
   await github.ensureRepo(login, repoName, String(manifest.description ?? ""));
-  const remote = github.remote(login, repoName);
+  const remote = await github.remote(login, repoName);
 
   if (!fs.existsSync(path.join(dir, ".git"))) await git(dir, ["init", "-q", "-b", "main"]);
   const ignore = path.join(dir, ".gitignore");

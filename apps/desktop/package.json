@@ -65,6 +65,7 @@
     "@tomradex/fields": "workspace:*",
     "@tomradex/files": "workspace:*",
     "@tomradex/files-github": "workspace:*",
+    "@tomradex/github": "workspace:*",
     "@tomradex/notes": "workspace:*",
     "@tomradex/hub": "workspace:*",
     "@tomradex/hub-cloud": "workspace:*",

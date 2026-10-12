@@ -1,4 +1,4 @@
-import { gitRunner } from "@tomradex/storage";
+import { gitRunner, type GitCredential } from "@tomradex/storage";
 import { GitFileStore, type GitRemoteTarget } from "./git-store.js";
 import type { FilesBackend, FilesConnection } from "./types.js";
 
@@ -10,6 +10,8 @@ export interface GitBackendOptions<C> {
   defaults: C;
   settingsSection?: string;
   connection?: FilesConnection;
+  /** How git authenticates to the remote, asked before each command; null leaves the user's own git credentials in charge. */
+  credential?: () => GitCredential | null;
   browse?: FilesBackend<C>["browse"];
   draft?: FilesBackend<C>["draft"];
   describe?: (config: C) => string;
@@ -42,7 +44,10 @@ export function createGitBackend<C>(opts: GitBackendOptions<C>): FilesBackend<C>
       const config = o.remote;
       const shared = opts.remote && config !== null;
       return new GitFileStore({
-        git: gitRunner(o.env.gitBinary),
+        git: gitRunner(o.env.gitBinary, undefined, () => {
+          const credential = opts.credential?.();
+          return credential ? [credential] : [];
+        }),
         gitBinary: o.env.gitBinary,
         dir: o.dir,
         remote: shared ? () => opts.remote!(config) : null,
