@@ -24,6 +24,7 @@ import {
   digestState,
   exportState,
   hasArtifact,
+  importPlugins,
   importState,
   parseArtifact,
   primaryKeyOf,
@@ -171,6 +172,12 @@ export class Storage extends Service {
       this.scheduleHubWrite();
     });
     this.home.on("hub/configured", () => void this.reconcileAll("configured").then(() => this.restoreMissing()));
+    // A plugin that loads after its project's folder was read takes in what it missed before it reads its own tables.
+    this.home.on("db/registered", (namespace, scope) => {
+      if (scope !== "project") return;
+      for (const entry of this.hub.catalog.projects()) if (entry.unimported.includes(namespace)) this.takeInLate(entry.id);
+    });
+    this.home.on("db/opened", (projectId) => this.takeInLate(projectId));
     // A destination switched on late may be the one a waiting project needs.
     this.home.on("storage/registered", (providerId) => this.requeue((e) => e.state === "needs-provider" && e.provider?.id === providerId));
 
@@ -530,14 +537,65 @@ export class Storage extends Service {
   }
 
   private exportFor(projectId: string, entry: CatalogProject, at = Date.now()): ProjectState {
+    const registrations = (this.ctx.db as Db).registrations("project");
     return exportState(this.db(projectId), projectId, {
-      registrations: (this.ctx.db as Db).registrations("project"),
+      registrations,
       exports: entry.exports,
       repo: entry.git === "dedicated" ? "dedicated" : undefined,
       checkpoint: this.checkpointOf(projectId),
       at,
-      withhold: entry.withheld
+      withhold: entry.withheld,
+      carry: this.unregistered(projectId, new Set(registrations.map((r) => r.namespace)))
     });
+  }
+
+  /**
+   * A plugin that is not loaded — not yet, early in a launch, or switched off —
+   * cannot say what its tables hold, and its silence is not a deletion: the
+   * folder keeps what it last had for it, for this machine and every other.
+   */
+  private unregistered(projectId: string, registered: Set<string>): ProjectState["plugins"] {
+    const dir = this.publishedDir(projectId);
+    if (dir) {
+      // Read the published copy only when a namespace in it has no plugin here.
+      let namespaces: string[] = [];
+      try {
+        namespaces = fs.readdirSync(path.join(dir, ARTIFACT_DIR, "plugins"));
+      } catch {
+        return {};
+      }
+      if (namespaces.every((ns) => registered.has(ns))) return {};
+    }
+    const published = this.loadPublished(projectId)?.plugins ?? {};
+    return Object.fromEntries(Object.entries(published).filter(([ns]) => !registered.has(ns)));
+  }
+
+  /** The namespaces of `state` the cache could not take in, for want of their plugin here. */
+  private unimportedOf(state: ProjectState): string[] {
+    const registered = new Set((this.ctx.db as Db).registrations("project").map((r) => r.namespace));
+    return Object.keys(state.plugins ?? {}).filter((ns) => !registered.has(ns)).sort();
+  }
+
+  /**
+   * Into the cache, now that their plugin is here: the tables the folder had
+   * when it was read without it. Its old cached rows would otherwise be
+   * published over what someone else changed meanwhile.
+   */
+  private takeInLate(projectId: string): void {
+    const entry = this.entry(projectId);
+    const pool = this.ctx.db as Db;
+    if (!entry?.unimported.length || !pool.has(projectId)) return;
+    const registrations = pool.registrations("project");
+    const ready = entry.unimported.filter((ns) => registrations.some((r) => r.namespace === ns));
+    if (!ready.length) return;
+    const published = this.loadPublished(projectId)?.plugins ?? {};
+    try {
+      importPlugins(this.db(projectId), Object.fromEntries(ready.flatMap((ns) => (published[ns] ? [[ns, published[ns]]] : []))), registrations);
+    } catch (error) {
+      this.warn(projectId, error);
+      return;
+    }
+    this.hub.catalog.patchProject(projectId, { unimported: entry.unimported.filter((ns) => !ready.includes(ns)) });
   }
 
   /** The base for a three-way merge: what this machine last wrote to or read from the folder. */
@@ -784,6 +842,7 @@ export class Storage extends Service {
     const digest = base.manifest.snapshot?.digest ?? digestState(base);
     const patch: Partial<CatalogProject> = { lastPublishedDigest: digest, lastSyncAt: Date.now(), name: String(state.manifest.project.name ?? entry.name), keyPrefix: String(state.manifest.project.key_prefix ?? entry.keyPrefix) };
     if (state.manifest.exports) patch.exports = state.manifest.exports;
+    patch.unimported = this.unimportedOf(state);
     // A withheld table this snapshot carries is known here from now on.
     if (entry.withheld.length) patch.withheld = entry.withheld.filter((key) => {
       const [ns, table] = key.split("/");
@@ -1113,7 +1172,8 @@ export class Storage extends Service {
       git,
       exports: state.manifest.exports ?? [],
       lastPublishedDigest: digest,
-      lastSyncAt: Date.now()
+      lastSyncAt: Date.now(),
+      unimported: this.unimportedOf(state)
     });
     this.importForeignLogs(projectId, dir);
     this.savePublished(projectId, state);
@@ -1166,7 +1226,7 @@ export class Storage extends Service {
     for (const log of readLogs(entry.dir)) this.oplog.importForeign(projectId, log.ops.flatMap((op) => this.foreignOp(op)), { includeOwn: true });
     this.savePublished(projectId, state);
     const last = db.prepare("SELECT MAX(seq) AS m FROM oplog").get() as { m: number | null };
-    this.hub.catalog.patchProject(projectId, { lastPublishedDigest: state.manifest.snapshot?.digest ?? digestState(state), lastSyncAt: Date.now(), lastLoggedSeq: last.m ?? 0 });
+    this.hub.catalog.patchProject(projectId, { lastPublishedDigest: state.manifest.snapshot?.digest ?? digestState(state), lastSyncAt: Date.now(), lastLoggedSeq: last.m ?? 0, unimported: this.unimportedOf(state) });
     this.watch(projectId);
     this.home.emit("storage/imported", projectId);
     this.home.emit("projects/changed", projectId);
