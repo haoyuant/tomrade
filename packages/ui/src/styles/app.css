@@ -1209,6 +1209,8 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 }
 .status-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .status-link:hover { color: var(--fg); }
+.status-needs { color: var(--fg-2); text-decoration: none; }
+.needs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
 .rail-label {
   writing-mode: vertical-rl; font-size: var(--text-xs);
   letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--meta);

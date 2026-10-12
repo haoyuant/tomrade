@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke, subscribe } from "~/lib/api";
@@ -13,6 +13,8 @@ export interface AttentionEntry {
   kind: "permission" | "question" | "waiting" | "stuck";
   who: string | null;
   text: string | null;
+  /** Since when it has waited in this kind. */
+  since: number;
 }
 
 declare module "@tomradex/ipc" {
@@ -51,17 +53,22 @@ export function onOpenRequest(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Mounted once at the root: a clicked notification brings up its project, whose shell then opens the conversation. */
-export function AttentionOpener() {
+/** Brings up the entry's project, whose shell then opens the conversation (or the ticket). */
+export function useOpenAttention(): (entry: AttentionEntry) => void {
   const navigate = useNavigate();
-  useEffect(
-    () =>
-      subscribe("attention.open", (entry) => {
-        waiting = entry;
-        if (!window.location.hash.startsWith(`#/p/${entry.projectId}`)) void navigate({ to: "/p/$projectId", params: { projectId: entry.projectId } });
-        for (const listener of listeners) listener();
-      }),
+  return useCallback(
+    (entry: AttentionEntry) => {
+      waiting = entry;
+      if (!window.location.hash.startsWith(`#/p/${entry.projectId}`)) void navigate({ to: "/p/$projectId", params: { projectId: entry.projectId } });
+      for (const listener of listeners) listener();
+    },
     [navigate]
   );
+}
+
+/** Mounted once at the root: a clicked notification opens what it is about. */
+export function AttentionOpener() {
+  const open = useOpenAttention();
+  useEffect(() => subscribe("attention.open", open), [open]);
   return null;
 }
