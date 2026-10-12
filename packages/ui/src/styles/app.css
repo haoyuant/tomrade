@@ -855,6 +855,12 @@ strong { font-weight: var(--font-weight-medium); }
 .gate-fix { display: grid; gap: var(--space-2); }
 .repo-workstreams { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--space-1); }
 .rules-input { width: 100%; min-height: 180px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.55; }
+.palette.sheet-templates { width: min(980px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px); }
+.template-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
+.template-card { display: flex; flex-direction: column; gap: var(--space-2); }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+.template-days button { min-width: 44px; }
+.template-failed { color: var(--danger); }
 .input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .textarea { resize: vertical; min-height: 72px; line-height: var(--leading-body); font-size: var(--text-base); }
 .field { display: flex; flex-direction: column; gap: 5px; }

@@ -155,6 +155,9 @@ importers:
       '@tomradex/repos':
         specifier: workspace:*
         version: link:../../packages/repos
+      '@tomradex/schedules':
+        specifier: workspace:*
+        version: link:../../packages/schedules
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../../packages/settings
@@ -1587,6 +1590,49 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/schedules:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/boards':
+        specifier: workspace:*
+        version: link:../boards
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/settings:
     dependencies:
       '@tomradex/db':
@@ -1963,6 +2009,9 @@ importers:
       '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
+      '@tomradex/schedules':
+        specifier: workspace:*
+        version: link:../schedules
       '@types/react':
         specifier: ^19.2.0
         version: 19.2.18

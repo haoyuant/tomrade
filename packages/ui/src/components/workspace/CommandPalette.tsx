@@ -7,6 +7,7 @@ import { Icon } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
 import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
 import { requestStart } from "~/lib/codeLink";
+import { useTemplateActions, useTemplates } from "~/lib/templates";
 import { useI18n } from "~/lib/i18n";
 import { useCommands, useRunCommand } from "~/lib/queries";
 import { useFilesTree } from "~/lib/files";
@@ -31,6 +32,7 @@ export interface PaletteActions {
   openAbout: () => void;
   openViewSettings: () => void;
   openFields: () => void;
+  openTemplates: () => void;
   openProjectSettings: () => void;
   openProjectMenu: () => void;
   openCodeInbox: () => void;
@@ -47,6 +49,8 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const toast = useToast();
   const dock = useOptionalAgentDock();
   const commands = useCommands();
+  const templates = useTemplates(ws.project.id);
+  const templateActions = useTemplateActions(ws.project.id);
   const runCommand = useRunCommand(ws.project.id);
   const [search, setSearch] = useState("");
   const tree = useFilesTree(ws.project.id);
@@ -99,6 +103,22 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },
     { label: t("commandPalette.fields"), kb: undefined, run: actions.openFields },
+    { label: t("templates.paletteOpen"), kb: undefined, run: actions.openTemplates },
+    ...(templates.data ?? []).map((tpl) => ({
+      label: t("templates.paletteRun", { name: tpl.name }),
+      kb: undefined,
+      run: () =>
+        templateActions.run.mutate(tpl.id, {
+          onSuccess: (r) =>
+            toast({
+              body: r.ok
+                ? r.itemIds.length
+                  ? t(r.itemIds.length === 1 ? "templates.ranTicket" : "templates.ranTickets", { name: tpl.name, n: r.itemIds.length })
+                  : t("templates.ran", { name: tpl.name })
+                : t("templates.failed", { name: tpl.name, error: r.error ?? "" })
+            })
+        })
+    })),
     { label: t("commandPalette.codeInbox"), kb: undefined, run: actions.openCodeInbox },
     { label: t("commandPalette.switchProject"), kb: shortcut("⌘P"), run: actions.openProjectMenu },
     { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
