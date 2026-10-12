@@ -28,7 +28,7 @@ beforeAll(async () => {
     grant execute on function auth.uid() to anon, authenticated;
   `);
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
-  await db.exec(migration("202610120001_diagnostic_reports.sql"));
+  await db.exec(migration("202610120003_diagnostic_reports.sql"));
 }, 30_000);
 afterAll(async () => {
   await db.close();
