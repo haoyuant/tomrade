@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { claudeMediaInput, looksRateLimited, resetTime } from "@tomradex/agent";
+import { claudeMediaInput, describeFailure, looksRateLimited, resetTime } from "@tomradex/agent";
 import { ClaudeCodeOptions } from "./legacy.js";
 import { localCli, spawnCli, type CliLaunch } from "./locate.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
@@ -20,7 +20,7 @@ function matchesTool(name: string, pattern: string): boolean {
  * The SDK starts a native path itself; a Windows `.cmd` shim needs our launch
  * (node + script), which the SDK only takes as a custom spawn.
  */
-export function sdkLaunch(launch: CliLaunch): Pick<Options, "pathToClaudeCodeExecutable" | "spawnClaudeCodeProcess"> {
+export function sdkLaunch(launch: CliLaunch, onStderr?: (data: string) => void): Pick<Options, "pathToClaudeCodeExecutable" | "spawnClaudeCodeProcess"> {
   if (launch.argv([]).command === launch.file) return { pathToClaudeCodeExecutable: launch.file };
   return {
     pathToClaudeCodeExecutable: launch.file,
@@ -29,7 +29,8 @@ export function sdkLaunch(launch: CliLaunch): Pick<Options, "pathToClaudeCodeExe
         ? spawnCli(launch, args, { cwd, env, signal, stdio: ["pipe", "pipe", "pipe"] })
         : spawn(command, args, { cwd, env, signal, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       // Unread, a full stderr pipe would stall the CLI.
-      child.stderr?.resume();
+      if (onStderr) child.stderr?.on("data", (chunk) => onStderr(String(chunk)));
+      else child.stderr?.resume();
       return child as unknown as SpawnedProcess;
     }
   };
@@ -51,6 +52,8 @@ export class ClaudeRuntime implements Runtime {
   /** Cumulative counters from the last result; the SDK reports running totals, so a turn is the difference. */
   private tokens: Tokens | null = null;
   private activeIO?: TurnIO;
+  private stderr = "";
+  private keepStderr = (data: string) => { this.stderr = (this.stderr + data).slice(-2000); };
 
   constructor(private ctx: Context, input: TurnInput) {
     const directory = runtimeDirectory(input);
@@ -86,7 +89,8 @@ export class ClaudeRuntime implements Runtime {
       void this.query?.interrupt().catch(() => this.close());
       interruptTimer ??= setTimeout(() => this.close(), 3000).unref();
     };
-    this.onFailure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error), resume: this.session, metrics });
+    this.onFailure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error),
+      details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, metrics });
     this.onMessage = (message) => {
       if (message.type === "system" && message.subtype === "init") {
         this.session = message.session_id;
@@ -137,6 +141,7 @@ export class ClaudeRuntime implements Runtime {
         const limited = message.is_error && !cancelled ? (limit ?? (looksRateLimited(error) ? { until: null, text: null } : null)) : null;
         finish({ stop: cancelled ? "cancelled" : budget ? "budget" : message.is_error ? "error" : binding.asked() ? "asked" : "end",
           error: limited?.text ?? error, usage, costUsd, resume: this.session, metrics,
+          ...(message.is_error && !cancelled ? { details: describeFailure({ result: message, stderr: this.stderr }) } : {}),
           ...(limited ? { limit: { until: limited.until ?? resetTime(limited.text ?? error) } } : {}) });
       }
     };
@@ -147,7 +152,7 @@ export class ClaudeRuntime implements Runtime {
         const code = input.purpose !== "backlog";
         const launch = await localCli("claude").launch(options.command);
         const sdkOptions: Options = {
-          ...sdkLaunch(launch), cwd: this.cwd,
+          ...sdkLaunch(launch, this.keepStderr), stderr: this.keepStderr, cwd: this.cwd,
           env: launch.env({ ...process.env, ...input.env }),
           model: options.model, effort: options.effort as Options["effort"],
           resume: io.resume, includePartialMessages: true,
@@ -219,7 +224,7 @@ export class ClaudeRuntime implements Runtime {
       return result;
     } catch (error) {
       this.close();
-      return { stop: cancelled ? "cancelled" : "error", error: String(error), resume: this.session, metrics };
+      return { stop: cancelled ? "cancelled" : "error", error: String(error), details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, metrics };
     } finally {
       io.signal.removeEventListener("abort", abort);
       clearTimeout(interruptTimer);

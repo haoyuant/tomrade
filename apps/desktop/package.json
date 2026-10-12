@@ -22,6 +22,7 @@
     "test:files": "electron scripts/files-check.mjs",
     "test:notes": "electron scripts/notes-check.mjs",
     "test:agent-panel": "electron scripts/agent-panel-check.mjs",
+    "test:error-details": "electron scripts/error-details-check.mjs",
     "test:restore": "electron scripts/restore-check.mjs",
     "test:updates": "electron scripts/updates-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",

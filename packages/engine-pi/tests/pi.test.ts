@@ -124,6 +124,8 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     input.input = { kind: "text", text: "FAIL" };
     const failed = await engine.turn(input, io);
     expect(failed).toMatchObject({ stop: "error", error: "401 invalid api key", resume: one.resume });
+    expect(failed.details).toMatch(/── reply ──[\s\S]*"provider": "fake"[\s\S]*"model": "fixed-model"/);
+    expect(failed.details).not.toContain('"content"');
     input.input = { kind: "text", text: "after" };
     expect((await engine.turn(input, io)).metrics?.runtime).toBe("cold");
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }

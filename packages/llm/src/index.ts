@@ -14,7 +14,7 @@ import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, type QuickSe
 
 export * from "./model.js";
 export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, type ProviderPreset, type QuickSetupResult } from "./providers.js";
-export { LlmError } from "./errors.js";
+export { LlmError, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
 export { withPromptTools } from "./prompt-tools.js";

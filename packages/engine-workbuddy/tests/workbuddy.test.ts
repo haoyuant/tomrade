@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { Context } from "cordis";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
-import { codebuddyUsage, createWorkBuddyEngine, helpModels, workbuddy, workbuddyApps } from "../src/index.js";
+import { codebuddyFailure, codebuddyUsage, createWorkBuddyEngine, helpModels, workbuddy, workbuddyApps } from "../src/index.js";
 
 it("reads a model request's tokens from CodeBuddy's usage update", () => {
   // As CodeBuddy 2.155 sent it on a second turn, trimmed.
@@ -44,4 +44,14 @@ it("runs `codebuddy --acp`, bypassing its prompts only for a full-access turn, a
     expect(workbuddy.probe!.says("Currently supported: (hy3, gpt-5.5)", catalog)).toBeNull();
     expect(catalog.models).toEqual([{ value: "hy3" }, { value: "gpt-5.5" }]);
   } finally { await ctx.fiber.dispose(); }
+});
+
+it("a refused turn's reason comes out of CodeBuddy's _meta, upstream words first", () => {
+  const meta = (error: unknown) => ({ stopReason: "refusal", _meta: { "codebuddy.ai/errorMessage": JSON.stringify(error) } });
+  expect(codebuddyFailure(meta({ code: -32603, message: "Internal error", data: { details: "401 endpoint mismatch", statusCode: 401, category: "internal" } }))).toBe("401 endpoint mismatch");
+  expect(codebuddyFailure(meta({ code: -32010, message: "Quota exceeded: no credits left", data: { details: "no credits left", category: "quota" } }))).toBe("Quota exceeded: no credits left");
+  expect(codebuddyFailure(meta({ code: -32603, message: "Network error: ECONNRESET", data: { details: "socket closed" } }))).toBe("Network error: ECONNRESET — socket closed");
+  expect(codebuddyFailure({ stopReason: "refusal", errorMessage: "This message looks sensitive" })).toBe("This message looks sensitive");
+  expect(codebuddyFailure({ stopReason: "refusal", _meta: { errorMessage: "Agent did not return to idle" } })).toBe("Agent did not return to idle");
+  expect(codebuddyFailure({ stopReason: "refusal" })).toBeUndefined();
 });

@@ -227,13 +227,14 @@ export class Pet extends Service {
     if (next === this.model) return;
     this.model = next;
     const state = this.model.threads[threadId];
-    if (state.busy === null && (state.mood === "success" || state.mood === "error")) this.settleToIdle(threadId, state.sequence);
+    // A failure keeps crying until the thread moves on: like a question, it waits on the person.
+    if (state.busy === null && state.mood === "success") this.settleToIdle(threadId, state.sequence);
     else this.clearSettleTimer(threadId);
     this.sendChanged(threadId);
     if (threadId === this.followed) this.pushSurfaceState();
   }
 
-  /** A finished turn shows its outcome briefly; the pet reflects turns, not the whole thread. */
+  /** A finished turn shows its success briefly; the pet reflects turns, not the whole thread. */
   private settleToIdle(threadId: string, sequence: number): void {
     this.clearSettleTimer(threadId);
     const timer = setTimeout(() => {

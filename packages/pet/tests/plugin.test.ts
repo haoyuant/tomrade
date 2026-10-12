@@ -128,12 +128,14 @@ describe("pet plugin lifecycle", () => {
     expect(ctx.pet.state("thread").mood).toBe("success");
     vi.advanceTimersByTime(1);
     expect(ctx.pet.state("thread").mood).toBe("idle");
-    // A failed turn rests too: the pet reflects the turn, not the thread.
+    // A failed turn keeps crying until the thread runs again.
     ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
     ctx.emit("agent/event", "thread", { type: "done", run: run("error") });
     expect(ctx.pet.state("thread").mood).toBe("error");
-    vi.advanceTimersByTime(3_000);
-    expect(ctx.pet.state("thread").mood).toBe("idle");
+    vi.advanceTimersByTime(60_000);
+    expect(ctx.pet.state("thread").mood).toBe("error");
+    ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
+    expect(ctx.pet.state("thread").mood).toBe("thinking");
     vi.useRealTimers();
 
     const current = ctx.settings.get();

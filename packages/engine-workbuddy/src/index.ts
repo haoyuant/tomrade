@@ -62,6 +62,23 @@ export function codebuddyUsage(update: Record<string, any>): RequestUsage | null
   };
 }
 
+/**
+ * CodeBuddy ends every failed turn with stopReason "refusal" and puts the
+ * reason in `_meta["codebuddy.ai/errorMessage"]` — a JSON-RPC error whose
+ * `data.details` holds the upstream words ("Internal error" alone says nothing).
+ * Its status code and category stay in the details.
+ */
+export function codebuddyFailure(response: Record<string, any>): string | undefined {
+  const raw = response._meta?.["codebuddy.ai/errorMessage"] ?? response.errorMessage ?? response._meta?.errorMessage;
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  let parsed: any;
+  try { parsed = JSON.parse(raw); } catch { return raw.trim(); }
+  if (!parsed || typeof parsed !== "object") return raw.trim();
+  const details = typeof parsed.data?.details === "string" && parsed.data.details.trim() ? parsed.data.details.trim() : undefined;
+  const message = typeof parsed.message === "string" && parsed.message.trim() && parsed.message !== "Internal error" ? parsed.message.trim() : undefined;
+  return message && details && !message.includes(details) ? `${message} — ${details}` : (message ?? details);
+}
+
 /** `codebuddy --help` lists the models it takes: "Currently supported: (a, b, c)". */
 export function helpModels(help: string): string[] {
   const list = /Currently supported:\s*\(([^)]*)\)/.exec(help.replace(/\s+/g, " "))?.[1];
@@ -86,6 +103,7 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   // "default" asks before the first use of every tool, so Tomrade decides what a read-only or ask turn lets through.
   mode: (policy) => (policy === "full-access" ? "bypassPermissions" : "default"),
   usage: codebuddyUsage,
+  failure: codebuddyFailure,
   signIn: "run `codebuddy` and /login with your WorkBuddy account",
   probe: {
     args: ["--help"],

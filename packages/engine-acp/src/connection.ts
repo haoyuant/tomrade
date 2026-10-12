@@ -8,8 +8,9 @@ export const AUTH_REQUIRED = -32000;
 
 /** An error the agent answered a request with. */
 export class AcpError extends Error {
-  constructor(message: string, readonly code?: number) {
+  constructor(message: string, readonly code?: number, readonly data?: unknown) {
     super(message);
+    this.name = "AcpError";
   }
 }
 
@@ -37,6 +38,9 @@ export class AcpConnection {
   }
 
   get alive(): boolean { return this.open; }
+
+  /** What the agent last wrote to stderr, for a failure's details. */
+  get stderrTail(): string { return this.stderr; }
 
   /** `timeoutMs` 0 waits as long as the agent works — a prompt runs until its turn ends. A null result stays null. */
   request(method: string, params: Json, timeoutMs = 60_000): Promise<any> {
@@ -74,7 +78,7 @@ export class AcpConnection {
       const pending = typeof msg.id === "number" ? this.pending.get(msg.id) : undefined;
       if (!pending) return;
       this.pending.delete(msg.id); clearTimeout(pending.timer);
-      if (msg.error) pending.reject(new AcpError(msg.error.message ?? `${this.name} refused ${pending.method}`, msg.error.code));
+      if (msg.error) pending.reject(new AcpError(msg.error.message ?? `${this.name} refused ${pending.method}`, msg.error.code, msg.error.data));
       else pending.resolve(msg.result ?? null);
     } else if (msg.id !== undefined && msg.id !== null) {
       const id = msg.id;
