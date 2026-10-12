@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { aboutInfo } from "./about.js";
@@ -7,6 +7,7 @@ import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
+import { followSystemProxy } from "./system-proxy.js";
 import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
 
@@ -50,6 +51,8 @@ app.whenReady().then(async () => {
 
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   await adoptShellEnv();
+  // After it, so a proxy the shell sets stands.
+  await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
 
   const machine = machineRoots();
   // Plugins and their switches belong to the machine; projects and settings to the account last signed in.
