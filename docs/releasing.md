@@ -10,7 +10,7 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-It builds on four runners: macOS arm64, macOS x64, Windows x64 (NSIS, unsigned), and Linux x64 (AppImage). The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+It builds four installers: macOS arm64 and x64 on the self-hosted Mac (below), Windows x64 (NSIS, unsigned) and Linux x64 (AppImage) on GitHub's runners. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
 A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces the files on the existing draft.
 
@@ -32,6 +32,29 @@ gh secret set APPLE_API_KEY_P8 -R $R < AuthKey_XXXXXXXXXX.p8
 gh secret set APPLE_API_KEY_ID -R $R --body XXXXXXXXXX
 gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+## Self-hosted runners: the Mac mini
+
+Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So the Mac builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy all run on runners on the Mac mini, which GitHub still schedules then. Windows and Linux need GitHub's runners (about 15 minutes a release); until the allowance resets, a tag builds the Macs but stops at Windows.
+
+| Runner | Repository | Labels |
+| --- | --- | --- |
+| `~/actions-runners/tomrade-mac-arm64` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
+| `~/actions-runners/tomrade-mac-x64` | haoyuant/tomrade | `self-hosted, macOS, X64` |
+| `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
+
+The x64 runner is the Intel build of the runner, so it and everything it starts run under Rosetta: Node, pnpm's packages and better-sqlite3 come out x64. Each is a LaunchAgent, so it runs while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh`, Xcode, and the Developer ID come from the machine.
+
+`.github/runners/setup.sh` installs or replaces one:
+
+```sh
+export GH_TOKEN=$(gh auth token --user haoyuant)
+.github/runners/setup.sh arm64 haoyuant/tomrade
+.github/runners/setup.sh x64   haoyuant/tomrade
+.github/runners/setup.sh arm64 haoyuant/tomrade-site
+```
+
+Check on them with `./svc.sh status` in a runner's folder, or under Settings → Actions → Runners; logs are in `~/Library/Logs/actions.runner.*`. While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
 
 ## Publishing: the website follows
 
