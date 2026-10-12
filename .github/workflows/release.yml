@@ -20,6 +20,10 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # One Mac at a time: electron-builder rewrites the user's keychain search
+    # list to sign, and two at once on the same Mac drop each other's keychain.
+    concurrency:
+      group: ${{ startsWith(matrix.slug, 'mac-') && 'mac-signing' || format('{0}-{1}', matrix.slug, github.run_id) }}
     strategy:
       fail-fast: false
       matrix:
