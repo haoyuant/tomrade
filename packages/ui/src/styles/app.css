@@ -618,6 +618,11 @@ strong { font-weight: var(--font-weight-medium); }
 .menu-row.m-link:hover { color: var(--fg); }
 .menu-row .m-go { color: var(--meta); font-size: var(--text-xs); flex-shrink: 0; }
 .menu-row.m-link:hover .m-go { color: var(--fg-2); }
+/* greyed like a disabled row, but focusable: picking it goes to where it gets fixed */
+.menu-row.is-unready .chk,
+.menu-row.is-unready .m-name { opacity: 0.45; }
+.menu-row.is-unready:hover .m-go,
+.menu-row.is-unready[data-highlighted] .m-go { color: var(--fg-2); }
 .menu-foot .menu-row { margin: 0; }
 
 .col-track {

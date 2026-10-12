@@ -2,7 +2,8 @@
  * Local agents, end to end: what the app finds of Claude Code and Codex, how
  * Settings shows it and lets a path be chosen (checked before it is saved, and
  * taken back with one click), how Start points an agent that is not ready to
- * its row, and what the guide says on Windows when the CLI is only in WSL.
+ * its row, how the panel's engine picker greys out what is not set up and
+ * leads to its row, and what the guide says on Windows when the CLI is only in WSL.
  * Stand-in CLIs make the not-signed-in state deterministic; the ACP agents
  * are switched off, since this machine may well have one of them ready.
  *
@@ -99,6 +100,17 @@ const run = async () => {
     fs.writeFileSync(path.join(shots, `${name}.png`), (await win.webContents.capturePage()).toPNG());
   };
   const command = (id) => ctx.settings.get().agent?.engines?.[id]?.command;
+  // Radix opens menus and picks rows on pointerdown, so a bare .click() never reaches them.
+  const press = (expr) =>
+    $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
+  const escape = () => $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  const titleOf = async (id) => (await ctx.agent.engineViews()).find((e) => e.id === id)?.title;
+  const engineRow = (title) => `[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(title)})`;
+  const rowPart = (title, part) => $(`${engineRow(title)}?.querySelector(${JSON.stringify(part)})?.textContent.trim() ?? null`);
+  const openEnginePicker = async () => {
+    await press(`document.querySelector('.ai-knobs .chip-btn[title="Who conducts this thread"]')`);
+    return wait(() => $(`document.querySelectorAll('.menu-row.is-radio').length > 0`), "engine picker");
+  };
 
   // ── Start, with no agent ready ────────────────────────────────────────
   await $(`location.hash = '#/p/${project.id}/i/${item.id}';true`);
@@ -162,6 +174,25 @@ const run = async () => {
   })();
   check("diagnostics name the platform, the folders searched and PATH", copied.includes("win32 x64") && copied.includes("C:\\Users\\me\\AppData\\Roaming\\npm") && copied.includes("PATH: C:\\Windows\\system32") && copied.includes("Found in WSL"), copied);
 
+  // ── the panel's engine picker, with no model and no agent signed in ───
+  // Automatic detection above may have found a real, signed-in claude: back to the stand-in.
+  const signedOut = ctx.settings.get();
+  ctx.settings.set({ ...signedOut, agent: { ...signedOut.agent, engines: { ...signedOut.agent?.engines, "claude-code": { command: claude } } } });
+  await ctx.agent.engineViews(true);
+  await escape();
+  await $(`location.hash = '#/p/${project.id}';true`);
+  const loopTitle = await titleOf("loop");
+  check("the panel's engine chip opens its picker", await wait(() => has('.ai-knobs .chip-btn[title="Who conducts this thread"]'), "engine chip") && (await openEnginePicker()));
+  check("an engine with no model is greyed and says so", await wait(async () => (await rowPart(loopTitle, ".m-sub")) === "Not set up yet · No model connected", "loop row"), await rowPart(loopTitle, ".m-sub"));
+  check("a signed-out agent is greyed and says why", (await $(`${engineRow("Claude Code")}?.classList.contains('is-unready')`)) && (await rowPart("Claude Code", ".m-sub")) === "Not set up yet · Not signed in", await rowPart("Claude Code", ".m-sub"));
+  check("each offers to set it up", (await rowPart("Claude Code", ".m-go")) === "Set up →", await rowPart("Claude Code", ".m-go"));
+  await shot("local-cli-05-picker-not-set-up");
+  const threadsBefore = ctx.agent.store.threads(project.id).length;
+  await press(engineRow(loopTitle));
+  check("picking the model-less engine opens the models, not a thread", await wait(() => has(".eng-list"), "assistant pane") && !(await has(".menu-row.is-radio")));
+  check("and nothing was switched or created", ctx.agent.store.threads(project.id).length === threadsBefore);
+  await escape();
+
   // ── the assistant, with a model and no local agent ────────────────────
   // Claude Code signed out again, Codex only in WSL, no pi. "setup-card" is what the card's old Hide saved:
   // Tomrade needs a local agent, so it no longer puts the card away.
@@ -179,9 +210,21 @@ const run = async () => {
   const setup = await text(".agent-setup");
   check("it says Tomrade needs both, and how to get an agent", setup.includes("Tomrade needs both a model and a local agent") && setup.includes("Claude Code: sign in with claude") && setup.includes("Pi: install with npm install -g @earendil-works/pi-coding-agent"), setup);
   check("and offers no way to put it away", await $(`document.querySelectorAll('.agent-setup button:not(.setup-action)').length === 0`));
-  await shot("local-cli-05-setup-card-no-agent");
+  await shot("local-cli-06-setup-card-no-agent");
   await click('[data-testid="setup-local"]');
   check("Set up opens Settings on the first agent's row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the card"));
+
+  await escape();
+  await sleep(300);
+  await openEnginePicker();
+  check("with a model saved, the built-in engine can be picked", await wait(async () => (await $(`${engineRow(loopTitle)}?.classList.contains('is-unready')`)) === false, "loop ready"));
+  check("an agent found only in WSL is greyed too", (await rowPart("Codex", ".m-sub")) === "Not set up yet · Only installed in WSL", await rowPart("Codex", ".m-sub"));
+  const order = await $(`[...document.querySelectorAll('.menu-row.is-radio')].map((r) => r.classList.contains('is-unready'))`);
+  check("what can run is listed first", order.includes(false) && order.includes(true) && order.lastIndexOf(false) < order.indexOf(true), order);
+  await shot("local-cli-07-picker-model-ready");
+  await press(engineRow("Claude Code"));
+  check("picking a greyed agent opens Settings on its row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the picker"));
+  check("and leaves the thread's engine alone", !ctx.agent.store.threads(project.id).some((th) => th.engine === "claude-code"));
 
   // signed in in a terminal meanwhile: the card's own Check again sees it, past the probe cache
   await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
@@ -190,6 +233,10 @@ const run = async () => {
   check("the card offers to look again", await has('[data-testid="setup-recheck"]'));
   await click('[data-testid="setup-recheck"]');
   check("and finds the agent signed in, without a restart", await wait(() => $(`!document.querySelector('.agent-setup [data-setup="local"]:not(.is-ok)')`), "local row ready"));
+  await openEnginePicker();
+  check("the picker offers it now, with no hint", await wait(async () => (await $(`${engineRow("Claude Code")}?.classList.contains('is-unready')`)) === false, "claude choosable") && (await rowPart("Claude Code", ".m-sub")) === null);
+  await press(engineRow("Claude Code"));
+  check("and picking it conducts with it", await wait(() => ctx.agent.store.threads(project.id).some((th) => th.engine === "claude-code"), "claude thread"));
 
   console.log(`screenshots in ${shots}`);
 };

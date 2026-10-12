@@ -7,6 +7,7 @@ export const localCli = {
     stateWsl: "Only installed in WSL",
     stateSignIn: "Not signed in",
     stateService: "MCP server is off",
+    stateModel: "No model connected",
 
     using: "Using {{path}}",
     sourceManual: "chosen by you",
@@ -64,6 +65,7 @@ export const localCli = {
     stateWsl: "只装在 WSL 中",
     stateSignIn: "未登录",
     stateService: "MCP 服务未运行",
+    stateModel: "未连接模型",
 
     using: "正在使用 {{path}}",
     sourceManual: "手动指定",
