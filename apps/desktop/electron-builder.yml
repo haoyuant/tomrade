@@ -30,6 +30,7 @@ generateUpdatesFilesForAllChannels: true
 # real files it can be allowed to read.
 asar: false
 npmRebuild: false
+afterPack: scripts/after-pack.cjs
 files:
   - dist/**
   - ui/**

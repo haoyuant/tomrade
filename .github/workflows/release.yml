@@ -23,13 +23,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Everything but Windows runs on the self-hosted Mac (docs/releasing.md),
+        # Linux in a container on it: hosted minutes run out, macOS ones tenfold.
         include:
-          - { name: macOS arm64, slug: mac-arm64, os: macos-15, args: --mac --arm64 }
-          # Native runner: better-sqlite3 and the agent SDK's binary are per-arch.
-          - { name: macOS x64, slug: mac-x64, os: macos-15-intel, args: --mac --x64 }
+          # Both Macs in one job: pnpm installs both arches' native packages and
+          # each app keeps its own (apps/desktop/scripts/after-pack.cjs).
+          - { name: macOS, slug: mac, os: [self-hosted, macOS, ARM64], args: --mac --arm64 --x64, install: --cpu=arm64 --cpu=x64 }
           - { name: Windows x64, slug: win-x64, os: windows-2025, args: --win --x64 }
-          # The oldest supported image, so the AppImage runs on older glibc.
-          - { name: Linux x64, slug: linux-x64, os: ubuntu-22.04, args: --linux --x64 }
+          # Ubuntu 22.04, the oldest supported, so the AppImage runs on older glibc.
+          - { name: Linux x64, slug: linux-x64, os: [self-hosted, Linux, X64], args: --linux --x64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -54,7 +56,7 @@ jobs:
           fi
           npm pkg set version="$version"
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile ${{ matrix.install }}
 
       # Fails rather than ship an unsigned Mac build.
       - name: Signing credentials
@@ -95,10 +97,11 @@ jobs:
       - name: Check the signature
         if: runner.os == 'macOS'
         run: |
-          app=$(echo apps/desktop/release/mac*/Tomrade.app)
-          codesign --verify --deep --strict --verbose=2 "$app"
-          spctl --assess --type execute --verbose "$app"
-          xcrun stapler validate "$app"
+          for app in apps/desktop/release/mac*/Tomrade.app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --verbose "$app"
+            xcrun stapler validate "$app"
+          done
           for dmg in apps/desktop/release/*.dmg; do
             spctl --assess --type open --context context:primary-signature --verbose "$dmg"
             xcrun stapler validate "$dmg"
@@ -108,6 +111,9 @@ jobs:
         with:
           name: installers-${{ matrix.slug }}
           if-no-files-found: error
+          # Only the release job reads them, and artifacts count against the
+          # account's 500 MB of Actions storage; the release keeps the files.
+          retention-days: 1
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
@@ -119,7 +125,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: write
     steps:
@@ -129,16 +135,14 @@ jobs:
           pattern: installers-*
           path: builds
 
-      # Each Mac runner lists only its own zip, and the updater reads one file
-      # for both arches, so the two are merged (yq ships on the runner image).
-      - name: Merge the Mac update manifests
+      # The updater reads one manifest for both Mac arches (yq: brew install yq).
+      - name: Check the Mac update manifests
         run: |
           mkdir installers
-          find builds -type f ! -name '*-mac.yml' -exec cp {} installers/ \;
-          for name in $(find builds -name '*-mac.yml' -exec basename {} \; | sort -u); do
-            yq eval-all '. as $m ireduce ({}; . *+ $m)' builds/*/"$name" > "installers/$name"
-            yq -e '[.files[].url | select(test("-mac-(arm64|x64)[.]zip$"))] | length == 2' "installers/$name" > /dev/null \
-              || { echo "::error::$name does not list both Mac zips"; exit 1; }
+          find builds -type f -exec cp {} installers/ \;
+          for f in installers/*-mac.yml; do
+            yq -e '[.files[].url | select(test("-mac-(arm64|x64)[.]zip$"))] | unique | length == 2' "$f" > /dev/null \
+              || { echo "::error::$(basename "$f") does not list both Mac zips"; exit 1; }
           done
 
       # A re-run replaces the files on the draft it made the first time.
