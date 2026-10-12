@@ -3,7 +3,7 @@ import { LocalAgentSetup } from "~/components/setup/LocalAgentSetup";
 import { QuickModelSetup } from "~/components/setup/QuickModelSetup";
 import { useI18n } from "~/lib/i18n";
 import { useSeen } from "~/lib/onboarding";
-import { isLocalAgent, useSetup } from "~/lib/setup";
+import { setupRows, useSetup } from "~/lib/setup";
 
 /**
  * Until Tomrade can work: connect a model or a local agent, either one. A
@@ -24,7 +24,7 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
       <p className="setup-head">{t("setup.cardTitle")}</p>
       <DetectedModels />
       <QuickModelSetup />
-      {engines.some((e) => e.setup && isLocalAgent(e)) && (
+      {setupRows(engines).length > 0 && (
         <div className="stack-2">
           <p className="setup-name">{t("setup.cliTitle")}</p>
           <LocalAgentSetup engines={engines} onOpenSettings={onOpenSettings} />

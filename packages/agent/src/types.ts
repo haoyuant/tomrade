@@ -352,6 +352,8 @@ export interface Engine {
   permissionModes?: { default: string; choices: { value: string; label: string }[] };
   /** False: it runs only inside Tomrade, with no CLI session a person can be handed in a terminal. */
   terminal?: boolean;
+  /** True: a CLI Tomrade starts only in a terminal the person sees — handed the ticket, heard over MCP, never driven turn by turn. */
+  terminalOnly?: boolean;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
 }
 
@@ -375,6 +377,7 @@ export interface EngineView {
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;
+  terminalOnly?: boolean;
   setup?: EngineSetup;
 }
 

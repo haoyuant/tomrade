@@ -97,7 +97,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const capability = general ? "general" : "code";
   // An agent Tomrade drives over ACP has no terminal session to open.
   const candidates = useMemo(
-    () => (engines.data ?? []).filter((engine) => engine.capabilities.includes(capability) && (mode !== "terminal" || engine.terminal !== false)),
+    () => (engines.data ?? []).filter((engine) => engine.capabilities.includes(capability) && (mode !== "terminal" || engine.terminal !== false) && (mode === "terminal" || !engine.terminalOnly)),
     [engines.data, capability, mode]
   );
   const otherAllowed = mode === "terminal" && !!otherCommand;

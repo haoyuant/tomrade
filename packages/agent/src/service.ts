@@ -508,7 +508,7 @@ export class Agent extends Service {
       [...this.engines.values()].map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.setup ? { setup: engine.setup } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
@@ -929,8 +929,9 @@ export class Agent extends Service {
     }
     if (this.activeByThread.has(threadId)) throw new Error("a run is already in progress on this thread");
     if (input.kind === "answer" && this.store.pending(projectId, threadId)?.question.id !== input.questionId) throw new Error("Invalid or expired question response");
-    const engine = this.engines.get(thread.engine) ?? [...this.engines.values()][0];
+    const engine = this.engines.get(thread.engine) ?? [...this.engines.values()].find((e) => !e.terminalOnly);
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
+    if (engine.terminalOnly) throw new Error(`${engine.title} runs only in a terminal — start the ticket "In a terminal", or pick another engine`);
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;

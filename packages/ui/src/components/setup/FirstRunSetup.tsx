@@ -5,7 +5,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { useProjects, useSettings } from "~/lib/queries";
-import { isLocalAgent, useSetup } from "~/lib/setup";
+import { setupRows, useSetup } from "~/lib/setup";
 import { DetectedModels } from "./DetectedModels";
 import { LocalAgentSetup } from "./LocalAgentSetup";
 import { QuickModelSetup } from "./QuickModelSetup";
@@ -99,7 +99,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                 <p className="meta-txt">{t("setup.keyLede")}</p>
                 <QuickModelSetup />
               </section>
-              {engines && engines.some((e) => e.setup && isLocalAgent(e)) && (
+              {engines && setupRows(engines).length > 0 && (
                 <section className="panel stack-3">
                   <h2 className="setup-section-title">{t("setup.cliTitle")}</h2>
                   <p className="meta-txt">{t("setup.cliLede")}</p>

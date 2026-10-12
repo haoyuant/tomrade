@@ -751,6 +751,38 @@ describe("starting a ticket", () => {
     expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
   });
 
+  it("starts Gemini CLI and OpenCode only in a terminal, each with its own session-only MCP config", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    for (const [id, title] of [["gemini", "Gemini CLI"], ["opencode", "OpenCode"]] as const) {
+      await ctx.plugin({ name: `fake-${id}`, inject: ["agent"], apply: (c: Context) => void c.agent.engine({ ...fakeCodeEngine([]), id, title, author: `ai:${id}`, terminalOnly: true }) });
+    }
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+
+    const item = ticket("Gemini terminal work");
+    expect(await codeLink.start(project.id, item.id, { mode: "run", engine: "gemini" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringMatching(/only in a terminal/) });
+    const gemini = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "gemini", options: { model: "pro" } });
+    expect(gemini.ok).toBe(true);
+    if (!gemini.ok) return;
+    expect(gemini.command).toMatch(/^GEMINI_CLI_SYSTEM_DEFAULTS_PATH=".*gemini-settings\.json" gemini -m pro -i "\$\(cat ".*prompt\.md"\)"$/);
+    const geminiSettings = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(gemini.sessionId), "gemini-settings.json"), "utf8"));
+    expect(geminiSettings).toEqual({ mcpServers: { tomrade: { httpUrl: ctx.mcp.urlFor(project.id), headers: { "X-Tomrade-Run": codeLink.sessions.token(gemini.sessionId) } } } });
+    // a terminal-only engine takes no turn inside Tomrade
+    expect(() => ctx.agent.send(project.id, gemini.threadId, { kind: "text", text: "go on" })).toThrow(/only in a terminal/);
+
+    const other = ticket("OpenCode terminal work");
+    const opencode = await codeLink.start(project.id, other.id, { mode: "terminal", engine: "opencode", options: { model: "anthropic/claude-sonnet-5" } });
+    expect(opencode.ok).toBe(true);
+    if (!opencode.ok) return;
+    expect(opencode.command).toMatch(/^OPENCODE_CONFIG=".*opencode\.json" opencode --model anthropic\/claude-sonnet-5 --prompt "\$\(cat ".*prompt\.md"\)"$/);
+    const config = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(opencode.sessionId), "opencode.json"), "utf8"));
+    expect(config.mcp.tomrade).toEqual({ type: "remote", url: ctx.mcp.urlFor(project.id), enabled: true, headers: { "X-Tomrade-Run": codeLink.sessions.token(opencode.sessionId) } });
+  });
+
   it("opens a terminal pi session whose extension carries the MCP server and reports like Claude's hooks", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, project, repo, checkout, ticket } = world;

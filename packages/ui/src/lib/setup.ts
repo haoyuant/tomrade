@@ -5,6 +5,7 @@ import type { WorkerStatus } from "@tomradex/llm";
 import { agentKeys, useEngines } from "./agent";
 import { invoke } from "./api";
 import { useI18n } from "./i18n";
+import { engineStatus } from "./localCli";
 import { keys, useSettings } from "./queries";
 
 const setupKeys = {
@@ -15,6 +16,10 @@ const setupKeys = {
 
 /** An engine a ticket can be handed to: it works on this computer, not only through Tomrade's tools. */
 export const isLocalAgent = (engine: EngineView): boolean => engine.capabilities.includes("code") || engine.capabilities.includes("general");
+
+/** The local agents worth a setup row: the suggested ones, and any other found on this computer. */
+export const setupRows = (engines: EngineView[]): EngineView[] =>
+  engines.filter((e) => e.setup && isLocalAgent(e) && (e.setup.suggested || engineStatus(e) !== "missing"));
 
 /**
  * Whether Tomrade can work yet. Either a model or a signed-in local agent is

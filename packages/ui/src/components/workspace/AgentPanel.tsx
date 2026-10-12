@@ -429,7 +429,7 @@ export function AgentPanel({
   const usable = (id: string) => !!engines.data?.some((e) => e.id === id && e.ok);
   // The settings' engine may not run here yet — no model, say — while another does: a new thread takes the one that can answer.
   const configuredEngine = agentSettings?.defaultEngine ?? "loop";
-  const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && e.capabilities.includes("backlog"))?.id ?? configuredEngine);
+  const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && !e.terminalOnly && e.capabilities.includes("backlog"))?.id ?? configuredEngine);
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
   const engine = engines.data?.find((e) => e.id === currentEngineId);
   const permissionModes = detail.data?.thread.itemId ? engine?.permissionModes : undefined;
@@ -439,7 +439,7 @@ export function AgentPanel({
     const choice = permissionModes?.choices.find((c) => c.value === value);
     return choice ? permissionName(t, choice) : value;
   };
-  const noEngineReady = engines.data ? !engines.data.some((e) => e.ok) : false;
+  const noEngineReady = engines.data ? !engines.data.some((e) => e.ok && !e.terminalOnly) : false;
 
   // Quick picks: with a thread they are that thread's overrides (what Start chose), layered over the engine's
   // global options — the same knobs settings edits; without one they edit the global options a new thread would get.
@@ -932,7 +932,7 @@ export function AgentPanel({
           >
             <MenuHead title={t("agentPanel.whoDoesWork")} />
             {/* An engine that is not set up, or fails its check, cannot conduct: it is greyed and leads to its Settings row. */}
-            {[...(engines.data ?? [])].sort((a, b) => Number(b.ok) - Number(a.ok)).map((e) => (
+            {[...(engines.data ?? [])].filter((e) => !e.terminalOnly).sort((a, b) => Number(b.ok) - Number(a.ok)).map((e) => (
               <MenuRadioItem
                 key={e.id}
                 checked={e.id === currentEngineId}

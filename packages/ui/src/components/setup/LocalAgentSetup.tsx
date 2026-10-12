@@ -3,7 +3,7 @@ import type { EngineView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import { engineStateLabel, engineStatus, useRecheckEngines } from "~/lib/localCli";
-import { useSetupInTerminal } from "~/lib/setup";
+import { setupRows, useSetupInTerminal } from "~/lib/setup";
 import { useToast } from "~/lib/toast";
 
 function CommandLine({ command }: { command: string }) {
@@ -36,7 +36,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
   const toast = useToast();
   const recheck = useRecheckEngines();
   const terminal = useSetupInTerminal();
-  const rows = engines.filter((e) => e.setup && (e.setup.suggested || engineStatus(e) !== "missing"));
+  const rows = setupRows(engines);
   const waiting = rows.some((e) => !e.ok);
 
   const lastLook = useRef(0);

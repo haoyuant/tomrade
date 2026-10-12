@@ -61,6 +61,9 @@ export interface SessionFiles {
   settings: string;
   /** The extension a terminal pi session loads: the MCP server and hook-style reports in one. */
   piExtension: string;
+  /** Gemini CLI's and OpenCode's own shapes of the same MCP server. */
+  geminiSettings: string;
+  opencodeConfig: string;
   prompt: string;
   mcpUrl: string;
   eventUrl: string;
@@ -180,13 +183,17 @@ export class Sessions {
     const mcpConfig = path.join(dir, "mcp.json");
     const settings = path.join(dir, "settings.json");
     const piFile = path.join(dir, "pi-extension.ts");
+    const geminiSettings = path.join(dir, "gemini-settings.json");
+    const opencodeConfig = path.join(dir, "opencode.json");
     const promptFile = path.join(dir, "prompt.md");
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(settings, JSON.stringify(hooksSettings(eventUrl), null, 2));
     fs.writeFileSync(piFile, piExtension(mcpUrl, token, eventUrl));
+    fs.writeFileSync(geminiSettings, JSON.stringify({ mcpServers: { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
+    fs.writeFileSync(opencodeConfig, JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { tomrade: { type: "remote", url: mcpUrl, enabled: true, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(promptFile, prompt);
     fs.rmSync(path.join(dir, "pid"), { force: true });
-    return { dir, mcpConfig, settings, piExtension: piFile, prompt: promptFile, mcpUrl, eventUrl, token };
+    return { dir, mcpConfig, settings, piExtension: piFile, geminiSettings, opencodeConfig, prompt: promptFile, mcpUrl, eventUrl, token };
   }
 
   token(sessionId: string): string | null {
