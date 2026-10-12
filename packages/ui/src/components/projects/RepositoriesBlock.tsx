@@ -18,6 +18,7 @@ import {
   useRepos,
   useSelectCheckout,
   useSetRunInCheckout,
+  useUpdateBoard,
   useUpdateRepo
 } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
@@ -95,8 +96,17 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
   const states = useRepoStates(projectId);
   const create = useCreateRepo(projectId);
   const folder = useChooseRepoFolder(projectId);
+  const updateBoard = useUpdateBoard(projectId);
   const toast = useToast();
   const [url, setUrl] = useState("");
+
+  // A new repository serves the one workstream that has none, when there is exactly one: said, and changed below it.
+  const autoLink = (repo: Repo) => {
+    const unlinked = (boards.data ?? []).filter((b) => !b.repoId);
+    if (unlinked.length !== 1) return;
+    const board = unlinked[0]!;
+    updateBoard.mutate({ id: board.id, patch: { repoId: repo.id, repoPath: "" } }, { onSuccess: () => toast({ body: t("repositories.linkedToast", { repo: repo.name, board: board.name }) }) });
+  };
 
   const add = () => {
     const remote = url.trim();
@@ -107,6 +117,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
         onSuccess: (repo) => {
           setUrl("");
           toast({ body: t("repositories.addedToast", { name: repo.name }) });
+          autoLink(repo);
         },
         onError: (error) => toast({ body: message(error) })
       }
@@ -128,7 +139,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
             key={repo.id}
             repo={repo}
             projectId={projectId}
-            boards={(boards.data ?? []).filter((b) => b.repoId === repo.id)}
+            boards={boards.data ?? []}
             checkout={byRemote.get(normalizeRemote(repo.remote)) ?? null}
             remoteState={(states.data ?? []).find((state) => state.repoId === repo.id) ?? null}
           />
@@ -149,7 +160,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
         <button type="button" className="btn btn-ghost" disabled={!url.trim() || create.isPending} onClick={add}>
           <Icon name="i-plus" size={13} /> {t("repositories.add")}
         </button>
-        <button type="button" className="btn btn-ghost repos-add-folder" disabled={folder.busy} onClick={() => void folder.choose()}>
+        <button type="button" className="btn btn-ghost repos-add-folder" disabled={folder.busy} onClick={() => void folder.choose().then((added) => added && !added.existing && autoLink(added.repo))}>
           <Icon name="i-folder" size={13} /> {folder.busy ? t("repositories.choosing") : t("repositories.addFolder")}
         </button>
       </div>
@@ -161,6 +172,8 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
   const { t } = useI18n();
   const toast = useToast();
   const update = useUpdateRepo(projectId);
+  const updateBoard = useUpdateBoard(projectId);
+  const repoNames = useRepos(projectId).data ?? [];
   const remove = useRemoveRepo(projectId);
   const selectCheckout = useSelectCheckout();
   const clearCheckout = useClearCheckout();
@@ -240,7 +253,30 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
           <Icon name="i-close" size={13} />
         </button>
       </div>
-      <p className="meta-txt dense repo-used">{boards.length ? t("repositories.usedBy", { names: boards.map((b) => b.name).join(", ") }) : t("repositories.usedByNone")}</p>
+      {/* which workstreams' tickets are coded here: one click each way, a workstream on another repository moves over */}
+      <div className="repo-workstreams" data-testid="repo-workstreams">
+        <span className="meta-txt">{t("repositories.workstreamsLabel")}</span>
+        {boards.map((b) => {
+          const on = b.repoId === repo.id;
+          const other = !on && b.repoId ? repoNames.find((r) => r.id === b.repoId)?.name : undefined;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              className={on ? "chip-opt sel" : "chip-opt"}
+              aria-pressed={on}
+              data-board={b.id}
+              title={other ? t("repositories.workstreamElsewhere", { name: other }) : undefined}
+              disabled={updateBoard.isPending}
+              onClick={() => updateBoard.mutate({ id: b.id, patch: on ? { repoId: null, repoPath: "" } : { repoId: repo.id, repoPath: "" } }, { onError: fail })}
+            >
+              {on ? "✓ " : ""}
+              {b.name}
+            </button>
+          );
+        })}
+      </div>
+      {!boards.some((b) => b.repoId === repo.id) && <p className="meta-txt dense repo-used">{t("repositories.workstreamsHint")}</p>}
       {checkout?.checkout && remoteState && (
         <div className="cfg-row repo-remote-state" style={{ marginTop: 0 }} title={remoteState.remoteDetail ?? undefined}>
           <Icon

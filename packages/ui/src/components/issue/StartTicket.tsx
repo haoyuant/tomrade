@@ -1,11 +1,12 @@
 import type { AgentSettings, EnginePick, PlaybookRecommendation } from "@tomradex/agent";
 import type { StartOptions } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
-import { useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
+import { onStartRequest, useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
+import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
 import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
@@ -39,6 +40,16 @@ export function StartTicket(props: StartTicketProps) {
   const { t } = useI18n();
   const { projectId, item, className } = props;
   const [open, setOpen] = useState(false);
+  // asked to open from elsewhere: in that mode, starting at once so what stopped it shows with its fix
+  const [requested, setRequested] = useState<"run" | "terminal" | null>(null);
+  useEffect(
+    () =>
+      onStartRequest(item.id, (mode) => {
+        setRequested(mode);
+        setOpen(true);
+      }),
+    [item.id]
+  );
   const sessions = useCodeSessions(projectId, item.id);
   const deliveries = useCodeDeliveries(projectId, item.id);
   const engines = useEngines();
@@ -53,12 +64,21 @@ export function StartTicket(props: StartTicketProps) {
       <button type="button" className={cn("btn btn-primary", className)} data-testid="start-ticket" onClick={() => setOpen(true)}>
         {t(hasSession ? "codeLink.continue" : "codeLink.start")}
       </button>
-      {open && <StartTicketDialog {...props} onClose={() => setOpen(false)} />}
+      {open && (
+        <StartTicketDialog
+          {...props}
+          requested={requested}
+          onClose={() => {
+            setOpen(false);
+            setRequested(null);
+          }}
+        />
+      )}
     </>
   );
 }
 
-function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, onClose }: StartTicketProps & { onClose: () => void }) {
+function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, onClose, requested }: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
@@ -92,7 +112,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
 
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
   const otherCommand = ((settings.data?.codeLink as { otherCommand?: string } | undefined)?.otherCommand ?? "").trim();
-  const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(null);
+  const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
   const mode = chosenMode ?? (latest?.mode === "terminal" ? "terminal" : "run");
   const capability = general ? "general" : "code";
   // An agent Tomrade drives over ACP has no terminal session to open.
@@ -149,7 +169,8 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const method = (id: string) => methodWords(t, id, methods.find((entry) => entry.id === id));
   const recommendedTitle = recommended ? method(recommended).title : null;
 
-  const [error, setError] = useState<{ message: string; action?: { label: string; run: () => void } } | null>(null);
+  const [error, setError] = useState<{ message: string; failure?: StartFailure } | null>(null);
+  const gateWords = useGateWords();
   const takeover = useMutation({
     mutationFn: () => invoke("agent.takeoverGeneral", projectId, item.id),
     onSuccess: (result) => toast({ body: t(result.stopped > 0 ? "fields.takeoverReady" : "fields.takeoverNoRun") }),
@@ -171,15 +192,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
       {
         onSuccess: (result) => {
           if (!result.ok) {
-            const action =
-              result.gate === "readiness" && result.bootstrapKey && onOpenIssue
-                ? { label: t("codeLink.gateOpenBootstrap", { key: result.bootstrapKey }), run: () => { onClose(); onOpenIssue(result.bootstrapKey!); } }
-                : (result.gate === "checkout" || result.gate === "workstream" || result.gate === "remote") && onOpenRepositories
-                  ? { label: t("codeLink.gateRepositories"), run: () => { onClose(); onOpenRepositories(); } }
-                  : result.gate === "blocked"
-                    ? { label: t("codeLink.startAnyway"), run: () => submit(true) }
-                    : undefined;
-            setError({ message: result.message, action });
+            setError({ message: result.message, failure: result });
             return;
           }
           onClose();
@@ -201,6 +214,14 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
       }
     );
   };
+
+  // opened because a start elsewhere stopped: try once more here, once the agents are known, so the problem shows with its fix
+  const retried = useRef(false);
+  useEffect(() => {
+    if (!requested || retried.current || !engines.data) return;
+    retried.current = true;
+    submit();
+  });
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()} label={title} className="sheet-md">
@@ -328,10 +349,31 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
           )}
 
           {error && (
-            <p role="alert" className="meta-txt" style={{ color: "var(--danger)" }} data-testid="start-error">
-              {error.message}
-              {error.action && <> <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} onClick={error.action.run}>{error.action.label}</button></>}
-            </p>
+            <div role="alert" className="start-problem" data-testid="start-error">
+              {error.failure ? (
+                (() => {
+                  const words = gateWords(error.failure, item.key);
+                  return (
+                    <>
+                      <p className="start-problem-lead">{words.lead}</p>
+                      {words.detail && <p className="meta-txt num start-problem-detail">{words.detail}</p>}
+                      <StartGateFix
+                        projectId={projectId}
+                        itemId={item.id}
+                        failure={error.failure}
+                        onRetry={(allowBlocked) => submit(allowBlocked)}
+                        onLeave={onClose}
+                        onOpenRepositories={onOpenRepositories}
+                        onOpenIssue={onOpenIssue}
+                        onOpenEngine={(id) => openSettings(id ?? engineId)}
+                      />
+                    </>
+                  );
+                })()
+              ) : (
+                <p className="start-problem-lead">{error.message}</p>
+              )}
+            </div>
           )}
         </div>
       </DialogBody>

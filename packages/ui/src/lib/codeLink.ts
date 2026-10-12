@@ -137,3 +137,20 @@ export const permissionHint = (t: (key: MessageKey) => string, value: string | u
 
 /** No approval and no sandbox: worth a warning wherever it is chosen. */
 export const isFullAccess = (value: string | undefined): boolean => value === "full-access" || value === "bypassPermissions";
+
+// A start that stopped somewhere without a dialog (a section's Continue, the palette) asks the ticket's own Start button to open.
+const startRequests = new Map<string, Set<(mode: "run" | "terminal") => void>>();
+
+export function onStartRequest(itemId: string, listener: (mode: "run" | "terminal") => void): () => void {
+  const set = startRequests.get(itemId) ?? new Set();
+  set.add(listener);
+  startRequests.set(itemId, set);
+  return () => set.delete(listener);
+}
+
+/** Whether a Start button for this ticket is on screen to take it. */
+export function requestStart(itemId: string, mode: "run" | "terminal"): boolean {
+  const listeners = [...(startRequests.get(itemId) ?? [])];
+  listeners.at(-1)?.(mode);
+  return listeners.length > 0;
+}

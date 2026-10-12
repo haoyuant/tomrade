@@ -1190,7 +1190,8 @@ export class CodeLink extends Service {
       const w = this.words();
       if (!scope.projectId || !scope.itemId) return { toast: w.selectTicket };
       const result = await this.start(scope.projectId, scope.itemId, { mode });
-      if (!result.ok) return { toast: result.message };
+      // the Start dialog says what stopped it and offers the fix; the toast is for surfaces that cannot open it
+      if (!result.ok) return { toast: result.message, startDialog: mode };
       const warning = result.warnings?.join("\n");
       const started = w.started(result.continued, result.branch);
       if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${w.terminalHasIt}` : w.runThis(result.command ?? "")}${warning ? `\n${warning}` : ""}` };
