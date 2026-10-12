@@ -51,7 +51,6 @@ declare module "@tomradex/ipc" {
   }
 }
 
-const FIRST_CHECK_MS = 30_000;
 const EVERY_MS = 60 * 60_000;
 
 const isPrerelease = (version: string) => /-/.test(version.split("+")[0]);
@@ -127,7 +126,6 @@ export class Updates {
 
   /** The person's settings, at start and whenever they change. A new channel forgets what the old one said. */
   configure(prefs: UpdatePrefs): void {
-    const first = !this.prefs;
     const switched = !!this.prefs && this.prefs.channel !== prefs.channel;
     this.prefs = prefs;
     clearTimeout(this.timer);
@@ -145,7 +143,8 @@ export class Updates {
       void this.check(false);
       this.timer = setTimeout(tick, EVERY_MS);
     };
-    this.timer = setTimeout(tick, first ? FIRST_CHECK_MS : 0);
+    // At launch too: a release that is already out is news the moment the app opens.
+    this.timer = setTimeout(tick, 0);
   }
 
   async check(asked = true): Promise<UpdateStatus> {
