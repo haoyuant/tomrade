@@ -52,7 +52,7 @@ export function TemplatesDialog({
   const current = all.find((x) => x.id === selected) ?? null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label={t("templates.title")} className="sheet-templates">
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("templates.title")} className="sheet-templates" resizable="templates">
       <DialogHead title={t("templates.title")} />
       <div className="dlg-split">
         <nav className="dlg-nav" aria-label={t("templates.title")}>
@@ -76,7 +76,7 @@ export function TemplatesDialog({
             </button>
           </div>
         </nav>
-        <DialogBody>
+        <DialogBody className="template-body">
           {templates.isError ? (
             <p className="meta-txt">{t("templates.off")}</p>
           ) : selected === "suggestions" ? (
@@ -204,142 +204,149 @@ function TemplateEditor({
     });
 
   return (
-    <div className="stack-3" data-testid="template-editor">
-      <div className="field">
-        <label htmlFor="tplName">{t("templates.name")}</label>
-        <input id="tplName" className="input" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
-      </div>
-      <div className="field">
-        <label htmlFor="tplDesc">{t("templates.description")}</label>
-        <input id="tplDesc" className="input" value={draft.description} onChange={(e) => set({ description: e.target.value })} />
-      </div>
-      <div className="field">
-        <label>{t("templates.what")}</label>
-        <div className="seg" role="group">
-          <button type="button" aria-pressed={draft.action.kind === "tickets"} onClick={() => draft.action.kind !== "tickets" && set({ action: { kind: "tickets", items: [blankTicket() as TicketSpec] } })}>
-            {t("templates.kindTickets")}
-          </button>
-          <button type="button" aria-pressed={draft.action.kind === "assistant"} onClick={() => draft.action.kind !== "assistant" && set({ action: { kind: "assistant", prompt: "", engine: null, options: null } })}>
-            {t("templates.kindAssistant")}
-          </button>
+    <div className={template ? "template-editor" : "template-editor solo"} data-testid="template-editor">
+      <div className="template-main">
+        <div className="field">
+          <label htmlFor="tplName">{t("templates.name")}</label>
+          <input id="tplName" className="input" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
         </div>
-        <span className="meta-txt">{t("templates.placeholders")}</span>
-      </div>
+        <div className="field">
+          <label htmlFor="tplDesc">{t("templates.description")}</label>
+          <input id="tplDesc" className="input" value={draft.description} onChange={(e) => set({ description: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>{t("templates.what")}</label>
+          <div className="seg" role="group">
+            <button type="button" aria-pressed={draft.action.kind === "tickets"} onClick={() => draft.action.kind !== "tickets" && set({ action: { kind: "tickets", items: [blankTicket() as TicketSpec] } })}>
+              {t("templates.kindTickets")}
+            </button>
+            <button type="button" aria-pressed={draft.action.kind === "assistant"} onClick={() => draft.action.kind !== "assistant" && set({ action: { kind: "assistant", prompt: "", engine: null, options: null } })}>
+              {t("templates.kindAssistant")}
+            </button>
+          </div>
+          <span className="meta-txt">{t("templates.placeholders")}</span>
+        </div>
 
-      {draft.action.kind === "tickets" ? (
-        <>
-          {items.map((it, i) => (
-            <div key={i} className="panel stack-3 template-ticket" data-ticket={i}>
-              <div className="row" style={{ gap: "var(--space-2)", alignItems: "end" }}>
-                <div className="field" style={{ flex: 1 }}>
-                  <label htmlFor={`tplT${i}`}>{t("templates.ticketTitle")}</label>
-                  <input id={`tplT${i}`} className="input" value={it.title} onChange={(e) => setItem(i, { title: e.target.value })} />
+        {draft.action.kind === "tickets" ? (
+          <>
+            <div className="template-tickets">
+              {items.map((it, i) => (
+                <div key={i} className="panel stack-3 template-ticket" data-ticket={i}>
+                  <div className="row" style={{ gap: "var(--space-2)", alignItems: "end" }}>
+                    <div className="field" style={{ flex: 1 }}>
+                      <label htmlFor={`tplT${i}`}>{t("templates.ticketTitle")}</label>
+                      <input id={`tplT${i}`} className="input" value={it.title} onChange={(e) => setItem(i, { title: e.target.value })} />
+                    </div>
+                    {items.length > 1 && (
+                      <button type="button" className="btn btn-ghost" onClick={() => setItems(items.filter((_, n) => n !== i))}>
+                        {t("templates.removeTicket")}
+                      </button>
+                    )}
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`tplB${i}`}>{t("templates.ticketBody")}</label>
+                    <textarea id={`tplB${i}`} className="textarea" rows={3} value={it.body ?? ""} onChange={(e) => setItem(i, { body: e.target.value })} />
+                    <span className="meta-txt">{t("templates.bodyHint")}</span>
+                  </div>
+                  <div className="template-grid">
+                    <div className="field">
+                      <label htmlFor={`tplS${i}`}>{t("templates.status")}</label>
+                      <select id={`tplS${i}`} className="select" value={it.status ?? "todo"} onChange={(e) => setItem(i, { status: e.target.value as "todo" | "backlog" })}>
+                        <option value="todo">{t("templates.todo")}</option>
+                        <option value="backlog">{t("templates.backlog")}</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`tplP${i}`}>{t("templates.priority")}</label>
+                      <select id={`tplP${i}`} className="select" value={it.priority ?? 2} onChange={(e) => setItem(i, { priority: Number(e.target.value) })}>
+                        {PRIORITIES.map((p) => (
+                          <option key={p} value={p}>
+                            {PRIORITY_LABEL[p]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`tplW${i}`}>{t("templates.workType")}</label>
+                      <select id={`tplW${i}`} className="select" value={it.workType ?? "general"} onChange={(e) => setItem(i, { workType: e.target.value as "general" | "coding" })}>
+                        <option value="general">{t("templates.general")}</option>
+                        <option value="coding">{t("templates.coding")}</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`tplL${i}`}>{t("templates.labels")}</label>
+                      <LabelsInput id={`tplL${i}`} placeholder={t("templates.labelsHint")} value={it.labels ?? []} onChange={(labels) => setItem(i, { labels })} />
+                    </div>
+                  </div>
+                  <div className="cfg-row">
+                    <span className="cfg-name">{t("templates.start")}</span>
+                    <button type="button" className="switch" role="switch" aria-checked={!!it.start} aria-label={t("templates.start")} onClick={() => setItem(i, { start: !it.start })} />
+                  </div>
                 </div>
-                {items.length > 1 && (
-                  <button type="button" className="btn btn-ghost" onClick={() => setItems(items.filter((_, n) => n !== i))}>
-                    {t("templates.removeTicket")}
-                  </button>
-                )}
-              </div>
-              <div className="field">
-                <label htmlFor={`tplB${i}`}>{t("templates.ticketBody")}</label>
-                <textarea id={`tplB${i}`} className="textarea" rows={3} value={it.body ?? ""} onChange={(e) => setItem(i, { body: e.target.value })} />
-                <span className="meta-txt">{t("templates.bodyHint")}</span>
-              </div>
-              <div className="template-grid">
-                <div className="field">
-                  <label htmlFor={`tplS${i}`}>{t("templates.status")}</label>
-                  <select id={`tplS${i}`} className="select" value={it.status ?? "todo"} onChange={(e) => setItem(i, { status: e.target.value as "todo" | "backlog" })}>
-                    <option value="todo">{t("templates.todo")}</option>
-                    <option value="backlog">{t("templates.backlog")}</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor={`tplP${i}`}>{t("templates.priority")}</label>
-                  <select id={`tplP${i}`} className="select" value={it.priority ?? 2} onChange={(e) => setItem(i, { priority: Number(e.target.value) })}>
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>
-                        {PRIORITY_LABEL[p]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor={`tplW${i}`}>{t("templates.workType")}</label>
-                  <select id={`tplW${i}`} className="select" value={it.workType ?? "general"} onChange={(e) => setItem(i, { workType: e.target.value as "general" | "coding" })}>
-                    <option value="general">{t("templates.general")}</option>
-                    <option value="coding">{t("templates.coding")}</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor={`tplL${i}`}>{t("templates.labels")}</label>
-                  <LabelsInput id={`tplL${i}`} placeholder={t("templates.labelsHint")} value={it.labels ?? []} onChange={(labels) => setItem(i, { labels })} />
-                </div>
-              </div>
-              <div className="cfg-row">
-                <span className="cfg-name">{t("templates.start")}</span>
-                <button type="button" className="switch" role="switch" aria-checked={!!it.start} aria-label={t("templates.start")} onClick={() => setItem(i, { start: !it.start })} />
-              </div>
+              ))}
             </div>
-          ))}
-          {items.length < 20 && (
-            <div>
-              <button type="button" className="btn btn-ghost" data-testid="template-add-ticket" onClick={() => setItems([...items, blankTicket()])}>
-                {t("templates.addTicket")}
-              </button>
+            {items.length < 20 && (
+              <div>
+                <button type="button" className="btn btn-ghost" data-testid="template-add-ticket" onClick={() => setItems([...items, blankTicket()])}>
+                  {t("templates.addTicket")}
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="field">
+              <label htmlFor="tplPrompt">{t("templates.prompt")}</label>
+              <textarea id="tplPrompt" className="textarea" rows={5} value={draft.action.prompt} onChange={(e) => set({ action: { ...(draft.action as Extract<Draft["action"], { kind: "assistant" }>), prompt: e.target.value } })} />
             </div>
+            <div className="field">
+              <label htmlFor="tplEngine">{t("templates.engine")}</label>
+              <select
+                id="tplEngine"
+                className="select"
+                value={draft.action.engine ?? ""}
+                onChange={(e) => set({ action: { ...(draft.action as Extract<Draft["action"], { kind: "assistant" }>), engine: e.target.value || null } })}
+              >
+                <option value="">{t("templates.defaultEngine")}</option>
+                {(engines.data ?? [])
+                  .filter((e) => !e.terminalOnly && e.capabilities.includes("backlog"))
+                  .map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.title}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        <div className="row" style={{ gap: "var(--space-2)" }}>
+          <button type="button" className="btn btn-primary" data-testid="template-save" disabled={!dirty || !valid(draft) || actions.create.isPending || actions.update.isPending} onClick={save}>
+            {t("templates.save")}
+          </button>
+          {template && (
+            <button type="button" className="btn btn-secondary" data-testid="template-run" disabled={actions.run.isPending} onClick={run}>
+              {t("templates.runNow")}
+            </button>
           )}
-        </>
-      ) : (
-        <>
-          <div className="field">
-            <label htmlFor="tplPrompt">{t("templates.prompt")}</label>
-            <textarea id="tplPrompt" className="textarea" rows={5} value={draft.action.prompt} onChange={(e) => set({ action: { ...(draft.action as Extract<Draft["action"], { kind: "assistant" }>), prompt: e.target.value } })} />
-          </div>
-          <div className="field">
-            <label htmlFor="tplEngine">{t("templates.engine")}</label>
-            <select
-              id="tplEngine"
-              className="select"
-              value={draft.action.engine ?? ""}
-              onChange={(e) => set({ action: { ...(draft.action as Extract<Draft["action"], { kind: "assistant" }>), engine: e.target.value || null } })}
+          <Spacer />
+          {template && (
+            <button
+              type="button"
+              className={removing ? "btn btn-danger" : "btn btn-ghost"}
+              onClick={() => (removing ? actions.remove.mutate(template.id, { onSuccess: onDeleted, onError: (err) => toast(errorSpec(err)) }) : setRemoving(true))}
             >
-              <option value="">{t("templates.defaultEngine")}</option>
-              {(engines.data ?? [])
-                .filter((e) => !e.terminalOnly && e.capabilities.includes("backlog"))
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.title}
-                  </option>
-                ))}
-            </select>
-          </div>
-        </>
-      )}
-
-      <div className="row" style={{ gap: "var(--space-2)" }}>
-        <button type="button" className="btn btn-primary" data-testid="template-save" disabled={!dirty || !valid(draft) || actions.create.isPending || actions.update.isPending} onClick={save}>
-          {t("templates.save")}
-        </button>
-        {template && (
-          <button type="button" className="btn btn-secondary" data-testid="template-run" disabled={actions.run.isPending} onClick={run}>
-            {t("templates.runNow")}
-          </button>
-        )}
-        <Spacer />
-        {template && (
-          <button
-            type="button"
-            className={removing ? "btn btn-danger" : "btn btn-ghost"}
-            onClick={() => (removing ? actions.remove.mutate(template.id, { onSuccess: onDeleted, onError: (err) => toast(errorSpec(err)) }) : setRemoving(true))}
-          >
-            {removing ? t("templates.removeSure") : t("templates.remove")}
-          </button>
-        )}
+              {removing ? t("templates.removeSure") : t("templates.remove")}
+            </button>
+          )}
+        </div>
       </div>
-
-      {template && <SchedulesBlock projectId={projectId} templateId={template.id} schedules={schedules} />}
-      {template && <RunsBlock projectId={projectId} templateId={template.id} onOpenIssue={onOpenIssue} onOpenThread={onOpenThread} />}
+      {template && (
+        <div className="template-side">
+          <SchedulesBlock projectId={projectId} templateId={template.id} schedules={schedules} />
+          <RunsBlock projectId={projectId} templateId={template.id} onOpenIssue={onOpenIssue} onOpenThread={onOpenThread} />
+        </div>
+      )}
     </div>
   );
 }

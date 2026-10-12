@@ -457,7 +457,7 @@ export class Schedules extends Service {
 
   private registerTools(ctx: Context): void {
     const ask = async (inv: { ask?(text: string, options: string[]): Promise<string | null> }, question: string): Promise<boolean> => {
-      if (!inv.ask) throw new Error("Nobody here can confirm this. Tell the user they can do it under Templates in the sidebar.");
+      if (!inv.ask) throw new Error("Nobody here can confirm this. Tell the user they can do it under Routines in the sidebar.");
       const w = ASK_WORDS[this.locale()];
       return (await inv.ask(question, [w.yes, w.no])) === w.yes;
     };
@@ -465,7 +465,7 @@ export class Schedules extends Service {
       defineTool({
         name: "list_templates",
         title: "List templates",
-        description: "The project's templates — reusable tickets (a daily to-do, weekly chores, a checklist) or prompts for the assistant — with the schedules that run them and how their last runs went.",
+        description: "The project's templates (the user sees them as Routines / 例行事务) — reusable tickets (a daily to-do, weekly chores, a checklist) or prompts for the assistant — with the schedules that run them and how their last runs went.",
         input: z.object({}),
         execute: (_args, inv) => {
           const projectId = requireProjectId("list_templates", undefined, inv);
@@ -534,14 +534,14 @@ export class Schedules extends Service {
 
 const ASK_WORDS = {
   en: {
-    save: (name: string) => `Save "${name}" as a template?`,
-    saveScheduled: (name: string, when: string) => `Save "${name}" as a template that runs ${when}? It runs on this machine while Tomrade is open.`,
+    save: (name: string) => `Save "${name}" as a routine?`,
+    saveScheduled: (name: string, when: string) => `Save "${name}" as a routine that runs ${when}? It runs on this machine while Tomrade is open.`,
     yes: "Save it",
     no: "Don't"
   },
   zh: {
-    save: (name: string) => `把「${name}」存成模板吗？`,
-    saveScheduled: (name: string, when: string) => `把「${name}」存成模板，并且${when}自动运行吗？它会在这台电脑上、Tomrade 打开时运行。`,
+    save: (name: string) => `把「${name}」存成例行事务吗？`,
+    saveScheduled: (name: string, when: string) => `把「${name}」存成例行事务，并且${when}自动运行吗？它会在这台电脑上、Tomrade 打开时运行。`,
     yes: "保存",
     no: "不要"
   }

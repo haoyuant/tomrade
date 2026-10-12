@@ -164,7 +164,7 @@ it("lets an agent save a template, or schedule one, only with the person's yes",
   const t = await boot();
   try {
     const call = (args: object, ask?: () => Promise<string | null>) => t.ctx.tools.execute("create_template", args, { by: "ai:test", projectId: t.project.id, ...(ask ? { ask } : {}) });
-    await expect(call(todo)).rejects.toThrow(/Templates in the sidebar/);
+    await expect(call(todo)).rejects.toThrow(/Routines in the sidebar/);
     expect(await call(todo, async () => "Don't")).toMatchObject({ created: false });
     expect(t.s.templates(t.project.id)).toEqual([]);
     const made = (await call({ ...todo, cadence: { kind: "daily", at: "08:00" } }, async () => "Save it")) as { template: { id: string }; schedule: { cadence: object } };
