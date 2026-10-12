@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AgentSettings, Block, EnginePick, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
+import type { AgentSettings, Block, EnginePick, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import { modelErrorKind, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
@@ -18,6 +18,7 @@ import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSetti
 import { useAttention, type AttentionEntry } from "~/lib/attention";
 import { permissionLabel as permissionName } from "~/lib/codeLink";
 import { engineStateLabel } from "~/lib/localCli";
+import { useSetupInTerminal } from "~/lib/setup";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -240,19 +241,36 @@ function RunMetrics({ run }: { run: RunView | undefined }) {
  * A run that failed says what the person can do about it — the key, the
  * model's name, a moment's wait — and keeps the raw message and whatever the
  * engine knew besides under Details: folded, so a trace never floods the
- * thread, and one click from a bug report.
+ * thread, and one click from a bug report. The fix follows the engine that
+ * failed: model settings for one that runs on Tomrade's models, its own sign-in
+ * or settings for an agent with an account of its own. Meanwhile another ready
+ * agent can take the same message, so a broken one never leaves the person stuck.
  */
-function ErrorBlock({ text, details, onOpenSettings, onRetry }: { text: string; details?: string; onOpenSettings: () => void; onRetry?: () => void }) {
+function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, onRetryWith }: {
+  text: string;
+  details?: string;
+  /** The engine whose turn failed, when the run says. */
+  engine?: EngineView;
+  /** Ready agents that could take the last message instead. */
+  others: EngineView[];
+  onOpenSettings: (engineId?: string) => void;
+  onRetry?: () => void;
+  onRetryWith?: (engineId: string) => void;
+}) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const signIn = useSetupInTerminal();
   const kind = modelErrorKind(text);
-  const head = kind === "other" ? null : t(`agentPanel.error_${kind}` as MessageKey);
-  const fixInSettings = kind === "auth" || kind === "model" || kind === "quota";
+  const own = !!engine && !engine.usesModels;
+  const head = kind === "other" ? null : own ? t(`agentPanel.errorAgent_${kind}` as MessageKey, { name: engine.title }) : t(`agentPanel.error_${kind}` as MessageKey);
+  const fixable = kind === "auth" || kind === "model" || kind === "quota";
+  const canSignIn = own && kind === "auth" && !!engine.setup?.signIn;
   const folded = [head ? text : null, details].filter(Boolean).join("\n\n");
   const copy = () => void navigator.clipboard?.writeText([text, details].filter(Boolean).join("\n\n")).then(() => {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   });
+  const retryWith = onRetryWith && others.length > 0;
   return (
     <div className="ai-error" role="alert">
       <p>{head ?? text}</p>
@@ -265,27 +283,51 @@ function ErrorBlock({ text, details, onOpenSettings, onRetry }: { text: string; 
           </button>
         </details>
       )}
-      {(fixInSettings || onRetry) && (
-        <div className="row" style={{ gap: 6, marginTop: 6 }}>
-          {fixInSettings && (
-            <button type="button" className="btn btn-ghost" onClick={onOpenSettings}>
+      {(fixable || onRetry || retryWith) && (
+        <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+          {fixable && !own && (
+            <button type="button" className="btn btn-ghost" onClick={() => onOpenSettings()}>
               {t("agentPanel.openModelSettings")}
             </button>
           )}
-          {onRetry && !fixInSettings && (
+          {canSignIn && (
+            <button type="button" className="btn btn-ghost" disabled={signIn.isPending} onClick={() => signIn.mutate({ engineId: engine.id, step: "signIn" })}>
+              {t("agentPanel.signInAgain", { name: engine.title })}
+            </button>
+          )}
+          {fixable && own && !canSignIn && (
+            <button type="button" className="btn btn-ghost" onClick={() => onOpenSettings(engine.id)}>
+              {t("agentPanel.engineSettings", { name: engine.title })}
+            </button>
+          )}
+          {onRetry && (
             <button type="button" className="btn btn-ghost" onClick={onRetry}>
               {t("agentPanel.retry")}
             </button>
           )}
+          {retryWith && (
+            <Menu label={t("agentPanel.retryWith")} trigger={
+              <button type="button" className="btn btn-ghost">
+                {t("agentPanel.retryWith")} <Icon name="i-chevdown" size={9} />
+              </button>
+            }>
+              <MenuHead title={t("agentPanel.retryWithHead")} />
+              {others.map((e) => (
+                <MenuActionItem key={e.id} icon={<Icon name="i-send" size={13} />} name={e.title} onSelect={() => onRetryWith(e.id)} />
+              ))}
+            </Menu>
+          )}
         </div>
       )}
+      {signIn.data?.launched && <p className="meta-txt" style={{ marginTop: 6 }}>{t("agentPanel.signInStarted", { name: engine?.title ?? "" })}</p>}
+      {signIn.data && !signIn.data.launched && <p className="meta-txt" style={{ marginTop: 6 }}>{t("agentPanel.signInManual", { command: signIn.data.command })}</p>}
     </div>
   );
 }
 
 const TranscriptRow = memo(Row);
 
-function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: () => void; onRetry?: () => void; busy: boolean; hint?: boolean }) {
+function Row({ projectId, m, runs, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -303,6 +345,7 @@ function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onReve
     );
   }
   if (b.type === "note") return <p className="agent-note">{b.text}</p>;
+  const failedEngine = b.type === "error" && m.runId ? engines?.find((e) => e.id === runs.get(m.runId!)?.engine) : undefined;
   const body =
     b.type === "text" ? (
       <>
@@ -320,7 +363,15 @@ function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onReve
     ) : b.type === "changes" ? (
       <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
     ) : b.type === "error" ? (
-      <ErrorBlock text={b.text} details={b.details} onOpenSettings={onOpenSettings} onRetry={onRetry} />
+      <ErrorBlock
+        text={b.text}
+        details={b.details}
+        engine={failedEngine}
+        others={retryEngines.filter((e) => e.id !== failedEngine?.id)}
+        onOpenSettings={onOpenSettings}
+        onRetry={onRetry}
+        onRetryWith={onRetryWith}
+      />
     ) : b.type === "status" ? (
       <p className="ai-pending">{b.text}</p>
     ) : null;
@@ -622,7 +673,19 @@ export function AgentPanel({
   latest.current = { doAnswer, revert: revert.mutate, onOpenSettings };
   const answerRow = useCallback((questionId: string, value: string | string[]) => latest.current.doAnswer(questionId, value), []);
   const revertRow = useCallback((runId: string) => latest.current.revert(runId), []);
-  const settingsRow = useCallback(() => latest.current.onOpenSettings(), []);
+  const settingsRow = useCallback((engineId?: string) => latest.current.onOpenSettings(engineId), []);
+  // Another agent takes the failed message: the thread moves to it, then the message goes again.
+  const retryWith = async (engineId: string) => {
+    if (!threadId || !lastAsked || busy) return;
+    await setEngine.mutateAsync({ threadId, engineId });
+    await doSend(lastAsked);
+  };
+  // A ticket's coding thread stays with agents that can code.
+  const needsCode = !!detail.data?.thread.itemId && !!engine?.capabilities.includes("code");
+  const retryEngines = useMemo(
+    () => (engines.data ?? []).filter((e) => e.ok && !e.terminalOnly && (!needsCode || e.capabilities.includes("code"))),
+    [engines.data, needsCode]
+  );
 
   const archiveThreadById = (id: string) => {
     if (busy) return;
@@ -782,8 +845,11 @@ export function AgentPanel({
             onAnswer={answerRow}
             onRevert={revertRow}
             onOpenSettings={settingsRow}
+            engines={engines.data}
+            retryEngines={retryEngines}
             // only the newest failure, and only while nothing runs: try the last message again
             onRetry={m.id === lastErrorId && lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
+            onRetryWith={m.id === lastErrorId && lastAsked && !busy && threadId ? (engineId) => void retryWith(engineId) : undefined}
             busy={busy}
             hint={m.id === lastChangesId}
           />

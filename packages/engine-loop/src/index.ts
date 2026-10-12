@@ -139,6 +139,7 @@ export function createLoopEngine(ctx: Context): Engine {
   return {
     id: "loop",
     title: "Tomrade loop",
+    usesModels: true,
     media: options => {
       const parsed = LoopOptions.parse(options ?? {});
       const llm = ctx.get("llm");

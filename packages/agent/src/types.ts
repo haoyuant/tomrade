@@ -377,6 +377,8 @@ export interface Engine {
   terminal?: boolean;
   /** True: a CLI Tomrade starts only in a terminal the person sees — handed the ticket, heard over MCP, never driven turn by turn. */
   terminalOnly?: boolean;
+  /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
+  usesModels?: boolean;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
 }
 
@@ -401,6 +403,7 @@ export interface EngineView {
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;
   terminalOnly?: boolean;
+  usesModels?: boolean;
   setup?: EngineSetup;
 }
 
