@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { FileReference } from "@tomradex/domain";
+import type { ConnectionState, ProviderConnection as FilesConnection } from "@tomradex/storage";
 
 /** Where a project's files stand against what they are shared through. `local` means nothing beyond this machine to be in step with. */
 export type FilesSyncState = "local" | "synced" | "ahead" | "behind" | "diverged" | "conflicted" | "syncing" | "offline" | "error" | "unavailable";
@@ -220,19 +221,8 @@ export interface FileSearchResult {
   truncated: string[];
 }
 
-export interface ConnectionState {
-  connected: boolean;
-  label?: string;
-  detail?: string;
-}
-
-/** An account behind a backend; the secret stays in the backend's own settings section. */
-export interface FilesConnection {
-  prompt: { label: string; help?: string; url?: string };
-  status(): Promise<ConnectionState>;
-  connect(secret: string): Promise<ConnectionState>;
-  disconnect(): Promise<void>;
-}
+/** An account behind a backend, the same shape as a storage provider's; the secret stays in the backend's own settings section. */
+export type { ConnectionState, ProviderConnection as FilesConnection } from "@tomradex/storage";
 
 export interface OpenStoreOptions<C> {
   projectId: string;

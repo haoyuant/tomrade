@@ -98,7 +98,21 @@ export const useFilesBackends = () => useQuery({ queryKey: filesKeys.backends, q
 
 /** Whether a backend's account is connected, and as whom. Never the secret. */
 export const useFilesConnection = (backendId: string | undefined) =>
-  useQuery({ queryKey: filesKeys.connection(backendId ?? ""), queryFn: () => invoke("files.connection", backendId!), enabled: !!backendId, retry: false });
+  useQuery({
+    queryKey: filesKeys.connection(backendId ?? ""),
+    queryFn: () => invoke("files.connection", backendId!),
+    enabled: !!backendId,
+    retry: false,
+    refetchInterval: (query) => (query.state.data?.pending ? 2_000 : false)
+  });
+
+export function useSignInFiles() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (backendId: string) => invoke("files.signIn", backendId),
+    onSuccess: (state, backendId) => qc.setQueryData(filesKeys.connection(backendId), state)
+  });
+}
 
 export function useConnectFiles() {
   const qc = useQueryClient();

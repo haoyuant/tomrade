@@ -347,6 +347,7 @@ export class Files extends Service {
       ctx.ipc.handle("files.draft", (backendId, name) => this.draft(backendId, name));
       ctx.ipc.handle("files.connection", (backendId) => this.connection(backendId));
       ctx.ipc.handle("files.connect", (backendId, secret) => this.connect(backendId, secret));
+      ctx.ipc.handle("files.signIn", (backendId) => this.signIn(backendId));
       ctx.ipc.handle("files.disconnect", (backendId) => this.disconnect(backendId));
       ctx.ipc.handle("files.attach", (projectId, itemId, input) => this.attach(projectId, itemId, input));
       ctx.ipc.handle("files.attachMany", (projectId, itemId, input) => this.attachMany(projectId, itemId, input));
@@ -436,6 +437,13 @@ export class Files extends Service {
     const backend = this.get(backendId);
     if (!backend.connection) return { connected: true };
     return backend.connection.connect(secret);
+  }
+
+  /** Begin a sign-in finished in the browser; `connection()` reports when it lands. */
+  async signIn(backendId: string): Promise<ConnectionState> {
+    const connection = this.get(backendId).connection;
+    if (!connection?.signIn) throw new Error(`files backend "${backendId}" has no sign-in`);
+    return connection.signIn();
   }
 
   async disconnect(backendId: string): Promise<void> {

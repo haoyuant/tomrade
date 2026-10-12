@@ -21,12 +21,15 @@ export interface Repo {
 
 /** Thin REST client. Used only for discovery and creation; moving bytes is git's job. */
 export class GitHub {
-  constructor(private readonly token: () => string | Promise<string>) {}
+  constructor(
+    private readonly token: () => string | Promise<string>,
+    private readonly base = BASE
+  ) {}
 
   private async call<T>(method: string, route: string, body?: unknown): Promise<T> {
     const token = await this.token();
     if (!token) throw new GitHubError(401, "No GitHub token configured — add one in Settings → GitHub.");
-    const res = await fetch(`${BASE}${route}`, {
+    const res = await fetch(`${this.base}${route}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -47,6 +50,10 @@ export class GitHub {
           return undefined;
         }
       })();
+      // A signed-in App reaches only what it was given; say so rather than GitHub's terse words.
+      if (res.status === 403 && parsed === "Resource not accessible by integration") {
+        throw new GitHubError(403, "Tomrade's GitHub App has no access to this — give it the repository on GitHub (Choose repositories), or use a personal access token");
+      }
       throw new GitHubError(res.status, parsed ?? `GitHub returned ${res.status}`);
     }
     return (res.status === 204 ? undefined : await res.json()) as T;
@@ -84,6 +91,11 @@ export class GitHub {
     return owner.toLowerCase() === me.login.toLowerCase()
       ? this.call<Repo>("POST", "/user/repos", body)
       : this.call<Repo>("POST", `/orgs/${owner}/repos`, body);
+  }
+
+  /** How many installations of the signed-in App this account can use; only for a sign-in, not a personal token. */
+  async installations(): Promise<number> {
+    return (await this.call<{ total_count: number }>("GET", "/user/installations?per_page=1")).total_count;
   }
 
   async mine(): Promise<Repo[]> {

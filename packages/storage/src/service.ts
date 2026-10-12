@@ -110,6 +110,7 @@ export class Storage extends Service {
   ready: Promise<void> = Promise.resolve();
 
   private registry = new Map<string, StorageProvider>();
+  private connectedProviders = new Set<string>();
   private watchers = new Map<string, fs.FSWatcher>();
   private watchTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -195,6 +196,7 @@ export class Storage extends Service {
       ctx.ipc.handle("storage.draft", (providerId, name) => ctx.storage.draft(providerId, name));
       ctx.ipc.handle("storage.connection", (providerId) => ctx.storage.connection(providerId));
       ctx.ipc.handle("storage.connect", (providerId, secret) => ctx.storage.connect(providerId, secret));
+      ctx.ipc.handle("storage.signIn", (providerId) => ctx.storage.signIn(providerId));
       ctx.ipc.handle("storage.disconnect", (providerId) => ctx.storage.disconnect(providerId));
       ctx.ipc.handle("storage.hubInfo", () => ctx.storage.hubInfo());
       ctx.ipc.handle("storage.hubBind", (providerId, config) => ctx.storage.bindHub(providerId, config));
@@ -374,19 +376,36 @@ export class Storage extends Service {
 
   async connection(providerId: string): Promise<ConnectionState> {
     const provider = this.get(providerId);
-    return provider.connection ? provider.connection.status() : { connected: true };
+    return this.connected(providerId, provider.connection ? await provider.connection.status() : { connected: true });
   }
 
   async connect(providerId: string, secret: string): Promise<ConnectionState> {
     const provider = this.get(providerId);
-    const state = provider.connection ? await provider.connection.connect(secret) : { connected: true };
-    // The account may be what a project waiting to come back needed.
-    if (state.connected) this.requeue((e) => e.provider?.id === providerId && (e.state === "needs-connection" || e.state === "failed"));
-    return state;
+    // Another account may reach what this one could not, so a connect always retries.
+    this.connectedProviders.delete(providerId);
+    return this.connected(providerId, provider.connection ? await provider.connection.connect(secret) : { connected: true });
+  }
+
+  /** Begin a sign-in finished in the browser; `connection()` reports when it lands. */
+  async signIn(providerId: string): Promise<ConnectionState> {
+    const connection = this.get(providerId).connection;
+    if (!connection?.signIn) throw new Error(`storage provider "${providerId}" has no sign-in`);
+    return connection.signIn();
   }
 
   async disconnect(providerId: string): Promise<void> {
+    this.connectedProviders.delete(providerId);
     await this.get(providerId).connection?.disconnect();
+  }
+
+  /** The account may be what a project waiting to come back needed: on the turn to connected — a sign-in landing, say — those try again. */
+  private connected(providerId: string, state: ConnectionState): ConnectionState {
+    if (!state.connected) this.connectedProviders.delete(providerId);
+    else if (!this.connectedProviders.has(providerId)) {
+      this.connectedProviders.add(providerId);
+      this.requeue((e) => e.provider?.id === providerId && (e.state === "needs-connection" || e.state === "failed"));
+    }
+    return state;
   }
 
   // ── the folder ───────────────────────────────────────────────────────────────

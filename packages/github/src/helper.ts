@@ -14,6 +14,8 @@ const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
  */
 const helperDir = (settings: string): string => path.join(path.dirname(settings), "bin");
 const helperPath = (settings: string): string => path.join(helperDir(settings), "tomrade-credential");
+/** The signed-in session's short-lived token, renewed by the app while it runs; the helper reads it before the settings' token. */
+const tokenFile = (settings: string): string => path.join(path.dirname(settings), "github-token.json");
 
 const writeHelper = (file: string, content: string, mode: number): void => {
   const temporary = `${file}.${randomUUID()}`;
@@ -32,6 +34,12 @@ export function githubHttps(remote: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Null takes it away, and the helper falls back to the settings' token. */
+export function writeHelperToken(settings: string, grant: { token: string; expiresAt: number | null } | null): void {
+  if (!grant) fs.rmSync(tokenFile(settings), { force: true });
+  else writeHelper(tokenFile(settings), JSON.stringify(grant), 0o600);
 }
 
 export const credentialCommand = (settings: string): string => `!${quote(helperPath(settings))}`;
@@ -100,7 +108,9 @@ export function writeGithubHelper(settings: string): string {
     '    const fields = Object.fromEntries(fs.readFileSync(0, "utf8").split("\\n").filter(Boolean).map(line => { const i = line.indexOf("="); return [line.slice(0, i), line.slice(i + 1)]; }));',
     '    if (fields.protocol !== "https" || fields.host !== "github.com") process.exit(0);',
     '  }',
-    `  const token = JSON.parse(fs.readFileSync(${JSON.stringify(path.resolve(settings))}, "utf8")).github?.token;`,
+    '  let token;',
+    `  try { const t = JSON.parse(fs.readFileSync(${JSON.stringify(path.resolve(tokenFile(settings)))}, "utf8")); if (typeof t.token === "string" && (!t.expiresAt || t.expiresAt > Date.now() + 30000)) token = t.token; } catch {}`,
+    `  if (token === undefined) token = JSON.parse(fs.readFileSync(${JSON.stringify(path.resolve(settings))}, "utf8")).github?.token;`,
     '  if (typeof token !== "string" || !token.trim() || /[\\r\\n\\0]/.test(token)) process.exit(action === "run" ? 1 : 0);',
     '  if (action === "run") {',
     '    const env = { ...process.env, GH_TOKEN: token.trim(), GITHUB_TOKEN: token.trim() };',

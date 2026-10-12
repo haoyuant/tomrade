@@ -1061,11 +1061,24 @@ helpers for that prefix) and then the helper — nothing is written to the
 folder's git config. Return null while no account is connected, and the user's
 own credentials (SSH keys, keychain) are used. A remote whose URL still names a
 credential for the same repository is cleaned whenever it is used.
+A connection may also offer `signIn()` (with `prompt.signIn: { name }`): the
+panel shows that first and keeps the secret as the fallback. `status()` then
+reports `pending: { code, url, expiresAt }` while the person finishes in the
+browser — the panel shows the code and polls — and may carry
+`action: { label, url, needed }` for a step outside Tomrade, such as choosing
+which repositories an App may use; `disconnect()` also calls off a sign-in.
 `browse()` and `draft(name)` remove typing. `@tomradex/storage-git`
 registers `git` (any URL); `@tomradex/storage-github` adds discovery and
 creation on top, with the account and helper of `ctx.github`
 (`@tomradex/github`: `token()`, `api`, `connection`, `credential()`, and the
-per-checkout helper code links opt into).
+per-checkout helper code links opt into). Its connection signs in to the
+Tomrade GitHub App by the device flow when the row's `clientId` is set — no
+client secret ships, and the short-lived token is renewed in the main process,
+its renewal token kept encrypted with the OS keychain (`safeStorage`) — and
+keeps the personal access token as the fallback: while both exist the sign-in
+is used, and if it can no longer be renewed or is revoked the token takes over.
+Git outside the app reads the current token through the helper, from a `0600`
+file beside the settings that holds only the short-lived one.
 
 | Call | Does |
 |---|---|
