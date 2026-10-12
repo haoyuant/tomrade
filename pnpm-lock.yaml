@@ -83,6 +83,9 @@ importers:
       '@tomradex/engine-scripted':
         specifier: workspace:*
         version: link:../../packages/engine-scripted
+      '@tomradex/engine-terminal':
+        specifier: workspace:*
+        version: link:../../packages/engine-terminal
       '@tomradex/engine-workbuddy':
         specifier: workspace:*
         version: link:../../packages/engine-workbuddy
@@ -797,6 +800,28 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/engine-terminal:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-claude-code':
+        specifier: workspace:*
+        version: link:../engine-claude-code
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3

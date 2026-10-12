@@ -55,6 +55,21 @@ export const LOCAL_AGENTS: Record<string, { name: string; install: (platform: st
     signInRuns: true,
     docs: "https://hermes-agent.nousresearch.com/docs/user-guide/features/acp"
   },
+  gemini: {
+    name: "gemini",
+    install: () => ["npm install -g @google/gemini-cli"],
+    // Its first run asks how to sign in: a Google account or an API key.
+    signIn: "gemini",
+    signInRuns: true,
+    docs: "https://github.com/google-gemini/gemini-cli"
+  },
+  opencode: {
+    name: "opencode",
+    install: (platform) => (platform === "win32" ? ["npm install -g opencode-ai"] : ["curl -fsSL https://opencode.ai/install | bash", "npm install -g opencode-ai"]),
+    signIn: "opencode auth login",
+    signInRuns: true,
+    docs: "https://opencode.ai/docs/"
+  },
   dsh: {
     name: "dsh",
     install: () => ["npm install -g @deepseek-ai/dsh"],

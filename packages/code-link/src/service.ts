@@ -191,6 +191,8 @@ const SETTINGS_SECTION = {
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
+        geminiCommand: { title: "Gemini CLI 命令", description: "{geminiSettings} 是只在本次会话生效的设置文件，作为最低一层读取，你自己的 Gemini 设置仍然优先。" },
+        opencodeCommand: { title: "OpenCode 命令", description: "{opencodeConfig} 是只在本次会话生效的配置，会和你自己的 OpenCode 配置合并。" },
         workbuddyCommand: { title: "WorkBuddy 命令" },
         otherCommand: { title: "其他智能体命令", description: "其他带 MCP 客户端的命令行智能体，比如 Gemini CLI、OpenCode、aider……留空表示没有设置。会自动填入 {mcpUrl}、{token}（也在 $TOMRADE_MCP_TOKEN 里）、{prompt} 和 {resume}（会话 id 本身）。" }
       }

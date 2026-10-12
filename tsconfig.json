@@ -122,6 +122,9 @@
       "path": "./packages/shell"
     },
     {
+      "path": "./packages/engine-terminal"
+    },
+    {
       "path": "./packages/storage"
     },
     {

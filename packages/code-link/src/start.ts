@@ -270,8 +270,11 @@ export class Starter {
   private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown): string {
     const template = terminalTemplate(settings, engineId);
     const id = session.externalId;
-    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
-    return fillTemplate(withOptions(template, optionFlags(engineId, options)), { cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension, resume });
+    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
+    return fillTemplate(withOptions(template, optionFlags(engineId, options)), {
+      cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension,
+      geminiSettings: files.geminiSettings, opencodeConfig: files.opencodeConfig, resume
+    });
   }
 
   /**
@@ -337,7 +340,9 @@ export class Starter {
   async pickEngine(agent: Agent, wanted?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
     const inside = terminal && wanted ? insideOnly(agent, wanted) : null;
     if (inside) return { ok: false, reason: inside };
-    const candidates = agent.codeEngines().filter((e) => (!wanted || e.id === wanted) && (!terminal || e.terminal !== false));
+    const only = !terminal && wanted ? agent.codeEngines().find((e) => e.id === wanted && e.terminalOnly) : undefined;
+    if (only) return { ok: false, reason: `${only.title} runs only in a terminal — choose In a terminal` };
+    const candidates = agent.codeEngines().filter((e) => (!wanted || e.id === wanted) && (!terminal || e.terminal !== false) && (terminal || !e.terminalOnly));
     if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code, Codex or Pi, then try again" };
     const reasons: string[] = [];
     for (const engine of candidates) {

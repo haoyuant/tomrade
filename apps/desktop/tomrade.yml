@@ -211,6 +211,11 @@ plugins:
   - id: engine-pi
     name: "@tomradex/engine-pi"
     implements: [engine]
+  # Gemini CLI and OpenCode, started only in a terminal the person sees, with
+  # Tomrade's MCP server set up for that one session.
+  - id: engine-terminal
+    name: "@tomradex/engine-terminal"
+    implements: [engine]
   # Agents that speak ACP (the Agent Client Protocol) over stdio, each its own row.
   - id: engine-hermes
     name: "@tomradex/engine-hermes"

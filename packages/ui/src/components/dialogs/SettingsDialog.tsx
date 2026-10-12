@@ -873,8 +873,10 @@ function EngineRow({
     <div className="eng-row" ref={row} data-engine={engine.id}>
       <div className={`eng-head${hasBody ? " eng-head-toggle" : ""}`} onClick={toggle}>
         <label className="eng-pick" onClick={(e) => e.stopPropagation()}>
-          <input type="radio" className="bs-radio" name="defaultEngine" checked={isDefault} onChange={onMakeDefault} />
+          {/* a terminal-only CLI conducts no conversation, so it cannot be the default */}
+          <input type="radio" className="bs-radio" name="defaultEngine" checked={isDefault} onChange={onMakeDefault} disabled={engine.terminalOnly} />
           <span>{engine.title}</span>
+          {engine.terminalOnly && <span className="meta-txt">{t("settingsDialog.terminalOnly")}</span>}
         </label>
         <span className={`meta-txt eng-state${status === "ready" || status === "other" ? "" : " is-warn"}`} title={engine.ok ? undefined : engine.reason}>
           {engine.cli ? engineStateLabel(engine, t, t("settingsDialog.engineUnavailable")) : engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}
