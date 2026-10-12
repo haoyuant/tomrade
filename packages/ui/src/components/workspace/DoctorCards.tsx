@@ -31,7 +31,7 @@ export function ChecklistBlock({ title, card }: { title: string; card: Checklist
  * A `finding` card: the one thing found, how sure, and buttons for what to do.
  * The backend words every label; the verbs are the panel's own.
  */
-export function FindingBlock({ card, engines, onAction }: { card: FindingCard; engines: EngineView[]; onAction: (action: CardAction, engineId?: string) => void }) {
+export function FindingBlock({ card, engines, allEngines, onAction }: { card: FindingCard; engines: EngineView[]; allEngines: EngineView[]; onAction: (action: CardAction, engineId?: string) => void }) {
   const { t } = useI18n();
   return (
     <div className={`finding is-${card.tone}`} role={card.tone === "fail" ? "alert" : undefined}>
@@ -44,6 +44,24 @@ export function FindingBlock({ card, engines, onAction }: { card: FindingCard; e
       {card.actions.length > 0 && (
         <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
           {card.actions.map((action, i) => {
+            if (action.kind === "investigate") {
+              // Who reads it, and where what it reads goes, is said before anyone is picked.
+              const choices = action.engineIds.flatMap((id) => allEngines.filter((e) => e.id === id && e.ok));
+              if (!choices.length) return null;
+              return (
+                <Menu key={i} label={action.label} wide trigger={
+                  <button type="button" className="btn btn-ghost">
+                    <Icon name="i-search" size={12} /> {action.label} <Icon name="i-chevdown" size={9} />
+                  </button>
+                }>
+                  <MenuHead title={action.label} />
+                  <p className="meta-txt dense menu-note">{action.note}</p>
+                  {choices.map((e) => (
+                    <MenuActionItem key={e.id} icon={<Icon name="i-search" size={13} />} name={e.title} onSelect={() => onAction(action, e.id)} />
+                  ))}
+                </Menu>
+              );
+            }
             if (action.kind !== "retry-with") {
               return (
                 <button key={i} type="button" className={`btn ${action.kind === "report" ? "btn-primary" : "btn-ghost"}`} onClick={() => onAction(action)}>

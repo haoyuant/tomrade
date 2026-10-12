@@ -50,7 +50,11 @@ const en = {
   actionRecheck: "Check again",
   actionReport: "Send to the developer",
   recheckSay: "Check again.",
-  confidence: { high: "sure", medium: "likely", low: "a guess" } as Record<string, string>
+  confidence: { high: "sure", medium: "likely", low: "a guess" } as Record<string, string>,
+  actionInvestigate: "Let an agent look into it",
+  investigateNote: "It reads the error, the checks and the log excerpts above, and may look the error up online. What it reads goes to that agent's model provider — at work, pick one your company allows.",
+  investigateAsk: (title: string) => `${title}, please look into this.`,
+  noInvestigator: "That agent can't look into it right now."
 };
 
 const zh: typeof en = {
@@ -98,7 +102,11 @@ const zh: typeof en = {
   actionRecheck: "再查一次",
   actionReport: "发给开发者",
   recheckSay: "再查一次。",
-  confidence: { high: "确定", medium: "很可能", low: "猜测" }
+  confidence: { high: "确定", medium: "很可能", low: "猜测" },
+  actionInvestigate: "让智能体深入查",
+  investigateNote: "它会读上面的出错信息、检查结果和日志摘录，也可能上网查这个错误。读到的内容会发给这个智能体背后的模型服务——在公司里，请选公司允许用的那个。",
+  investigateAsk: (title) => `请 ${title} 深入查一查。`,
+  noInvestigator: "这个智能体现在没法帮忙排查。"
 };
 
 export type Words = typeof en;

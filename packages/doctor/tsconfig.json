@@ -15,6 +15,7 @@
     { "path": "../llm" },
     { "path": "../mcp" },
     { "path": "../projects" },
-    { "path": "../settings" }
+    { "path": "../settings" },
+    { "path": "../tools" }
   ]
 }

@@ -372,7 +372,7 @@ function Row({ projectId, m, runs, cards, engines, retryEngines, pending, byKey,
       // the stream holds the card as it was first posted; the live one ticks as checks finish
       <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />
     ) : b.type === "card" && b.schema === "finding" ? (
-      <FindingBlock card={b.data as FindingCard} engines={retryEngines} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
+      <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
@@ -503,6 +503,7 @@ export function AgentPanel({
   const cards = useMemo(() => new Map((detail.data?.cards ?? []).map((c) => [c.id, c])), [detail.data?.cards]);
   // A troubleshooting thread runs on the troubleshooter's own engine; a new thread from it goes back to the default.
   const doctorThread = detail.data?.thread.surface === "doctor";
+  const investigator = doctorThread ? ((detail.data?.thread.options as { investigator?: string } | null | undefined)?.investigator ?? null) : null;
   const [reportFor, setReportFor] = useState<string | null>(null);
   const byKey = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.key, i])), [itemsQ.data]);
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
@@ -709,6 +710,7 @@ export function AgentPanel({
         toast({ body: started.launched ? t("doctor.inTerminal") : t("agentPanel.signInManual", { command: started.command }) });
       } else if (action.kind === "settings") onOpenSettings(action.engineId);
       else if (action.kind === "report") setReportFor(inThread);
+      else if (action.kind === "investigate" && engineId) await invoke("doctor.investigate", projectId, inThread, engineId);
       else if (action.kind === "say") { if (!busy) await send.mutateAsync({ threadId: inThread, text: action.text }); }
       else if (action.kind === "retry-with" && engineId) {
         const target = await invoke("agent.thread", projectId, action.threadId);
@@ -1049,7 +1051,10 @@ export function AgentPanel({
           </Menu>
           {doctorThread ? (
             // the troubleshooter conducts its own threads; nothing to switch to here
-            <span className="tag" title={t("agentPanel.whoConducts")}>{engine?.title ?? currentEngineId}</span>
+            <span className="tag" title={t("agentPanel.whoConducts")}>
+              {engine?.title ?? currentEngineId}
+              {investigator ? ` · ${engines.data?.find((e) => e.id === investigator)?.title ?? investigator}` : ""}
+            </span>
           ) : (
           <Menu
             label={t("agentPanel.engineLabel")}

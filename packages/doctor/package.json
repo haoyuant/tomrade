@@ -25,6 +25,7 @@
     "@tomradex/mcp": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/settings": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },
