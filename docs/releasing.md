@@ -10,9 +10,9 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-Every installer builds on the self-hosted Mac (below), each in a job of its own and all at once: the Mac ones (arm64 and x64), the Windows one (NSIS, unsigned), and the Linux AppImage. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+Every installer builds on the self-hosted Mac (below), each in a job of its own and all at once: the Mac ones (arm64 and x64), the Windows one (NSIS, unsigned), and the Linux AppImage. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. A **draft** release with generated notes is made first, and each build uploads its installers and update manifests to it as soon as it's done. Once every build has passed, the release job adds the Mac manifest, merged from the two Mac builds; a draft without `latest-mac.yml` had a build fail. Check the files, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
-A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces the files on the existing draft.
+A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces its files on the existing draft. The builds don't hand their installers to the release job as artifacts: on self-hosted runners each one would cross the Mac's line three times (up as an artifact, down to the release job, up to the release) instead of once. Only the two Mac manifests, a few KB, still travel as artifacts.
 
 The workflow reads five repository secrets (Settings → Secrets and variables → Actions):
 
