@@ -557,16 +557,27 @@ export class Storage extends Service {
    * would be identical.
    */
   async publish(projectId: string, reason = "write"): Promise<StorageStatus> {
+    if (!this.entry(projectId)?.dir) return this.remember(projectId, LOCAL);
+    const wrote = await this.writeOut(projectId, reason);
+    const status = await this.statusFor(projectId);
+    if (wrote) {
+      this.home.emit("storage/synced", projectId, status);
+      this.notify(projectId);
+    }
+    return status;
+  }
+
+  /** The folder written and committed, and pushed where it has a remote; false when it could not be written yet. */
+  private async writeOut(projectId: string, reason: string, opts: { leaving?: boolean } = {}): Promise<boolean> {
     const first = this.entry(projectId);
-    if (!first?.dir) return this.remember(projectId, LOCAL);
+    if (!first?.dir || !fs.existsSync(first.dir)) return false;
     const dir = first.dir;
-    if (!fs.existsSync(dir)) return this.statusFor(projectId);
     this.appendTail(projectId);
     // Someone else's change may be sitting in the folder; take it (merging if
     // need be) before writing over it.
     if (hasArtifact(dir) && reason !== "merge") {
       const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
-      if (problem?.state === "syncing") return this.statusFor(projectId);
+      if (problem?.state === "syncing") return false;
       if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) await this.refresh(projectId);
     }
     const entry = this.mustEntry(projectId);
@@ -586,16 +597,13 @@ export class Storage extends Service {
       }
       const counts = Object.entries(state.tables).filter(([, rows]) => rows.length);
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
-      if (entry.git === "dedicated") await this.pushDedicated(projectId, entry, summary);
+      if (entry.git === "dedicated") await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
       else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
     } finally {
       this.publishing.delete(projectId);
       this.quiet(projectId);
     }
-    const status = await this.statusFor(projectId);
-    this.home.emit("storage/synced", projectId, status);
-    this.notify(projectId);
-    return status;
+    return true;
   }
 
   /** The manifest carries more than the digest covers (repo, exports); a change there is a change worth writing. */
@@ -628,6 +636,20 @@ export class Storage extends Service {
       }
     }
     await g.push(remote.branch);
+  }
+
+  /**
+   * On the way out only our own commits travel, in one try, and only when
+   * there are any: the remote's news waits for the next launch, which merges
+   * it, so a quit never waits on a fetch or a merge.
+   */
+  private async pushOnLeaving(entry: CatalogProject, summary: string): Promise<void> {
+    const g = this.git(entry.dir!);
+    const committed = await g.commit(summary);
+    const remote = await this.remoteOf(entry);
+    if (!remote) return;
+    // Against the last-known remote tip; without one, assume there is something to push.
+    if (committed || ((await g.aheadBehind(remote.branch))?.ahead ?? 1) > 0) await g.push(remote.branch);
   }
 
   private async remoteOf(entry: CatalogProject): Promise<{ url: string; branch: string } | null> {
@@ -1531,16 +1553,18 @@ export class Storage extends Service {
     return this.restorer.run();
   }
 
-  /** Publish every project with something to publish; what the quit path calls. */
+  /**
+   * Write out every project at once; what the quit path calls. Nothing asks a
+   * remote for its status or news, so a quit with nothing to push stays local.
+   */
   async flushAll(reason = "quit"): Promise<void> {
-    for (const entry of this.hub.catalog.projects()) {
-      if (!entry.dir || !(this.ctx.db as Db).has(entry.id)) continue;
-      try {
-        await this.publish(entry.id, reason);
-      } catch (error) {
-        this.home.logger.warn(`storage: ${entry.id} not published — ${message(error)}`);
-      }
-    }
+    const ids = this.hub.catalog
+      .projects()
+      .filter((entry) => entry.dir && (this.ctx.db as Db).has(entry.id))
+      .map((entry) => entry.id);
+    await Promise.all(
+      ids.map((id) => this.writeOut(id, reason, { leaving: true }).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${message(error)}`)))
+    );
   }
 }
 

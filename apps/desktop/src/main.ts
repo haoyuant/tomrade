@@ -5,7 +5,7 @@ import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots } from "./accounts.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
-import { prepareToQuit, quitApproved } from "./quit.js";
+import { leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
@@ -101,12 +101,14 @@ app.whenReady().then(async () => {
   };
   openMain();
   app.on("second-instance", () => {
+    if (leaving()) return;
     const win = [...mainWindows].find((w) => !w.isDestroyed()) ?? openMain();
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
   });
   app.on("activate", () => {
+    if (leaving()) return;
     // Auxiliary plugin surfaces are top-level BrowserWindows too; only a real
     // Tomrade window satisfies application activation.
     if (![...mainWindows].some((win) => !win.isDestroyed())) openMain();
