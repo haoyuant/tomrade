@@ -56,7 +56,9 @@ async function fakeGitHub(opts: { accessSeconds?: number; installations?: number
       const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
       if (!state.access.has(token) && token !== "ghp_pat") return json(401, { message: "Bad credentials" });
       if (req.url === "/user") return json(200, { login: "me" });
-      if (req.url?.startsWith("/user/installations")) return json(200, { total_count: state.installations, installations: [] });
+      if (req.url?.startsWith("/user/installations/1/repositories")) return json(200, { total_count: 1, repositories: [{ full_name: "me/chosen", name: "chosen", owner: { login: "me" }, default_branch: "main", private: true, pushed_at: null }] });
+      if (req.url?.startsWith("/user/installations")) return json(200, { total_count: state.installations, installations: state.installations ? [{ id: 1 }] : [] });
+      if (req.url?.startsWith("/user/repos")) return json(200, [{ full_name: "me/chosen", name: "chosen", owner: { login: "me" } }, { full_name: "me/other", name: "other", owner: { login: "me" } }]);
       json(404, { message: "Not Found" });
     });
   });
@@ -126,6 +128,8 @@ it("signs in with a device code, asks for repository access, and hands the sessi
   const restarted = await machine(gh, { userData });
   expect(await restarted.github.token()).toBe("ghu_1");
   expect((await restarted.github.status()).action).toEqual({ label: "Choose repositories", url: `${gh.origin}/apps/tomrade/installations/new`, needed: false });
+  // Only what the App was given is offered, not everything the account can see.
+  expect((await restarted.github.repositories()).map((r) => r.full_name)).toEqual(["me/chosen"]);
 });
 
 it("renews a token about to run out once, however many ask, and turns the renewal token over", async () => {
@@ -186,6 +190,7 @@ it("offers no sign-in without the App's client ID, and a token still works", asy
   expect(github.connection.signIn).toBeUndefined();
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "ghp_pat" } });
   expect(await github.status()).toEqual({ connected: true, label: "@me" });
+  expect((await github.repositories()).map((r) => r.full_name)).toEqual(["me/chosen", "me/other"]);
 });
 
 it("a renewal under way when the person signs out does not bring the session back", async () => {

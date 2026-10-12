@@ -98,6 +98,24 @@ export class GitHub {
     return (await this.call<{ total_count: number }>("GET", "/user/installations?per_page=1")).total_count;
   }
 
+  /**
+   * The repositories a signed-in App's token reaches — those of every
+   * installation the person can use — newest push first. `mine()` would list
+   * everything the account sees, App or not.
+   */
+  async installed(): Promise<Repo[]> {
+    const { installations } = await this.call<{ installations: { id: number }[] }>("GET", "/user/installations?per_page=100");
+    const repos: Repo[] = [];
+    for (const { id } of installations) {
+      for (let page = 1; ; page++) {
+        const { repositories } = await this.call<{ repositories: Repo[] }>("GET", `/user/installations/${id}/repositories?per_page=100&page=${page}`);
+        repos.push(...repositories);
+        if (repositories.length < 100) break;
+      }
+    }
+    return repos.sort((a, b) => (b.pushed_at ?? "").localeCompare(a.pushed_at ?? ""));
+  }
+
   async mine(): Promise<Repo[]> {
     return this.call<Repo[]>("GET", "/user/repos?per_page=100&sort=updated&affiliation=owner,organization_member");
   }

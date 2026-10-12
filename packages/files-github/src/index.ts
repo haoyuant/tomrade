@@ -60,7 +60,7 @@ export const filesGithub = {
         },
 
         async browse() {
-          const repos = await api.mine();
+          const repos = await ctx.github.repositories();
           return repos.map((r) => ({
             label: `${r.full_name}${r.private ? " (private)" : ""}`,
             config: { owner: r.owner.login, repo: r.name, branch: r.default_branch || "main", directory: "project-files" }

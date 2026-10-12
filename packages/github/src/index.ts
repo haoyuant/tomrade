@@ -5,7 +5,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/settings";
 import type { ConnectionState, Git, GitCredential, ProviderConnection } from "@tomradex/storage";
-import { GitHub, GitHubError } from "./api.js";
+import { GitHub, GitHubError, type Repo } from "./api.js";
 import { DeviceFlow, OAuthError, type DeviceCode } from "./device.js";
 import { githubEnvironment, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential, writeGithubHelper, writeHelperToken } from "./helper.js";
 import { SessionStore, type Cipher, type Session } from "./session.js";
@@ -236,6 +236,11 @@ export class GitHubAccount extends Service {
       this.installed.set(token, known);
     }
     return known.count ? { label: "Choose repositories", url, needed: false } : { label: "Give Tomrade access to your repositories", url, needed: true };
+  }
+
+  /** The repositories Tomrade can use: a signed-in App's installed ones, else every one the token's account reaches. */
+  async repositories(): Promise<Repo[]> {
+    return (await this.liveSession()) ? this.api.installed() : this.api.mine();
   }
 
   /** The login of the connected account, as "@login", or null. */
