@@ -18,7 +18,9 @@ const remote = vi.hoisted(() => ({
   /** Emails asked for, with where their link lands. `taken` answers sign-up as for an existing address. */
   mails: [] as { type: string; email: string; to?: string }[], taken: false, mailWait: 0,
   /** The account's user_metadata, what sign-up sent as metadata, and each metadata update in order. */
-  meta: {} as Record<string, unknown>, signUpData: null as Record<string, unknown> | null, metaUpdates: [] as Record<string, unknown>[]
+  meta: {} as Record<string, unknown>, signUpData: null as Record<string, unknown> | null, metaUpdates: [] as Record<string, unknown>[],
+  /** Accounts deleted through the RPC. */
+  deleted: [] as string[]
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const mail = async (type: string, email: string, to?: string) => {
@@ -54,6 +56,11 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       }
     },
     rpc: async (name: string, args?: { p_mutation: Mutation }) => {
+      if (name === "tomrade_delete_account") {
+        if (remote.offline) return { data: null, error: { message: "TypeError: fetch failed" } };
+        remote.deleted.push((remote.as ?? user()).id);
+        return { data: null, error: null };
+      }
       if (remote.offline) return { data: null, error: { message: "offline" } };
       if (name === "tomrade_ensure_hub") return { data: remote.hubId, error: null };
       const op = args!.p_mutation;
@@ -82,7 +89,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = [];
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = [];
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -241,12 +248,14 @@ it("signs out on this device when the server cannot be reached", async () => {
 function folders(elsewhere: string[] = []) {
   const opened: { user: { id: string; email: string }; session: { key: string; value: string } }[] = [];
   const claimed: { id: string; email: string }[] = [];
+  const forgotten: string[] = [];
   const accounts: LocalAccounts = {
     elsewhere: id => elsewhere.includes(id),
     claim: user => { claimed.push(user); },
-    open: async (user, session) => { opened.push({ user, session }); }
+    open: async (user, session) => { opened.push({ user, session }); },
+    forget: id => { forgotten.push(id); }
   };
-  return { accounts, opened, claimed };
+  return { accounts, opened, claimed, forgotten };
 }
 const other = { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "other@example.test" };
 
@@ -379,4 +388,39 @@ it("records the terms ticked at sign-in, and never writes over a newer version a
   await cloud.sync();
   expect(remote.metaUpdates).toHaveLength(1);
   expect(cloud.info().terms.accepted).toBe(later.terms_version);
+});
+
+it("deletes the account only with its password, and leaves this computer's projects to the next account", async () => {
+  const { accounts, forgotten } = folders();
+  const { cloud, ctx, project, dir } = await machine({ accounts });
+  await cloud.sync();
+  await expect(cloud.deleteAccount("wrong")).rejects.toThrow(/^\[invalid_credentials\] /);
+  expect(remote.deleted).toEqual([]);
+  expect(cloud.info().user?.id).toBe(remote.userId);
+
+  const info = await cloud.deleteAccount("password");
+  expect(remote.deleted).toEqual([remote.userId]);
+  expect(info).toMatchObject({ user: null, owner: null, hubId: null, offlineAccess: false });
+  expect(remote.forgotten).toContain("sb-example-auth-token");
+  expect(forgotten).toEqual([remote.userId]);
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, "hub-cloud.json"), "utf8"));
+  expect(saved).toMatchObject({ userId: null, hubId: null, email: null, records: [], conflicts: [], migrated: true });
+  expect(saved.outbox.map((op: Mutation) => op.kind)).toEqual(["preference"]);
+  expect(ctx.hub.catalog.project(project.id)).toBeTruthy();
+
+  // Whoever signs in next takes this local Hub, projects and all, as on a first run.
+  remote.as = other;
+  remote.requests = [];
+  await cloud.signIn(other.email, "password");
+  expect(cloud.cache.data.userId).toBe(other.id);
+  expect(remote.requests.some(op => op.kind === "project" && op.key === project.id)).toBe(true);
+});
+
+it("keeps the account when the server can't be reached", async () => {
+  const { cloud } = await machine();
+  await cloud.sync();
+  remote.offline = true;
+  await expect(cloud.deleteAccount("password")).rejects.toThrow(/^\[network\] /);
+  expect(cloud.info().user?.id).toBe(remote.userId);
+  expect(cloud.cache.data.userId).toBe(remote.userId);
 });

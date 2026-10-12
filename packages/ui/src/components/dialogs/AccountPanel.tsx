@@ -40,6 +40,16 @@ const copy = {
     agree: (terms: ReactNode, privacy: ReactNode) => <>I agree to the {terms} and the {privacy}.</>,
     terms: "Terms of Service", privacy: "Privacy Policy",
     needAgree: "Tick this to agree to the Terms of Service and Privacy Policy first.",
+    deleteAccount: "Delete account…",
+    deleteTitle: "Delete your Tomrade account?",
+    deleteIntro: (email: ReactNode) => <>This deletes {email} for good. It can't be undone.</>,
+    deleteGoesLabel: "Deleted:",
+    deleteGoes: "the account, your synced preferences and project list, your plugin reports and your publisher profile.",
+    deleteStaysLabel: "Kept:",
+    deleteStays: "your projects on this computer and in their git remotes, and plugins you published (write to support@tomrade.com to take them down). The next account to sign in here takes over these projects.",
+    deletePassword: "Your password, to confirm",
+    deleteForever: "Delete account", deleting: "Deleting…", cancel: "Cancel",
+    wrongPassword: "That password isn't right.",
     errors: {
       invalid_credentials: "Wrong email or password.",
       email_not_confirmed: "Confirm your email first: open the link we sent you, then sign in.",
@@ -83,6 +93,16 @@ const copy = {
     agree: (terms: ReactNode, privacy: ReactNode) => <>我已阅读并同意{terms}和{privacy}。</>,
     terms: "《用户条款》", privacy: "《隐私政策》",
     needAgree: "请先勾选同意用户条款和隐私政策。",
+    deleteAccount: "注销账号…",
+    deleteTitle: "注销你的 Tomrade 账号？",
+    deleteIntro: (email: ReactNode) => <>{email} 将被永久注销，无法恢复。</>,
+    deleteGoesLabel: "删除：",
+    deleteGoes: "账号本身、同步的偏好设置和项目列表、你的插件举报和发布者资料。",
+    deleteStaysLabel: "保留：",
+    deleteStays: "这台电脑上的项目和它们的 git 远程仓库，以及你发布的插件（如需下架，请写信到 support@tomrade.com）。下一个在这里登录的账号会接管这些项目。",
+    deletePassword: "输入密码以确认",
+    deleteForever: "注销账号", deleting: "正在注销…", cancel: "取消",
+    wrongPassword: "密码不正确。",
     errors: {
       invalid_credentials: "邮箱或密码不正确。",
       email_not_confirmed: "请先确认邮箱：打开我们发给你的确认链接，然后再登录。",
@@ -132,6 +152,8 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
+  /** The signed-in panel's confirmation before the account is deleted, with the password it asks for. */
+  const [deleting, setDeleting] = useState<{ password: string; problem: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -235,7 +257,34 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     </>}
     {account.isPending ? <p>{t.loading}</p> : account.error ? <>
       <p role="alert">{account.error.message}</p><button className="btn btn-secondary" onClick={() => void account.refetch()}>{t.retry}</button>
-    </> : account.data?.user ? <>
+    </> : account.data?.user && deleting ? <form className="account-step stack-3" noValidate aria-labelledby="account-delete-title" onSubmit={e => {
+      e.preventDefault();
+      if (!deleting.password) return;
+      const secret = deleting.password;
+      void run(async () => {
+        try {
+          await invoke("account.deleteAccount", secret);
+          setDeleting(null);
+        } catch (err) {
+          setDeleting({ password: "", problem: codeOf(err) === "invalid_credentials" ? t.wrongPassword : explain(err) });
+        }
+      });
+    }}>
+      <Heading id="account-delete-title" className="account-step__title">{t.deleteTitle}</Heading>
+      <p>{t.deleteIntro(<strong>{account.data.user.email}</strong>)}</p>
+      <p className="meta-txt"><strong>{t.deleteGoesLabel}</strong> {t.deleteGoes}</p>
+      <p className="meta-txt"><strong>{t.deleteStaysLabel}</strong> {t.deleteStays}</p>
+      <div className="field-group">
+        <label className="field">{t.deletePassword}<input className="input" type="password" autoComplete="current-password" autoFocus value={deleting.password}
+          aria-invalid={!!deleting.problem || undefined} aria-describedby={deleting.problem ? "account-delete-problem" : undefined}
+          onChange={e => setDeleting({ password: e.target.value, problem: null })} /></label>
+        {deleting.problem && <span id="account-delete-problem" className="field-note is-error" role="alert">{deleting.problem}</span>}
+      </div>
+      <div className="row account-step__actions">
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setDeleting(null)}>{t.cancel}</button>
+        <button className="btn btn-danger" disabled={busy || !deleting.password}>{busy ? t.deleting : t.deleteForever}</button>
+      </div>
+    </form> : account.data?.user ? <>
       <p>{account.data.user.email}</p>
       <p className="meta-txt">{t.pending}: {account.data.pending}</p>
       <div className="row" style={{ gap: "var(--space-2)" }}>
@@ -250,6 +299,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           <button className="btn btn-secondary" disabled={busy} onClick={() => void run(() => invoke("account.resolve", c.id, "cloud"))}>{t.cloud}</button>
         </div>
       </div>)}
+      <button type="button" className="link-btn is-danger account-delete" disabled={busy} onClick={() => { setNotice(""); setDeleting({ password: "", problem: null }); }}>{t.deleteAccount}</button>
     </> : switchingTo !== null ? <p role="status">{t.switching(switchingTo)}</p> : step.kind === "confirm" ? <section className="account-step stack-3" aria-labelledby="account-step-title">
       <Heading id="account-step-title" ref={stepTitle} tabIndex={-1} className="account-step__title">{t.checkEmail}</Heading>
       <p>{t.confirmSent(<strong>{step.email}</strong>)}</p>

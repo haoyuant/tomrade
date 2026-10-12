@@ -41,6 +41,8 @@ export interface LocalAccounts {
   claim(user: { id: string; email: string }): void;
   /** Store the session in the user's own local Hub, made if new, and restart into it. */
   open(user: { id: string; email: string }, session: { key: string; value: string }): Promise<void>;
+  /** The account was deleted: no folder is its any more. The folders themselves stay. */
+  forget(userId: string): void;
 }
 declare module "cordis" { interface Context { cloudHub: CloudHub } }
 declare module "@tomradex/ipc" {
@@ -52,6 +54,7 @@ declare module "@tomradex/ipc" {
     "account.resendConfirmation": (email: string, lang?: string) => void;
     "account.resetPassword": (email: string, lang?: string) => void;
     "account.signOut": () => void;
+    "account.deleteAccount": (password: string) => AccountInfo;
     "account.sync": () => AccountInfo;
     "account.resolve": (id: string, choice: "local" | "cloud") => AccountInfo;
   }
@@ -143,14 +146,10 @@ export class CloudHub extends Service {
         this.schedule();
       }
     });
-    if (!this.cache.data.migrated) {
-      // The machine catalog is observed by storage.writeHub below. Local Hub
-      // manifest/settings files are deliberately not migration inputs; the live
-      // user-scope settings are, so the account starts with what this machine has.
-      this.cache.observe("preference", SETTINGS_KEY, JSON.parse(JSON.stringify(settings.exportUser())));
-      this.cache.data.migrated = true;
-      this.cache.save();
-    }
+    // The machine catalog is observed by storage.writeHub below. Local Hub
+    // manifest/settings files are deliberately not migration inputs; the live
+    // user-scope settings are, so the account starts with what this machine has.
+    if (!this.cache.data.migrated) this.seed();
     settings.refreshUserStore();
     if (this.cache.data.userId) this.config.accounts?.claim({ id: this.cache.data.userId, email: this.cache.data.email ?? "" });
     this.home.inject(["ipc"], ctx => {
@@ -167,6 +166,7 @@ export class CloudHub extends Service {
       ctx.ipc.handle("account.resendConfirmation", (email, lang) => this.resendConfirmation(email, lang));
       ctx.ipc.handle("account.resetPassword", (email, lang) => this.resetPassword(email, lang));
       ctx.ipc.handle("account.signOut", () => this.signOut());
+      ctx.ipc.handle("account.deleteAccount", password => this.deleteAccount(password));
       ctx.ipc.handle("account.sync", async () => { await this.ctx.storage.writeHub(); await this.sync(); return this.info(); });
       ctx.ipc.handle("account.resolve", async (id, choice) => {
         z.enum(["local", "cloud"]).parse(choice);
@@ -216,6 +216,11 @@ export class CloudHub extends Service {
     };
   }
 
+  private seed(): void {
+    this.cache.observe("preference", SETTINGS_KEY, JSON.parse(JSON.stringify(this.ctx.settings.exportUser())));
+    this.cache.data.migrated = true;
+    this.cache.save();
+  }
   manifest(): HubManifest {
     const manifest = emptyHub();
     for (const r of this.cache.view()) {
@@ -422,6 +427,34 @@ export class CloudHub extends Service {
       this.cache.data.offlineAccess = false;
       this.cache.save();
       this.notify();
+    } finally { this.signingOut = false; }
+  }
+  /**
+   * Deletes the signed-in account on the server once its password checks out, then
+   * forgets it here. This computer's projects stay, in a local Hub that belongs to
+   * nobody until the next account signs in and takes it, as on a first run.
+   */
+  async deleteAccount(password: string): Promise<AccountInfo> {
+    const user = this.user;
+    if (!user?.email) throw new Error("[not_signed_in] Sign in to delete your account.");
+    const { error: refused } = await this.scratch().auth.signInWithPassword(credentials(user.email, password));
+    if (refused) throw failure(refused);
+    this.signingOut = true;
+    try {
+      if (this.active) await this.active;
+      const { error } = await this.client.rpc("tomrade_delete_account");
+      if (error) throw new Error(/fetch failed|failed to fetch|network|aborted|timed? ?out/i.test(error.message) ? `[network] ${error.message}` : error.message);
+      // The server has already ended the session; only this machine's copy is left to drop.
+      await this.client.auth.signOut({ scope: "local" }).catch(() => undefined);
+      await this.config.sessionStorage.removeItem(this.sessionKey);
+      this.user = null;
+      this.error = null;
+      this.config.accounts?.forget(user.id);
+      this.cache.release();
+      this.seed();
+      this.ctx.settings.refreshUserStore();
+      this.notify();
+      return this.info();
     } finally { this.signingOut = false; }
   }
   private notify(): void {
