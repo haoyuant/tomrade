@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { RepoStateView } from "@tomradex/code-link";
 import type { Board, Repo } from "@tomradex/domain";
-import type { CheckoutView } from "@tomradex/repos";
+import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
 import { useGithubCredential, useGithubCredentialAccount, useRemoteIdentity, useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import {
+  useAddRepoFromFolder,
   useBoards,
   useClearCheckout,
   useCloneRepoInto,
@@ -57,6 +58,30 @@ function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { val
   );
 }
 
+/** Pick a folder and add the repository in it: by its origin, or as a local repository when it has none. */
+export function useChooseRepoFolder(projectId: string) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const add = useAddRepoFromFolder(projectId);
+  const [picking, setPicking] = useState(false);
+  const choose = async (): Promise<FolderRepo | null> => {
+    setPicking(true);
+    const dir = await pickDirectory(t("repositories.addFolderTitle"), t("repositories.pickButton"));
+    setPicking(false);
+    if (!dir) return null;
+    try {
+      const added = await add.mutateAsync(dir);
+      const key = added.existing ? "repositories.checkoutSetToast" : added.local ? "repositories.addedLocalToast" : "repositories.addedToast";
+      toast({ body: t(key, { name: added.repo.name, dir: added.view.checkout ?? dir }) });
+      return added;
+    } catch (error) {
+      toast({ body: message(error) });
+      return null;
+    }
+  };
+  return { choose, busy: picking || add.isPending };
+}
+
 /**
  * The code a project's workstreams stand for. The URL is a project row and
  * travels; the checkout is this machine's alone and is verified against the
@@ -69,6 +94,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
   const checkouts = useRepoCheckouts();
   const states = useRepoStates(projectId);
   const create = useCreateRepo(projectId);
+  const folder = useChooseRepoFolder(projectId);
   const toast = useToast();
   const [url, setUrl] = useState("");
 
@@ -122,6 +148,9 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
         />
         <button type="button" className="btn btn-ghost" disabled={!url.trim() || create.isPending} onClick={add}>
           <Icon name="i-plus" size={13} /> {t("repositories.add")}
+        </button>
+        <button type="button" className="btn btn-ghost repos-add-folder" disabled={folder.busy} onClick={() => void folder.choose()}>
+          <Icon name="i-folder" size={13} /> {folder.busy ? t("repositories.choosing") : t("repositories.addFolder")}
         </button>
       </div>
     </div>
@@ -214,12 +243,23 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       <p className="meta-txt dense repo-used">{boards.length ? t("repositories.usedBy", { names: boards.map((b) => b.name).join(", ") }) : t("repositories.usedByNone")}</p>
       {checkout?.checkout && remoteState && (
         <div className="cfg-row repo-remote-state" style={{ marginTop: 0 }} title={remoteState.remoteDetail ?? undefined}>
-          <Icon name={remoteState.remote === "ok" ? "i-check" : remoteState.remote === "unreachable" ? "i-warn" : "i-clock"} size={14} style={{ color: remoteState.remote === "unreachable" ? "var(--danger)" : remoteState.remote === "ok" ? "var(--accent)" : "var(--meta)" }} />
+          <Icon
+            name={remoteState.remote === "ok" ? "i-check" : remoteState.remote === "unreachable" ? "i-warn" : remoteState.remote === "none" ? "i-folder" : "i-clock"}
+            size={14}
+            style={{ color: remoteState.remote === "unreachable" ? "var(--danger)" : remoteState.remote === "ok" ? "var(--accent)" : "var(--meta)" }}
+          />
           <span className="repo-remote-copy">
             <span className="cfg-name">
-              {remoteState.remote === "ok" ? t("repositories.remoteOk") : remoteState.remote === "unreachable" ? t("repositories.remoteUnreachable") : t("repositories.remoteUnknown")}
+              {remoteState.remote === "ok"
+                ? t("repositories.remoteOk")
+                : remoteState.remote === "unreachable"
+                  ? t("repositories.remoteUnreachable")
+                  : remoteState.remote === "none"
+                    ? t("repositories.remoteNone")
+                    : t("repositories.remoteUnknown")}
             </span>
             {remoteState.remoteDetail && <span className="meta-txt num repo-remote-detail">{remoteState.remoteDetail}</span>}
+            {remoteState.remote === "none" && <span className="meta-txt repo-remote-detail">{t("repositories.remoteNoneNote", { branch: repo.defaultBranch })}</span>}
           </span>
         </div>
       )}

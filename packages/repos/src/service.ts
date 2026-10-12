@@ -10,7 +10,7 @@ import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPa
 import type {} from "@tomradex/ipc";
 import { GitFolder, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
 import { defineTool, requireProjectId } from "@tomradex/tools";
-import { normalizeRemote, sameRepository } from "./remotes.js";
+import { isLocalRemote, normalizeRemote, sameRepository } from "./remotes.js";
 
 declare module "cordis" {
   interface Context {
@@ -34,6 +34,16 @@ export type CheckoutSelection =
   | { state: "ready"; view: CheckoutView }
   | { state: "clone"; remote: string; parent: string; dir: string; /** Set when the chosen folder is a checkout of another repository. */ origin?: string };
 
+/** A folder the user chose as one of the project's repositories. */
+export interface FolderRepo {
+  repo: Repo;
+  view: CheckoutView;
+  /** The folder has no origin: it is the repository, and its branches stay on this machine. */
+  local: boolean;
+  /** The project already had this repository; the folder became its checkout. */
+  existing: boolean;
+}
+
 export interface WorkdirView {
   repo: Repo;
   /** The folder the agent runs in: a worktree of the checkout by default, the checkout itself when asked. */
@@ -47,6 +57,8 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "repos.list": (projectId: string) => Repo[];
     "repos.create": (input: CreateRepoInput) => Repo;
+    /** Add the repository in a folder the user chose: its origin when it has one, the folder itself when it has none. */
+    "repos.addFromFolder": (projectId: string, dir: string) => FolderRepo;
     "repos.update": (projectId: string, id: string, patch: RepoPatch) => Repo;
     "repos.remove": (projectId: string, id: string) => void;
     /** Every remote this machine has placed, by remote URL. */
@@ -126,6 +138,7 @@ export class Repos extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("repos.list", (projectId) => ctx.repos.list(projectId));
       ctx.ipc.handle("repos.create", (input) => ctx.repos.create(input));
+      ctx.ipc.handle("repos.addFromFolder", (projectId, dir) => ctx.repos.addFromFolder(projectId, dir));
       ctx.ipc.handle("repos.update", (projectId, id, patch) => ctx.repos.update(projectId, id, patch));
       ctx.ipc.handle("repos.remove", (projectId, id) => ctx.repos.remove(projectId, id));
       ctx.ipc.handle("repos.checkouts", () => ctx.repos.checkouts());
@@ -183,6 +196,82 @@ export class Repos extends Service {
       .run(repo.id, repo.projectId, repo.remote, repo.name, repo.defaultBranch, now, now);
     this.notify();
     return repo;
+  }
+
+  /**
+   * A folder chosen as a repository. Its origin, when it has one, is the
+   * identity, and a row already naming it under any spelling is reused. With
+   * no origin the folder itself is the repository, local to this machine until
+   * it gains one (see adoptOrigins). The folder is only read.
+   */
+  async addFromFolder(projectId: string, rawDir: string): Promise<FolderRepo> {
+    const dir = path.resolve(rawDir);
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`${dir} is not an existing folder`);
+    const g = new GitFolder(this.runGit, dir);
+    const top = await g.toplevel();
+    if (!top) throw new Error(`${dir} is not a git repository yet — run git init there and commit what should be kept, then choose it again`);
+    if (top !== fs.realpathSync(dir)) throw new Error(`${dir} is inside the repository at ${top} — choose that folder, then point the workstream at the subfolder`);
+    const origin = await g.remoteUrl();
+    let known: Repo | undefined;
+    for (const row of this.list(projectId)) {
+      if (origin ? await sameRepository(origin, row.remote) : normalizeRemote(row.remote) === normalizeRemote(dir)) {
+        known = row;
+        break;
+      }
+    }
+    const repo = known ?? this.create({ projectId, remote: origin ?? dir, name: origin ? undefined : path.basename(dir), defaultBranch: await this.trunkOf(dir, !!origin) });
+    const key = normalizeRemote(repo.remote);
+    this.hub.catalog.setRepo(key, { checkout: dir });
+    this.notify();
+    this.home.emit("repos/checkout-set", key);
+    return { repo, view: this.checkout(key), local: !origin, existing: !!known };
+  }
+
+  /** Where a folder's branches start: origin's HEAD, else main or master, else whatever is checked out. */
+  private async trunkOf(dir: string, hasOrigin: boolean): Promise<string> {
+    const run = (args: string[]) => this.runGit(args, { cwd: dir, ok: true });
+    if (hasOrigin) {
+      const head = await run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+      if (head.code === 0 && head.stdout.trim()) return head.stdout.trim().replace(/^origin\//, "");
+    }
+    for (const name of ["main", "master"]) {
+      for (const ref of hasOrigin ? [`refs/remotes/origin/${name}`, `refs/heads/${name}`] : [`refs/heads/${name}`]) {
+        if ((await run(["rev-parse", "--verify", "--quiet", ref])).code === 0) return name;
+      }
+    }
+    const current = await run(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    return (current.code === 0 && current.stdout.trim()) || "main";
+  }
+
+  /**
+   * A local repository whose folder has since gained an origin takes that
+   * origin as its identity, so the project, and every machine it travels to,
+   * sees the remote. The row keeps its id: workstreams and links stay put.
+   */
+  async adoptOrigins(projectId: string): Promise<Repo[]> {
+    const rows = this.list(projectId);
+    const adopted: Repo[] = [];
+    for (const repo of rows) {
+      if (!isLocalRemote(repo.remote)) continue;
+      const placement = this.checkout(repo.remote);
+      if (!placement.checkout || !fs.existsSync(placement.checkout)) continue;
+      const origin = await new GitFolder(this.runGit, placement.checkout).remoteUrl();
+      if (!origin || (await sameRepository(origin, repo.remote))) continue;
+      // Another row already stands for that origin: two rows for one repository would split its workstreams.
+      let taken = false;
+      for (const other of rows) {
+        if (other.id !== repo.id && (await sameRepository(origin, other.remote))) {
+          taken = true;
+          break;
+        }
+      }
+      if (taken) continue;
+      const next = this.update(projectId, repo.id, { remote: origin });
+      // The old key stays: another project naming the same folder adopts on its own pass.
+      this.hub.catalog.setRepo(normalizeRemote(next.remote), { checkout: placement.checkout, runInCheckout: placement.runInCheckout });
+      adopted.push(next);
+    }
+    return adopted;
   }
 
   update(projectId: string, id: string, patch: RepoPatch): Repo {
@@ -254,6 +343,10 @@ export class Repos extends Service {
       other = normalizeRemote(origin);
     }
 
+    // A local repository can be cloned only where its folder is; elsewhere its copy is chosen, not made.
+    if (isLocalRemote(key) && !fs.existsSync(key) && !fs.existsSync(`${key}.git`)) {
+      throw new Error(other ? `${parent} is a checkout of ${other}, not of ${key}` : `${parent} is not a git repository, and ${key} has no remote to clone from — choose its folder on this machine`);
+    }
     const dir = path.join(parent, checkoutFolderNameOf(key));
     if (fs.existsSync(dir)) {
       if (!fs.statSync(dir).isDirectory()) throw new Error(`${dir} already exists and is not a folder — nothing was cloned`);
@@ -321,11 +414,17 @@ export class Repos extends Service {
       fs.mkdirSync(path.dirname(worktree), { recursive: true });
       const checkout = placement.checkout;
       const verify = async (ref: string) => (await this.runGit(["rev-parse", "--verify", "--quiet", ref], { cwd: checkout, ok: true })).code === 0;
-      // Where a new branch starts: the remote's default branch, else whatever the
-      // checkout has, else nothing — an empty repository has no commit to start
-      // from, so the branch is born unborn (`--orphan`) and its first commit is
-      // the repository's first.
-      const start = (await verify(`refs/remotes/origin/${repo.defaultBranch}`)) ? `origin/${repo.defaultBranch}` : (await verify("HEAD")) ? "HEAD" : null;
+      // Where a new branch starts: the remote's default branch, else the local
+      // one (a repository with no remote), else whatever the checkout has, else
+      // nothing — an empty repository has no commit to start from, so the branch
+      // is born unborn (`--orphan`) and its first commit is the repository's first.
+      const start = (await verify(`refs/remotes/origin/${repo.defaultBranch}`))
+        ? `origin/${repo.defaultBranch}`
+        : (await verify(`refs/heads/${repo.defaultBranch}`))
+          ? repo.defaultBranch
+          : (await verify("HEAD"))
+            ? "HEAD"
+            : null;
       const branch = opts.branch ?? null;
       if (branch) {
         // A ticket's branch: continued where it already exists (an earlier

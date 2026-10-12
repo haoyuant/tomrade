@@ -246,14 +246,8 @@ export class CodeLink extends Service {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
-      onEnd: (session) => {
-        // If SessionEnd lands during a scan, wait for that pass before asking
-        // again; the first pass still saw this session as active.
-        const current = this.inFlight.get(session.projectId);
-        void (current ? current.catch(() => undefined) : Promise.resolve())
-          .then(() => this.scan(session.projectId))
-          .catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${message(err)}`));
-      }
+      // A pass already running still saw this session as active.
+      onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${message(err)}`))
     });
     this.starter = new Starter({
       ctx: this.ctx,
@@ -294,7 +288,7 @@ export class CodeLink extends Service {
     this.ctx.on("repos/checkout-set", (remote) => {
       for (const projectId of this.ctx.db.openIds()) {
         if (!this.ctx.repos.list(projectId).some((repo) => repo.remote === remote)) continue;
-        void this.scan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${message(err)}`));
+        void this.rescan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${message(err)}`));
       }
     });
     // An earlier version wrote the helper under the Hub; repoint it before a
@@ -307,6 +301,7 @@ export class CodeLink extends Service {
       registerTools(ctx, {
         store: this.store,
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
+        handOver: (projectId, itemId, repoId) => this.handOver(projectId, itemId, repoId),
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
         attach: (projectId, sessionId, itemId, branch, delivery) => this.attach(projectId, sessionId, itemId, branch, delivery),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
@@ -659,6 +654,7 @@ export class CodeLink extends Service {
       const folder = new GitFolder(this.git, view.worktree);
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code and Codex discover Tomrade, agent instructions describe the ticket conventions, and Claude hooks report session lifecycle back."));
       if (!committed) return { branch, files, committed: false, pushed: false, url: null, message: files.length ? "nothing new to commit" : `${repo.name} is already connected` };
+      if (!(await folder.remoteUrl())) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch} — ${repo.name} has no remote, so merge it into ${repo.defaultBranch} yourself` };
       if (state && !state.agentPush) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch} in the checkout — pushing from Tomrade is off for ${repo.name}` };
       const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: view.worktree, ok: true })).code === 0;
       if (!pushed) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch}, but git push failed — check your credentials for ${repo.remote}` };
@@ -699,6 +695,7 @@ export class CodeLink extends Service {
     if (link.branch === repo.defaultBranch) return { pushed: false, url: null, created: false, message: "never the default branch" };
     const cwd = this.worktreeOf(projectId, itemId);
     if (!cwd) return { pushed: false, url: compareUrl(repo.remote, repo.defaultBranch, link.branch), created: false, message: `no Tomrade worktree for ${link.branch} on this machine — push it from where you work` };
+    if (!(await new GitFolder(this.git, cwd).remoteUrl())) return { pushed: false, url: null, created: false, message: `${repo.name} has no remote — merge ${link.branch} into ${repo.defaultBranch} in your checkout instead` };
 
     const pushed = await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${link.branch}`], { cwd, ok: true });
     if (pushed.code !== 0) return { pushed: false, url: null, created: false, message: `git push failed — check your credentials for ${repo.remote}` };
@@ -768,6 +765,12 @@ export class CodeLink extends Service {
     return job;
   }
 
+  /** A pass that sees a change made just now: it waits out a running pass, which may have started before the change. */
+  private rescan(projectId: string): Promise<ScanSummary> {
+    const running = this.inFlight.get(projectId);
+    return (running ? running.catch(() => undefined) : Promise.resolve()).then(() => this.scan(projectId));
+  }
+
   async scanOpen(): Promise<void> {
     for (const projectId of this.ctx.db.openIds()) {
       try {
@@ -781,6 +784,11 @@ export class CodeLink extends Service {
   private async doScan(projectId: string): Promise<ScanSummary> {
     const summary: ScanSummary = { repos: 0, scanned: 0, offline: 0, links: 0, changed: 0, proposals: 0, skipped: [] };
     const prefix = this.prefixOf(projectId);
+    try {
+      await this.ctx.repos.adoptOrigins(projectId);
+    } catch (err) {
+      this.ctx.logger.warn(`adopting new origins in ${projectId} failed: ${message(err)}`);
+    }
     const repos = this.ctx.repos.list(projectId);
     summary.repos = repos.length;
     const unlinked: UnlinkedBranch[] = [];
@@ -941,6 +949,15 @@ export class CodeLink extends Service {
     this.notify(projectId);
   }
 
+  /** Without a remote there is no pull request: a session's scoped hand-over is the request for review. */
+  handOver(projectId: string, itemId: string, repoId: string): void {
+    if (this.store.repoState(projectId, repoId)?.remote !== "none") return;
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item || item.humanLocked || !["backlog", "todo", "doing"].includes(item.status)) return;
+    this.ctx.items.update(projectId, itemId, { status: "verifying" }, AUTHOR);
+    this.notify(projectId);
+  }
+
   /** Apply the sync matrix to one ticket in one repository. */
   completionPolicy(projectId: string, item: Item): "merge" | "human" {
     if (item.workType === "general") return "human";
@@ -1056,6 +1073,8 @@ export class CodeLink extends Service {
               value: `${l.prNumber !== null ? `#${l.prNumber}` : w.openIt}${l.prState ? ` · ${w.prState(l.prState)}` : ""}`,
               href: l.prUrl ?? undefined
             });
+          } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.store.repoState(item.projectId, l.repoId)?.remote === "none") {
+            rows.push({ label: w.pullRequest, icon: "i-merge", value: w.noRemote(repo?.defaultBranch ?? "main") });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
             rows.push({ label: w.pullRequest, icon: "i-merge", value: w.openPr, command: "code-link.open-pr" });
           }

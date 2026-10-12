@@ -45,6 +45,19 @@ function codeRepo(opts: { manifest?: boolean } = {}): { remote: string; checkout
   return { remote, checkout };
 }
 
+/** A repository with no remote: a folder of its own with one commit on main. */
+function localRepo(): string {
+  const folder = path.join(root, `local-${n++}`);
+  fs.mkdirSync(folder);
+  git(["init", "-q", "-b", "main"], folder);
+  git(["config", "user.email", "dev@localhost"], folder);
+  git(["config", "user.name", "Dev"], folder);
+  fs.writeFileSync(path.join(folder, "package.json"), '{ "name": "app" }\n');
+  git(["add", "-A"], folder);
+  git(["commit", "-q", "-m", "initial"], folder);
+  return folder;
+}
+
 function gitWithFailure(command: "ls-remote" | "push", stderr: string): string {
   const file = path.join(root, `git-${n++}`);
   fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "${command}" ]; then\n  echo "${stderr.replaceAll('"', '\\"')}" >&2\n  exit 128\nfi\nexec git "$@"\n`);
@@ -403,6 +416,53 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "Session")?.value).toMatch(/^idle · run by Tomrade/);
     expect(section.rows.find((r) => r.label === "Worktree")).toMatchObject({ value: result.worktree, command: "code-link.open-terminal" });
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
+  });
+
+  it("works a repository with no remote: nothing probed or pushed, the branch handed over for review, a local merge finishes it", async () => {
+    const folder = localRepo();
+    const world = await machine(null);
+    const { codeLink, ctx, agent, project, board, turns, ticket } = world;
+    const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+    world.boards.update(project.id, board.id, { repoId: repo.id });
+    const item = ticket("Local feature");
+
+    const result = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(result).toMatchObject({ ok: true, branch: `tom-${item.keyNum}/local-feature` });
+    if (!result.ok) return;
+    expect(result.warnings).toBeUndefined();
+    await untilRunsSettle(agent);
+    const prompt = JSON.stringify(agent.store.messages(project.id, result.threadId)[0].block);
+    expect(prompt).toContain("this repository has no remote");
+    expect(prompt).not.toContain("git push");
+    expect(turns).toHaveLength(1);
+
+    await codeLink.scan(project.id);
+    expect(codeLink.repoStates(project.id)[0]).toMatchObject({ remote: "none", readiness: "scaffolded" });
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ ahead: 1 });
+    const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!;
+    expect(section.rows.find((r) => r.label === "Pull request")).toMatchObject({ value: "none — no remote; merge the branch into main here" });
+    expect(await codeLink.openPr(project.id, item.id)).toMatchObject({ pushed: false, message: expect.stringContaining("has no remote") });
+
+    const handed = (await sessionContext.run({ projectId: project.id, sessionId: result.sessionId }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:fake-code", projectId: project.id }))) as { status: string };
+    expect(handed.status).toBe("verifying");
+
+    git(["merge", "-q", "--no-ff", "-m", `Merge ${item.key}`, result.branch], folder);
+    await codeLink.scan(project.id);
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+  });
+
+  it("scans a repository added while a slower scan is still fetching", async () => {
+    const slowGit = path.join(root, `git-slow-${n++}`);
+    fs.writeFileSync(slowGit, `#!/bin/sh\nif [ "$1" = "fetch" ]; then sleep 1; fi\nexec git "$@"\n`, { mode: 0o755 });
+    const world = await machine(codeRepo(), { gitBinary: slowGit });
+    const { ctx, codeLink, project, repo, checkout } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const running = codeLink.scan(project.id);
+    const { repo: local } = await ctx.repos.addFromFolder(project.id, localRepo());
+    await running;
+    const t0 = Date.now();
+    while (codeLink.repoStates(project.id).find((s) => s.repoId === local.id)?.remote !== "none" && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));
+    expect(codeLink.repoStates(project.id).find((s) => s.repoId === local.id)).toMatchObject({ remote: "none", readiness: "scaffolded" });
   });
 
   it("says a run here is waiting while it asks permission, however long that takes, and stuck when it fails", async () => {

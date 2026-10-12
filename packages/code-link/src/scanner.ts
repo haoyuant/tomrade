@@ -61,7 +61,8 @@ export interface MergedCommit {
 export interface ScanResult {
   /** The fetch failed — what follows is this machine's last view of the remote. */
   offline: boolean;
-  remote: "ok" | "unreachable" | "unknown";
+  /** `none`: the checkout has no origin — a local repository, whose default branch is the local one. */
+  remote: "ok" | "unreachable" | "unknown" | "none";
   /** Last stderr line from a failed fetch, with credentials removed. */
   remoteDetail: string | null;
   /** `origin/<default>` when the remote has it, the local branch otherwise, null in an empty repository. */
@@ -92,13 +93,12 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
   const run = (args: string[]) => git(args, { cwd: checkout, ok: true });
   let remote: ScanResult["remote"] = "unknown";
   let remoteDetail: string | null = null;
-  if (opts.fetch !== false) {
-    const hasOrigin = (await run(["remote", "get-url", "origin"])).code === 0;
-    if (hasOrigin) {
-      const fetched = await run(["fetch", "-q", "--prune", "origin"]);
-      remote = fetched.code === 0 ? "ok" : "unreachable";
-      if (fetched.code !== 0) remoteDetail = remoteFailureDetail(fetched.stderr ?? "");
-    }
+  const hasOrigin = (await run(["remote", "get-url", "origin"])).code === 0;
+  if (!hasOrigin) remote = "none";
+  else if (opts.fetch !== false) {
+    const fetched = await run(["fetch", "-q", "--prune", "origin"]);
+    remote = fetched.code === 0 ? "ok" : "unreachable";
+    if (fetched.code !== 0) remoteDetail = remoteFailureDetail(fetched.stderr ?? "");
   }
   const offline = remote === "unreachable";
 
