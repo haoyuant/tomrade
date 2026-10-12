@@ -35,11 +35,11 @@ gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ## Self-hosted runners: the Mac mini
 
-Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job runs on runners on the Mac mini, which GitHub still schedules then: the Mac, Windows, and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy. Three Mac runners carry the same labels, so the two Mac builds and the Windows one run side by side, as they would on hosted runners, and Linux takes Windows' runner once it's done (each takes 2–3 minutes). A release takes about as long as its slowest build, which is mostly waiting for Apple's notary service.
+Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job runs on runners on the Mac mini, which GitHub still schedules then: the Mac, Windows, and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy. Four Mac runners carry the same labels, one per build, so all four builds run side by side, as they would on hosted runners. A release takes about as long as its slowest build, which is mostly waiting for Apple's notary service.
 
 | Runner | Repository | Labels |
 | --- | --- | --- |
-| `~/actions-runners/tomrade-mac-arm64`, `-2`, `-3` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
+| `~/actions-runners/tomrade-mac-arm64`, `-2`, `-3`, `-4` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
 | `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
 The x64 Mac app builds on the arm64 Mac. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves the app only its own esbuild. It also drops the agent SDK's bundled Claude Code binary from every app: the Claude Code engine runs the person's own `claude`, like the other local agents. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time. Each Mac build writes an update manifest listing only its own zip; the release job merges the two.
@@ -59,6 +59,7 @@ export GH_TOKEN=$(gh auth token --user haoyuant)
 .github/runners/setup.sh arm64 haoyuant/tomrade
 .github/runners/setup.sh arm64 haoyuant/tomrade 2
 .github/runners/setup.sh arm64 haoyuant/tomrade 3
+.github/runners/setup.sh arm64 haoyuant/tomrade 4
 .github/runners/setup.sh arm64 haoyuant/tomrade-site
 ```
 
