@@ -9,9 +9,10 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
-import { BUNDLED, KnownIssue, matches, said, type Evidence } from "./issues.js";
+import { BUNDLED, KnownIssue, before, matches, said, type Evidence } from "./issues.js";
 import { errorLines, newestFiles, scrub, tail } from "./evidence.js";
 import { WORDS, type Locale, type Words } from "./words.js";
+import { CATALOG_MAX_AGE_MS, fetchCatalog, readCache } from "./catalog.js";
 import { CONCLUSION, brief, conclusionCard, investigationMessages, investigationTools, logSources, scopedTools, type Conclusion } from "./investigate.js";
 import type {} from "@tomradex/tools";
 
@@ -98,12 +99,48 @@ export interface SendResult {
 /** Puts a report in Tomrade's backend; the default goes through the signed-in account. */
 export type Transport = (report: Report) => Promise<void>;
 
+/** A sent report as the backend holds it: the developer sets its status, reply and fix. */
+export interface RemoteReport {
+  code: string;
+  created_at: string;
+  summary: string;
+  engine: string | null;
+  status: string;
+  reply: string | null;
+  replied_at: string | null;
+  fixed_in: string | null;
+}
+
+export interface ReportView {
+  code: string;
+  createdAt: string;
+  summary: string;
+  engine: string | null;
+  /** queued: still on this machine; sent: gone, its status not read yet; else as the developer set it. */
+  status: "queued" | "sent" | "new" | "triaged" | "fixed" | "wontfix" | "duplicate";
+  reply?: string;
+  repliedAt?: string;
+  fixedIn?: string;
+  /** Fixed in a release this machine already runs. */
+  fixedHere?: boolean;
+  /** A reply or a decision the person has not seen yet. */
+  unread: boolean;
+}
+
+export interface ReportsView {
+  signedIn: boolean;
+  reports: ReportView[];
+  unread: number;
+}
+
 export const DoctorConfig = z.object({
   /** Where diagnoses and the outbox live. */
   dataDir: z.string(),
   /** Tomrade's own log folder, as the desktop writes it. */
   logDir: z.string().optional(),
-  version: z.string().default("dev")
+  version: z.string().default("dev"),
+  /** Known issues found since this release; data only, refreshed every few hours. Empty: bundled only. */
+  catalogUrl: z.string().default("https://tomrade.com/known-issues.json")
 });
 export type DoctorConfig = z.infer<typeof DoctorConfig>;
 
@@ -123,6 +160,10 @@ declare module "@tomradex/ipc" {
     "doctor.preview": (projectId: string, threadId: string, include?: Partial<ReportInclude>, note?: string) => Report;
     "doctor.send": (projectId: string, threadId: string, include?: Partial<ReportInclude>, note?: string) => SendResult;
     "doctor.investigate": (projectId: string, threadId: string, engineId: string) => void;
+    "doctor.reports": () => ReportsView;
+    "doctor.markRead": () => void;
+    "doctor.deleteReport": (code: string) => void;
+    "doctor.flush": () => number;
   }
 }
 
@@ -159,6 +200,10 @@ export class Doctor extends Service {
   private retryTimer: NodeJS.Timeout | null = null;
   /** Swapped in tests; otherwise the account's backend. */
   transport: Transport | null = null;
+  /** Swapped in tests; otherwise the signed-in account's own reports. */
+  fetchReports: (() => Promise<RemoteReport[] | null>) | null = null;
+  private remote = new Map<string, KnownIssue>();
+  private unread = 0;
 
   constructor(ctx: Context, public config: DoctorConfig) {
     super(ctx, "doctor");
@@ -175,6 +220,10 @@ export class Doctor extends Service {
       ctx.ipc.handle("doctor.preview", (projectId, threadId, include, note) => this.report(projectId, threadId, include, note));
       ctx.ipc.handle("doctor.send", (projectId, threadId, include, note) => this.send(projectId, threadId, include, note));
       ctx.ipc.handle("doctor.investigate", (projectId, threadId, engineId) => this.investigate(projectId, threadId, engineId));
+      ctx.ipc.handle("doctor.reports", () => this.reports());
+      ctx.ipc.handle("doctor.markRead", () => this.markRead());
+      ctx.ipc.handle("doctor.deleteReport", (code) => this.deleteReport(code));
+      ctx.ipc.handle("doctor.flush", () => this.flush());
     });
     ctx.inject(["tools"], (ctx) => {
       const host = { ctx: this.ctx, sources: (engineId?: string) => this.sources(engineId), latest: (threadId: string) => this.latest(threadId), recheck: (projectId: string, threadId: string, runId: string) => this.recheck(projectId, threadId, runId) };
@@ -183,13 +232,21 @@ export class Doctor extends Service {
     ctx.inject(["contributions"], (ctx) => {
       ctx.contributions.command({ id: "doctor.troubleshoot", title: () => this.words().command, group: () => this.words().commandGroup, run: (scope) => this.troubleshoot(scope.projectId) });
       ctx.contributions.statusItem({ id: "doctor", text: () => this.words().statusItem, title: () => this.words().statusTitle, command: "doctor.troubleshoot" });
+      // The developer answered, or decided: said where the person already looks, until they read it.
+      ctx.contributions.command({ id: "doctor.reports", title: () => this.words().reportsCommand, group: () => this.words().commandGroup, run: () => ({ settingsPane: "about" }) });
+      ctx.contributions.statusItem({ id: "doctor-replies", text: () => (this.unread ? this.words().statusReplies(this.unread) : null), command: "doctor.reports" });
     });
-    // Reports that could not go out try again while the app runs.
-    const first = setTimeout(() => void this.flush(), 30_000);
+    // Reports that could not go out try again while the app runs; replies and newer known issues are looked for too.
+    for (const issue of readCache(this.catalogFile())?.issues ?? []) this.remote.set(issue.id, issue);
+    const first = setTimeout(() => void this.flush().then(() => this.refreshReports()), 30_000);
     first.unref?.();
-    this.retryTimer = setInterval(() => void this.flush(), RETRY_MS);
+    const catalog = setTimeout(() => void this.refreshCatalog(), 20_000);
+    catalog.unref?.();
+    this.retryTimer = setInterval(() => void this.flush().then(() => this.refreshReports()), RETRY_MS);
     this.retryTimer.unref?.();
-    ctx.effect(() => () => { clearTimeout(first); if (this.retryTimer) clearInterval(this.retryTimer); });
+    const catalogTimer = setInterval(() => void this.refreshCatalog(), CATALOG_MAX_AGE_MS);
+    catalogTimer.unref?.();
+    ctx.effect(() => () => { clearTimeout(first); clearTimeout(catalog); clearInterval(catalogTimer); if (this.retryTimer) clearInterval(this.retryTimer); });
   }
 
   locale(): Locale {
@@ -214,8 +271,27 @@ export class Doctor extends Service {
     return this.ctx.effect(() => () => { if (before) this.catalog.set(parsed.id, before); else this.catalog.delete(parsed.id); });
   }
 
+  /** Bundled and plugin issues, with the fetched catalog's newer word on the same id. */
   issues(): KnownIssue[] {
-    return [...this.catalog.values()];
+    const merged = new Map(this.catalog);
+    for (const [id, issue] of this.remote) merged.set(id, issue);
+    return [...merged.values()];
+  }
+
+  private catalogFile(): string {
+    return path.join(this.config.dataDir, "catalog.json");
+  }
+
+  /** The catalog from tomrade.com, at most every few hours; a failed read keeps what was cached. */
+  async refreshCatalog(force = false, fetcher?: typeof fetch): Promise<number> {
+    if (!this.config.catalogUrl) return this.remote.size;
+    const cached = readCache(this.catalogFile());
+    if (!force && cached && Date.now() - cached.fetchedAt < CATALOG_MAX_AGE_MS) return this.remote.size;
+    const fetched = await fetchCatalog(this.config.catalogUrl, fetcher);
+    if (!fetched) return this.remote.size;
+    fs.writeFileSync(this.catalogFile(), JSON.stringify({ fetchedAt: Date.now(), catalog: fetched.raw }));
+    this.remote = new Map(fetched.issues.map((issue) => [issue.id, issue]));
+    return this.remote.size;
   }
 
   // ── starting ─────────────────────────────────────────────────────────
@@ -723,6 +799,97 @@ export class Doctor extends Service {
   pending(): number {
     const dir = path.join(this.config.dataDir, "outbox");
     return fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => n.endsWith(".json")).length : 0;
+  }
+
+  // ── my reports ───────────────────────────────────────────────────────
+
+  private signedIn(): boolean {
+    const hub = this.ctx.get("cloudHub") as { info(): { user: unknown } } | undefined;
+    return !!this.fetchReports || !!hub?.info().user;
+  }
+
+  private async remoteReports(): Promise<RemoteReport[] | null> {
+    if (this.fetchReports) return this.fetchReports();
+    const hub = this.ctx.get("cloudHub") as { client: any; info(): { user: unknown } } | undefined;
+    if (!hub?.info().user) return null;
+    const { data, error } = await hub.client.from("tomrade_diagnostic_reports").select("code, created_at, summary, engine, status, reply, replied_at, fixed_in").order("created_at", { ascending: false }).limit(100);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as RemoteReport[];
+  }
+
+  private readJson<T>(name: string, fallback: T): T {
+    try { return JSON.parse(fs.readFileSync(path.join(this.config.dataDir, name), "utf8")) as T; } catch { return fallback; }
+  }
+
+  /** What the person last saw of each report; a newer reply or decision reads as unread. */
+  private stamp(r: RemoteReport): string | null {
+    return r.reply || ["fixed", "wontfix", "duplicate"].includes(r.status) ? `${r.status}|${r.replied_at ?? ""}|${r.fixed_in ?? ""}` : null;
+  }
+
+  /** Every report this person sent from here or anywhere, newest first: waiting, sent, answered. */
+  async reports(): Promise<ReportsView> {
+    const outbox = path.join(this.config.dataDir, "outbox");
+    const queued: ReportView[] = (fs.existsSync(outbox) ? fs.readdirSync(outbox) : []).flatMap((name) => {
+      try {
+        const r = JSON.parse(fs.readFileSync(path.join(outbox, name), "utf8")) as Report;
+        return [{ code: r.code, createdAt: r.createdAt, summary: r.summary, engine: r.engine, status: "queued" as const, unread: false }];
+      } catch { return []; }
+    });
+    const sent = this.readJson<{ code: string; at: string; summary: string; engine: string | null }[]>("sent.json", []);
+    let remote: RemoteReport[] | null = null;
+    try { remote = await this.remoteReports(); } catch {}
+    const seen = this.readJson<Record<string, string>>("seen.json", {});
+    const byCode = new Map<string, ReportView>();
+    for (const s of sent) byCode.set(s.code, { code: s.code, createdAt: s.at, summary: s.summary, engine: s.engine, status: "sent", unread: false });
+    for (const r of remote ?? []) {
+      const stamp = this.stamp(r);
+      byCode.set(r.code, {
+        code: r.code, createdAt: r.created_at, summary: r.summary, engine: r.engine,
+        status: (["new", "triaged", "fixed", "wontfix", "duplicate"].includes(r.status) ? r.status : "new") as ReportView["status"],
+        ...(r.reply ? { reply: r.reply } : {}), ...(r.replied_at ? { repliedAt: r.replied_at } : {}),
+        ...(r.fixed_in ? { fixedIn: r.fixed_in, fixedHere: !before(this.config.version, r.fixed_in) } : {}),
+        unread: !!stamp && seen[r.code] !== stamp
+      });
+    }
+    const reports = [...queued, ...byCode.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    this.setUnread(reports.filter((r) => r.unread).length);
+    return { signedIn: this.signedIn(), reports, unread: this.unread };
+  }
+
+  async refreshReports(): Promise<void> {
+    if (this.signedIn()) await this.reports().catch(() => {});
+  }
+
+  private setUnread(n: number): void {
+    if (n === this.unread) return;
+    this.unread = n;
+    this.ctx.get("ipc")?.send("contributions.changed");
+  }
+
+  /** The person opened their reports: what is there now is seen. */
+  async markRead(): Promise<void> {
+    let remote: RemoteReport[] | null = null;
+    try { remote = await this.remoteReports(); } catch {}
+    const seen = this.readJson<Record<string, string>>("seen.json", {});
+    for (const r of remote ?? []) {
+      const stamp = this.stamp(r);
+      if (stamp) seen[r.code] = stamp;
+    }
+    fs.writeFileSync(path.join(this.config.dataDir, "seen.json"), JSON.stringify(seen));
+    this.setUnread(0);
+  }
+
+  /** Gone from this machine and, when signed in, from the backend too. */
+  async deleteReport(code: string): Promise<void> {
+    if (!/^R-[0-9A-Z]{6}$/.test(code)) throw new Error(`Not a report code: ${code}`);
+    const hub = this.ctx.get("cloudHub") as { client: any; info(): { user: unknown } } | undefined;
+    if (hub?.info().user) {
+      const { error } = await hub.client.from("tomrade_diagnostic_reports").delete().eq("code", code);
+      if (error) throw new Error(error.message);
+    }
+    fs.rmSync(path.join(this.config.dataDir, "outbox", `${code}.json`), { force: true });
+    const sent = this.readJson<{ code: string }[]>("sent.json", []).filter((s) => s.code !== code);
+    fs.writeFileSync(path.join(this.config.dataDir, "sent.json"), JSON.stringify(sent));
   }
 
   private remember(report: Report): void {

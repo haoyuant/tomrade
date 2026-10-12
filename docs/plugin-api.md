@@ -756,8 +756,27 @@ before anything is sent. Keys, the home folder's name and email addresses are
 masked, and the failed conversation is left out unless ticked.
 `ctx.doctor.send()` writes the report to the outbox first, then submits it
 through the signed-in account (`tomrade_submit_diagnostic_report`). A report
-that can't go now is retried while the app runs. The maintainer reads the
-reports with `tomrade-store diag`.
+that can't go now is retried while the app runs.
+
+The maintainer works through the reports with `tomrade-store diag`:
+
+- `diag import --project <id>` turns new reports into TOM tickets through a
+  running Tomrade's MCP, one ticket per fingerprint.
+- `diag reply` and `diag status` answer one report, or every report on a
+  ticket (`--ticket TOM-N`), with `--in 0.7.0` saying which release fixes it.
+
+The sender sees the status, the reply and the fix in **Settings → About → My
+reports**. Meanwhile the bottom bar says a reply came, until it has been read.
+
+Known issues also come from a catalog at `catalogUrl` (default
+`https://tomrade.com/known-issues.json`, `{ version: 1, issues: [...] }`):
+
+- It is read at most every six hours and cached under the data folder.
+- Each entry is validated on its own: a bad one is dropped, never the whole
+  file.
+- An entry with the same id replaces the bundled one's wording.
+
+So a newly understood problem reaches everyone without a release.
 
 ## Events
 
@@ -1472,7 +1491,8 @@ with the current `{ projectId, boardId, viewId, itemId }`. Badges are computed
 on every board refresh over the project's items. Status items render in the
 status bar; one that names a `command` runs it when clicked, its result
 handled as the palette handles it (a `showThread` with a `projectId` opens that
-project first, so it works from the projects home too); sections in the
+project first, so it works from the projects home too; `settingsPane` opens
+Settings on that pane); sections in the
 detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
 refetches. A section row may carry `href` — its value opens that link in the

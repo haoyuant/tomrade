@@ -6,6 +6,7 @@ import { useI18n } from "~/lib/i18n";
 import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
+import { MyReports } from "./MyReports";
 
 const SITE = "https://tomrade.com";
 
@@ -56,6 +57,8 @@ export function AboutPane() {
           </div>
         )
       )}
+
+      <MyReports />
 
       <hr className="rule" />
       <SectionHead

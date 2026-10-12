@@ -4,6 +4,7 @@ import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { attest, generateSigningKey } from "@tomradex/plugin-kit";
 import { satisfies } from "@tomradex/plugin-sdk";
+import { mcpClient } from "./mcp.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
 const flag = (name: string) => {
@@ -36,6 +37,9 @@ const usage = `tomrade-store <command>
   reports                         open plugin reports
   diag [--all]                    troubleshooting reports people sent, grouped by fingerprint (new ones; --all for every status)
   diag R-XXXXXX                   one troubleshooting report, as its sender read it
+  diag reply R-XXXXXX "text" [--status s] [--in 0.7.0]   answer it; the sender sees it in the app (--ticket TOM-N: every report on that ticket)
+  diag status R-XXXXXX fixed [--in 0.7.0]                new, triaged, fixed, wontfix or duplicate (--ticket TOM-N too)
+  diag import --project <id> [--mcp url]                 new reports become TOM tickets through a running Tomrade, one per fingerprint
   show publisher/name@version     a listed version as the store holds it
   official publisher/name@version sign one of Tomrade's own plugins as official (STORE_SIGNING_KEY)
   revoke publisher/name [--versions range] --reason text   switch it off on every machine
@@ -59,15 +63,73 @@ async function main(): Promise<number> {
     }
     case "diag": {
       const client = serviceClient();
-      const code = positional[0];
-      if (code) {
-        const { data } = await client.from("tomrade_diagnostic_reports").select("code, created_at, status, engine, app_version, platform, fingerprint, report").eq("code", code).maybeSingle();
-        if (!data) throw new Error(`no report ${code}`);
-        console.log(`${data.code} · ${data.status} · ${data.engine ?? "no engine"} · ${data.app_version} · ${data.platform} · ${data.created_at}\nfingerprint ${data.fingerprint}\n`);
+      const TABLE = "tomrade_diagnostic_reports";
+      const [sub, ...args] = positional;
+      if (sub && /^R-[0-9A-Z]{6}$/.test(sub)) {
+        const { data } = await client.from(TABLE).select("code, created_at, status, engine, app_version, platform, fingerprint, ticket, reply, fixed_in, report").eq("code", sub).maybeSingle();
+        if (!data) throw new Error(`no report ${sub}`);
+        console.log(`${data.code} · ${data.status} · ${data.engine ?? "no engine"} · ${data.app_version} · ${data.platform} · ${data.created_at}\nfingerprint ${data.fingerprint}${data.ticket ? ` · ${data.ticket}` : ""}${data.fixed_in ? ` · fixed in ${data.fixed_in}` : ""}${data.reply ? `\nreply: ${data.reply}` : ""}\n`);
         for (const section of (data.report as { sections?: { title: string; text: string }[] }).sections ?? []) console.log(`── ${section.title} ──\n${section.text}\n`);
         return 0;
       }
-      let query = client.from("tomrade_diagnostic_reports").select("code, fingerprint, summary, engine, app_version, created_at, status").order("created_at", { ascending: false }).limit(500);
+      // One report by code, or every report on a ticket: the same failure seen by many people gets one answer.
+      const update = (code: string | undefined, patch: Record<string, unknown>) => {
+        const ticket = flag("ticket");
+        if (ticket) return client.from(TABLE).update(patch).eq("ticket", ticket);
+        if (!code || !/^R-[0-9A-Z]{6}$/.test(code)) throw new Error("name a report (R-XXXXXX) or --ticket TOM-N");
+        return client.from(TABLE).update(patch).eq("code", code);
+      };
+      const status = flag("status");
+      if (status && !["new", "triaged", "fixed", "wontfix", "duplicate"].includes(status)) throw new Error("status is one of new, triaged, fixed, wontfix, duplicate");
+      if (sub === "reply") {
+        const text = flag("ticket") ? args[0] : args[1];
+        if (!text) throw new Error('diag reply R-XXXXXX "text" | diag reply --ticket TOM-N "text" [--status fixed] [--in 0.7.0]');
+        const { error } = await update(args[0], { reply: text, replied_at: new Date().toISOString(), ...(status ? { status } : {}), ...(flag("in") ? { fixed_in: flag("in") } : {}) });
+        if (error) throw new Error(error.message);
+        console.log("replied; the sender sees it in Settings → About → My reports");
+        return 0;
+      }
+      if (sub === "status") {
+        const value = flag("ticket") ? args[0] : args[1];
+        if (!value || !["new", "triaged", "fixed", "wontfix", "duplicate"].includes(value)) throw new Error("diag status R-XXXXXX fixed [--in 0.7.0] | diag status --ticket TOM-N fixed");
+        const { error } = await update(args[0], { status: value, ...(flag("in") ? { fixed_in: flag("in") } : {}) });
+        if (error) throw new Error(error.message);
+        console.log(`status ${value}${flag("in") ? `, fixed in ${flag("in")}` : ""}`);
+        return 0;
+      }
+      if (sub === "import") {
+        const projectId = flag("project");
+        if (!projectId) throw new Error("diag import --project <Tomrade project id> [--mcp http://127.0.0.1:19090/mcp]");
+        const mcp = await mcpClient(flag("mcp") ?? "http://127.0.0.1:19090/mcp");
+        const { data: fresh, error } = await client.from(TABLE).select("code, fingerprint, summary, engine, app_version, platform, created_at").eq("status", "new").is("ticket", null).order("created_at");
+        if (error) throw new Error(error.message);
+        const { data: filed } = await client.from(TABLE).select("fingerprint, ticket").not("ticket", "is", null);
+        const ticketOf = new Map((filed ?? []).map((r) => [r.fingerprint as string, r.ticket as string]));
+        const groups = new Map<string, NonNullable<typeof fresh>>();
+        for (const r of fresh ?? []) groups.set(r.fingerprint, [...(groups.get(r.fingerprint) ?? []), r]);
+        const items = (await mcp.call("list_items", { projectId })) as { id: string; key: string; version: number; body: string | null }[];
+        const line = (r: NonNullable<typeof fresh>[number]) => `- ${String(r.created_at).slice(0, 10)} ${r.code} · v${r.app_version} · ${r.platform} · ${r.engine ?? "-"}: ${r.summary}`;
+        for (const [fingerprint, rows] of groups) {
+          let key = ticketOf.get(fingerprint);
+          const item = key ? items.find((i) => i.key === key) : undefined;
+          if (item) {
+            await mcp.call("update_item", { projectId, id: item.id, baseVersion: item.version, patch: { body: `${(item.body ?? "").trimEnd()}\n\n## 新报告\n\n${rows.map(line).join("\n")}\n` } });
+          } else {
+            const created = await mcp.call("create_item", {
+              projectId, kind: "ticket", status: "backlog", labels: ["报告"],
+              title: `[报告] ${rows[0]!.summary || fingerprint}`.slice(0, 120),
+              body: `## 来源\n\n用户通过「排查问题」发来的报告，指纹 \`${fingerprint}\`。\n\n${rows.map(line).join("\n")}\n\n## 看报告\n\n\`tomrade-store diag ${rows[0]!.code}\`\n\n回复所有报告：\`tomrade-store diag reply --ticket <本工单号> "…"\`\n\n## 修复记录\n`
+            });
+            key = (created as { key: string }).key;
+          }
+          const update = await client.from(TABLE).update({ ticket: key, status: "triaged" }).in("code", rows.map((r) => r.code));
+          if (update.error) throw new Error(update.error.message);
+          console.log(`${key} ← ${rows.length} report(s) · ${fingerprint}`);
+        }
+        if (!groups.size) console.log("no new reports");
+        return 0;
+      }
+      let query = client.from(TABLE).select("code, fingerprint, summary, engine, app_version, created_at, status, ticket").order("created_at", { ascending: false }).limit(500);
       if (!rest.includes("--all")) query = query.eq("status", "new");
       const { data, error } = await query;
       if (error) throw new Error(error.message);
@@ -75,7 +137,7 @@ async function main(): Promise<number> {
       for (const r of data ?? []) groups.set(r.fingerprint, [...(groups.get(r.fingerprint) ?? []), r]);
       for (const [fingerprint, rows] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
         const latest = rows[0]!;
-        console.log(`${rows.length}× ${fingerprint} · ${latest.engine ?? "-"} · ${latest.summary}\n   ${rows.map((r) => `${r.code} (${r.app_version}, ${String(r.created_at).slice(0, 10)}${rest.includes("--all") ? `, ${r.status}` : ""})`).join(", ")}`);
+        console.log(`${rows.length}× ${fingerprint}${latest.ticket ? ` · ${latest.ticket}` : ""} · ${latest.engine ?? "-"} · ${latest.summary}\n   ${rows.map((r) => `${r.code} (${r.app_version}, ${String(r.created_at).slice(0, 10)}${rest.includes("--all") ? `, ${r.status}` : ""})`).join(", ")}`);
       }
       return 0;
     }
