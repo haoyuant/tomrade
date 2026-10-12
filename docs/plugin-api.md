@@ -283,7 +283,7 @@ consumer follows.
 | `ctx.agent` | spine registry | `@tomradex/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
 | `ctx.schedules` | optional feature | `@tomradex/schedules` | Templates and their schedules: a template is one or more tickets (`{date}`, `{weekday}`, `{week}`, `{month}`, `{year}` filled in; General and To Do by default; optionally started) or a prompt to the assistant, run by hand or on any number of schedules (daily, weekdays, days of the week, every N days, a day of the month, every N hours). Templates travel with the project; schedules and runs stay on this machine, a missed time caught up once or skipped. A bilingual gallery of suggestions (daily to-do, chores, bills, weekly review, weekly report…). Tools `list_templates`, `create_template` / `schedule_template` (both ask the person), `run_template`, `delete_template` |
 | `ctx.pet` | optional feature | `@tomradex/pet` | Pet task-state reduction, settings, renderer state and its embedded/desktop lifecycle |
-| `ctx.mcp` | — | `@tomradex/mcp` | Projects `ctx.tools` onto MCP |
+| `ctx.mcp` | — | `@tomradex/mcp` | Projects `ctx.tools` onto MCP; plugins add prompts (`prompt`, a client's slash command) and connect-time instructions (`instruct`, for sessions without a run token) |
 | `ctx.plugins` | — | `@tomradex/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
 
 Reserved, not yet declared or provided: `ctx.search` (FTS5, later a vector
@@ -659,6 +659,20 @@ Hooks a repository commits for every developer carry no token; they post to
 `/sessions/event`, and `ctx.mcp.onEvent(listener)` hears them with the `cwd`
 and `session_id` the payload carries.
 
+A session Tomrade did not start reaches the backlog only when the person wants
+it to. `ctx.mcp.prompt({ name, description, render })` offers a prompt each
+session renders for its own project (Claude Code lists it as
+`/tomrade:<name>`); Code link's `sync` is the one that brings a session's work
+back — matching it to tickets by key or search, then linking code, moving
+status and filing follow-ups, with unmatched work left alone.
+`ctx.mcp.instruct(render, { order })` adds a paragraph to the instructions a
+client reads on connect, lowest `order` first (Claude Code keeps 2048
+characters); run-bound sessions skip them, since their run already has a brief.
+The project's rules travel this way, first: inline when short, otherwise as a
+pointer to `get_project_rules`. Codex files instructions as notes on the
+server's tools rather than orders, so Connect's AGENTS.md section has it call
+`get_project_rules` before its first reply.
+
 An engine declares **capabilities**: `backlog` (the default) talks to the app
 through its tools; `code` also edits files and runs commands in a repository.
 Only a local coding agent (Claude Code, Codex, Pi, the ACP agents) declares `code`, and only such
@@ -785,7 +799,9 @@ surface at once: engines see it via `io.tools.describe()`, and each MCP
 session registers it under its own name — the server name is the namespace.
 There is no per-surface code to write. The one exception is `mcp: false`: the
 MCP server (any local client, Claude Code and Codex included) never lists or runs
-such a tool, so only engines in this process reach it — the shell is one. A tool may return a string as well as a
+such a tool, so only engines in this process reach it — the shell is one.
+`readOnly: true` marks a tool that only reads; MCP lists it with `readOnlyHint`,
+which lets Codex run it without asking. A tool may return a string as well as a
 value: the MCP server passes a string through as the result text and serialises
 anything else as compact JSON, so a tool whose answer is already prose spends no
 context on quoting and indentation.

@@ -58,6 +58,8 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   execute(args: z.output<S>, invocation: ToolInvocation): unknown;
   /** False keeps the tool off the MCP server, so only engines in this process can call it — for what no outside client may reach, like a shell. */
   mcp?: boolean;
+  /** True when the tool only reads: MCP clients such as Codex then run it without asking (`readOnlyHint`). */
+  readOnly?: boolean;
   /** How to undo this tool's non-oplog effects; undoRun calls it for ledger entries whose tool declares one. */
   revert?(args: z.output<S>, result: unknown, invocation: ToolInvocation): void | Promise<void>;
 }

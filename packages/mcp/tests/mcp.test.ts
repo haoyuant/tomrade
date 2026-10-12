@@ -32,14 +32,19 @@ describe("the MCP surface", () => {
     let ran = 0;
     ctx.tools.register(defineTool({ name: "open_tool", title: "Open", description: "test", input: z.object({}), execute: () => "ok" }));
     ctx.tools.register(defineTool({ name: "local_tool", title: "Local", description: "test", input: z.object({}), mcp: false, execute: () => { ran++; return "ran"; } }));
+    ctx.tools.register(defineTool({ name: "read_tool", title: "Read", description: "test", input: z.object({}), readOnly: true, execute: () => "read" }));
     const unbind = ctx.mcp.bindRun("local-run", { author: "ai:codex", execute: async (name, args) => ctx.tools.execute(name, args, { by: "ai:codex" }) });
     const clients = [new Client({ name: "plain", version: "0" }), new Client({ name: "run", version: "0" })];
     try {
       await clients[0]!.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
       await clients[1]!.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers: { "X-Tomrade-Run": "local-run" } } }));
       for (const client of clients) {
-        const names = (await client.listTools()).tools.map((t) => t.name);
+        const listed = (await client.listTools()).tools;
+        const names = listed.map((t) => t.name);
         expect(names).toContain("open_tool");
+        // Codex runs a read-only tool without asking; every other tool keeps its default.
+        expect(listed.find((t) => t.name === "read_tool")?.annotations).toEqual({ readOnlyHint: true });
+        expect(listed.find((t) => t.name === "open_tool")?.annotations).toBeUndefined();
         expect(names).not.toContain("local_tool");
         expect((await client.callTool({ name: "local_tool", arguments: {} })).isError).toBe(true);
       }
@@ -140,5 +145,47 @@ describe("the MCP surface", () => {
     await plain.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
     expect(answer(await plain.callTool({ name: "whose_project", arguments: {} })).projectId).toBeNull();
     await plain.close();
+  });
+  it("offers registered prompts rendered for the session's project, and instructions only to sessions without a run token", async () => {
+    const { ctx, project } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const drop = ctx.mcp.prompt({ name: "sync", title: "Sync", description: "Sync this session", render: ({ projectId }) => `sync ${projectId ?? "any project"}` });
+    ctx.mcp.instruct(({ projectId }) => (projectId ? `tickets of ${projectId}` : null));
+    ctx.mcp.instruct(() => "always");
+    ctx.mcp.instruct(() => {
+      throw new Error("broken plugin");
+    });
+    ctx.mcp.instruct(() => "first", { order: -1 });
+    const unbind = ctx.mcp.bindRun("run-tok", { author: "ai:codex", execute: async () => "x" });
+    const text = (result: { messages: { content: unknown }[] }) => (result.messages[0]!.content as { text: string }).text;
+    const clients: Client[] = [];
+    const open = async (url: string, headers?: Record<string, string>) => {
+      const client = new Client({ name: `c${clients.length}`, version: "0" });
+      clients.push(client);
+      await client.connect(new StreamableHTTPClientTransport(new URL(url), headers ? { requestInit: { headers } } : undefined));
+      return client;
+    };
+    try {
+      const scoped = await open(ctx.mcp.urlFor(project.id)!);
+      expect((await scoped.listPrompts()).prompts.map((p) => p.name)).toEqual(["sync"]);
+      expect(text(await scoped.getPrompt({ name: "sync" }))).toBe(`sync ${project.id}`);
+      expect(scoped.getInstructions()).toBe(`first\n\ntickets of ${project.id}\n\nalways`);
+
+      const plain = await open(ctx.mcp.url!);
+      expect(text(await plain.getPrompt({ name: "sync" }))).toBe("sync any project");
+      expect(plain.getInstructions()).toBe("first\n\nalways");
+
+      const run = await open(ctx.mcp.url!, { "X-Tomrade-Run": "run-tok" });
+      expect((await run.listPrompts()).prompts.map((p) => p.name)).toEqual(["sync"]);
+      expect(run.getInstructions()).toBeUndefined();
+
+      drop();
+      const later = await open(ctx.mcp.url!);
+      expect(later.getServerCapabilities()?.prompts).toBeUndefined();
+    } finally {
+      unbind();
+      for (const client of clients) await client.close();
+      await ctx.fiber.dispose();
+    }
   });
 });
