@@ -35,12 +35,12 @@ gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ## Self-hosted runners: the Mac mini
 
-Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job runs on runners on the Mac mini, which GitHub still schedules then: the Mac, Windows, and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy. Three Mac runners carry the same labels, so the two Mac builds and the Windows one run side by side, as they would on hosted runners: a release takes about as long as its slowest build, which is mostly waiting for Apple's notary service.
+Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job runs on runners on the Mac mini, which GitHub still schedules then: the Mac, Windows, and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy. Three Mac runners carry the same labels, so the two Mac builds and the Windows one run side by side, as they would on hosted runners, and Linux takes Windows' runner once it's done (each takes 2–3 minutes). A release takes about as long as its slowest build, which is mostly waiting for Apple's notary service.
 
 | Runner | Repository | Labels |
 | --- | --- | --- |
 | `~/actions-runners/tomrade-mac-arm64`, `-2`, `-3` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
-| Docker container `actions-runner-haoyuant-tomrade` | haoyuant/tomrade | `self-hosted, Linux, X64` |
+| Docker container `actions-runner-haoyuant-tomrade` (no release job uses it since Linux cross-builds on the Mac) | haoyuant/tomrade | `self-hosted, Linux, X64` |
 | `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
 The x64 Mac app builds on the arm64 Mac. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves the app only its own: the agent SDK's Claude Code binary and esbuild's. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time. Each Mac build writes an update manifest listing only its own zip; the release job merges the two.
@@ -49,9 +49,11 @@ The Mac builds sign from one keychain, `~/Library/Keychains/tomrade-signing.keyc
 
 Windows is cross-built on a Mac runner too. No Wine: electron-builder edits the exe's resources in JavaScript, runs NSIS's macOS `makensis`, and pulls the uninstaller out of the installer itself. `pnpm install --os=darwin --os=win32 --cpu=arm64 --cpu=x64` installs the Mac packages the build runs on beside Windows', and `after-pack.cjs` drops all but win32-x64 (left in, they double the installer). makensis aborts on an include path of 265 characters or more, and electron-builder reports only `makensis process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE`. pnpm's folder for app-builder-lib makes that path 262 characters in the runner's work folder, so the job sets `pnpm_config_virtual_store_dir_max_length: 60`, which brings it to 216. It must stay an environment variable: pnpm checks that each later command sees the settings the install used, and a `--config.` flag on the install alone sends `pnpm exec` back to reinstall.
 
+Linux is cross-built on a Mac runner the same way, with `--os=darwin --os=linux`. Nothing is compiled (better-sqlite3 and the AppImage runtime come prebuilt), so the build machine's glibc doesn't matter. On a Mac pnpm also installs the musl builds, and `after-pack.cjs` drops them: an AppImage runs only on glibc. It also puts the target's esbuild binary over esbuild's CLI, which esbuild's install filled with the build machine's. The Mac-built AppImage matched the one an x64 Ubuntu 22.04 container built: the same runtime bytes, the same files except those two, and the bundled binaries run there. That container can't run any AppImage under Rosetta, so the full app was not started.
+
 The Mac runners are LaunchAgents, so they run while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh` and Xcode come from the machine.
 
-The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. It restarts with Docker Desktop, so Docker Desktop must be running for a release. The build peaks around 2 GB of the Docker VM's memory: if a step dies with exit code 137, the VM ran out.
+The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. No release job needs it any more.
 
 `.github/runners/setup.sh` installs or replaces one:
 
