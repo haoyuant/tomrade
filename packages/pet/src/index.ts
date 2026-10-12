@@ -97,8 +97,6 @@ const SIZE = {
   large: { width: 220, height: 175 }
 } as const;
 
-const SETTLE_MS = 3_000;
-
 const isMoveMessage = (message: unknown): message is { type: "move"; x: number; y: number } =>
   typeof message === "object" &&
   message !== null &&
@@ -122,7 +120,6 @@ export class Pet extends Service {
   private surfaceHost: DesktopSurfaceHost | null = null;
   private surface: DesktopSurface | null = null;
   private surfaceSignature = "";
-  private settleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** The thread the assistant panel shows: the desktop pet follows it, as the embedded stage does. */
   private followed: string | null = null;
   /** Where the user last dragged the desktop pet; a reopened window (new size, setting change) returns there. */
@@ -226,33 +223,9 @@ export class Pet extends Service {
     const next = reducePetModel(this.model, threadId, event);
     if (next === this.model) return;
     this.model = next;
-    const state = this.model.threads[threadId];
-    // A failure keeps crying until the thread moves on: like a question, it waits on the person.
-    if (state.busy === null && state.mood === "success") this.settleToIdle(threadId, state.sequence);
-    else this.clearSettleTimer(threadId);
+    // A finished turn's outcome — pleased or in tears — stays until the thread's next run.
     this.sendChanged(threadId);
     if (threadId === this.followed) this.pushSurfaceState();
-  }
-
-  /** A finished turn shows its success briefly; the pet reflects turns, not the whole thread. */
-  private settleToIdle(threadId: string, sequence: number): void {
-    this.clearSettleTimer(threadId);
-    const timer = setTimeout(() => {
-      this.settleTimers.delete(threadId);
-      const before = this.model.threads[threadId];
-      if (!before || before.sequence !== sequence) return;
-      const nextSequence = this.model.sequence + 1;
-      this.model = { sequence: nextSequence, threads: { ...this.model.threads, [threadId]: { ...before, mood: "idle", sequence: nextSequence } } };
-      this.sendChanged(threadId);
-      if (threadId === this.followed) this.pushSurfaceState();
-    }, SETTLE_MS);
-    this.settleTimers.set(threadId, timer);
-  }
-
-  private clearSettleTimer(threadId: string): void {
-    const timer = this.settleTimers.get(threadId);
-    if (timer) clearTimeout(timer);
-    this.settleTimers.delete(threadId);
   }
 
   private reconcile(): void {
@@ -337,8 +310,6 @@ export class Pet extends Service {
   private deactivate(): void {
     this.removeAccessory();
     this.closeSurface();
-    for (const timer of this.settleTimers.values()) clearTimeout(timer);
-    this.settleTimers.clear();
   }
 }
 

@@ -1,7 +1,8 @@
 /**
  * A failed turn shows its one line, with everything the engine knew folded
  * under Details — the model service's whole answer, an agent's own words —
- * ready to copy, with no key in it. The pet cries until the thread runs again.
+ * ready to copy, with no key in it. The pet keeps a turn's outcome — tears or
+ * delight — until the thread runs again.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:error-details
@@ -109,7 +110,9 @@ const run = async () => {
     res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'); }); });
   await send("again");
   await sleep(2500);
-  check("the next turn's outcome replaces the tears", (await pet()) !== "error", await pet());
+  check("the next turn's outcome replaces the tears", (await pet()) === "success", await pet());
+  await sleep(4000);
+  check("and a success stays too, past the old 3 s", (await pet()) === "success", await pet());
 
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length - failed.length}/${results.length} passed`);
