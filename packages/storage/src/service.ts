@@ -42,6 +42,7 @@ import {
   UnknownProviderError,
   type ConnectionState,
   type GitOrigin,
+  type RemoteVisibility,
   type StorageInfo,
   type StorageProvider,
   type StorageProviderView,
@@ -78,7 +79,9 @@ export const StorageConfig = z.preprocess(
     /** Backstop sweep: publish anything the timers missed. 0 disables. */
     reconcileMs: z.number().int().min(0).default(300_000),
     /** Bring back, without being asked, every project the Hub names and this machine lacks. */
-    autoRestore: z.boolean().default(true)
+    autoRestore: z.boolean().default(true),
+    /** How long a remote's answer to "who can read you?" stands before the next push asks again. */
+    visibilityMs: z.number().int().min(0).default(600_000)
   })
 );
 export type StorageConfig = z.infer<typeof StorageConfig>;
@@ -445,12 +448,51 @@ export class Storage extends Service {
   }
 
   /** What the user can choose to carry. Tables declared `always` travel regardless, so they are not a choice. */
-  private exportable(): { namespace: string; tables: string[] }[] {
+  private exportable(): { namespace: string; tables: string[]; private: boolean }[] {
     return (this.ctx.db as Db)
       .registrations("project")
-      .map((r) => ({ namespace: r.namespace, tables: Object.entries(r.tables).filter(([, s]) => s.export && !s.export.always).map(([t]) => t) }))
+      .map((r) => {
+        const chosen = Object.entries(r.tables).filter(([, s]) => s.export && !s.export.always);
+        return { namespace: r.namespace, tables: chosen.map(([t]) => t), private: chosen.some(([, s]) => s.export && s.export.private === true) };
+      })
       .filter((e) => e.tables.length)
       .sort((a, b) => a.namespace.localeCompare(b.namespace));
+  }
+
+  /** What may travel to a remote this visible: anything but `private` namespaces when it is public. */
+  private allowedExports(namespaces: string[], visibility: RemoteVisibility | null): string[] {
+    if (visibility !== "public") return namespaces;
+    const closed = new Set(this.exportable().filter((e) => e.private).map((e) => e.namespace));
+    return namespaces.filter((n) => !closed.has(n));
+  }
+
+  /**
+   * Ask the provider who can read the project's remote, at most once per
+   * `visibilityMs` — and so before a push once the last answer is that old.
+   * A public remote has its `private` namespaces unticked; one that doesn't
+   * answer keeps the last answer.
+   */
+  private async checkVisibility(projectId: string, force = false): Promise<void> {
+    const entry = this.entry(projectId);
+    if (!entry?.remote || entry.git !== "dedicated" || !this.has(entry.remote.provider)) return;
+    if (!force && entry.visibilityAt !== null && Date.now() - entry.visibilityAt < this.config.visibilityMs) return;
+    const provider = this.get(entry.remote.provider);
+    let visibility: RemoteVisibility = "unknown";
+    if (provider.visibility) {
+      try {
+        visibility = await Promise.race([
+          provider.visibility(provider.configSchema.parse(entry.remote.config)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("no answer in 10 s")), 10_000).unref?.())
+        ]);
+      } catch (error) {
+        this.home.logger.warn(`storage: could not tell who can read the remote of ${projectId} — ${message(error)}`);
+        return;
+      }
+    }
+    const current = this.mustEntry(projectId);
+    const exports = this.allowedExports(current.exports, visibility);
+    this.hub.catalog.patchProject(projectId, { visibility, visibilityAt: Date.now(), exports });
+    if (visibility !== current.visibility || exports.length !== current.exports.length) this.notify(projectId);
   }
 
   private async detectOrigin(dir: string, markedDedicated: boolean): Promise<GitOrigin> {
@@ -482,6 +524,7 @@ export class Storage extends Service {
       autoCommit: entry.autoCommit,
       exports: entry.exports,
       exportable: this.exportable(),
+      visibility: entry.git === "dedicated" && entry.remote ? entry.visibility : null,
       logWindowDays: DEFAULT_LOG_WINDOW_DAYS
     };
   }
@@ -540,7 +583,7 @@ export class Storage extends Service {
     const registrations = (this.ctx.db as Db).registrations("project");
     return exportState(this.db(projectId), projectId, {
       registrations,
-      exports: entry.exports,
+      exports: this.allowedExports(entry.exports, entry.visibility),
       repo: entry.git === "dedicated" ? "dedicated" : undefined,
       checkpoint: this.checkpointOf(projectId),
       at,
@@ -657,6 +700,8 @@ export class Storage extends Service {
       if (problem?.state === "syncing") return false;
       if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) await this.refresh(projectId);
     }
+    // A quit never waits on the network; it goes by the last answer.
+    if (!opts.leaving) await this.checkVisibility(projectId);
     const entry = this.mustEntry(projectId);
     const now = Date.now();
     const state = this.exportFor(projectId, entry, now);
@@ -836,12 +881,18 @@ export class Storage extends Service {
    * becomes what the next refresh compares the folder against.
    */
   private importInto(projectId: string, entry: CatalogProject, state: ProjectState, base: ProjectState = state): void {
-    importState(this.db(projectId), state, { registrations: (this.ctx.db as Db).registrations("project") });
+    const registrations = (this.ctx.db as Db).registrations("project");
+    // What a public remote must not get is not taken from it either, whatever its manifest lists: this machine's copy stands.
+    const closed = new Set(entry.visibility === "public" ? this.exportable().filter((e) => e.private).map((e) => e.namespace) : []);
+    const taken = { ...state, plugins: Object.fromEntries(Object.entries(state.plugins ?? {}).filter(([ns]) => !closed.has(ns))) };
+    const always = (ns: string) => registrations.some((r) => r.namespace === ns && Object.values(r.tables).some((t) => t.export && t.export.always));
+    const additive = Object.keys(taken.plugins).filter((ns) => !entry.exports.includes(ns) && !always(ns));
+    importState(this.db(projectId), taken, { registrations, additive });
     if (entry.dir) this.importForeignLogs(projectId, entry.dir);
     this.savePublished(projectId, base);
     const digest = base.manifest.snapshot?.digest ?? digestState(base);
     const patch: Partial<CatalogProject> = { lastPublishedDigest: digest, lastSyncAt: Date.now(), name: String(state.manifest.project.name ?? entry.name), keyPrefix: String(state.manifest.project.key_prefix ?? entry.keyPrefix) };
-    if (state.manifest.exports) patch.exports = state.manifest.exports;
+    if (state.manifest.exports) patch.exports = this.allowedExports(state.manifest.exports, entry.visibility);
     patch.unimported = this.unimportedOf(state);
     // A withheld table this snapshot carries is known here from now on.
     if (entry.withheld.length) patch.withheld = entry.withheld.filter((key) => {
@@ -930,7 +981,10 @@ export class Storage extends Service {
    */
   private mergeWith(projectId: string, entry: CatalogProject, base: ProjectState | null, theirs: ProjectState, theirLogs: DeviceLog[]): void {
     const own = this.hub.deviceId;
-    const ours = this.exportFor(projectId, entry);
+    // What travels on either side is merged, ours included even if unticked here; what travels on neither stays out
+    // of it — merging it would read as every row of it deleted.
+    const travels = this.allowedExports([...new Set([...entry.exports, ...(theirs.manifest.exports ?? [])])].sort(), entry.visibility);
+    const ours = this.exportFor(projectId, { ...entry, exports: travels });
     const checkpoint = base?.manifest.snapshot?.checkpoint ?? {};
     const since = (device: string) => checkpoint[device] ?? 0;
     const ourOps: LogOp[] = this.oplog
@@ -946,9 +1000,23 @@ export class Storage extends Service {
 
     const rules: Record<string, TableRule> = { ...CORE_RULES };
     const db = this.db(projectId);
-    for (const reg of (this.ctx.db as Db).registrations("project")) {
+    const registrations = (this.ctx.db as Db).registrations("project");
+    const moves = (ns: string, table: string) => {
+      const reg = registrations.find((r) => r.namespace === ns);
+      const spec = reg?.tables[table]?.export;
+      return !reg || (!!spec && (spec.always === true || travels.includes(ns)));
+    };
+    const moving = (state: ProjectState): ProjectState => ({
+      ...state,
+      plugins: Object.fromEntries(
+        Object.entries(state.plugins ?? {})
+          .map(([ns, byTable]) => [ns, Object.fromEntries(Object.entries(byTable).filter(([table]) => moves(ns, table)))] as const)
+          .filter(([, byTable]) => Object.keys(byTable).length)
+      )
+    });
+    for (const reg of registrations) {
       for (const [table, spec] of Object.entries(reg.tables)) {
-        if (!spec.export) continue;
+        if (!spec.export || !moves(reg.namespace, table)) continue;
         let key = ["id"];
         try {
           key = primaryKeyOf(db, table);
@@ -958,7 +1026,7 @@ export class Storage extends Service {
         rules[`${reg.namespace}/${table}`] = { key, mode: spec.export.appendOnly ? "append" : "rows" };
       }
     }
-    const result = mergeStates({ base: base ? this.toMergeState(base) : null, ours: this.toMergeState(ours), theirs: this.toMergeState(theirs), logs: { ours: ourOps, theirs: theirOps }, rules });
+    const result = mergeStates({ base: base ? this.toMergeState(moving(base)) : null, ours: this.toMergeState(ours), theirs: this.toMergeState(moving(theirs)), logs: { ours: ourOps, theirs: theirOps }, rules });
     const merged = this.fromMergeState(result.merged, ours, theirs);
     // Recording the merge as the base would make the folder's older snapshot
     // read, on the next refresh, as theirs having deleted every row we added.
@@ -1004,6 +1072,7 @@ export class Storage extends Service {
 
   /** What the "Sync now" button does: take theirs, then publish ours. */
   async sync(projectId: string): Promise<StorageStatus> {
+    await this.checkVisibility(projectId, true);
     await this.refresh(projectId);
     return this.publish(projectId, "sync");
   }
@@ -1089,9 +1158,10 @@ export class Storage extends Service {
 
   /** Which plugin data travels. Shared through the manifest, so the next publish carries it to every machine. */
   async setExports(projectId: string, namespaces: string[]): Promise<StorageInfo> {
-    this.mustEntry(projectId);
+    const entry = this.mustEntry(projectId);
     const known = new Set(this.exportable().map((e) => e.namespace));
-    this.hub.catalog.patchProject(projectId, { exports: [...new Set(namespaces)].filter((n) => known.has(n)).sort() });
+    const chosen = [...new Set(namespaces)].filter((n) => known.has(n)).sort();
+    this.hub.catalog.patchProject(projectId, { exports: this.allowedExports(chosen, entry.visibility) });
     await this.publish(projectId, "exports");
     return this.info(projectId);
   }
@@ -1111,8 +1181,9 @@ export class Storage extends Service {
     if (origin === "none") await g.init(target.branch);
     await provider.ensureRemote?.(config);
     await g.setRemote(target.url);
-    this.hub.catalog.patchProject(projectId, { git: "dedicated", remote: { provider: providerId, config } });
+    this.hub.catalog.patchProject(projectId, { git: "dedicated", remote: { provider: providerId, config }, visibility: null, visibilityAt: null });
     this.scheduleHubWrite();
+    await this.checkVisibility(projectId, true);
     // The remote may already hold this project (a second machine binding to the same repository).
     if ((await g.probe(target.branch)) === "exists" && (await g.fetch(target.branch))) {
       const counts = await g.aheadBehind(target.branch);
@@ -1121,7 +1192,7 @@ export class Storage extends Service {
         if (hasArtifact(entry.dir)) {
           const { state } = this.readFolder(entry.dir, this.verifies(projectId));
           if (state && projectIdOf(state) !== projectId) {
-            this.hub.catalog.patchProject(projectId, { remote: null });
+            this.hub.catalog.patchProject(projectId, { remote: null, visibility: null, visibilityAt: null });
             throw new ForeignProjectError(projectId, projectIdOf(state));
           }
         }
@@ -1137,7 +1208,7 @@ export class Storage extends Service {
   async unbind(projectId: string): Promise<StorageInfo> {
     const entry = this.mustEntry(projectId);
     if (entry.dir && entry.git === "dedicated") await this.git(entry.dir).removeRemote().catch(() => {});
-    this.hub.catalog.patchProject(projectId, { remote: null });
+    this.hub.catalog.patchProject(projectId, { remote: null, visibility: null, visibilityAt: null });
     this.lastState.delete(projectId);
     this.scheduleHubWrite();
     this.notify(projectId);

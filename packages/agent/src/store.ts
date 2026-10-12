@@ -230,13 +230,14 @@ const toRun = (r: RunRow): RunView => ({
  * Table declarations for `ctx.db.migrate`: how each table's rows belong to a
  * project (deletion, the legacy split and export all read this), and whether
  * they travel in the project's folder. Cards and pending questions are one
- * machine's working state and never leave it.
+ * machine's working state and never leave it. Conversations are `private`:
+ * they never travel to a public repository.
  */
 export const TABLES = {
-  plugin_agent_threads: { project: "project_id", export: { order: "id" } },
-  plugin_agent_messages: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: { order: "thread_id, seq", appendOnly: true } },
-  plugin_agent_runs: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: { order: "thread_id, started_at" } },
-  plugin_agent_ledger: { project: { via: "run_id", table: "plugin_agent_runs" }, export: { order: "run_id, seq", appendOnly: true } },
+  plugin_agent_threads: { project: "project_id", export: { order: "id", private: true } },
+  plugin_agent_messages: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: { order: "thread_id, seq", appendOnly: true, private: true } },
+  plugin_agent_runs: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: { order: "thread_id, started_at", private: true } },
+  plugin_agent_ledger: { project: { via: "run_id", table: "plugin_agent_runs" }, export: { order: "run_id, seq", appendOnly: true, private: true } },
   plugin_agent_cards: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
   plugin_agent_pending: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
   plugin_agent_briefs: { project: "project_id", export: { order: "project_id" } },

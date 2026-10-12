@@ -18,6 +18,9 @@ export interface StorageStatus {
 
 export type GitOrigin = "dedicated" | "shared" | "none";
 
+/** Who can read a remote: anyone, only those given access, or the host can't say. */
+export type RemoteVisibility = "public" | "private" | "unknown";
+
 /** Everything the project's storage block draws. */
 export interface StorageInfo {
   projectId: string;
@@ -32,7 +35,10 @@ export interface StorageInfo {
   autoCommit: boolean;
   /** Plugin namespaces whose tables travel in the folder, and every namespace that could. */
   exports: string[];
-  exportable: { namespace: string; tables: string[] }[];
+  /** `private`: declared for the people the project is shared with only, so it never travels to a public remote. */
+  exportable: { namespace: string; tables: string[]; private: boolean }[];
+  /** Who can read the dedicated repository's remote, as its provider last said; null without a remote or before it was asked. */
+  visibility: RemoteVisibility | null;
   logWindowDays: number;
 }
 
@@ -93,6 +99,8 @@ export interface StorageProvider<C = unknown> {
   toRemote(config: C): Promise<RemoteTarget> | RemoteTarget;
   /** Bring the destination into existence — create the repository, say. */
   ensureRemote?(config: C): Promise<void>;
+  /** Who can read the destination. Without it, every remote of this provider is "unknown". */
+  visibility?(config: C): Promise<RemoteVisibility>;
   /** Candidates the user picks from, so nothing has to be typed by hand. */
   browse?(): Promise<{ label: string; config: C }[]>;
   /** A config for a destination that does not exist yet, from a name alone. */

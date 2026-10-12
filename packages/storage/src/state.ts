@@ -444,7 +444,12 @@ export function readClone(dir: string): { state: ProjectState; fill: Map<string,
  * through `write()` and lands no oplog rows. Plugin tables named in the
  * artifact are replaced too; those the artifact lacks are left alone.
  */
-export function importState(db: StateDb, state: ProjectState, opts: { registrations?: PluginRegistration[] } = {}): void {
+/**
+ * `additive`: namespaces whose rows join this machine's instead of replacing
+ * them — ones that did not travel here until now, so what is only here is not
+ * a deletion.
+ */
+export function importState(db: StateDb, state: ProjectState, opts: { registrations?: PluginRegistration[]; additive?: string[] } = {}): void {
   const projectId = projectIdOf(state);
   db.transaction(() => {
     // Each sweep scopes through a table a later one empties, so dependents go first.
@@ -486,7 +491,7 @@ export function importState(db: StateDb, state: ProjectState, opts: { registrati
     // The counter is derived, never merged: past every key anyone has minted, and never below where it was.
     db.prepare("UPDATE projects SET next_key_num = MAX(next_key_num, COALESCE((SELECT MAX(key_num) FROM items WHERE project_id = @projectId), 0) + 1) WHERE id = @projectId").run({ projectId });
 
-    writePlugins(db, state.plugins ?? {}, opts.registrations ?? []);
+    writePlugins(db, state.plugins ?? {}, opts.registrations ?? [], opts.additive ?? []);
   });
 }
 
@@ -495,7 +500,7 @@ export function importPlugins(db: StateDb, plugins: ProjectState["plugins"], reg
   db.transaction(() => writePlugins(db, plugins, registrations));
 }
 
-function writePlugins(db: StateDb, plugins: ProjectState["plugins"], registrations: PluginRegistration[]): void {
+function writePlugins(db: StateDb, plugins: ProjectState["plugins"], registrations: PluginRegistration[], additive: string[] = []): void {
   const declared = new Map(registrations.filter((r) => r.scope === "project").map((r) => [r.namespace, r]));
   for (const [ns, tables] of Object.entries(plugins ?? {})) {
     const reg = declared.get(ns);
@@ -511,7 +516,7 @@ function writePlugins(db: StateDb, plugins: ProjectState["plugins"], registratio
       } catch {
         continue;
       }
-      db.prepare(`DELETE FROM ${table}`).run();
+      if (!additive.includes(ns)) db.prepare(`DELETE FROM ${table}`).run();
       if (!rows.length) continue;
       const cols = columns.filter((c) => rows.some((r) => c in r));
       const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((c) => `@${c}`).join(", ")})`);

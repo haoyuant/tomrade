@@ -261,6 +261,40 @@ describe("ctx.storage", () => {
     expect(fs.readFileSync(path.join(a.dir, ARTIFACT_DIR, "state", "items.jsonl"), "utf8")).toMatch(/Renamed elsewhere/);
   });
 
+  it("never loses rows that travel nowhere: an unticked namespace sits out a merge, and one ticked elsewhere joins ours", async () => {
+    const a = await machine();
+    a.ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
+      tables: { plugin_demo_notes: { project: "project_id", export: { order: "id" } } }
+    });
+    const notes = () => a.ctx.db.for(a.project.id).prepare("SELECT id, body FROM plugin_demo_notes ORDER BY id").all();
+    await a.storage.setExports(a.project.id, []);
+    a.ctx.db.for(a.project.id).prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'only here')").run(a.project.id);
+    const item = a.items.create({ title: "Shared", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+    const edit = (change: (state: ReturnType<typeof readArtifact> & object) => void) => {
+      const state = readArtifact(a.dir)!;
+      change(state);
+      state.manifest.snapshot!.digest = digestState(state);
+      writeArtifact(a.dir, state);
+    };
+    // Both sides moved, and the namespace travels on neither: merging it would read as every row deleted.
+    edit((state) => (state.tables.items.find((r) => r.id === item.id)!.title = "Renamed elsewhere"));
+    a.items.update(a.project.id, item.id, { status: "done" }, "human");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("diverged");
+    await a.storage.refresh(a.project.id);
+    expect(a.items.get(a.project.id, item.id)?.title).toBe("Renamed elsewhere");
+    expect(notes()).toEqual([{ id: "n1", body: "only here" }]);
+    await a.storage.publish(a.project.id);
+    // Another machine ticks it and brings its own rows: they join ours rather than replace them.
+    edit((state) => {
+      state.manifest.exports = ["demo"];
+      state.plugins.demo = { plugin_demo_notes: [{ id: "n2", project_id: a.project.id, body: "from there" }] };
+    });
+    await a.storage.refresh(a.project.id);
+    expect(notes()).toEqual([{ id: "n1", body: "only here" }, { id: "n2", body: "from there" }]);
+    expect(a.hub.catalog.project(a.project.id)?.exports).toEqual(["demo"]);
+  });
+
   it("keeps a merge it has not published yet: the folder still holding the older snapshot is not a deletion", async () => {
     const a = await machine();
     const shared = a.items.create({ title: "Shared", projectId: a.project.id, boardId: a.board.id, by: "human" });
@@ -473,7 +507,7 @@ describe("ctx.storage", () => {
     ctx.db.for(project.id).prepare("INSERT INTO plugin_pin_binding (project_id, url) VALUES (?, 'git@example.com:docs.git')").run(project.id);
     let info = await storage.info(project.id);
     // The binding is not a choice, so it is not listed.
-    expect(info.exportable).toEqual([{ namespace: "demo", tables: ["plugin_demo_notes"] }]);
+    expect(info.exportable).toEqual([{ namespace: "demo", tables: ["plugin_demo_notes"], private: false }]);
     info = await storage.setExports(project.id, ["demo", "unknown", "pin"]);
     expect(info.exports).toEqual(["demo"]);
     expect(JSON.parse(read(dir, "project.json")).exports).toEqual(["demo"]);
