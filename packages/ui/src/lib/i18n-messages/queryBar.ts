@@ -1,5 +1,11 @@
 export const queryBar = {
   en: {
+    searchPlaceholder: "Search tickets",
+    searchAria: "Search tickets in this view",
+    clearSearch: "Clear the search",
+    searchElsewhere: "{{n}} more outside this view",
+    searchElsewhereTitle: "These match too, but this view's filters leave them out",
+
     filter: "Filter",
     addFilterShort: "Add",
     addFilter: "Add a filter",
@@ -31,6 +37,12 @@ export const queryBar = {
     newViewPlaceholder: "View name…"
   },
   zh: {
+    searchPlaceholder: "搜索工作项",
+    searchAria: "在此视图中搜索工作项",
+    clearSearch: "清除搜索",
+    searchElsewhere: "此视图之外还有 {{n}} 个",
+    searchElsewhereTitle: "它们也匹配，但被此视图的筛选条件排除了",
+
     filter: "筛选",
     addFilterShort: "添加",
     addFilter: "添加筛选",

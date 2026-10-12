@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Badge } from "@tomradex/contributions";
 import {
@@ -8,8 +8,10 @@ import {
   compareItems,
   groupSpaceOf,
   matchesFilter,
+  matchesSearch,
   normalizeQuery,
   patchForGroup,
+  searchTerms,
   type Board,
   type FieldDef,
   type Item,
@@ -74,7 +76,11 @@ export interface WorkspaceValue {
   saveAsNewView: (name: string) => void;
   filterCount: number;
 
-  /** Tickets passing the filter, in sort order (sortBy, else manual rank, then recency). Column visibility is not applied. */
+  /** The ticket search as applied — it trails the field while typing. Narrows `visible` in every view and layout; never saved with a view. */
+  search: string;
+  /** Tickets the search matches that this view's filter hides, so an empty result can say where they are. */
+  searchElsewhere: number;
+  /** Tickets passing the filter and the search, in sort order (sortBy, else manual rank, then recency). Column visibility is not applied. */
   visible: Item[];
   ranks: Record<string, number>;
   /** Plugin badges per item id, computed in the main process. */
@@ -130,6 +136,7 @@ function createSelection() {
   };
 }
 type Selection = ReturnType<typeof createSelection>;
+
 const SelectionCtx = createContext<Selection | null>(null);
 
 const useSelection = (): Selection => {
@@ -147,6 +154,28 @@ export function useSelectedId(): string | null {
 export function useIsSelected(id: string): boolean {
   const selection = useSelection();
   return useSyncExternalStore(selection.subscribe, () => selection.get() === id);
+}
+
+/** The ticket search, one per project: switching views or workstreams keeps it, since it narrows whichever is open. */
+const searches = new Map<string, string>();
+const searchListeners = new Set<() => void>();
+export const ticketSearch = {
+  get: (projectId: string) => searches.get(projectId) ?? "",
+  set: (projectId: string, text: string) => {
+    if (text === ticketSearch.get(projectId)) return;
+    searches.set(projectId, text);
+    for (const listener of searchListeners) listener();
+  }
+};
+
+export function useTicketSearch(projectId: string): string {
+  return useSyncExternalStore(
+    (listener) => {
+      searchListeners.add(listener);
+      return () => void searchListeners.delete(listener);
+    },
+    () => ticketSearch.get(projectId)
+  );
 }
 
 export function useWorkspace(): WorkspaceValue {
@@ -224,6 +253,8 @@ export function WorkspaceProvider({
   const [selection] = useState(createSelection);
   const select = selection.set;
   const [draft, setDraft] = useState<Draft | null>(null);
+  // Typing re-renders the field at once and the layouts when React has a moment.
+  const search = useDeferredValue(useTicketSearch(projectId));
 
   const project = projects.data?.find((p) => p.id === projectId);
   const workstream = boardId ? (boards.data?.find((b) => b.id === boardId) ?? null) : null;
@@ -336,7 +367,9 @@ export function WorkspaceProvider({
     const rankMap = ranks.data ?? {};
     const rankOf = (i: Item) => rankMap[i.id] ?? i.rank;
     const owned = all.filter(isTicket);
-    const visible = owned.filter((i) => matchesFilter(i, live.query.filter)).sort((a, b) => compareItems(a, b, live.query.sortBy, queryCtx, rankOf));
+    const terms = searchTerms(search);
+    const found = terms.length ? owned.filter((i) => matchesSearch(i, terms)) : owned;
+    const visible = found.filter((i) => matchesFilter(i, live.query.filter)).sort((a, b) => compareItems(a, b, live.query.sortBy, queryCtx, rankOf));
     const columnBy = live.query.columnBy ?? "status";
     const space = groupSpace(columnBy);
     const chosen = live.query.columns.filter((k) => space.includes(k));
@@ -387,6 +420,8 @@ export function WorkspaceProvider({
       filePath: inFiles ? filePath : null,
       openFile,
       filterCount: live.query.filter.length,
+      search,
+      searchElsewhere: terms.length ? found.length - visible.length : 0,
       visible,
       ranks: rankMap,
       badges: badges.data ?? {},
@@ -407,6 +442,7 @@ export function WorkspaceProvider({
     saved,
     live,
     dirty,
+    search,
     boardList,
     fields,
     fieldById,

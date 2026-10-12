@@ -112,6 +112,44 @@ export function matchesClause(item: Item, clause: FilterClause): boolean {
 
 export const matchesFilter = (item: Item, filter: FilterClause[]): boolean => filter.every((c) => matchesClause(item, c));
 
+/**
+ * The terms of a search: whitespace-separated words, except that a run in
+ * double quotes ("login timeout", “登录 超时”) is one term matched as a whole,
+ * spaces included. A quote with no partner runs to the end of the string.
+ */
+export function searchTerms(search: string): string[] {
+  const out: string[] = [];
+  const closer: Record<string, string> = { '"': '"', "\u201c": "\u201d" };
+  let i = 0;
+  while (i < search.length) {
+    const c = search[i]!;
+    if (/\s/.test(c)) {
+      i++;
+      continue;
+    }
+    const close = closer[c];
+    if (close) {
+      const end = search.indexOf(close, i + 1);
+      const phrase = (end === -1 ? search.slice(i + 1) : search.slice(i + 1, end)).trim();
+      if (phrase) out.push(phrase);
+      i = end === -1 ? search.length : end + 1;
+      continue;
+    }
+    let j = i;
+    while (j < search.length && !/\s/.test(search[j]!)) j++;
+    out.push(search.slice(i, j));
+    i = j;
+  }
+  return out;
+}
+
+/** Every term appears, case aside, in the ticket's key, title or body — what the items index matches, plus the key. */
+export function matchesSearch(item: Item, terms: string[]): boolean {
+  if (!terms.length) return true;
+  const text = `${item.key} ${item.title} ${item.body ?? ""}`.toLowerCase();
+  return terms.every((term) => text.includes(term.toLowerCase()));
+}
+
 /** A comparable for one sort key: numbers for numeric fields, strings otherwise, null when empty. */
 export function sortKeyOf(item: Item, fieldId: string, ctx: QueryContext): number | string | null {
   const raw = fieldValueOf(item, fieldId);

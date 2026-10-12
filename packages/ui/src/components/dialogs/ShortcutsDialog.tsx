@@ -23,6 +23,7 @@ const GROUPS: { title: MessageKey; rows: [keys: string[], what: MessageKey][] }[
   {
     title: "shortcuts.board",
     rows: [
+      [["⌘F", "/"], "shortcuts.searchTickets"],
       [["↑", "↓", "←", "→"], "shortcuts.moveFocus"],
       [["↵"], "shortcuts.openCard"],
       [["⌥←", "⌥→"], "shortcuts.moveCard"],

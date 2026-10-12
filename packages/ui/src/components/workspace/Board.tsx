@@ -126,7 +126,7 @@ function Column({
   onNudge: (item: Item, d: -1 | 1) => void;
 }) {
   const { t } = useI18n();
-  const { filterCount, query } = useWorkspace();
+  const { filterCount, query, search } = useWorkspace();
   const [composing, setComposing] = useState(false);
   // Low priority lets a card win the collision, so an empty column still accepts a drop.
   const { ref, isDropTarget } = useDroppable({ id: cell, type: "column", accept: "card", collisionPriority: CollisionPriority.Low });
@@ -136,7 +136,7 @@ function Column({
     <section className={`col${isDropTarget ? " drop-target" : ""}`} role="group" aria-label={t("board.columnAria", { label, n: cards.length })} data-column={splitCell(cell).col}>
       {head && <ColumnHead index={index} label={label} count={head.count} cap={head.cap} />}
       <div className="col-body" ref={ref as (node: HTMLElement | null) => void}>
-        {cards.length === 0 && !composing && <p className="col-empty">{t(filterCount ? "board.emptyFiltered" : "board.emptyPlain", { label })}</p>}
+        {cards.length === 0 && !composing && <p className="col-empty">{search.trim() ? t("board.emptySearch", { label, query: search.trim() }) : t(filterCount ? "board.emptyFiltered" : "board.emptyPlain", { label })}</p>}
         {cards.map((item, i) => (
           <SortableCard key={item.id} item={item} index={i} cell={cell} onOpen={() => onOpen(item)} onNudge={(d) => onNudge(item, d)} />
         ))}
