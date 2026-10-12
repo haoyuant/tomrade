@@ -1,5 +1,7 @@
 import net from "node:net";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const host = "127.0.0.1";
 const firstPort = Number(process.env.VITE_DEV_PORT ?? 5173);
@@ -27,6 +29,10 @@ function waitForServer(port) {
     check();
   });
 }
+
+// The built-in agent's Pi; a no-op once fetched. Offline, the app still starts without it.
+const fetchPi = spawnSync("node", [path.join(path.dirname(fileURLToPath(import.meta.url)), "fetch-pi.mjs")], { stdio: "inherit" });
+if (fetchPi.status !== 0) console.warn("Could not fetch the built-in agent; starting without it");
 
 let port = firstPort;
 while (!(await isAvailable(port))) port += 1;
