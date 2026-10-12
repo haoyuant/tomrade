@@ -20,6 +20,7 @@
   "dependencies": {
     "@tomradex/agent": "workspace:*",
     "@tomradex/engine-claude-code": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",

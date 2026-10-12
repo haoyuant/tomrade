@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "fetch:pi": "node scripts/fetch-pi.mjs",
     "test:ui": "electron scripts/ui-regression.mjs",
     "test:onboarding": "electron scripts/onboarding-check.mjs",
     "test:plugins": "electron scripts/plugins-check.mjs",
@@ -30,6 +31,7 @@
     "test:storage-race": "electron scripts/storage-race-check.mjs",
     "test:attention": "electron scripts/attention-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
+    "test:setup": "electron scripts/setup-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "package": "node scripts/package.mjs"
   },

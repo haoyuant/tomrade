@@ -24,6 +24,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
     permissionModes: agent.permissionModes,
     terminal: agent.terminal ?? false,
+    ...(agent.setup ? { setup: agent.setup } : {}),
     picks: () => [
       // What the agent can use depends on its own sign-in; the list is what its last session offered.
       { key: "model", title: "Model", choices: catalog.models, freeText: true },

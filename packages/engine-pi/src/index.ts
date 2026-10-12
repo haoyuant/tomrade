@@ -42,6 +42,8 @@ export function createPiEngine(ctx: Context): Engine {
       }
     }),
     checkCli: (file) => cli.check(file),
+    // Inside pi, /login picks a provider; an API key in the environment works too. The built-in agent needs neither.
+    setup: { install: ["npm install -g @earendil-works/pi-coding-agent"], signIn: "pi", signInRuns: true, docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent" },
     async turn(input, io) {
       if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
       return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
@@ -57,4 +59,6 @@ export default {
 };
 
 export { PiOptions, listedModels, piSignedIn, toolSelection } from "./options.js";
+export { default as builtinPi, BuiltinPiConfig, BuiltinPiOptions, createBuiltinPiEngine } from "./builtin.js";
+export { modelsFile, piTarget, type PiTarget } from "./target.js";
 export { bridgeSource } from "./bridge.js";

@@ -1,5 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
@@ -101,6 +102,27 @@ export async function launchTerminal(input: LaunchInput, terminal: string): Prom
   } catch {
     return { script, launched: false };
   }
+}
+
+/**
+ * Run one setup command where the person can watch it and answer its
+ * questions: a new shell afterwards picks up a PATH the install just changed.
+ * Windows gets PowerShell, which the official installers there are written for.
+ */
+export async function setupTerminal(command: string, dir: string, terminal: string): Promise<{ launched: boolean }> {
+  if (process.platform === "win32") {
+    // Detached, PowerShell gets a console window of its own; no cmd in between to read the command's `|`.
+    return new Promise((resolve) => {
+      const child = spawn("powershell.exe", ["-NoExit", "-Command", command], { cwd: os.homedir(), detached: true, stdio: "ignore" });
+      child.once("error", () => resolve({ launched: false }));
+      child.once("spawn", () => {
+        child.unref();
+        resolve({ launched: true });
+      });
+    });
+  }
+  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir }, terminal);
+  return { launched };
 }
 
 const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;

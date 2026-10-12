@@ -23,6 +23,7 @@ export {
   type EngineNeed,
   type EnginePick,
   type EngineView,
+  type EngineSetup,
   type FocusRef,
   type FollowUpStart,
   type GeneralExecution,

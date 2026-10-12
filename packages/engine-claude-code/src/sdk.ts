@@ -20,7 +20,7 @@ function matchesTool(name: string, pattern: string): boolean {
  * The SDK starts a native path itself; a Windows `.cmd` shim needs our launch
  * (node + script), which the SDK only takes as a custom spawn.
  */
-function sdkLaunch(launch: CliLaunch): Pick<Options, "pathToClaudeCodeExecutable" | "spawnClaudeCodeProcess"> {
+export function sdkLaunch(launch: CliLaunch): Pick<Options, "pathToClaudeCodeExecutable" | "spawnClaudeCodeProcess"> {
   if (launch.argv([]).command === launch.file) return { pathToClaudeCodeExecutable: launch.file };
   return {
     pathToClaudeCodeExecutable: launch.file,

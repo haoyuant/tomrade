@@ -592,6 +592,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -617,6 +620,9 @@ importers:
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -756,6 +762,9 @@ importers:
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp

@@ -302,17 +302,30 @@ only in WSL gets its own warning, the full guide (`where codex` included) and
 diagnostics naming the platform, the folders searched and PATH; the panel's
 engine picker lists what can run first and greys the rest with a short reason
 and Set up, which opens Settings on that engine (the models, for an engine with
-none) and never switches or creates a thread; the setup card asks for a local
-agent while a model is ready, and its Check again finds one signed in meanwhile,
-after which the picker offers it — 45 checks.
+none) and never switches or creates a thread; with nothing set up the setup card
+offers a key and each agent's sign-in command (run in a terminal, or handed over
+when there is none), its Check again finds Claude Code signed in meanwhile and
+the card goes — Claude Code then conducts and lends its model for planning —
+and with a model alone there is no card either, the built-in agent among what
+can run; Start lists the built-in agent first — 50 checks.
+`test:setup` (`scripts/setup-check.mjs`) connects an AI on a first run against a
+stand-in DeepSeek: the screen before the projects finds a key exported in the
+shell, masked, says in plain words why a pasted key is refused and saves
+nothing, connects the found key as the first profile on a model the provider
+lists, says what that unlocked and opens the sample project, and the built-in
+agent — the bundled Pi, run by Electron as Node — takes a turn that calls
+Tomrade's tools with the key only in its environment — 15 checks.
 `test:onboarding` (`scripts/onboarding-check.mjs`) is a first run left alone:
 the app opens on the sample project and nothing else, its seed absent from
-History and from the account's catalog; its Learning path view draws as a
-graph; the assistant's setup card says what is ready and what is missing and
-stays put away once hidden; a run's first changes carry the hint about undoing
+History and from the account's catalog; before the projects it asks to connect
+an AI, guesses a pasted key's provider and can be told "later"; its Learning
+path view draws as a graph; the assistant keeps a setup card that offers a key
+and cannot be put away; a run's first changes carry the hint about undoing
 them, Start and the first dependency elsewhere are pointed out once each, and
 all of it stays seen across a reload; deleted, the sample is offered again,
-comes back in Chinese, and its offer can be put away for good — 31 checks. The other checks set
+comes back in Chinese, and its offer can be put away for good; the home runs
+onboarding again — setup screen and hints back, a sample made if there is none
+or, when asked, put back as it began — and again a second time — 44 checks. The other checks set
 `onboarding.seen: ["*"]` before the page loads, so no hint stands in their way,
 and `TOMRADE_UI_WORK` gives `test:ui` a folder of its own when two checkouts run
 it at once.

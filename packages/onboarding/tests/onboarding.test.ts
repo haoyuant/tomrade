@@ -52,6 +52,29 @@ describe("the sample project", () => {
     expect(await ctx.oplog.undo(project.id)).toBeNull();
   });
 
+  it("can be run again, as often as wanted: hints unseen, the sample kept or made anew", async () => {
+    const { ctx, project, items, hub } = await fresh({ firstRun: "none", hubDir: tmp("restart"), plugins: [[Settings, { path: path.join(tmp("restart-settings"), "settings.json") }], Onboarding] });
+    await settle();
+    ctx.settings.set({ ...ctx.settings.get(), onboarding: { seen: ["setup-screen", "hint.revert"] } });
+    const first = items.list({ projectId: project.id })[0];
+    items.update(project.id, first.id, { status: "done" }, "human");
+    const dir = hub.catalog.project(project.id)!.dir;
+
+    expect(ctx.onboarding.restart({ resetSample: false }).id).toBe(project.id);
+    expect(ctx.settings.get().onboarding).toEqual({ seen: [] });
+    expect(items.get(project.id, first.id)?.status).toBe("done");
+
+    const again = ctx.onboarding.restart({ resetSample: true, locale: "zh" });
+    expect(again.id).not.toBe(project.id);
+    expect(ctx.projects.list().map((p) => p.id)).toEqual([again.id]);
+    expect(again.name).toBe(SAMPLE.zh.name);
+    expect(items.list({ projectId: again.id }).every((i) => i.status === "todo" || i.status === "backlog")).toBe(true);
+    expect(fs.existsSync(dir)).toBe(false);
+
+    ctx.projects.remove(again.id, { deleteFolder: true });
+    expect(ctx.onboarding.restart({ resetSample: false }).sample).toBe(true);
+  });
+
   it("seeds nothing when the machine already has a project", async () => {
     const { ctx, project } = await fresh({ plugins: [Onboarding] });
     expect(ctx.projects.list().map((p) => p.name)).toEqual(["Default Project"]);

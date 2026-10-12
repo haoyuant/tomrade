@@ -1,8 +1,10 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
 import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
+import type {} from "@tomradex/llm";
 import { CodexOptions, createCodexCliEngine, migrateLegacyModel } from "./legacy.js";
 import { CodexRuntime } from "./app-server.js";
+import { codexLentModel } from "./lend.js";
 
 export function createCodexEngine(ctx: Context): Engine {
   const baseline = createCodexCliEngine(ctx);
@@ -27,6 +29,12 @@ export function createCodexEngine(ctx: Context): Engine {
 
 export default {
   name: "engine-codex", inject: ["agent", "mcp", "tools", "settings"],
-  apply(ctx: Context) { migrateLegacyModel(ctx); ctx.agent.engine(createCodexEngine(ctx)); }
+  apply(ctx: Context) {
+    migrateLegacyModel(ctx);
+    const engine = createCodexEngine(ctx);
+    ctx.agent.engine(engine);
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(codexLentModel(ctx, async () => (await engine.available()).ok))));
+  }
 };
 export { CodexOptions, codexModel, codexSignedIn, createCodexCliEngine } from "./legacy.js";
+export { codexLentModel } from "./lend.js";

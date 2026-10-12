@@ -12,6 +12,7 @@
   ],
   "references": [
     { "path": "../agent" },
+    { "path": "../llm" },
     { "path": "../mcp" }
   ]
 }

@@ -73,6 +73,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       signIn: { args: ["login", "status"], says: codexSignedIn, reason: "Codex is not signed in — run `codex login` in a terminal" }
     }),
     checkCli: (file) => cli.check(file),
+    setup: { install: ["npm install -g @openai/codex"], signIn: "codex login", docs: "https://github.com/openai/codex", suggested: true },
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       const options = CodexOptions.parse(input.options ?? {});
       const url = ctx.mcp.url;

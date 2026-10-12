@@ -30,6 +30,9 @@ export function useSeen() {
 /** Raised this session already: a second mount (StrictMode, a second pane) must not raise it again before the save lands. */
 const raised = new Set<string>();
 
+/** Onboarding run again: the toasts raised this session may show once more. */
+export const forgetRaisedHints = () => raised.clear();
+
 /** A hint with nowhere to sit beside its subject: one toast, the first time `when` holds, and never again. */
 export function useHintToast(id: string, when: boolean, message: MessageKey) {
   const { t } = useI18n();

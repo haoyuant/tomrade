@@ -128,7 +128,7 @@ const run = async () => {
       return true;
     })()`);
   const rowIds = (scope = ".dlg-body") => $(`[...document.querySelectorAll('${scope} .cfg-row[data-id]')].map(r => r.dataset.id).join()`);
-  check("engines are grouped under their contract, the switched-off one too", (await rowIds('.plug-group[data-contract="engine"]')) === "engine-loop,engine-scripted,engine-claude-code,engine-codex,engine-pi,engine-hermes,engine-dsh,engine-workbuddy");
+  check("engines are grouped under their contract, the switched-off one too", (await rowIds('.plug-group[data-contract="engine"]')) === "engine-loop,engine-pi-builtin,engine-scripted,engine-claude-code,engine-codex,engine-pi,engine-hermes,engine-dsh,engine-workbuddy");
   check("destinations under theirs", (await rowIds('.plug-group[data-contract="storage"]')) === "storage-git,storage-github");
   check("and every other row under one heading", (await rowIds('.plug-group[data-contract=""]')).split(",").includes("db"));
   await $(`document.querySelector('.plug-group[data-contract="engine"]').scrollIntoView({ block: 'start' });true`);
@@ -156,7 +156,7 @@ const run = async () => {
   await sleep(700);
   check("its link opens Plugins already searching for engines", (await $(`document.querySelector('[data-testid="plugins-search"]')?.value`)) === "engine" && (await $(`document.querySelector('.dlg-nav .side-row[aria-current="true"]')?.textContent.trim()`)) === "Manage plugins");
   check("opened at the top, where the search box is", (await $(`document.querySelector('.dlg-body').scrollTop`)) === 0);
-  check("which shows the engines and nothing else", (await rowIds()) === "engine-loop,engine-scripted,engine-claude-code,engine-codex,engine-pi,engine-hermes,engine-dsh,engine-workbuddy", await rowIds());
+  check("which shows the engines and nothing else", (await rowIds()) === "engine-loop,engine-pi-builtin,engine-scripted,engine-claude-code,engine-codex,engine-pi,engine-hermes,engine-dsh,engine-workbuddy", await rowIds());
   await shot("30-plugins-engines");
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === 'Assistant')`);
   await sleep(400);

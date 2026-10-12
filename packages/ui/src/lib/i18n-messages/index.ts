@@ -12,6 +12,7 @@ import { fields } from "./fields";
 import { files } from "./files";
 import { notes } from "./notes";
 import { onboarding } from "./onboarding";
+import { setup } from "./setup";
 import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
@@ -93,6 +94,7 @@ export const en = {
   fields: fields.en,
   agentPanel: agentPanel.en,
   onboarding: onboarding.en,
+  setup: setup.en,
   codeLink: codeLink.en,
   localCli: localCli.en,
   files: files.en,
@@ -147,6 +149,7 @@ export const zh: typeof en = {
   fields: fields.zh,
   agentPanel: agentPanel.zh,
   onboarding: onboarding.zh,
+  setup: setup.zh,
   codeLink: codeLink.zh,
   localCli: localCli.zh,
   files: files.zh,

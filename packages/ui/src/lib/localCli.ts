@@ -4,67 +4,6 @@ import { agentKeys } from "./agent";
 import { invoke } from "./api";
 import type { MessageKey } from "./i18n";
 
-/**
- * What each local agent's CLI is called and how a person installs and signs in
- * to it. `suggested` ones are offered on the setup card before they are
- * installed; the rest show up there once found.
- */
-export const LOCAL_AGENTS: Record<string, { name: string; install: (platform: string) => string[]; signIn: string; signInRuns?: boolean; docs: string; suggested?: boolean }> = {
-  "claude-code": {
-    name: "claude",
-    // The official installer first; npm still works and is what many already have.
-    install: (platform) => [platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],
-    signIn: "claude",
-    signInRuns: true,
-    docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
-    suggested: true
-  },
-  codex: {
-    name: "codex",
-    install: () => ["npm install -g @openai/codex"],
-    signIn: "codex login",
-    docs: "https://github.com/openai/codex",
-    suggested: true
-  },
-  pi: {
-    name: "pi",
-    install: () => ["npm install -g @earendil-works/pi-coding-agent"],
-    // Inside pi, /login picks a provider; an API key in the environment works too.
-    signIn: "pi",
-    signInRuns: true,
-    docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent",
-    suggested: true
-  },
-  // The WorkBuddy app's own copy of the CLI is found without any install.
-  workbuddy: {
-    name: "codebuddy",
-    install: () => ["npm install -g @tencent-ai/codebuddy-code"],
-    // Inside codebuddy, /login signs in with the WorkBuddy account.
-    signIn: "codebuddy",
-    signInRuns: true,
-    docs: "https://www.workbuddy.ai/docs/cli/overview"
-  },
-  hermes: {
-    name: "hermes",
-    install: (platform) => [
-      platform === "win32"
-        ? "iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)"
-        : "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"
-    ],
-    signIn: "hermes setup",
-    signInRuns: true,
-    docs: "https://hermes-agent.nousresearch.com/docs/user-guide/features/acp"
-  },
-  dsh: {
-    name: "dsh",
-    install: () => ["npm install -g @deepseek-ai/dsh"],
-    // Its web app's Models page stores the DeepSeek key.
-    signIn: "dsh web",
-    signInRuns: true,
-    docs: "https://github.com/deepseek-ai/deepseek-harness"
-  }
-};
-
 export type EngineStatus = "ready" | "missing" | "broken" | "wsl" | "sign-in" | "service" | "model" | "other";
 
 export function engineStatus(engine: EngineView): EngineStatus {

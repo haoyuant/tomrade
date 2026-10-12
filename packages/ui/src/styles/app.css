@@ -1803,6 +1803,12 @@ html.overlay-open .titlebar .btn-primary {
 .setup-fix { display: block; margin-top: 4px; font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); overflow-wrap: anywhere; }
 .setup-fix code { font-family: var(--font-mono); font-size: 0.95em; }
 .setup-action { margin-top: var(--space-2); }
+.quick-providers { display: flex; flex-wrap: wrap; gap: 6px; }
+.setup-ok { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--success); font-size: var(--text-sm); }
+.setup-command { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.setup-command code { font-family: var(--font-mono); font-size: 0.95em; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-warm); overflow-wrap: anywhere; }
+.setup-section-title { margin: 0; font-family: var(--font-display); font-size: var(--text-lg); font-weight: var(--font-weight-medium); color: var(--fg); }
+.agent-setup .quick-model { padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
 /* A one-time line beside what it explains. */
 .hint { display: flex; align-items: flex-start; gap: 8px; margin-top: var(--space-2); padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); }
 .hint > svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
