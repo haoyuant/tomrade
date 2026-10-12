@@ -244,6 +244,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/fields':
+        specifier: workspace:*
+        version: link:../fields
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub

@@ -173,4 +173,74 @@ describe("repositories", () => {
     expect(fs.existsSync(view.worktree!)).toBe(false);
   });
 
+  it("adds the repository in a chosen folder by its origin, reusing a row that spells it differently", async () => {
+    const { repos, project, hub } = await machine();
+    const known = repos.create({ projectId: project.id, remote: "https://github.com/acme/app" });
+    const folder = path.join(root, `cloned-${n++}`);
+    fs.mkdirSync(folder);
+    git(["init", "-q", "-b", "main"], folder);
+    git(["remote", "add", "origin", "git@github.com:Acme/App.git"], folder);
+    const added = await repos.addFromFolder(project.id, folder);
+    expect(added).toMatchObject({ local: false, existing: true, repo: { id: known.id }, view: { remote: "https://github.com/acme/app", checkout: folder } });
+    expect(repos.list(project.id)).toHaveLength(1);
+
+    const code = codeRepo();
+    const fresh = await repos.addFromFolder(project.id, code.checkout);
+    expect(fresh).toMatchObject({ local: false, existing: false, repo: { remote: normalizeRemote(code.remote), name: path.basename(code.remote, ".git"), defaultBranch: "main" } });
+    expect(hub.catalog.repo(normalizeRemote(code.remote))?.checkout).toBe(code.checkout);
+  });
+
+  it("adds a folder with no remote as a local repository, and takes the origin it gains later", async () => {
+    const { repos, boards, project, board } = await machine();
+    const folder = path.join(root, `local-app-${n++}`);
+    fs.mkdirSync(folder);
+    git(["init", "-q", "-b", "trunk"], folder);
+    git(["config", "user.email", "dev@localhost"], folder);
+    git(["config", "user.name", "Dev"], folder);
+    fs.writeFileSync(path.join(folder, "app.ts"), "export {};\n");
+    git(["add", "-A"], folder);
+    git(["commit", "-q", "-m", "app"], folder);
+
+    const added = await repos.addFromFolder(project.id, folder);
+    expect(added).toMatchObject({ local: true, existing: false, repo: { remote: folder, name: path.basename(folder), defaultBranch: "trunk" }, view: { checkout: folder } });
+    expect((await repos.addFromFolder(project.id, folder)).existing).toBe(true);
+    expect(repos.list(project.id)).toHaveLength(1);
+
+    // The user's checkout is on a side branch: a thread still starts from the trunk.
+    git(["checkout", "-q", "-b", "side"], folder);
+    fs.writeFileSync(path.join(folder, "side.ts"), "export {};\n");
+    git(["add", "-A"], folder);
+    git(["commit", "-q", "-m", "side"], folder);
+    boards.update(project.id, board.id, { repoId: added.repo.id });
+    const view = (await repos.workdirFor(project.id, board.id, "t1", { branch: "TOM-1/local" }))!;
+    expect(git(["rev-parse", "HEAD"], view.worktree!)).toBe(git(["rev-parse", "trunk"], folder));
+
+    const bare = path.join(root, `published-${n++}.git`);
+    fs.mkdirSync(bare);
+    git(["init", "--bare", "-q", "."], bare);
+    expect(await repos.adoptOrigins(project.id)).toEqual([]);
+    git(["remote", "add", "origin", bare], folder);
+    const [adopted] = await repos.adoptOrigins(project.id);
+    expect(adopted).toMatchObject({ id: added.repo.id, remote: normalizeRemote(bare) });
+    expect(repos.checkout(bare).checkout).toBe(folder);
+    expect(await repos.adoptOrigins(project.id)).toEqual([]);
+  });
+
+  it("refuses a folder that is not a repository root, and offers no clone of a local repository it cannot reach", async () => {
+    const { repos, project } = await machine();
+    const plain = path.join(root, `plain-${n++}`);
+    fs.mkdirSync(plain);
+    await expect(repos.addFromFolder(project.id, plain)).rejects.toThrow(/not a git repository yet/);
+    await expect(repos.addFromFolder(project.id, path.join(root, "nowhere"))).rejects.toThrow(/not an existing folder/);
+    const code = codeRepo();
+    await expect(repos.addFromFolder(project.id, path.join(code.checkout, "packages"))).rejects.toThrow(/is inside the repository at/);
+    expect(repos.list(project.id)).toHaveLength(0);
+
+    const elsewhere = "/Users/someone-else/code/app";
+    await expect(repos.selectCheckout(elsewhere, plain)).rejects.toThrow(/has no remote to clone from/);
+    const copy = path.join(root, `copy-${n++}`);
+    fs.mkdirSync(copy);
+    git(["init", "-q", "-b", "main"], copy);
+    expect(await repos.selectCheckout(elsewhere, copy)).toEqual({ state: "ready", view: { remote: elsewhere, checkout: copy, runInCheckout: false } });
+  });
 });

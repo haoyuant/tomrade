@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Board, FieldDef, FieldType, Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
+import { useChooseRepoFolder } from "~/components/projects/RepositoriesBlock";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
@@ -285,12 +286,16 @@ const cleanRepoPath = (p: string) => p.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
  * repository and folder its coding agents start in, and one sentence spells
  * out what that means on this machine.
  */
+/** The repository select's last option: pick a folder, add its repository, and point the workstream at it. */
+const FROM_FOLDER = "__folder__";
+
 function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: { board: Board; count: number; others: Board[]; projectId: string; onOpenRepositories?: () => void }) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const update = useUpdateBoard(projectId);
   const repos = useRepos(projectId);
   const checkouts = useRepoCheckouts();
+  const folder = useChooseRepoFolder(projectId);
   const remove = useRemoveBoard(projectId);
   const move = useMoveItemsToBoard(projectId);
   const items = useItems(projectId);
@@ -358,7 +363,15 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
             className="select"
             aria-label={t("fieldsDialog.workstreamRepoAria", { name: board.name })}
             value={board.repoId ?? ""}
-            onChange={(e) => update.mutate({ id: board.id, patch: { repoId: e.target.value || null, repoPath: e.target.value ? board.repoPath : "" } }, { onError: fail })}
+            disabled={folder.busy}
+            onChange={(e) => {
+              const repoId = e.target.value;
+              if (repoId === FROM_FOLDER) {
+                void folder.choose().then((added) => added && update.mutate({ id: board.id, patch: { repoId: added.repo.id } }, { onError: fail }));
+                return;
+              }
+              update.mutate({ id: board.id, patch: { repoId: repoId || null, repoPath: repoId ? board.repoPath : "" } }, { onError: fail });
+            }}
           >
             <option value="">{t("fieldsDialog.workstreamRepoNone")}</option>
             {(repos.data ?? []).map((r) => (
@@ -366,6 +379,7 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
                 {r.name}
               </option>
             ))}
+            <option value={FROM_FOLDER}>{t("fieldsDialog.workstreamRepoFolder")}</option>
           </select>
         </div>
         {repo && (

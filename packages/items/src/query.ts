@@ -17,7 +17,8 @@ export interface Compiled {
 
 const PROVENANCE_SQL = "CASE WHEN i.human_locked = 1 THEN 'locked' WHEN i.updated_by LIKE 'ai:%' THEN 'ai' WHEN i.updated_by LIKE 'sync:%' THEN 'sync' ELSE 'human' END";
 const STATUS_RANK_SQL = `CASE i.status ${ITEM_STATUSES.map((s, n) => `WHEN '${s}' THEN ${n}`).join(" ")} END`;
-export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, defs: Map<string, FieldDef>): Compiled {
+/** `derived` holds each derived field's scalar SQL over `i`, as the plugin that computes it gave it. */
+export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, defs: Map<string, FieldDef>, derived: Map<string, string> = new Map()): Compiled {
   const joins: string[] = [];
   const joinParams: unknown[] = [];
   const where: string[] = [];
@@ -61,6 +62,8 @@ export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, d
       case "labels":
         return null;
       default: {
+        const sql = derived.get(def.id);
+        if (sql) return { expr: `(${sql})`, bind: Number };
         if (def.builtin) return null;
         const alias = aliasOf(def.id);
         return def.type === "number" || def.type === "checkbox" ? { expr: `${alias}.num`, bind: Number } : { expr: `${alias}.text`, bind: String };
@@ -127,7 +130,8 @@ export function compileQuery(q: { filter: FilterClause[]; sortBy: SortKey[] }, d
   for (const key of q.sortBy) {
     const def = defs.get(key.field);
     if (!def || !def.can.sort) continue;
-    const expr = sortExprOf(def, aliasOf);
+    const sql = derived.get(def.id);
+    const expr = sql ? `(${sql})` : sortExprOf(def, aliasOf);
     if (!expr) continue;
     // Empty values sort last either way, as the evaluator does.
     orderBy.push(`(${expr}) IS NULL ASC`, `${expr} ${key.dir === "desc" ? "DESC" : "ASC"}`);

@@ -1214,6 +1214,10 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 }
 .status-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .status-link:hover { color: var(--fg); }
+.usage-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.usage-table th { text-align: left; font-weight: var(--font-weight-medium); color: var(--meta); font-size: var(--text-xs); padding: 0 var(--space-2) var(--space-1); border-bottom: 1px solid var(--border); }
+.usage-table td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border-soft); }
+.usage-table .num { text-align: right; }
 .status-needs { color: var(--fg-2); text-decoration: none; }
 .needs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
 .rail-label {

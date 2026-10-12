@@ -18,6 +18,8 @@ export interface ToolHost {
   store: CodeLinkStore;
   /** Re-judge one ticket in one repository after a link changed by hand or by tool. */
   reevaluate(projectId: string, itemId: string, repoId: string): void;
+  /** A repository with no remote has no pull request: the session's scoped link moves the ticket to Verifying. */
+  handOver(projectId: string, itemId: string, repoId: string): void;
   noteProgress(projectId: string, sessionId: string, text: string): void;
   /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void;
@@ -66,7 +68,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       name: "link_code",
       title: "Link code to a ticket",
       description:
-        "Attach a branch and/or pull request to a ticket. A coding session must inspect its complete diff and pass scopeChecked: true; then the ticket moves to Verifying. Without `key` it applies to the ticket this session was started from.",
+        "Attach a branch and/or pull request to a ticket. A coding session must inspect its complete diff and pass scopeChecked: true; then the ticket moves to Verifying (with the pull request, or with the branch alone in a repository that has no remote). Without `key` it applies to the ticket this session was started from.",
       input: z.object({
         key: z.string().optional().describe("Ticket key, e.g. TOM-42; defaults to this session's ticket"),
         branch: z.string().optional().describe("Branch name; defaults to this session's branch"),
@@ -106,6 +108,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           }
         );
         host.reevaluate(projectId, item.id, repoId);
+        if (session && !args.prUrl) host.handOver(projectId, item.id, repoId);
         const after = ctx.items.get(projectId, item.id)!;
         return { key: after.key, status: after.status, branch: link.branch, prUrl: link.prUrl, prState: link.prState };
       }

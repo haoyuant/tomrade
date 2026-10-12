@@ -850,7 +850,15 @@ this machine's alone (`ctx.repos.selectCheckout(remote, dir)`, verified against
 the folder's origin). If the selected folder is not that checkout, the UI offers
 a separate explicit `ctx.repos.cloneInto(remote, branch, dir)` action which clones
 into a repository-named child of the selected folder; Tomrade never overwrites the
-selected folder's contents. A
+selected folder's contents. A repository can also be added from a folder
+(`ctx.repos.addFromFolder(projectId, dir)`, which only reads it): a folder with
+an origin is added by that origin, reusing a row that names the same repository
+under another spelling; a folder with no origin becomes a **local repository**
+whose identity is its path. Code link then probes and pushes nothing, the agent
+hands its branch over with `link_code` (no pull request), and merging into the
+local default branch finishes the ticket. When such a folder later gains an
+origin, the next scan adopts it as the row's remote (`ctx.repos.adoptOrigins`);
+the row keeps its id. A
 thread on such a workstream runs its engine in a detached worktree of the
 checkout under `<Hub>/worktrees/`, or in the checkout itself when the user
 chose that, and refuses to start while no checkout is named. Tomrade never
@@ -880,6 +888,17 @@ change them live — removing a field or an option takes the values holding it
 (or moves them, with `moveTo`). A value that does not fit its field is refused
 with `FieldValueError` before the write path sees it; built-in ids are refused
 in `fields` because they have their own patch keys.
+
+A plugin may add a **derived** field: a read-only number it computes from its
+own tables in the project's file. `ctx.fields.derive({ id, name, names?, unit?,
+values, expr })` lists it with the built-ins (`derived: true`, filterable and
+sortable, never groupable or written). `values` is `SELECT item_id, value …`
+over every item that has one; `expr` is the same value as a scalar subquery
+over the item aliased `i`, which `items.query` filters and sorts on. The two
+must agree. Items read over IPC carry the value in `fields`, so the renderer's
+evaluator sees it too; items the service hands to writes, undo or export never
+do. The agent plugin derives `cost`: the summed `costUsd` of every run of every
+thread started from the ticket.
 
 `items.query` takes the same `FilterClause[]` / `SortKey[]` a view stores. A
 clause is `{ field, op: "in" | "not-in" | "contains" | "gte" | "lte", values }`,

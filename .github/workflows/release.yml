@@ -20,16 +20,24 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      # The Windows build's macOS makensis aborts on an include path of 265
+      # characters or more; pnpm's folder for app-builder-lib alone is over 100.
+      # An environment variable, so every later pnpm command sees what the
+      # install did and doesn't try to reinstall.
+      pnpm_config_virtual_store_dir_max_length: 60
     strategy:
       fail-fast: false
       matrix:
-        # Everything but Windows runs on the self-hosted Mac (docs/releasing.md),
-        # Linux in a container on it: hosted minutes run out, macOS ones tenfold.
+        # Every build runs on the self-hosted Mac (docs/releasing.md), Linux in
+        # a container on it: hosted minutes run out, macOS ones tenfold.
         include:
           # Both Macs in one job: pnpm installs both arches' native packages and
           # each app keeps its own (apps/desktop/scripts/after-pack.cjs).
           - { name: macOS, slug: mac, os: [self-hosted, macOS, ARM64], args: --mac --arm64 --x64, install: --cpu=arm64 --cpu=x64 }
-          - { name: Windows x64, slug: win-x64, os: windows-2025, args: --win --x64 }
+          # Cross-built: the build's own tools need the Mac's packages, the app
+          # keeps only Windows x64's.
+          - { name: Windows x64, slug: win-x64, os: [self-hosted, macOS, ARM64], args: --win --x64, install: --os=darwin --os=win32 --cpu=arm64 --cpu=x64 }
           # Ubuntu 22.04, the oldest supported, so the AppImage runs on older glibc.
           - { name: Linux x64, slug: linux-x64, os: [self-hosted, Linux, X64], args: --linux --x64 }
     steps:
@@ -58,9 +66,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile ${{ matrix.install }}
 
-      # Fails rather than ship an unsigned Mac build.
+      # Fails rather than ship an unsigned Mac build. By slug, not runner.os: the
+      # Windows job runs on the Mac too, and electron-builder would sign the exe
+      # with whatever CSC_LINK holds.
       - name: Signing credentials
-        if: runner.os == 'macOS'
+        if: matrix.slug == 'mac'
         env:
           MAC_CERTS: ${{ secrets.MAC_CERTS }}
           MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
@@ -87,7 +97,7 @@ jobs:
 
       # electron-builder notarizes the app, not the disk image around it.
       - name: Notarize the disk image
-        if: runner.os == 'macOS'
+        if: matrix.slug == 'mac'
         run: |
           for dmg in apps/desktop/release/*.dmg; do
             xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
@@ -95,7 +105,7 @@ jobs:
           done
 
       - name: Check the signature
-        if: runner.os == 'macOS'
+        if: matrix.slug == 'mac'
         run: |
           for app in apps/desktop/release/mac*/Tomrade.app; do
             codesign --verify --deep --strict --verbose=2 "$app"

@@ -57,6 +57,25 @@ export interface FieldOptionInput {
 
 export type FieldOptionPatch = Partial<Pick<FieldOption, "name" | "description" | "rank">>;
 
+/**
+ * A read-only number a plugin computes from its own tables in the project's
+ * file. Both SQL strings run against that file: `values` lists every item that
+ * has one, `expr` is the value for the item aliased `i` in a view query — the
+ * two must agree, as the renderer sorts on the first and the items service on
+ * the second.
+ */
+export interface DerivedField {
+  id: string;
+  /** English; `names` may say it in the person's language. */
+  name: string;
+  names?: Partial<Record<"en" | "zh", string>>;
+  unit?: "usd";
+  /** `SELECT item_id, value …` — one row per item with a value. */
+  values: string;
+  /** A scalar subquery over `i`, e.g. `SELECT SUM(x) FROM t WHERE t.item_id = i.id`. */
+  expr: string;
+}
+
 /** How a value sits in `item_values`: numbers in `num`, everything else in `text`. */
 export type StoredValue = { num: number | null; text: string | null };
 
@@ -74,8 +93,64 @@ export class Fields extends Service {
   static provide = "fields";
   static inject = ["db"];
 
+  private derivedFields = new Map<string, DerivedField>();
+
   constructor(ctx: Context) {
     super(ctx, "fields");
+  }
+
+  /** Reversible: the field leaves every list, view and query with the plugin that computes it. */
+  derive(field: DerivedField): () => void {
+    if (isBuiltinFieldId(field.id) || this.derivedFields.has(field.id)) throw new FieldDefinitionError(field.id, "that field id is taken");
+    return this.ctx.effect(() => {
+      this.derivedFields.set(field.id, field);
+      return () => this.derivedFields.delete(field.id);
+    }, `fields.derive(${field.id})`);
+  }
+
+  derived(): FieldDef[] {
+    const locale = (this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
+    return [...this.derivedFields.values()].map((f, n) => ({
+      id: f.id,
+      projectId: null,
+      name: f.names?.[locale] ?? f.name,
+      type: "number" as const,
+      builtin: true,
+      options: [],
+      readonly: true,
+      can: { filter: true, sort: true, group: false },
+      rank: BUILTIN_FIELDS.length + n,
+      derived: true,
+      ...(f.unit ? { unit: f.unit } : {})
+    }));
+  }
+
+  /** The scalar SQL for each derived field, for the items service's query compiler. */
+  derivedSql(): Map<string, string> {
+    return new Map([...this.derivedFields.values()].map((f) => [f.id, f.expr]));
+  }
+
+  /** Each item's derived values, by item id. A field whose SQL fails is left out rather than failing the read. */
+  derivedValues(projectId: string): Map<string, Record<string, number>> {
+    const out = new Map<string, Record<string, number>>();
+    if (!this.derivedFields.size || !this.ctx.db.has(projectId)) return out;
+    const db = this.ctx.db.for(projectId);
+    for (const f of this.derivedFields.values()) {
+      let rows: { item_id: string; value: number | null }[];
+      try {
+        rows = db.prepare(f.values).all() as { item_id: string; value: number | null }[];
+      } catch (err) {
+        this.ctx.logger.warn(`derived field ${f.id}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+      for (const r of rows) {
+        if (r.value === null || !Number.isFinite(r.value)) continue;
+        const values = out.get(r.item_id) ?? {};
+        values[f.id] = r.value;
+        out.set(r.item_id, values);
+      }
+    }
+    return out;
   }
 
   [Service.init]() {
@@ -91,7 +166,7 @@ export class Fields extends Service {
 
   /** Built-ins first, then the project's own, each in its rank order. */
   list(projectId: string): FieldDef[] {
-    return [...BUILTIN_FIELDS, ...this.custom(projectId)];
+    return [...BUILTIN_FIELDS, ...this.derived(), ...this.custom(projectId)];
   }
 
   custom(projectId: string): FieldDef[] {
@@ -105,7 +180,7 @@ export class Fields extends Service {
   }
 
   get(projectId: string, id: string): FieldDef | null {
-    const builtin = BUILTIN_FIELDS.find((f) => f.id === id);
+    const builtin = BUILTIN_FIELDS.find((f) => f.id === id) ?? this.derived().find((f) => f.id === id);
     if (builtin) return builtin;
     if (!this.ctx.db.has(projectId)) return null;
     const db = this.ctx.db.for(projectId);
@@ -196,6 +271,7 @@ export class Fields extends Service {
     const out = new Map<string, StoredValue | null>();
     for (const [fieldId, value] of Object.entries(patch)) {
       if (isBuiltinFieldId(fieldId)) throw new FieldValueError(fieldId, "built-in fields are written through their own patch keys");
+      if (this.derivedFields.has(fieldId)) throw new FieldValueError(fieldId, "a derived field is computed, never written");
       const def = defs.get(fieldId);
       if (!def) throw new FieldValueError(fieldId, "no such field in this project");
       // An unticked checkbox is the absence of a value, not a stored zero.
@@ -221,7 +297,7 @@ export class Fields extends Service {
   }
 
   private customRow(db: ProjectDb, id: string): FieldRow {
-    if (isBuiltinFieldId(id)) throw new FieldDefinitionError(id, "built-in fields cannot be changed");
+    if (isBuiltinFieldId(id) || this.derivedFields.has(id)) throw new FieldDefinitionError(id, "built-in fields cannot be changed");
     const row = db.prepare("SELECT * FROM fields WHERE id = ?").get(id) as FieldRow | undefined;
     if (!row) throw new NotFoundError(id);
     return row;
@@ -245,7 +321,8 @@ export class Fields extends Service {
   /** A field's name is its identity in a filter bar, so two cannot share one; built-in names are taken too. */
   private assertNameFree(db: ProjectDb, projectId: string, name: string): void {
     const lower = name.toLowerCase();
-    if (BUILTIN_FIELDS.some((f) => f.name.toLowerCase() === lower)) throw new FieldDefinitionError(name, `"${name}" is a built-in field`);
+    const taken = [...BUILTIN_FIELDS.map((f) => f.name), ...[...this.derivedFields.values()].flatMap((f) => [f.name, ...Object.values(f.names ?? {})])];
+    if (taken.some((n) => n.toLowerCase() === lower)) throw new FieldDefinitionError(name, `"${name}" is a built-in field`);
     const clash = db.prepare("SELECT 1 FROM fields WHERE project_id = ? AND lower(name) = ?").get(projectId, lower);
     if (clash) throw new FieldDefinitionError(name, `a field named "${name}" already exists`);
   }

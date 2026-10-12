@@ -6,7 +6,7 @@
  *
  *   pnpm --filter @tomrade/desktop test:ui        (needs the dev server up)
  */
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
@@ -878,7 +878,7 @@ const run = async () => {
   const ui = repos.boards.list(project.id).find((b) => b.name === "UI");
   check(
     "a workstream row offers the project's repositories",
-    (await $(`[...document.querySelectorAll('.fld-ws[data-board="${ui.id}"] select[aria-label^="Repository of"] option')].map(o => o.textContent).join('|')`)) === `No repository|${sampleRepo.name}`
+    (await $(`[...document.querySelectorAll('.fld-ws[data-board="${ui.id}"] select[aria-label^="Repository of"] option')].map(o => o.textContent).join('|')`)) === `No repository|${sampleRepo.name}|Choose a folder…`
   );
   check("and the path inside the one it stands for", (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-path')?.value`)) === "packages/ui");
   check("and says where its agents start", (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-where')?.textContent ?? ''`)).includes(`${sampleRepo.name}`) && (await $(`document.querySelector('.fld-ws[data-board="${ui.id}"] .fld-ws-where .num')?.textContent`)) === "packages/ui/");
@@ -939,6 +939,9 @@ const run = async () => {
   // ── project settings: the repositories its workstreams stand for ───
   await press(`document.querySelector('.side-project-settings')`);
   await sleep(900);
+  // Settings open on Overview; Repositories is a pane of its own.
+  await press(`[...document.querySelectorAll('.project-settings-split .dlg-nav .side-row')].find((b) => (b.textContent ?? '').includes('Repositories'))`);
+  await sleep(600);
   check("project settings list the project's repositories", (await $(`document.querySelectorAll('#psRepos .repo-row').length`)) === 1);
   check("a repository is named by its remote", (await $(`document.querySelector('#psRepos .repo-remote')?.textContent`)) === sampleRepo.remote);
   check("and by the workstreams that stand for it", (await $(`document.querySelector('#psRepos .repo-used')?.textContent ?? ''`)).includes("UI"));
@@ -959,6 +962,24 @@ const run = async () => {
   ctx.repos.clearCheckout(sampleRepo.remote);
   await sleep(700);
   check("clearing it returns the row to unset", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
+  // A folder with no remote is a repository too: chosen as is, it stays on this machine.
+  const localDir = path.join(WORK, "checkouts", "local-notes");
+  fs.mkdirSync(localDir, { recursive: true });
+  execSync(`git init -q -b main && git -c user.email=dev@localhost -c user.name=Dev commit -q --allow-empty -m start`, { cwd: localDir, stdio: "ignore" });
+  const showOpenDialog = dialog.showOpenDialog;
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [localDir] });
+  check("a folder can be chosen as a repository", await press(`document.querySelector('#psRepos .repos-add-folder')`));
+  await sleep(1200);
+  dialog.showOpenDialog = showOpenDialog;
+  const localRepo = ctx.repos.list(project.id).find((r) => r.remote === localDir);
+  check("a folder with no remote is added by its path, its checkout already set", !!localRepo && ctx.repos.checkout(localDir).checkout === localDir);
+  // Its scan follows any pass already running, so wait for the state rather than call one.
+  for (let i = 0; i < 60 && !ctx.codeLink.repoStates(project.id).some((s) => s.repoId === localRepo?.id && s.remote === "none"); i++) await sleep(250);
+  await sleep(700);
+  check("and reads as a local repository", (await $(`[...document.querySelectorAll('#psRepos .repo-row')].find((r) => r.querySelector('.repo-remote')?.textContent === ${JSON.stringify(localDir)})?.querySelector('.repo-remote-state')?.textContent ?? ''`)).includes("Local repository — no remote"));
+  if (localRepo) ctx.repos.remove(project.id, localRepo.id);
+  ctx.repos.clearCheckout(localDir);
+  await sleep(500);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 

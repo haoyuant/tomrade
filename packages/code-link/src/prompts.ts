@@ -18,21 +18,27 @@ export interface FirstPromptInput {
   /** The workstream's folder inside the repository, '' for the root. */
   subdir?: string;
   completionPolicy?: "merge" | "human";
+  /** The checkout has no origin: nothing is pushed and there is no pull request. */
+  local?: boolean;
 }
 
-const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human") =>
+const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human", local = false) =>
   [
     "Conventions:",
     `- this run owns exactly ${key}; implement only its stated outcome and acceptance criteria`,
     "- use neighboring tickets only for context and dependencies; do not implement their models, screens, flows, APIs, or cleanup while you are here",
-    "- before the first edit, name the smallest expected change; before pushing, inspect the full diff and remove work that is not required by this ticket",
+    `- before the first edit, name the smallest expected change; before ${local ? "handing the branch over" : "pushing"}, inspect the full diff and remove work that is not required by this ticket`,
     "- if required work belongs to another ticket, report it with note_progress and leave it for a separate branch and session",
     `- every commit message names ${key}; never commit to ${defaultBranch}, stay on your branch`,
-    "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
+    local
+      ? `- this repository has no remote: commit on your branch, do not push, do not add a remote, and open no pull request; after the full-diff scope review, call link_code with scopeChecked: true and no prUrl — that moves the ticket to Verifying, and the human merges your branch into ${defaultBranch} here`
+      : "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
     "- call note_progress with one line at each milestone; it is what the ticket shows while you work",
-    "- if git push, fetch, pull or gh fails with an authentication or repository-not-found error, do not switch accounts, edit credential helpers or change the remote; commit locally, call note_progress with 'blocked: push …', and stop — the human owns credentials",
+    local ? "" : "- if git push, fetch, pull or gh fails with an authentication or repository-not-found error, do not switch accounts, edit credential helpers or change the remote; commit locally, call note_progress with 'blocked: push …', and stop — the human owns credentials",
     `- do not mark the ticket done; ${completionPolicy === "merge" ? "the platform completes delivery after all code links merge" : "human acceptance is required, even after code merges; submit required artifacts for review"}`
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
 /** The first message of a thread started from a ticket: the ticket, the place, the protocol. How to code is the repository's CLAUDE.md's business. */
 export function firstPrompt(input: FirstPromptInput): string {
@@ -47,7 +53,7 @@ export function firstPrompt(input: FirstPromptInput): string {
     item.body?.trim() || "(no description yet — read the backlog around it, and ask before assuming)",
     attachmentsLine(item.body),
     "",
-    `Repository: ${repo.name} (${repo.remote}) · default branch ${repo.defaultBranch} · your branch ${branch}.`,
+    `Repository: ${repo.name} (${input.local ? "local, no remote" : repo.remote}) · default branch ${repo.defaultBranch} · your branch ${branch}.`,
     input.subdir ? `This workstream's code lives in ${input.subdir}/ inside the repository — you are started there; keep the work under it, and put shared files (CLAUDE.md, CI) at the repository root.` : "",
     state?.hasBrief
       ? "Read CLAUDE.md or AGENTS.md before writing anything."
@@ -60,13 +66,13 @@ export function firstPrompt(input: FirstPromptInput): string {
       : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",
     mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json and .codex/config.toml: ${mcpUrl}` : "",
     "",
-    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"))
+    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"), input.local)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }
 
 /** Picking a thread back up: where it stopped, what the branch looks like now. */
-export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human"): string {
+export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false): string {
   const parts = [
     `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
     "",
@@ -75,10 +81,10 @@ export function continuePrompt(item: Item, repo: Repo, session: SessionView | nu
     attachmentsLine(item.body),
     "",
     session?.summary ? `Last note: ${session.summary}` : "",
-    link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : " · no pull request yet"}.` : "",
+    link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : local ? "" : " · no pull request yet"}.` : "",
     "Check the working tree and the tests, then carry on where you stopped. get_item has the ticket's latest state if you need it.",
     "",
-    conventions(item.key, repo.defaultBranch, completionPolicy)
+    conventions(item.key, repo.defaultBranch, completionPolicy, local)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }

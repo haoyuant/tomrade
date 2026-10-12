@@ -37,6 +37,9 @@ export const remoteIdentity = (remote: string): RemoteIdentity | null => {
   return scp ? { host: canonicalHost(scp[1]!), path: canonicalPath(scp[2]!), ssh: true } : null;
 };
 
+/** A path or file URL: a repository with no server behind it, known only by where it is. */
+export const isLocalRemote = (remote: string): boolean => remoteIdentity(remote) === null;
+
 /** The real server behind an alias in ~/.ssh/config (`Host github.com-work` → `HostName github.com`), or the name itself. */
 export const sshHostName = (host: string): Promise<string> =>
   new Promise((resolve) => {
