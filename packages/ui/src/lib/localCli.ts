@@ -65,7 +65,7 @@ export const LOCAL_AGENTS: Record<string, { name: string; install: (platform: st
   }
 };
 
-export type EngineStatus = "ready" | "missing" | "broken" | "wsl" | "sign-in" | "service" | "other";
+export type EngineStatus = "ready" | "missing" | "broken" | "wsl" | "sign-in" | "service" | "model" | "other";
 
 export function engineStatus(engine: EngineView): EngineStatus {
   if (engine.ok) return "ready";
@@ -73,7 +73,9 @@ export function engineStatus(engine: EngineView): EngineStatus {
   if (engine.need === "install") return "missing";
   if (engine.need === "repair") return "broken";
   if (engine.need === "sign-in") return "sign-in";
-  if (engine.need === "service") return "service";
+  if (engine.need === "model") return "model";
+  // "service" names the MCP server only for a local agent; any other engine says which service itself.
+  if (engine.need === "service" && engine.cli) return "service";
   return "other";
 }
 
@@ -82,7 +84,8 @@ const STATE_KEYS: Record<Exclude<EngineStatus, "ready" | "other">, MessageKey> =
   broken: "localCli.stateBroken",
   wsl: "localCli.stateWsl",
   "sign-in": "localCli.stateSignIn",
-  service: "localCli.stateService"
+  service: "localCli.stateService",
+  model: "localCli.stateModel"
 };
 
 /** One short phrase for an engine's state, in the person's language — fits a select option or a row's end. */

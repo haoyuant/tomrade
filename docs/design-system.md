@@ -299,7 +299,12 @@ agent's row, which shows the chosen file, the sign-in step and a short state;
 a path that does not run is refused before it is saved, automatic detection
 takes a chosen path back, Check again skips the cache, and a Windows CLI found
 only in WSL gets its own warning, the full guide (`where codex` included) and
-diagnostics naming the platform, the folders searched and PATH — 25 checks.
+diagnostics naming the platform, the folders searched and PATH; the panel's
+engine picker lists what can run first and greys the rest with a short reason
+and Set up, which opens Settings on that engine (the models, for an engine with
+none) and never switches or creates a thread; the setup card asks for a local
+agent while a model is ready, and its Check again finds one signed in meanwhile,
+after which the picker offers it — 45 checks.
 `test:onboarding` (`scripts/onboarding-check.mjs`) is a first run left alone:
 the app opens on the sample project and nothing else, its seed absent from
 History and from the account's catalog; its Learning path view draws as a

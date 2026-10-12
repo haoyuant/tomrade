@@ -92,7 +92,9 @@ export function MenuRadioItem({
   name,
   sub,
   count,
-  actions
+  actions,
+  unready,
+  title
 }: {
   checked: boolean;
   onSelect: () => void;
@@ -101,9 +103,13 @@ export function MenuRadioItem({
   sub?: string;
   count?: number;
   actions?: ReactNode;
+  /** A choice that cannot be made yet: drawn greyed but still reachable, `onSelect` going to where it is fixed, which this names. */
+  unready?: string;
+  /** The whole of a `sub` that may not fit. */
+  title?: string;
 }) {
   return (
-    <RadixMenu.Item className="menu-row is-radio" role="menuitemradio" aria-checked={checked} onSelect={onSelect}>
+    <RadixMenu.Item className={cn("menu-row is-radio", unready && "is-unready")} role="menuitemradio" aria-checked={checked} title={title} onSelect={onSelect}>
       <Check />
       {mark && <span className="m-mark">{mark}</span>}
       {sub ? (
@@ -116,6 +122,7 @@ export function MenuRadioItem({
       )}
       {count !== undefined && <span className="m-count">{count}</span>}
       {actions && <span className="m-actions" onClick={(event) => event.stopPropagation()}>{actions}</span>}
+      {unready && <span className="m-go">{unready} →</span>}
     </RadixMenu.Item>
   );
 }

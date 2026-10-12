@@ -17,6 +17,7 @@ import { useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, us
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
 import { permissionLabel as permissionName } from "~/lib/codeLink";
+import { engineStateLabel } from "~/lib/localCli";
 
 const MIN_W = 352;
 const MAX_W = 616;
@@ -919,6 +920,8 @@ export function AgentPanel({
           <Menu
             label={t("agentPanel.engineLabel")}
             align="end"
+            // the window does not refetch on focus: a CLI signed in or a model saved meanwhile shows the next time this opens
+            onOpenChange={(open) => { if (open) void engines.refetch(); }}
             trigger={
               <button type="button" className="tag chip-btn" title={t("agentPanel.whoConducts")}>
                 {engine?.title ?? currentEngineId}
@@ -928,13 +931,17 @@ export function AgentPanel({
             }
           >
             <MenuHead title={t("agentPanel.whoDoesWork")} />
-            {(engines.data ?? []).map((e) => (
+            {/* An engine that is not set up, or fails its check, cannot conduct: it is greyed and leads to its Settings row. */}
+            {[...(engines.data ?? [])].sort((a, b) => Number(b.ok) - Number(a.ok)).map((e) => (
               <MenuRadioItem
                 key={e.id}
                 checked={e.id === currentEngineId}
                 name={e.title}
-                sub={e.ok ? undefined : e.reason}
+                sub={e.ok ? undefined : t("agentPanel.engineNotSetUp", { state: engineStateLabel(e, t, t("settingsDialog.engineUnavailable")) })}
+                unready={e.ok ? undefined : t("localCli.configure")}
+                title={e.ok ? undefined : e.reason}
                 onSelect={() => {
+                  if (!e.ok) return onOpenSettings(e.need === "model" ? undefined : e.id);
                   if (busy || e.id === currentEngineId) return;
                   if (threadId) setEngine.mutate({ threadId, engineId: e.id });
                   else void openThread({ engine: e.id, boardId }).then((th) => pickThread(th.id));
