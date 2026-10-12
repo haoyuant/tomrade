@@ -96,9 +96,11 @@ export function TabStrip() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || document.documentElement.classList.contains("overlay-open")) return;
+      // In the note editor a Mac's Ctrl chords move the caret; only ⌘ is ours there.
+      const lenientCtrl = !(document.activeElement as HTMLElement | null)?.isContentEditable;
       const order: (FileTab | null)[] = [null, ...state.tabs];
       const at = activeIndex + 1;
-      if (hits(e, "closeTab", { lenientCtrl: true })) {
+      if (hits(e, "closeTab", { lenientCtrl })) {
         e.preventDefault();
         if (activeIndex >= 0) close((_, i) => i === activeIndex);
       } else if (hits(e, "nextTab") || hits(e, "prevTab")) {
@@ -107,7 +109,7 @@ export function TabStrip() {
         const target = order[(at + step + order.length) % order.length];
         if (target) goTab(target);
         else goBacklog();
-      } else if (hits(e, "backlogTab", { lenientCtrl: true })) {
+      } else if (hits(e, "backlogTab", { lenientCtrl })) {
         e.preventDefault();
         if (filePath !== null) goBacklog();
       }
