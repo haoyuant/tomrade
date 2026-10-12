@@ -10,7 +10,7 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-Every installer builds on the self-hosted Mac (below): the Mac ones (arm64 and x64), the Windows one (NSIS, unsigned), and the Linux AppImage. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+Every installer builds on the self-hosted Mac (below), each in a job of its own and all at once: the Mac ones (arm64 and x64), the Windows one (NSIS, unsigned), and the Linux AppImage. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
 A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces the files on the existing draft.
 
@@ -35,19 +35,21 @@ gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ## Self-hosted runners: the Mac mini
 
-Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job runs on runners on the Mac mini, which GitHub still schedules then: the Mac, Windows, and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy.
+Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job runs on runners on the Mac mini, which GitHub still schedules then: the Mac, Windows, and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy. Three Mac runners carry the same labels, so the two Mac builds and the Windows one run side by side, as they would on hosted runners: a release takes about as long as its slowest build, which is mostly waiting for Apple's notary service.
 
 | Runner | Repository | Labels |
 | --- | --- | --- |
-| `~/actions-runners/tomrade-mac-arm64` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
+| `~/actions-runners/tomrade-mac-arm64`, `-2`, `-3` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
 | Docker container `actions-runner-haoyuant-tomrade` | haoyuant/tomrade | `self-hosted, Linux, X64` |
 | `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
-One job builds both Macs on the arm64 runner. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves each app only its own esbuild. It also drops the agent SDK's bundled Claude Code binary from every app: the Claude Code engine runs the person's own `claude`, like the other local agents. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time.
+The x64 Mac app builds on the arm64 Mac. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves the app only its own esbuild. It also drops the agent SDK's bundled Claude Code binary from every app: the Claude Code engine runs the person's own `claude`, like the other local agents. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time. Each Mac build writes an update manifest listing only its own zip; the release job merges the two.
 
-Windows is cross-built on the same runner, in a job of its own, so the two queue. No Wine: electron-builder edits the exe's resources in JavaScript, runs NSIS's macOS `makensis`, and pulls the uninstaller out of the installer itself. `pnpm install --os=darwin --os=win32 --cpu=arm64 --cpu=x64` installs the Mac packages the build runs on beside Windows', and `after-pack.cjs` drops all but win32-x64 (left in, they double the installer). makensis aborts on an include path of 265 characters or more, and electron-builder reports only `makensis process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE`. pnpm's folder for app-builder-lib makes that path 262 characters in the runner's work folder, so the job sets `pnpm_config_virtual_store_dir_max_length: 60`, which brings it to 216. It must stay an environment variable: pnpm checks that each later command sees the settings the install used, and a `--config.` flag on the install alone sends `pnpm exec` back to reinstall.
+The Mac builds sign from one keychain, `~/Library/Keychains/tomrade-signing.keychain-db`, which the workflow's first job remakes from `MAC_CERTS` on every run and adds to the user's keychain search list (codesign builds the certificate chain from that list). Each build unlocks it with `MAC_CERTS_PASSWORD` and hands it to electron-builder as `CSC_KEYCHAIN`. Given `CSC_LINK` instead, electron-builder makes a keychain per build and rewrites the search list to add it, and two builds doing that at once drop each other's: codesign then fails with `errSecInternalComponent`. The Developer ID stays on the Mac between releases, locked after an hour unused. Runs of the workflow wait for each other, so one never remakes the keychain under another's builds.
 
-The Mac runners are LaunchAgents, so they run while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh`, Xcode, and the Developer ID come from the machine.
+Windows is cross-built on a Mac runner too. No Wine: electron-builder edits the exe's resources in JavaScript, runs NSIS's macOS `makensis`, and pulls the uninstaller out of the installer itself. `pnpm install --os=darwin --os=win32 --cpu=arm64 --cpu=x64` installs the Mac packages the build runs on beside Windows', and `after-pack.cjs` drops all but win32-x64 (left in, they double the installer). makensis aborts on an include path of 265 characters or more, and electron-builder reports only `makensis process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE`. pnpm's folder for app-builder-lib makes that path 262 characters in the runner's work folder, so the job sets `pnpm_config_virtual_store_dir_max_length: 60`, which brings it to 216. It must stay an environment variable: pnpm checks that each later command sees the settings the install used, and a `--config.` flag on the install alone sends `pnpm exec` back to reinstall.
+
+The Mac runners are LaunchAgents, so they run while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh` and Xcode come from the machine.
 
 The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. It restarts with Docker Desktop, so Docker Desktop must be running for a release. The build peaks around 2 GB of the Docker VM's memory: if a step dies with exit code 137, the VM ran out.
 
@@ -56,6 +58,8 @@ The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Docker
 ```sh
 export GH_TOKEN=$(gh auth token --user haoyuant)
 .github/runners/setup.sh arm64 haoyuant/tomrade
+.github/runners/setup.sh arm64 haoyuant/tomrade 2
+.github/runners/setup.sh arm64 haoyuant/tomrade 3
 .github/runners/setup.sh linux haoyuant/tomrade
 .github/runners/setup.sh arm64 haoyuant/tomrade-site
 ```
