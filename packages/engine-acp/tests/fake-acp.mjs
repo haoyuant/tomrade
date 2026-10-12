@@ -101,6 +101,7 @@ async function prompt(id, p) {
   if (text.includes('WAIT_FOREVER')) { waiting = id; return; }
   if (text.includes('CRASH')) process.exit(3);
   if (text.includes('FAIL')) return send({ id, error: { code: -32000, message: 'Authentication required' } });
+  if (text.includes('REFUSE_SAYING')) return send({ id, result: { stopReason: 'refusal', _meta: { reason: 'upstream said no' } } });
   if (text.includes('REFUSE')) return send({ id, result: { stopReason: 'refusal' } });
   if (text.includes('SILENT')) {
     // As Hermes does: a call starts and is asked about, and its end is never reported.

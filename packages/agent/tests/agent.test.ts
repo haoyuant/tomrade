@@ -51,6 +51,34 @@ describe("the loop engine on the platform", () => {
     expect(errors[0]?.block).toEqual({ type: "error", text: "The selected model is unavailable." });
   });
 
+  it("folds what an engine knew under its error, and describes an error it threw", async () => {
+    const { ctx, agent, project } = await boot([]);
+    agent.engine({
+      id: "explaining",
+      title: "Explaining engine",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      turn: async () => ({ stop: "error", error: "Agent stopped", details: "── stderr ──\nquota exhausted" })
+    });
+    agent.engine({
+      id: "throwing",
+      title: "Throwing engine",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      turn: async () => { throw Object.assign(new Error("request failed", { cause: new Error("socket hang up") }), { status: 502 }); }
+    });
+    const errorOf = async (engine: string) => {
+      const thread = agent.newThread(project.id, engine);
+      const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "hello" });
+      await settled(ctx, project.id, runId);
+      return agent.store.messages(project.id, thread.id).find((entry) => entry.block.type === "error")?.block;
+    };
+    expect(await errorOf("explaining")).toEqual({ type: "error", text: "Agent stopped", details: "── stderr ──\nquota exhausted" });
+    const thrown = await errorOf("throwing");
+    expect(thrown).toMatchObject({ type: "error", text: "request failed" });
+    expect(thrown?.type === "error" && thrown.details).toMatch(/status: 502[\s\S]*caused by Error: socket hang up/);
+  });
+
   it("hands a tool the run's signal, so cancelling the run stops the call", async () => {
     const { ctx, agent, project } = await boot([]);
     let started = false;

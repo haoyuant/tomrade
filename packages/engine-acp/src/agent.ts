@@ -59,6 +59,11 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   setup?: EngineSetup;
   /** Effort levels to offer before a session has advertised its own. */
   efforts?: string[];
+  /**
+   * The agent's own words for a turn it ended on "refusal" — some agents end
+   * every failed turn that way and put the reason in the answer's `_meta`.
+   */
+  failure?(response: Record<string, any>): string | undefined;
   /** What gets a signed-out agent going, said after its own error. */
   signIn?: string;
   /** A run that tells whether the agent can work yet; it may also fill in the model list. */

@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
-import { attachedMedia, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, describeFailure, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bindTurn, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
@@ -324,7 +324,7 @@ export class AcpRuntime implements Runtime {
       }
     };
 
-    const result = (stop: TurnResult["stop"], error?: string): TurnResult => {
+    const result = (stop: TurnResult["stop"], error?: string, details?: string): TurnResult => {
       let costUsd: number | undefined;
       if (cost !== undefined) { costUsd = cost - (this.sessionCost ?? 0); this.sessionCost = cost; }
       if (tokens.cacheRead !== undefined) {
@@ -335,7 +335,7 @@ export class AcpRuntime implements Runtime {
       const model = this.option("model")?.currentValue ?? this.models?.currentModelId;
       if (model) metrics.providerModel = String(model);
       return {
-        stop, ...(error ? { error } : {}), ...(counted ? { usage: { inputTokens: tokens.input, outputTokens: tokens.output } } : {}),
+        stop, ...(error ? { error } : {}), ...(details ? { details } : {}), ...(counted ? { usage: { inputTokens: tokens.input, outputTokens: tokens.output } } : {}),
         ...(costUsd && costUsd > 0 ? { costUsd } : {}), resume: this.session, metrics
       };
     };
@@ -368,12 +368,16 @@ export class AcpRuntime implements Runtime {
       }
       if (stop === "max_tokens") return result("error", "The model reached its output limit before it finished");
       if (stop === "max_turn_requests") return result("budget", `${this.agent.title} reached its limit of model requests for one turn`);
-      if (stop === "refusal") return result("error", `${this.agent.title} refused to go on`);
+      if (stop === "refusal") {
+        const said = this.agent.failure?.(response);
+        return result("error", said ? `${this.agent.title} stopped: ${said}` : `${this.agent.title} refused to go on`, describeFailure({ response, stderr: this.conn?.stderrTail }));
+      }
       return result(binding.asked() ? "asked" : "end");
     } catch (error) {
       flush();
+      const stderr = this.conn?.stderrTail;
       this.close();
-      return result(cancelled ? "cancelled" : "error", cancelled ? undefined : this.explain(error));
+      return result(cancelled ? "cancelled" : "error", cancelled ? undefined : this.explain(error), cancelled ? undefined : describeFailure({ error, stderr }));
     } finally {
       io.signal.removeEventListener("abort", abort); clearTimeout(abortTimer);
       this.listener = undefined; this.io = undefined;

@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { codexMediaInput, publishNativeImage } from "@tomradex/agent";
+import { codexMediaInput, describeFailure, publishNativeImage } from "@tomradex/agent";
 import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
 
@@ -74,7 +74,7 @@ export class CodexRuntime implements Runtime {
       const pending = this.pending.get(msg.id);
       if (!pending) return;
       this.pending.delete(msg.id); clearTimeout(pending.timer);
-      if (msg.error) pending.reject(new Error(msg.error.message ?? "Codex protocol error"));
+      if (msg.error) pending.reject(Object.assign(new Error(msg.error.message ?? "Codex protocol error"), { code: msg.error.code, data: msg.error.data }));
       else pending.resolve(msg.result ?? {});
     } else if (msg.id !== undefined) {
       void this.respondToRequest(msg).catch((error) => { this.fail(new Error(String(error))); this.close(); });
@@ -115,7 +115,10 @@ export class CodexRuntime implements Runtime {
     let finish!: (value: TurnResult) => void;
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seen = new Set<string>();
-    this.failure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : error.message, resume: this.session, usage, metrics });
+    // Codex says each failed attempt before it gives up; the last few explain the failure.
+    const attempts: Json[] = [];
+    this.failure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : error.message,
+      details: cancelled ? undefined : describeFailure({ error, attempts: attempts.length ? attempts : undefined, stderr: this.stderr }), resume: this.session, usage, metrics });
     const abort = () => {
       cancelled = true;
       if (!turnId) { this.close(); return; }
@@ -143,7 +146,8 @@ export class CodexRuntime implements Runtime {
         io.progress(usage);
       }
       if (params.turnId && turnId && params.turnId !== turnId) return;
-      if (method === "item/agentMessage/delta") {
+      if (method === "error") { attempts.push(params); if (attempts.length > 3) attempts.shift(); }
+      else if (method === "item/agentMessage/delta") {
         metrics.firstTokenMs ??= performance.now() - start;
         io.delta(params.delta);
       } else if (method === "item/completed") {
@@ -156,7 +160,8 @@ export class CodexRuntime implements Runtime {
         if (["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall"].includes(item.type)) metrics.toolCalls!++;
       } else if (method === "turn/completed" && params.turn.id === turnId) {
         finish({ stop: cancelled || params.turn.status === "interrupted" ? "cancelled" : params.turn.status === "failed" ? "error" : binding.asked() ? "asked" : "end",
-          error: params.turn.error?.message, resume: this.session, usage, metrics });
+          error: params.turn.error?.message, resume: this.session, usage, metrics,
+          ...(params.turn.status === "failed" && !cancelled ? { details: describeFailure({ error: params.turn.error, attempts: attempts.length ? attempts : undefined, stderr: this.stderr }) } : {}) });
       }
     };
     io.signal.addEventListener("abort", abort, { once: true });
@@ -169,7 +174,7 @@ export class CodexRuntime implements Runtime {
         { cwd: this.cwd, env: { ...process.env, ...input.env, TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
         const reader = readline.createInterface({ input: this.child.stdout });
         reader.on("line", (line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } });
-        this.child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-1000); });
+        this.child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-2000); });
         this.child.on("error", (error) => { this.fail(error); this.close(); });
         this.child.stdin.on("error", (error) => { this.fail(error); this.close(); });
         this.child.on("close", (code) => { reader.close(); this.fail(new Error(`Codex exited with ${code}: ${this.stderr.slice(-400)}`)); this.alive = false; });
@@ -203,7 +208,8 @@ export class CodexRuntime implements Runtime {
       return result;
     } catch (error) {
       this.close();
-      return { stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error), resume: this.session, usage, metrics };
+      return { stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error),
+        details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, usage, metrics };
     } finally {
       io.signal.removeEventListener("abort", abort); clearTimeout(interruptTimer);
       this.notification = undefined; this.failure = undefined; this.activeIO = undefined;

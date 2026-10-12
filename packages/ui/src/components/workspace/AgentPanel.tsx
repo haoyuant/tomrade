@@ -238,20 +238,31 @@ function RunMetrics({ run }: { run: RunView | undefined }) {
 
 /**
  * A run that failed says what the person can do about it — the key, the
- * model's name, a moment's wait — and keeps the raw message under Details.
+ * model's name, a moment's wait — and keeps the raw message and whatever the
+ * engine knew besides under Details: folded, so a trace never floods the
+ * thread, and one click from a bug report.
  */
-function ErrorBlock({ text, onOpenSettings, onRetry }: { text: string; onOpenSettings: () => void; onRetry?: () => void }) {
+function ErrorBlock({ text, details, onOpenSettings, onRetry }: { text: string; details?: string; onOpenSettings: () => void; onRetry?: () => void }) {
   const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
   const kind = modelErrorKind(text);
   const head = kind === "other" ? null : t(`agentPanel.error_${kind}` as MessageKey);
   const fixInSettings = kind === "auth" || kind === "model" || kind === "quota";
+  const folded = [head ? text : null, details].filter(Boolean).join("\n\n");
+  const copy = () => void navigator.clipboard?.writeText([text, details].filter(Boolean).join("\n\n")).then(() => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  });
   return (
     <div className="ai-error" role="alert">
       <p>{head ?? text}</p>
-      {head && (
+      {folded && (
         <details className="ai-error-details">
           <summary>{t("agentPanel.errorDetails")}</summary>
-          <code>{text}</code>
+          <pre>{folded}</pre>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={copy}>
+            <Icon name="i-copy" size={11} /> {copied ? t("agentPanel.errorCopied") : t("agentPanel.errorCopy")}
+          </button>
         </details>
       )}
       {(fixInSettings || onRetry) && (
@@ -309,7 +320,7 @@ function Row({ projectId, m, runs, pending, byKey, onOpenIssue, onAnswer, onReve
     ) : b.type === "changes" ? (
       <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
     ) : b.type === "error" ? (
-      <ErrorBlock text={b.text} onOpenSettings={onOpenSettings} onRetry={onRetry} />
+      <ErrorBlock text={b.text} details={b.details} onOpenSettings={onOpenSettings} onRetry={onRetry} />
     ) : b.type === "status" ? (
       <p className="ai-pending">{b.text}</p>
     ) : null;

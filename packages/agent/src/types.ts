@@ -27,7 +27,8 @@ export type Block =
   | { type: "status"; text: string }
   | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
   | { type: "note"; text: string }
-  | { type: "error"; text: string };
+  /** `details`: what the engine knew beyond the one line, folded under it so it can be read and copied. */
+  | { type: "error"; text: string; details?: string };
 
 export interface ThreadMessage {
   id: string;
@@ -245,6 +246,8 @@ export interface TurnResult {
   usage?: { inputTokens?: number; outputTokens?: number };
   costUsd?: number;
   error?: string;
+  /** Everything else known about the failure (see describeFailure); shown folded under `error`. */
+  details?: string;
   /** External session id to store on the thread for the next turn. */
   resume?: string;
   metrics?: import("./evaluation.js").TurnMetrics;

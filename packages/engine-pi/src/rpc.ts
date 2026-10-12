@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { attachedMedia, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, describeFailure, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { bridgeSource } from "./bridge.js";
@@ -133,7 +133,7 @@ export class PiRuntime implements Runtime {
     const child = spawnCli(start.launch, args, { cwd: this.cwd, env: { ...process.env, ...start.env, ...input.env }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stdout.on("data", lineSplitter((line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } }));
-    child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-1000); });
+    child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-2000); });
     child.on("error", (error) => { this.fail(error); this.close(); });
     child.stdin.on("error", (error) => { this.fail(error); this.close(); });
     child.on("close", (code) => { this.fail(new Error(`Pi exited with ${code}: ${this.stderr.slice(-400)}`)); this.alive = false; });
@@ -163,12 +163,14 @@ export class PiRuntime implements Runtime {
     let abortTimer: NodeJS.Timeout | undefined;
     let finish!: (value: TurnResult) => void;
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
-    const result = (stop: TurnResult["stop"], error?: string): TurnResult => ({
-      stop, ...(error ? { error } : {}), usage: counted(), ...(total.cost > 0 ? { costUsd: total.cost } : {}), resume: this.session,
+    const result = (stop: TurnResult["stop"], error?: string, details?: string): TurnResult => ({
+      stop, ...(error ? { error } : {}), ...(details ? { details } : {}), usage: counted(), ...(total.cost > 0 ? { costUsd: total.cost } : {}), resume: this.session,
       metrics: { ...metrics, uncachedInputTokens: total.input, cacheReadTokens: total.cacheRead, cacheWriteTokens: total.cacheWrite }
     });
     const calls = new Map<string, unknown>();
-    this.onFailure = (error) => finish(result(cancelled ? "cancelled" : "error", cancelled ? undefined : error.message));
+    this.onFailure = (error) => finish(cancelled ? result("cancelled") : result("error", error.message, describeFailure({ error, stderr: this.stderr })));
+    // The model's last reply without its text: provider, model, stop reason and Pi's own error words.
+    const lastSaid = () => { if (!last) return undefined; const { content: _, ...rest } = last; return rest; };
     this.onEvent = (event) => {
       switch (event.type) {
         case "message_update": {
@@ -210,7 +212,7 @@ export class PiRuntime implements Runtime {
           break;
         case "agent_settled":
           if (cancelled || event.aborted) finish(result("cancelled"));
-          else if (last?.stopReason === "error") finish(result("error", last.errorMessage ?? retryError ?? "Pi reported an error"));
+          else if (last?.stopReason === "error") finish(result("error", last.errorMessage ?? retryError ?? "Pi reported an error", describeFailure({ reply: lastSaid(), retries: retryError, stderr: this.stderr })));
           else if (last?.stopReason === "length") finish(result("error", "The model reached its output limit before it finished"));
           else finish(result(binding.asked() ? "asked" : "end"));
           break;
@@ -238,7 +240,7 @@ export class PiRuntime implements Runtime {
       return outcome;
     } catch (error) {
       this.close();
-      return result(cancelled ? "cancelled" : "error", cancelled ? undefined : error instanceof Error ? error.message : String(error));
+      return cancelled ? result("cancelled") : result("error", error instanceof Error ? error.message : String(error), describeFailure({ error, stderr: this.stderr }));
     } finally {
       io.signal.removeEventListener("abort", abort); clearTimeout(abortTimer);
       this.onEvent = undefined; this.onFailure = undefined; this.activeIO = undefined;

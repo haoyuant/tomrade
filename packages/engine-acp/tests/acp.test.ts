@@ -149,8 +149,10 @@ describe("an ACP agent as an engine", () => {
     io.signal = new AbortController().signal; io.resume = cancelled.resume;
     const failed = await engine.turn(turnInput({ input: { kind: "text", text: "FAIL" } }), io);
     expect(failed).toMatchObject({ stop: "error", error: "Authentication required — run fake login, then try again", resume: cancelled.resume });
+    expect(failed.details).toMatch(/AcpError: Authentication required\ncode: -32000/);
     const refused = await engine.turn(turnInput({ input: { kind: "text", text: "REFUSE" } }), io);
     expect(refused).toMatchObject({ stop: "error", error: "Fake refused to go on" });
+    expect(refused.details).toContain('"stopReason": "refusal"');
     expect(refused.metrics?.runtime).toBe("cold");
     // Reopened, not restarted: no second copy of the instructions.
     expect(sent("session/resume").map((r) => r.params.sessionId)).toEqual([cancelled.resume]);
@@ -159,6 +161,14 @@ describe("an ACP agent as an engine", () => {
     const crashed = await engine.turn(turnInput({ input: { kind: "text", text: "CRASH" } }), io);
     expect(crashed.stop).toBe("error");
     expect(crashed.error).toMatch(/Fake exited with 3/);
+  });
+
+  it("says the agent's own words for a refusal, with its whole answer under details", async () => {
+    const engine = createAcpEngine(ctx, spec({ failure: (response) => response._meta?.reason }));
+    const { io } = turnIO();
+    const refused = await engine.turn(turnInput({ input: { kind: "text", text: "REFUSE_SAYING" } }), io);
+    expect(refused).toMatchObject({ stop: "error", error: "Fake stopped: upstream said no" });
+    expect(refused.details).toMatch(/── response ──[\s\S]*"reason": "upstream said no"/);
   });
 
   it("answers permission requests for the turn's policy: always Tomrade's tools, the person when asked, refusals when read-only", async () => {

@@ -50,6 +50,7 @@ import {
 } from "./types.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
+import { describeFailure, redactSecrets } from "./failure.js";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 export interface WorkdirStatus {
@@ -1283,7 +1284,7 @@ export class Agent extends Service {
       if (rc.abort.signal.aborted) {
         result = { stop: "cancelled" };
       } else {
-        result = { stop: "error", error: message(err) };
+        result = { stop: "error", error: message(err), details: describeFailure({ error: err }) };
       }
     } finally {
       this.finish(rc, await this.runFollowUps(rc, result ?? { stop: "error", error: "engine returned nothing" }));
@@ -1406,7 +1407,7 @@ export class Agent extends Service {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().budget }, rc.run.id);
     }
     if (result.stop === "error") {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: result.error ?? "The engine stopped without an error message." }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: redactSecrets(result.error ?? "The engine stopped without an error message."), ...(result.details ? { details: result.details } : {}) }, rc.run.id);
     }
     // Settings and anything else an undo provider tracks by run count too, and go with the run's Undo.
     const elsewhere = this.ctx.oplog.runChanges(rc.projectId, rc.run.id);

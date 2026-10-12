@@ -144,13 +144,18 @@ export class OpenAiCompatible implements ChatModel {
     }
     if (request.json) body.response_format = { type: "json_object" };
 
-    const res = await this.post(this.config.baseURL.replace(/\/$/, "") + "/chat/completions", {
+    const url = this.config.baseURL.replace(/\/$/, "") + "/chat/completions";
+    const res = await this.post(url, {
       method: "POST",
       headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal
     });
-    if (!res.ok) throw new LlmError(`LLM request failed ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
+      throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
+    }
     if (!res.body) throw new LlmError("LLM response had no body");
 
     const calls = new Map<number, { id: string; name: string; args: string }>();

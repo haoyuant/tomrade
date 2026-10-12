@@ -1259,6 +1259,11 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .ai-error-details { margin-top: 4px; color: var(--meta); font-size: var(--text-xs); }
 .ai-error-details summary { cursor: pointer; }
 .ai-error-details code { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); }
+.ai-error-details pre {
+  margin: 4px 0; max-height: 240px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-xs);
+}
+.ai-error-details .btn { color: var(--meta); }
 /* the pending line reads as unresolved without animating — nothing here
    loops, so reduced-motion needs no special case */
 .ai-pending { color: var(--meta); font-size: 14px; line-height: var(--leading-dense); }

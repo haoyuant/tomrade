@@ -121,19 +121,18 @@ describe("pet plugin lifecycle", () => {
     expect(ipc.handlers.has("pet.state")).toBe(true);
     ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
     expect(ipc.handlers.get("pet.state")?.("thread")).toMatchObject({ mood: "thinking" });
+    // A finished turn's outcome stays until the thread runs again, a success as much as a failure.
     vi.useFakeTimers();
     ctx.emit("agent/event", "thread", { type: "done", run: run("done") });
+    vi.advanceTimersByTime(60_000);
     expect(ctx.pet.state("thread").mood).toBe("success");
-    vi.advanceTimersByTime(2_999);
-    expect(ctx.pet.state("thread").mood).toBe("success");
-    vi.advanceTimersByTime(1);
-    expect(ctx.pet.state("thread").mood).toBe("idle");
-    // A failed turn rests too: the pet reflects the turn, not the thread.
     ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
+    expect(ctx.pet.state("thread").mood).toBe("thinking");
     ctx.emit("agent/event", "thread", { type: "done", run: run("error") });
+    vi.advanceTimersByTime(60_000);
     expect(ctx.pet.state("thread").mood).toBe("error");
-    vi.advanceTimersByTime(3_000);
-    expect(ctx.pet.state("thread").mood).toBe("idle");
+    ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
+    expect(ctx.pet.state("thread").mood).toBe("thinking");
     vi.useRealTimers();
 
     const current = ctx.settings.get();

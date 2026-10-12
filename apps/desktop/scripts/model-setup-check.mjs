@@ -98,7 +98,7 @@ const run = async () => {
   // the adapter waits 1 s and then 3 s between its tries before the error surfaces
   await sleep(6500);
   check("a 503 reads as the service's own error, not raw JSON", (await $(`document.querySelector('.ai-error p')?.textContent ?? ''`)) === "The model service had an error of its own.");
-  check("with the raw message kept under Details", (await $(`document.querySelector('.ai-error details code')?.textContent ?? ''`)).includes("503"));
+  check("with the raw message kept under Details", (await $(`document.querySelector('.ai-error details pre')?.textContent ?? ''`)).includes("503"));
   await press(`document.querySelector('.ai-error') && ${button("Try again")}`);
   await sleep(2500);
   check("Try again sends the message again, and it answers", (await $(`[...document.querySelectorAll('.ai-scroll .turn-ai')].pop()?.textContent ?? ''`)).includes("pong"));
