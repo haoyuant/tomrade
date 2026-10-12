@@ -19,7 +19,16 @@ export interface AccountInfo {
   owner: { email: string | null } | null;
   /** Set while another account's sign-in restarts Tomrade into that account's own local Hub. */
   switchingTo: string | null;
+  /** Which dated Terms of Service and Privacy Policy this account agreed to, against the ones this build asks for. */
+  terms: { current: string; accepted: string | null };
 }
+
+/**
+ * The `updated` date of the Terms of Service and Privacy Policy on tomrade.com that this build
+ * asks people to agree to. A material change to either gets a new date there and here.
+ */
+export const TERMS_VERSION = "2026-10-12";
+const termsRecord = (version: string) => ({ terms_version: version, terms_accepted_at: new Date().toISOString() });
 
 /**
  * The machine's local Hubs, one per account. The desktop shell supplies it;
@@ -37,8 +46,9 @@ declare module "cordis" { interface Context { cloudHub: CloudHub } }
 declare module "@tomradex/ipc" {
   interface Channels {
     "account.info": () => AccountInfo;
-    "account.signIn": (email: string, password: string) => AccountInfo;
-    "account.signUp": (email: string, password: string, lang?: string) => { confirmationRequired: boolean };
+    "account.signIn": (email: string, password: string, agreed?: boolean) => AccountInfo;
+    "account.signUp": (email: string, password: string, lang?: string, agreed?: boolean) => { confirmationRequired: boolean };
+    "account.acceptTerms": () => AccountInfo;
     "account.resendConfirmation": (email: string, lang?: string) => void;
     "account.resetPassword": (email: string, lang?: string) => void;
     "account.signOut": () => void;
@@ -151,8 +161,9 @@ export class CloudHub extends Service {
         if (!this.cache.data.offlineAccess) await this.sessionRead;
         return this.info();
       });
-      ctx.ipc.handle("account.signIn", (email, password) => this.signIn(email, password));
-      ctx.ipc.handle("account.signUp", (email, password, lang) => this.signUp(email, password, lang));
+      ctx.ipc.handle("account.signIn", (email, password, agreed) => this.signIn(email, password, agreed));
+      ctx.ipc.handle("account.signUp", (email, password, lang, agreed) => this.signUp(email, password, lang, agreed));
+      ctx.ipc.handle("account.acceptTerms", () => this.acceptTerms());
       ctx.ipc.handle("account.resendConfirmation", (email, lang) => this.resendConfirmation(email, lang));
       ctx.ipc.handle("account.resetPassword", (email, lang) => this.resetPassword(email, lang));
       ctx.ipc.handle("account.signOut", () => this.signOut());
@@ -244,6 +255,7 @@ export class CloudHub extends Service {
       hubId: this.cache.data.hubId, status: this.status(), pending: this.cache.data.outbox.length,
       offlineAccess: this.cache.data.offlineAccess && !!this.cache.data.userId,
       owner: this.cache.data.userId ? { email: this.cache.data.email } : null, switchingTo: this.switchingTo,
+      terms: { current: TERMS_VERSION, accepted: this.termsAccepted() },
       conflicts: this.cache.data.conflicts.map(r => ({ id: recordKey(r), cloud: r.value, local: this.cache.view().find(v => recordKey(v) === recordKey(r))?.value })) };
   }
   private schedule(): void {
@@ -275,6 +287,14 @@ export class CloudHub extends Service {
     this.cache.data.email = this.user?.email ?? this.cache.data.email;
     this.cache.save();
     this.config.accounts?.claim({ id: userId, email: this.cache.data.email ?? "" });
+    // Never over a newer version agreed on another computer. A failure here retries next time, without holding up sync.
+    const agreed = this.cache.data.terms, recorded = this.user?.user_metadata?.terms_version;
+    if (agreed && !(typeof recorded === "string" && recorded >= agreed)) {
+      const { data, error: unrecorded } = await this.client.auth.updateUser({ data: termsRecord(agreed) });
+      if (this.closed || this.user?.id !== userId) return;
+      if (unrecorded) this.home.logger.warn(`terms: ${unrecorded.message}`);
+      else this.user = data.user;
+    }
     for (const op of [...this.cache.data.outbox]) {
       if (this.closed || this.user?.id !== userId) return;
       if (!this.cache.data.outbox.some(p => p.id === op.id)) continue;
@@ -328,22 +348,26 @@ export class CloudHub extends Service {
   private refusal(): Error {
     return new Error(`[other_account] This computer's projects belong to ${this.cache.data.email ?? "another account"}. Sign in with that account.`);
   }
-  async signIn(email: string, password: string): Promise<AccountInfo> {
+  /** `agreed`: the person ticked the terms on the sign-in form; the account records it on the next sync. */
+  async signIn(email: string, password: string, agreed = false): Promise<AccountInfo> {
     const { data, error } = await this.scratch().auth.signInWithPassword(credentials(email, password));
     if (error) throw failure(error);
     if (await this.handOff(data.user, data.session)) return this.info();
     const { error: adopted } = await this.client.auth.setSession(data.session);
     if (adopted) throw failure(adopted);
     this.user = data.user;
+    if (agreed) this.agree();
     await this.sync(); this.notify();
     return this.info();
   }
-  async signUp(email: string, password: string, lang?: string): Promise<{ confirmationRequired: boolean }> {
+  async signUp(email: string, password: string, lang?: string, agreed = false): Promise<{ confirmationRequired: boolean }> {
     const owned = !!this.cache.data.userId;
     // Refuse before the account exists, not after.
     if (owned && !this.config.accounts) throw this.refusal();
+    const parsed = credentials(email, password, 8);
+    if (!agreed) throw new Error("[terms_required] Agree to the Terms of Service and Privacy Policy to create an account.");
     const { data, error } = await (owned ? this.scratch() : this.client).auth.signUp({
-      ...credentials(email, password, 8), options: { emailRedirectTo: this.page("confirmed", lang) }
+      ...parsed, options: { emailRedirectTo: this.page("confirmed", lang), data: termsRecord(TERMS_VERSION) }
     });
     if (error) throw failure(error);
     if (!data.session) {
@@ -356,6 +380,23 @@ export class CloudHub extends Service {
     await this.sync();
     this.notify();
     return { confirmationRequired: false };
+  }
+  /** Agreed from the prompt an already signed-in account sees. Offline, it waits in the cache for the next sync. */
+  async acceptTerms(): Promise<AccountInfo> {
+    this.agree();
+    await this.sync();
+    this.notify();
+    return this.info();
+  }
+  private agree(): void {
+    this.cache.data.terms = TERMS_VERSION;
+    this.cache.save();
+  }
+  /** The newer of what the account carries and what was agreed here; the dated versions sort as text. */
+  private termsAccepted(): string | null {
+    const recorded = this.user?.user_metadata?.terms_version;
+    const versions = [typeof recorded === "string" ? recorded : null, this.cache.data.terms].filter((v): v is string => !!v).sort();
+    return versions.at(-1) ?? null;
   }
   async resendConfirmation(email: string, lang?: string): Promise<void> {
     const { error } = await this.scratch().auth.resend({ type: "signup", email: address(email), options: { emailRedirectTo: this.page("confirmed", lang) } });

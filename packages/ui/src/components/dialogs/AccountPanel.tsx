@@ -4,6 +4,8 @@ import { useAccount } from "~/lib/account";
 import { invoke, messageOf } from "~/lib/api";
 import { useHubInfo } from "~/lib/queries";
 import { useI18n } from "~/lib/i18n";
+import { legalUrl } from "~/lib/legal";
+import { openExternal } from "~/lib/shell";
 import { AccountSunrise } from "./AccountSunrise";
 
 const MIN_PASSWORD = 8;
@@ -35,6 +37,9 @@ const copy = {
     resetNext: "Choose a new password on the page the link opens, then come back here and sign in with it.",
     backToSignIn: "Back to sign in",
     mailWait: (n: number) => `We emailed this address less than a minute ago. Check your inbox, or try again in ${n}s.`,
+    agree: (terms: ReactNode, privacy: ReactNode) => <>I agree to the {terms} and the {privacy}.</>,
+    terms: "Terms of Service", privacy: "Privacy Policy",
+    needAgree: "Tick this to agree to the Terms of Service and Privacy Policy first.",
     errors: {
       invalid_credentials: "Wrong email or password.",
       email_not_confirmed: "Confirm your email first: open the link we sent you, then sign in.",
@@ -47,7 +52,8 @@ const copy = {
       email_address_not_authorized: "Tomrade can't send email to this address yet. Try again later.",
       signup_disabled: "New accounts can't be created right now.",
       network: "Can't reach the Tomrade server. Check your connection, then try again.",
-      other_account: "This computer's projects belong to another account. Sign in with that account."
+      other_account: "This computer's projects belong to another account. Sign in with that account.",
+      terms_required: "Tick the box to agree to the Terms of Service and Privacy Policy first."
     } as Record<string, string>
   },
   zh: {
@@ -74,6 +80,9 @@ const copy = {
     resetNext: "在链接打开的网页上设置新密码，然后回到这里用新密码登录。",
     backToSignIn: "返回登录",
     mailWait: (n: number) => `刚刚已经给这个邮箱发过邮件了。请先查收，或 ${n} 秒后再试。`,
+    agree: (terms: ReactNode, privacy: ReactNode) => <>我已阅读并同意{terms}和{privacy}。</>,
+    terms: "《用户条款》", privacy: "《隐私政策》",
+    needAgree: "请先勾选同意用户条款和隐私政策。",
     errors: {
       invalid_credentials: "邮箱或密码不正确。",
       email_not_confirmed: "请先确认邮箱：打开我们发给你的确认链接，然后再登录。",
@@ -86,12 +95,13 @@ const copy = {
       email_address_not_authorized: "暂时无法向这个邮箱发送邮件，请稍后再试。",
       signup_disabled: "目前暂不开放注册新账号。",
       network: "无法连接 Tomrade 服务器，请检查网络后重试。",
-      other_account: "这台电脑上的项目属于另一个账号，请使用那个账号登录。"
+      other_account: "这台电脑上的项目属于另一个账号，请使用那个账号登录。",
+      terms_required: "请先勾选同意用户条款和隐私政策。"
     } as Record<string, string>
   }
 };
 
-type Problem = { field: "email" | "password"; text: string };
+type Problem = { field: "email" | "password" | "terms"; text: string };
 /** Signed out, the panel is the sign-in form, a wait for the confirmation email, or a password reset request. */
 type Step = { kind: "form" } | { kind: "confirm"; email: string; password: string } | { kind: "reset"; sentTo: string | null };
 
@@ -115,10 +125,13 @@ function useCooldown() {
 export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const { locale } = useI18n();
   const t = copy[locale];
+  const legalLink = (doc: "terms" | "privacy") =>
+    <button type="button" className="link-btn" onClick={() => openExternal(legalUrl(doc, locale))}>{t[doc]}</button>;
   const account = useAccount();
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -126,6 +139,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const cooldown = useCooldown();
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const agreeRef = useRef<HTMLInputElement>(null);
   const stepTitle = useRef<HTMLHeadingElement>(null);
   const Heading = entrance ? "h2" : "h3";
   const owner = account.data?.user ? null : account.data?.owner?.email ?? null;
@@ -163,7 +177,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   };
   const signIn = (address: string, secret: string, from: "form" | "confirm" | "return") => run(async () => {
     try {
-      await invoke("account.signIn", address, secret);
+      await invoke("account.signIn", address, secret, true);
       setStep({ kind: "form" });
     } catch (e) {
       if (codeOf(e) !== "email_not_confirmed") throw e;
@@ -200,10 +214,11 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
       : mode === "reset" ? null
       : !password ? { field: "password", text: t.needPassword }
       : mode === "signUp" && password.length < MIN_PASSWORD ? { field: "password", text: t.shortPassword }
+      : !agreed ? { field: "terms", text: t.needAgree }
       : null;
     setProblem(found);
     setNotice("");
-    if (found) (found.field === "email" ? emailRef : passwordRef).current?.focus();
+    if (found) ({ email: emailRef, password: passwordRef, terms: agreeRef })[found.field].current?.focus();
     return !found;
   }
   const emailField = <div className="field-group">
@@ -280,6 +295,15 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           <button type="button" className="link-btn" onClick={() => { setStep({ kind: "reset", sentTo: null }); setProblem(null); setNotice(""); }}>{t.forgot}</button>
         </div>
       </div>
+      <div className="field-group">
+        <label className="account-agree">
+          <input ref={agreeRef} type="checkbox" checked={agreed}
+            aria-invalid={problem?.field === "terms" || undefined} aria-describedby={problem?.field === "terms" ? "account-problem" : undefined}
+            onChange={e => { setAgreed(e.target.checked); if (problem?.field === "terms") setProblem(null); }} />
+          <span>{t.agree(legalLink("terms"), legalLink("privacy"))}</span>
+        </label>
+        {problem?.field === "terms" && <span id="account-problem" className="field-note is-error" role="alert">{problem.text}</span>}
+      </div>
       {owner && email.trim() && email.trim().toLowerCase() !== owner.toLowerCase() && <p className="field-note">{t.otherAccount(owner)}</p>}
       <div className="row" style={{ gap: "var(--space-2)" }}>
         <button className="btn btn-primary" disabled={busy}>{busy ? t.busy : t.signIn}</button>
@@ -287,7 +311,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
           if (!check("signUp")) return;
           const address = email.trim(), secret = password;
           void run(async () => {
-            const result = await invoke("account.signUp", address, secret, locale);
+            const result = await invoke("account.signUp", address, secret, locale, true);
             if (result.confirmationRequired) { cooldown.start(MAIL_INTERVAL); setStep({ kind: "confirm", email: address, password: secret }); }
           });
         }}>{t.signUp}</button>
