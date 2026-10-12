@@ -64,9 +64,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every build runs on the self-hosted Mac (docs/releasing.md), each on a
-        # runner of its own and Linux in a container: hosted minutes run out,
-        # macOS ones tenfold.
+        # Every build runs on the self-hosted Mac's runners (docs/releasing.md):
+        # hosted minutes run out, macOS ones tenfold.
         include:
           - { name: macOS arm64, slug: mac-arm64, os: [self-hosted, macOS, ARM64], args: --mac --arm64 }
           # Built on the arm64 Mac: pnpm installs both arches' native packages
@@ -75,8 +74,9 @@ jobs:
           # Cross-built: the build's own tools need the Mac's packages, the app
           # keeps only Windows x64's.
           - { name: Windows x64, slug: win-x64, os: [self-hosted, macOS, ARM64], args: --win --x64, install: --os=darwin --os=win32 --cpu=arm64 --cpu=x64 }
-          # Ubuntu 22.04, the oldest supported, so the AppImage runs on older glibc.
-          - { name: Linux x64, slug: linux-x64, os: [self-hosted, Linux, X64], args: --linux --x64 }
+          # Cross-built the same way. Nothing is compiled, so the build machine's
+          # glibc doesn't matter.
+          - { name: Linux x64, slug: linux-x64, os: [self-hosted, macOS, ARM64], args: --linux --x64, install: --os=darwin --os=linux --cpu=arm64 --cpu=x64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
