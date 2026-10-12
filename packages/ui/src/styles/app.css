@@ -2237,6 +2237,10 @@ button.kref { cursor: pointer; }
 .about-update-pref .meta-txt { margin: 2px 0 0; }
 .about-update-pref-name { font-size: var(--text-sm); color: var(--fg); }
 .about-update-pref .seg button:disabled { opacity: 0.55; cursor: not-allowed; }
+.palette.sheet-sm { width: min(460px, calc(100vw - 64px)); }
+.update-notice-body { display: flex; align-items: flex-start; gap: var(--space-5); }
+.update-notice-body .meta-txt { margin: 0; }
+.update-notice-note { margin: var(--space-2) 0 0; font-size: var(--text-sm); line-height: var(--leading-dense); color: var(--fg-2); }
 .about-facts { margin: var(--space-3) 0 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
 .about-facts .field-row { grid-template-columns: 112px 1fr; }
 .about-facts .field-row:first-child { border-top: 0; }

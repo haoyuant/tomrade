@@ -14,6 +14,7 @@ import { useSeen } from "~/lib/onboarding";
 import { useToast } from "~/lib/toast";
 import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
 import { useSetup } from "~/lib/setup";
+import { useSettingsHost } from "~/lib/settingsHost";
 import { HubSetup } from "./HubSetup";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
@@ -165,6 +166,10 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPane, setSettingsPane] = useState<string>();
+  useSettingsHost((pane) => {
+    setSettingsPane(pane);
+    setSettingsOpen(true);
+  });
   const [newOpen, setNewOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */

@@ -15,6 +15,7 @@ import { useScreenBinding, useAgentDock, type ScreenBinding } from "~/components
 import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
+import { useSettingsHost } from "~/lib/settingsHost";
 import { useCreateView, useRedo, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast } from "~/lib/onboarding";
@@ -86,6 +87,7 @@ export function Workspace() {
   const [settings, setSettings] = useState<string | null>(null);
   /** The engine row Settings opens unfolded on, when sent there to set one up. */
   const [settingsEngine, setSettingsEngine] = useState<string>();
+  useSettingsHost(setSettings);
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);

@@ -1,6 +1,7 @@
 /**
  * Update flow regression, against a feed served from this process: a newer
- * release is announced and nothing more, Later means not again, the two
+ * release is announced in a centred sheet and nothing more, Later means not
+ * again, Download opens Settings on About where the progress is, the two
  * settings change what is asked and when, and no channel ever offers an older
  * build. A checkout cannot install, so the restart itself is left to a real
  * release (docs/releasing.md).
@@ -79,8 +80,10 @@ const run = async () => {
   };
   const line = () => $(`document.querySelector('.about-update .about-update-state')?.textContent ?? null`);
   const button = (label) => `[...document.querySelectorAll('.about-update-head .btn')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
-  const toasts = () => $(`[...document.querySelectorAll('.toast')].map((t) => t.querySelector('.toast-body')?.textContent ?? '')`);
-  const toastAction = (label) => `[...document.querySelectorAll('.toast .btn')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
+  const notice = () => $(`document.querySelector('.update-notice')?.textContent ?? null`);
+  const noticeAction = (label) => `[...document.querySelectorAll('.update-notice .dlg-foot .btn')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
+  const settingsSheets = () => $(`document.querySelectorAll('.palette.sheet-settings').length`);
+  const settingsPane = () => $(`document.querySelector('.palette.sheet-settings .side-row[aria-current="true"]')?.textContent.trim() ?? null`);
   const switchOn = () => $(`document.querySelector('.about-update-pref[data-pref="autoCheck"] .switch')?.getAttribute('aria-checked')`);
   const channelShown = () => $(`document.querySelector('.about-update-pref[data-pref="channel"] button[aria-pressed="true"]')?.textContent.trim() ?? null`);
 
@@ -89,16 +92,18 @@ const run = async () => {
   check("a build pointed at a feed can update itself", s.blocked === null, s);
   check("checks are on and Stable is the channel by default", prefs()?.autoCheck === true && prefs()?.channel === "stable", prefs());
   check("the Stable feed is asked at launch and the newer release found", s.phase.kind === "available" && s.phase.version === newer && asked.includes(stable), { s, asked });
-  const notice = (await toasts()).find((t) => t.includes(`Tomrade ${newer} is available`));
   await shot("updates-notice");
-  check("a notice says so, with Download and Later", !!notice && !!(await $(`!!(${toastAction("Download")}) && !!(${toastAction("Later")})`)), await toasts());
+  check("a sheet says so, with Download and Later", ((await notice()) ?? "").includes(`Tomrade ${newer}`) && !!(await $(`!!(${noticeAction("Download")}) && !!(${noticeAction("Later")})`)), await notice());
+  const placed = await $(`(() => { const r = document.querySelector('.update-notice').getBoundingClientRect(); return { dx: Math.abs(r.left + r.width / 2 - innerWidth / 2), dy: Math.abs(r.top + r.height / 2 - innerHeight / 2) }; })()`);
+  check("in the middle of the window, over a scrim", placed.dx < 2 && placed.dy < 40 && !!(await $(`!!document.querySelector('.scrim')`)), placed);
+  check("with Download holding the focus", (await $(`document.activeElement?.textContent.trim()`)) === "Download");
   check("nothing was downloaded", !asked.some((p) => p.endsWith(".zip")), asked);
-  await press(toastAction("Later"));
+  await press(noticeAction("Later"));
   await sleep(500);
-  check("Later puts the notice away", !(await toasts()).some((t) => t.includes("is available")), await toasts());
+  check("Later puts the notice away", (await notice()) === null, await notice());
   await $(`window.tomrade.invoke('updates.check')`);
   await sleep(800);
-  check("and a later check of the same version doesn't bring it back", !(await toasts()).some((t) => t.includes("is available")), await toasts());
+  check("and a later check of the same version doesn't bring it back", (await notice()) === null, await notice());
   check("installing is refused before anything is downloaded", (await $(`window.tomrade.invoke('updates.install')`)) === false);
 
   // ── the About pane: the same news, and the settings ─────────────────
@@ -156,7 +161,39 @@ const run = async () => {
   await $(`window.tomrade.invoke('updates.check')`);
   await sleep(1000);
   check("with the About pane open, a newer release shows there", ((await line()) ?? "").includes(`Tomrade ${newest} is available`), await line());
-  check("and no notice is stacked on top, whose click would close the dialog", !(await toasts()).some((t) => t.includes(newest)), await toasts());
+  check("and no notice is stacked on top of it", (await notice()) === null, await notice());
+
+  // ── Download from the notice opens Settings on About ────────────────
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
+  await sleep(600);
+  check("(Settings closed again)", (await settingsSheets()) === 0);
+  const third = `${Number(newest.split(".")[0]) + 1}.0.0`;
+  feed.set(stable, manifest(third));
+  await $(`window.tomrade.invoke('updates.check')`);
+  await sleep(1000);
+  check("with Settings shut, the next release is announced", ((await notice()) ?? "").includes(`Tomrade ${third}`), await notice());
+  await press(noticeAction("Download"));
+  await sleep(1500);
+  s = await status();
+  await shot("updates-download");
+  check("Download closes the notice", (await notice()) === null);
+  // A checkout has no app-update.yml, so its download fails before asking for the zip.
+  check("starts the download", s.phase.kind === "downloading" || s.phase.kind === "failed", s.phase);
+  check("and opens Settings on About, where the progress shows", (await settingsSheets()) === 1 && (await settingsPane()) === "About" && (await line()) !== null, { sheets: await settingsSheets(), pane: await settingsPane(), line: await line() });
+  check("with the focus inside Settings", !!(await $(`!!document.activeElement?.closest('.sheet-settings')`)));
+
+  // ── Settings open on another pane: switched, not stacked ────────────
+  await press(`[...document.querySelectorAll('.palette.sheet-settings .side-row')].find((b) => b.textContent.trim() === 'Appearance')`);
+  await sleep(500);
+  check("(Settings moved to Appearance)", (await settingsPane()) === "Appearance", await settingsPane());
+  const fourth = `${Number(third.split(".")[0]) + 1}.0.0`;
+  feed.set(stable, manifest(fourth));
+  await $(`window.tomrade.invoke('updates.check')`);
+  await sleep(1000);
+  check("away from About, the notice comes up over Settings", ((await notice()) ?? "").includes(`Tomrade ${fourth}`), await notice());
+  await press(noticeAction("Download"));
+  await sleep(1500);
+  check("and Download turns that same sheet to About instead of opening a second", (await settingsSheets()) === 1 && (await settingsPane()) === "About", { sheets: await settingsSheets(), pane: await settingsPane() });
   check("harness reached the end", true);
 };
 
