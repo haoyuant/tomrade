@@ -843,7 +843,7 @@ describe("starting a ticket", () => {
 
     const other = ticket("Hermes terminal work");
     expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "hermes" }))
-      .toEqual({ ok: false, gate: "engine", message: "Hermes runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
+      .toEqual({ ok: false, gate: "engine", engine: "hermes", message: "Hermes runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
     const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "Hermes general work", workType: "general", status: "todo", by: "human" });
     expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "hermes" })).toMatchObject({ ok: false, gate: "engine" });
   });

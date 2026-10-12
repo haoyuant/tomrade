@@ -944,7 +944,7 @@ const run = async () => {
   await sleep(600);
   check("project settings list the project's repositories", (await $(`document.querySelectorAll('#psRepos .repo-row').length`)) === 1);
   check("a repository is named by its remote", (await $(`document.querySelector('#psRepos .repo-remote')?.textContent`)) === sampleRepo.remote);
-  check("and by the workstreams that stand for it", (await $(`document.querySelector('#psRepos .repo-used')?.textContent ?? ''`)).includes("UI"));
+  check("and by the workstreams that stand for it", (await $(`[...document.querySelectorAll('#psRepos .repo-workstreams .chip-opt.sel')].map((c) => c.textContent).join()`)).includes("UI"));
   check("with no checkout on this machine, it says so", (await $(`document.querySelector('#psRepos .repo-checkout')?.textContent ?? ''`)).includes("Not set on this machine"));
   check("and waits for an explicit folder before offering clone", (await $(`!!document.querySelector('#psRepos .repo-clone')`)) === false);
   await shot("15-project-repositories");

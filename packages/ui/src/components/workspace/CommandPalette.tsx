@@ -6,6 +6,7 @@ import { LAYOUTS } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, StatusMark } from "~/components/ui/atoms";
 import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
+import { requestStart } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import { useCommands, useRunCommand } from "~/lib/queries";
 import { useFilesTree } from "~/lib/files";
@@ -77,6 +78,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     runCommand.mutate(
       { id, scope: { projectId: ws.project.id, viewId: ws.view.id, itemId: selectedId } },
       { onSuccess: (r) => {
+        if (r.startDialog && selectedId && requestStart(selectedId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
       }, onError: (e) => toast(errorSpec(e)) }

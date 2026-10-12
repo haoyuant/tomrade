@@ -23,6 +23,7 @@ import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
+import { requestStart } from "~/lib/codeLink";
 import { openExternal } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
@@ -69,6 +70,8 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
   const dock = useOptionalAgentDock();
   const run = (id: string) =>
     runCommand.mutate({ id, scope: { projectId, itemId } }, { onSuccess: (r) => {
+        // a start that stopped opens the ticket's Start dialog, where its fix is
+        if (r.startDialog && requestStart(itemId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
       }, onError: (e) => toast(errorSpec(e)) });

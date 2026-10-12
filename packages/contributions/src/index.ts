@@ -14,6 +14,8 @@ export interface CommandResult {
   toast?: string;
   /** A conversation the renderer should bring up in the assistant panel. */
   showThread?: string;
+  /** Starting the scoped ticket stopped on something the Start dialog can fix: open it there, in this mode. */
+  startDialog?: "run" | "terminal";
 }
 
 /** Words a plugin may compute when shown, so they come out in the person's language at that moment. */

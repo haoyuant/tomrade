@@ -36,7 +36,21 @@ export interface StartOptions {
 }
 
 export type StartResult =
-  | { ok: false; gate: StartGate; message: string; bootstrapKey?: string; remote?: string; blockers?: string[] }
+  | {
+      ok: false;
+      gate: StartGate;
+      /** English, for agents and logs; a screen says it in its own words from the fields beside it. */
+      message: string;
+      bootstrapKey?: string;
+      remote?: string;
+      blockers?: string[];
+      /** The workstream the ticket is on — what a missing or vanished repository is fixed on. */
+      board?: { id: string; name: string };
+      /** The repository it runs in — what a missing checkout or an unreachable origin is fixed on. */
+      repo?: { id: string; name: string };
+      /** The engine that is not ready, when one was asked for. */
+      engine?: string;
+    }
   | {
       ok: true;
       /** An earlier thread on this ticket was picked up rather than a new one opened. */
@@ -101,12 +115,14 @@ export class Starter {
     if (item.workType === "general") return this.startGeneral(projectId, item, opts);
 
     const board = ctx.boards.get(projectId, item.boardId);
-    if (!board?.repoId) return { ok: false, gate: "workstream", message: `${board?.name ?? "This workstream"} has no repository yet — link one under Repositories` };
+    const onBoard = board ? { board: { id: board.id, name: board.name } } : {};
+    if (!board?.repoId) return { ok: false, gate: "workstream", message: `${board?.name ?? "This workstream"} has no repository yet — link one under Repositories`, ...onBoard };
     const repo = ctx.repos.get(projectId, board.repoId);
-    if (!repo) return { ok: false, gate: "workstream", message: `${board.name} points at a repository this project no longer has` };
+    if (!repo) return { ok: false, gate: "workstream", message: `${board.name} points at a repository this project no longer has`, ...onBoard };
+    const onRepo = { ...onBoard, repo: { id: repo.id, name: repo.name }, remote: repo.remote };
     const placement = ctx.repos.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) {
-      return { ok: false, gate: "checkout", message: `No checkout of ${repo.name} on this machine — point Tomrade at yours, or let it clone one`, remote: repo.remote };
+      return { ok: false, gate: "checkout", message: `No checkout of ${repo.name} on this machine — point Tomrade at yours, or let it clone one`, ...onRepo };
     }
 
     let state = store.repoState(projectId, repo.id);
@@ -119,7 +135,7 @@ export class Starter {
     const local = !(await new GitFolder(this.host.git, placement.checkout).remoteUrl());
     const probe = local ? null : await probeRemote(this.host.git, placement.checkout, repo.defaultBranch);
     if (probe?.state === "offline") {
-      if (probe.failure !== "network") return { ok: false, gate: "remote", message: remoteFailureMessage(probe.stderr), remote: repo.remote };
+      if (probe.failure !== "network") return { ok: false, gate: "remote", message: remoteFailureMessage(probe.stderr), ...onRepo };
       warnings.push(`origin unreachable right now (${probe.detail ?? "network error"}) — commit locally, do not push until it is back`);
     }
     // "Empty" is only believed when the remote confirms it. A checkout whose
@@ -130,7 +146,7 @@ export class Starter {
         // The remote has the branch but this machine never fetched it: fetch now and read again.
         await this.host.scan(projectId);
         state = store.repoState(projectId, repo.id);
-        if (state?.readiness === "unknown") return { ok: false, gate: "remote", message: `${repo.remote} has ${repo.defaultBranch}, but this checkout cannot fetch it — check the credentials that checkout uses`, remote: repo.remote };
+        if (state?.readiness === "unknown") return { ok: false, gate: "remote", message: `${repo.remote} has ${repo.defaultBranch}, but this checkout cannot fetch it — check the credentials that checkout uses`, ...onRepo };
       }
     }
     const delivery = store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
@@ -142,14 +158,14 @@ export class Starter {
       if (pushed.code !== 0) {
         const stderr = scrubRemoteOutput(pushed.stderr ?? "");
         const failure = classifyRemoteFailure(stderr);
-        if (failure === "credentials") return { ok: false, gate: "remote", message: remoteFailureMessage(stderr), remote: repo.remote };
+        if (failure === "credentials") return { ok: false, gate: "remote", message: remoteFailureMessage(stderr), ...onRepo };
         if (failure === "network") warnings.push(`origin unreachable right now (${remoteFailureDetail(stderr) ?? "network error"}) — commit locally, do not push until it is back`);
       }
     }
     const bootstrapping = item.labels.includes(BOOTSTRAP_LABEL);
     if (state?.readiness === "empty" && !bootstrapping) {
       const bootstrap = this.ensureBootstrap(projectId, item, board, repo);
-      return { ok: false, gate: "readiness", message: `${repo.name} has no project in it yet — ${bootstrap.key} bootstraps it first and blocks ${item.key} until it lands`, bootstrapKey: bootstrap.key };
+      return { ok: false, gate: "readiness", message: `${repo.name} has no project in it yet — ${bootstrap.key} bootstraps it first and blocks ${item.key} until it lands`, bootstrapKey: bootstrap.key, ...onRepo };
     }
 
     // The readiness gate creates this dependency, so it also owns removing it
@@ -174,7 +190,7 @@ export class Starter {
     let engineId = "other";
     if (!other) {
       const picked = await this.pickEngine(agent, opts.engine, opts.mode === "terminal");
-      if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason };
+      if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason, ...(opts.engine ? { engine: opts.engine } : {}) };
       engineId = picked.engine.id;
     }
     // A terminal session connects back over MCP; without the server there is nothing to start, so nothing is created.
@@ -211,7 +227,7 @@ export class Starter {
     }
 
     const where = await agent.workdir(projectId, thread.id);
-    if (where.problem || !where.cwd) return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", remote: repo.remote };
+    if (where.problem || !where.cwd) return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", ...onRepo };
     this.host.worktrees.set(thread.id, where.worktree ?? where.cwd);
 
     const now = Date.now();
@@ -293,7 +309,7 @@ export class Starter {
     const other = opts.mode === "terminal" && opts.engine === "other";
     if (other && !terminalSettings.otherCommand.trim()) return { ok: false, gate: "engine", message: "No command is set for another CLI agent — add one under Settings → Code link" };
     const refused = opts.mode === "terminal" && !other && opts.engine ? insideOnly(agent, opts.engine) : null;
-    if (refused) return { ok: false, gate: "engine", message: refused };
+    if (refused) return { ok: false, gate: "engine", message: refused, ...(opts.engine ? { engine: opts.engine } : {}) };
     const blockers = this.openBlockers(projectId, item);
     if (blockers.length && !opts.allowBlocked) return blockedGate(item, blockers);
     const prepared = await agent.prepareGeneral(projectId, item.id, {
@@ -326,7 +342,7 @@ export class Starter {
 
     // The thread may have brought its own engine; one that runs only inside Tomrade has no terminal session.
     const inside = insideOnly(agent, engineId);
-    if (inside) return { ok: false, gate: "engine", message: inside };
+    if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), prepared.prompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId));
