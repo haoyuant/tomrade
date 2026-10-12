@@ -164,6 +164,7 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
   });
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPane, setSettingsPane] = useState<string>();
   const [newOpen, setNewOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
@@ -202,6 +203,19 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
           {t("projectsScreen.crumbProjects")}
         </span>
         <Spacer />
+        <button
+          type="button"
+          className="btn btn-icon no-drag"
+          title={t("usage.label")}
+          aria-label={t("usage.label")}
+          data-testid="titlebar-usage"
+          onClick={() => {
+            setSettingsPane("usage");
+            setSettingsOpen(true);
+          }}
+        >
+          <Icon name="i-bars" size={17} />
+        </button>
         <button
           type="button"
           className="btn btn-icon no-drag"
@@ -316,7 +330,14 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
         projects={list}
         onOpenChange={(open) => !open && setConfiguring(null)}
       />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        pane={settingsPane}
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open) setSettingsPane(undefined);
+        }}
+      />
       <RestartOnboardingDialog open={restartOpen} onOpenChange={setRestartOpen} hasSample={list.some((p) => p.sample)} onRestarted={onRestartOnboarding} />
     </div>
   );
