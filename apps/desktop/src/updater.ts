@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { app, autoUpdater as squirrel } from "electron";
 import electronUpdater, { type AppUpdater } from "electron-updater";
 import type { Context } from "cordis";
@@ -237,6 +239,33 @@ function blockedHere(): UpdateBlock | null {
   return null;
 }
 
+/** The parts of electron-updater that stamp an install ID on every request; private, so checked before they are touched. */
+type StagingInternals = {
+  stagingUserIdPromise?: { readonly value: Promise<string> };
+  computeFinalHeaders?: (headers: Record<string, unknown>) => Record<string, unknown>;
+};
+const STAGING_HEADER = "x-user-staging-id";
+
+/**
+ * electron-updater sends every check a random ID it keeps in `<userData>/.updaterId`, for staged
+ * rollouts. Tomrade stages none, so the feed gets no ID and the file goes. False when this
+ * electron-updater no longer looks the way this expects, so the caller can say so.
+ */
+export function withoutInstallId(updater: AppUpdater, userData: string): boolean {
+  fs.rmSync(path.join(userData, ".updaterId"), { force: true });
+  updater.isUserWithinRollout = () => true;
+  const internals = updater as unknown as StagingInternals;
+  const finalHeaders = internals.computeFinalHeaders;
+  if (!internals.stagingUserIdPromise || typeof finalHeaders !== "function") return false;
+  internals.stagingUserIdPromise = { value: Promise.resolve("") };
+  internals.computeFinalHeaders = (headers) => {
+    const final = finalHeaders.call(updater, headers);
+    delete final[STAGING_HEADER];
+    return final;
+  };
+  return true;
+}
+
 /** The feed is the one electron-builder wrote into the app; TOMRADE_UPDATE_URL points a check at another, a checkout included. */
 function feed(ctx: Context): AppUpdater {
   const { autoUpdater } = electronUpdater;
@@ -246,6 +275,7 @@ function feed(ctx: Context): AppUpdater {
     error: (m) => ctx.logger.error(String(m)),
     debug: (m) => ctx.logger.debug(m)
   };
+  if (!withoutInstallId(autoUpdater, app.getPath("userData"))) ctx.logger.warn("electron-updater changed: update checks may carry its install ID");
   autoUpdater.autoDownload = false;
   // "Later" on a downloaded update means the next ordinary quit installs it.
   autoUpdater.autoInstallOnAppQuit = true;

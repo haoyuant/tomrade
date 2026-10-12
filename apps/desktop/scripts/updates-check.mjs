@@ -36,9 +36,12 @@ const newer = `${Number(running.split(".")[0]) + 1}.0.0`;
 const manifest = (version) => `version: ${version}\nfiles:\n  - url: ${version}/Tomrade-${version}.zip\n    sha512: AAAA\n    size: 1\npath: ${version}/Tomrade-${version}.zip\nsha512: AAAA\nreleaseDate: '2026-11-01T08:00:00.000Z'\n`;
 const feed = new Map([[stable, manifest(newer)]]);
 const asked = [];
+/** Every request's headers: a check must carry nothing that tells one install from another. */
+const heard = [];
 const server = http.createServer((req, res) => {
   const at = new URL(req.url, "http://feed").pathname;
   asked.push(at);
+  heard.push(req.headers);
   const body = feed.get(at);
   if (body) res.writeHead(200, { "content-type": "text/yaml" }).end(body);
   else res.writeHead(404).end();
@@ -46,6 +49,10 @@ const server = http.createServer((req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 process.env.TOMRADE_UPDATE_URL = `http://127.0.0.1:${server.address().port}/`;
 if (process.platform === "linux") process.env.APPIMAGE ??= path.join(work, "Tomrade.AppImage");
+
+// An ID an earlier version of Tomrade left behind, which this one removes.
+const installId = path.join(work, ".updaterId");
+fs.writeFileSync(installId, "d4ad8e5b-6f0a-5b3c-9a1e-2f7c3b8d1e40");
 
 const run = async () => {
   const { boot } = await import("../dist/boot.js");
@@ -194,6 +201,10 @@ const run = async () => {
   await press(noticeAction("Download"));
   await sleep(1500);
   check("and Download turns that same sheet to About instead of opening a second", (await settingsSheets()) === 1 && (await settingsPane()) === "About", { sheets: await settingsSheets(), pane: await settingsPane() });
+  // ── no install ID ───────────────────────────────────────────────────
+  check("no check carried an install ID", heard.length > 0 && heard.every((h) => !("x-user-staging-id" in h)), heard.map((h) => Object.keys(h)));
+  check("and the ID file an earlier version left is gone", !fs.existsSync(installId));
+  console.log(`  a check's headers: ${[...new Set(heard.flatMap((h) => Object.entries(h).map(([k, v]) => `${k}: ${k === "host" ? "<feed>" : v}`)))].join(" | ")}`);
   check("harness reached the end", true);
 };
 
