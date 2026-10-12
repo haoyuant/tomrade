@@ -529,6 +529,8 @@ strong { font-weight: var(--font-weight-medium); }
   color: var(--fg); font-family: var(--font-display); font-size: var(--text-sm);
   letter-spacing: var(--tracking-label); outline: none;
 }
+/* the field draws the ring; the global :focus-visible would add a second */
+.qb-search-input:focus-visible { box-shadow: none; }
 .qb-search-input::placeholder { color: var(--meta); }
 .qb-search-input::-webkit-search-cancel-button { display: none; }
 .qb-search-x {
@@ -2179,6 +2181,7 @@ button.kref { cursor: pointer; }
 .notes-search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .notes-search-field .ico { color: var(--meta); flex-shrink: 0; }
 .notes-search-input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 14px; outline: none; }
+.notes-search-input:focus-visible { box-shadow: none; }
 .notes-search-input::placeholder { color: var(--meta); }
 .notes-search-input::-webkit-search-cancel-button { display: none; }
 .notes-search-close { width: 22px; height: 22px; color: var(--meta); }
@@ -2203,6 +2206,7 @@ button.kref { cursor: pointer; }
 .plug-search:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .plug-search .ico { color: var(--meta); flex-shrink: 0; }
 .plug-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 14px; outline: none; }
+.plug-search input:focus-visible { box-shadow: none; }
 .plug-search input::placeholder { color: var(--meta); }
 .plug-group + .plug-group { margin-top: var(--space-5); }
 .plug-group-head { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-1); }
