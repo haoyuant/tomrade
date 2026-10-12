@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { HOOK_EVENTS } from "./sessions.js";
+import { syncPrompt, syncSteps } from "./sync.js";
 
 export interface ConnectInput {
   projectName: string;
@@ -16,21 +17,44 @@ const SECTION_START = "## Tomrade";
 const CODEX_START = "# BEGIN TOMRADE MCP";
 const CODEX_END = "# END TOMRADE MCP";
 
-/** The CLAUDE.md section that tells any coding agent how this repository and Tomrade stay in step. */
+/** The CLAUDE.md section that tells any coding agent how this repository and Tomrade stay in step — when the work has a ticket at all. */
 export function tomradeSection(input: ConnectInput): string {
   const example = `${input.prefix}-42`;
   return [
     SECTION_START,
     "",
-    `Tickets for this repository live in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code, \`.codex/config.toml\` for Codex).`,
+    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code, \`.codex/config.toml\` for Codex).`,
+    "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
     "",
-    `- Before starting a ticket, call \`claim_ticket("${example}")\`: it returns the ticket, the branch to use, and marks it Doing.`,
-    "- One coding session owns one ticket. Implement only that ticket's stated outcome and acceptance criteria; neighboring tickets are context, not extra work.",
-    "- Before pushing, inspect the complete diff against the default branch and remove models, screens, flows, APIs, refactors, and cleanup that the ticket does not require.",
-    "- If you discover work for another ticket, leave it untouched, report it with `note_progress`, and start a separate branch and session for that ticket.",
+    `### When the work is a ticket (the user or the branch names a key such as \`${example}\`)`,
+    "",
+    `- Call \`claim_ticket("${example}")\` before starting: it returns the ticket and the branch to use, and marks it Doing. A session that claimed a ticket owns only that ticket.`,
+    "- Implement only its stated outcome and acceptance criteria; neighboring tickets are context, not extra work. Work you find for another ticket stays untouched — mention it when you sync.",
     `- Branch names follow \`${input.branchTemplate}\` (for example \`${example.toLowerCase()}/short-slug\`); every commit message names the key (\`${example}: …\`).`,
-    "- After the full-diff scope review, call `link_code` with the pull request URL and `scopeChecked: true`. Never mark a ticket done yourself — merging does that.",
+    "- Before pushing, inspect the complete diff against the default branch and remove models, screens, flows, APIs, refactors, and cleanup that the ticket does not require. Then call `link_code` with the pull request URL and `scopeChecked: true`. Never mark a ticket done yourself — merging does that.",
     "- Call `note_progress` with one line at milestones; it is what the ticket shows while you work.",
+    "",
+    "### Syncing back",
+    "",
+    "When the user asks to sync with Tomrade (in Claude Code: `/tomrade:sync`; in Codex: `$tomrade-sync`):",
+    "",
+    ...syncSteps(),
+    "",
+    "When a meaningful piece of work looks like it belongs to a ticket, you may offer once to sync it back; drop it if the user declines.",
+    ""
+  ].join("\n");
+}
+
+/** Codex reads no MCP prompts; a repository skill is its `/tomrade:sync`, invoked as `$tomrade-sync`. */
+export function codexSyncSkill(input: ConnectInput): string {
+  return [
+    "---",
+    "name: tomrade-sync",
+    // A JSON string is a valid YAML scalar whatever the project is called.
+    `description: ${JSON.stringify(`Bring this session's work back into the Tomrade backlog (project "${input.projectName}") when the user asks to sync with Tomrade — match it to tickets, link code, update status, file follow-ups.`)}`,
+    "---",
+    "",
+    syncPrompt({ projectName: input.projectName, prefix: input.prefix }),
     ""
   ].join("\n");
 }
@@ -73,7 +97,7 @@ function readJson(file: string): Record<string, unknown> | null {
 /**
  * Lay the agent connection files down in a worktree: Claude and Codex each
  * gain a project-scoped `tomrade` MCP server; CLAUDE.md and AGENTS.md gain or
- * replace their `## Tomrade` section;
+ * replace their `## Tomrade` section; Codex gains the `tomrade-sync` skill;
  * `.claude/settings.json` gains one hook per lifecycle event that posts to
  * Tomrade. Everything else in each file is kept as it was. Returns the files
  * that changed.
@@ -109,6 +133,14 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
       fs.writeFileSync(file, body);
       changed.push(name);
     }
+  }
+
+  const skillFile = path.join(root, ".agents", "skills", "tomrade-sync", "SKILL.md");
+  const skill = codexSyncSkill(input);
+  if (!fs.existsSync(skillFile) || fs.readFileSync(skillFile, "utf8") !== skill) {
+    fs.mkdirSync(path.dirname(skillFile), { recursive: true });
+    fs.writeFileSync(skillFile, skill);
+    changed.push(".agents/skills/tomrade-sync/SKILL.md");
   }
 
   const settingsFile = path.join(root, ".claude", "settings.json");

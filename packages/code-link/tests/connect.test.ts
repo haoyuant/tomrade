@@ -18,6 +18,8 @@ import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Tools } from "@tomradex/tools";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-connect-"));
@@ -81,7 +83,7 @@ describe("connecting a repository", () => {
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).sort()).toEqual([".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
+    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
     const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
@@ -90,10 +92,16 @@ describe("connecting a repository", () => {
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).not.toContain("old words");
     expect(claude).toContain('claim_ticket("APP-42")');
-    expect(claude).toContain("One coding session owns one ticket");
+    expect(claude).toContain("Work without a ticket is fine");
+    expect(claude).toContain("A session that claimed a ticket owns only that ticket");
+    expect(claude).toContain("`/tomrade:sync`");
+    expect(claude).toContain("2. Match the work to tickets.");
     expect(claude).toContain("inspect the complete diff");
     expect(claude).toContain("## Layout\n\nkeep me");
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
+    const skill = fs.readFileSync(path.join(dir, ".agents", "skills", "tomrade-sync", "SKILL.md"), "utf8");
+    expect(skill).toMatch(/^---\nname: tomrade-sync\ndescription: "Bring .*\(project \\"App\\"\).*"\n---\n/);
+    expect(skill).toContain("ticket keys look like APP-42");
     const settings = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8")) as { permissions: unknown; hooks: Record<string, unknown[]> };
     expect(settings.permissions).toEqual({ allow: ["Bash(pnpm test)"] });
     expect(settings.hooks.Stop).toHaveLength(2);
@@ -107,7 +115,7 @@ describe("connecting a repository", () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
     const result = await codeLink.connect(project.id, repo.id);
     expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
-    expect(result.files.sort()).toEqual([".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
     git(["fetch", "-q", "origin"], checkout);
@@ -134,11 +142,18 @@ describe("a developer's own Claude Code session", () => {
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: session.id, itemIds: [item.id], branch: claimed.branch });
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: claimed.branch, source: "mcp" });
 
+    // No token: the note finds the session through the ticket it claimed.
+    expect(await ctx.tools.execute("note_progress", { key: item.key, text: "parser done" }, { by: "ai:claude-code", projectId: project.id })).toMatchObject({ ok: true });
+    expect(codeLink.sessionsOf(project.id, item.id)[0].summary).toBe("parser done");
+
     const other = items.create({ projectId: project.id, boardId: board.id, title: "Separate work", status: "todo", by: "human" });
     await expect(ctx.tools.execute("claim_ticket", { key: other.key }, { by: "ai:claude-code", projectId: project.id })).rejects.toThrow(
       `this session already owns ${item.key}`
     );
     expect(items.get(project.id, other.id)!.status).toBe("todo");
+    await expect(ctx.tools.execute("note_progress", { key: other.key, text: "x" }, { by: "ai:claude-code", projectId: project.id })).rejects.toThrow(
+      `Tomrade is not tracking a session on ${other.key}`
+    );
 
     await post({ hook_event_name: "Stop", session_id: "cli-9", cwd: checkout });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");
@@ -164,5 +179,33 @@ describe("a developer's own Claude Code session", () => {
     await codeLink.scan(project.id);
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: "tom-777/dark-mode-toggle", source: "manual", ahead: 1 });
     expect(ctx.items.get(project.id, item.id)!.status).toBe("doing");
+  });
+});
+
+describe("syncing a session back", () => {
+  it("offers /tomrade:sync for the session's project and tells every unbound client a ticket is never required", async () => {
+    const { ctx, project } = await machine();
+    const client = new Client({ name: "cli", version: "0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.urlFor(project.id)!)));
+      expect((await client.listPrompts()).prompts).toMatchObject([{ name: "sync", title: "Sync with Tomrade" }]);
+      const prompt = await client.getPrompt({ name: "sync" });
+      const text = (prompt.messages[0]!.content as { text: string }).text;
+      expect(text).toContain(`project "${project.name}" (ticket keys look like ${project.keyPrefix}-42)`);
+      expect(text).toContain("Work that matches no ticket stays unmatched");
+      expect(text).toContain("never mark a code ticket done yourself");
+      expect(client.getInstructions()).toContain("never ask the user to open a ticket before working");
+    } finally {
+      await client.close();
+    }
+
+    const bare = new Client({ name: "bare", version: "0" });
+    try {
+      await bare.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      const text = ((await bare.getPrompt({ name: "sync" })).messages[0]!.content as { text: string }).text;
+      expect(text).toContain("call list_projects and pass projectId");
+    } finally {
+      await bare.close();
+    }
   });
 });
