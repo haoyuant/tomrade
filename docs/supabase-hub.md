@@ -195,6 +195,17 @@ The desktop rejects secret/service-role keys and remote HTTP URLs. Sessions are
 never sent to the renderer or stored as plaintext JSON. If the OS keychain is
 unavailable (including Linux `basic_text`), secure persistence fails explicitly.
 
+## Verification
+
+`pnpm test` includes the real migration executed in PGlite's PostgreSQL runtime:
+RLS visibility, grants, ownership, version conflicts, tombstones and idempotent
+receipts. Service tests use a simulated Supabase client for failed networks,
+lost replies, safe preference export and unchanged project write-through. The
+encrypted-session adapter has its own persistence tests.
+
+These checks do not replace live Auth/email testing or application of the
+migration to the deployment. No live project is touched by the test suite.
+
 ## Auth log retention
 
 Supabase Auth writes a row to `auth.audit_log_entries` for every sign-in,
@@ -220,14 +231,3 @@ privacy policy states.
   writing audit logs to the database. Then the only copy is the dashboard's log
   storage, which keeps auth audit logs for 1 hour on Free, 7 days on Pro and
   28 days on Team. That is too short to look into abuse on Free.
-
-## Verification
-
-`pnpm test` includes the real migration executed in PGlite's PostgreSQL runtime:
-RLS visibility, grants, ownership, version conflicts, tombstones and idempotent
-receipts. Service tests use a simulated Supabase client for failed networks,
-lost replies, safe preference export and unchanged project write-through. The
-encrypted-session adapter has its own persistence tests.
-
-These checks do not replace live Auth/email testing or application of the
-migration to the deployment. No live project is touched by the test suite.
