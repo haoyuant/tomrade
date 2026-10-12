@@ -47,7 +47,7 @@ import { FileViewer, isRenderable } from "./FileViewer";
 import { NoteEditor, type SaveState } from "./NoteEditor";
 import { stateOf, type StateView } from "./state";
 import { useNoteActions } from "./useNoteActions";
-import { shortcut } from "~/lib/keys";
+import { hits, keyLabel } from "~/lib/keybindings";
 
 const KIND: Record<FileConflict["kind"], MessageKey> = {
   content: "files.kindContent",
@@ -478,13 +478,12 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
   const backlinks = notesOn && !versionId && isNotePath(path) && content.data ? <Backlinks projectId={projectId} path={path} paths={actions.paths} /> : null;
   useEffect(() => {
     if (!editable) return;
-    // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours.
-    const mac = /Mac/i.test(navigator.platform);
+    // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours — so no Ctrl leniency here.
     const onKey = (e: KeyboardEvent) => {
       // Not behind a dialog, and not from some other field: the editor itself is fine.
       const field = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? "");
       if (e.defaultPrevented || field || document.documentElement.classList.contains("overlay-open")) return;
-      if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "e") {
+      if (hits(e, "readWrite")) {
         e.preventDefault();
         setMode(mode === "read" ? writing : "read");
       }
@@ -519,16 +518,16 @@ function FileView({ projectId, path, conflict }: { projectId: string; path: stri
             {(editable || holding) && (
               <div className="row file-view-bar files-mode-bar">
                 <div className="seg quiet files-mode" role="group" aria-label={t("notes.modeAria")} data-mode={mode}>
-                  <button type="button" aria-pressed={mode === "read"} data-tip={shortcut("⌘E")} onClick={() => setMode("read")}>
+                  <button type="button" aria-pressed={mode === "read"} data-tip={keyLabel("readWrite")} onClick={() => setMode("read")}>
                     <Icon className="ico" name="i-eye" size={13} />
                     {t("notes.read")}
                   </button>
-                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? shortcut("⌘E") : undefined} onClick={() => setMode("edit")}>
+                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? keyLabel("readWrite") : undefined} onClick={() => setMode("edit")}>
                     <Icon className="ico" name="i-pen" size={13} />
                     {t("notes.edit")}
                   </button>
                   {previewable && (
-                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? shortcut("⌘E") : undefined} onClick={() => setMode("split")}>
+                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? keyLabel("readWrite") : undefined} onClick={() => setMode("split")}>
                       <Icon className="ico" name="i-split" size={13} />
                       {t("notes.split")}
                     </button>

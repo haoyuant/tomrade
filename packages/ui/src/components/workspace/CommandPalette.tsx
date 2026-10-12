@@ -17,7 +17,7 @@ import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useSelectedId, useWorkspace, viewCount } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
-import { shortcut } from "~/lib/keys";
+import { keyLabel } from "~/lib/keybindings";
 import { openSettingsPane } from "~/lib/settingsHost";
 
 export interface PaletteActions {
@@ -92,18 +92,18 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     );
 
   const actionRows = [
-    { label: t("commandPalette.newIssue"), kb: shortcut("⌘N"), run: actions.newIssue },
+    { label: t("commandPalette.newIssue"), kb: keyLabel("newTicket"), run: actions.newIssue },
     { label: t("notes.newNote"), kb: undefined, run: () => void noteActions.createNote("") },
-    ...(notesOn ? [{ label: t("notes.today"), kb: undefined, run: () => void noteActions.openToday() }, { label: t("notes.search"), kb: shortcut("⇧⌘F"), run: () => notesSearch.open() }] : []),
+    ...(notesOn ? [{ label: t("notes.today"), kb: undefined, run: () => void noteActions.openToday() }, { label: t("notes.search"), kb: keyLabel("searchNotes"), run: () => notesSearch.open() }] : []),
     { label: t("commandPalette.newView"), kb: undefined, run: actions.newView },
     ...(ws.dirty ? [{ label: t("commandPalette.saveView"), kb: undefined, run: ws.saveView }, { label: t("commandPalette.discardChanges"), kb: undefined, run: ws.discardChanges }] : []),
-    { label: t("commandPalette.toggleAssistant"), kb: shortcut("⌘J"), run: actions.toggleAssistant },
-    { label: t("commandPalette.toggleSidebar"), kb: shortcut("⌘B"), run: actions.toggleSidebar },
-    { label: t("commandPalette.undoLastWrite"), kb: shortcut("⌘Z"), run: actions.undo },
-    { label: t("commandPalette.redoLastUndo"), kb: shortcut("⇧⌘Z"), run: actions.redo },
+    { label: t("commandPalette.toggleAssistant"), kb: keyLabel("assistant"), run: actions.toggleAssistant },
+    { label: t("commandPalette.toggleSidebar"), kb: keyLabel("sidebar"), run: actions.toggleSidebar },
+    { label: t("commandPalette.undoLastWrite"), kb: keyLabel("undo"), run: actions.undo },
+    { label: t("commandPalette.redoLastUndo"), kb: keyLabel("redo"), run: actions.redo },
     { label: t("commandPalette.history"), kb: undefined, run: actions.openHistory },
     ...LAYOUTS.map((l) => ({ label: t("commandPalette.layoutAction", { layout: LAYOUT_LABEL[l].label }), kb: undefined, run: () => ws.setLayout(l) })),
-    ...(ws.filePath === null ? [{ label: t("commandPalette.searchTickets"), kb: shortcut("⌘F"), run: actions.searchTickets }] : []),
+    ...(ws.filePath === null ? [{ label: t("commandPalette.searchTickets"), kb: keyLabel("searchTickets"), run: actions.searchTickets }] : []),
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },
     { label: t("commandPalette.fields"), kb: undefined, run: actions.openFields },
@@ -124,9 +124,9 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
         })
     })),
     { label: t("commandPalette.codeInbox"), kb: undefined, run: actions.openCodeInbox },
-    { label: t("commandPalette.switchProject"), kb: shortcut("⌘P"), run: actions.openProjectMenu },
+    { label: t("commandPalette.switchProject"), kb: keyLabel("switchProject"), run: actions.openProjectMenu },
     { label: t("commandPalette.allProjects"), kb: undefined, run: () => void navigate({ to: "/" }) },
-    { label: t("commandPalette.settings"), kb: shortcut("⌘,"), run: actions.openSettings },
+    { label: t("commandPalette.settings"), kb: keyLabel("settings"), run: actions.openSettings },
     { label: t("commandPalette.plugins"), kb: undefined, run: actions.openPlugins },
     { label: t("commandPalette.about"), kb: undefined, run: actions.openAbout },
     { label: t("shortcuts.title"), kb: "?", run: actions.openShortcuts },

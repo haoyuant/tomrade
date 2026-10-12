@@ -89,6 +89,9 @@
       "path": "./packages/items"
     },
     {
+      "path": "./packages/keybindings"
+    },
+    {
       "path": "./packages/llm"
     },
     {

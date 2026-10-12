@@ -20,6 +20,7 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { RestartOnboardingDialog } from "./RestartOnboardingDialog";
 import { RestoreBanner, RestoreCard, useRestoredToasts } from "./RestoreCards";
+import { hits } from "~/lib/keybindings";
 
 interface Facts {
   boards: number;
@@ -186,7 +187,7 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
   // the gear advertises ⌘, — a shortcut with no handler is a broken promise
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+      if (hits(e, "settings", { lenientCtrl: true })) {
         e.preventDefault();
         setSettingsOpen(true);
       }

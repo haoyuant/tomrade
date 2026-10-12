@@ -61,6 +61,7 @@
     "@tomradex/files": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/keybindings": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "@tomradex/mcp-client": "workspace:*",

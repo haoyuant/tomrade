@@ -11,7 +11,7 @@ import { useRemoveView, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
-import { shortcut } from "~/lib/keys";
+import { keyLabel } from "~/lib/keybindings";
 
 /**
  * Home *leaves* the project, the switcher *rebinds* it in place — two jobs, so
@@ -90,7 +90,7 @@ export function TitleBar({
       <button type="button" className="btn btn-ghost no-drag" onClick={onOpenPalette} title={t("titleBar.commandPaletteTitle")}>
         <Icon name="i-search" size={14} />
         <span>{t("titleBar.search")}</span>
-        <Kbd>{shortcut("⌘K")}</Kbd>
+        <Kbd>{keyLabel("palette")}</Kbd>
       </button>
       <button type="button" className="btn btn-primary no-drag" onClick={onNewIssue} title={t("titleBar.newIssueTitle")}>
         <Icon name="i-plus" size={14} />

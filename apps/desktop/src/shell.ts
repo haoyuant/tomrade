@@ -1,4 +1,5 @@
-import { BrowserWindow, dialog, shell as electronShell } from "electron";
+import { app, BrowserWindow, dialog, shell as electronShell } from "electron";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "cordis";
@@ -21,6 +22,10 @@ declare module "@tomradex/ipc" {
     "shell.openExternal": (url: string) => void;
     /** Which build this is and what it runs on, for the About pane. */
     "shell.about": () => AboutInfo;
+    /** Native save dialog, then the text written there — an exported settings file. The chosen path, or null when cancelled. */
+    "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
+    /** Native open dialog for one text file, read back — a settings file to import. Null when cancelled. */
+    "shell.openTextFile": (opts: { title?: string; extensions?: string[] }) => { path: string; text: string } | null;
   }
 }
 
@@ -78,6 +83,36 @@ export const shell = {
     });
 
     ctx.ipc.handle("shell.about", () => aboutInfo(repoRoot));
+
+    ctx.ipc.handle("shell.saveTextFile", async ({ title, defaultName, text }) => {
+      const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const ext = path.extname(defaultName).slice(1);
+      const options = {
+        title: title ?? "Save",
+        defaultPath: path.join(app.getPath("documents"), path.basename(defaultName)),
+        ...(ext ? { filters: [{ name: ext.toUpperCase(), extensions: [ext] }] } : {})
+      };
+      const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      await fs.writeFile(result.filePath, text, "utf8");
+      return result.filePath;
+    });
+
+    ctx.ipc.handle("shell.openTextFile", async ({ title, extensions }) => {
+      const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options = {
+        title: title ?? "Open",
+        properties: ["openFile" as const],
+        ...(extensions?.length ? { filters: [{ name: extensions.map((e) => e.toUpperCase()).join(", "), extensions }, { name: "All files", extensions: ["*"] }] } : {})
+      };
+      const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+      const file = result.canceled ? undefined : result.filePaths[0];
+      if (!file) return null;
+      // A settings file is small; anything big enough to stall the window is not one.
+      const stat = await fs.stat(file);
+      if (stat.size > 1024 * 1024) throw new Error("That file is too large to be a settings file.");
+      return { path: file, text: await fs.readFile(file, "utf8") };
+    });
   }
 };
 

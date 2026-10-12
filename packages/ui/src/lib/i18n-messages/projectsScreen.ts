@@ -8,7 +8,7 @@ export const projectsScreen = {
     openFolderTitle: "Open a project folder",
     openFolderButton: "Open",
     newProject: "New project",
-    settingsShortcutTitle: "Settings — ⌘,",
+    settingsShortcutTitle: "Settings — [[cmd:settings]]",
     settingsAria: "Settings",
     leadParagraph:
       "Every project is a folder you can see. Its backlog is one list of issues with built-in and custom fields; saved views filter, group and sort it without moving anything.",
@@ -43,7 +43,7 @@ export const projectsScreen = {
     openFolderTitle: "打开项目文件夹",
     openFolderButton: "打开",
     newProject: "新建项目",
-    settingsShortcutTitle: "设置 — ⌘,",
+    settingsShortcutTitle: "设置 — [[cmd:settings]]",
     settingsAria: "设置",
     leadParagraph: "每个项目都是一个看得见的文件夹。它的 backlog 是一份带有内置字段和自定义字段的工作项列表；已保存的视图对它筛选、分组、排序，而不移动任何东西。",
     newProjectCardDesc: "创建一个「主线」工作流和默认视图。",

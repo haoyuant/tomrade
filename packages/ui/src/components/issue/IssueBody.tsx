@@ -19,6 +19,7 @@ import { openExternal } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import type { FieldProps } from "./fields";
+import { hits } from "~/lib/keybindings";
 
 /** The Files store's binary read limit: anything larger could be saved but never shown again. */
 const ATTACHMENT_LIMIT = 8 * 1024 * 1024;
@@ -426,7 +427,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
       // an edit is not thrown away by one stray key: the first Escape asks, the second discards
       if (!dirty() || confirmingDiscard) discard();
       else setConfirmingDiscard(true);
-    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    } else if (hits(e.nativeEvent, "saveBody", { lenientCtrl: true })) {
       e.preventDefault();
       void commit();
     }

@@ -326,6 +326,10 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
+  # Which keys run which command. The defaults live with the renderer's
+  # commands; this row holds only what the person rebound, in their settings.
+  - id: keybindings
+    name: "@tomradex/keybindings"
   - id: community
     name: "@tomradex/community"
   - id: plugin-studio

@@ -31,7 +31,8 @@ export const SectionHead = ({ title, aside, children }: { title: string; aside?:
   </div>
 );
 
-export const Kbd = ({ children }: { children: React.ReactNode }) => <span className="kbd">{children}</span>;
+/** An empty label is a command the person unbound: no key cap at all. */
+export const Kbd = ({ children }: { children: React.ReactNode }) => (children === "" ? null : <span className="kbd">{children}</span>);
 
 export const Spacer = () => <div className="spacer" />;
 

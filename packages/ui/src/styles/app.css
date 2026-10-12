@@ -433,6 +433,49 @@ strong { font-weight: var(--font-weight-medium); }
 .side-foot { margin-top: auto; padding-top: var(--space-4); }
 .side-foot .side-row { color: var(--meta); }
 
+/* ─── tabs ───────────────────────────────────────────────────────────── */
+/* The column beside the sidebar: the tab strip over whatever the open tab shows.
+ * It carries the board's old sizing, so the detail pane still squeezes it the same way. */
+.main-col { display: flex; flex-direction: column; min-height: 0; flex: 1 1 362px; min-width: 362px; }
+.main-col > .board-region { flex: 1 1 0; min-width: 0; }
+.tab-strip {
+  display: flex; align-items: stretch; gap: 2px;
+  height: 36px; flex-shrink: 0; padding: 4px var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  /* a step darker than the page, so the open tab — in the page's own colour — reads as joined to it */
+  background: color-mix(in srgb, var(--surface-warm) 70%, var(--bg));
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.tab-strip::-webkit-scrollbar { display: none; }
+.tab {
+  position: relative; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-width: 0; max-width: 220px; padding: 0 4px 0 10px;
+  border: 1px solid transparent; border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent; color: var(--muted);
+  font-family: var(--font-display); font-size: 13px; line-height: 1;
+  white-space: nowrap; cursor: pointer; user-select: none;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.tab.is-backlog { padding-right: 12px; }
+.tab:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--fg); }
+/* the open tab sits on the line below it, joined to what it shows */
+.tab[aria-selected="true"] { background: var(--bg); color: var(--fg); border-color: var(--border); margin-bottom: -1px; cursor: default; }
+.tab[aria-selected="true"]::before { content: ""; position: absolute; left: -1px; right: -1px; top: -1px; height: 2px; background: var(--accent); border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.tab-ico { color: var(--meta); flex-shrink: 0; }
+.tab[aria-selected="true"] .tab-ico { color: var(--accent); }
+.tab-name { overflow: hidden; text-overflow: ellipsis; }
+.tab-pin { color: var(--meta); flex-shrink: 0; }
+.tab-close {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--meta); opacity: 0;
+}
+.tab:hover .tab-close, .tab[aria-selected="true"] .tab-close, .tab:focus-visible .tab-close { opacity: 1; }
+.tab-close:hover { background: var(--border-soft); color: var(--fg); }
+
 /* ─── board region ───────────────────────────────────────────────────── */
 .board-region { display: flex; flex-direction: column; min-height: 0;
   /* Basis and floor are both one full 330px column plus the track padding.
@@ -2296,3 +2339,46 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .shortcut-row { display: grid; grid-template-columns: 9.5rem 1fr; gap: var(--space-3); align-items: baseline; }
 .shortcut-row dt { display: flex; flex-wrap: wrap; gap: 4px; }
 .shortcut-row dd { margin: 0; color: var(--fg-2); }
+
+/* Settings → Keyboard shortcuts: a row per command, its key caps click to re-record */
+.keys-pane { display: grid; gap: var(--space-4); }
+.keys-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.keys-toolbar .keys-search { flex: 1 1 200px; min-width: 0; }
+.keys-confirm { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+.keys-group { display: grid; gap: var(--space-2); }
+.keys-list { padding: 0; }
+.keys-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+  padding: 8px var(--space-4); min-height: 44px;
+}
+.keys-row + .keys-row { border-top: 1px solid var(--border-soft); }
+.keys-label { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--fg); font-size: var(--text-sm); }
+.keys-row.is-fixed .keys-label { color: var(--muted); }
+.keys-chords { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.keys-chord { position: relative; display: inline-flex; }
+.keys-chord-btn { border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: var(--radius-xs); }
+.keys-chord-btn .kbd { display: inline-block; padding: 4px 7px; font-size: 12px; border: 1px solid var(--border); background: var(--surface-warm); color: var(--fg-2); }
+.keys-chord-btn:hover .kbd { border-color: var(--meta); color: var(--fg); }
+.keys-chord-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.keys-chord-x {
+  position: absolute; top: -6px; right: -6px; width: 15px; height: 15px; padding: 0;
+  display: none; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer;
+}
+.keys-chord:hover .keys-chord-x, .keys-chord:focus-within .keys-chord-x { display: inline-flex; }
+.keys-chord-x:hover { color: var(--danger); border-color: var(--danger); }
+.keys-recording {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px;
+  border: 1px dashed var(--accent); border-radius: var(--radius-xs);
+  font-size: var(--text-xs); color: var(--accent);
+}
+.keys-add { padding: 3px 7px; font-size: var(--text-xs); }
+.keys-actions { display: flex; justify-content: flex-end; min-width: 4.5rem; }
+.keys-actions .btn { padding: 3px 8px; font-size: var(--text-xs); }
+.keys-note {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  padding: 8px 10px; border-radius: var(--radius-sm); background: var(--tag-bg-faint);
+  font-size: var(--text-sm); color: var(--fg-2);
+}
+.keys-note .ico, .keys-note svg { color: var(--warn); flex-shrink: 0; }
+.keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }

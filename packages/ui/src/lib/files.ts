@@ -5,6 +5,7 @@ import type { ConflictChoice, ListMode, SyncMode } from "@tomradex/files";
 import type { FileReference } from "@tomradex/domain";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
+import { renameTabs } from "./tabs";
 
 /** The drag payload for moving a file or folder within the tree/table — never set for a drag out to the OS. */
 export const FILES_DRAG_MIME = "application/x-tomrade-paths";
@@ -150,7 +151,13 @@ export const useSyncFiles = (projectId: string) => useFilesMutation(projectId, (
 export const useBindFiles = (projectId: string) => useFilesMutation(projectId, (args: { backendId: string; config: Record<string, unknown> }) => invoke("files.bind", projectId, args.backendId, args.config));
 export const useUnbindFiles = (projectId: string) => useFilesMutation(projectId, () => invoke("files.unbind", projectId));
 export const useMakeFolder = (projectId: string) => useFilesMutation(projectId, (path: string) => invoke("files.mkdir", projectId, path));
-export const useMoveFile = (projectId: string) => useFilesMutation(projectId, (args: { from: string; to: string }) => invoke("files.move", projectId, args.from, args.to));
+// An open tab follows its file, whichever screen moved it.
+export const useMoveFile = (projectId: string) =>
+  useFilesMutation(projectId, async (args: { from: string; to: string }) => {
+    const moved = await invoke("files.move", projectId, args.from, args.to);
+    renameTabs(projectId, args.from, args.to);
+    return moved;
+  });
 export const useCopyFile = (projectId: string) => useFilesMutation(projectId, (args: { from: string; to: string }) => invoke("files.copy", projectId, args.from, args.to));
 export const useRemoveFile = (projectId: string) => useFilesMutation(projectId, (path: string) => invoke("files.remove", projectId, path));
 export const useImportFiles = (projectId: string) => useFilesMutation(projectId, (args: { dir: string; sources: string[] }) => invoke("files.import", projectId, args.dir, args.sources));

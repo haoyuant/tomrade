@@ -5,6 +5,7 @@ import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots } from "./accounts.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
+import { installAppMenu } from "./menu.js";
 import { leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { followSystemProxy } from "./system-proxy.js";
@@ -37,6 +38,7 @@ app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
+  installAppMenu();
   // The app menu's About item, which a checkout would otherwise credit to Electron.
   void aboutInfo(path.resolve(here, "../../..")).then((info) =>
     app.setAboutPanelOptions({

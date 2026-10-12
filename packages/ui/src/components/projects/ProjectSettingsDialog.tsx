@@ -12,7 +12,7 @@ import { RepositoriesBlock } from "./RepositoriesBlock";
 import { RulesBlock } from "./RulesBlock";
 import { StorageBlock } from "./StorageBlock";
 import { errorSpec, useToast } from "~/lib/toast";
-import { shortcut } from "~/lib/keys";
+import { keyLabel } from "~/lib/keybindings";
 
 type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -262,7 +262,7 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
           </div>
           <div className="project-settings-section project-settings-copy">
             <Eyebrow style={{ color: "var(--danger)" }}>{t("projectSettingsDialog.deleteThisProject")}</Eyebrow>
-            <p className="meta-txt dense">{tx("projectSettingsDialog.deleteWarning", { cmdz: <Num>{shortcut("⌘Z")}</Num> })}</p>
+            <p className="meta-txt dense">{tx("projectSettingsDialog.deleteWarning", { cmdz: <Num>{keyLabel("undo")}</Num> })}</p>
             <button type="button" className="btn btn-danger del-proj" aria-haspopup="dialog" onClick={onRequestDelete}><Icon name="i-trash" size={13} />{t("projectSettingsDialog.deleteButton")}</button>
           </div>
         </>
@@ -379,7 +379,7 @@ function DeleteFace({
           <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
             {tx("projectSettingsDialog.notUndoable", {
               strong: <strong>{t("projectSettingsDialog.notUndoableStrong")}</strong>,
-              cmdz: <span className="num">{shortcut("⌘Z")}</span>
+              cmdz: <span className="num">{keyLabel("undo")}</span>
             })}
           </p>
         </div>
