@@ -27,6 +27,7 @@ import { openExternal, reveal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
 import { readableError } from "~/lib/toast";
 import { shortcut } from "~/lib/keys";
+import { useSettingsSheet } from "~/lib/settingsHost";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -320,6 +321,7 @@ export function SettingsDialog({
   useEffect(() => {
     if (open && pane) go(pane);
   }, [open, pane]);
+  useSettingsSheet(open, go);
   // A destination's account is asked for where it is used — in a project's own
   // settings — so the section behind it is storage, not a screen. Whoever claims
   // one draws it; this dialog does not draw it twice.

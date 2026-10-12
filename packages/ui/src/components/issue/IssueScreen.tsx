@@ -30,6 +30,7 @@ import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/do
 import { useI18n } from "~/lib/i18n";
 import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 import { shortcut } from "~/lib/keys";
+import { useSettingsHost } from "~/lib/settingsHost";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
 const FLOW: ItemStatus[] = ["backlog", "todo", "doing", "verifying", "done"];
@@ -51,6 +52,10 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Where the panel sent Settings: the assistant pane, maybe at one engine's row. */
   const [settingsAt, setSettingsAt] = useState<{ pane: string; engine?: string } | null>(null);
+  useSettingsHost((pane) => {
+    setSettingsAt({ pane });
+    setSettingsOpen(true);
+  });
   const [deleting, setDeleting] = useState(false);
 
   const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
