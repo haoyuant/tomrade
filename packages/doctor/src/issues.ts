@@ -40,7 +40,8 @@ const pattern = (source: string): RegExp | null => {
 
 /** Whether `version` (1.2.3, v-prefixed or not) comes before `fixed`. */
 export function before(version: string, fixed: string): boolean {
-  const parts = (v: string) => v.replace(/^v/, "").split(/[.-]/).slice(0, 3).map((n) => Number.parseInt(n, 10) || 0);
+  // Missing parts count as 0, so "dev" or "1.2" compare like any release.
+  const parts = (v: string) => [0, 1, 2].map((i) => Number.parseInt(v.replace(/^v/, "").split(/[.-]/)[i] ?? "", 10) || 0);
   const [a, b] = [parts(version), parts(fixed)];
   for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! < b[i]!;
   return false;

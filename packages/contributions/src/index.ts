@@ -16,6 +16,8 @@ export interface CommandResult {
   showThread?: string;
   /** The project that conversation lives in, when the command ran without one (the projects home). */
   projectId?: string;
+  /** A settings pane the renderer should show ("about"). */
+  settingsPane?: string;
   /** Starting the scoped ticket stopped on something the Start dialog can fix: open it there, in this mode. */
   startDialog?: "run" | "terminal";
 }

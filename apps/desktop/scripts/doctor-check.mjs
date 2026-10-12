@@ -4,7 +4,8 @@
  * names the known issue and offers what to do; the report shows exactly what
  * would be sent (no conversation unless ticked) and waits in the outbox when
  * it can't go; another agent, picked by the person, looks into it with only
- * the troubleshooting tools and concludes on a card; the bottom bar starts one too; the troubleshooter is never
+ * the troubleshooting tools and concludes on a card; the bottom bar starts one too;
+ * the developer's reply shows in the bottom bar and in About → My reports; the troubleshooter is never
  * offered as an agent; and a packaged build's log now lands in a file.
  *
  *   pnpm build:backend && pnpm dev:ui   then
@@ -60,7 +61,9 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...local.map((id) => ({ id, disabled: true }))]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...local.map((id) => ({ id, disabled: true })),
+      // no catalog from tomrade.com in a check
+      { id: "doctor", config: { dataDir: "${userData}/doctor", logDir: "${logDir}", version: "${appVersion}", catalogUrl: "" } }]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
@@ -207,6 +210,25 @@ const run = async () => {
   const generalRows = await $(`[...[...document.querySelectorAll('.checklist')].pop().querySelectorAll('.check-title')].map((n) => n.textContent)`);
   check("which looks at the whole setup: agents, models, tools, sync", ["Tomrade", "Refusing", "Models", "Tomrade's tools for local agents", "Account and sync"].every((r) => generalRows.includes(r)), generalRows);
   await shot("general");
+
+  // ── the developer answers ────────────────────────────────────────────
+  const queuedCode = outbox[0].replace(/\.json$/, "");
+  ctx.doctor.transport = async () => {};
+  check("a waiting report goes once the backend can take it", (await ctx.doctor.flush()) === 1 && ctx.doctor.pending() === 0);
+  ctx.doctor.fetchReports = async () => [{ code: queuedCode, created_at: new Date().toISOString(), summary: "Refusing is the internal edition", engine: "refusing", status: "fixed", reply: "Fixed — update to 0.7.0 and it signs in.", replied_at: new Date().toISOString(), fixed_in: "0.7.0" }];
+  await ctx.doctor.refreshReports();
+  const notice = await waitFor(`!!${button("A reply to your report", "document.querySelector('.statusbar')")}`, 5000);
+  check("a reply shows in the bottom bar", notice);
+  await press(button("A reply to your report", "document.querySelector('.statusbar')"));
+  const listed = await waitFor(`!!document.querySelector('.my-report[data-code="${queuedCode}"]')`, 5000);
+  check("which opens About on My reports", listed);
+  const mine = await $(`(() => { const r = document.querySelector('.my-report[data-code="${queuedCode}"]'); return r ? { text: r.textContent, isNew: r.classList.contains('is-new') } : null; })()`);
+  check("with the reply, marked new, and when the fix arrives", !!mine && mine.isNew && mine.text.includes("Fixed — update to 0.7.0") && mine.text.includes("Fixed in 0.7.0 — update to get it."), mine);
+  await shot("my-reports");
+  const gone = await waitFor(`!${button("A reply to your report", "document.querySelector('.statusbar')")}`, 5000);
+  check("seen, the bottom bar lets it go", gone);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await sleep(400);
 
   // ── a log a packaged build keeps ─────────────────────────────────────
   const logs = fs.existsSync(path.join(work, "logs")) ? fs.readdirSync(path.join(work, "logs")) : [];

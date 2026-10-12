@@ -1322,6 +1322,10 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .finding.is-warn .finding-head > svg { color: var(--warn); }
 .finding.is-ok .finding-head > svg { color: var(--success); }
 .finding-body { margin: 4px 0 0; color: var(--fg-2); }
+.my-report + .my-report { border-top: 1px solid var(--border-soft); padding-top: var(--space-3); }
+.my-report.is-new .num { color: var(--accent); }
+.my-report-summary { margin: 4px 0 0; color: var(--fg-2); font-size: 14px; }
+.my-report-reply { margin: 6px 0 0; padding-left: var(--space-3); border-left: 2px solid var(--accent); font-size: 14px; line-height: var(--leading-dense); }
 .palette.sheet-report { width: min(720px, calc(100vw - 64px)); }
 .report-sections { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 0; padding: 0; margin: 0; font-size: var(--text-sm); }
 .report-note { width: 100%; resize: vertical; }

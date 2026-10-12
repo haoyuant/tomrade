@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, PANEL_SURFACES, type CardView, type ChecklistCard, type FindingCard, type RunView } from "@tomradex/agent";
-import { Doctor, KnownIssue, before, fingerprint, matches, scrub } from "@tomradex/doctor";
+import { Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, scrub, type RemoteReport } from "@tomradex/doctor";
 
 const tmp = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `tomrade-doctor-${name}-`));
 
@@ -66,6 +66,8 @@ describe("known issues", () => {
     expect(matches(fixed, { engineId: "acme", texts: [], facts: { edition: "ioa" }, version: "v0.6.3" })).toBe(true);
     expect(matches(fixed, { engineId: "acme", texts: [], facts: { edition: "ioa" }, version: "0.7.0" })).toBe(false);
     expect(before("0.10.0", "0.9.9")).toBe(false);
+    expect(before("dev", "0.7.0")).toBe(true);
+    expect(before("1.2", "1.2.1")).toBe(true);
   });
 
   it("are data: a malformed entry is refused, a bad pattern never matches", () => {
@@ -244,5 +246,58 @@ describe("an agent looking into it", () => {
   it("never runs its tools outside a troubleshooting conversation", async () => {
     const { ctx } = await boot();
     await expect(ctx.tools.execute("doctor_read_log", {}, { by: "ai:mcp" })).rejects.toThrow(/only inside a troubleshooting conversation/);
+  });
+});
+
+describe("the catalog from tomrade.com", () => {
+  const entry = { id: "acme-quota", engine: "acme", when: [{ text: "quota" }], title: { en: "Out of quota", zh: "额度用完" }, explain: { en: "x", zh: "x" }, confidence: "high", offer: ["settings"] };
+
+  it("keeps the well-formed entries and drops the rest, never the whole file", () => {
+    expect(parseCatalog({ version: 1, issues: [entry, { ...entry, id: "Bad" }, { ...entry, id: "acme-run", offer: ["rm -rf /"] }, 42] }).map((i) => i.id)).toEqual(["acme-quota"]);
+    expect(parseCatalog({ version: 2, issues: [entry] })).toEqual([]);
+    expect(parseCatalog("<html>")).toEqual([]);
+  });
+
+  it("adds to what was bundled, with its newer word on the same id, and keeps its cache when tomrade.com can't be reached", async () => {
+    const { ctx } = await boot();
+    const newer = { ...entry, id: "workbuddy-ioa-edition", engine: "workbuddy", title: { en: "Newer wording", zh: "新的说法" } };
+    const ok = (async () => new Response(JSON.stringify({ version: 1, issues: [entry, newer] }), { status: 200 })) as unknown as typeof fetch;
+    expect(await ctx.doctor.refreshCatalog(true, ok)).toBe(2);
+    const ids = ctx.doctor.issues().map((i) => i.id);
+    expect(ids).toContain("acme-quota");
+    expect(ids.filter((id) => id === "workbuddy-ioa-edition")).toHaveLength(1);
+    expect(ctx.doctor.issues().find((i) => i.id === "workbuddy-ioa-edition")?.title.en).toBe("Newer wording");
+    const down = (async () => { throw new Error("fetch failed"); }) as unknown as typeof fetch;
+    expect(await ctx.doctor.refreshCatalog(true, down)).toBe(2);
+    expect(ctx.doctor.issues().map((i) => i.id)).toContain("acme-quota");
+  });
+});
+
+describe("my reports", () => {
+  it("lists what waits, what went and what came back; a reply is new until seen, and new again when it changes", async () => {
+    const { ctx, project } = await boot();
+    const thread = ctx.doctor.start(project.id, null);
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+    ctx.doctor.transport = async () => { throw new Error("offline"); };
+    const waiting = await ctx.doctor.send(project.id, thread.id);
+    ctx.doctor.transport = async () => {};
+    const sent = await ctx.doctor.send(project.id, thread.id);
+    let remote: RemoteReport[] = [{ code: sent.code, created_at: new Date().toISOString(), summary: "Models: no model connected", engine: null, status: "fixed", reply: "Fixed — update to 0.7.0.", replied_at: "2026-10-12T10:00:00Z", fixed_in: "0.7.0" }];
+    ctx.doctor.fetchReports = async () => remote;
+
+    const first = await ctx.doctor.reports();
+    expect(first.reports.map((r) => [r.code, r.status])).toEqual(expect.arrayContaining([[waiting.code, "queued"], [sent.code, "fixed"]]));
+    expect(first.unread).toBe(1);
+    const fixed = first.reports.find((r) => r.code === sent.code)!;
+    expect(fixed).toMatchObject({ reply: "Fixed — update to 0.7.0.", fixedIn: "0.7.0", fixedHere: false, unread: true });
+
+    await ctx.doctor.markRead();
+    expect((await ctx.doctor.reports()).unread).toBe(0);
+    remote = [{ ...remote[0]!, reply: "Also: sign in again after updating.", replied_at: "2026-10-13T10:00:00Z" }];
+    expect((await ctx.doctor.reports()).unread).toBe(1);
+
+    await ctx.doctor.deleteReport(waiting.code);
+    expect((await ctx.doctor.reports()).reports.some((r) => r.code === waiting.code)).toBe(false);
+    expect(ctx.doctor.pending()).toBe(0);
   });
 });

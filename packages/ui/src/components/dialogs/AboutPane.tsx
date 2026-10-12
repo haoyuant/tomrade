@@ -7,6 +7,7 @@ import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
+import { MyReports } from "./MyReports";
 
 /** Plain text, the way a bug report wants it: one fact per line, nothing localized. */
 function details(info: AboutInfo): string {
@@ -55,6 +56,8 @@ export function AboutPane() {
           </div>
         )
       )}
+
+      <MyReports />
 
       <hr className="rule" />
       <SectionHead

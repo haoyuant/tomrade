@@ -18,6 +18,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useSelectedId, useWorkspace, viewCount } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { shortcut } from "~/lib/keys";
+import { openSettingsPane } from "~/lib/settingsHost";
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -86,6 +87,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
         if (r.startDialog && selectedId && requestStart(selectedId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
+        if (r.settingsPane) openSettingsPane(r.settingsPane);
       }, onError: (e) => toast(errorSpec(e)) }
     );
 

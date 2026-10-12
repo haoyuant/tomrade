@@ -19,6 +19,13 @@ It also reads the **troubleshooting reports** people send from the app (Troubles
 tomrade-store diag                                      # new reports, grouped by fingerprint, most common first
 tomrade-store diag --all                                # every status
 tomrade-store diag R-7K3F2A                             # one report, section by section
+tomrade-store diag import --project <id>                # new reports → TOM tickets in a running Tomrade (its MCP, 127.0.0.1:19090), one per fingerprint
+tomrade-store diag reply --ticket TOM-60 "Fixed in 0.7.0 — update and it signs in." --status fixed --in 0.7.0
+tomrade-store diag status R-7K3F2A wontfix              # new, triaged, fixed, wontfix or duplicate
 ```
+
+The sender sees the status, the reply and the fixing release in Settings → About → My reports. The bottom bar says so until they read it.
+
+Known issues people can fix themselves belong in the site's `known-issues.json` (`{ "version": 1, "issues": [...] }`, the `KnownIssue` shape in `@tomradex/doctor`). Every Tomrade reads it within six hours, so no release is needed.
 
 Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.

@@ -8,6 +8,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useMcpUrl, useOplog, useProjects, useRunCommand, useStatusItems } from "~/lib/queries";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "./ProjectShell";
+import { openSettingsPane } from "~/lib/settingsHost";
 
 const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp(\/[^/]+)?$/, "") : null);
 
@@ -108,6 +109,7 @@ export function StatusBar({
     runCommand.mutate({ id, scope: projectId ? { projectId } : {} }, {
       onSuccess: (r) => {
         if (r.toast) toast({ body: r.toast });
+        if (r.settingsPane) openSettingsPane(r.settingsPane);
         if (!r.showThread) return;
         if (dock && (!r.projectId || r.projectId === projectId)) dock.showThread(r.showThread);
         else if (r.projectId) openIn({ projectId: r.projectId, threadId: r.showThread, itemId: null });
