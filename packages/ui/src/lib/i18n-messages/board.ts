@@ -1,6 +1,7 @@
 export const board = {
   en: {
     emptyFiltered: "Nothing in {{label}} matches these filters.",
+    emptySearch: "Nothing in {{label}} matches “{{query}}”.",
     emptyPlain: "Nothing in {{label}}. Drag a card here or add below.",
     columnAria: "{{label}} — {{n}} issues",
     laneAria: "{{label}} — {{n}} issues",
@@ -17,6 +18,7 @@ export const board = {
   },
   zh: {
     emptyFiltered: "「{{label}}」中没有符合这些筛选条件的工作项。",
+    emptySearch: "「{{label}}」中没有匹配「{{query}}」的工作项。",
     emptyPlain: "「{{label}}」中还没有工作项。拖一张卡片过来，或在下方新建。",
     columnAria: "{{label}} — 共 {{n}} 个工作项",
     laneAria: "{{label}} — 共 {{n}} 个工作项",

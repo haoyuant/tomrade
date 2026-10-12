@@ -507,6 +507,39 @@ strong { font-weight: var(--font-weight-medium); }
 .qb-btn[data-on="true"][aria-expanded="true"] { background: var(--tag-bg-base); color: var(--tag-fg); }
 .qb-val { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: var(--tracking-label); }
 
+/* ─── ticket search · first in the bar ─────────────────────────────────
+ * It narrows every layout and is never saved with the view, so it reads
+ * as a field, and as armed only while it holds words. The basis is what
+ * wrapping measures; the field only grows into room the line has spare. */
+.qb-search {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: 1 1 170px; min-width: 150px; max-width: 280px; padding: 0 5px 0 8px;
+  border-radius: var(--radius-sm); background: transparent; box-shadow: var(--elev-ring);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+}
+.qb-search .ico { color: var(--meta); flex-shrink: 0; }
+.qb-search[data-on="true"] { background: var(--tag-bg-soft); box-shadow: var(--elev-ring-accent); }
+.qb-search[data-on="true"] .ico { color: var(--tag-fg); }
+.qb-search:focus-within { background: var(--surface); box-shadow: var(--focus-ring); }
+.qb-search .kbd { padding: 2px 5px; flex-shrink: 0; }
+.qb-search:focus-within .kbd { display: none; }
+.qb-search-input {
+  flex: 1; min-width: 0; border: 0; background: transparent; padding: 5px 0;
+  color: var(--fg); font-family: var(--font-display); font-size: var(--text-sm);
+  letter-spacing: var(--tracking-label); outline: none;
+}
+.qb-search-input::placeholder { color: var(--meta); }
+.qb-search-input::-webkit-search-cancel-button { display: none; }
+.qb-search-x {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 18px; height: 18px; border: 0; border-radius: var(--radius-xs);
+  background: transparent; color: var(--tag-fg); opacity: 0.6; cursor: pointer;
+}
+.qb-search-x:hover { opacity: 1; background: var(--tag-bg-base); }
+.qb-search-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--focus-ring); }
+.qb-search-note { white-space: nowrap; cursor: default; }
+
 /* ─── filter chips · one per clause, armed by construction ─────────────
  * A chip is the clause in words. Its body opens the same editor that made it;
  * the × takes it off. The add control is the only unarmed filter button. */

@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { EMPTY_KEY, fieldValueOf, type FieldDef, type FieldValue, type FilterClause, type FilterOp, type Item, type Priority, type SortKey, type ViewQuery } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
-import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
+import { Kbd, PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuCheckItem, MenuEmpty, MenuFoot, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { Popover } from "~/components/ui/popover";
 import { FILTER_OP_LABEL, fieldLabel, manualSortLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useWorkspace, type WorkspaceValue } from "./context";
+import { ticketSearch, useTicketSearch, useWorkspace, type WorkspaceValue } from "./context";
 
 const FIELD_ICON: Record<string, IconId> = {
   title: "i-pen",
@@ -353,6 +353,62 @@ function SortPick() {
   );
 }
 
+/** Puts the caret in the query bar's search, its words selected; false where the screen has no query bar. */
+export function focusTicketSearch(): boolean {
+  const input = document.querySelector<HTMLInputElement>(".qb-search-input");
+  if (!input) return false;
+  input.focus();
+  input.select();
+  return true;
+}
+
+/** Narrows whichever view is open to the tickets holding every word, in key, title or body. */
+function SearchBox() {
+  const { t } = useI18n();
+  const ws = useWorkspace();
+  const text = useTicketSearch(ws.project.id);
+  const set = (next: string) => ticketSearch.set(ws.project.id, next);
+  return (
+    <>
+      <div className="qb-search" data-on={text.trim().length > 0}>
+        <Icon className="ico" name="i-search" size={13} />
+        <input
+          className="qb-search-input"
+          type="search"
+          value={text}
+          placeholder={t("queryBar.searchPlaceholder")}
+          aria-label={t("queryBar.searchAria")}
+          spellCheck={false}
+          onChange={(e) => set(e.target.value)}
+          onKeyDown={(e) => {
+            // Escape empties the field, then leaves it — before it closes the open ticket
+            if (e.key === "Escape") {
+              e.preventDefault();
+              if (text) set("");
+              else e.currentTarget.blur();
+            } else if (e.key === "Enter" && ws.visible[0]) {
+              e.preventDefault();
+              ws.select(ws.visible[0].id);
+            }
+          }}
+        />
+        {text ? (
+          <button type="button" className="qb-search-x" aria-label={t("queryBar.clearSearch")} title={t("queryBar.clearSearch")} onClick={() => set("")}>
+            <Icon name="i-close" size={10} />
+          </button>
+        ) : (
+          <Kbd>/</Kbd>
+        )}
+      </div>
+      {ws.searchElsewhere > 0 && (
+        <span className="qb-search-note meta-txt" title={t("queryBar.searchElsewhereTitle")}>
+          {t("queryBar.searchElsewhere", { n: ws.searchElsewhere })}
+        </span>
+      )}
+    </>
+  );
+}
+
 /** Save the draft under a new name: a popover with one field. */
 function SaveAsNew() {
   const { t } = useI18n();
@@ -419,6 +475,7 @@ export function QueryBar() {
 
   return (
     <div className="query-bar" data-dirty={ws.dirty}>
+      <SearchBox />
       {ws.query.filter.map((clause, i) => (
         <FilterChip key={`${clause.field}:${clause.op}:${i}`} index={i} clause={clause} />
       ))}

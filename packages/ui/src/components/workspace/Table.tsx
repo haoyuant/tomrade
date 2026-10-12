@@ -212,7 +212,7 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
           {visible.length === 0 && (
             <tr className="tbl-empty">
               <td className="tbl-cell col-empty" colSpan={span}>
-                {t(ws.filterCount ? "table.emptyFiltered" : "table.emptyPlain")}
+                {ws.search.trim() ? t("table.emptySearch", { query: ws.search.trim() }) : t(ws.filterCount ? "table.emptyFiltered" : "table.emptyPlain")}
               </td>
             </tr>
           )}

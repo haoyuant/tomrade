@@ -23,7 +23,7 @@ import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
 import { GraphView } from "./GraphView";
-import { QueryBar } from "./QueryBar";
+import { QueryBar, focusTicketSearch } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { Table } from "./Table";
 import { TitleBar, ViewHead } from "./TitleBar";
@@ -231,6 +231,8 @@ export function Workspace() {
       } else if (meta && e.shiftKey && key === "f") {
         e.preventDefault();
         notesSearch.open();
+      } else if (meta && key === "f" && !anyOverlay) {
+        if (focusTicketSearch()) e.preventDefault();
       } else if (meta && key === "b") {
         e.preventDefault();
         setSideOpen((v) => !v);
@@ -266,6 +268,8 @@ export function Workspace() {
       } else if (key === "n" && !meta && !typing && !anyOverlay) {
         e.preventDefault();
         setNewIssue(true);
+      } else if (e.key === "/" && !meta && !typing && !anyOverlay) {
+        if (focusTicketSearch()) e.preventDefault();
       } else if (e.key === "?" && !meta && !typing && !anyOverlay) {
         e.preventDefault();
         setShortcutsOpen(true);
@@ -353,7 +357,9 @@ export function Workspace() {
           openTemplates,
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true),
-          openCodeInbox: () => setCodeInbox(true)
+          openCodeInbox: () => setCodeInbox(true),
+          // the closing palette hands focus back to its trigger; take it after that
+          searchTickets: () => requestAnimationFrame(() => focusTicketSearch())
         }}
       />
       <TemplatesDialog

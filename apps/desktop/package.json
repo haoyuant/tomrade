@@ -35,6 +35,7 @@
     "test:usage": "electron scripts/usage-check.mjs",
     "test:rules": "electron scripts/rules-check.mjs",
     "test:schedules": "electron scripts/schedules-check.mjs",
+    "test:search": "electron scripts/search-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",

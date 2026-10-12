@@ -4,6 +4,7 @@
  * for a trigram fall back to instr(), and the index follows every write.
  */
 import { describe, expect, it } from "vitest";
+import { matchesSearch, searchTerms } from "@tomradex/domain";
 import { fresh } from "@tomradex/testkit";
 
 async function seed() {
@@ -104,5 +105,15 @@ describe("items search", () => {
     expect(q("mode", { filter: [{ field: "status", op: "in", values: ["todo"] }] })).toEqual(["Light mode"]);
     expect(q("dark", {})).toEqual(["Dark mode toggle", "Light mode"]);
     expect(q("dark", { sortBy: [{ field: "title", dir: "desc" }] })).toEqual(["Light mode", "Dark mode toggle"]);
+  });
+
+  it("the search box's matcher finds what the index finds, and the key too", async () => {
+    const { items, project, dark, titles } = await seed();
+    const all = items.list({ projectId: project.id });
+    const inApp = (search: string) => all.filter((i) => matchesSearch(i, searchTerms(search))).map((i) => i.title).sort();
+    for (const search of ["DARK", "toggle theme", "toggle nothing", "认证", "认证系统", "tom-42", '"mode toggle"', '"toggle mode"', "“认证系统”", '"unclosed dark', "(dark)", "mode OR", "   "]) {
+      expect(inApp(search), search).toEqual([...titles(search)].sort());
+    }
+    expect(inApp(dark.key.toLowerCase())).toEqual(["Dark mode toggle"]);
   });
 });

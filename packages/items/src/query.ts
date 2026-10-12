@@ -1,4 +1,4 @@
-import { ITEM_STATUSES, dayBound, type FieldDef, type FilterClause, type FieldValue, type SortKey } from "@tomradex/domain";
+import { ITEM_STATUSES, dayBound, searchTerms, type FieldDef, type FilterClause, type FieldValue, type SortKey } from "@tomradex/domain";
 
 /**
  * Compiles a view query to SQL over `items i`. Built-in fields are column
@@ -189,37 +189,6 @@ export type SearchMode = "all" | "any";
 
 /** BM25 column weights: a hit in the title says more about what a ticket is than one in its body. */
 export const SEARCH_TITLE_WEIGHT = 5;
-
-/**
- * The terms of a search: whitespace-separated words, except that a run in
- * double quotes ("login timeout", “登录 超时”) is one term matched as a whole,
- * spaces included. A quote with no partner runs to the end of the string.
- */
-export function searchTerms(search: string): string[] {
-  const out: string[] = [];
-  const closer: Record<string, string> = { '"': '"', "\u201c": "\u201d" };
-  let i = 0;
-  while (i < search.length) {
-    const c = search[i]!;
-    if (/\s/.test(c)) {
-      i++;
-      continue;
-    }
-    const close = closer[c];
-    if (close) {
-      const end = search.indexOf(close, i + 1);
-      const phrase = (end === -1 ? search.slice(i + 1) : search.slice(i + 1, end)).trim();
-      if (phrase) out.push(phrase);
-      i = end === -1 ? search.length : end + 1;
-      continue;
-    }
-    let j = i;
-    while (j < search.length && !/\s/.test(search[j]!)) j++;
-    out.push(search.slice(i, j));
-    i = j;
-  }
-  return out;
-}
 
 /**
  * A title/body search as SQL over `items i`. Every term must appear, in either
