@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../agent" },
+    { "path": "../boards" },
+    { "path": "../code-link" },
+    { "path": "../db" },
+    { "path": "../domain" },
+    { "path": "../ipc" },
+    { "path": "../items" },
+    { "path": "../settings" },
+    { "path": "../tools" }
+  ]
+}

@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
+import { TemplatesDialog } from "~/components/dialogs/TemplatesDialog";
 import { HistoryDialog } from "~/components/dialogs/HistoryDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
@@ -70,7 +71,7 @@ export function Workspace() {
   const dismissToast = useToastDismiss();
   const navigate = useNavigate();
 
-  const { setAiOpen } = useAgentDock();
+  const { setAiOpen, showThread } = useAgentDock();
   const [sideOpen, setSideOpen] = usePanelOpen(sidebarOpenKey);
   // The note search lives in the sidebar: asking for it, from anywhere, unfolds the sidebar.
   const searchFocus = useNotesSearchState().focus;
@@ -87,6 +88,8 @@ export function Workspace() {
   const [settingsEngine, setSettingsEngine] = useState<string>();
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const openTemplates = useCallback(() => setTemplatesOpen(true), []);
   const [codeInbox, setCodeInbox] = useState(false);
   const [history, setHistory] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -286,7 +289,7 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenProjectSettings={openProjectSettings} />
+        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} onOpenProjectSettings={openProjectSettings} />
         {ws.filePath !== null ? (
           <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
         ) : (
@@ -347,9 +350,23 @@ export function Workspace() {
           openAbout: () => setSettings("about"),
           openViewSettings: () => setViewSettings(true),
           openFields: () => openFields(),
+          openTemplates,
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true),
           openCodeInbox: () => setCodeInbox(true)
+        }}
+      />
+      <TemplatesDialog
+        projectId={ws.project.id}
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        onOpenIssue={(id) => {
+          setTemplatesOpen(false);
+          ws.select(id);
+        }}
+        onOpenThread={(id) => {
+          setTemplatesOpen(false);
+          showThread(id);
         }}
       />
       <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} onOpenRepositories={() => setProjectSettings("repositories")} />

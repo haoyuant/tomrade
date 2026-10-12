@@ -205,7 +205,8 @@ const AUTHORS: Record<string, [string, string]> = {
   "ai:mcp": ["An agent", "智能体"],
   "ai:claude-code": ["Claude Code", "Claude Code"],
   "ai:codex": ["Codex", "Codex"],
-  "ai:pi": ["Pi", "Pi"]
+  "ai:pi": ["Pi", "Pi"],
+  "ai:automation": ["A template", "模板"]
 };
 
 /** Who wrote, as a person reads it: "You", "The assistant", an agent's name — not its author id. */

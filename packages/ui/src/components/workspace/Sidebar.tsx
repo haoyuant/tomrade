@@ -210,11 +210,13 @@ export function Sidebar({
   open,
   onToggle,
   onOpenFields,
+  onOpenTemplates,
   onOpenProjectSettings
 }: {
   open: boolean;
   onToggle: (open: boolean) => void;
   onOpenFields: (fieldId?: string) => void;
+  onOpenTemplates: () => void;
   onOpenProjectSettings: () => void;
 }) {
   const { t } = useI18n();
@@ -301,6 +303,10 @@ export function Sidebar({
         <NewWorkstreamRow />
       </div>
       <div className="side-group side-foot">
+        <button type="button" className="side-row side-add side-templates" aria-haspopup="dialog" data-testid="open-templates" onClick={onOpenTemplates}>
+          <Icon className="ico" name="i-clock" size={14} />
+          <span className="side-name">{t("templates.label")}</span>
+        </button>
         <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
           <Icon className="ico" name="i-sliders" size={14} />
           <span className="side-name">{t("sidebar.fields")}</span>
