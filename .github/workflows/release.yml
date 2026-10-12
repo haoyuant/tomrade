@@ -23,15 +23,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The Macs run on the self-hosted Mac (docs/releasing.md): hosted macOS
-        # minutes count tenfold. It has no Windows or Linux, so those stay hosted.
+        # Everything but Windows runs on the self-hosted Mac (docs/releasing.md),
+        # Linux in a container on it: hosted minutes run out, macOS ones tenfold.
         include:
           - { name: macOS arm64, slug: mac-arm64, os: [self-hosted, macOS, ARM64], args: --mac --arm64 }
           # An x64 runner: better-sqlite3 and the agent SDK's binary are per-arch.
           - { name: macOS x64, slug: mac-x64, os: [self-hosted, macOS, X64], args: --mac --x64 }
           - { name: Windows x64, slug: win-x64, os: windows-2025, args: --win --x64 }
-          # The oldest supported image, so the AppImage runs on older glibc.
-          - { name: Linux x64, slug: linux-x64, os: ubuntu-22.04, args: --linux --x64 }
+          # Ubuntu 22.04, the oldest supported, so the AppImage runs on older glibc.
+          - { name: Linux x64, slug: linux-x64, os: [self-hosted, Linux, X64], args: --linux --x64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -112,7 +112,7 @@ jobs:
           if-no-files-found: error
           # Only the release job reads them, and artifacts count against the
           # account's 500 MB of Actions storage; the release keeps the files.
-          retention-days: 2
+          retention-days: 1
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip

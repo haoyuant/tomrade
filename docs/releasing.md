@@ -10,7 +10,7 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-It builds four installers: macOS arm64 and x64 on the self-hosted Mac (below), Windows x64 (NSIS, unsigned) and Linux x64 (AppImage) on GitHub's runners. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+It builds four installers: macOS arm64 and x64 and Linux x64 (AppImage) on the self-hosted Mac (below), and Windows x64 (NSIS, unsigned) on GitHub's runner. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
 A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces the files on the existing draft.
 
@@ -35,15 +35,18 @@ gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 ## Self-hosted runners: the Mac mini
 
-Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So the Mac builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy all run on runners on the Mac mini, which GitHub still schedules then. Windows and Linux need GitHub's runners (about 15 minutes a release); until the allowance resets, a tag builds the Macs but stops at Windows.
+Hosted macOS minutes count ten times against the account's monthly allowance, and when it runs out GitHub starts no hosted job at all. So every job but the Windows build runs on runners on the Mac mini, which GitHub still schedules then: the Mac and Linux builds, the release job, the Website job, and haoyuant/tomrade-site's Deploy. Windows needs GitHub's runner (about 12 billed minutes a release); until the allowance resets, a tag builds the rest but stops at Windows.
 
 | Runner | Repository | Labels |
 | --- | --- | --- |
 | `~/actions-runners/tomrade-mac-arm64` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
 | `~/actions-runners/tomrade-mac-x64` | haoyuant/tomrade | `self-hosted, macOS, X64` |
+| Docker container `actions-runner-haoyuant-tomrade` | haoyuant/tomrade | `self-hosted, Linux, X64` |
 | `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
 The x64 runner is the Intel build of the runner, so it and everything it starts run under Rosetta: Node, pnpm's packages and better-sqlite3 come out x64. Each is a LaunchAgent, so it runs while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh`, Xcode, and the Developer ID come from the machine.
+
+The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. It restarts with Docker Desktop, so Docker Desktop must be running for a release. The build needs about 4 GB of the Docker VM's memory: if a step dies with exit code 137, it ran out.
 
 `.github/runners/setup.sh` installs or replaces one:
 
@@ -51,10 +54,11 @@ The x64 runner is the Intel build of the runner, so it and everything it starts 
 export GH_TOKEN=$(gh auth token --user haoyuant)
 .github/runners/setup.sh arm64 haoyuant/tomrade
 .github/runners/setup.sh x64   haoyuant/tomrade
+.github/runners/setup.sh linux haoyuant/tomrade
 .github/runners/setup.sh arm64 haoyuant/tomrade-site
 ```
 
-Check on them with `./svc.sh status` in a runner's folder, or under Settings → Actions → Runners; logs are in `~/Library/Logs/actions.runner.*`. While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
+Check on them under Settings → Actions → Runners, with `./svc.sh status` in a Mac runner's folder (logs in `~/Library/Logs/actions.runner.*`), or with `docker logs actions-runner-haoyuant-tomrade`. While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
 
 ## Publishing: the website follows
 
