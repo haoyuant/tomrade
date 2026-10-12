@@ -888,7 +888,21 @@ strong { font-weight: var(--font-weight-medium); }
 .gate-fix { display: grid; gap: var(--space-2); }
 .repo-workstreams { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--space-1); }
 .rules-input { width: 100%; min-height: 180px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.55; }
-.palette.sheet-templates { width: min(980px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px); }
+/* Resizable from its corner grip; these are its limits — the widest any Tomrade
+ * sheet goes, and never past the workspace row. */
+.palette.modal.sheet-templates {
+  width: min(1040px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px);
+  min-width: min(720px, calc(100vw - 64px)); max-width: min(1280px, calc(100vw - 64px));
+  min-height: min(480px, var(--overlay-max-h)); max-height: min(var(--overlay-max-h), 920px);
+}
+.template-body { container-type: inline-size; }
+.template-editor { display: grid; gap: var(--space-5); align-items: start; }
+.template-main, .template-side { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+/* Two columns once there is room: what it does on the left, when it runs and how it went on the right. */
+@container (min-width: 640px) {
+  .template-editor:not(.solo) { grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr); }
+}
+.template-tickets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: var(--space-3); align-items: start; }
 .template-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
 .template-card { display: flex; flex-direction: column; gap: var(--space-2); }
 .template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
@@ -1438,6 +1452,12 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   height: min(var(--overlay-max-h), 700px);
 }
 .dlg-split { display: flex; flex: 1; min-height: 0; }
+.dlg-grip {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; z-index: 3;
+  cursor: nwse-resize; touch-action: none; opacity: 0.55;
+  background: linear-gradient(135deg, transparent 0 55%, var(--meta) 55% 61%, transparent 61% 72%, var(--meta) 72% 78%, transparent 78%);
+}
+.dlg-grip:hover { opacity: 1; }
 .dlg-nav {
   width: 204px; flex-shrink: 0; overflow-y: auto;
   padding: var(--space-4) var(--space-3);
@@ -1701,7 +1721,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .panel + .panel { margin-top: var(--space-3); }
 /* ...but not when they are grid siblings — the margin would offset the
  * second card and defeat grid stretch, leaving mismatched heights. */
-.grid-2 > .panel + .panel, .grid-3 > .panel + .panel { margin-top: 0; }
+.grid-2 > .panel + .panel, .grid-3 > .panel + .panel, .template-tickets > .panel + .panel, .template-gallery > .panel + .panel { margin-top: 0; }
 .sec-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-4); }
 .sec-title { font-size: var(--text-xl); line-height: var(--leading-tight); }
 .sec-lede { font-size: var(--text-base); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }

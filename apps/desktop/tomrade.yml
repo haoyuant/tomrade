@@ -73,7 +73,7 @@ modules:
   - id: notes
     title: Notes
   - id: schedules
-    title: Templates
+    title: Routines
   - id: pet
     title: Pet
   - id: webSearch
@@ -250,7 +250,7 @@ plugins:
     name: "@tomradex/code-link"
     config:
       scanMs: 120000
-  # Templates: tickets (a daily to-do, the week's chores, a checklist) or a
+  # Routines (templates in code): tickets (a daily to-do, the week's chores, a checklist) or a
   # prompt to the assistant, run by hand or on schedules. Templates travel with
   # the project; schedules run on this machine while Tomrade is open.
   - id: schedules

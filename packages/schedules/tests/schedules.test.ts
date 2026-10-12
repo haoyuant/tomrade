@@ -131,6 +131,23 @@ it("offers ready-made templates in the person's language, added with or without 
   }
 });
 
+it("adds every suggestion, in both languages, with its schedule", async () => {
+  for (const language of ["en", "zh"] as const) {
+    const t = await boot(language);
+    try {
+      const gallery = t.s.suggestions();
+      expect(gallery.map((g) => g.id)).toEqual(expect.arrayContaining(["daily-words", "on-this-day", "daily-why", "film-pick", "call-family", "checkup-prep", "ai-news", "interview-prep", "meeting-prep"]));
+      for (const g of gallery) {
+        const { template, schedule } = t.s.addSuggestion(t.project.id, g.id, true, at(2026, 10, 12, 9));
+        expect(template.name).toBe(g.template.name);
+        expect(schedule === null).toBe(!g.cadence);
+      }
+    } finally {
+      await t.ctx.fiber.dispose();
+    }
+  }
+});
+
 it("does nothing while off, counts from the moment it is on again, and goes with its template", async () => {
   const t = await boot();
   try {
@@ -164,7 +181,7 @@ it("lets an agent save a template, or schedule one, only with the person's yes",
   const t = await boot();
   try {
     const call = (args: object, ask?: () => Promise<string | null>) => t.ctx.tools.execute("create_template", args, { by: "ai:test", projectId: t.project.id, ...(ask ? { ask } : {}) });
-    await expect(call(todo)).rejects.toThrow(/Templates in the sidebar/);
+    await expect(call(todo)).rejects.toThrow(/Routines in the sidebar/);
     expect(await call(todo, async () => "Don't")).toMatchObject({ created: false });
     expect(t.s.templates(t.project.id)).toEqual([]);
     const made = (await call({ ...todo, cadence: { kind: "daily", at: "08:00" } }, async () => "Save it")) as { template: { id: string }; schedule: { cadence: object } };

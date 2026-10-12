@@ -1,13 +1,13 @@
 export const templates = {
   en: {
-    label: "Templates",
-    title: "Templates",
+    label: "Routines",
+    title: "Routines",
     lede: "Things you do again and again — a daily to-do, the week's chores, a checklist, a question for the assistant. Run one whenever you like, or give it a schedule.",
-    off: "The Templates plugin is off. Turn it on in Settings → Manage plugins.",
+    off: "The Routines plugin is off. Turn it on in Settings → Manage plugins.",
     suggestions: "Suggestions",
-    yours: "Your templates",
+    yours: "Your routines",
     none: "None yet — start from a suggestion, or make your own.",
-    new: "New template",
+    new: "New routine",
     groupEveryday: "Everyday",
     groupWork: "Work",
     groupCoding: "Coding",
@@ -45,7 +45,7 @@ export const templates = {
     ranTicket: "Ran “{{name}}”: 1 new ticket.",
     ranTickets: "Ran “{{name}}”: {{n}} new tickets.",
     failed: "“{{name}}” failed: {{error}}",
-    remove: "Delete template",
+    remove: "Delete routine",
     removeSure: "Delete it and its schedules?",
     schedules: "Schedules",
     schedulesLede: "Runs on this machine while Tomrade is open.",
@@ -73,18 +73,18 @@ export const templates = {
     "trigger_catch-up": "caught up",
     openTicket: "open",
     openThread: "open the conversation",
-    paletteOpen: "Templates…",
-    paletteRun: "Run template · {{name}}"
+    paletteOpen: "Routines…",
+    paletteRun: "Run routine · {{name}}"
   },
   zh: {
-    label: "模板",
-    title: "模板",
+    label: "例行事务",
+    title: "例行事务",
     lede: "一次次重复做的事：每日待办、每周家务、清单，或者要问助手的问题。随时手动运行，也可以给它定个时间。",
-    off: "模板插件已关闭。可以在 设置 → 管理插件 里打开。",
+    off: "例行事务插件已关闭。可以在 设置 → 管理插件 里打开。",
     suggestions: "推荐",
-    yours: "我的模板",
+    yours: "我的例行事务",
     none: "还没有——从推荐里挑一个，或者自己建一个。",
-    new: "新建模板",
+    new: "新建例行事务",
     groupEveryday: "日常",
     groupWork: "工作",
     groupCoding: "编程",
@@ -122,7 +122,7 @@ export const templates = {
     ranTicket: "已运行「{{name}}」：建了 1 张工作项。",
     ranTickets: "已运行「{{name}}」：建了 {{n}} 张工作项。",
     failed: "「{{name}}」运行失败：{{error}}",
-    remove: "删除模板",
+    remove: "删除例行事务",
     removeSure: "连同它的定时计划一起删除？",
     schedules: "定时",
     schedulesLede: "在这台电脑上、Tomrade 打开时运行。",
@@ -150,7 +150,7 @@ export const templates = {
     "trigger_catch-up": "补跑",
     openTicket: "打开",
     openThread: "打开对话",
-    paletteOpen: "模板…",
-    paletteRun: "运行模板 · {{name}}"
+    paletteOpen: "例行事务…",
+    paletteRun: "运行例行事务 · {{name}}"
   }
 };

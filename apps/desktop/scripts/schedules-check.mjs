@@ -1,5 +1,5 @@
 /**
- * Templates regression: a suggestion is added from the sidebar and run, a
+ * Routines (templates) regression: a suggestion is added from the sidebar and run, a
  * template of the person's own (two tickets) is written, scheduled every three
  * days and run, the palette offers it, a schedule fires on its own, and a
  * deleted template takes its schedules with it.
@@ -57,7 +57,7 @@ const run = async () => {
   // ── from the sidebar, the suggestions first ───────────────────────────
   await press(`document.querySelector('[data-testid="open-templates"]')`);
   await sleep(700);
-  check("the sidebar opens Templates on its suggestions", (await $(`!!document.querySelector('[data-suggestion="daily-todo"]')`)) === true);
+  check("the sidebar opens Routines on its suggestions", (await $(`!!document.querySelector('[data-suggestion="daily-todo"]')`)) === true);
   check("everyday ones come first, not only coding", ((await $(`document.querySelector('.dlg-body .eyebrow')?.textContent`)) ?? "").trim() === "Everyday");
   await shot("templates-01-suggestions");
   await press(`document.querySelector('[data-testid="suggestion-add-daily-todo"]')`);
@@ -90,6 +90,54 @@ const run = async () => {
   await sleep(900);
   const own = ctx.schedules.templates(project.id).find((x) => x.name === "Sunday reset");
   check("it is saved as written", own && own.action.kind === "tickets" && own.action.items.length === 2 && own.action.items[1].labels.join() === "home,weekly", own);
+
+  // ── two columns, and a sheet that resizes from its corner within its limits ──
+  await sleep(300);
+  const box = (sel) => $(`(() => { const r = document.querySelector('${sel}')?.getBoundingClientRect(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; })()`);
+  const main = await box(".template-main");
+  const side = await box(".template-side");
+  check("a saved template reads in two columns", main && side && side.x > main.x + main.w - 1 && Math.abs(side.y - main.y) < 2, { main, side });
+  await shot("templates-03-columns");
+  const sheet0 = await box(".sheet-templates");
+  const drag = async (dx, dy) => {
+    const g = await box(".dlg-grip");
+    const [x, y] = [Math.round(g.x + g.w / 2), Math.round(g.y + g.h / 2)];
+    win.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    win.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    for (let i = 1; i <= 8; i++) {
+      win.webContents.sendInputEvent({ type: "mouseMove", x: x + Math.round((dx * i) / 8), y: y + Math.round((dy * i) / 8), modifiers: ["leftButtonDown"] });
+      await sleep(16);
+    }
+    win.webContents.sendInputEvent({ type: "mouseUp", x: x + dx, y: y + dy, button: "left", clickCount: 1 });
+    await sleep(150);
+    return box(".sheet-templates");
+  };
+  // a short window already holds the sheet at the workspace row's height
+  const capH = await $(`parseFloat(getComputedStyle(document.querySelector('.sheet-templates')).maxHeight)`);
+  const grown = await drag(60, 40);
+  check("dragging the corner grows the sheet under the pointer", Math.abs(grown.w - sheet0.w - 120) <= 4 && Math.abs(grown.h - Math.min(sheet0.h + 80, capH)) <= 4, { sheet0, grown, capH });
+  const huge = await drag(900, 900);
+  check("it stops at Tomrade's widest sheet and the workspace row", huge.w <= 1280 && huge.h <= 920 && huge.y >= 42, huge);
+  const tiny = await drag(-2000, -2000);
+  check("and never shrinks past its minimum", tiny.w >= 719 && tiny.h >= 479, tiny);
+  await drag(300, 200);
+  const kept = await $(`localStorage.getItem('tomrade.dialogSize.templates')`);
+  check("the size is remembered", !!kept && JSON.parse(kept).w > tiny.w, kept);
+  await shot("templates-04-resized");
+  // a new routine has no schedules yet, so its tickets get the whole width
+  await press(`document.querySelector('[data-testid="template-new"]')`);
+  await sleep(300);
+  await press(`document.querySelector('[data-testid="template-add-ticket"]')`);
+  await sleep(200);
+  const cards = await $(`[...document.querySelectorAll('.template-ticket')].map((n) => { const r = n.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) }; })`);
+  check("a new routine on a wide sheet lays its tickets side by side", cards.length === 2 && cards[1].x > cards[0].x && cards[1].y === cards[0].y, cards);
+  await shot("templates-05-new-wide");
+  await press(`document.querySelector('[data-template="${own.id}"]')`);
+  await sleep(300);
+  await $(`document.querySelector('.dlg-grip').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  await sleep(100);
+  const reset = await box(".sheet-templates");
+  check("double-clicking the grip goes back to the default size", Math.abs(reset.w - sheet0.w) <= 1 && Math.abs(reset.h - sheet0.h) <= 1 && (await $(`localStorage.getItem('tomrade.dialogSize.templates')`)) === null, reset);
   await press(`document.querySelector('[data-testid="schedule-add"]')`);
   await sleep(300);
   await pick("#cdKind", "days");
@@ -110,7 +158,7 @@ const run = async () => {
   await sleep(400);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));true`);
   await sleep(500);
-  check("the palette can run a template", (await $(`[...document.querySelectorAll('.palette-row')].some((r) => r.textContent?.includes('Run template · Sunday reset'))`)) === true);
+  check("the palette can run a template", (await $(`[...document.querySelectorAll('.palette-row')].some((r) => r.textContent?.includes('Run routine · Sunday reset'))`)) === true);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await sleep(300);
 
@@ -123,7 +171,7 @@ const run = async () => {
   await sleep(600);
   await press(`document.querySelector('[data-template="${own.id}"]')`);
   await sleep(500);
-  await press(`[...document.querySelectorAll('[data-testid="template-editor"] button')].find((b) => b.textContent === 'Delete template')`);
+  await press(`[...document.querySelectorAll('[data-testid="template-editor"] button')].find((b) => b.textContent === 'Delete routine')`);
   await sleep(200);
   await press(`[...document.querySelectorAll('[data-testid="template-editor"] button')].find((b) => b.textContent === 'Delete it and its schedules?')`);
   await sleep(700);
