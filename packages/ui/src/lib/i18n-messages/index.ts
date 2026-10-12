@@ -10,6 +10,7 @@ import { codeLink } from "./codeLink";
 import { commandPalette } from "./commandPalette";
 import { common } from "./common";
 import { deleteIssueDialog } from "./deleteIssueDialog";
+import { doctor } from "./doctor";
 import { destination } from "./destination";
 import { detailPane } from "./detailPane";
 import { fields } from "./fields";
@@ -67,6 +68,7 @@ export const en = {
   mcpServers: mcpServers.en,
   petProfiles: petProfiles.en,
   deleteIssueDialog: deleteIssueDialog.en,
+  doctor: doctor.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
   fieldsDialog: fieldsDialog.en,
@@ -126,6 +128,7 @@ export const zh: typeof en = {
   mcpServers: mcpServers.zh,
   petProfiles: petProfiles.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
+  doctor: doctor.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,
   fieldsDialog: fieldsDialog.zh,

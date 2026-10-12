@@ -1306,6 +1306,26 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .tool-head { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); margin-bottom: var(--space-2); }
 .tool-row { display: flex; align-items: center; gap: var(--space-2); padding: 5px 0; border-top: 1px solid var(--border-soft); font-size: 14px; }
 .tool-row:first-of-type { border-top: 0; }
+/* the troubleshooter's checklist and findings */
+.check-row .check-title { flex: none; color: var(--fg); }
+.check-row .t-title { color: var(--meta); font-size: var(--text-sm); }
+.check-row.is-ok > svg { color: var(--success); }
+.check-row.is-warn > svg { color: var(--warn); }
+.check-row.is-fail > svg { color: var(--danger); }
+.check-row.is-pending, .check-row.is-skip { color: var(--meta); }
+.finding { border-left: 2px solid var(--border); padding: 2px 0 2px var(--space-3); margin-top: var(--space-3); font-size: 14px; line-height: var(--leading-dense); }
+.finding.is-fail { border-left-color: var(--danger); }
+.finding.is-warn { border-left-color: var(--warn); }
+.finding.is-ok { border-left-color: var(--success); }
+.finding-head { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--fg); font-weight: 500; }
+.finding.is-fail .finding-head > svg { color: var(--danger); }
+.finding.is-warn .finding-head > svg { color: var(--warn); }
+.finding.is-ok .finding-head > svg { color: var(--success); }
+.finding-body { margin: 4px 0 0; color: var(--fg-2); }
+.palette.sheet-report { width: min(720px, calc(100vw - 64px)); }
+.report-sections { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 0; padding: 0; margin: 0; font-size: var(--text-sm); }
+.report-note { width: 100%; resize: vertical; }
+.report-preview { max-height: 280px; overflow: auto; margin: 0; padding: var(--space-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xs); white-space: pre-wrap; word-break: break-word; color: var(--fg-2); }
 .tool-row .t-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .ai-error { color: var(--danger); font-size: 14px; line-height: var(--leading-dense); }
 .ai-error > p { margin: 0; }

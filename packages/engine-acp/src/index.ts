@@ -38,6 +38,10 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
       ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } } : {})
     }),
     checkCli: (file) => agent.cli.check(file),
+    diagnostics: {
+      logs: () => agent.diagnostics?.logs?.() ?? [],
+      facts: () => ({ models: catalog.models.slice(0, 40).map((m) => m.value).join(",") || "unknown", ...agent.diagnostics?.facts?.(catalog) })
+    },
     async turn(input, io) {
       if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
       return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),

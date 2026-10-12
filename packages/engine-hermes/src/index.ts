@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
@@ -43,6 +46,9 @@ export const hermes: AcpAgent<HermesOptions> = {
   reopen: "load",
   usage: "turn",
   signIn: "run `hermes setup` to choose a provider and add its key",
+  diagnostics: {
+    logs: () => ["errors.log", "agent.log"].map((name) => path.join(process.env.HERMES_HOME ?? path.join(os.homedir(), ".hermes"), "logs", name)).filter((file) => fs.existsSync(file))
+  },
   probe: {
     args: ["acp", "--check"],
     says: (output) => hermesAcpReady(output),

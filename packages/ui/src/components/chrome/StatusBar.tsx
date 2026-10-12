@@ -5,7 +5,9 @@ import { Menu, MenuHead, MenuStackItem } from "~/components/ui/menu";
 import { useAttention, useOpenAttention } from "~/lib/attention";
 import { agoLabel, authorLabel, timeAgo } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useMcpUrl, useOplog, useProjects, useStatusItems } from "~/lib/queries";
+import { useMcpUrl, useOplog, useProjects, useRunCommand, useStatusItems } from "~/lib/queries";
+import { useErrorToast, useToast } from "~/lib/toast";
+import { useOptionalAgentDock } from "./ProjectShell";
 
 const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp(\/[^/]+)?$/, "") : null);
 
@@ -96,6 +98,22 @@ export function StatusBar({
   const oplog = useOplog(projectId, 1);
   const plugins = useStatusItems(projectId);
   const latest = oplog.data?.[0];
+  const runCommand = useRunCommand(projectId);
+  const dock = useOptionalAgentDock();
+  const openIn = useOpenAttention();
+  const toast = useToast();
+  const reportError = useErrorToast();
+  // An item that names a command runs it here; a conversation it opens shows in its own project, from home too.
+  const run = (id: string) =>
+    runCommand.mutate({ id, scope: projectId ? { projectId } : {} }, {
+      onSuccess: (r) => {
+        if (r.toast) toast({ body: r.toast });
+        if (!r.showThread) return;
+        if (dock && (!r.projectId || r.projectId === projectId)) dock.showThread(r.showThread);
+        else if (r.projectId) openIn({ projectId: r.projectId, threadId: r.showThread, itemId: null });
+      },
+      onError: reportError
+    });
 
   return (
     <footer className="statusbar">
@@ -105,7 +123,11 @@ export function StatusBar({
       <NeedsYou projectId={projectId} />
       {latest && <Ribbon entry={latest} />}
       {plugins.data?.map((s) =>
-        s.opens && onOpen ? (
+        s.command ? (
+          <button type="button" className="status-item status-link" key={s.id} title={s.title} disabled={runCommand.isPending} onClick={() => run(s.command!)}>
+            {s.text}
+          </button>
+        ) : s.opens && onOpen ? (
           <button type="button" className="status-item status-link" key={s.id} onClick={() => onOpen(s.opens!)}>
             {s.text}
           </button>

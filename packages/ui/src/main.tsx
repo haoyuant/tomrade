@@ -6,6 +6,7 @@ import { router } from "./router.js";
 import { subscribe } from "./lib/api.js";
 import type {} from "@tomradex/repos";
 import type {} from "@tomradex/code-link";
+import type {} from "@tomradex/doctor";
 import type {} from "@tomradex/files";
 import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";

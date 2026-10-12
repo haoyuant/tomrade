@@ -46,7 +46,9 @@ import {
   type TurnResult,
   type UserInput,
   type WorkflowIO,
-  type WorkflowSpec
+  type WorkflowSpec,
+  type ThreadSurface,
+  PANEL_SURFACES
 } from "./types.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
@@ -116,7 +118,7 @@ export interface GeneralStartOptions {
   /** Engine option overrides for the thread (model, effort…); replaces earlier overrides when given. */
   options?: Record<string, unknown>;
   /** The UI that owns the thread; a terminal session is a `code` surface thread the panel does not list. */
-  surface?: "assistant" | "code";
+  surface?: ThreadSurface;
   /** The engine is a CLI the user runs themselves: no engine plugin is checked and none is required. */
   external?: boolean;
   /** Start although tickets this one waits on are still open; the agent is told which. */
@@ -142,7 +144,7 @@ export interface NewThreadOptions {
   branch?: string | null;
   title?: string;
   /** The UI that owns this thread. Defaults to the Assistant panel. */
-  surface?: "assistant" | "code";
+  surface?: ThreadSurface;
   /** The engine knobs the thread opens with — what the thread it was opened from was using. */
   options?: Record<string, unknown> | null;
 }
@@ -373,7 +375,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.threads", (projectId) => {
         const running = new Set(ctx.agent.activeRuns().map((a) => a.thread.id));
         const parked = new Map(ctx.agent.store.allParked(projectId).map((p) => [p.threadId, p.until]));
-        return ctx.agent.store.threads(projectId).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
+        return ctx.agent.store.threads(projectId, PANEL_SURFACES).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.usage", () => ctx.agent.usage());
@@ -387,7 +389,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
-      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.store.archivedThreads(projectId));
+      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.store.archivedThreads(projectId, PANEL_SURFACES));
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
@@ -421,6 +423,15 @@ export class Agent extends Service {
 
   // ── registries ─────────────────────────────────────────────────────────────
   // These run on the CALLER's context, so a registration dies with its plugin.
+
+  /** A registered engine, for a plugin that reads the contract (the troubleshooter). */
+  engineOf(id: string): Engine | undefined {
+    return this.engines.get(id);
+  }
+
+  allEngines(): Engine[] {
+    return [...this.engines.values()];
+  }
 
   engine(engine: Engine): () => void {
     if (this.engines.has(engine.id)) throw new Error(`engine "${engine.id}" is already registered`);
@@ -529,7 +540,7 @@ export class Agent extends Service {
       });
     }
     for (const projectId of this.ctx.db.openIds()) {
-      for (const thread of this.store.threads(projectId)) {
+      for (const thread of this.store.threads(projectId, PANEL_SURFACES)) {
         if (out.has(thread.id)) continue;
         const pending = this.store.pending(projectId, thread.id);
         if (pending) out.set(thread.id, { projectId, threadId: thread.id, run: null, pending: this.pendingView(pending) });

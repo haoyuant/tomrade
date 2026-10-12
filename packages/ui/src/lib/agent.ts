@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentEvent, AgentSettings, FocusRef, MediaRef, PlaybookIndexEntry, PlaybookSource, ThreadDetail } from "@tomradex/agent";
+import type { AgentEvent, AgentSettings, EngineView, FocusRef, MediaRef, PlaybookIndexEntry, PlaybookSource, ThreadDetail } from "@tomradex/agent";
 import type { WorkType } from "@tomradex/domain";
 import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
@@ -58,6 +58,9 @@ export const methodWords = (t: (key: MessageKey) => string, id: string, entry?: 
 };
 
 export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
+
+/** An engine with no capabilities conducts only the threads its plugin opens — the troubleshooter's: no list offers it. */
+export const conducts = (engine: Pick<EngineView, "capabilities">): boolean => engine.capabilities.length > 0;
 
 export const usePlaybooks = (projectId?: string) =>
   useQuery({ queryKey: agentKeys.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });

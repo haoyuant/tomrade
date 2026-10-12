@@ -249,6 +249,17 @@ plugins:
   - id: engine-workbuddy
     name: "@tomradex/engine-workbuddy"
     implements: [engine]
+  # The troubleshooter: when something fails, checks what it can (the agent,
+  # its sign-in, a test turn, the models), says what to do, and sends a report
+  # the person has read to Tomrade's developer. Its own engine opens the
+  # troubleshooting threads; the bottom bar and the palette start one.
+  - id: doctor
+    name: "@tomradex/doctor"
+    implements: [engine]
+    config:
+      dataDir: "${userData}/doctor"
+      logDir: "${logDir}"
+      version: "${appVersion}"
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"

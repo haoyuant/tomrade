@@ -33,7 +33,9 @@ const ref = (text: string | undefined) => {
 const usage = `tomrade-store <command>
 
   keygen [--out dir]              make the store's signing key; put the public key in apps/desktop/src/trust.ts
-  reports                         open reports
+  reports                         open plugin reports
+  diag [--all]                    troubleshooting reports people sent, grouped by fingerprint (new ones; --all for every status)
+  diag R-XXXXXX                   one troubleshooting report, as its sender read it
   show publisher/name@version     a listed version as the store holds it
   official publisher/name@version sign one of Tomrade's own plugins as official (STORE_SIGNING_KEY)
   revoke publisher/name [--versions range] --reason text   switch it off on every machine
@@ -53,6 +55,28 @@ async function main(): Promise<number> {
     case "reports": {
       const { data } = await serviceClient().from("tomrade_plugin_reports").select("plugin_id, version, reason, details, created_at").eq("status", "open").order("created_at");
       for (const r of data ?? []) console.log(`${r.plugin_id}${r.version ? `@${r.version}` : ""} · ${r.reason} · ${r.created_at} · ${String(r.details).slice(0, 160)}`);
+      return 0;
+    }
+    case "diag": {
+      const client = serviceClient();
+      const code = positional[0];
+      if (code) {
+        const { data } = await client.from("tomrade_diagnostic_reports").select("code, created_at, status, engine, app_version, platform, fingerprint, report").eq("code", code).maybeSingle();
+        if (!data) throw new Error(`no report ${code}`);
+        console.log(`${data.code} · ${data.status} · ${data.engine ?? "no engine"} · ${data.app_version} · ${data.platform} · ${data.created_at}\nfingerprint ${data.fingerprint}\n`);
+        for (const section of (data.report as { sections?: { title: string; text: string }[] }).sections ?? []) console.log(`── ${section.title} ──\n${section.text}\n`);
+        return 0;
+      }
+      let query = client.from("tomrade_diagnostic_reports").select("code, fingerprint, summary, engine, app_version, created_at, status").order("created_at", { ascending: false }).limit(500);
+      if (!rest.includes("--all")) query = query.eq("status", "new");
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      const groups = new Map<string, NonNullable<typeof data>>();
+      for (const r of data ?? []) groups.set(r.fingerprint, [...(groups.get(r.fingerprint) ?? []), r]);
+      for (const [fingerprint, rows] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+        const latest = rows[0]!;
+        console.log(`${rows.length}× ${fingerprint} · ${latest.engine ?? "-"} · ${latest.summary}\n   ${rows.map((r) => `${r.code} (${r.app_version}, ${String(r.created_at).slice(0, 10)}${rest.includes("--all") ? `, ${r.status}` : ""})`).join(", ")}`);
+      }
       return 0;
     }
     case "show": {

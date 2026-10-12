@@ -5,7 +5,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Menu, MenuActionItem } from "~/components/ui/menu";
-import { useEngines } from "~/lib/agent";
+import { conducts, useEngines } from "~/lib/agent";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import {
   useBecomePublisher,
@@ -160,7 +160,7 @@ function NewPluginDialog({ projectId, onClose, onLeave }: { projectId: string; o
   const create = useStudioCreate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const usable = (engines.data ?? []).filter((e) => e.ok);
+  const usable = (engines.data ?? []).filter((e) => e.ok && conducts(e));
   const [engine, setEngine] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const valid = NAME.test(name) && description.trim().length > 3;

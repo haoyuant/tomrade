@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
     configFile: path.join(here, "../tomrade.yml"),
     patchFiles: [path.join(machine.userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
     // What a first run is written in, before the person has picked a language.
-    vars: { userData, hubDir, pluginsRoot, pluginsDevRoot, locale: app.getLocale() },
+    vars: { userData, hubDir, pluginsRoot, pluginsDevRoot, logDir: path.join(machine.userData, "logs"), appVersion: app.getVersion(), locale: app.getLocale() },
     extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
   });
 

@@ -1,0 +1,35 @@
+{
+  "name": "@tomradex/doctor",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The troubleshooter: checks what it can when something fails, says what to do about it, and sends a report the person has read to Tomrade's developer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
+    "@tomradex/projects": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

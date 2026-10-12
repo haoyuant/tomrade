@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
@@ -85,6 +86,16 @@ export function helpModels(help: string): string[] {
   return list ? list.split(",").map((model) => model.trim()).filter(Boolean) : [];
 }
 
+/** Newest first, at most a few: the files in `dir` that `keep` lets through. */
+export function newestLogs(dir: string, keep: (name: string) => boolean, limit = 2): string[] {
+  try {
+    return fs.readdirSync(dir).filter(keep).map((name) => path.join(dir, name))
+      .map((file) => ({ file, at: fs.statSync(file).mtimeMs })).sort((a, b) => b.at - a.at).slice(0, limit).map((f) => f.file);
+  } catch {
+    return [];
+  }
+}
+
 export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   id: "workbuddy",
   title: "WorkBuddy",
@@ -105,6 +116,18 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   usage: codebuddyUsage,
   failure: codebuddyFailure,
   signIn: "run `codebuddy` and /login with your WorkBuddy account",
+  diagnostics: {
+    // Each CLI process logs to <date>/<cwd hash>__<id>.log; the WorkBuddy app's own sessions are the desktop__ ones.
+    logs: () => {
+      const dir = path.join(os.homedir(), ".codebuddy", "logs", new Date().toISOString().slice(0, 10));
+      return newestLogs(dir, (name) => name.endsWith(".log") && !name.startsWith("desktop__"));
+    },
+    facts: (catalog) => ({
+      // Tencent's internal edition offers models named *-ioa and signs in against its own endpoint.
+      edition: catalog.models.some((m) => /-ioa$/.test(m.value)) ? "ioa" : catalog.models.length ? "public" : "unknown",
+      internetEnvironment: process.env.CODEBUDDY_INTERNET_ENVIRONMENT ?? "unset"
+    })
+  },
   probe: {
     args: ["--help"],
     says: (output, catalog) => {
