@@ -669,6 +669,17 @@ wall clock (`AgentConfig.codeMaxWallMs`, hours) instead of the backlog one. The
 platform emits `agent/run-started` and `agent/run-ended` for whoever follows
 runs; `ctx.agent.activeRuns()` is what a quit would interrupt.
 
+A turn that stopped on a usage or rate limit returns `stop: "error"` with
+`limit: { until }` (epoch ms, or null when the engine did not say); an error
+whose words read as a limit ("429", "usage limit", "try again in 2 hours") is
+treated the same, its reset time read by `resetTime()`. The thread is then
+**parked** on this machine (`ctx.agent.parked()`, emitted as `agent/parked`):
+at `until` the platform sends the thread a continue message — at most three
+limited runs in a row, and only while `agent.resumeAfterLimit` is on — or
+emits `agent/limit-lifted` so the person can be told. Whoever continues the
+thread first ends the wait; `ctx.agent.park()` / `unpark()` let a plugin do
+the same for work Tomrade cannot type into, such as a terminal session.
+
 ## Events
 
 Events are the policy layer. `emit` announces; `waterfall` decides — a listener

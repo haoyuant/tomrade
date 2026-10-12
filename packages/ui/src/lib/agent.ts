@@ -62,7 +62,7 @@ export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn:
 export const usePlaybooks = (projectId?: string) =>
   useQuery({ queryKey: agentKeys.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });
 
-const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
+const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
 
 /**
  * Surfaces playbook id collisions the user has not ruled on: one toast per id,

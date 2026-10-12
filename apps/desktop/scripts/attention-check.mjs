@@ -135,6 +135,22 @@ const run = async () => {
   await press(`document.querySelector('.menu.is-floating [role="menuitem"]')`);
   await sleep(1000);
   check("choosing it shows that conversation", (await shown()).includes("and the second one"));
+
+  // ── a run stopped by a usage limit waits for it, and the list says until when ──
+  ctx.agent.engine({ id: "limited", title: "Limited", author: "ai:limited", available: async () => ({ ok: true }), async turn() {
+    return { stop: "error", error: "You've hit your limit · resets 11:58pm", limit: { until: null } };
+  } });
+  const limited = ctx.agent.newThread(project.id, "limited");
+  ctx.agent.send(project.id, limited.id, { kind: "text", text: "write the report" });
+  await sleep(800);
+  ctx.ipc.send("attention.open", { key: `thread:${limited.id}`, projectId: project.id, threadId: limited.id, itemId: null, itemKey: null, kind: "waiting", who: null, text: null, since: Date.now() });
+  await sleep(1200);
+  check("the conversation says it waits for the limit", /Hit a usage limit/.test(await shown()), (await shown()).slice(-300));
+  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
+  await sleep(400);
+  const subs = await $(`[...document.querySelectorAll('.menu-row.is-radio .m-sub')].map((n) => n.textContent)`);
+  check("the thread list says the conversation continues later", subs.some((s) => /^Usage limit · continues /.test(s)), subs);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   check("harness reached the end", true);
 };
 

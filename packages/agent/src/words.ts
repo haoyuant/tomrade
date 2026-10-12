@@ -12,7 +12,11 @@ const en = {
   budget: "Stopped after its step budget for one turn — say “continue” to pick up from here.",
   interrupted: "Interrupted — the app closed while this run was in progress.",
   recommendedByType: "Picked from the kind of work the ticket describes.",
-  reasonLanguage: "English"
+  reasonLanguage: "English",
+  limited: (when: string, known: boolean, resumes: boolean) =>
+    `Hit a usage limit${known ? `; it lifts at ${when}` : ` — it did not say when it lifts, so the next try is at ${when}`}. ${resumes ? "Tomrade continues this conversation then." : "Continue it then."}`,
+  limitGaveUp: (n: number) => `Still limited after ${n} tries in a row, so Tomrade stops trying on its own. Continue it once the limit has lifted.`,
+  continueAfterLimit: "The usage limit has lifted. Continue where you left off."
 };
 
 export type AgentWords = typeof en;
@@ -28,7 +32,11 @@ const zh: AgentWords = {
   budget: "这一轮的步数用完了，已停下——说“继续”就能接着做。",
   interrupted: "已中断——这次运行进行中时应用关闭了。",
   recommendedByType: "根据工作项描述的工作类型选出。",
-  reasonLanguage: "Simplified Chinese"
+  reasonLanguage: "Simplified Chinese",
+  limited: (when: string, known: boolean, resumes: boolean) =>
+    `用量到了上限${known ? `，${when} 解除` : `，没说什么时候解除，下次在 ${when} 再试`}。${resumes ? "到时 Tomrade 会自动接着做。" : "到时请继续。"}`,
+  limitGaveUp: (n: number) => `连续 ${n} 次都被限流，Tomrade 不再自动重试。等额度恢复后请手动继续。`,
+  continueAfterLimit: "用量限制已经解除，请从刚才停下的地方继续。"
 };
 
 export const AGENT_WORDS: Record<Locale, AgentWords> = { en, zh };

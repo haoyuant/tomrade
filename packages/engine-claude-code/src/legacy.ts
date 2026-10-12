@@ -10,7 +10,7 @@ import { localAvailability } from "./availability.js";
 import { claudeSignedIn, runJsonl } from "./cli.js";
 import { localCli } from "./locate.js";
 import { buildSystem, promptOf } from "./system.js";
-import { claudeMediaInput } from "@tomradex/agent";
+import { claudeMediaInput, looksRateLimited, resetTime } from "@tomradex/agent";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
 
 export const ClaudeCodeOptions = z.object({
@@ -40,6 +40,7 @@ interface StreamLine extends ResultCounters {
   result?: unknown;
   is_error?: boolean;
   total_cost_usd?: number;
+  rate_limit_info?: { status?: string; resetsAt?: number };
 }
 
 export function createClaudeCodeCliEngine(ctx: Context): Engine {
@@ -136,6 +137,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       let costUsd: number | undefined;
       let session: string | undefined;
       let failure: string | null = null;
+      let limitUntil: number | null = null;
 
       try {
         const run = runJsonl(await cli.launch(options.command), args, {
@@ -175,12 +177,15 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
               usage.inputTokens = promptTokens(turn);
               usage.outputTokens = turn.output;
               if (line.is_error) failure = typeof line.result === "string" ? line.result : (line.subtype ?? "Claude Code reported an error");
+            } else if (line.type === "rate_limit_event" && line.rate_limit_info?.status === "rejected" && typeof line.rate_limit_info.resetsAt === "number") {
+              const at = line.rate_limit_info.resetsAt;
+              limitUntil = at < 1e12 ? at * 1000 : at;
             }
           }
         });
         const { code, stderr } = await run.done;
         if (io.signal.aborted) return { stop: "cancelled", usage, costUsd, resume: session };
-        if (failure) return { stop: "error", error: failure, usage, costUsd, resume: session };
+        if (failure) return { stop: "error", error: failure, usage, costUsd, resume: session, ...(limitUntil !== null || looksRateLimited(failure) ? { limit: { until: limitUntil ?? resetTime(failure) } } : {}) };
         if (code !== 0) return { stop: "error", error: `claude exited with ${code}: ${stderr.slice(-400)}`, usage, costUsd, resume: session };
         return { stop: asked ? "asked" : "end", usage, costUsd, resume: session, metrics };
       } finally {

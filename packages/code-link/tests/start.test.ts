@@ -649,8 +649,11 @@ describe("starting a ticket", () => {
     await codeLink.scan(project.id);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "idle", blocked: null });
 
-    codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "StopFailure", error_type: "rate_limit", error_message: "retry after 20:00" });
-    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", blocked: null, summary: "stopped: rate_limit — retry after 20:00" });
+    // Claude Code's own field names; a limit is said as one, and the thread waits for it
+    codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "StopFailure", error: "rate_limit", error_details: "You've hit your limit · resets 8pm" });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", blocked: null, summary: expect.stringMatching(/^usage limit — lifts at (tomorrow )?20:00$/) });
+    codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "StopFailure", error: "authentication_failed", error_details: "Invalid API key" });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", summary: "stopped: authentication_failed — Invalid API key" });
   });
 
   it("opens a terminal session: files for the agent, a token that binds its calls and hooks to the ticket", async () => {
@@ -722,8 +725,11 @@ describe("starting a ticket", () => {
     expect(ctx.agent.store.thread(project.id, result.threadId)).toMatchObject({ surface: "code" });
     expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
     await post({ hook_event_name: "StopFailure", session_id: "cli-abc", error_type: "rate_limit", error_message: "retry after 20:00" });
-    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", summary: "stopped: rate_limit — retry after 20:00" });
-    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([{ id: "stuck", label: "stuck", tone: "strong", title: "stopped: rate_limit — retry after 20:00" }]));
+    const limited = expect.stringMatching(/^usage limit — lifts at (tomorrow )?20:00$/);
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", summary: limited });
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([{ id: "stuck", label: "stuck", tone: "strong", title: limited }]));
+    // a terminal cannot be typed into: when the limit lifts the person is told, not the agent
+    expect(ctx.agent.parked(project.id, result.threadId)).toMatchObject({ resume: false, known: true });
     // Tomrade restarts: the binding is gone from memory, the token is still in the session's folder, and comes back.
     codeLink.sessions.release(result.sessionId);
     expect(await post({ hook_event_name: "PostToolUse" })).toBe(404);

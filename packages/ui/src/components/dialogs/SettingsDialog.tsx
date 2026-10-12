@@ -614,7 +614,7 @@ const PRESETS = [
 ];
 
 const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
-const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, engines: {}, playbookChoices: {} };
+const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
 function AssistantPane({
@@ -784,6 +784,21 @@ function AssistantPane({
             onChange={(e) => saveAgent({ ...agent, confirmWritesOver: Math.max(0, Number(e.target.value) || 0) })}
           />
           <span className="meta-txt">{t("settingsDialog.confirmWritesNote")}</span>
+        </div>
+        <div className="field">
+          <div className="cfg-row">
+            <span className="cfg-name">{t("settingsDialog.resumeAfterLimitLabel")}</span>
+            <button
+              type="button"
+              className="switch"
+              role="switch"
+              data-testid="resume-after-limit"
+              aria-checked={agent.resumeAfterLimit !== false}
+              aria-label={t("settingsDialog.resumeAfterLimitLabel")}
+              onClick={() => saveAgent({ ...agent, resumeAfterLimit: agent.resumeAfterLimit === false })}
+            />
+          </div>
+          <span className="meta-txt">{t("settingsDialog.resumeAfterLimitNote")}</span>
         </div>
       </div>
 

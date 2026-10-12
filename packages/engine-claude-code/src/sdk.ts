@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { claudeMediaInput } from "@tomradex/agent";
+import { claudeMediaInput, looksRateLimited, resetTime } from "@tomradex/agent";
 import { ClaudeCodeOptions } from "./legacy.js";
 import { localCli, spawnCli, type CliLaunch } from "./locate.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
@@ -78,6 +78,8 @@ export class ClaudeRuntime implements Runtime {
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seenTools = new Set<string>();
     const live = new LiveUsage();
+    // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
+    let limit: { until: number | null; text: string | null } | null = null;
     const abort = () => {
       cancelled = true;
       // A protocol interrupt is scoped to this turn. Kill only on timeout.
@@ -102,7 +104,14 @@ export class ClaudeRuntime implements Runtime {
           metrics.firstTokenMs ??= performance.now() - start;
           io.delta(event.delta.text);
         }
+      } else if (message.type === "rate_limit_event") {
+        const info = message.rate_limit_info;
+        if (info.status === "rejected") limit = { until: info.resetsAt ? (info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt) : limit?.until ?? null, text: limit?.text ?? null };
       } else if (message.type === "assistant" && !message.parent_tool_use_id) {
+        if (message.error === "rate_limit") {
+          const said = message.message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(" ").trim();
+          limit = { until: limit?.until ?? null, text: said || limit?.text || null };
+        }
         for (const block of message.message.content) {
           if (block.type === "text" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
           if (block.type === "tool_use" && !seenTools.has(block.id)) {
@@ -124,8 +133,11 @@ export class ClaudeRuntime implements Runtime {
         const usage = { inputTokens: promptTokens(turn), outputTokens: turn.output };
         io.progress(usage);
         const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
+        const error = message.subtype === "success" ? (message.is_error ? message.result || undefined : undefined) : message.errors.join("\n");
+        const limited = message.is_error && !cancelled ? (limit ?? (looksRateLimited(error) ? { until: null, text: null } : null)) : null;
         finish({ stop: cancelled ? "cancelled" : budget ? "budget" : message.is_error ? "error" : binding.asked() ? "asked" : "end",
-          error: message.subtype === "success" ? undefined : message.errors.join("\n"), usage, costUsd, resume: this.session, metrics });
+          error: limited?.text ?? error, usage, costUsd, resume: this.session, metrics,
+          ...(limited ? { limit: { until: limited.until ?? resetTime(limited.text ?? error) } } : {}) });
       }
     };
     io.signal.addEventListener("abort", abort, { once: true });

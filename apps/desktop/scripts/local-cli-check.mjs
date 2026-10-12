@@ -127,6 +127,12 @@ const run = async () => {
   await click('[data-testid="start-engine-configure"]');
   check("Set up opens Settings on that agent's row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row unfolded"));
   check("the Start dialog is gone", !(await has('[data-testid="start-dialog"]')));
+  check("the same pane says a run continues once its usage limit lifts", (await $(`document.querySelector('[data-testid="resume-after-limit"]')?.getAttribute('aria-checked')`)) === "true");
+  await click('[data-testid="resume-after-limit"]');
+  check("and switching it off is saved", await wait(() => ctx.settings.get().agent?.resumeAfterLimit === false, "resumeAfterLimit off"));
+  await wait(async () => (await $(`document.querySelector('[data-testid="resume-after-limit"]')?.getAttribute('aria-checked')`)) === "false", "switch shows off");
+  await click('[data-testid="resume-after-limit"]');
+  check("and back on", await wait(() => ctx.settings.get().agent?.resumeAfterLimit === true, "resumeAfterLimit on"));
   const rowText = await text('[data-testid="cli-setup-claude-code"]');
   check("the row names the chosen file and that it was chosen", rowText.includes(claude) && rowText.includes("chosen by you"), rowText);
   check("and says how to sign in", rowText.includes("Sign in: run claude and follow the prompts"), rowText);

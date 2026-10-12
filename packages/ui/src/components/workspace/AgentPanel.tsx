@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
-import { timeAgo, viewIcon } from "~/lib/domain";
+import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
@@ -688,7 +688,7 @@ export function AgentPanel({
               key={th.id}
               checked={th.id === threadId}
               name={th.title || t("agentPanel.newThread")}
-              sub={[attentionOf.has(th.id) ? attentionLabel(attentionOf.get(th.id)!) : th.running ? t("agentPanel.threadRunning") : null, timeAgo(th.updatedAt)].filter(Boolean).join(" · ")}
+              sub={[attentionOf.has(th.id) ? attentionLabel(attentionOf.get(th.id)!) : th.running ? t("agentPanel.threadRunning") : th.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(th.parkedUntil) }) : null, timeAgo(th.updatedAt)].filter(Boolean).join(" · ")}
               onSelect={() => pickThread(th.id)}
               actions={
                 <>

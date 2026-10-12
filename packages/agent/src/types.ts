@@ -45,6 +45,8 @@ export interface ThreadSummary {
   execution?: GeneralExecution | null;
   /** In a listing for the panel: a run of it is going right now. */
   running?: boolean;
+  /** In a listing for the panel: it stopped on a usage limit that lifts then. */
+  parkedUntil?: number | null;
   id: string;
   projectId: string;
   /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */
@@ -244,6 +246,22 @@ export interface TurnResult {
   /** External session id to store on the thread for the next turn. */
   resume?: string;
   metrics?: import("./evaluation.js").TurnMetrics;
+  /** The engine stopped on a usage or rate limit; `until` is when it lifts, when the engine said. */
+  limit?: { until: number | null };
+}
+
+/** A thread that stopped on a usage limit, waiting for it to lift. Kept on this machine only: it is this machine's clock that continues it. */
+export interface ParkView {
+  threadId: string;
+  /** The run that hit the limit; null when a terminal session reported it. */
+  runId: string | null;
+  until: number;
+  /** Whether `until` came from the engine's own words, not a guess. */
+  known: boolean;
+  /** Tomrade continues the thread itself at `until`; otherwise the person is told it can go on. */
+  resume: boolean;
+  /** How many limited runs in a row this thread has had. */
+  attempt: number;
 }
 
 /**
@@ -457,6 +475,10 @@ declare module "cordis" {
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */
     "agent/run-ended"(run: RunView, thread: ThreadSummary): void;
+    /** A thread stopped on a usage limit and waits for it to lift. */
+    "agent/parked"(park: ParkView, thread: ThreadSummary): void;
+    /** A parked thread's limit lifted and nobody continues it on its own: the person may. */
+    "agent/limit-lifted"(park: ParkView, thread: ThreadSummary): void;
   }
 }
 
