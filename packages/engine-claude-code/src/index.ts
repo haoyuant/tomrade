@@ -1,6 +1,8 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
+import type {} from "@tomradex/llm";
 import { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
+import { claudeLentModel } from "./lend.js";
 import { ClaudeRuntime } from "./sdk.js";
 import { RuntimePool, runtimeFingerprint } from "./runtime.js";
 
@@ -29,12 +31,17 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
 export default {
   name: "engine-claude-code",
   inject: ["agent", "mcp", "tools"],
-  apply(ctx: Context) { ctx.agent.engine(createClaudeCodeEngine(ctx)); }
+  apply(ctx: Context) {
+    const engine = createClaudeCodeEngine(ctx);
+    ctx.agent.engine(engine);
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(claudeLentModel(ctx, async () => (await engine.available()).ok))));
+  }
 };
 
 export { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
 export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
 export { localAvailability, chosenCommand } from "./availability.js";
+export { claudeLentModel } from "./lend.js";
 export {
   CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
   type BundledCli, type CliHost, type CliLaunch, type CliRunResult

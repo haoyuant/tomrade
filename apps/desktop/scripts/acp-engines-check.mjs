@@ -41,7 +41,7 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work, locale: "en-US" },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal"].map((id) => ({ id, disabled: true }))]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin", "engine-terminal"].map((id) => ({ id, disabled: true }))]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;

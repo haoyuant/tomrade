@@ -301,6 +301,22 @@ export interface EngineAvailability {
   cli?: LocalCliStatus;
 }
 
+/**
+ * How a person makes a local agent ready on this machine, as commands: what
+ * setup screens show, copy and run in a terminal. Only what an engine declares
+ * here can be started in a terminal from the app.
+ */
+export interface EngineSetup {
+  /** Install commands, the recommended one first. */
+  install: string[];
+  signIn?: string;
+  /** Signing in starts the agent itself, which then asks (`/login`); otherwise the command signs in and returns. */
+  signInRuns?: boolean;
+  docs?: string;
+  /** Offered on setup screens before it is installed. */
+  suggested?: boolean;
+}
+
 /** A path the person typed or picked, run once to see whether it is the CLI. */
 export interface CliCheck {
   ok: boolean;
@@ -328,6 +344,7 @@ export interface Engine {
   available(opts?: { fresh?: boolean }): Promise<EngineAvailability>;
   /** For an engine that runs a local CLI: whether this file is one it can use. */
   checkCli?(file: string): Promise<CliCheck>;
+  setup?: EngineSetup;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
@@ -361,6 +378,7 @@ export interface EngineView {
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;
   terminalOnly?: boolean;
+  setup?: EngineSetup;
 }
 
 export interface WorkflowQuestion {

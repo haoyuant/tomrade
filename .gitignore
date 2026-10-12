@@ -20,6 +20,8 @@ packages/*/tests/.tmp-*/
 build/npm/
 apps/desktop/ui/
 apps/desktop/release/
+# The built-in agent's Pi, fetched by apps/desktop/scripts/fetch-pi.mjs
+apps/desktop/vendor/
 
 # UI harness output
 apps/desktop/scripts/shots/

@@ -197,6 +197,13 @@ plugins:
   - id: engine-loop
     name: "@tomradex/engine-loop"
     implements: [engine]
+  # Pi shipped inside the app, run on the model profiles: a local agent with nothing to install or sign in to.
+  - id: engine-pi-builtin
+    name: "@tomradex/engine-pi/builtin"
+    implements: [engine]
+    config:
+      cli: "${appDir}/vendor/pi/dist/bundle/cli.js"
+      home: "${userData}/pi"
   # Off until switched on in Settings → Manage plugins: a menu of workflows, no model.
   - id: engine-scripted
     name: "@tomradex/engine-scripted"

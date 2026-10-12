@@ -1,0 +1,108 @@
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { fresh, settle } from "@tomradex/testkit";
+import { Tools } from "@tomradex/tools";
+import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { Llm, type ModelProfile } from "@tomradex/llm";
+import { Mcp } from "@tomradex/mcp";
+import { builtinPi, modelsFile, piTarget } from "@tomradex/engine-pi";
+
+const profile = (patch: Partial<ModelProfile>): ModelProfile => ({ id: "p1", title: "", provider: "openai-compatible", apiKey: "sk-secret", model: "m", ...patch });
+
+it("runs a known endpoint as pi's own provider only when pi's catalog lists the model", () => {
+  const catalog = new Set(["deepseek/deepseek-flash", "anthropic/claude-sonnet-5", "moonshotai-cn/kimi-k3"]);
+  expect(piTarget(profile({ baseURL: "https://api.deepseek.com", model: "deepseek-flash" }), catalog)).toEqual({ model: "deepseek/deepseek-flash", env: { DEEPSEEK_API_KEY: "sk-secret" } });
+  expect(piTarget(profile({ provider: "anthropic", model: "claude-sonnet-5" }), catalog)).toEqual({ model: "anthropic/claude-sonnet-5", env: { ANTHROPIC_API_KEY: "sk-secret" } });
+  expect(piTarget(profile({ baseURL: "https://api.moonshot.cn/v1", model: "kimi-k3" }), catalog).model).toBe("moonshotai-cn/kimi-k3");
+  // an alias pi does not list, and an endpoint pi has no provider for
+  expect(piTarget(profile({ baseURL: "https://api.deepseek.com", model: "deepseek-chat" }), catalog)).toEqual({ model: "tomrade-p1/deepseek-chat", env: { TOMRADE_KEY_P1: "sk-secret" } });
+  expect(piTarget(profile({ id: "my local", baseURL: "http://127.0.0.1:11434/v1", apiKey: "", model: "qwen3" }), catalog)).toEqual({ model: "tomrade-my-local/qwen3", env: {} });
+});
+
+it("writes models.json with keys named by variable, never the key itself", () => {
+  const file = modelsFile([
+    profile({ baseURL: "https://api.example.com/v1", inputModalities: ["image"] }),
+    profile({ id: "local", baseURL: "http://127.0.0.1:11434/v1", apiKey: "", model: "qwen3" }),
+    profile({ id: "claude", provider: "anthropic", model: "claude-sonnet-5" }),
+    profile({ id: "pics", provider: "openai-images", model: "gpt-image" })
+  ]);
+  expect(JSON.stringify(file)).not.toContain("sk-secret");
+  expect(file.providers["tomrade-p1"]).toEqual({ baseUrl: "https://api.example.com/v1", api: "openai-completions", apiKey: "$TOMRADE_KEY_P1", models: [{ id: "m", name: "m", input: ["text", "image"] }] });
+  expect(file.providers["tomrade-local"]).toMatchObject({ apiKey: "none", models: [{ input: ["text"] }] });
+  expect(file.providers["tomrade-claude"]).toMatchObject({ baseUrl: "https://api.anthropic.com", api: "anthropic-messages", models: [{ input: ["text", "image"] }] });
+  expect(file.providers["tomrade-pics"]).toBeUndefined();
+});
+
+async function boot(cli: string) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-builtin-"));
+  const booted = await fresh({ plugins: [Tools, [Settings, { path: path.join(home, "settings.json") }], Llm, Agent, [Mcp, { port: 0 }], [builtinPi, { cli, home: path.join(home, "pi") }]] });
+  await settle();
+  const engine = () => booted.ctx.agent.engineViews(true).then((views) => views.find((v) => v.id === "pi-builtin")!);
+  const useModel = (patch: Partial<ModelProfile>) => booted.ctx.settings.set({ ...booted.ctx.settings.get(), models: { profiles: [profile(patch)], roles: { worker: "" } } });
+  return { ...booted, home, engine, useModel };
+}
+
+it("asks for nothing but a model", async () => {
+  const missing = await boot("/nowhere/cli.js");
+  expect(await missing.engine()).toMatchObject({ ok: false, need: "install" });
+  const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");
+  const { engine, useModel } = await boot(fs.existsSync(bundled) ? bundled : process.execPath);
+  expect(await engine()).toMatchObject({ ok: false, need: "model", capabilities: ["backlog", "code", "general"] });
+  useModel({ provider: "openai-images" });
+  expect(await engine()).toMatchObject({ ok: false, need: "model" });
+});
+
+const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");
+
+/** The real bundled pi against a stand-in chat-completions endpoint: one Tomrade tool call, then an answer. */
+describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
+  it("conducts a turn on a model profile, with the key only in its environment", async () => {
+    const seen: { auth?: string; tools: string[] }[] = [];
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const request = JSON.parse(body) as { tools?: { function: { name: string } }[]; messages: { role: string }[] };
+        const tools = (request.tools ?? []).map((t) => t.function.name);
+        seen.push({ auth: req.headers.authorization, tools });
+        const chunk = (delta: unknown, finish: string | null = null) => `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: "fake", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const listItems = tools.find((name) => name.endsWith("list_items"));
+        if (listItems && !request.messages.some((m) => m.role === "tool")) {
+          res.end(chunk({ role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: listItems, arguments: "{}" } }] }) + chunk({}, "tool_calls") + "data: [DONE]\n\n");
+        } else {
+          res.end(chunk({ role: "assistant", content: "There is 1 item." }) + chunk({}, "stop") + "data: [DONE]\n\n");
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const { ctx, items, project, board, home, engine, useModel } = await boot(bundled);
+      useModel({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "sk-secret", model: "fake-model" });
+      expect(await engine()).toMatchObject({ ok: true });
+      items.create({ projectId: project.id, boardId: board.id, title: "Ship the water reminder", by: "human" });
+
+      const thread = ctx.agent.newThread(project.id, "pi-builtin");
+      const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "How many items are there?" });
+      const t0 = Date.now();
+      while (ctx.agent.store.run(project.id, runId)?.status === "running") {
+        if (Date.now() - t0 > 60_000) throw new Error("the run did not settle");
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const run = ctx.agent.store.run(project.id, runId)!;
+      const blocks = ctx.agent.store.messages(project.id, thread.id).map((m) => m.block);
+      expect(run.status, run.error ?? "").toBe("done");
+      expect(blocks.some((b) => b.type === "trace" && b.tool === "list_items" && b.ok)).toBe(true);
+      expect(blocks.some((b) => b.type === "text" && b.text.includes("1 item"))).toBe(true);
+      expect(seen[0].auth).toBe("Bearer sk-secret");
+      expect(fs.readFileSync(path.join(home, "pi", "models.json"), "utf8")).not.toContain("sk-secret");
+    } finally {
+      server.close();
+    }
+  }, 90_000);
+});

@@ -89,13 +89,12 @@ The new view stays in the sidebar.`
     {
       key: "b1",
       title: "Connect a model",
-      body: `The assistant needs a language model to talk, tidy the backlog and plan work.
+      body: `The assistant needs a language model to talk, tidy the backlog and plan work. A model also runs the **built-in agent**, so Start works with nothing else installed.
 
-1. Open Settings → **Assistant**.
-2. Pick a provider: DeepSeek, Anthropic, OpenAI, Kimi, OpenRouter — or Ollama on this computer, which needs no key.
-3. Paste the API key and save.
+1. In the setup card at the top of the assistant panel — or Settings → **Assistant** — pick a provider: DeepSeek, Kimi, Anthropic, OpenAI, OpenRouter, or Ollama on this computer, which needs no key.
+2. Paste the API key and click **Connect**. Tomrade checks it and picks a model.
 
-The setup card at the top of the assistant panel marks the model as ready.`
+Signed in to Claude Code or Codex? Then this is already done: the assistant runs on it and plans with its model.`
     },
     {
       key: "b2",
@@ -123,14 +122,14 @@ After the undo the example backlog is as it was.`
 
 The assistant asks a few questions, then plans it as a set of tickets with dependencies in a new workstream. Not what you wanted? Revert it like any other run.
 
-The plan is written by your model, so this needs one even when the conversation runs on Claude Code or Codex.`
+The plan is written by your model — or, with no model connected, by the Claude Code or Codex you are signed in to.`
     },
     {
       key: "c1",
       title: "Hand a ticket to a local agent with Start",
-      body: `**Start** gives a ticket to Claude Code or Codex on this computer, which works on it in the background.
+      body: `**Start** gives a ticket to an agent on this computer, which works on it in the background.
 
-1. In a terminal, install and sign in to Claude Code (\`claude\`) or Codex (\`codex login\`).
+1. With a model connected, the **built-in agent** is ready — nothing to install. Claude Code or Codex work too, once installed and signed in.
 2. Open **Write a one-page user guide** in the example workstream and click **Start**.
 3. When it is done it submits its result for review. The ticket is finished when you accept it.`
     },
@@ -215,13 +214,12 @@ const zh: SampleWords = {
     {
       key: "b1",
       title: "接上一个模型",
-      body: `助手需要一个语言模型，才能对话、整理 backlog、规划工作。
+      body: `助手需要一个语言模型，才能对话、整理 backlog、规划工作。接上模型后，**内置智能体**也能用了，「开始」不用再装别的东西。
 
-1. 打开设置 → **助手**。
-2. 选一个服务商：DeepSeek、Anthropic、OpenAI、Kimi、OpenRouter，或者本机的 Ollama（不需要 key）。
-3. 填入 API key 并保存。
+1. 在助手面板顶部的设置卡片里（或设置 → **助手**）选一个服务商：DeepSeek、Kimi、Anthropic、OpenAI、OpenRouter，或者本机的 Ollama（不需要 key）。
+2. 粘贴 API key，点 **连接**。Tomrade 会检查它并选好模型。
 
-助手面板顶部的设置卡片会把模型标成可用。`
+已经登录了 Claude Code 或 Codex？那这一步已经完成了：助手会用它来对话，也用它的模型来规划。`
     },
     {
       key: "b2",
@@ -249,14 +247,14 @@ const zh: SampleWords = {
 
 助手会先问几个问题，再把它规划成一组带依赖关系的工作项，放进一个新的工作流。不满意的话，像其他运行一样撤销就行。
 
-规划是由你配置的模型来写的，所以即使对话跑在 Claude Code 或 Codex 上，这一步也需要模型。`
+规划由你接上的模型来写；没接模型时，由你登录的 Claude Code 或 Codex 来写。`
     },
     {
       key: "c1",
       title: "用「开始」把一个工作项交给本地智能体",
-      body: `**开始** 把一个工作项交给这台电脑上的 Claude Code 或 Codex，在后台完成。
+      body: `**开始** 把一个工作项交给这台电脑上的智能体，在后台完成。
 
-1. 在终端里安装并登录 Claude Code（\`claude\`）或 Codex（\`codex login\`）。
+1. 接上模型后，**内置智能体**就能用，不用安装任何东西。Claude Code 或 Codex 装好并登录后也可以。
 2. 打开示例工作流里的 **写一页使用说明**，点 **开始**。
 3. 做完后它会提交成果等你验收。你接受了，这个工作项才算完成。`
     },

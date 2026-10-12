@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { EngineNeed, EnginePick, TurnInput } from "@tomradex/agent";
+import type { EngineNeed, EnginePick, EngineSetup, TurnInput } from "@tomradex/agent";
 import type { CliLocator } from "@tomradex/engine-claude-code";
 
 /** How much the agent may do without asking, as Tomrade settles it for one turn. */
@@ -56,6 +56,7 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   usage?: "turn" | "session" | ((update: Record<string, any>) => RequestUsage | null);
   /** Whether its CLI can also be handed a ticket in a terminal (code link has a template for it). */
   terminal?: boolean;
+  setup?: EngineSetup;
   /** Effort levels to offer before a session has advertised its own. */
   efforts?: string[];
   /** What gets a signed-out agent going, said after its own error. */

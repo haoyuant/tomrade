@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import type { Engine } from "@tomradex/agent";
+import type { Engine, EngineSetup } from "@tomradex/agent";
 import { localAvailability, localCli } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 
@@ -11,11 +11,24 @@ export interface TerminalAgent {
   bin: string;
   /** The English tail of "not found — …". */
   install: string;
+  setup: EngineSetup;
 }
 
 export const TERMINAL_AGENTS: TerminalAgent[] = [
-  { id: "gemini", title: "Gemini CLI", bin: "gemini", install: "install Gemini CLI (npm install -g @google/gemini-cli) and sign in" },
-  { id: "opencode", title: "OpenCode", bin: "opencode", install: "install OpenCode (curl -fsSL https://opencode.ai/install | bash) and add a provider" }
+  {
+    id: "gemini", title: "Gemini CLI", bin: "gemini", install: "install Gemini CLI (npm install -g @google/gemini-cli) and sign in",
+    // Its first run asks how to sign in: a Google account or an API key.
+    setup: { install: ["npm install -g @google/gemini-cli"], signIn: "gemini", signInRuns: true, docs: "https://github.com/google-gemini/gemini-cli" }
+  },
+  {
+    id: "opencode", title: "OpenCode", bin: "opencode", install: "install OpenCode (curl -fsSL https://opencode.ai/install | bash) and add a provider",
+    setup: {
+      install: process.platform === "win32" ? ["npm install -g opencode-ai"] : ["curl -fsSL https://opencode.ai/install | bash", "npm install -g opencode-ai"],
+      signIn: "opencode auth login",
+      signInRuns: true,
+      docs: "https://opencode.ai/docs/"
+    }
+  }
 ];
 
 /**
@@ -31,6 +44,7 @@ export function createTerminalEngine(ctx: Context, agent: TerminalAgent): Engine
     author: `ai:${agent.id}`,
     capabilities: ["code", "general"],
     terminalOnly: true,
+    setup: agent.setup,
     picks: () => [{ key: "model", title: "Model", choices: [], freeText: true }],
     available: localAvailability(ctx, { engineId: agent.id, title: agent.title, cli, install: agent.install }),
     checkCli: (file) => cli.check(file),

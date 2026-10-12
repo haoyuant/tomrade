@@ -314,6 +314,21 @@ exported for a provider that wants the same behaviour over its own `ChatModel`.
 Keep optional fields in a schema forgiving (`.catch(undefined)`), so a cosmetic
 slip does not cost the whole document.
 
+While no profile is configured, a plugin can **lend** a model for the worker
+role: `ctx.llm.lend({ id, title, ready, model })` returns its withdrawal (wrap
+it in `ctx.effect`). The Claude Code and Codex engines lend their signed-in CLI
+this way — one prompt, no tools, no session — so planning works with a
+subscription and no API key. `ctx.llm.worker()` says who answers worker calls
+(`via: "profile" | "lent"`); `ready()` still answers for profiles only, because
+a lent model has no tools to run the loop engine with.
+
+Quick setup lives in the same plugin, so the UI knows no provider: `llm.providers`
+lists the well-known ones in the reader's order, `llm.guess` reads a pasted key's
+shape, `llm.quickSetup({ preset, apiKey })` checks the key against the provider's
+model listing, picks a model and saves the profile first, and `llm.detect` /
+`llm.adopt` offer keys exported in the shell and a local Ollama without the key
+ever reaching the page.
+
 ## Modules
 
 A **module** is a capability, named by the service key that carries it. The
@@ -402,9 +417,13 @@ no opinion about what to do next. Four registrations extend it, all effects:
 
 ```ts
 // An ENGINE takes turns: it reads the thread, emits blocks, calls tools.
+// `available()` says what stands in the way (`need`: install, sign-in, model…);
+// a local agent's `setup` gives its install and sign-in commands, the only
+// ones the app will run in a terminal for the person.
 ctx.agent.engine({
   id: "acme", title: "Acme", author: "ai:acme",
   available: async () => ({ ok: true }),
+  setup: { install: ["npm install -g acme-cli"], signIn: "acme login" },
   async turn(input, io) {
     const items = await io.tools.execute("list_items", { status: "backlog" });
     io.emit({ type: "text", text: `${(items as unknown[]).length} in the backlog.` });

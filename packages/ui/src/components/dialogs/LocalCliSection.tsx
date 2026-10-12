@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
-import { LOCAL_AGENTS, cliDiagnostics, engineStatus, useRecheckEngines } from "~/lib/localCli";
+import { cliDiagnostics, engineStatus, useRecheckEngines } from "~/lib/localCli";
 import { openExternal, pickProgram } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 
@@ -18,7 +18,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
   const toast = useToast();
   const recheck = useRecheckEngines();
   const about = useQuery({ queryKey: ["about"], queryFn: () => invoke("shell.about"), staleTime: Infinity, retry: false });
-  const agent = LOCAL_AGENTS[engine.id];
+  const agent = engine.setup;
   const status = engineStatus(engine);
   const windows = cli.platform === "win32";
 
@@ -65,7 +65,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
         : status === "ready" || status === "service" || status === "other"
           ? []
           : ["install", "signIn", "verify", "recheck", "locate"];
-  const install = agent?.install(cli.platform) ?? [];
+  const install = agent?.install ?? [];
 
   return (
     <div className="cli-setup stack-3" data-testid={`cli-setup-${engine.id}`}>
@@ -149,13 +149,17 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
                   <>
                     {tx("localCli.stepInstall", { command: code(install[0]) })}
                     {install[1] && <> {tx("localCli.stepInstallOr", { command: code(install[1]) })}</>}
-                    {" · "}
-                    <button type="button" className="link-btn" onClick={() => openExternal(agent.docs)}>
-                      {t("localCli.docs")}
-                    </button>
+                    {agent.docs && (
+                      <>
+                        {" · "}
+                        <button type="button" className="link-btn" onClick={() => openExternal(agent.docs!)}>
+                          {t("localCli.docs")}
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
-                {step === "signIn" && tx(agent.signInRuns ? "localCli.stepSignInRun" : "localCli.stepSignIn", { command: code(agent.signIn) })}
+                {step === "signIn" && agent.signIn && tx(agent.signInRuns ? "localCli.stepSignInRun" : "localCli.stepSignIn", { command: code(agent.signIn) })}
                 {step === "verify" && tx("localCli.stepVerify", { command: code(`${cli.name} --version`) })}
                 {step === "recheck" && t("localCli.stepRecheck")}
                 {step === "locate" && tx("localCli.stepLocate", { command: code(`${windows ? "where" : "which"} ${cli.name}`) })}

@@ -103,6 +103,13 @@ export function assistantMessage(collected: Pick<Collected, "text" | "toolCalls"
   return { role: "assistant", content };
 }
 
+/** A conversation as one prompt, for a model that takes a single message (a CLI's print mode). Text only. */
+export function transcriptOf(messages: Message[]): string {
+  const textOf = (m: Message) => m.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n");
+  if (messages.length === 1) return textOf(messages[0]);
+  return messages.map((m) => `${m.role === "user" ? "USER" : "YOU (earlier)"}:\n${textOf(m)}`).join("\n\n");
+}
+
 export function toolResultsMessage(results: { id: string; content: string; isError?: boolean }[]): Message {
   return { role: "user", content: results.map((r) => ({ type: "tool_result" as const, id: r.id, content: r.content, isError: r.isError })) };
 }

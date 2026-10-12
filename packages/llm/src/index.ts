@@ -10,8 +10,10 @@ import { LlmError } from "./errors.js";
 import { assistantMessage, collect, userMessage, type ChatModel, type ChatRequest, type LlmRole, type Message } from "./model.js";
 import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
+import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, type QuickSetupResult } from "./providers.js";
 
 export * from "./model.js";
+export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 export { LlmError } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
@@ -49,6 +51,45 @@ export interface LlmStatus {
 }
 
 /**
+ * A model another plugin answers one-shot prompts with — a local agent the
+ * person is signed in to. It stands in for the worker role only while no
+ * profile is configured, so planning works with a subscription and no API key.
+ */
+export interface LentModel {
+  id: string;
+  title: string;
+  /** Whether it can answer now; asked before each call, so keep it cached. */
+  ready(): Promise<boolean>;
+  model: ChatModel;
+}
+
+/** A provider as the quick setup offers it, in the person's language and order. */
+export interface ProviderView {
+  id: string;
+  title: string;
+  hint: string;
+  keyPage?: string;
+  local?: boolean;
+}
+
+/** A model found on this computer: a key in the environment, or a local server answering. */
+export interface DetectedModel {
+  id: string;
+  preset: string;
+  source: "env" | "local";
+  /** The variable and a masked key, or the models a local server has. */
+  detail: string;
+}
+
+/** Who answers worker calls (planning, duplicate checks): a profile, a lent model, or nobody yet. */
+export interface WorkerStatus {
+  ok: boolean;
+  via?: "profile" | "lent";
+  title?: string;
+  reason?: string;
+}
+
+/**
  * The model seam. An engine picks its own profile per thread (falling back to
  * the first configured one); `worker` is what compound tools and workflow
  * steps generate content with — often cheaper.
@@ -63,11 +104,20 @@ export interface LlmService extends LLMProvider {
   profiles(): { id: string; title: string }[];
   /** Ask the profile's endpoint for one token — a wrong key or address shows when it is saved, not in the first conversation. */
   test(profile: ModelProfile): Promise<ModelTest>;
+  /** Offer a model for worker calls while no profile is configured; returns the withdrawal. */
+  lend(model: LentModel): () => void;
+  worker(): Promise<WorkerStatus>;
 }
 
 declare module "@tomradex/ipc" {
   interface Channels {
     "llm.test": (profile: ModelProfile) => ModelTest;
+    "llm.worker": () => WorkerStatus;
+    "llm.providers": () => ProviderView[];
+    "llm.guess": (key: string) => string[];
+    "llm.detect": () => DetectedModel[];
+    "llm.quickSetup": (input: { preset: string; apiKey?: string }) => QuickSetupResult;
+    "llm.adopt": (id: string) => QuickSetupResult;
   }
 }
 
@@ -154,6 +204,7 @@ export class Llm extends Service implements LlmService {
   static inject = ["settings"];
 
   private cache = new Map<string, ChatModel>();
+  private lent: LentModel[] = [];
 
   constructor(ctx: Context) {
     super(ctx, "llm");
@@ -162,6 +213,12 @@ export class Llm extends Service implements LlmService {
   [Service.init]() {
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("llm.test", (profile) => ctx.llm.test(profile));
+      ctx.ipc.handle("llm.worker", () => ctx.llm.worker());
+      ctx.ipc.handle("llm.providers", () => this.providers());
+      ctx.ipc.handle("llm.guess", (key) => guessProviders(key));
+      ctx.ipc.handle("llm.detect", () => this.detect());
+      ctx.ipc.handle("llm.quickSetup", (input) => this.quickSetup(input));
+      ctx.ipc.handle("llm.adopt", (id) => this.adopt(id));
     });
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
@@ -230,8 +287,97 @@ export class Llm extends Service implements LlmService {
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
     const profile = this.profileFor("worker");
+    if (!profile) {
+      const lent = await this.readyLent();
+      if (lent) return completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`);
+    }
     const label = profile ? `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)` : undefined;
     return completeJson(this.for("worker"), schema, request, label);
+  }
+
+  lend(model: LentModel): () => void {
+    this.lent.push(model);
+    return () => {
+      this.lent = this.lent.filter((m) => m !== model);
+    };
+  }
+
+  async worker(): Promise<WorkerStatus> {
+    const profile = this.profileFor("worker");
+    if (profile) return { ok: true, via: "profile", title: profile.title || profile.model };
+    const lent = await this.readyLent();
+    if (lent) return { ok: true, via: "lent", title: lent.title };
+    return { ok: false, reason: this.ready().reason };
+  }
+
+  private zh(): boolean {
+    return this.ctx.settings.locale?.() === "zh";
+  }
+
+  providers(): ProviderView[] {
+    const zh = this.zh();
+    // Reachable from mainland China first for a Chinese reader; the paid global APIs first otherwise.
+    const order = zh ? ["deepseek", "kimi", "anthropic", "openai", "openrouter", "ollama"] : ["anthropic", "openai", "deepseek", "openrouter", "kimi", "ollama"];
+    return [...PROVIDERS]
+      .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+      .map((p) => ({ id: p.id, title: p.title, hint: zh ? p.hint.zh : p.hint.en, ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
+  }
+
+  /** Keys exported in the person's shell and local servers, minus what a profile already uses. */
+  async detect(): Promise<DetectedModel[]> {
+    const profiles = this.models().profiles;
+    const found: DetectedModel[] = [];
+    for (const preset of PROVIDERS) {
+      if (preset.env) {
+        const key = process.env[preset.env]?.trim();
+        if (key && !profiles.some((p) => p.apiKey === key)) found.push({ id: `env:${preset.env}`, preset: preset.id, source: "env", detail: `${preset.env} · ${keyHint(key)}` });
+      }
+      if (preset.local && !profiles.some((p) => p.baseURL === preset.baseURL)) {
+        const listing = await listModels(preset, "", 800);
+        if (listing.ok && listing.models?.length) found.push({ id: `local:${preset.id}`, preset: preset.id, source: "local", detail: listing.models.slice(0, 3).join(", ") });
+      }
+    }
+    return found;
+  }
+
+  adopt(id: string): Promise<QuickSetupResult> {
+    const [source, name] = id.split(":");
+    if (source === "local") return this.quickSetup({ preset: name });
+    const preset = PROVIDERS.find((p) => p.env === name);
+    if (source !== "env" || !preset) throw new Error(`Nothing detected as ${id}`);
+    return this.quickSetup({ preset: preset.id, apiKey: process.env[name] ?? "" });
+  }
+
+  /**
+   * One key to a working profile: the provider's listing checks the key and
+   * names a model, one token checks the model, and the profile goes first so
+   * every engine uses it. A profile on the same endpoint takes the new key.
+   */
+  async quickSetup(input: { preset: string; apiKey?: string }): Promise<QuickSetupResult> {
+    const preset = PROVIDERS.find((p) => p.id === input.preset);
+    if (!preset) throw new Error(`Unknown provider ${input.preset}`);
+    const apiKey = input.apiKey?.trim() ?? "";
+    if (!preset.local && !apiKey) return { ok: false, kind: "auth", detail: "no API key" };
+    const listing = await listModels(preset, apiKey);
+    if (!listing.ok) return { ok: false, kind: modelErrorKind(listing.detail), detail: listing.detail };
+    const model = pickModel(preset, listing.models);
+    if (!model) return { ok: false, kind: "model", detail: `${preset.title} lists no model to use` };
+    const models = this.models();
+    const same = models.profiles.find((p) => p.provider === preset.provider && (p.baseURL || "") === preset.baseURL);
+    const taken = new Set(models.profiles.map((p) => p.id));
+    let id = same?.id ?? preset.id;
+    for (let n = 2; !same && taken.has(id); n += 1) id = `${preset.id}-${n}`;
+    const profile: ModelProfile = { ...same, id, title: same?.title || preset.title, provider: preset.provider, ...(preset.baseURL ? { baseURL: preset.baseURL } : {}), apiKey, model };
+    const test = await this.test(profile);
+    if (!test.ok && test.kind !== "rate") return test;
+    const all = this.ctx.settings.get();
+    this.ctx.settings.set({ ...all, models: { ...models, profiles: [profile, ...models.profiles.filter((p) => p !== same)] } });
+    return { ok: true, profile: { id, title: profile.title, model } };
+  }
+
+  private async readyLent(): Promise<LentModel | undefined> {
+    for (const model of this.lent) if (await model.ready().catch(() => false)) return model;
+    return undefined;
   }
 
   /** A v1 `llm` section with a key becomes the first profile, bound to both roles. */
@@ -276,6 +422,14 @@ export class FakeLlm implements LlmService {
 
   ready(): LlmStatus {
     return { ok: false, reason: "FakeLlm answers completeJson only" };
+  }
+
+  lend(): () => void {
+    return () => {};
+  }
+
+  async worker(): Promise<WorkerStatus> {
+    return { ok: true, via: "profile", title: "fake" };
   }
 }
 
@@ -324,6 +478,8 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       profiles: () => [{ id: "fake", title: "fake" }],
       ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
       test: async () => ({ ok: true }),
+      lend: () => () => {},
+      worker: async () => ({ ok: true, via: "profile", title: "fake" }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
         if (!respond) throw new LlmError("fakeChat was given no completeJson responder");
         return schema.parse(respond(request.system, request.user));

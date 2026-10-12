@@ -508,7 +508,7 @@ export class Agent extends Service {
       [...this.engines.values()].map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
@@ -546,7 +546,7 @@ export class Agent extends Service {
       return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words.recommendedByType, source: "fallback", requires: selected?.requires ?? [] };
     };
     const llm = this.ctx.get("llm") as LlmService | undefined;
-    if (!llm || !llm.ready().ok || !candidates.length) return fallback();
+    if (!llm || !candidates.length || !(await llm.worker()).ok) return fallback();
     try {
       const result = await llm.completeJson(recommendationSchema, {
         system: `Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,

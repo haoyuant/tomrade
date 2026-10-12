@@ -1,9 +1,12 @@
 /**
- * A first run, end to end: the app opens on the sample project and nothing
- * else, its learning path draws as a graph, the assistant says what is still
- * missing until it is set up, the hints show once and stay seen, and the
- * sample can be made again — in the person's language — after it is deleted.
- * A stand-in engine that writes one ticket makes the run deterministic.
+ * A first run, end to end: the app first asks to connect a model or a local
+ * agent — and can be told "later" — then opens on the sample project and
+ * nothing else, its learning path draws as a graph, the assistant keeps a
+ * setup card until one is connected, the hints show once and stay seen, and the
+ * sample can be made again — in the person's language — after it is deleted,
+ * and the whole of it can be run again from the home, as often as wanted.
+ * A stand-in engine that writes one ticket makes the run deterministic; the
+ * local CLI agents are switched off, since this machine may have one signed in.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:onboarding
@@ -32,7 +35,7 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work, locale: "en-US" },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
@@ -70,6 +73,7 @@ const run = async () => {
   await win.loadURL(base);
   const $ = (js) => win.webContents.executeJavaScript(js, true);
   const has = (selector) => $(`!!document.querySelector(${JSON.stringify(selector)})`);
+  const text = (selector) => $(`document.querySelector(${JSON.stringify(selector)})?.textContent.trim() ?? null`);
   const texts = (selector) => $(`[...document.querySelectorAll(${JSON.stringify(selector)})].map((n) => n.textContent.trim())`);
   const press = (js) =>
     $(`(() => { const n = ${js}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
@@ -91,6 +95,15 @@ const run = async () => {
     await $(`document.querySelector('.ai-send').click();true`);
   };
 
+  // ── connect an AI first ───────────────────────────────────────────────
+  check("a first run asks to connect an AI before the projects", await wait(() => has('[data-testid="first-run-setup"]'), "first-run setup"));
+  check("it offers to paste a key, providers in the reader's order", (await texts('[data-testid="quick-model"] .chip-opt'))[0] === "Anthropic" && (await has("#quickKey")), await texts('[data-testid="quick-model"] .chip-opt'));
+  await $(`(() => { const i = document.querySelector('#quickKey'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'sk-ant-api03-abc'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  check("a pasted key picks its provider", await wait(async () => (await texts('[data-testid="quick-model"] .chip-opt.sel'))[0] === "Anthropic" && (await texts('[data-testid="quick-model"] .meta-txt')).some((t) => t === "Looks like a key from Anthropic."), "guess"));
+  await shot("onboarding-00-connect");
+  await press(`document.querySelector('[data-testid="setup-later"]')`);
+  check("Set up later goes to the projects, and the screen stays away", await wait(async () => !(await has('[data-testid="first-run-setup"]')) && seen().includes("setup-screen"), "later"));
+
   // ── the projects home ─────────────────────────────────────────────────
   check("the home shows the sample", await wait(() => $(`!!${byText(".proj .proj-name", "Tomrade tour")}`), "sample card"));
   check("marked as the tour", (await texts(".proj .tag")).includes("Tour"));
@@ -111,10 +124,10 @@ const run = async () => {
   check("the sample teaches the graph itself, so no graph hint", !(await toasts()).some((t) => t.includes("Switch a view's layout to Graph")));
 
   // ── what the assistant still needs ────────────────────────────────────
-  check("the assistant shows what is set up and what is missing", await wait(() => has(".agent-setup"), "setup card"));
-  check("the model is missing, with the way to connect one", await $(`(() => { const row = document.querySelector('[data-setup="model"]'); return !!row && !row.classList.contains('is-ok') && !!row.querySelector('.setup-action'); })()`));
-  check("it says Tomrade needs both", (await texts(".agent-setup .setup-head")).includes("Tomrade needs both a model and a local agent:"));
-  check("and cannot be put away while one is missing", await $(`document.querySelectorAll('.agent-setup button:not(.setup-action)').length === 0`));
+  check("the assistant keeps a setup card until an AI is connected", await wait(() => has(".agent-setup"), "setup card"));
+  check("it offers to paste a key right there", await has('.agent-setup [data-testid="quick-model"]'));
+  check("it says either a model or a local agent will do", (await texts(".agent-setup .setup-head")).includes("Connect an AI first — a model or a local agent, either one works."));
+  check("and cannot be put away", await $(`!document.querySelector('.agent-setup .btn-icon')`));
   await shot("onboarding-03-setup-card");
 
   // ── the first write, and the hint beside it ───────────────────────────
@@ -175,6 +188,25 @@ const run = async () => {
   await press(`document.querySelector('.proj-sample-hide')`);
   check("and its × puts it away", await wait(async () => !(await has(".proj-sample")), "tile hidden"));
   check("for good", await wait(async () => seen().includes("sample-tile"), "seen sample-tile"));
+
+  // ── onboarding again, as often as wanted ──────────────────────────────
+  check("the home offers to run onboarding again", (await text('[data-testid="restart-onboarding"]')) === "重新开始新手引导", await text('[data-testid="restart-onboarding"]'));
+  await press(`document.querySelector('[data-testid="restart-onboarding"]')`);
+  check("with no sample, it says one is made again", await wait(async () => (await texts(".dlg-body .meta-txt")).includes("会重新创建示例项目。"), "restart dialog"));
+  await press(`document.querySelector('[data-testid="restart-confirm"]')`);
+  check("it opens on the setup screen again", await wait(() => has('[data-testid="first-run-setup"]'), "setup screen again"));
+  check("with every hint unseen and the sample back", seen().length === 0 && !!(await again()));
+  await shot("onboarding-07-restarted");
+  await press(`document.querySelector('[data-testid="setup-later"]')`);
+  check("Later leads to the home with the sample", await wait(async () => (await texts(".proj .proj-name")).includes("Tomrade 入门"), "home with sample"));
+  const before = await again();
+  const firstTicket = ctx.items.list({ projectId: before.id })[0];
+  ctx.items.update(before.id, firstTicket.id, { status: "done" }, "human");
+  await press(`document.querySelector('[data-testid="restart-onboarding"]')`);
+  check("with a sample, it asks before putting it back as it began", await wait(() => $(`document.querySelector('[data-testid="restart-reset-sample"]')?.checked === true`), "reset checkbox"));
+  await press(`document.querySelector('[data-testid="restart-confirm"]')`);
+  check("and does: a fresh sample, nothing done in it", await wait(async () => { const now = await again(); return !!now && now.id !== before.id && ctx.items.list({ projectId: now.id }).every((i) => i.status !== "done"); }, "fresh sample"));
+  check("run twice, the setup screen comes again", await wait(() => has('[data-testid="first-run-setup"]'), "setup screen twice"));
 
   console.log(`screenshots in ${shots}`);
 };

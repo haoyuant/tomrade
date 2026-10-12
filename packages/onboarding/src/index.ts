@@ -24,6 +24,8 @@ declare module "@tomradex/ipc" {
   interface Channels {
     /** The sample project again, for someone who deleted it; `locale` names its language. */
     "onboarding.createSample": (locale?: string) => Project;
+    /** Onboarding from the top: every hint unseen, and the sample there — made anew when `resetSample`. */
+    "onboarding.restart": (opts: { resetSample: boolean; locale?: string }) => Project;
   }
 }
 
@@ -90,6 +92,7 @@ export class Onboarding extends Service {
     }
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("onboarding.createSample", (locale) => ctx.onboarding.createSample(locale));
+      ctx.ipc.handle("onboarding.restart", (opts) => ctx.onboarding.restart(opts));
     });
     this.home.inject(["settings"], (ctx) => {
       ctx.settings.register(ONBOARDING_SECTION);
@@ -102,7 +105,7 @@ export class Onboarding extends Service {
   /** The tour, in `locale`. Its seed is how it began, not history: nothing to undo, nothing in History. */
   createSample(locale?: string): Project {
     const words = SAMPLE[seedLocale(locale)];
-    return this.ctx.projects.create(
+    const created = this.ctx.projects.create(
       { name: words.name, description: words.description, keyPrefix: "TOM", locale },
       {
         seed: (project) => {
@@ -111,6 +114,22 @@ export class Onboarding extends Service {
         }
       }
     );
+    // Read back: the catalog marked it the sample after the row was made.
+    return this.ctx.projects.get(created.id) ?? created;
+  }
+
+  /**
+   * Onboarding again, as often as wanted: the hints and the setup screen count
+   * as unseen, and the sample is there. Reset, the old sample goes with its
+   * folder — it is this machine's alone — and a fresh one takes its place.
+   */
+  restart(opts: { resetSample: boolean; locale?: string }): Project {
+    const settings = this.ctx.get("settings");
+    if (settings) settings.set({ ...settings.get(), onboarding: { seen: [] } });
+    const samples = this.ctx.projects.list().filter((p) => p.sample);
+    if (samples.length && !opts.resetSample) return samples[0];
+    for (const sample of samples) this.ctx.projects.remove(sample.id, { deleteFolder: true });
+    return this.createSample(opts.locale ?? this.config.locale);
   }
 
   private fill(projectId: string, words: SampleWords): void {

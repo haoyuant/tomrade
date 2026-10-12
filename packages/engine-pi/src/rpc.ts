@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { attachedMedia, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
-import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
+import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { bridgeSource } from "./bridge.js";
 import { PiOptions, toolSelection } from "./options.js";
@@ -14,6 +14,22 @@ type Json = Record<string, any>;
 interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } }
 
 const DIALOGS = new Set(["confirm", "select", "input", "editor"]);
+
+/** How one pi process starts: which file, with what environment, and the model flags for this thread. */
+export interface PiLaunch {
+  launch: CliLaunch;
+  env?: NodeJS.ProcessEnv;
+  args: string[];
+}
+
+/** The person's own pi, found like any local CLI, with the model and effort the thread picked. */
+export async function ownPi(input: TurnInput): Promise<PiLaunch> {
+  const options = PiOptions.parse(input.options ?? {});
+  return {
+    launch: await localCli("pi").launch(options.command),
+    args: [...(options.model ? ["--model", options.model] : []), ...(options.effort ? ["--thinking", options.effort] : [])]
+  };
+}
 
 /** One `pi --mode rpc` process owned by Tomrade for one thread; its session lives in pi's own store. */
 export class PiRuntime implements Runtime {
@@ -34,7 +50,7 @@ export class PiRuntime implements Runtime {
   private activeIO?: TurnIO;
   private stderr = "";
 
-  constructor(private ctx: Context, input: TurnInput) {
+  constructor(private ctx: Context, input: TurnInput, private start: (input: TurnInput) => Promise<PiLaunch> = ownPi) {
     const directory = runtimeDirectory(input);
     this.token = directory.token; this.cwd = directory.cwd;
     this.dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-"));
@@ -104,7 +120,7 @@ export class PiRuntime implements Runtime {
     if (this.alive) this.send({ type: "extension_ui_response", id: request.id, ...reply });
   }
 
-  private async spawn(input: TurnInput, io: TurnIO, options: PiOptions): Promise<void> {
+  private async spawn(input: TurnInput, io: TurnIO): Promise<void> {
     this.session = io.resume ?? randomUUID();
     const bridge = path.join(this.dir, "tomrade.ts");
     const system = path.join(this.dir, "system.md");
@@ -112,11 +128,9 @@ export class PiRuntime implements Runtime {
     fs.writeFileSync(bridge, bridgeSource({ url: this.ctx.mcp.url!, token: this.token, approval }), { mode: 0o600 });
     fs.writeFileSync(system, sessionSystem(input, "Pi"), { mode: 0o600 });
     const tools = toolSelection(input);
-    const args = ["--mode", "rpc", "-e", bridge, "--session-id", this.session, "--append-system-prompt", system,
-      ...(options.model ? ["--model", options.model] : []), ...(options.effort ? ["--thinking", options.effort] : []),
-      ...(tools ? ["--tools", tools] : [])];
-    const launch = await localCli("pi").launch(options.command);
-    const child = spawnCli(launch, args, { cwd: this.cwd, env: { ...process.env, ...input.env }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    const start = await this.start(input);
+    const args = ["--mode", "rpc", "-e", bridge, "--session-id", this.session, "--append-system-prompt", system, ...start.args, ...(tools ? ["--tools", tools] : [])];
+    const child = spawnCli(start.launch, args, { cwd: this.cwd, env: { ...process.env, ...start.env, ...input.env }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stdout.on("data", lineSplitter((line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } }));
     child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-1000); });
@@ -128,7 +142,6 @@ export class PiRuntime implements Runtime {
 
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
     this.activeIO = io;
-    const options = PiOptions.parse(input.options ?? {});
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "rpc", runtime: warm ? "warm" : "cold", toolCalls: 0, compactions: 0 };
     const binding = bindTurn(this.ctx, this.token, io, input);
@@ -212,7 +225,7 @@ export class PiRuntime implements Runtime {
     io.signal.addEventListener("abort", abort, { once: true });
     try {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
-      if (!this.child) await this.spawn(input, io, options);
+      if (!this.child) await this.spawn(input, io);
       const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/")).map((media) => ({ type: "image", data: media.base64, mimeType: media.mime }));
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
       prompted = true;

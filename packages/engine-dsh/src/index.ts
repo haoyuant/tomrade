@@ -18,6 +18,8 @@ export const dsh: AcpAgent<DshOptions> = {
   title: "dsh",
   cli: localCli("dsh"),
   install: "install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and add a DeepSeek API key",
+  // Its web app's Models page stores the DeepSeek key.
+  setup: { install: ["npm install -g @deepseek-ai/dsh"], signIn: "dsh web", signInRuns: true, docs: "https://github.com/deepseek-ai/deepseek-harness" },
   options: DshOptions,
   // dsh's ACP server has no modes and its own sandbox rules decide what needs asking; it asks for none of a workspace's reads and writes.
   permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.local] },

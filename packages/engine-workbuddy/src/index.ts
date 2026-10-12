@@ -73,6 +73,8 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   title: "WorkBuddy",
   cli: localCli("codebuddy", { bundled: workbuddyApps }),
   install: "install WorkBuddy (workbuddy.ai), or its CLI with npm install -g @tencent-ai/codebuddy-code",
+  // The WorkBuddy app's own copy of the CLI is found without any install; inside codebuddy, /login signs in.
+  setup: { install: ["npm install -g @tencent-ai/codebuddy-code"], signIn: "codebuddy", signInRuns: true, docs: "https://www.workbuddy.ai/docs/cli/overview" },
   options: WorkBuddyOptions,
   permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
   args: () => ["--acp"],

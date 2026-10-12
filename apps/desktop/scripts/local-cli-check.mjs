@@ -3,7 +3,8 @@
  * Settings shows it and lets a path be chosen (checked before it is saved, and
  * taken back with one click), how Start points an agent that is not ready to
  * its row, how the panel's engine picker greys out what is not set up and
- * leads to its row, and what the guide says on Windows when the CLI is only in WSL.
+ * leads to its row, what the guide says on Windows when the CLI is only in WSL,
+ * and how the setup card asks for a model or a signed-in agent — either one.
  * Stand-in CLIs make the not-signed-in state deterministic; the ACP agents
  * are switched off, since this machine may well have one of them ready.
  *
@@ -119,6 +120,8 @@ const run = async () => {
   check("the dialog opens", await wait(() => has('[data-testid="start-dialog"]'), "start dialog"));
   const options = await $(`[...document.querySelectorAll('#stEngine option')].map((o) => o.textContent)`);
   check("each agent says why in a few words, not the CLI's error", options.includes("Codex — Not signed in") && options.includes("Claude Code — Not signed in"), options);
+  check("the built-in agent comes first, waiting for a model", options[0] === "Built-in agent — No model connected", options);
+  await $(`(() => { const s = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'claude-code'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   check("and the chosen one is explained under the list", (await text('[data-testid="start-engine-not-ready"]'))?.startsWith("Claude Code isn't ready: Not signed in."), await text('[data-testid="start-engine-not-ready"]'));
   await shot("local-cli-01-start-not-ready");
   await click('[data-testid="start-engine-configure"]');
@@ -193,50 +196,68 @@ const run = async () => {
   check("and nothing was switched or created", ctx.agent.store.threads(project.id).length === threadsBefore);
   await escape();
 
-  // ── the assistant, with a model and no local agent ────────────────────
-  // Claude Code signed out again, Codex only in WSL, no pi. "setup-card" is what the card's old Hide saved:
-  // Tomrade needs a local agent, so it no longer puts the card away.
+  // ── the assistant: a model or a signed-in agent, either one is enough ──
+  // Nothing ready: no model, Claude Code signed out, Codex only in WSL. "setup-card" is what the card's old Hide saved;
+  // it no longer puts the card away. With no terminal app, a terminal step hands back its command instead.
   const before = ctx.settings.get();
   ctx.settings.set({
     ...before,
     onboarding: { seen: ["setup-card"] },
+    codeLink: { ...before.codeLink, terminal: "none" },
     agent: { ...before.agent, engines: { ...before.agent?.engines, "claude-code": { command: claude } } },
-    models: { profiles: [{ id: "local", title: "Local model", provider: "openai-compatible", baseURL: "http://127.0.0.1:9/v1", model: "local", apiKey: "" }], roles: { worker: "" } }
+    models: { profiles: [], roles: { worker: "" } }
   });
-  await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await ctx.agent.engineViews(true);
+  await escape();
   await $(`location.hash = '#/p/${project.id}';true`);
-  check("the assistant says a local agent is still missing", await wait(() => $(`!!document.querySelector('.agent-setup [data-setup="local"]:not(.is-ok)')`), "local row missing"));
-  check("while the model is ready", await has('.agent-setup [data-setup="model"].is-ok'));
-  const setup = await text(".agent-setup");
-  check("it says Tomrade needs both, and how to get an agent", setup.includes("Tomrade needs both a model and a local agent") && setup.includes("Claude Code: sign in with claude") && setup.includes("Pi: install with npm install -g @earendil-works/pi-coding-agent"), setup);
-  check("and offers no way to put it away", await $(`document.querySelectorAll('.agent-setup button:not(.setup-action)').length === 0`));
-  await shot("local-cli-06-setup-card-no-agent");
-  await click('[data-testid="setup-local"]');
-  check("Set up opens Settings on the first agent's row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the card"));
-
+  check("with nothing set up, the assistant shows the setup card", await wait(() => has('[data-testid="setup-card"]'), "setup card"));
+  const setup = await text('[data-testid="setup-card"]');
+  check("it says either a model or a local agent will do", setup.includes("a model or a local agent, either one works"), setup);
+  check("it offers to paste a key", await has('[data-testid="setup-card"] [data-testid="quick-model"]'));
+  check("and says how to sign in to Claude Code, with the command", setup.includes("Claude Code · Not signed in") && setup.includes("claude") && setup.includes("Sign in in Terminal"), setup);
+  check("and offers no way to put it away", await $(`!document.querySelector('[data-testid="setup-card"] .btn-icon')`));
+  await shot("local-cli-06-setup-card-nothing-ready");
+  await click('[data-testid="signin-claude-code"]');
+  check("signing in runs the engine's own command in a terminal, or hands it over", await wait(async () => (await $(`[...document.querySelectorAll('.toast .toast-body')].map((n) => n.textContent)`)).some((t) => t.includes("Run this yourself: claude")), "terminal toast"));
+  await $(`[...document.querySelectorAll('[data-testid="setup-card"] .link-btn')].find((b) => b.textContent.startsWith('Set up'))?.click();true`);
+  check("an agent with another problem leads to its Settings row", await wait(() => has('[data-testid="cli-setup-codex"]'), "codex row from the card"));
   await escape();
   await sleep(300);
+
+  // signed in in a terminal meanwhile: the card's own Check again sees it, past the probe cache
+  fs.writeFileSync(claude, `#!/bin/sh\ncase "$1" in\n  --version) echo "claude 9.9.9";;\n  *) echo '{"loggedIn": true}';;\nesac\n`, { mode: 0o755 });
+  check("the card offers to look again", await has('[data-testid="setup-recheck"]'));
+  await click('[data-testid="setup-recheck"]');
+  check("a signed-in Claude Code is enough: the card goes, with no model", await wait(async () => !(await has('[data-testid="setup-card"]')), "card gone"));
+  const worker = await ctx.llm.worker();
+  check("planning borrows Claude Code's model", worker.ok && worker.via === "lent" && worker.title === "Claude Code", worker);
   await openEnginePicker();
-  check("with a model saved, the built-in engine can be picked", await wait(async () => (await $(`${engineRow(loopTitle)}?.classList.contains('is-unready')`)) === false, "loop ready"));
+  check("the picker offers it now, with no hint", await wait(async () => (await $(`${engineRow("Claude Code")}?.classList.contains('is-unready')`)) === false, "claude choosable") && (await rowPart("Claude Code", ".m-sub")) === null);
+  await escape();
+  check("and the assistant already conducts with it, the one engine that can", await wait(async () => (await text('.ai-knobs .chip-btn[title="Who conducts this thread"]'))?.startsWith("Claude Code"), "claude chip"), await text('.ai-knobs .chip-btn[title="Who conducts this thread"]'));
+
+  // ── a model alone is enough too: it also runs the built-in agent ──────
+  fs.writeFileSync(claude, `#!/bin/sh\ncase "$1" in\n  --version) echo "claude 9.9.9";;\n  *) echo '{"loggedIn": false}';;\nesac\n`, { mode: 0o755 });
+  const signedIn = ctx.settings.get();
+  ctx.settings.set({ ...signedIn, models: { profiles: [{ id: "local", title: "Local model", provider: "openai-compatible", baseURL: "http://127.0.0.1:9/v1", model: "local", apiKey: "" }], roles: { worker: "" } } });
+  await ctx.agent.engineViews(true);
+  await $(`location.hash = '#/p/${project.id}/i/${item.id}';true`);
+  await sleep(300);
+  await $(`location.hash = '#/p/${project.id}';true`);
+  await sleep(1200);
+  check("with a model saved and no agent signed in, there is no card", !(await has('[data-testid="setup-card"]')));
+  await openEnginePicker();
+  check("the built-in engine can be picked", await wait(async () => (await $(`${engineRow(loopTitle)}?.classList.contains('is-unready')`)) === false, "loop ready"));
+  if (fs.existsSync(path.join(dir, "../vendor/pi/dist/bundle/cli.js"))) {
+    check("and so can the built-in agent, with nothing installed", (await $(`${engineRow("Built-in agent")}?.classList.contains('is-unready')`)) === false, await rowPart("Built-in agent", ".m-sub"));
+  }
   check("an agent found only in WSL is greyed too", (await rowPart("Codex", ".m-sub")) === "Not set up yet · Only installed in WSL", await rowPart("Codex", ".m-sub"));
   const order = await $(`[...document.querySelectorAll('.menu-row.is-radio')].map((r) => r.classList.contains('is-unready'))`);
   check("what can run is listed first", order.includes(false) && order.includes(true) && order.lastIndexOf(false) < order.indexOf(true), order);
   await shot("local-cli-07-picker-model-ready");
   await press(engineRow("Claude Code"));
   check("picking a greyed agent opens Settings on its row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the picker"));
-  check("and leaves the thread's engine alone", !ctx.agent.store.threads(project.id).some((th) => th.engine === "claude-code"));
-
-  // signed in in a terminal meanwhile: the card's own Check again sees it, past the probe cache
-  await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
-  await sleep(500);
-  fs.writeFileSync(claude, `#!/bin/sh\ncase "$1" in\n  --version) echo "claude 9.9.9";;\n  *) echo '{"loggedIn": true}';;\nesac\n`, { mode: 0o755 });
-  check("the card offers to look again", await has('[data-testid="setup-recheck"]'));
-  await click('[data-testid="setup-recheck"]');
-  check("and finds the agent signed in, without a restart", await wait(() => $(`!document.querySelector('.agent-setup [data-setup="local"]:not(.is-ok)')`), "local row ready"));
-  await openEnginePicker();
-  check("the picker offers it now, with no hint", await wait(async () => (await $(`${engineRow("Claude Code")}?.classList.contains('is-unready')`)) === false, "claude choosable") && (await rowPart("Claude Code", ".m-sub")) === null);
-  await press(engineRow("Claude Code"));
-  check("and picking it conducts with it", await wait(() => ctx.agent.store.threads(project.id).some((th) => th.engine === "claude-code"), "claude thread"));
+  await escape();
 
   console.log(`screenshots in ${shots}`);
 };

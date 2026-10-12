@@ -23,6 +23,14 @@ export const hermes: AcpAgent<HermesOptions> = {
   title: "Hermes",
   cli: localCli("hermes"),
   install: "install Hermes Agent (curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash) and run `hermes setup`",
+  setup: {
+    install: [process.platform === "win32"
+      ? "iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)"
+      : "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"],
+    signIn: "hermes setup",
+    signInRuns: true,
+    docs: "https://hermes-agent.nousresearch.com/docs/user-guide/features/acp"
+  },
   options: HermesOptions,
   // Non-dangerous commands run without asking whatever the mode, so a read-only turn is not something Hermes can promise.
   permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask] },

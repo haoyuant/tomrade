@@ -9,12 +9,15 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettingsSections } from "~/lib/queries";
+import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings, useSettingsSections } from "~/lib/queries";
 import { useSeen } from "~/lib/onboarding";
 import { useToast } from "~/lib/toast";
+import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
+import { useSetup } from "~/lib/setup";
 import { HubSetup } from "./HubSetup";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+import { RestartOnboardingDialog } from "./RestartOnboardingDialog";
 import { RestoreBanner, RestoreCard, useRestoredToasts } from "./RestoreCards";
 
 interface Facts {
@@ -115,14 +118,34 @@ function ProjectCard({
   );
 }
 
-/** The home grid, or — before the Hub folder exists — the one question that comes first. */
+/**
+ * The home grid, or what has to come first: the Hub folder, then — once, and
+ * only while nothing can answer yet — connecting a model or a local agent.
+ */
 export function ProjectsScreen() {
   const hub = useHubInfo();
+  const { seen, markSeen } = useSeen();
+  const settings = useSettings();
+  const { state } = useSetup();
+  // Held once raised, so connecting something shows what it unlocked instead of the screen vanishing.
+  const [setup, setSetup] = useState<"open" | "closed" | null>(null);
+  useEffect(() => {
+    if (setup === null && state && settings.data) setSetup(!state.complete && !seen("setup-screen") ? "open" : "closed");
+  }, [setup, state, seen, settings.data]);
   if (hub.data && !hub.data.configured) return <HubSetup />;
-  return <ProjectsHome />;
+  if (setup === "open")
+    return (
+      <FirstRunSetup
+        onDone={() => {
+          markSeen("setup-screen");
+          setSetup("closed");
+        }}
+      />
+    );
+  return <ProjectsHome onRestartOnboarding={() => setSetup("open")} />;
 }
 
-function ProjectsHome() {
+function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void }) {
   const navigate = useNavigate();
   const { t, locale } = useI18n();
   const qc = useQueryClient();
@@ -142,11 +165,13 @@ function ProjectsHome() {
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
   const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
   const facts = useProjectFacts(list);
-  const offerSample = !!projects.data && !list.some((p) => p.sample) && !!sections.data?.some((s) => s.id === "onboarding") && !seen("sample-tile");
+  const onboarding = !!sections.data?.some((s) => s.id === "onboarding");
+  const offerSample = !!projects.data && !list.some((p) => p.sample) && onboarding && !seen("sample-tile");
   // Projects in the account that are not on this computer yet stand in the grid too, saying where they are.
   const restores = useRestores();
   const missing = restores.data?.entries ?? [];
@@ -197,6 +222,14 @@ function ProjectsHome() {
                 {t("projectsScreen.leadParagraph")}
               </p>
             </div>
+            {onboarding && (
+              <>
+                <Spacer />
+                <button type="button" className="btn btn-ghost" data-testid="restart-onboarding" onClick={() => setRestartOpen(true)}>
+                  <Icon name="i-leaf" size={14} /> {t("onboarding.restartButton")}
+                </button>
+              </>
+            )}
           </div>
 
           {restores.data && <RestoreBanner summary={restores.data} />}
@@ -284,6 +317,7 @@ function ProjectsHome() {
         onOpenChange={(open) => !open && setConfiguring(null)}
       />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <RestartOnboardingDialog open={restartOpen} onOpenChange={setRestartOpen} hasSample={list.some((p) => p.sample)} onRestarted={onRestartOnboarding} />
     </div>
   );
 }

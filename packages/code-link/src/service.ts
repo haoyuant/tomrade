@@ -29,7 +29,7 @@ import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { TerminalSettings, commandOk, exec, launchTerminal } from "./terminal.js";
+import { TerminalSettings, commandOk, exec, launchTerminal, setupTerminal } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
@@ -117,6 +117,8 @@ declare module "@tomradex/ipc" {
     "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
     /** Put Claude/Codex MCP config, agent instructions and hooks into the repository, on a branch, as a pull request. */
     "codeLink.connect": (projectId: string, repoId: string) => ConnectResult;
+    /** Install or sign in to a local agent in a terminal, with the command its engine declares. */
+    "codeLink.setupInTerminal": (engineId: string, step: "install" | "signIn") => { launched: boolean; command: string };
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -410,6 +412,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connect", (projectId, repoId) => ctx.codeLink.connect(projectId, repoId));
+      ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
 
@@ -521,6 +524,16 @@ export class CodeLink extends Service {
   }
 
   /** This machine's worktree for the ticket's most recent thread, if one was started here. */
+  /** Only a command an engine declares can be run this way; the page names the engine and the step, never the command. */
+  async setupInTerminal(engineId: string, step: "install" | "signIn"): Promise<{ launched: boolean; command: string }> {
+    const setup = (await this.ctx.get("agent")?.engineViews())?.find((e) => e.id === engineId)?.setup;
+    const command = step === "install" ? setup?.install[0] : setup?.signIn;
+    if (!command) throw new Error(`${engineId} has no ${step} command`);
+    const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
+    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), engineId), settings.terminal);
+    return { launched, command };
+  }
+
   worktreeOf(projectId: string, itemId: string): string | null {
     for (const link of this.currentLinks(projectId, itemId)) {
       const dir = link.threadId ? this.worktrees.get(link.threadId) : undefined;

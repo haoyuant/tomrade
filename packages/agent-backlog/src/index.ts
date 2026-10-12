@@ -249,7 +249,7 @@ export default {
           }
           const changes = ticketChanges(ctx, projectId, state.runIds);
           const model = llm();
-          if ((!changes.length && !state.full) || !model?.ready().ok) return { done: { proposed: 0 } };
+          if ((!changes.length && !state.full) || !model || !(await model.worker()).ok) return { done: { proposed: 0 } };
           let proposal: DependencyProposal;
           try {
             proposal = await proposeDependencies(ctx, model, projectId, changes);

@@ -63,6 +63,14 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       signIn: { args: ["auth", "status"], says: claudeSignedIn, reason: "Claude Code is not signed in — run `claude` in a terminal and log in" }
     }),
     checkCli: (file) => cli.check(file),
+    setup: {
+      // The official installer first; npm still works and is what many already have.
+      install: [process.platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],
+      signIn: "claude",
+      signInRuns: true,
+      docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
+      suggested: true
+    },
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       const options = ClaudeCodeOptions.parse(input.options ?? {});
       if (input.permissionMode) options.codePermissionMode = input.permissionMode === "local" ? undefined : ClaudeCodeOptions.shape.codePermissionMode.parse(input.permissionMode);

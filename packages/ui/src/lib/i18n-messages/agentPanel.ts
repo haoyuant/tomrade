@@ -83,9 +83,6 @@ export const agentPanel = {
     collapsePanel: "Collapse panel — ⌘J",
     collapseAssistantAria: "Collapse assistant panel",
 
-    giveABrain: "To start, give the assistant a brain:",
-    connectModelApi: "Connect a model API",
-    engineReasonLine: "{{title}}: {{reason}}",
     introMessage: "I can read this board and write to it. Every write I make is attributed, grouped by run, and revertible in one click.",
     startersAria: "Things to try",
     starterIdea: "Turn a product idea into a backlog…",
@@ -198,9 +195,6 @@ export const agentPanel = {
     collapsePanel: "收起面板 — ⌘J",
     collapseAssistantAria: "收起助手面板",
 
-    giveABrain: "首先，给助手配上一个大脑：",
-    connectModelApi: "连接模型 API",
-    engineReasonLine: "{{title}}：{{reason}}",
     introMessage: "我可以读取这个看板并对它进行写入。我做出的每一次写入都会标明来源、按运行归组，并且可以一键撤销。",
     startersAria: "可以试试",
     starterIdea: "说说产品想法，整理成 backlog…",

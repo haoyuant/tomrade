@@ -39,6 +39,8 @@ files:
   - surface-preload.cjs
   - tomrade.yml
   - package.json
+  # The built-in agent's Pi (scripts/fetch-pi.mjs).
+  - vendor/**
   - "!**/*.map"
   - "!**/*.tsbuildinfo"
 mac:
