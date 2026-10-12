@@ -88,6 +88,7 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     capabilities: ["backlog", "code", "general"],
     // Its key reaches pi only through Tomrade's environment, so there is no session to hand to a terminal.
     terminal: false,
+    usesModels: true,
     options: BuiltinPiOptions,
     media: (options) => {
       const profile = profileOf(options);

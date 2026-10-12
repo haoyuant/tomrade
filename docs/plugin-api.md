@@ -652,7 +652,10 @@ engine that runs only inside Tomrade sets `terminal: false`, and Start offers
 it no terminal session; the reverse, `terminalOnly: true`, is a CLI Tomrade only
 ever starts in a terminal (Gemini CLI and OpenCode, from `@tomradex/engine-terminal`):
 Start offers it no in-app run, the panel never conducts with it, and Code
-link's command template hands it a session-only MCP config. A binding may also carry `event(payload)`: whatever is POSTed to
+link's command template hands it a session-only MCP config. An engine that runs
+on the model profiles set up in Tomrade (the loop, the built-in agent) sets
+`usesModels: true`: a failed turn's key or model error then points to model
+settings, while any other engine's points to its own sign-in or settings. A binding may also carry `event(payload)`: whatever is POSTed to
 `/sessions/<token>/event` on the MCP server — a coding agent's hooks reporting
 it started, stopped or is waiting — reaches the binding that owns the token.
 Hooks a repository commits for every developer carry no token; they post to

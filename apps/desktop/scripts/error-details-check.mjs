@@ -1,8 +1,10 @@
 /**
  * A failed turn shows its one line, with everything the engine knew folded
  * under Details — the model service's whole answer, an agent's own words —
- * ready to copy, with no key in it. The pet keeps a turn's outcome — tears or
- * delight — until the thread runs again.
+ * ready to copy, with no key in it. The fix it offers follows the engine that
+ * failed — model settings for the loop, its own sign-in for an agent — and
+ * another ready agent can take the message. The pet keeps a turn's outcome —
+ * tears or delight — until the thread runs again.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:error-details
@@ -50,6 +52,7 @@ const run = async () => {
     title: "Refusing",
     author: "ai:refusing",
     available: async () => ({ ok: true }),
+    setup: { install: [], signIn: "refusing login" },
     async turn() {
       return { stop: "error", error: `Refusing stopped: ${codebuddyFailure(refusal)}`, details: describeFailure({ response: refusal, stderr: "warn: endpoint drift\n" }) };
     }
@@ -74,6 +77,10 @@ const run = async () => {
   const lastError = () => $(`(() => { const e = [...document.querySelectorAll('.ai-error')].pop(); const d = e?.querySelector('details');
     return e ? { line: e.querySelector(':scope > p')?.textContent ?? '', folded: !!d && !d.open, details: d?.querySelector('pre')?.textContent ?? '', copy: !!d?.querySelector('button') } : null; })()`);
   const pet = () => $(`document.querySelector('.pet-stage')?.dataset.petState ?? null`);
+  const press = (expr) =>
+    $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
+  const actions = () => $(`[...([...document.querySelectorAll('.ai-error')].pop()?.querySelectorAll(':scope > .row button') ?? [])].map((b) => b.textContent.trim())`);
+  const byText = (text) => `[...document.querySelectorAll('.ai-error .row button')].find((b) => b.textContent.includes(${JSON.stringify(text)}))`;
   await sleep(2500);
 
   // ── the loop: a 401 from the model service ───────────────────────────
@@ -88,6 +95,9 @@ const run = async () => {
   check("the pet cries", (await pet()) === "error", await pet());
   await sleep(4000);
   check("and keeps crying past the old 3 s", (await pet()) === "error", await pet());
+  const loopActions = await actions();
+  check("the loop's key error leads to model settings, with a retry beside it", loopActions.includes("Open model settings") && loopActions.includes("Try again"), loopActions);
+  check("and never to an agent's sign-in", !loopActions.some((a) => a.startsWith("Sign in")), loopActions);
 
   await $(`[...document.querySelectorAll('.ai-error details')].pop().open = true;true`);
   await sleep(300);
@@ -104,12 +114,33 @@ const run = async () => {
   check("an agent's refusal says the agent's own words", shown?.text === "Refusing stopped: Request failed with status code 401", shown);
   check("with the whole answer and its stderr under details", !!shown?.details && shown.details.includes('"statusCode\\":401') && shown.details.includes("endpoint drift"), shown?.details);
 
+  // ── on screen: the agent's own sign-in, never Tomrade's model settings ─
+  await $(`localStorage.setItem(${JSON.stringify(`tomrade.agent.thread.${project.id}`)}, ${JSON.stringify(thread.id)}); location.reload(); true`);
+  await sleep(3000);
+  const agent = await lastError();
+  check("an agent's 401 is said as its sign-in, by name", agent?.line === "Refusing did not accept its sign-in.", agent);
+  const agentActions = await actions();
+  check("it offers the agent's own sign-in", agentActions.includes("Sign in to Refusing again"), agentActions);
+  check("not Tomrade's model settings, which would not fix it", !agentActions.includes("Open model settings"), agentActions);
+  check("and another agent to take the message", agentActions.some((a) => a.startsWith("Try another agent")), agentActions);
+  await press(byText("Try another agent"));
+  await sleep(500);
+  fs.writeFileSync(shot.replace("loop", "agent"), (await win.webContents.capturePage()).toPNG());
+  const offered = await $(`[...document.querySelectorAll('[role="menu"] .m-name')].map((n) => n.textContent)`);
+  check("the ready agents are offered, the failing one left out", offered.includes("Tomrade loop") && !offered.includes("Refusing"), offered);
+
   // ── running again stops the crying ───────────────────────────────────
   endpoint.removeAllListeners("request");
   endpoint.on("request", (req, res) => { req.resume(); req.on("end", () => { res.writeHead(200, { "content-type": "text/event-stream" });
     res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'); }); });
-  await send("again");
-  await sleep(2500);
+  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.textContent.includes("Tomrade loop"))`);
+  await sleep(3000);
+  const moved = ctx.agent.store.thread(project.id, thread.id);
+  check("picking one moves the thread to it", moved?.engine === "loop", moved?.engine);
+  const after = ctx.agent.store.messages(project.id, thread.id);
+  const resent = after.filter((m) => m.role === "user").map((m) => m.block.text);
+  check("and sends the failed message again", resent.length === 2 && resent[1] === "hi", resent);
+  check("which the other agent answers", after.at(-1)?.block.type === "text" && after.at(-1).block.text === "pong", after.at(-1)?.block);
   check("the next turn's outcome replaces the tears", (await pet()) === "success", await pet());
   await sleep(4000);
   check("and a success stays too, past the old 3 s", (await pet()) === "success", await pet());
