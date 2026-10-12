@@ -76,6 +76,9 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   options: WorkBuddyOptions,
   permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
   args: () => ["--acp"],
+  // Every few prompts CodeBuddy titles the session with the session's own model, thinking included, and
+  // answers the prompt only once the title is back — 45 s after a 3 s reply on hy4-preview. Tomrade shows no such title.
+  env: () => ({ CODEBUDDY_CODE_DISABLE_SESSION_SUMMARY: "1" }),
   // Interactive `codebuddy` takes Claude Code's flags and hooks, so a ticket can start in a terminal too.
   terminal: true,
   // "default" asks before the first use of every tool, so Tomrade decides what a read-only or ask turn lets through.

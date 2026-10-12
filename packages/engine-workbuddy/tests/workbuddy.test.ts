@@ -31,6 +31,7 @@ it("knows where the WorkBuddy app keeps its CLI and the binary that runs it", ()
 
 it("runs `codebuddy --acp`, bypassing its prompts only for a full-access turn, and seeds the models from its help", async () => {
   expect(workbuddy.args({} as never, { command: "codebuddy" })).toEqual(["--acp"]);
+  expect(workbuddy.env!({} as never, { command: "codebuddy" })).toEqual({ CODEBUDDY_CODE_DISABLE_SESSION_SUMMARY: "1" });
   expect([workbuddy.mode!("full-access"), workbuddy.mode!("ask"), workbuddy.mode!("read-only")]).toEqual(["bypassPermissions", "default", "default"]);
   expect(workbuddy.cli.name).toBe("codebuddy");
   const ctx = new Context();
