@@ -1,10 +1,12 @@
-import { dialog } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/storage";
 
 let approved = false;
 let pending: Promise<boolean> | null = null;
+// Windows put away while the quit finishes; the one in front is shown again first.
+let away: { wins: BrowserWindow[]; front: BrowserWindow | null } | null = null;
 
 /**
  * Everything a quit owes before it happens: the person's word on agent runs in
@@ -44,14 +46,33 @@ async function ask(ctx: Context): Promise<boolean> {
     });
     if (choice === 1) return false;
   }
+  // The flush can wait on a remote; the person shouldn't. From here the app looks closed.
+  putAway();
   const storage = ctx.get("storage");
   if (storage) await Promise.race([storage.flushAll("quit").catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 5_000))]);
   return true;
 }
 
+function putAway(): void {
+  const front = BrowserWindow.getFocusedWindow();
+  away = { wins: BrowserWindow.getAllWindows().filter((win) => win.isVisible()), front };
+  for (const win of away.wins) win.hide();
+  // Focus goes back to the app behind, as it would after a finished quit.
+  if (process.platform === "darwin") app.hide();
+}
+
 export const quitApproved = () => approved;
 
-/** A quit that did not happen after all, like an install that failed: the next one asks and flushes again. */
+/** The windows are put away and the quit is finishing; asking for a window now would only flash one. */
+export const leaving = () => away !== null;
+
+/** A quit that did not happen after all, like an install that failed: the windows come back and the next quit asks and flushes again. */
 export function cancelQuit(): void {
   approved = false;
+  if (!away) return;
+  const { wins, front } = away;
+  away = null;
+  if (process.platform === "darwin") app.show();
+  for (const win of wins) if (!win.isDestroyed()) win.showInactive();
+  if (front && !front.isDestroyed()) front.focus();
 }

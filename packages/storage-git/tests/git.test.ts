@@ -128,6 +128,36 @@ describe("a dedicated repository", () => {
     expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Theirs", status: "done" });
   });
 
+  it("on quit pushes only its own commits, in one try, and never waits on the remote's news", async () => {
+    const a = await machine("quit");
+    const remote = bareRemote();
+    const item = a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const tracked = () => git(["rev-parse", "origin/main"], a.dir);
+
+    // Ours goes out.
+    a.items.update(a.project.id, item.id, { status: "doing" }, "human");
+    await a.storage.flushAll("quit");
+    expect(git(["rev-parse", "main"], remote)).toBe(git(["rev-parse", "HEAD"], a.dir));
+    expect(git(["log", "-1", "--format=%s", "main"], remote)).toMatch(/^tomrade: quit/);
+
+    // Nothing of ours: the remote is not even asked, so a teammate's push is not fetched.
+    teammateEdits(remote, (work) => fs.writeFileSync(path.join(work, "NOTES.md"), "theirs\n"));
+    const before = tracked();
+    await a.storage.flushAll("quit");
+    expect(tracked()).toBe(before);
+
+    // Both moved: the push is turned away, nothing is forced, and the next sync merges.
+    const theirs = git(["rev-parse", "main"], remote);
+    a.items.update(a.project.id, item.id, { status: "done" }, "human");
+    await a.storage.flushAll("quit");
+    expect(git(["rev-parse", "main"], remote)).toBe(theirs);
+    expect(git(["log", "-1", "--format=%s"], a.dir)).toMatch(/^tomrade: quit/);
+    await a.storage.sync(a.project.id);
+    expect(git(["rev-list", "--parents", "-n", "1", "main"], remote).split(" ")).toContain(theirs);
+    expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ status: "done" });
+  });
+
   it("never records a repository inside the folder, and drops one an earlier commit recorded", async () => {
     const a = await machine("embedded");
     const remote = bareRemote();
