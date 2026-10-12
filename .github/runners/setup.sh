@@ -3,7 +3,6 @@
 # (docs/releasing.md):
 #
 #   .github/runners/setup.sh arm64 haoyuant/tomrade
-#   .github/runners/setup.sh x64   haoyuant/tomrade
 #   .github/runners/setup.sh linux haoyuant/tomrade         # a Docker container
 #   .github/runners/setup.sh arm64 haoyuant/tomrade-site
 #
@@ -12,13 +11,10 @@
 set -euo pipefail
 
 VERSION=2.338.0
-kind=${1:?kind: arm64, x64 or linux}
+kind=${1:?kind: arm64 or linux}
 repo=${2:?repository, like haoyuant/tomrade}
 case $kind in
   arm64) sha=df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2 ;;
-  # An x64 runner runs under Rosetta and so does everything it starts, so a
-  # job sees an Intel Mac: setup-node installs x64 Node, pnpm the x64 packages.
-  x64) sha=dea7a58796ce215fc424a8b27c0fdd9b813fa5fc03d109a4a1d38131d6bfa1a3 ;;
   linux) sha=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32 ;;
   *) echo "Unknown kind: $kind" >&2; exit 1 ;;
 esac

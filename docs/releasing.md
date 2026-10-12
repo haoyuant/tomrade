@@ -10,7 +10,7 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-It builds four installers: macOS arm64 and x64 and Linux x64 (AppImage) on the self-hosted Mac (below), and Windows x64 (NSIS, unsigned) on GitHub's runner. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+The Mac installers (arm64 and x64) and the Linux AppImage build on the self-hosted Mac (below), the Windows installer (NSIS, unsigned) on GitHub's runner. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. When every build passes, the installers and their update manifests go on a **draft** release with generated notes. Check them, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
 A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces the files on the existing draft.
 
@@ -40,20 +40,18 @@ Hosted macOS minutes count ten times against the account's monthly allowance, an
 | Runner | Repository | Labels |
 | --- | --- | --- |
 | `~/actions-runners/tomrade-mac-arm64` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
-| `~/actions-runners/tomrade-mac-x64` | haoyuant/tomrade | `self-hosted, macOS, X64` |
 | Docker container `actions-runner-haoyuant-tomrade` | haoyuant/tomrade | `self-hosted, Linux, X64` |
 | `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
-The x64 runner is the Intel build of the runner, so it and everything it starts run under Rosetta: Node, pnpm's packages and better-sqlite3 come out x64. Each is a LaunchAgent, so it runs while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh`, Xcode, and the Developer ID come from the machine.
+One job builds both Macs on the arm64 runner. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves each app only its own: the agent SDK's Claude Code binary and esbuild's. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time. The Mac runners are LaunchAgents, so they run while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh`, Xcode, and the Developer ID come from the machine.
 
-The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. It restarts with Docker Desktop, so Docker Desktop must be running for a release. The build needs about 4 GB of the Docker VM's memory: if a step dies with exit code 137, it ran out.
+The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. It restarts with Docker Desktop, so Docker Desktop must be running for a release. The build peaks around 2 GB of the Docker VM's memory: if a step dies with exit code 137, the VM ran out.
 
 `.github/runners/setup.sh` installs or replaces one:
 
 ```sh
 export GH_TOKEN=$(gh auth token --user haoyuant)
 .github/runners/setup.sh arm64 haoyuant/tomrade
-.github/runners/setup.sh x64   haoyuant/tomrade
 .github/runners/setup.sh linux haoyuant/tomrade
 .github/runners/setup.sh arm64 haoyuant/tomrade-site
 ```
@@ -73,7 +71,7 @@ An installed build asks download.tomrade.com for its channel's manifest (`apps/d
 - Only `-beta.N` tags reach the Beta channel. electron-builder names the manifest after the first word of the suffix, so `v0.3.0-rc.1` writes `rc-mac.yml`, which no copy reads.
 - A release also writes the `beta` manifests, so Beta moves on to it. A prerelease writes only its own.
 - Nothing is ever downgraded, so a bad release is pulled by publishing a higher version. Leaving Beta waits for the next release.
-- The two Mac builds each list only their own zip; the release job merges them into one `latest-mac.yml` and fails if either arch is missing.
+- One `latest-mac.yml` lists both Mac zips; the release job fails if either arch is missing.
 - The mirror never moves a manifest back to an older version, so re-running an old tag cannot roll the channel back.
 - Differential downloads use the `.blockmap` files on Windows and Linux. A Mac's first update after installing from the DMG downloads the whole zip.
 - A Mac copy updates itself only from Applications; the About pane offers to move it there.
