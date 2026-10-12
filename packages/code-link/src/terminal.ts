@@ -11,6 +11,9 @@ export const TerminalSettings = z.object({
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command" }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
   /** WorkBuddy's CLI takes Claude Code's flags and posts Claude-shaped hooks. */
   workbuddyCommand: z.string().default('codebuddy {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "WorkBuddy command" }),
+  /** Gemini CLI reads a session-only settings file as its lowest layer, so the person's own settings still win. */
+  geminiCommand: z.string().default('GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command" }),
+  opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" opencode {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command" }),
   otherCommand: z.string().default("").meta({ title: "Other agent command" }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
@@ -21,6 +24,8 @@ export function terminalTemplate(settings: TerminalSettings, engine: string): st
     case "codex": return settings.codexCommand;
     case "pi": return settings.piCommand;
     case "workbuddy": return settings.workbuddyCommand;
+    case "gemini": return settings.geminiCommand;
+    case "opencode": return settings.opencodeCommand;
     case "other": return settings.otherCommand;
     default: return settings.claudeCommand;
   }
@@ -57,6 +62,11 @@ export function optionFlags(engine: string, options: unknown): string {
   } else if (engine === "pi") {
     if (model) flags.push(`--model ${bare(model)}`);
     if (effort) flags.push(`--thinking ${bare(effort)}`);
+  } else if (engine === "gemini") {
+    if (model) flags.push(`-m ${bare(model)}`);
+  } else if (engine === "opencode") {
+    // provider/model, as OpenCode names them
+    if (model) flags.push(`--model ${bare(model)}`);
   }
   return flags.join(" ");
 }
