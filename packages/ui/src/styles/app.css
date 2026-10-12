@@ -924,6 +924,11 @@ strong { font-weight: var(--font-weight-medium); }
 .account-step__title:focus { outline: none; }
 .account-step__actions { flex-wrap: wrap; }
 .account-step strong { overflow-wrap: anywhere; }
+/* The terms checkbox: its sentence wraps beside the box, the two document names are links. */
+.account-agree { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.5; color: var(--fg-2); cursor: pointer; }
+.account-agree input { margin-top: 3px; }
+.account-agree .link-btn { display: inline; text-align: inherit; }
+.terms-prompt-links { gap: var(--space-4); flex-wrap: wrap; }
 
 /* Checkboxes follow the switch, not the OS: the surface inside its ring when
    off, the accent with the mark cut in `--accent-on` when on. */
