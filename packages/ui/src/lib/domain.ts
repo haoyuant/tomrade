@@ -166,6 +166,9 @@ export const agoLabel = (ts: number, now = Date.now()) => {
   return short === "now" ? "now" : `${short} ago`;
 };
 
+/** Money as a run reports it: cents once it is a dollar or more, a tenth of a cent below. */
+export const usd = (v: number): string => (v >= 1 ? `$${v.toFixed(2)}` : v > 0 && v < 0.001 ? "<$0.001" : `$${v.toFixed(3)}`);
+
 /** Short relative time, the same string the card prints and recency sorts on. */
 export function timeAgo(ts: number, now = Date.now()): string {
   const mins = Math.max(0, Math.round((now - ts) / 60000));

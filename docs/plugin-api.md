@@ -870,6 +870,17 @@ change them live — removing a field or an option takes the values holding it
 with `FieldValueError` before the write path sees it; built-in ids are refused
 in `fields` because they have their own patch keys.
 
+A plugin may add a **derived** field: a read-only number it computes from its
+own tables in the project's file. `ctx.fields.derive({ id, name, names?, unit?,
+values, expr })` lists it with the built-ins (`derived: true`, filterable and
+sortable, never groupable or written). `values` is `SELECT item_id, value …`
+over every item that has one; `expr` is the same value as a scalar subquery
+over the item aliased `i`, which `items.query` filters and sorts on. The two
+must agree. Items read over IPC carry the value in `fields`, so the renderer's
+evaluator sees it too; items the service hands to writes, undo or export never
+do. The agent plugin derives `cost`: the summed `costUsd` of every run of every
+thread started from the ticket.
+
 `items.query` takes the same `FilterClause[]` / `SortKey[]` a view stores. A
 clause is `{ field, op: "in" | "not-in" | "contains" | "gte" | "lte", values }`,
 and a `null` value means empty; empties sort last whichever direction. The

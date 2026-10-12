@@ -5,6 +5,7 @@ import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import {
   BoardField,
   CustomField,
+  DerivedField,
   DepsField,
   EpicField,
   IssueTitle,
@@ -164,6 +165,8 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
   const { project, epics, boards, labels, items, select } = useWorkspace();
   const fields = useFields(project.id);
   const custom = (fields.data ?? []).filter((f) => !f.builtin);
+  // a computed value only once there is one: a ticket nobody ran has spent nothing worth a row
+  const derived = (fields.data ?? []).filter((f) => f.derived && typeof item.fields[f.id] === "number");
   const prov = provenanceOf(item);
   return (
     <dl className="fieldstrip">
@@ -219,6 +222,14 @@ export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
           <dt>{fieldLabel(def)}</dt>
           <dd>
             <CustomField item={item} write={write} def={def} />
+          </dd>
+        </div>
+      ))}
+      {derived.map((def) => (
+        <div className="field-row" key={def.id} data-field={def.id}>
+          <dt>{fieldLabel(def)}</dt>
+          <dd>
+            <DerivedField item={item} def={def} />
           </dd>
         </div>
       ))}

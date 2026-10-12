@@ -4,7 +4,7 @@ import type { WorkType } from "@tomradex/domain";
 import { useEffect, useRef } from "react";
 import { invoke, subscribe } from "./api";
 import { useI18n, type MessageKey } from "./i18n";
-import { invalidateWorkspace, useSaveSettings, useSettings } from "./queries";
+import { invalidateWorkspace, keys, useSaveSettings, useSettings } from "./queries";
 import { useToast } from "./toast";
 import { useErrorToast } from "~/lib/toast";
 
@@ -244,6 +244,8 @@ export function useAgentEvents(
       if (eventThreadId !== threadId) {
         // another conversation's list entry changes when a run starts or ends, or a message lands — not per streamed word
         if (event.type === "run" || event.type === "done" || event.type === "message") void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+        // a ticket's spend is read with its items
+        if (event.type === "done" && event.run.costUsd) void qc.invalidateQueries({ queryKey: keys.items(projectId) });
         return;
       }
       const key = agentKeys.thread(projectId, threadId);
@@ -279,6 +281,7 @@ export function useAgentEvents(
           void qc.invalidateQueries({ queryKey: key });
           void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
           if (event.run.changes > 0) invalidateWorkspace(qc, projectId);
+          else if (event.run.costUsd) void qc.invalidateQueries({ queryKey: keys.items(projectId) });
           break;
       }
     });

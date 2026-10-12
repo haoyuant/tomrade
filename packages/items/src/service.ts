@@ -271,7 +271,7 @@ export class Items extends Service {
   query(q: ItemQuery): Item[] {
     const db = this.db(q.projectId);
     const defs = new Map(this.fields.list(q.projectId).map((f) => [f.id, f]));
-    const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs);
+    const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs, this.fields.derivedSql());
     const run = (mode: SearchMode) => {
       const search = compileSearch(q.search, mode);
       const joins = [...compiled.joins, ...search.joins];

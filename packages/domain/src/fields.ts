@@ -36,6 +36,10 @@ export interface FieldDef {
   readonly: boolean;
   can: { filter: boolean; sort: boolean; group: boolean };
   rank: number;
+  /** Computed by a plugin from what it keeps (a ticket's spend, say); its value rides on `item.fields` when items are read. */
+  derived?: boolean;
+  /** How a number reads: `usd` is money. */
+  unit?: "usd";
 }
 
 export type BuiltinFieldId = "title" | "status" | "workType" | "priority" | "epic" | "labels" | "board" | "updated" | "key" | "provenance";

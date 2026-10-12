@@ -29,6 +29,7 @@
     "test:perf": "electron scripts/perf-check.mjs",
     "test:storage-race": "electron scripts/storage-race-check.mjs",
     "test:attention": "electron scripts/attention-check.mjs",
+    "test:usage": "electron scripts/usage-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "package": "node scripts/package.mjs"

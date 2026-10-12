@@ -10,6 +10,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { AboutPane } from "./AboutPane";
+import { UsagePane } from "./UsagePane";
 import { HubPane } from "./HubPane";
 import { LocalCliSection } from "./LocalCliSection";
 import { McpServersPane } from "./McpServersPane";
@@ -461,6 +462,7 @@ export function SettingsDialog({
           />
         ) : null
     },
+    { id: "usage", label: t("usage.label"), icon: "i-bars" as IconId, group: "app" as const, render: () => <UsagePane /> },
     {
       id: "agents",
       label: t("settingsDialog.agentsLabel"),

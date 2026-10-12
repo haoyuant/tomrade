@@ -4,6 +4,7 @@ import type { z } from "zod";
 import type { addResourceSchema, submitDeliverySchema, reviewDeliverySchema } from "@tomradex/domain";
 import type { DeliveryView } from "@tomradex/db";
 import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/fields";
 import type { ItemQuery } from "./service.js";
 
 declare module "@tomradex/ipc" {
@@ -27,17 +28,35 @@ declare module "@tomradex/ipc" {
   }
 }
 
+/**
+ * What the renderer reads carries each derived field's value in `fields`, so
+ * the board sorts and filters on it as the items service does. Only here: an
+ * item handed back to a write, an undo or an export never holds them.
+ */
+function withDerived(ctx: Context, items: Item[]): Item[] {
+  const fields = ctx.get("fields");
+  if (!fields || !items.length || !fields.derivedSql().size) return items;
+  const byProject = new Map<string, Map<string, Record<string, number>>>();
+  return items.map((item) => {
+    let values = byProject.get(item.projectId);
+    if (!values) byProject.set(item.projectId, (values = fields.derivedValues(item.projectId)));
+    const own = values.get(item.id);
+    return own ? { ...item, fields: { ...item.fields, ...own } } : item;
+  });
+}
+
 /** Every renderer write is a human write. */
 export function registerChannels(ctx: Context): void {
+  const one = (item: Item | null) => (item ? withDerived(ctx, [item])[0]! : item);
   ctx.ipc.handle("items.deliveries", (projectId, id) => ctx.items.deliveries.list(projectId, id));
   ctx.ipc.handle("items.addResource", (projectId, id, input) => ctx.items.addResource(projectId, id, input, "human"));
   ctx.ipc.handle("items.submitDelivery", (projectId, id, input) => ctx.items.submitDelivery(projectId, id, input, "human"));
   ctx.ipc.handle("items.reviewDelivery", (projectId, id, input, baseVersion) => ctx.items.reviewDelivery(projectId, id, input, baseVersion));
-  ctx.ipc.handle("items.list", (filter = {}) => ctx.items.list(filter));
-  ctx.ipc.handle("items.query", (query) => ctx.items.query(query));
-  ctx.ipc.handle("items.get", (projectId, id) => ctx.items.get(projectId, id));
-  ctx.ipc.handle("items.create", (input) => ctx.items.create({ ...input, by: "human" }));
-  ctx.ipc.handle("items.update", (projectId, id, patch, baseVersion) => ctx.items.update(projectId, id, patch, "human", { baseVersion }));
+  ctx.ipc.handle("items.list", (filter = {}) => withDerived(ctx, ctx.items.list(filter)));
+  ctx.ipc.handle("items.query", (query) => withDerived(ctx, ctx.items.query(query)));
+  ctx.ipc.handle("items.get", (projectId, id) => one(ctx.items.get(projectId, id)));
+  ctx.ipc.handle("items.create", (input) => one(ctx.items.create({ ...input, by: "human" }))!);
+  ctx.ipc.handle("items.update", (projectId, id, patch, baseVersion) => one(ctx.items.update(projectId, id, patch, "human", { baseVersion }))!);
   ctx.ipc.handle("items.delete", (projectId, id) => ctx.items.delete(projectId, id, "human"));
   ctx.ipc.handle("items.purge", (projectId, id, baseVersion) => ctx.items.purge(projectId, id, "human", { baseVersion }));
   ctx.ipc.handle("items.labels", (projectId) => ctx.items.labelsFor(projectId));

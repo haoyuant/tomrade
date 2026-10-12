@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
-import { BoardField, CustomField, EpicField, LabelsField, PriorityField, StatusField, useIssueWriter, type IssueWrite } from "~/components/issue/fields";
+import { BoardField, CustomField, DerivedField, EpicField, LabelsField, PriorityField, StatusField, useIssueWriter, type IssueWrite } from "~/components/issue/fields";
 import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
@@ -46,7 +46,7 @@ function Cell({ item, def, ws, write }: { item: Item; def: FieldDef; ws: Workspa
         </span>
       );
     default:
-      return def.builtin ? null : <CustomField item={item} write={write} def={def} />;
+      return def.derived ? <DerivedField item={item} def={def} /> : def.builtin ? null : <CustomField item={item} write={write} def={def} />;
   }
 }
 
