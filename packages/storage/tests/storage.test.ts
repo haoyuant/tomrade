@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { Context } from "cordis";
 import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import {
@@ -382,6 +383,83 @@ describe("ctx.storage", () => {
         toRemote: () => ({ url: "", branch: "main" })
       })
     ).toThrow(/secret/);
+  });
+
+  it("keeps a plugin's tables while the plugin is not loaded, and gives it what it missed when it is", async () => {
+    const { ctx, storage, project, dir } = await machine();
+    // A plugin that loads after storage — as most do, early in a launch — or is switched off.
+    const notes = {
+      name: "demo-notes",
+      inject: ["db"],
+      apply(c: Context) {
+        c.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
+          tables: { plugin_demo_notes: { project: "project_id", export: { order: "id", always: true } } }
+        });
+      }
+    };
+    const rows = () => ctx.db.for(project.id).prepare("SELECT id, body FROM plugin_demo_notes ORDER BY id").all();
+    let fiber = ctx.plugin(notes);
+    await settle();
+    ctx.db.for(project.id).prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'mine')").run(project.id);
+    await storage.publish(project.id);
+    const file = path.join(dir, ARTIFACT_DIR, "plugins", "demo", "plugin_demo_notes.jsonl");
+    const published = fs.readFileSync(file, "utf8");
+    expect(published).toContain("mine");
+
+    // Not loaded: its silence is not a deletion, so there is nothing to publish and nothing goes.
+    await fiber.dispose();
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    await storage.publish(project.id);
+    expect(fs.readFileSync(file, "utf8")).toBe(published);
+
+    // Someone else adds a note while it is off here: it is taken in and not published back over.
+    const theirs = readArtifact(dir)!;
+    theirs.plugins.demo.plugin_demo_notes.push({ id: "n2", project_id: project.id, body: "theirs" });
+    theirs.manifest.snapshot!.digest = digestState(theirs);
+    writeArtifact(dir, theirs);
+    await storage.refresh(project.id);
+    expect(ctx.hub.catalog.project(project.id)?.unimported).toEqual(["demo"]);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    await storage.publish(project.id);
+    expect(fs.readFileSync(file, "utf8")).toContain("theirs");
+
+    // Back on, it starts from the folder's rows, not the ones it left in the cache.
+    fiber = ctx.plugin(notes);
+    await settle();
+    expect(rows()).toEqual([{ id: "n1", body: "mine" }, { id: "n2", body: "theirs" }]);
+    expect(ctx.hub.catalog.project(project.id)?.unimported).toEqual([]);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    await storage.publish(project.id);
+    expect(fs.readFileSync(file, "utf8")).toContain("theirs");
+    await fiber.dispose();
+  });
+
+  it("merges around a plugin that is not loaded: our issue and their note both survive", async () => {
+    const { ctx, storage, project, board, items, dir } = await machine();
+    const fiber = ctx.plugin({
+      name: "demo-notes",
+      inject: ["db"],
+      apply(c: Context) {
+        c.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
+          tables: { plugin_demo_notes: { project: "project_id", export: { order: "id", always: true } } }
+        });
+      }
+    });
+    await settle();
+    ctx.db.for(project.id).prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'mine')").run(project.id);
+    await storage.publish(project.id);
+    await fiber.dispose();
+
+    items.create({ title: "Ours", projectId: project.id, boardId: board.id, by: "human" });
+    const theirs = readArtifact(dir)!;
+    theirs.plugins.demo.plugin_demo_notes.push({ id: "n2", project_id: project.id, body: "theirs" });
+    theirs.manifest.snapshot!.digest = digestState(theirs);
+    writeArtifact(dir, theirs);
+    expect((await storage.statusFor(project.id)).state).toBe("diverged");
+    await storage.refresh(project.id);
+    await storage.publish(project.id);
+    expect(read(dir, "state/items.jsonl")).toContain("Ours");
+    expect(read(dir, path.join("plugins", "demo", "plugin_demo_notes.jsonl"))).toContain("theirs");
   });
 
   it("describes what can travel and what does", async () => {
