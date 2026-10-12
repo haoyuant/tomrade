@@ -40,7 +40,6 @@ Hosted macOS minutes count ten times against the account's monthly allowance, an
 | Runner | Repository | Labels |
 | --- | --- | --- |
 | `~/actions-runners/tomrade-mac-arm64`, `-2`, `-3` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
-| Docker container `actions-runner-haoyuant-tomrade` (no release job uses it since Linux cross-builds on the Mac) | haoyuant/tomrade | `self-hosted, Linux, X64` |
 | `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
 The x64 Mac app builds on the arm64 Mac. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves the app only its own esbuild. It also drops the agent SDK's bundled Claude Code binary from every app: the Claude Code engine runs the person's own `claude`, like the other local agents. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time. Each Mac build writes an update manifest listing only its own zip; the release job merges the two.
@@ -49,11 +48,9 @@ The Mac builds sign from one keychain, `~/Library/Keychains/tomrade-signing.keyc
 
 Windows is cross-built on a Mac runner too. No Wine: electron-builder edits the exe's resources in JavaScript, runs NSIS's macOS `makensis`, and pulls the uninstaller out of the installer itself. `pnpm install --os=darwin --os=win32 --cpu=arm64 --cpu=x64` installs the Mac packages the build runs on beside Windows', and `after-pack.cjs` drops all but win32-x64 (left in, they double the installer). makensis aborts on an include path of 265 characters or more, and electron-builder reports only `makensis process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE`. pnpm's folder for app-builder-lib makes that path 262 characters in the runner's work folder, so the job sets `pnpm_config_virtual_store_dir_max_length: 60`, which brings it to 216. It must stay an environment variable: pnpm checks that each later command sees the settings the install used, and a `--config.` flag on the install alone sends `pnpm exec` back to reinstall.
 
-Linux is cross-built on a Mac runner the same way, with `--os=darwin --os=linux`. Nothing is compiled (better-sqlite3 and the AppImage runtime come prebuilt), so the build machine's glibc doesn't matter. `after-pack.cjs` puts the target's esbuild binary over esbuild's CLI, which esbuild's install filled with the build machine's. The Mac-built AppImage matched the one an x64 Ubuntu 22.04 container built: the same runtime bytes, and the same files except esbuild's CLI and the musl Claude Code builds a Mac's pnpm adds (since dropped with the rest of the agent SDK's binaries); the bundled binaries ran there. That container can't run any AppImage under Rosetta, so the full app was not started.
+Linux is cross-built on a Mac runner the same way, with `--os=darwin --os=linux`. Nothing is compiled (better-sqlite3 and the AppImage runtime come prebuilt), so the build machine's glibc doesn't matter. `after-pack.cjs` puts the target's esbuild binary over esbuild's CLI, which esbuild's install filled with the build machine's. The Mac-built AppImage matched the one the x64 Ubuntu 22.04 container runner it replaced had built: the same runtime bytes, and the same files except esbuild's CLI and the musl Claude Code builds a Mac's pnpm adds (since dropped with the rest of the agent SDK's binaries); the bundled binaries ran there. That container can't run any AppImage under Rosetta, so the full app was not started.
 
 The Mac runners are LaunchAgents, so they run while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh` and Xcode come from the machine.
-
-The Linux runner is an x64 Ubuntu 22.04 container (`.github/runners/linux.Dockerfile`) that Docker Desktop runs under Rosetta. No release job needs it any more.
 
 `.github/runners/setup.sh` installs or replaces one:
 
@@ -62,11 +59,10 @@ export GH_TOKEN=$(gh auth token --user haoyuant)
 .github/runners/setup.sh arm64 haoyuant/tomrade
 .github/runners/setup.sh arm64 haoyuant/tomrade 2
 .github/runners/setup.sh arm64 haoyuant/tomrade 3
-.github/runners/setup.sh linux haoyuant/tomrade
 .github/runners/setup.sh arm64 haoyuant/tomrade-site
 ```
 
-Check on them under Settings → Actions → Runners, with `./svc.sh status` in a Mac runner's folder (logs in `~/Library/Logs/actions.runner.*`), or with `docker logs actions-runner-haoyuant-tomrade`. While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
+Check on them under Settings → Actions → Runners, or with `./svc.sh status` in a runner's folder (logs in `~/Library/Logs/actions.runner.*`). While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
 
 ## Publishing: the website follows
 
