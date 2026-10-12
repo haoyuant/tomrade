@@ -117,6 +117,10 @@ export class GitHubAccount extends Service {
     } catch (error) {
       this.home.logger.warn(`github: credential helper not written — ${message(error)}`);
     }
+    this.publishToken();
+    this.home.on("settings/changed", (next, previous) => {
+      if ((next.github as { token?: string } | undefined)?.token !== (previous.github as { token?: string } | undefined)?.token) this.publishToken();
+    });
     // Renewed ahead of time, and the helper's copy rewritten, so it is fresh whenever git asks.
     void this.liveSession().then((session) => session && this.keep(session));
     this.home.effect(() => {
@@ -148,8 +152,15 @@ export class GitHubAccount extends Service {
     } catch (error) {
       this.home.logger.warn(`github: sign-in not saved — ${message(error)}`);
     }
+    this.publishToken();
+  }
+
+  /** What the helper hands git: the session's token, else the personal one, which git can't read sealed in settings. */
+  private publishToken(): void {
+    const session = this.loaded();
+    const personal = this.personalToken();
     try {
-      writeHelperToken(this.settingsFile, session ? { token: session.accessToken, expiresAt: session.accessExpiresAt } : null);
+      writeHelperToken(this.settingsFile, session ? { token: session.accessToken, expiresAt: session.accessExpiresAt } : personal ? { token: personal, expiresAt: null } : null);
     } catch (error) {
       this.home.logger.warn(`github: token for git not written — ${message(error)}`);
     }

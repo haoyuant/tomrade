@@ -156,11 +156,13 @@ it("falls back to the personal access token when the sign-in can no longer be re
 
   expect(await github.token()).toBe("ghp_pat");
   expect(await github.status()).toEqual({ connected: true, label: "@me" });
-  expect(fs.existsSync(path.join(userData, "github-token.json"))).toBe(false);
+  // git reads the personal token from the helper's file: settings.json may hold it sealed.
+  expect(JSON.parse(fs.readFileSync(path.join(userData, "github-token.json"), "utf8"))).toEqual({ token: "ghp_pat", expiresAt: null });
   expect(gitPassword(credentialArgs([github.credential()!]))).toBe("ghp_pat");
 
   // Without the token there is nothing left, and the panel says why.
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "" } });
+  expect(fs.existsSync(path.join(userData, "github-token.json"))).toBe(false);
   expect(await github.status()).toEqual({ connected: false, detail: "GitHub would not renew the sign-in — sign in again" });
   expect(github.credential()).toBeNull();
 });

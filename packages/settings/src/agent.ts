@@ -6,6 +6,7 @@ import type {} from "@tomradex/hub";
 import type { RunChange, UndoProvider } from "@tomradex/oplog";
 import { defineTool, type ToolInvocation } from "@tomradex/tools";
 import type { Settings, SettingsSection } from "./index.js";
+import { mapSecrets } from "./secrets.js";
 
 /**
  * Tomrade's own settings as agent tools. What a section allows is its own
@@ -16,22 +17,11 @@ import type { Settings, SettingsSection } from "./index.js";
 
 const PROVIDER = "settings";
 const HIDDEN = "[hidden]";
-const SECRET_KEY = /api.?key|secret|token|passw|credential|authori[sz]ation|cookie|private.?key/i;
-
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Strings under a secret-sounding key, and everything in an `env` or `headers` map, never reach a model. */
-export function redact(value: unknown, key = ""): unknown {
-  if (Array.isArray(value)) return value.map((v) => redact(v, key));
-  if (isRecord(value)) {
-    const whole = key === "env" || key === "headers";
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, whole ? hide(v) : redact(v, k)]));
-  }
-  return typeof value === "string" && SECRET_KEY.test(key) ? hide(value) : value;
-}
-
-const hide = (v: unknown) => (typeof v === "string" && v === "" ? v : HIDDEN);
+/** Secrets never reach a model. */
+export const redact = (value: unknown, key = ""): unknown => mapSecrets(value, (v) => (v === "" ? v : HIDDEN), key);
 
 /** A redacted value sent back unchanged keeps what it stood for. */
 function unredact(next: unknown, current: unknown): unknown {

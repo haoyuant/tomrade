@@ -63,3 +63,17 @@ it("keeps only a token GitHub accepts, and hands it to git through the helper wh
   expect(ctx.settings.get().github).toEqual({ token: "" });
   expect(fill([])).toContain("username=wrong-account");
 });
+
+it("hands git a personal token that settings.json keeps sealed", async () => {
+  const userData = path.join(root, `user data ${n++}`);
+  fs.mkdirSync(userData, { recursive: true });
+  const cipher = { available: () => true, encrypt: (v: string) => Buffer.from([...v].reverse().join("")), decrypt: (b: Buffer) => [...b.toString()].reverse().join("") };
+  const { ctx } = await fresh({ plugins: [[Settings, { path: path.join(userData, "settings.json"), cipher }], GitHubAccount] });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => answer(200, { login: "me" }));
+  await ctx.github.connection.connect("ghp_sealed");
+  expect(fs.readFileSync(path.join(userData, "settings.json"), "utf8")).not.toContain("ghp_sealed");
+  expect(fill(credentialArgs([ctx.github.credential()!]))).toContain("username=x-access-token\npassword=ghp_sealed");
+  expect(fs.statSync(path.join(userData, "github-token.json")).mode & 0o777).toBe(0o600);
+  await ctx.github.connection.disconnect!();
+  expect(fs.existsSync(path.join(userData, "github-token.json"))).toBe(false);
+});

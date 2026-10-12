@@ -82,6 +82,9 @@ const run = async () => {
   await press(button("Save profile"));
   await sleep(1500);
   check("a key the endpoint accepts saves the profile", profiles().length === 1 && profiles()[0].apiKey === "good", profiles());
+  const file = fs.readFileSync(path.join(work, "settings.json"), "utf8");
+  check("settings.json keeps the key sealed by the keychain, not in plain text", JSON.parse(file).models.profiles[0].apiKey.startsWith("tomrade-encrypted:v1:") && !file.includes('"good"'), JSON.parse(file).models.profiles[0].apiKey.slice(0, 24));
+  check("and only this user can read the file", (fs.statSync(path.join(work, "settings.json")).mode & 0o777) === 0o600);
 
   // ── a model error in the conversation says what to do ────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);

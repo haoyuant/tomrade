@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { Icon } from "~/components/icons";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { PlainSecretNote } from "./PlainSecretNote";
 import { pickDirectory } from "~/lib/shell";
 
 /** The slice of JSON Schema the renderer draws. Anything else falls back to text. */
@@ -183,6 +184,7 @@ export function SchemaField({
         </span>
       )}
       {schema.description && <span className="meta-txt">{schema.description}</span>}
+      {schema.format === "password" && <PlainSecretNote />}
     </div>
   );
 }

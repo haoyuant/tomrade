@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useQuickSetup, useProviders } from "~/lib/setup";
+import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { openExternal } from "~/lib/shell";
 
 /** Why a connection failed, in words that say what to fix. */
@@ -117,6 +118,7 @@ export function QuickModelSetup({ onConnected }: { onConnected?: () => void }) {
             </button>
           </div>
           {!picked && guess.length === 1 && <span className="meta-txt">{t("setup.keyLooksLike", { provider: chosen.title })}</span>}
+          <PlainSecretNote />
         </div>
       ) : (
         <div className="row" style={{ gap: "var(--space-2)", alignItems: "center" }}>
