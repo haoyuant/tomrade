@@ -102,11 +102,11 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       ];
     },
     async available(opts): Promise<EngineAvailability> {
-      if (!fs.existsSync(config.cli)) return { ok: false, need: "install", reason: "This build has no built-in agent — run `pnpm --filter @tomrade/desktop fetch:pi`" };
-      if (!ctx.get("mcp")?.url) return { ok: false, need: "service", reason: "the MCP server is not running — enable the mcp plugin" };
+      if (!fs.existsSync(config.cli)) return { ok: false, need: "install", reason: zh() ? "这个版本没有内置智能体——运行 `pnpm --filter @tomrade/desktop fetch:pi`" : "This build has no built-in agent — run `pnpm --filter @tomrade/desktop fetch:pi`" };
+      if (!ctx.get("mcp")?.url) return { ok: false, need: "service", reason: zh() ? "MCP 服务没有运行——请启用 mcp 插件" : "The MCP server is not running — enable the mcp plugin" };
       if (!profiles().length) return { ok: false, need: "model", reason: zh() ? "先连接一个模型——内置智能体用它工作" : "Connect a model — the built-in agent runs on it" };
       const probe = await starts(opts?.fresh);
-      if (!probe.ok) return { ok: false, need: "repair", reason: `The built-in agent does not start: ${probe.detail}` };
+      if (!probe.ok) return { ok: false, need: "repair", reason: zh() ? `内置智能体启动失败：${probe.detail}` : `The built-in agent does not start: ${probe.detail}` };
       return { ok: true };
     },
     async turn(input, io) {
