@@ -34,6 +34,10 @@ export const storageBlock = {
     travelsNote: "Plugin data in this list is written into the folder and merges with the project; unticked data stays only in this machine's cache.",
     travelsNoteShared: "Inside a code repository nothing travels by default — a long conversation can be megabytes your teammates would clone.",
     exportAgent: "Conversation history",
+    travelsPrivateNote: "“{{what}}” travels with the project: anyone who can read the repository can read it. Tomrade never pushes it to a public repository.",
+    travelsPublicNote: "This repository is public, so “{{what}}” stays on this machine. Anything pushed before is still in the repository's history.",
+    includePrivate: "Include “{{what}}”",
+    includePrivateNote: "It travels with the project to this repository, where anyone who can read the repository can read it. A public repository never gets it.",
     exportCodeLink: "Code links",
 
     stateLabel: "State",
@@ -104,6 +108,10 @@ export const storageBlock = {
     travelsNote: "列表中勾选的插件数据会写进文件夹并随项目合并；未勾选的只留在本机缓存里。",
     travelsNoteShared: "在代码仓库里默认不带任何插件数据——一段很长的对话可能有几 MB，同事克隆代码时也会拉下来。",
     exportAgent: "对话历史",
+    travelsPrivateNote: "“{{what}}”会随项目一起同步：能读取这个仓库的人都能看到。Tomrade 从不把它推送到公开仓库。",
+    travelsPublicNote: "这个仓库是公开的，所以“{{what}}”只留在这台电脑上。之前推送过的内容仍在仓库的历史记录里。",
+    includePrivate: "包括“{{what}}”",
+    includePrivateNote: "它会随项目同步到这个仓库，能读取这个仓库的人都能看到。公开仓库永远不会收到它。",
     exportCodeLink: "代码关联",
 
     stateLabel: "状态",

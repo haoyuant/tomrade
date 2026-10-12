@@ -24,6 +24,9 @@ export const CatalogProject = z.object({
   git: z.enum(["dedicated", "shared", "none"]).default("none"),
   /** Only meaningful for a dedicated repository: where Tomrade pushes. */
   remote: RemoteRef.nullable().default(null),
+  /** Who can read that remote, as its provider said at `visibilityAt`; null until asked. */
+  visibility: z.enum(["public", "private", "unknown"]).nullable().default(null),
+  visibilityAt: z.number().nullable().default(null),
   /** Plugin namespaces whose tables travel in this project's folder. */
   exports: z.array(z.string()).default([]),
   /** In a shared checkout: commit the `.tomrade` subtree after publishing. Never push. */

@@ -989,7 +989,11 @@ declared** in `tables` — the registry refuses a namespace that does not say:
   `always: true` for a table that is part of the project's identity rather
   than data about it (a binding every machine needs, such as where the files
   live) — it travels regardless, even inside a code checkout, and the
-  namespace is not offered as a choice.
+  namespace is not offered as a choice. Add `private: true` for rows meant
+  only for the people the project is shared with, such as conversations: the
+  namespace is unticked, and kept off, while the project's remote is known to
+  be public (a provider's `visibility` says so), and this machine's rows are
+  never replaced by what such a remote holds.
 - `scope: "hub"` (on the call) for tables that belong to no project: they live in
   `hub.db`, need no `project`, and export to the Hub folder's `plugins/`.
 

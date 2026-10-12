@@ -84,6 +84,25 @@ export class GitHub {
     }
   }
 
+  /**
+   * Who can read a repository. With access, GitHub says; without it — no
+   * token, or an App not given this repository — only a public one can be
+   * read anonymously.
+   */
+  async visibility(owner: string, repo: string): Promise<"public" | "private" | "unknown"> {
+    if (await this.token()) {
+      const found = await this.exists(owner, repo).catch((error) => {
+        if (error instanceof GitHubError && (error.status === 401 || error.status === 403)) return null;
+        throw error;
+      });
+      if (found) return found.private ? "private" : "public";
+    }
+    const res = await fetch(`${this.base}/repos/${owner}/${repo}`, { headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "tomrade" } });
+    if (res.status === 404) return "private";
+    if (!res.ok) throw new GitHubError(res.status, `GitHub returned ${res.status}`);
+    return ((await res.json()) as Repo).private ? "private" : "public";
+  }
+
   /** Private by default: a backlog is not public unless someone says so. */
   async create(owner: string, repo: string, opts: { private?: boolean; autoInit?: boolean; description?: string } = {}): Promise<Repo> {
     const me = await this.login();
