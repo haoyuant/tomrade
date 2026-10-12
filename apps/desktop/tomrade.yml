@@ -162,8 +162,15 @@ plugins:
   # The one GitHub account this machine uses — for the backlog's repository,
   # Files, code checkouts and publishing — and the git credential helper that
   # hands its token to git, so no remote URL carries it.
+  # Signing in uses the Tomrade GitHub App (github.com/apps/tomradex) by the
+  # device flow: the client ID is public and no secret ships in the app.
+  # Without a clientId only a personal access token is offered.
   - id: github
-    name: "@tomradex/github"
+    name: ./dist/github.js
+    config:
+      userData: "${userData}"
+      clientId: Iv23lilOnDQLgcQBtlrt
+      appSlug: tomradex
   # Remote transports for a project's own repository: any git URL…
   - id: storage-git
     name: "@tomradex/storage-git"

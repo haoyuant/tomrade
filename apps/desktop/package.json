@@ -24,6 +24,7 @@
     "test:agent-panel": "electron scripts/agent-panel-check.mjs",
     "test:error-details": "electron scripts/error-details-check.mjs",
     "test:restore": "electron scripts/restore-check.mjs",
+    "test:github-signin": "electron scripts/github-signin-check.mjs",
     "test:updates": "electron scripts/updates-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",

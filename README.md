@@ -133,6 +133,7 @@ pnpm --filter @tomrade/desktop test:plugins  # switches real rows on and off, ag
 pnpm --filter @tomrade/desktop test:extensions   # an extension from outside the app, installed and reloaded in the real shell
 pnpm --filter @tomrade/desktop test:plugins-ui   # the Plugins pane, Plugin Studio's review dialog, both languages (needs the dev server)
 pnpm --filter @tomrade/desktop test:local-cli    # finding Claude Code and Codex, choosing a CLI path, Start's way to Settings (needs the dev server)
+pnpm --filter @tomrade/desktop test:github-signin  # signing in to GitHub from a destination against a stand-in GitHub, token fallback, both languages (needs the dev server)
 pnpm --filter @tomrade/desktop package           # installers (DMG/ZIP, NSIS, AppImage); -- --dir for an unpacked app
 ```
 

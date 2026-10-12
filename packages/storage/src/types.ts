@@ -46,9 +46,16 @@ export interface StorageInfo {
  * project's config, which is committed alongside the code.
  */
 export interface ProviderConnection {
-  prompt: { label: string; help?: string; url?: string };
+  /**
+   * What the panel asks for. With `signIn` it offers that first — signing in
+   * to `name` in the browser — and the secret becomes the fallback.
+   */
+  prompt: { label: string; help?: string; url?: string; signIn?: { name: string } };
   status(): Promise<ConnectionState>;
   connect(secret: string): Promise<ConnectionState>;
+  /** Start a sign-in the person finishes elsewhere; the state carries `pending` until it lands. */
+  signIn?(): Promise<ConnectionState>;
+  /** Also cancels a sign-in under way. */
   disconnect(): Promise<void>;
 }
 
@@ -56,6 +63,10 @@ export interface ConnectionState {
   connected: boolean;
   label?: string;
   detail?: string;
+  /** A sign-in waiting on the person: the code to enter at `url`, until `expiresAt`. */
+  pending?: { code: string; url: string; expiresAt: number };
+  /** A step the account needs outside Tomrade, such as choosing which repositories it may use. */
+  action?: { label: string; url: string; needed: boolean };
 }
 
 /** A git remote, as a provider resolves it from its config. The URL may carry a credential; it is scrubbed before display. */

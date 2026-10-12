@@ -283,6 +283,13 @@ gear opens the project's sheet where one nobody can find the folder of is
 removed from the catalog after one confirmation (Cancel focused, Cancel goes
 back) and stays removed, a located folder becomes the project and its arrival
 is announced, and the Hub pane lists the same — 47 checks.
+`test:github-signin` (`scripts/github-signin-check.mjs`) points the GitHub row at
+a stand-in for github.com: a project's destination offers signing in first with
+the token behind it, the device code shows while GitHub waits and its page is
+opened, the account lands by itself, an App installed nowhere says so with the
+link that fixes it, the session is kept encrypted and git's copy of the token is
+private, disconnecting forgets it, a personal access token still connects, and
+the panel in Chinese — 15 checks.
 `test:updates` (`scripts/updates-check.mjs`) points the updater at a feed served
 from the check itself: the feed is asked at launch, a newer release is announced
 by a notice and not downloaded, Later keeps it away, the About pane says the same with Download and

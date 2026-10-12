@@ -5,7 +5,7 @@ import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { ConnectionPanel, DestinationPicker, message, type RemoteApi } from "~/components/projects/destination";
 import { agoLabel } from "~/lib/domain";
-import { useBindFiles, useBrowseFiles, useConnectFiles, useDisconnectFiles, useDraftFiles, useFilesBackends, useFilesConnection, useFilesInfo, useFilesStatus, useSyncFiles, useUnbindFiles } from "~/lib/files";
+import { useBindFiles, useBrowseFiles, useConnectFiles, useDisconnectFiles, useDraftFiles, useFilesBackends, useFilesConnection, useFilesInfo, useFilesStatus, useSignInFiles, useSyncFiles, useUnbindFiles } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
@@ -16,6 +16,7 @@ import { AgentPolicySettings } from "./AgentPolicy";
 const filesRemoteApi: RemoteApi = {
   useConnection: useFilesConnection,
   useConnect: useConnectFiles,
+  useSignIn: useSignInFiles,
   useDisconnect: useDisconnectFiles,
   useBrowse: useBrowseFiles,
   useDraft: useDraftFiles

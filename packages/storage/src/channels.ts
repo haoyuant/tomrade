@@ -31,6 +31,7 @@ declare module "@tomradex/ipc" {
     "storage.draft": (providerId: string, name: string) => unknown;
     "storage.connection": (providerId: string) => ConnectionState;
     "storage.connect": (providerId: string, secret: string) => ConnectionState;
+    "storage.signIn": (providerId: string) => ConnectionState;
     "storage.disconnect": (providerId: string) => void;
     /** The Hub folder's own remote and what its portable catalog offers to attach. */
     "storage.hubInfo": () => { dir: string | null; remote: RemoteRef | null; status: StorageStatus; manifest: HubManifest | null; attachable: string[] };

@@ -47,6 +47,7 @@ declare module "@tomradex/ipc" {
     "files.draft": (backendId: string, name: string) => unknown;
     "files.connection": (backendId: string) => ConnectionState;
     "files.connect": (backendId: string, secret: string) => ConnectionState;
+    "files.signIn": (backendId: string) => ConnectionState;
     "files.disconnect": (backendId: string) => void;
     /** Pin a file's latest version to a ticket as material or an output artifact. */
     "files.attach": (projectId: string, itemId: string, input: { path: string; role: "input" | "output"; name?: string }) => Item;

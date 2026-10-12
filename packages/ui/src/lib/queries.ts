@@ -481,14 +481,24 @@ export function useRebuildStorage(projectId: string) {
   });
 }
 
-/** Whether a destination's account is connected, and as whom. Never the secret. */
+/** Whether a destination's account is connected, and as whom. Never the secret. Asked again while a sign-in waits on the person. */
 export const useStorageConnection = (providerId: string | undefined) =>
   useQuery({
     queryKey: keys.storageConnection(providerId ?? ""),
     queryFn: () => invoke("storage.connection", providerId!),
     enabled: !!providerId,
-    retry: false
+    retry: false,
+    refetchInterval: (query) => (query.state.data?.pending ? 2_000 : false)
   });
+
+/** Starts a sign-in the person finishes in the browser; the connection query follows it from there. */
+export function useSignInStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (providerId: string) => invoke("storage.signIn", providerId),
+    onSuccess: (state, providerId) => qc.setQueryData(keys.storageConnection(providerId), state)
+  });
+}
 
 /** Collected where it is needed; the provider keeps it per machine. */
 export function useConnectStorage() {

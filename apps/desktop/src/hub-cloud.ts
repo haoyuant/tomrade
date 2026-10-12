@@ -1,8 +1,8 @@
-import { safeStorage } from "electron";
 import path from "node:path";
 import { Context } from "cordis";
 import { CloudHub, EncryptedSessionStorage, type Cipher, type LocalAccounts } from "@tomradex/hub-cloud";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
+import { safeCipher } from "./cipher.js";
 
 /**
  * Public Supabase client configuration for the production desktop build.
@@ -22,10 +22,7 @@ export default function hubCloud(ctx: Context, config: { userData: string; url?:
   const url = config.url ?? process.env.TOMRADE_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? DEFAULT_SUPABASE_URL;
   const publishableKey = config.publishableKey ?? process.env.TOMRADE_SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_KEY ?? DEFAULT_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !publishableKey) throw new Error("Configure both TOMRADE_SUPABASE_URL and TOMRADE_SUPABASE_PUBLISHABLE_KEY.");
-  const cipher: Cipher = {
-    available: () => safeStorage.isEncryptionAvailable() && (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
-    encrypt: value => safeStorage.encryptString(value), decrypt: value => safeStorage.decryptString(value)
-  };
+  const cipher: Cipher = safeCipher;
   const sessionStorage = new EncryptedSessionStorage(path.join(config.userData, "account.enc"), cipher);
   ctx.plugin(CloudHub, { url, publishableKey, sessionStorage, cacheFile: path.join(config.userData, "hub-cloud.json"), syncMs: 30_000, site: config.site ?? DEFAULT_SITE, accounts: accountsAt(config.userData, cipher) });
 }
