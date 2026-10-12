@@ -1,11 +1,11 @@
 // CI builds on one arm64 Mac, where pnpm installs more than one platform's
-// optional packages: both arches for the two Macs (pnpm install --cpu=arm64
-// --cpu=x64), and the Mac's own beside Windows' for the cross-built Windows
-// app. Each app keeps only its own esbuild.
+// optional packages: both arches for the x64 Mac (pnpm install --cpu=arm64
+// --cpu=x64), and the Mac's own beside Windows' or Linux's for the cross-built
+// apps. Each app keeps only its own esbuild.
 //
-// None keeps the agent SDK's Claude Code (~190 MB): the engine always passes
-// the person's own CLI as pathToClaudeCodeExecutable, and the SDK reads its
-// bundled copy only without one.
+// None keeps the agent SDK's Claude Code (~190 MB, musl builds included): the
+// engine always passes the person's own CLI as pathToClaudeCodeExecutable, and
+// the SDK reads its bundled copy only without one.
 const fs = require("node:fs");
 const path = require("node:path");
 const { Arch } = require("electron-builder");
@@ -31,7 +31,10 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
   });
   // esbuild's install copied the build machine's binary over its CLI. Windows
   // runs @esbuild/win32-x64's esbuild.exe and never reads it.
-  if (electronPlatformName === "darwin") {
-    fs.copyFileSync(path.join(modules, `@esbuild/darwin-${own}/bin/esbuild`), path.join(modules, "esbuild/bin/esbuild"));
+  if (electronPlatformName !== "win32") {
+    fs.copyFileSync(
+      path.join(modules, `@esbuild/${electronPlatformName}-${own}/bin/esbuild`),
+      path.join(modules, "esbuild/bin/esbuild"),
+    );
   }
 };
