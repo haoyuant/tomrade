@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { oneFocusRing } from "./focus-ring.mjs";
 import { seedDesignProject } from "./seed.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -66,6 +67,7 @@ const run = async () => {
   await $(`document.activeElement?.blur(); true`);
   await key("window", { key: "/" });
   check("/ elsewhere puts the caret in it", await focused());
+  check("one focus ring, on the field — none on the input inside it", await oneFocusRing(win, ".qb-search-input", ".qb-search"));
   const word = "matcha";
   const hits = matching(word);
   const hitKeys = hits.map((i) => i.key).sort().join(",");

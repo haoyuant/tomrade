@@ -14,6 +14,7 @@ import { ATTESTATION_FILE, attest, generateSigningKey, packPlugin, packageDigest
 import { build } from "@tomradex/plugin-cli";
 import { boot } from "../dist/boot.js";
 import { registerExtensionResolution } from "../dist/extension-resolve.js";
+import { oneFocusRing } from "./focus-ring.mjs";
 import { seedDesignProject } from "./seed.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +128,8 @@ const run = async () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     })()`);
+  check("the search shows one focus ring, on the field — none on the input inside it", await oneFocusRing(win, '[data-testid="plugins-search"]', ".plug-search"));
+  await $(`document.activeElement?.blur(); true`);
   const rowIds = (scope = ".dlg-body") => $(`[...document.querySelectorAll('${scope} .cfg-row[data-id]')].map(r => r.dataset.id).join()`);
   check("engines are grouped under their contract, the switched-off one too", (await rowIds('.plug-group[data-contract="engine"]')) === "engine-loop,engine-pi-builtin,engine-scripted,engine-claude-code,engine-codex,engine-pi,engine-terminal,engine-hermes,engine-dsh,engine-workbuddy");
   check("destinations under theirs", (await rowIds('.plug-group[data-contract="storage"]')) === "storage-git,storage-github");

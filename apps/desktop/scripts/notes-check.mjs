@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { oneFocusRing } from "./focus-ring.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-notes-ui-"));
@@ -280,6 +281,7 @@ const run = async () => {
   await wait(() => has(".side-files-list"), "tree back");
   await key("f", ["meta", "shift"]);
   check("⇧⌘F opens the search from anywhere", await wait(() => $(`document.activeElement?.classList.contains('notes-search-input')`), "focused search"));
+  check("one focus ring, on the field — none on the input inside it", await oneFocusRing(win, ".notes-search-input", ".notes-search-field"));
   await click(".notes-search-close");
 
   // ── new notes and the journal ──────────────────────────────────────────
