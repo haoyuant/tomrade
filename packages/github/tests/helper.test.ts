@@ -80,6 +80,9 @@ it("does not leak a previous token when settings are missing, malformed, disconn
     expect(result.stdout).not.toContain("password=");
     expect(result.stderr).not.toMatch(/test-token|injected/);
   }
+  // A token settings.json keeps sealed is not git's to read.
+  fs.writeFileSync(f.settings, JSON.stringify({ github: { token: "tomrade-encrypted:v1:c2VhbGVk" } }));
+  expect((await f.fill()).stdout).not.toContain("password=");
   fs.rmSync(f.settings);
   expect((await f.fill()).code).not.toBe(0);
   const stored = await f.git(["credential", "approve"], { stdin: "protocol=https\nhost=github.com\nusername=ignored\npassword=do-not-store\n\n" });
