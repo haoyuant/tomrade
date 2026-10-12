@@ -1,8 +1,10 @@
 /**
  * Attention regression: an agent that waits on the person is seen wherever
  * the person is — a count on the Dock, a badge on the collapsed assistant, a
- * word in the thread list — and a clicked notification opens its thread. A
- * stand-in engine that asks permission mid-run makes it deterministic.
+ * word in the thread list, a list in the status bar — and a clicked
+ * notification opens its thread. A finished run is told once; what the person
+ * switched off in Settings is not told at all. A stand-in engine that asks
+ * permission mid-run makes it deterministic.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:attention
@@ -26,7 +28,9 @@ const check = (name, cond, detail) => {
 };
 
 const run = async () => {
-  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }]] });
+  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false, finishedAfterMs: 0 } }]] });
+  const notes = [];
+  ctx.on("attention/notified", (note) => notes.push(note));
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
@@ -67,6 +71,9 @@ const run = async () => {
   let entries = await list();
   check("a permission question mid-run is on the attention list", entries.length === 1 && entries[0].kind === "permission" && entries[0].text === "Run the migration?", entries);
   if (badge() !== null) check("the Dock counts it", badge() === 1, badge());
+  check("each entry says since when it waits", typeof entries[0]?.since === "number" && entries[0].since <= Date.now(), entries);
+  check("a notification says who needs what", notes.some((n) => n.title === "The assistant needs your approval" && n.body === "Run the migration?"), notes);
+  check("the status bar says one thing waits", /1 waiting for you/.test((await $(`document.querySelector('[data-testid="needs-you"]')?.textContent`)) ?? ""));
   const firstThread = entries[0]?.threadId;
   await press(`document.querySelector('[aria-label="Collapse assistant panel"]')`);
   await sleep(500);
@@ -87,6 +94,12 @@ const run = async () => {
   entries = await list();
   check("once answered, nothing waits", entries.length === 0, entries);
   if (badge() !== null) check("and the Dock count is gone", badge() === 0, badge());
+  check("the status bar has nothing waiting", (await $(`!!document.querySelector('[data-testid="needs-you"]')`)) === false);
+  check("the run that finished is told once, with its last words", notes.filter((n) => n.title === "The assistant finished").length === 1 && notes.some((n) => n.title === "The assistant finished" && n.body === "answer: Allow"), notes);
+
+  // approvals switched off in Settings: the badge still counts, nothing is told
+  const told = notes.length;
+  ctx.settings.set({ ...ctx.settings.get(), notifications: { ...ctx.settings.get().notifications, approvals: false } });
 
   // ── a clicked notification opens the thread that waits ─────────────────
   await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
@@ -98,6 +111,7 @@ const run = async () => {
   entries = await list();
   const second = entries.find((e) => e.threadId !== firstThread);
   check("a second conversation waits", !!second, entries);
+  check("with approvals switched off, it is counted but not told", notes.length === told, notes.slice(told));
   // the person moves to the first thread, then clicks the notification for the second
   await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
   await sleep(400);
@@ -106,6 +120,21 @@ const run = async () => {
   ctx.ipc.send("attention.open", second);
   await sleep(1000);
   check("clicking its notification shows the conversation that waits", (await $(`[...document.querySelectorAll('.ai-scroll button')].some((b) => b.textContent?.trim() === 'Allow')`)) === true);
+
+  // the status bar's list is a way back too
+  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
+  await sleep(400);
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => !(r.textContent ?? '').includes('Needs your approval'))`);
+  await sleep(800);
+  const shown = () => $(`document.querySelector('.ai-scroll')?.textContent ?? ''`);
+  check("away from it, the first conversation is on screen", (await shown()).includes("migrate the database") && !(await shown()).includes("and the second one"));
+  await press(`document.querySelector('[data-testid="needs-you"]')`);
+  await sleep(400);
+  const rows = await $(`[...document.querySelectorAll('.menu.is-floating [role="menuitem"]')].map((r) => r.textContent)`);
+  check("the status bar lists what waits, and on what", rows.length === 1 && rows[0].includes("Assistant · Needs your approval") && rows[0].includes("Run the migration?"), rows);
+  await press(`document.querySelector('.menu.is-floating [role="menuitem"]')`);
+  await sleep(1000);
+  check("choosing it shows that conversation", (await shown()).includes("and the second one"));
   check("harness reached the end", true);
 };
 

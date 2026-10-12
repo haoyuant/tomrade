@@ -1,6 +1,8 @@
 import { app, BrowserWindow, Notification } from "electron";
 import type { Context } from "cordis";
-import type {} from "@tomradex/agent";
+import { z } from "zod";
+import type { RunView, ThreadSummary } from "@tomradex/agent";
+import type { SettingsSection } from "@tomradex/settings";
 import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
 
@@ -17,6 +19,30 @@ export interface AttentionEntry {
   who: string | null;
   /** The question, or what the agent last said. */
   text: string | null;
+  /** Since when it has waited in this kind, as far as this run of the app has seen. */
+  since: number;
+}
+
+/** What one notification says, and the entry it opens when clicked. */
+export interface AttentionNote {
+  title: string;
+  body: string;
+  entry: AttentionEntry;
+}
+
+export interface NotificationPrefs {
+  enabled: boolean;
+  approvals: boolean;
+  waiting: boolean;
+  stopped: boolean;
+  finished: boolean;
+}
+
+declare module "cordis" {
+  interface Events {
+    /** A notification was decided on — whether or not the system is asked to show it. */
+    "attention/notified"(note: AttentionNote): void;
+  }
 }
 
 declare module "@tomradex/ipc" {
@@ -31,27 +57,153 @@ declare module "@tomradex/ipc" {
   }
 }
 
+export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
+  id: "notifications",
+  title: "Notifications",
+  description: "What Tomrade tells you while none of its windows is in front. The Dock count and the badges stay either way.",
+  schema: z.object({
+    enabled: z.boolean().default(true).meta({ title: "Notify me" }),
+    approvals: z.boolean().default(true).meta({ title: "Approvals and questions" }).describe("An agent needs your permission or asks you something."),
+    waiting: z.boolean().default(true).meta({ title: "Waiting for you" }).describe("A coding session ended its turn and has waited 15 seconds without you."),
+    stopped: z.boolean().default(true).meta({ title: "Stopped" }).describe("A run or a coding session stopped on an error."),
+    finished: z.boolean().default(true).meta({ title: "Finished" }).describe("A ticket's run, or any run over 30 seconds, finished in the background.")
+  }),
+  defaults: { enabled: true, approvals: true, waiting: true, stopped: true, finished: true },
+  order: 15,
+  scope: "user",
+  agent: "write",
+  words: {
+    zh: {
+      title: "通知",
+      description: "Tomrade 的窗口都不在前台时，哪些事要告诉你。Dock 数字和角标不受影响。",
+      fields: {
+        enabled: { title: "发通知" },
+        approvals: { title: "批准与提问", description: "代理需要你批准，或者在问你问题。" },
+        waiting: { title: "在等你", description: "编码会话说完一轮，等了你 15 秒。" },
+        stopped: { title: "停下了", description: "运行或编码会话因出错停下。" },
+        finished: { title: "完成", description: "工单的运行，或者超过 30 秒的运行，在后台完成。" }
+      }
+    }
+  }
+};
+
 const WORDS = {
   en: {
     assistant: "The assistant",
     permission: "{who} needs your approval",
     question: "{who} is asking you something",
     waiting: "{who} is waiting for you",
-    stuck: "{who} stopped"
+    stuck: "{who} stopped",
+    finished: "{who} finished"
   },
   zh: {
     assistant: "助手",
     permission: "{who} 需要你批准",
     question: "{who} 在问你问题",
     waiting: "{who} 在等你",
-    stuck: "{who} 停下了"
+    stuck: "{who} 停下了",
+    finished: "{who} 完成了"
   }
 } as const;
+type Words = (typeof WORDS)[keyof typeof WORDS];
 
 const clip = (text: string | null | undefined, n = 160): string | null => {
   const line = text?.replace(/\s+/g, " ").trim();
   return line ? (line.length > n ? `${line.slice(0, n - 1)}…` : line) : null;
 };
+
+export interface TellerOptions {
+  /** A coding session's turn ends with "waiting" every time; told only once it has waited this long. */
+  waitingDelayMs: number;
+  /** A run with no ticket is worth a "finished" only past this. */
+  finishedAfterMs: number;
+  prefs(): NotificationPrefs;
+  /** Someone is looking at Tomrade: nothing needs telling. */
+  focused(): boolean;
+  words(): Words;
+  tell(note: AttentionNote): void;
+}
+
+/**
+ * Decides which changes to the attention list become a notification: each
+ * entry once per kind, a coding session's "waiting" only once it has lasted,
+ * nothing while a Tomrade window has focus, and nothing the person switched off.
+ */
+export class Teller {
+  private told = new Map<string, AttentionEntry["kind"]>();
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private current = new Map<string, AttentionEntry>();
+  private failed = new Map<string, AttentionEntry>();
+  private primed = false;
+
+  constructor(private readonly options: TellerOptions) {}
+
+  /** The list as it stands now. The first one is what already waited at launch: the badge has it, no notification does. */
+  update(entries: AttentionEntry[]): void {
+    this.current = new Map(entries.map((e) => [e.key, e]));
+    for (const [key, kind] of this.told) if (this.current.get(key)?.kind !== kind) this.told.delete(key);
+    for (const [key, timer] of this.timers) {
+      if (this.current.get(key)?.kind === "waiting") continue;
+      clearTimeout(timer);
+      this.timers.delete(key);
+    }
+    if (!this.primed) {
+      this.primed = true;
+      for (const e of entries) this.told.set(e.key, e.kind);
+    }
+    for (const e of entries) {
+      if (this.told.get(e.key) === e.kind || this.timers.has(e.key)) continue;
+      if (e.kind !== "waiting") {
+        this.decide(e);
+        continue;
+      }
+      this.timers.set(
+        e.key,
+        setTimeout(() => {
+          this.timers.delete(e.key);
+          const now = this.current.get(e.key);
+          if (now?.kind === "waiting" && this.told.get(e.key) !== "waiting") this.decide(now);
+        }, this.options.waitingDelayMs)
+      );
+    }
+    // a failed run that no coding session stands for has no entry of its own to say so
+    for (const [key, entry] of this.failed) if (!this.current.has(key)) this.decide(entry);
+    this.failed.clear();
+  }
+
+  /** A run ended. Errors are told by the next update, unless a session's entry already says it stopped. */
+  ended(entry: Omit<AttentionEntry, "kind" | "since">, run: Pick<RunView, "status" | "startedAt" | "endedAt" | "error">, last: string | null): void {
+    const now = Date.now();
+    if (run.status === "error") {
+      this.failed.set(entry.key, { ...entry, kind: "stuck", text: clip(run.error) ?? entry.text, since: now });
+      return;
+    }
+    if (run.status !== "done") return;
+    if (!entry.itemId && (run.endedAt ?? now) - run.startedAt < this.options.finishedAfterMs) return;
+    const prefs = this.options.prefs();
+    if (!prefs.enabled || !prefs.finished || this.options.focused()) return;
+    const w = this.options.words();
+    this.options.tell({ title: this.titleOf(entry.itemKey, w.finished, entry.who), body: clip(last) ?? "", entry: { ...entry, kind: "waiting", since: now } });
+  }
+
+  dispose(): void {
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+  }
+
+  private decide(entry: AttentionEntry): void {
+    this.told.set(entry.key, entry.kind);
+    const prefs = this.options.prefs();
+    const on = entry.kind === "permission" || entry.kind === "question" ? prefs.approvals : entry.kind === "waiting" ? prefs.waiting : prefs.stopped;
+    if (!prefs.enabled || !on || this.options.focused()) return;
+    const w = this.options.words();
+    this.options.tell({ title: this.titleOf(entry.itemKey, w[entry.kind], entry.who), body: entry.text ?? "", entry });
+  }
+
+  private titleOf(itemKey: string | null, phrase: string, who: string | null): string {
+    return [itemKey, phrase.replace("{who}", who ?? this.options.words().assistant)].filter(Boolean).join(" · ");
+  }
+}
 
 /**
  * Says when an agent is waiting on the person: a count on the Dock, a flash
@@ -61,26 +213,25 @@ const clip = (text: string | null | undefined, n = 160): string | null => {
  */
 export const attention = {
   name: "attention",
-  inject: ["ipc", "agent"],
-  /** `notify: false` keeps the badges and drops the notifications — for checks that run with no window in front. */
-  apply(ctx: Context, config: { notify?: boolean } = {}) {
-    const notifies = config.notify !== false;
+  inject: ["ipc", "agent", "settings"],
+  /**
+   * `notify: false` decides as usual but never asks the system to show anything — for checks that run with no window in front.
+   * The delays are there for those checks too.
+   */
+  apply(ctx: Context, config: { notify?: boolean; waitingDelayMs?: number; finishedAfterMs?: number } = {}) {
+    const shows = config.notify !== false;
+    ctx.settings.register(NOTIFICATIONS_SECTION);
     let entries: AttentionEntry[] = [];
-    let seen = new Map<string, AttentionEntry["kind"]>();
-    let first = true;
+    let since = new Map<string, { kind: AttentionEntry["kind"]; at: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const words = () => {
-      const pref = (ctx.get("settings")?.get() as { language?: string } | undefined)?.language;
-      const lang = pref === "zh" || pref === "en" ? pref : app.getLocale().toLowerCase().startsWith("zh") ? "zh" : "en";
-      return WORDS[lang];
-    };
+    const words = () => WORDS[ctx.settings.locale()];
+    const engineTitle = (id: string) => ctx.agent.codeEngines().find((e) => e.id === id)?.title ?? id;
+    const itemKeyOf = (projectId: string, itemId: string | null) => (itemId ? ctx.get("items")?.get(projectId, itemId)?.key ?? null : null);
 
-    const collect = (): AttentionEntry[] => {
-      const out = new Map<string, AttentionEntry>();
-      const itemOf = (projectId: string, itemId: string | null) => (itemId ? ctx.get("items")?.get(projectId, itemId)?.key ?? null : null);
+    const collect = (): Omit<AttentionEntry, "since">[] => {
+      const out = new Map<string, Omit<AttentionEntry, "since">>();
       const codeLink = ctx.get("codeLink");
-      const engineTitle = (id: string) => ctx.agent.codeEngines().find((e) => e.id === id)?.title ?? id;
       if (codeLink) {
         for (const projectId of ctx.get("db")?.openIds() ?? []) {
           for (const s of codeLink.sessionsOf(projectId)) {
@@ -88,7 +239,7 @@ export const attention = {
             const key = s.threadId ? `thread:${s.threadId}` : `session:${s.id}`;
             const itemId = s.itemIds[0] ?? null;
             out.set(key, {
-              key, projectId, threadId: s.threadId, itemId, itemKey: itemOf(projectId, itemId),
+              key, projectId, threadId: s.threadId, itemId, itemKey: itemKeyOf(projectId, itemId),
               kind: s.state === "error" ? "stuck" : "waiting",
               who: engineTitle(s.agent), text: clip(s.activity ?? s.summary)
             });
@@ -102,7 +253,7 @@ export const attention = {
         const itemId = thread?.itemId ?? null;
         const session = out.get(key);
         out.set(key, {
-          key, projectId: a.projectId, threadId: a.threadId, itemId, itemKey: itemOf(a.projectId, itemId),
+          key, projectId: a.projectId, threadId: a.threadId, itemId, itemKey: itemKeyOf(a.projectId, itemId),
           kind: a.pending.kind === "permission" ? "permission" : "question",
           who: session?.who ?? (thread?.itemId ? engineTitle(thread.engine) : null),
           text: clip(a.pending.question.text)
@@ -122,41 +273,57 @@ export const attention = {
       ctx.ipc.send("attention.open", entry);
     };
 
-    const notify = (entry: AttentionEntry) => {
-      if (!notifies || !Notification.isSupported()) return;
-      const w = words();
-      const title = [entry.itemKey, w[entry.kind].replace("{who}", entry.who ?? w.assistant)].filter(Boolean).join(" · ");
-      const n = new Notification({ title, body: entry.text ?? "", silent: false });
-      n.on("click", () => open(entry));
-      n.show();
-    };
+    const teller = new Teller({
+      waitingDelayMs: config.waitingDelayMs ?? 15_000,
+      finishedAfterMs: config.finishedAfterMs ?? 30_000,
+      prefs: () => ({ ...NOTIFICATIONS_SECTION.defaults, ...(ctx.settings.get().notifications as Partial<NotificationPrefs> | undefined) }),
+      focused: () => !!BrowserWindow.getFocusedWindow(),
+      words,
+      tell: (note) => {
+        ctx.emit("attention/notified", note);
+        if (!shows || !Notification.isSupported()) return;
+        if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
+        const n = new Notification({ title: note.title, body: note.body, silent: false });
+        n.on("click", () => open(note.entry));
+        n.show();
+      }
+    });
 
     const refresh = () => {
       timer = undefined;
-      const next = collect();
-      const fresh = next.filter((e) => seen.get(e.key) !== e.kind);
-      entries = next;
-      seen = new Map(next.map((e) => [e.key, e.kind]));
-      if (process.platform !== "win32") app.setBadgeCount(next.length);
-      ctx.ipc.send("attention.changed", next);
-      // what was already waiting when the app opened is on the badge, not a burst of notifications
-      if (first) {
-        first = false;
-        return;
-      }
-      if (!fresh.length || BrowserWindow.getFocusedWindow()) return;
-      if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
-      for (const entry of fresh) notify(entry);
+      const now = Date.now();
+      entries = collect().map((e) => {
+        const was = since.get(e.key);
+        return { ...e, since: was?.kind === e.kind ? was.at : now };
+      });
+      since = new Map(entries.map((e) => [e.key, { kind: e.kind, at: e.since }]));
+      if (process.platform !== "win32") app.setBadgeCount(entries.length);
+      ctx.ipc.send("attention.changed", entries);
+      teller.update(entries);
     };
     const schedule = () => {
       if (!timer) timer = setTimeout(refresh, 250);
+    };
+
+    const lastSaid = (thread: ThreadSummary, runId: string): string | null => {
+      const said = ctx.agent.store.messages(thread.projectId, thread.id).filter((m) => m.runId === runId && m.role === "agent" && m.block.type === "text");
+      const block = said.at(-1)?.block;
+      return block?.type === "text" ? block.text : null;
     };
 
     ctx.ipc.handle("attention.list", () => entries);
     ctx.on("agent/event", (_threadId, event) => {
       if (event.type === "pending" || event.type === "done") schedule();
     });
-    ctx.on("agent/run-ended", schedule);
+    ctx.on("agent/run-ended", (run, thread) => {
+      const who = thread.itemId ? engineTitle(thread.engine) : null;
+      teller.ended(
+        { key: `thread:${thread.id}`, projectId: thread.projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(thread.projectId, thread.itemId), who, text: null },
+        run,
+        run.status === "done" ? lastSaid(thread, run.id) : null
+      );
+      schedule();
+    });
     ctx.on("codeLink/changed", schedule);
     ctx.on("db/opened", schedule);
     // Focusing a window is the person seeing it: stop the taskbar asking.
@@ -168,6 +335,7 @@ export const attention = {
       () => () => {
         clearTimeout(timer);
         clearInterval(sweep);
+        teller.dispose();
         app.off("browser-window-focus", onFocus);
         if (process.platform !== "win32") app.setBadgeCount(0);
       },

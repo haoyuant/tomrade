@@ -139,6 +139,19 @@ export function MenuActionItem({ icon, name, onSelect, keepOpen, disabled, title
   );
 }
 
+/** A row that goes to what it names, with a second line saying more about it. */
+export function MenuStackItem({ mark, name, sub, onSelect }: { mark?: ReactNode; name: string; sub: string; onSelect: () => void }) {
+  return (
+    <RadixMenu.Item className="menu-row" onSelect={onSelect}>
+      {mark && <span className="m-mark">{mark}</span>}
+      <span className="m-stack">
+        <span className="m-name">{name}</span>
+        <span className="m-sub">{sub}</span>
+      </span>
+    </RadixMenu.Item>
+  );
+}
+
 /** A row that leaves this screen rather than changing it — the arrow says so. */
 export function MenuLinkItem({ icon, name, onSelect }: { icon: ReactNode; name: string; onSelect: () => void }) {
   return (

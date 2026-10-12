@@ -13,7 +13,10 @@ export const statusBar = {
     undoTitle: "Undo — ⌘Z",
     redoTitle: "Redo — ⇧⌘Z",
     historyTitle: "History — what was done, and where to roll back to",
-    history: "History"
+    history: "History",
+    needsYou: "{{n}} waiting for you",
+    needsYouTitle: "Waiting for you, longest first",
+    waitedFor: "waiting {{time}}"
   },
   zh: {
     verbCreated: "创建了",
@@ -29,6 +32,9 @@ export const statusBar = {
     undoTitle: "撤销 — ⌘Z",
     redoTitle: "重做 — ⇧⌘Z",
     historyTitle: "操作历史 — 查看做过什么，并回滚到任一记录",
-    history: "历史"
+    history: "历史",
+    needsYou: "{{n}} 件事在等你",
+    needsYouTitle: "等你处理（等得最久的在前）",
+    waitedFor: "已等 {{time}}"
   }
 };

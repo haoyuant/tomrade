@@ -1,9 +1,11 @@
 import type { Item, OplogEntry } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
-import { agoLabel, authorLabel } from "~/lib/domain";
-import { useI18n } from "~/lib/i18n";
-import { useMcpUrl, useOplog, useStatusItems } from "~/lib/queries";
+import { Menu, MenuHead, MenuStackItem } from "~/components/ui/menu";
+import { useAttention, useOpenAttention } from "~/lib/attention";
+import { agoLabel, authorLabel, timeAgo } from "~/lib/domain";
+import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useMcpUrl, useOplog, useProjects, useStatusItems } from "~/lib/queries";
 
 const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/mcp(\/[^/]+)?$/, "") : null);
 
@@ -29,6 +31,43 @@ function Ribbon({ entry }: { entry: OplogEntry }) {
       {entry.by.startsWith("ai:") && !sync && <span className="ribbon-tick" />}
       {tx("statusBar.ribbon", { author: sync ? t("statusBar.authorSync") : authorLabel(entry.by), verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
     </span>
+  );
+}
+
+/** Everything agents wait on the person for, in every open project — longest wait first, each a way back to it. */
+function NeedsYou({ projectId }: { projectId?: string }) {
+  const { t } = useI18n();
+  const entries = useAttention();
+  const projects = useProjects();
+  const open = useOpenAttention();
+  if (!entries.length) return null;
+  const projectName = (id: string) => projects.data?.find((p) => p.id === id)?.name ?? null;
+  const waited = (since: number) => {
+    const span = timeAgo(since);
+    return span === "now" || span === "刚刚" ? null : t("statusBar.waitedFor", { time: span });
+  };
+  return (
+    <Menu
+      label={t("statusBar.needsYouTitle")}
+      wide
+      trigger={
+        <button type="button" className="status-item status-link status-needs" data-testid="needs-you">
+          <span className="needs-dot" aria-hidden /> {t("statusBar.needsYou", { n: entries.length })}
+        </button>
+      }
+    >
+      <MenuHead title={t("statusBar.needsYouTitle")} />
+      {[...entries]
+        .sort((a, b) => a.since - b.since)
+        .map((e) => (
+          <MenuStackItem
+            key={e.key}
+            name={[e.itemKey, e.who ?? t("agentPanel.assistantLabel"), t(`agentPanel.attention_${e.kind}` as MessageKey)].filter(Boolean).join(" · ")}
+            sub={[e.projectId !== projectId ? projectName(e.projectId) : null, e.text, waited(e.since)].filter(Boolean).join(" · ")}
+            onSelect={() => open(e)}
+          />
+        ))}
+    </Menu>
   );
 }
 
@@ -63,6 +102,7 @@ export function StatusBar({
       <span className="status-item">
         <LiveDot /> {t("statusBar.mcpLabel")} <Num>{host(mcp.data ?? null) ?? t("statusBar.offline")}</Num>
       </span>
+      <NeedsYou projectId={projectId} />
       {latest && <Ribbon entry={latest} />}
       {plugins.data?.map((s) =>
         s.opens && onOpen ? (
