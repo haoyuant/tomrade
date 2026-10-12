@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tomradex/files": "workspace:*",
+    "@tomradex/github": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage-github": "workspace:*",
     "cordis": "4.0.0-rc.8",

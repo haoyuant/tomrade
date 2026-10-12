@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../files" },
+    { "path": "../github" },
     { "path": "../settings" },
     { "path": "../storage-github" }
   ]

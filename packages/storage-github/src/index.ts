@@ -3,15 +3,12 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type {} from "@tomradex/settings";
+import type {} from "@tomradex/github";
 import type {} from "@tomradex/storage";
-import type { ProviderConnection } from "@tomradex/storage";
 import { createRemoteProvider } from "@tomradex/storage-git";
-import { GitHub, GitHubError } from "./api.js";
 
-export { GitHub, GitHubError } from "./api.js";
-export type { Repo } from "./api.js";
-
+export { GitHub, GitHubError } from "@tomradex/github";
+export type { Repo } from "@tomradex/github";
 
 /** Per-project and non-secret, so it can be committed beside the code it tracks. */
 const RepoConfig = z.object({
@@ -22,59 +19,15 @@ const RepoConfig = z.object({
 type RepoConfig = z.infer<typeof RepoConfig>;
 
 /**
- * Where the token is kept — per machine, because one account serves every
- * project. It is deliberately NOT a card of its own in Settings: the connection
- * is made where it is needed, in a project's own destination block, and the
- * settings dialog skips any section a storage provider claims.
- */
-const TOKEN_SECTION = {
-  id: "github",
-  title: "GitHub",
-  description: "The GitHub account Tomrade publishes with. Connected from a project's destination settings.",
-  schema: z.object({ token: z.string().meta({ format: "password" }) }),
-  defaults: { token: "" },
-  order: 20
-};
-
-/**
  * GitHub is not a peer of "a folder I choose" — it is a hosting choice on top of
  * the git provider. This plugin adds exactly what git cannot do by itself:
- * find a repository, and make one.
+ * find a repository, and make one. The account is `ctx.github`'s.
  */
 export const storageGithub = {
   name: "storage-github",
-  inject: ["storage", "settings"],
+  inject: ["storage", "github"],
   apply(ctx: Context) {
-    ctx.settings.register(TOKEN_SECTION);
-    const token = () => ((ctx.settings.get().github as { token?: string } | undefined)?.token ?? "").trim();
-    const api = new GitHub(token);
-
-    const connection: ProviderConnection = {
-      prompt: {
-        label: "Personal access token",
-        help: "A token with repo and workflow scopes. Tomrade finds and creates repositories with it, and can push both code and GitHub Actions workflows when your own git credentials cannot reach the remote.",
-        url: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Tomrade"
-      },
-      async status() {
-        if (!token()) return { connected: false };
-        try {
-          return { connected: true, label: `@${await api.whoami()}` };
-        } catch (error) {
-          return { connected: false, detail: error instanceof GitHubError ? error.message : "Could not reach GitHub" };
-        }
-      },
-      async connect(secret) {
-        const trimmed = secret.trim();
-        if (!trimmed) return { connected: false, detail: "Paste a token first" };
-        // Verified before it is stored: a token that does not work is never saved.
-        const login = await new GitHub(() => trimmed).whoami();
-        ctx.settings.set({ ...ctx.settings.get(), github: { token: trimmed } });
-        return { connected: true, label: `@${login}` };
-      },
-      async disconnect() {
-        ctx.settings.set({ ...ctx.settings.get(), github: { token: "" } });
-      }
-    };
+    const api = ctx.github.api;
 
     ctx.storage.register(
       createRemoteProvider<RepoConfig>({
@@ -84,7 +37,8 @@ export const storageGithub = {
           configSchema: RepoConfig,
           defaults: { owner: "", repo: "", branch: "main" },
           settingsSection: "github",
-          connection,
+          connection: ctx.github.connection,
+          credential: () => ctx.github.credential(),
 
           /** "backlog" or "acme/backlog" — the account fills in the rest. */
           async draft(name) {
@@ -95,16 +49,12 @@ export const storageGithub = {
             return { owner, repo, branch: "main" };
           },
 
-          // A token, when there is one, authenticates the push; without one the
-          // user's own SSH keys or credential helper are used instead.
-          toRemote: (c) => {
-            const secret = token();
-            const host = secret ? `x-access-token:${secret}@github.com` : "github.com";
-            return { url: `https://${host}/${c.owner}/${c.repo}.git`, branch: c.branch };
-          },
+          // The URL never carries the token: `credential` hands it to git, and
+          // without an account the user's own SSH keys or helper are used.
+          toRemote: (c) => ({ url: `https://github.com/${c.owner}/${c.repo}.git`, branch: c.branch }),
 
           async ensureRemote(c) {
-            if (!token()) return; // nothing to check with; let git report what it finds
+            if (!(await ctx.github.token())) return; // nothing to check with; let git report what it finds
             const existing = await api.exists(c.owner, c.repo);
             if (existing) return;
             await api.create(c.owner, c.repo);

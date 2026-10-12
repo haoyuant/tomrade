@@ -11,7 +11,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, cleanRemote, gitRunner, type Git } from "./git.js";
+import { GitFolder, GitMissingError, cleanRemote, gitRunner, type Git, type GitCredential } from "./git.js";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, mergeStates, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
@@ -142,7 +142,7 @@ export class Storage extends Service {
   ) {
     super(ctx, "storage");
     this.home = ctx;
-    this.runGit = gitRunner(config.gitBinary);
+    this.runGit = gitRunner(config.gitBinary, undefined, () => this.credentials());
   }
 
   [Service.init]() {
@@ -655,7 +655,29 @@ export class Storage extends Service {
   private async remoteOf(entry: CatalogProject): Promise<{ url: string; branch: string } | null> {
     if (!entry.remote || !this.has(entry.remote.provider)) return null;
     const provider = this.get(entry.remote.provider);
-    return provider.toRemote(provider.configSchema.parse(entry.remote.config));
+    const target = await provider.toRemote(provider.configSchema.parse(entry.remote.config));
+    if (entry.dir) await this.cleanOrigin(entry.dir, target.url);
+    return target;
+  }
+
+  /** Every registered provider's helper, for each of Tomrade's own git commands. */
+  private credentials(): GitCredential[] {
+    const out = new Map<string, GitCredential>();
+    for (const provider of this.registry.values()) {
+      const credential = provider.credential?.();
+      if (credential && !out.has(credential.url)) out.set(credential.url, credential);
+    }
+    return [...out.values()];
+  }
+
+  /** Remotes once carried the token in their URL; whenever a folder's remote is used, a credential left there goes. */
+  private async cleanOrigin(dir: string, url: string): Promise<void> {
+    if (!fs.existsSync(dir)) return;
+    try {
+      await this.git(dir).dropRemoteCredential(url);
+    } catch (error) {
+      this.home.logger.warn(`storage: could not clean the remote of ${dir} — ${message(error)}`);
+    }
   }
 
   // ── reading the folder back ──────────────────────────────────────────────────
@@ -1421,7 +1443,9 @@ export class Storage extends Service {
     const ref = this.hub.remote;
     if (!ref || !this.has(ref.provider)) return null;
     const provider = this.get(ref.provider);
-    return provider.toRemote(provider.configSchema.parse(ref.config));
+    const target = await provider.toRemote(provider.configSchema.parse(ref.config));
+    if (this.hub.dir) await this.cleanOrigin(this.hub.dir, target.url);
+    return target;
   }
 
   async hubStatus(): Promise<StorageStatus> {

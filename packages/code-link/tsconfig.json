@@ -12,6 +12,7 @@
     { "path": "../contributions" },
     { "path": "../db" },
     { "path": "../domain" },
+    { "path": "../github" },
     { "path": "../hub" },
     { "path": "../ipc" },
     { "path": "../items" },

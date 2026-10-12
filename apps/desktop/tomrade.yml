@@ -159,6 +159,11 @@ plugins:
     name: ./dist/hub-cloud.js
     config:
       userData: "${userData}"
+  # The one GitHub account this machine uses — for the backlog's repository,
+  # Files, code checkouts and publishing — and the git credential helper that
+  # hands its token to git, so no remote URL carries it.
+  - id: github
+    name: "@tomradex/github"
   # Remote transports for a project's own repository: any git URL…
   - id: storage-git
     name: "@tomradex/storage-git"

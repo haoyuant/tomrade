@@ -4,6 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type {} from "@tomradex/github";
 import type {} from "@tomradex/hub-cloud";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
@@ -147,7 +148,7 @@ const summarize = (v: VersionRow, revocations: Revocation[]): VersionSummary => 
  */
 export class Community extends Service {
   static provide = "community";
-  static inject = ["cloudHub", "settings"];
+  static inject = ["cloudHub", "settings", "github"];
   static Config = CommunityConfig;
 
   private readonly home: Context;
@@ -155,7 +156,7 @@ export class Community extends Service {
   private publisherCache: string | null = null;
   /** Packages fetched to be read before installing, by digest; installing takes them from here. */
   private downloadDir: string | null = null;
-  /** For tests: GitHub access other than through the token in settings. */
+  /** For tests: GitHub access other than through the connected account. */
   github: GitHubAccess;
 
   constructor(
@@ -164,7 +165,7 @@ export class Community extends Service {
   ) {
     super(ctx, "community");
     this.home = ctx;
-    this.github = githubAccess(() => ((this.home.settings.get() as { github?: { token?: string } }).github?.token ?? "").trim());
+    this.github = githubAccess(() => this.home.github.token());
   }
 
   [Service.init]() {
@@ -409,7 +410,7 @@ export class Community extends Service {
       publisher = rows[0]?.github_login ?? null;
     }
     this.publisherCache = publisher;
-    const token = ((this.home.settings.get() as { github?: { token?: string } }).github?.token ?? "").trim();
+    const token = await this.home.github.token();
     return {
       signedIn: !!user,
       email: user?.email ?? null,

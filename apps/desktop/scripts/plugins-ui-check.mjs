@@ -136,7 +136,7 @@ const run = async () => {
   await shot("30-plugins-groups");
   await search("github");
   await sleep(300);
-  check("a search narrows the list to the rows that match", (await rowIds()) === "storage-github,files-github", await rowIds());
+  check("a search narrows the list to the rows that match", (await rowIds()) === "storage-github,files-github,github", await rowIds());
   check("and leaves the module table out of the way", (await $(`!!document.querySelector('.dlg-body .tok-table')`)) === false);
   await search("counter");
   await sleep(300);

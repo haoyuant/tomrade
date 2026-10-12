@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
+import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { fresh, settle } from "@tomradex/testkit";
@@ -154,7 +155,7 @@ async function storeHost(tables: Record<string, Record<string, unknown>[]>, base
     }
   }
   const root = fs.mkdtempSync(path.join(tmp, "root-"));
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], FakeCloud] });
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], GitHubAccount, FakeCloud] });
   const store = new ExtensionStore({ root, lockFile: path.join(root, LOCK_FILE), trustedKeys: { [key.keyId]: key.publicKey }, importer });
   await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }) });
   await w.ctx.plugin(Community, {});

@@ -21,7 +21,7 @@ import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { writeConnectFiles } from "./connect.js";
-import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential } from "./credentials.js";
+import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult, type ScannedBranch } from "./scanner.js";
@@ -215,7 +215,7 @@ const SETTINGS_SECTION = {
  */
 export class CodeLink extends Service {
   static provide = "codeLink";
-  static inject = ["db", "items", "boards", "repos", "hub", "settings", "storage"];
+  static inject = ["db", "items", "boards", "repos", "hub", "settings", "storage", "github"];
   static Config = CodeLinkConfig;
 
   store!: CodeLinkStore;
@@ -290,7 +290,7 @@ export class CodeLink extends Service {
         if (item) input.ticket.completionPolicy = this.completionPolicy(input.projectId, item);
       }
       if (input.cwd && input.workdir && githubHttps(input.workdir.remote)) {
-        input.env = { ...input.env, ...await githubEnvironment(this.git, input.cwd, this.ctx.settings.config.path) };
+        input.env = { ...input.env, ...await this.ctx.github.environment(this.git, input.cwd) };
       }
     });
     // A headless session cannot have survived a restart; say so, and let the ticket offer Continue.
@@ -474,20 +474,15 @@ export class CodeLink extends Service {
   async remoteIdentity(remote: string): Promise<RemoteIdentity> {
     const checkout = this.ctx.repos.checkout(remote).checkout;
     if (!checkout || !fs.existsSync(checkout)) return { host: null, login: null };
-    if (githubHttps(remote) && await usesTomradeCredential(this.git, checkout, this.ctx.settings.config.path)) {
+    if (githubHttps(remote) && await this.ctx.github.usesHelper(this.git, checkout)) {
       const account = await this.githubAccount();
       return { host: "github.com", login: account?.replace(/^@/, "") ?? null, tomrade: true };
     }
     return readRemoteIdentity(this.git, checkout, remote);
   }
 
-  private async githubAccount(): Promise<string | null> {
-    try {
-      const state = await this.ctx.storage.connection("github");
-      return state.connected ? state.label ?? null : null;
-    } catch {
-      return null;
-    }
+  private githubAccount(): Promise<string | null> {
+    return this.ctx.github.account().catch(() => null);
   }
 
   async githubCredentialAccount(projectId: string, repoId: string): Promise<string | null> {
@@ -505,7 +500,7 @@ export class CodeLink extends Service {
     if (!await this.githubAccount()) throw new Error("Connect your GitHub account in Tomrade first.");
     const origin = await new GitFolder(this.git, checkout).remoteUrl();
     if (!origin || !githubHttps(origin) || normalizeRemote(origin) !== normalizeRemote(repo.remote)) throw new Error("The checkout's origin has changed. Choose the checkout again.");
-    await installGithubCredential(this.git, checkout, this.ctx.settings.config.path);
+    await this.ctx.github.installHelper(this.git, checkout);
     await this.inFlight.get(projectId);
     const probe = await probeRemote(this.git, checkout, repo.defaultBranch);
     const reachable = probe.state !== "offline";
@@ -684,7 +679,7 @@ export class CodeLink extends Service {
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
-        const env = await githubEnvironment(this.git, view.worktree, this.ctx.settings.config.path);
+        const env = await this.ctx.github.environment(this.git, view.worktree);
         try {
           url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], view.worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
@@ -739,7 +734,7 @@ export class CodeLink extends Service {
     let url: string | null = null;
     let created = false;
     if (await commandOk("gh")) {
-      const env = await githubEnvironment(this.git, cwd, this.ctx.settings.config.path);
+      const env = await this.ctx.github.environment(this.git, cwd);
       try {
         const out = await exec("gh", ["pr", "create", "--head", link.branch, "--base", repo.defaultBranch, "--title", `${item.key}: ${item.title}`, "--body", `${item.body ?? ""}\n\nRefs ${item.key}`.trim()], cwd, env);
         url = out.trim().split("\n").pop() ?? null;
@@ -772,7 +767,7 @@ export class CodeLink extends Service {
       const checkout = this.ctx.repos.checkout(repo.remote).checkout;
       if (!checkout || !fs.existsSync(checkout)) continue;
       try {
-        await migrateGithubCredential(this.git, checkout, this.ctx.settings.config.path);
+        await this.ctx.github.migrateHelper(this.git, checkout);
       } catch (err) {
         this.ctx.logger.warn(`credential helper migration for ${checkout} failed: ${message(err)}`);
       }

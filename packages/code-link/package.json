@@ -23,6 +23,7 @@
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
+    "@tomradex/github": "workspace:*",
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",

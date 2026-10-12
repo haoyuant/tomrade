@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { GitCredential } from "./git.js";
 
 /**
  * Where a project's folder stands relative to what this machine has published.
@@ -86,6 +87,12 @@ export interface StorageProvider<C = unknown> {
   /** A config for a destination that does not exist yet, from a name alone. */
   draft?(name: string): Promise<C> | C;
   connection?: ProviderConnection;
+  /**
+   * How git authenticates to this provider's remotes, asked before each of
+   * Tomrade's git commands; null leaves the user's own git credentials in
+   * charge. The secret stays with the helper, never in the remote URL.
+   */
+  credential?(): GitCredential | null;
 }
 
 /** What the renderer gets: the schema as JSON Schema, so a form is drawn without the provider's code. */

@@ -136,6 +136,9 @@
     },
     {
       "path": "../../packages/community"
+    },
+    {
+      "path": "../../packages/github"
     }
   ]
 }

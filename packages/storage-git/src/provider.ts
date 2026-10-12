@@ -13,6 +13,7 @@ export interface RemoteProviderOptions<C> {
   settingsSection?: string;
   /** Passed through: a hosting provider supplies the account and the shortcuts. */
   connection?: StorageProvider<C>["connection"];
+  credential?: StorageProvider<C>["credential"];
   draft?: StorageProvider<C>["draft"];
   toRemote(config: C): Promise<RemoteTarget> | RemoteTarget;
   /** Bring the destination into existence — create the repository, say. */
@@ -36,6 +37,7 @@ export function createRemoteProvider<C>(opts: RemoteProviderOptions<C>): Storage
     browse: opts.browse,
     draft: opts.draft,
     connection: opts.connection,
+    credential: opts.credential,
     toRemote: opts.toRemote,
     ensureRemote: opts.ensureRemote
   };
