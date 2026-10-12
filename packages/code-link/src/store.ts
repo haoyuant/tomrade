@@ -185,7 +185,8 @@ export type { DeliveryState, DeliveryView } from "@tomradex/db";
 import type { DeliveryState, DeliveryView } from "@tomradex/db";
 
 export type Readiness = "unknown" | "empty" | "scaffolded";
-export type RemoteState = "ok" | "unreachable" | "unknown";
+/** `none`: the checkout has no origin, so nothing is fetched or pushed. */
+export type RemoteState = "ok" | "unreachable" | "unknown" | "none";
 
 export interface RepoStateView {
   repoId: string;

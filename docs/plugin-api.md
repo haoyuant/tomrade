@@ -831,7 +831,15 @@ this machine's alone (`ctx.repos.selectCheckout(remote, dir)`, verified against
 the folder's origin). If the selected folder is not that checkout, the UI offers
 a separate explicit `ctx.repos.cloneInto(remote, branch, dir)` action which clones
 into a repository-named child of the selected folder; Tomrade never overwrites the
-selected folder's contents. A
+selected folder's contents. A repository can also be added from a folder
+(`ctx.repos.addFromFolder(projectId, dir)`, which only reads it): a folder with
+an origin is added by that origin, reusing a row that names the same repository
+under another spelling; a folder with no origin becomes a **local repository**
+whose identity is its path. Code link then probes and pushes nothing, the agent
+hands its branch over with `link_code` (no pull request), and merging into the
+local default branch finishes the ticket. When such a folder later gains an
+origin, the next scan adopts it as the row's remote (`ctx.repos.adoptOrigins`);
+the row keeps its id. A
 thread on such a workstream runs its engine in a detached worktree of the
 checkout under `<Hub>/worktrees/`, or in the checkout itself when the user
 chose that, and refuses to start while no checkout is named. Tomrade never

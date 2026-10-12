@@ -3,7 +3,7 @@ import type { CommandScope } from "@tomradex/contributions";
 import type { RestoreSummary, StorageInfo, StorageProviderView, StorageStatus } from "@tomradex/storage";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/repos";
-import type { CheckoutSelection, CheckoutView } from "@tomradex/repos";
+import type { CheckoutSelection, CheckoutView, FolderRepo } from "@tomradex/repos";
 import type { CreateFieldInput, FieldOptionInput, FieldOptionPatch, FieldPatch } from "@tomradex/fields";
 import type { Repo, RepoPatch } from "@tomradex/domain";
 import type {
@@ -665,6 +665,7 @@ function useRepoMutation<A, R>(projectId: string | null, fn: (args: A) => Promis
 
 export const useCreateRepo = (projectId: string) =>
   useRepoMutation(projectId, (input: { remote: string; name?: string; defaultBranch?: string }): Promise<Repo> => invoke("repos.create", { ...input, projectId }));
+export const useAddRepoFromFolder = (projectId: string) => useRepoMutation(projectId, (dir: string): Promise<FolderRepo> => invoke("repos.addFromFolder", projectId, dir));
 export const useUpdateRepo = (projectId: string) => useRepoMutation(projectId, (args: { id: string; patch: RepoPatch }) => invoke("repos.update", projectId, args.id, args.patch));
 export const useRemoveRepo = (projectId: string) => useRepoMutation(projectId, (id: string) => invoke("repos.remove", projectId, id));
 export const useSelectCheckout = () => useRepoMutation(null, (args: { remote: string; dir: string }): Promise<CheckoutSelection> => invoke("repos.selectCheckout", args.remote, args.dir));

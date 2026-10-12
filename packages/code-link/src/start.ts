@@ -6,9 +6,8 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
-import type {} from "@tomradex/storage";
 import type { Author, Board, Item, Repo } from "@tomradex/domain";
-import type { Git } from "@tomradex/storage";
+import { GitFolder, type Git } from "@tomradex/storage";
 import { listDecisions } from "./decisions.js";
 import { branchFor } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
@@ -116,8 +115,10 @@ export class Starter {
       state = store.repoState(projectId, repo.id);
     }
     const warnings: string[] = [];
-    const probe = await probeRemote(this.host.git, placement.checkout, repo.defaultBranch);
-    if (probe.state === "offline") {
+    // A checkout with no origin is a local repository: nothing to reach, nothing to push.
+    const local = !(await new GitFolder(this.host.git, placement.checkout).remoteUrl());
+    const probe = local ? null : await probeRemote(this.host.git, placement.checkout, repo.defaultBranch);
+    if (probe?.state === "offline") {
       if (probe.failure !== "network") return { ok: false, gate: "remote", message: remoteFailureMessage(probe.stderr), remote: repo.remote };
       warnings.push(`origin unreachable right now (${probe.detail ?? "network error"}) — commit locally, do not push until it is back`);
     }
@@ -125,7 +126,7 @@ export class Starter {
     // fetch fails — wrong account, no network — looks the same from here, and
     // bootstrapping a repository that is full elsewhere would be the wrong move.
     if (state?.readiness === "empty" || state?.readiness === "unknown") {
-      if (probe.state === "exists") {
+      if (probe?.state === "exists") {
         // The remote has the branch but this machine never fetched it: fetch now and read again.
         await this.host.scan(projectId);
         state = store.repoState(projectId, repo.id);
@@ -136,7 +137,7 @@ export class Starter {
     const deliveryLinks = store.links(projectId, item.id).filter((link) => link.delivery === delivery.sequence);
     const baseBranch = branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
     const plannedBranch = deliveryLinks.find((link) => link.repoId === repo.id && link.branch)?.branch ?? (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
-    if (probe.state !== "offline" && (state?.agentPush ?? true)) {
+    if (probe && probe.state !== "offline" && (state?.agentPush ?? true)) {
       const pushed = await this.host.git(["push", "--dry-run", "origin", `HEAD:refs/heads/${plannedBranch}`], { cwd: placement.checkout, ok: true });
       if (pushed.code !== 0) {
         const stderr = scrubRemoteOutput(pushed.stderr ?? "");
@@ -239,8 +240,8 @@ export class Starter {
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
     const basePrompt = continued
-      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy)
-      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy });
+      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local)
+      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local });
     const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
 
     if (opts.mode === "run") {
