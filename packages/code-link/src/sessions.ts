@@ -346,13 +346,14 @@ export class Sessions {
     this.options.onChange(projectId);
   }
 
-  end(projectId: string, sessionId: string, state: "ended" | "lost" = "ended"): void {
+  /** `quiet` skips the follow-up rescan, for sessions closed because their tickets are already done. */
+  end(projectId: string, sessionId: string, state: "ended" | "lost" = "ended", quiet = false): void {
     const session = this.store.session(projectId, sessionId);
     if (!session || session.state === "ended") return;
     this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now(), activity: null });
     this.release(sessionId);
     this.options.onChange(projectId);
-    if (state === "ended") this.options.onEnd?.(this.store.session(projectId, sessionId)!);
+    if (state === "ended" && !quiet) this.options.onEnd?.(this.store.session(projectId, sessionId)!);
   }
 
   /** The process Tomrade launched for the session, if its script left a pid and it still answers. */

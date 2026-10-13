@@ -561,6 +561,80 @@ describe("starting a ticket", () => {
     expect(ctx.contributions.commands().find((c) => c.id === "code-link.start-run")).toMatchObject({ title: "在这里开始工作项", group: "代码" });
   });
 
+  it("archives completed code conversations while retaining their messages and links", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Archive delivered code");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    const messages = agent.store.messages(project.id, started.threadId);
+    await ctx.tools.execute("link_code", { key: item.key, branch: started.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    expect(ctx.items.get(project.id, item.id)?.status).toBe("done");
+    expect(agent.store.threads(project.id).map(t => t.id)).not.toContain(started.threadId);
+    expect(agent.store.archivedThreads(project.id).map(t => t.id)).toContain(started.threadId);
+    expect(agent.store.messages(project.id, started.threadId)).toEqual(messages);
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ threadId: started.threadId, branch: started.branch, prState: "merged" });
+    expect(codeLink.store.session(project.id, started.sessionId)).toMatchObject({ state: "ended", threadId: started.threadId });
+  });
+
+  it.each(["scan", "db/opened", "storage/imported"] as const)("backfills completed sessions on %s without repeating archive operations", async trigger => {
+    const { codeLink, ctx, agent, project, repo, ticket } = await machine(codeRepo());
+    const done = ticket("Previously completed");
+    ctx.items.update(project.id, done.id, { status: "done" }, "human");
+    const open = ticket("Still needs work");
+    const cancelled = ticket("Cancelled work");
+    ctx.items.update(project.id, cancelled.id, { status: "cancelled" }, "human");
+    const seed = (itemIds: string[], mode: "headless" | "terminal" = "headless") => {
+      const thread = agent.store.createThread(project.id, "fake-code", "Historical code", null, itemIds[0], "tom-history", "code");
+      return codeLink.store.createSession(project.id, { repoId: repo!.id, branch: "tom-history", itemIds, mode, agent: "fake-code", threadId: thread.id, device: "test" });
+    };
+    const completed = [seed([done.id]), seed([done.id], "terminal")];
+    const untouched = [seed([open.id]), seed([done.id, open.id]), seed([cancelled.id]), seed([])];
+    const archive = vi.spyOn(agent, "archiveThread");
+    const check = async () => {
+      if (trigger === "scan") await codeLink.scan(project.id);
+      else ctx.emit(trigger, project.id);
+    };
+    await check();
+    for (const session of completed) {
+      expect(agent.store.thread(project.id, session.threadId!)?.archived).toBe(true);
+      expect(codeLink.store.session(project.id, session.id)?.state).toBe("ended");
+    }
+    for (const session of untouched) {
+      expect(agent.store.thread(project.id, session.threadId!)?.archived).toBe(false);
+      expect(codeLink.store.session(project.id, session.id)?.state).not.toBe("ended");
+    }
+    expect(archive).toHaveBeenCalledTimes(2);
+    const rows = completed.map(session => codeLink.store.session(project.id, session.id));
+    await check();
+    expect(archive).toHaveBeenCalledTimes(2);
+    expect(completed.map(session => codeLink.store.session(project.id, session.id))).toEqual(rows);
+  });
+
+  it("defers archiving a completed ticket until its active run ends", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    agent.engine({ ...fakeCodeEngine([]), id: "held", async turn() { await gate; return { stop: "end" }; } });
+    const item = ticket("Finish while running");
+    const started = await codeLink.start(project.id, item.id, { mode: "run", engine: "held" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    try {
+      ctx.items.update(project.id, item.id, { status: "done" }, "human");
+      expect(agent.store.thread(project.id, started.threadId)?.archived).toBe(false);
+      expect(codeLink.store.session(project.id, started.sessionId)?.state).not.toBe("ended");
+    } finally {
+      release();
+    }
+    await untilRunsSettle(agent);
+    expect(agent.store.thread(project.id, started.threadId)?.archived).toBe(true);
+    expect(codeLink.store.session(project.id, started.sessionId)?.state).toBe("ended");
+  });
+
   it("brings an archived conversation back when its ticket is continued", async () => {
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
     await ctx.repos.setCheckout(repo!.remote, checkout!);
