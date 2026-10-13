@@ -507,7 +507,8 @@ export class Doctor extends Service {
       at: Date.now(),
       version: this.config.version,
       rows: rows.map((r) => ({ id: r.id, title: r.title, state: r.state, line: r.line ?? "", ...(evidence[r.id] ? { evidence: evidence[r.id] } : {}) })),
-      facts: Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, scrub(v)])),
+      // A plugin's check may hand back a non-string fact.
+      facts: Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, scrub(String(v))])),
       issues: issues.map((i) => i.id),
       findings,
       logs: await this.logs(topic.engineId)
@@ -687,11 +688,13 @@ export class Doctor extends Service {
         applies: (topic) => !topic.engineId,
         async run() {
           const words = doctor.words();
-          const hub = doctor.ctx.get("cloudHub") as { info(): { user: unknown; status: string; pending: number } } | undefined;
+          const hub = doctor.ctx.get("cloudHub") as { info(): { user: unknown; status: { state: string; detail?: string }; pending: number } } | undefined;
           if (!hub) return { state: "skip", line: words.syncOff };
           const info = hub.info();
           if (!info.user) return { state: "warn", line: words.syncOff };
-          return { state: /error|offline|conflict/i.test(info.status) ? "warn" : "ok", line: words.syncState(info.status, info.pending), facts: { sync: info.status } };
+          const { state, detail } = info.status;
+          const status = detail ? `${state} (${detail})` : state;
+          return { state: /error|unavailable|diverged/.test(state) ? "warn" : "ok", line: words.syncState(status, info.pending), facts: { sync: state } };
         }
       }
     ];
