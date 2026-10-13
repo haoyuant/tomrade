@@ -2,26 +2,30 @@
 # Registers one of the Mac's self-hosted runners with a repository
 # (docs/releasing.md):
 #
-#   .github/runners/setup.sh arm64 haoyuant/tomrade
+#   .github/runners/setup.sh arm64 haoyuant/tomrade 1       # ~/actions-runners/tomrade-1
 #   .github/runners/setup.sh arm64 haoyuant/tomrade 2       # one more, beside it
-#   .github/runners/setup.sh arm64 haoyuant/tomrade-site
+#   .github/runners/setup.sh arm64 haoyuant/tomrade-site    # ~/actions-runners/tomrade-site
 #
 # A number after the repository adds another Mac runner with the same labels,
-# so another job runs at the same time. gh must be signed in as an admin of the
-# repository. Running it again replaces that runner.
+# so another job runs at the same time. Number 1 keeps the unnumbered runner
+# name the first runner was registered under. gh must be signed in as an admin
+# of the repository. Running it again replaces that runner.
 set -euo pipefail
 
 VERSION=2.338.0
 kind=${1:?kind: arm64}
 repo=${2:?repository, like haoyuant/tomrade}
-instance=${3:+-$3}
+number=${3:-}
+folder=${repo#*/}${number:+-$number}
+instance=${number:+-$number}
+if [ "$number" = 1 ]; then instance=; fi
 case $kind in
   arm64) sha=df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2 ;;
   *) echo "Unknown kind: $kind" >&2; exit 1 ;;
 esac
 token=$(gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token)
 
-dir="$HOME/actions-runners/${repo#*/}-mac-$kind$instance"
+dir="$HOME/actions-runners/$folder"
 if [ -f "$dir/.service" ]; then
   (cd "$dir" && ./svc.sh stop && ./svc.sh uninstall) || true
 fi
