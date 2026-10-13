@@ -39,8 +39,8 @@ Hosted macOS minutes count ten times against the account's monthly allowance, an
 
 | Runner | Repository | Labels |
 | --- | --- | --- |
-| `~/actions-runners/tomrade-mac-arm64`, `-2`, `-3`, `-4` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
-| `~/actions-runners/tomrade-site-mac-arm64` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
+| `~/actions-runners/tomrade-1`, `-2`, `-3`, `-4` | haoyuant/tomrade | `self-hosted, macOS, ARM64` |
+| `~/actions-runners/tomrade-site` | haoyuant/tomrade-site | `self-hosted, macOS, ARM64` |
 
 The x64 Mac app builds on the arm64 Mac. `pnpm install --cpu=arm64 --cpu=x64` installs both arches' native packages, and `apps/desktop/scripts/after-pack.cjs` leaves the app only its own esbuild. It also drops the agent SDK's bundled Claude Code binary from every app: the Claude Code engine runs the person's own `claude`, like the other local agents. better-sqlite3 ships prebuilt binaries for every platform and picks one at run time. Each Mac build writes an update manifest listing only its own zip; the release job merges the two.
 
@@ -56,14 +56,14 @@ The Mac runners are LaunchAgents, so they run while the user is logged in (codes
 
 ```sh
 export GH_TOKEN=$(gh auth token --user haoyuant)
-.github/runners/setup.sh arm64 haoyuant/tomrade
+.github/runners/setup.sh arm64 haoyuant/tomrade 1
 .github/runners/setup.sh arm64 haoyuant/tomrade 2
 .github/runners/setup.sh arm64 haoyuant/tomrade 3
 .github/runners/setup.sh arm64 haoyuant/tomrade 4
 .github/runners/setup.sh arm64 haoyuant/tomrade-site
 ```
 
-Check on them under Settings → Actions → Runners, or with `./svc.sh status` in a runner's folder (logs in `~/Library/Logs/actions.runner.*`). While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
+The four tomrade runners are interchangeable: each job goes to whichever is free. Check on them under Settings → Actions → Runners, or with `./svc.sh status` in a runner's folder (logs in `~/Library/Logs/actions.runner.*`). While the Mac is off, jobs wait for it. Only collaborators can start these workflows (tags, releases, manual runs). If the repository goes public, don't add `pull_request` workflows to these runners: a fork's code would run on the Mac.
 
 ## Publishing: the website follows
 
