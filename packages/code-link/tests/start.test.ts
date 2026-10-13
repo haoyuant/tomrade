@@ -13,6 +13,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
+import { fakeLlm } from "@tomradex/llm";
 import { CodeLink, BOOTSTRAP_LABEL, sessionContext } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
@@ -87,7 +88,7 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
   };
 }
 
-async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string } = {}) {
+async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const turns: TurnInput[] = [];
@@ -102,6 +103,7 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
       Contributions,
       Agent,
       enginePlugin,
+      ...(opts.llm ? [fakeLlm(opts.llm)] : []),
       [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git", defaultsPath: opts.defaultsPath ?? path.join(hubDir, "code-link.json") }]
     ]
   });
@@ -417,6 +419,52 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "Session")?.value).toMatch(/^idle · run by Tomrade/);
     expect(section.rows.find((r) => r.label === "Worktree")).toMatchObject({ value: result.worktree, command: "code-link.open-terminal" });
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
+  });
+
+  it("names a new branch on a Chinese title with the model's English slug, and falls back to the local rule without a model", async () => {
+    // The model answers only the CJK title; the plain one is slugged locally and never asked.
+    const asked: string[] = [];
+    const world = await machine(codeRepo(), {
+      llm: (system, user) => {
+        asked.push(user);
+        expect(system).toContain("git branch");
+        return { slug: user.includes("统一") ? "Unify Usage Statistics" : "should-not-be-asked" };
+      }
+    });
+    await world.ctx.repos.setCheckout(world.repo!.remote, world.checkout!);
+    const chinese = world.ticket("统一 ticket 用量与用量统计的 token 口径");
+    const result = await world.codeLink.start(world.project.id, chinese.id, { mode: "run" });
+    expect(result).toMatchObject({ ok: true, branch: `tom-${chinese.keyNum}/unify-usage-statistics` });
+    expect(asked).toEqual(["统一 ticket 用量与用量统计的 token 口径"]);
+
+    // Starting the same ticket again continues its branch and does not ask the model a second time.
+    const again = await world.codeLink.start(world.project.id, chinese.id, { mode: "run" });
+    expect(again).toMatchObject({ ok: true, continued: true, branch: result.ok ? result.branch : "" });
+    expect(asked).toHaveLength(1);
+
+    // A model that answers with prose or rubbish cannot leak it into the branch.
+    const messy = await machine(codeRepo(), { llm: () => ({ slug: "  Unify usage!!! statistics. " }) });
+    await messy.ctx.repos.setCheckout(messy.repo!.remote, messy.checkout!);
+    const other = messy.ticket("统一 ticket 用量");
+    const tidy = await messy.codeLink.start(messy.project.id, other.id, { mode: "run" });
+    if (!tidy.ok) throw new Error(tidy.message);
+    expect(tidy.branch).toMatch(/^tom-\d+\/[a-z0-9-]+$/);
+    expect(tidy.branch).toBe(`tom-${other.keyNum}/unify-usage-statistics`);
+  });
+
+  it("falls back to a local slug when no model answers a Chinese title", async () => {
+    const world = await machine(codeRepo(), { llm: () => ({ nope: true }) }); // the answer does not fit the schema
+    await world.ctx.repos.setCheckout(world.repo!.remote, world.checkout!);
+    const item = world.ticket("统一 ticket 用量与用量统计的 token 口径");
+    const result = await world.codeLink.start(world.project.id, item.id, { mode: "run" });
+    // No model: the same latin fragments the local rule has always found.
+    expect(result).toMatchObject({ ok: true, branch: `tom-${item.keyNum}/ticket-token` });
+
+    const symbols = await machine(codeRepo(), { llm: () => ({ slug: "!!!" }) });
+    await symbols.ctx.repos.setCheckout(symbols.repo!.remote, symbols.checkout!);
+    const empty = symbols.ticket("!!! ???");
+    const fallback = await symbols.codeLink.start(symbols.project.id, empty.id, { mode: "run" });
+    expect(fallback).toMatchObject({ ok: true, branch: `tom-${empty.keyNum}/work` });
   });
 
   it("works a repository with no remote: nothing probed or pushed, the branch handed over for review, a local merge finishes it", async () => {
