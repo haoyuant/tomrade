@@ -352,11 +352,157 @@ describe("code link", () => {
     expect(link.mergedSha).toBe(git(["rev-parse", "HEAD"], checkout));
   });
 
+  it.each(["done", "cancelled"] as const)("does not open another delivery when a %s ticket's branch is recreated from main", async (status) => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Closed work", "todo");
+      const branch = `tom-${item.keyNum}/work`;
+      const originalSha = commitOn(checkout, branch, "work.ts", `${item.key}: work`);
+      await codeLink.scan(project.id);
+      if (status === "done") {
+        git(["checkout", "-q", "main"], checkout);
+        git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+        git(["push", "-q", "origin", "main"], checkout);
+        await codeLink.scan(project.id);
+      } else {
+        items.update(project.id, item.id, { status }, "human");
+      }
+      const history = codeLink.links(project.id, item.id);
+      const mainSha = commitOn(checkout, "main", "unrelated.ts", "Unrelated main change");
+      git(["push", "-q", "origin", "main"], checkout);
+      git(["branch", "-f", branch, "main"], checkout);
+      expect(mainSha).not.toBe(originalSha);
+
+      await codeLink.scan(project.id);
+      await codeLink.scan(project.id);
+
+      expect(items.get(project.id, item.id)!.status).toBe(status);
+      expect(codeLink.deliveries(project.id, item.id).map(d => [d.sequence, d.state])).toEqual([[1, status === "done" ? "completed" : "cancelled"]]);
+      expect(codeLink.links(project.id, item.id)).toEqual(history);
+    } finally { await ctx.fiber.dispose(); }
+  });
+
+  it.each(["done", "cancelled"] as const)("ignores a newly discovered branch on a %s ticket without a delivery", async (status) => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Already closed", status);
+      commitOn(checkout, `tom-${item.keyNum}/work`, "work.ts", `${item.key}: unexpected work`);
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)).toEqual([]);
+      expect(codeLink.deliveries(project.id, item.id)).toEqual([]);
+    } finally { await ctx.fiber.dispose(); }
+  });
+
+  it.each(["done", "cancelled"] as const)("cancels an accidental scan-only delivery on a %s ticket and withdraws its proposals", async (status) => {
+    const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Accidental delivery", status);
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.finishActiveDelivery(project.id, item.id, status === "done" ? "completed" : "cancelled");
+      commitOn(checkout, "main", "unrelated.ts", "Unrelated main change");
+      git(["push", "-q", "origin", "main"], checkout);
+      const branch = `tom-${item.keyNum}/work`;
+      git(["branch", branch, "main"], checkout);
+      const accidental = codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch }, { source: "scan", headSha: git(["rev-parse", "main"], checkout), ahead: 0 });
+      codeLink.store.addProposal(project.id, { itemId: item.id, delivery: accidental.delivery, linkId: accidental.id, kind: "flag", fromStatus: status, toStatus: null, reason: "Accidental scan", evidenceSha: accidental.headSha });
+
+      await codeLink.scan(project.id);
+      await codeLink.scan(project.id);
+
+      expect(codeLink.deliveries(project.id, item.id)).toEqual([expect.objectContaining({ sequence: 1, state: status === "done" ? "completed" : "cancelled" }), expect.objectContaining({ sequence: 2, state: "cancelled", completedAt: expect.any(Number) })]);
+      expect(codeLink.store.activeDelivery(project.id, item.id)).toBeNull();
+      expect(codeLink.links(project.id, item.id)).toHaveLength(1);
+      expect(codeLink.proposals(project.id, item.id)).toEqual([]);
+      expect(codeLink.store.proposals(project.id, item.id, "any")[0].state).toBe("stale");
+      const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find(s => s.id === "code")!;
+      expect(section.rows.find(row => row.label === "Delivery")?.value).toBe("#2 · cancelled");
+      expect(items.get(project.id, item.id)!.status).toBe(status);
+
+      items.update(project.id, item.id, { status: "todo" }, "human");
+      commitOn(checkout, branch, "revision.ts", `${item.key}: reopened work`);
+      await codeLink.scan(project.id);
+      expect(codeLink.store.activeDelivery(project.id, item.id)?.sequence).toBe(3);
+      expect(codeLink.links(project.id, item.id).at(-1)?.delivery).toBe(3);
+    } finally { await ctx.fiber.dispose(); }
+  });
+
+  it("keeps closed tickets' deliveries with real evidence or an explicit link", async () => {
+    const { codeLink, ctx, db, project, repo, ticket } = await machine(codeRepo());
+    try {
+      const patches = [
+        { source: "manual" as const }, { source: "start" as const }, { source: "mcp" as const },
+        { ahead: 1 }, { mergedSha: "merged" }, { prNumber: 191 }, { prUrl: "https://github.com/example/repo/pull/191" }, { prState: "open" as const }, { threadId: "thread" }
+      ];
+      const protectedItems = patches.map(patch => {
+        const item = ticket("Has evidence", "cancelled");
+        codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: `missing-${item.keyNum}` }, patch);
+        return item;
+      });
+      for (const evidence of ["session", "output", "submission"] as const) {
+        const item = ticket(`Has ${evidence}`, "cancelled");
+        codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: `missing-${item.keyNum}` }, {});
+        const active = codeLink.store.activeDelivery(project.id, item.id)!;
+        if (evidence === "session") {
+          const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "missing", delivery: active.sequence, itemIds: [item.id], mode: "headless", agent: "codex", threadId: null, device: "test" });
+          codeLink.store.patchSession(project.id, session.id, { state: "ended", endedAt: Date.now() });
+        } else {
+          const history = evidence === "output"
+            ? { ...item.evidence, resources: [{ id: "output", name: "Guide", role: "output", deliveryId: active.id, file: { fileId: "guide", versionId: "v1" }, createdBy: "human", createdAt: 1 }] }
+            : { ...item.evidence, submissions: [{ id: "submission", deliveryId: active.id, report: "Review me", artifactIds: [], submittedBy: "human", submittedAt: 1 }] };
+          db.prepare("UPDATE items SET evidence_json = ? WHERE id = ?").run(JSON.stringify(history), item.id);
+        }
+        protectedItems.push(item);
+      }
+      await codeLink.scan(project.id);
+      for (const item of protectedItems) expect(codeLink.store.activeDelivery(project.id, item.id)?.state).toBe("active");
+    } finally { await ctx.fiber.dispose(); }
+  });
+
+  it.each(["todo", "doing"] as const)("opens a new delivery when completed work is reopened to %s", async (status) => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Reopen work", "done");
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.finishActiveDelivery(project.id, item.id, "completed");
+      const branch = `tom-${item.keyNum}/work`;
+      git(["branch", branch, "main"], checkout);
+      await codeLink.scan(project.id);
+      items.update(project.id, item.id, { status }, "human");
+      await codeLink.scan(project.id);
+      expect(codeLink.deliveries(project.id, item.id).map(d => [d.sequence, d.state])).toEqual([[1, "completed"], [2, "active"]]);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, delivery: 2 });
+      expect(items.get(project.id, item.id)!.status).toBe(status);
+    } finally { await ctx.fiber.dispose(); }
+  });
+
+  it.each([false, true])("waits for every linked repository before repairing a scan-only delivery (new commits: %s)", async (newCommits) => {
+    const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
+    try {
+      const second = codeRepo();
+      const secondRepo = ctx.repos.create({ projectId: project.id, remote: second.remote });
+      await ctx.repos.setCheckout(second.remote, second.checkout);
+      const item = ticket("Cross-repository scan", "done");
+      const branch = `tom-${item.keyNum}/work`;
+      for (const [cwd, repoId] of [[checkout, repo.id], [second.checkout, secondRepo.id]]) {
+        git(["branch", branch, "main"], cwd);
+        codeLink.store.upsertLink(project.id, { itemId: item.id, repoId, branch }, { headSha: git(["rev-parse", "main"], cwd), source: "scan", ahead: 0 });
+      }
+      if (newCommits) commitOn(second.checkout, branch, "work.ts", `${item.key}: actual work`);
+
+      await codeLink.scan(project.id);
+
+      expect(codeLink.deliveries(project.id, item.id)[0].state).toBe(newCommits ? "active" : "cancelled");
+      if (newCommits) expect(codeLink.links(project.id, item.id).find(link => link.repoId === secondRepo.id)?.ahead).toBe(1);
+    } finally { await ctx.fiber.dispose(); }
+  });
+
   it("flags a ticket that says done while its branch is unmerged, and lets a person settle it", async () => {
     const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
-    const item = ticket("Claimed done", "done");
+    const item = ticket("Claimed done", "doing");
     const branch = `tom-${item.keyNum}/early`;
     commitOn(checkout, branch, "b.ts", `TOM-${item.keyNum}`);
+    await codeLink.scan(project.id);
+    items.update(project.id, item.id, { status: "done" }, "human");
 
     const summary = await codeLink.scan(project.id);
     expect(summary.changed).toBe(0);

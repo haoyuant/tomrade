@@ -859,6 +859,7 @@ export class CodeLink extends Service {
       summary.changed += outcome.changed;
       summary.proposals += outcome.proposals;
     }
+    for (const item of this.ctx.items.list({ projectId })) this.closeEmptyScannedDelivery(projectId, item, now);
     this.unlinkedByProject.set(projectId, unlinked);
     this.scannedAt.set(projectId, now);
     this.notify(projectId);
@@ -886,6 +887,8 @@ export class CodeLink extends Service {
         const current = active ? sameBranch.find((link) => link.delivery === active.sequence) : undefined;
         const unchangedHistory = !current ? sameBranch.find((link) => link.headSha === b.sha) : undefined;
         const target = current ?? unchangedHistory;
+        // A recreated branch is not a request to reopen a closed ticket.
+        if (!target && (item.status === "done" || item.status === "cancelled")) continue;
         const merged = landed(b, target);
         const link = target
           ? this.store.patchLink(projectId, target.id, {
@@ -919,6 +922,8 @@ export class CodeLink extends Service {
       this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: merged ? result.defaultSha : undefined, ...(merged && l.prState === "open" ? { prState: "merged" } : {}), lastSeenAt: now });
       seen.add(l.id);
     }
+
+    for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
 
     for (const [keyNum, commit] of result.mergedKeys) {
       const item = byNum.get(keyNum);
@@ -963,6 +968,21 @@ export class CodeLink extends Service {
       proposals += r.proposals;
     }
     return { links, changed, proposals };
+  }
+
+  private closeEmptyScannedDelivery(projectId: string, item: Item, now: number, repoId?: string): void {
+    if (item.status !== "done" && item.status !== "cancelled") return;
+    const active = this.store.activeDelivery(projectId, item.id);
+    if (!active) return;
+    const links = this.store.links(projectId, item.id).filter(link => link.delivery === active.sequence);
+    // Cross-repository attempts must wait until every repository has been scanned.
+    if (repoId && links.some(link => link.repoId !== repoId)) return;
+    if (!links.length || links.some(link => link.source !== "scan" || link.ahead > 0 || link.mergedSha || link.prNumber !== null || link.prUrl || link.prState || link.threadId)) return;
+    if (this.store.sessions(projectId, { itemId: item.id, delivery: active.sequence }).length) return;
+    if (item.evidence.resources.some(resource => resource.role === "output" && resource.deliveryId === active.id) || item.evidence.submissions.some(submission => submission.deliveryId === active.id)) return;
+    // Keep the accidental attempt as cancelled history; it has no delivery evidence.
+    this.store.finishActiveDelivery(projectId, item.id, "cancelled", now);
+    for (const proposal of this.store.proposalsForDelivery(projectId, item.id, active.sequence, "open")) this.store.setProposalState(projectId, proposal.id, "stale");
   }
 
   /** Re-judge one ticket in one repository after a link changed by tool or by hand, taking every branch as present. */
