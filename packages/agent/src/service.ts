@@ -54,6 +54,7 @@ import {
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, redactSecrets } from "./failure.js";
+import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 export interface WorkdirStatus {
@@ -81,13 +82,11 @@ const recommendationSchema = z.object({
   reason: z.string().min(1)
 });
 
-/** What one engine's runs added up to over a stretch of time, across every open project. */
-export interface EngineUsage {
+/** What one engine's finished runs added up to over a stretch of time, across every open project. */
+export interface EngineUsage extends TokenBreakdown {
   engine: string;
   title: string;
   runs: number;
-  inputTokens: number;
-  outputTokens: number;
   /** Null when none of the runs said what it cost (Codex, the loop): tokens are all there is. */
   costUsd: number | null;
 }
@@ -648,20 +647,12 @@ export class Agent extends Service {
       for (const projectId of this.ctx.db.openIds()) {
         const rows = this.ctx.db
           .for(projectId)
-          .prepare(
-            `SELECT engine, COUNT(*) AS runs, SUM(COALESCE(json_extract(usage_json, '$.inputTokens'), 0)) AS input, SUM(COALESCE(json_extract(usage_json, '$.outputTokens'), 0)) AS output, SUM(cost_usd) AS cost
-             FROM plugin_agent_runs WHERE started_at >= ? GROUP BY engine`
-          )
-          .all(since) as { engine: string; runs: number; input: number; output: number; cost: number | null }[];
+          .prepare("SELECT engine, usage_json, metrics_json, cost_usd FROM plugin_agent_runs WHERE started_at >= ?")
+          .all(since) as { engine: string; usage_json: string | null; metrics_json: string | null; cost_usd: number | null }[];
         for (const r of rows) {
-          const was = by.get(r.engine) ?? { engine: r.engine, title: titles.get(r.engine) ?? r.engine, runs: 0, inputTokens: 0, outputTokens: 0, costUsd: null };
-          by.set(r.engine, {
-            ...was,
-            runs: was.runs + r.runs,
-            inputTokens: was.inputTokens + (r.input ?? 0),
-            outputTokens: was.outputTokens + (r.output ?? 0),
-            costUsd: r.cost === null ? was.costUsd : (was.costUsd ?? 0) + r.cost
-          });
+          const was = by.get(r.engine) ?? { engine: r.engine, title: titles.get(r.engine) ?? r.engine, runs: 0, ...NO_TOKENS, costUsd: null };
+          const tokens = runTokens(r.usage_json ? JSON.parse(r.usage_json) : null, r.metrics_json ? JSON.parse(r.metrics_json) : null);
+          by.set(r.engine, { ...was, ...addTokens(was, tokens), runs: was.runs + 1, costUsd: r.cost_usd === null ? was.costUsd : (was.costUsd ?? 0) + r.cost_usd });
         }
       }
       return [...by.values()].sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs);

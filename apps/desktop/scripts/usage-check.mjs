@@ -90,7 +90,7 @@ const run = async () => {
   await shot("usage-02-settings-usage");
   const usage = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] tr[data-engine="spender"]')].map((r) => [...r.querySelectorAll('td')].map((d) => d.textContent))`);
   check("Usage lists the engine for today and the week", usage.length === 2, usage);
-  check("with its runs, tokens and spend", JSON.stringify(usage[0]) === JSON.stringify(["Spender", "3", "6,000", "900", "$1.75"]), usage[0]);
+  check("with its runs, tokens and spend", JSON.stringify(usage[0]) === JSON.stringify(["Spender", "3", "6,000", "6,000", "0", "0", "900", "$1.75"]), usage[0]);
   check("harness reached the end", true);
 };
 

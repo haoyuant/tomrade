@@ -11,6 +11,7 @@ export { describeFailure, redactSecrets, DETAILS_MAX_CHARS } from "./failure.js"
 export { resultLine, stepHint, stepSummary } from "./steps.js";
 export { HOUSE_RULES, RULES_INSTRUCTIONS_MAX, RULES_MAX_CHARS, rulesInstructions, rulesSection, attachmentsLine, focusSuffix, generalBrief, generalOpener, generalPrompt, playbookSection, promptSections, waitsOnLine } from "./prompt.js";
 export { evaluateTurn, summarizeEvaluation, type TurnMetrics, type EvaluationObservation } from "./evaluation.js";
+export { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
 export {
   isSuspended,
   PANEL_SURFACES,

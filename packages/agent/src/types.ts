@@ -123,6 +123,8 @@ export interface RunView {
   stop: string | null;
   error: string | null;
   usage: { inputTokens: number; outputTokens: number } | null;
+  /** `usage` split into new input, cache read, cache write and output — what every surface shows. */
+  tokens?: import("./tokens.js").TokenBreakdown | null;
   costUsd: number | null;
   changes: number;
   reverted: boolean;

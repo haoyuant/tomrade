@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type { Author } from "@tomradex/domain";
 import type { Block, CardView, GeneralExecution, ParkView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
+import { runTokens } from "./tokens.js";
 
 const SURFACES: ThreadSurface[] = ["assistant", "code", "doctor", "probe"];
 
@@ -209,24 +210,29 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   updatedAt: r.updated_at
 });
 
-const toRun = (r: RunRow): RunView => ({
-  playbooks: JSON.parse(r.playbooks_json ?? "[]"),
-  execution: r.execution_json ? JSON.parse(r.execution_json) : null,
-  id: r.id,
-  threadId: r.thread_id,
-  status: r.status,
-  engine: r.engine,
-  stop: r.stop,
-  error: r.error,
-  usage: r.usage_json ? (JSON.parse(r.usage_json) as RunView["usage"]) : null,
-  costUsd: r.cost_usd,
-  changes: r.changes,
-  reverted: r.reverted === 1,
-  keptOnRevert: r.kept,
-  startedAt: r.started_at,
-  endedAt: r.ended_at
-  , metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null
-});
+const toRun = (r: RunRow): RunView => {
+  const usage = r.usage_json ? (JSON.parse(r.usage_json) as RunView["usage"]) : null;
+  const metrics = r.metrics_json ? (JSON.parse(r.metrics_json) as RunView["metrics"]) : null;
+  return {
+    playbooks: JSON.parse(r.playbooks_json ?? "[]"),
+    execution: r.execution_json ? JSON.parse(r.execution_json) : null,
+    id: r.id,
+    threadId: r.thread_id,
+    status: r.status,
+    engine: r.engine,
+    stop: r.stop,
+    error: r.error,
+    usage,
+    tokens: runTokens(usage, metrics),
+    costUsd: r.cost_usd,
+    changes: r.changes,
+    reverted: r.reverted === 1,
+    keptOnRevert: r.kept,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    metrics
+  };
+};
 
 /**
  * Table declarations for `ctx.db.migrate`: how each table's rows belong to a

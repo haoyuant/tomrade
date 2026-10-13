@@ -49,6 +49,8 @@ export const agentPanel = {
     confirmNote: "Nothing runs until you confirm — or type a reply below.",
 
     revertedPlain: "Reverted",
+    tokensSplit: "↑{{input}} (new {{uncached}} · cache read {{read}} · cache write {{write}}) ↓{{output}}",
+    tokensNew: "↑{{input}} new ↓{{output}}",
     revertedKept: "Reverted · kept {{n}}",
     changedOne: "Changed {{n}} item",
     changedMany: "Changed {{n}} items",
@@ -196,6 +198,8 @@ export const agentPanel = {
     confirmNote: "在你确认之前不会执行任何操作——也可以直接在下方输入回复。",
 
     revertedPlain: "已撤销",
+    tokensSplit: "↑{{input}}（未缓存 {{uncached}} · 缓存读取 {{read}} · 缓存写入 {{write}}）↓{{output}}",
+    tokensNew: "↑{{input}} 未缓存 ↓{{output}}",
     revertedKept: "已撤销 · 保留了 {{n}} 项",
     changedOne: "变更了 {{n}} 个工作项",
     changedMany: "变更了 {{n}} 个工作项",
