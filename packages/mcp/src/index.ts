@@ -41,13 +41,14 @@ const block = (text: string) => ({ type: "text" as const, text });
  * A tool that already speaks prose is passed through as it is; anything else
  * is compact JSON. Indenting a result costs the model roughly a third more
  * context for nothing it reads. A long list of records comes back as the loop
- * reads it — its note, then rows that are still valid JSON; any other long
- * result stays whole, for the client to size.
+ * reads it — its note, then rows that are still valid JSON — unless the tool
+ * declares its result reference read whole; any other long result stays
+ * whole, for the client to size.
  */
-function textResult(data: unknown) {
+function textResult(data: unknown, whole?: boolean) {
   if (typeof data === "string") return { content: [block(data)] };
   const json = JSON.stringify(data);
-  const list = json && json.length > LONG_RESULT ? compactList(data) : null;
+  const list = !whole && json && json.length > LONG_RESULT ? compactList(data) : null;
   return { content: list ? [block(list.note), block(list.json)] : [block(json)] };
 }
 const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
@@ -291,9 +292,9 @@ export class Mcp extends Service {
           if (token) {
             const binding = this.bindings.get(token);
             if (!binding) throw new Error("No active run for this runtime");
-            return textResult(await binding.execute(tool.name, args, extra.signal));
+            return textResult(await binding.execute(tool.name, args, extra.signal), tool.whole);
           }
-          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }));
+          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }), tool.whole);
         } catch (e) {
           return errorResult(e);
         }

@@ -46,6 +46,7 @@ export default {
       name: "diagram_schema", title: "Read diagram schema",
       description: "Read Archify's JSON schema, shared definitions or one example for a system diagram. Fetch all three resources before authoring. Installs the pinned Archify runtime on first use.",
       input: z.object({ type: z.enum(diagramTypes), resource: z.enum(["schema", "common", "example"]) }),
+      whole: true,
       execute: async ({ type, resource }) => {
         const data = await runtime.schema(type);
         return { type, resource, revision: data.revision, content: data[resource] };

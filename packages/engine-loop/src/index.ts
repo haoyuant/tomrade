@@ -34,6 +34,8 @@ const CONTEXT_BUDGET = 64_000;
 const CONTEXT_TARGET = 40_000;
 /** The latest tool-result messages are never dropped: the model is working from them. */
 const KEEP_RECENT_RESULTS = 2;
+/** How much of a tool's reference the loop reads (ToolDefinition.whole). */
+const WHOLE_CAP = 100_000;
 
 /**
  * Arguments an adapter could not parse arrive as `{ __raw }`. Validating them reported every
@@ -54,8 +56,9 @@ function brokenJson(name: string, args: unknown): string | null {
   return `${name}: the arguments were not valid JSON (${problem}), near: …${raw.slice(Math.max(0, at - 60), at + 30)}… Send the whole call again as one valid JSON object; inside strings, escape double quotes as \\".`;
 }
 
-/** A tool result as the model reads it; a long list of records comes back compacted (see compactList). */
-export function render(result: unknown, cap = RESULT_CAP): string {
+/** A tool result as the model reads it; a long list of records comes back compacted (see compactList), unless the tool's result is reference read whole. */
+export function render(result: unknown, whole = false): string {
+  const cap = whole ? WHOLE_CAP : RESULT_CAP;
   // Read as written: a JSON-escaped string turns every line break of command output into \n.
   if (typeof result === "string") {
     const limit = Math.max(cap, TEXT_RESULT_CAP);
@@ -63,7 +66,7 @@ export function render(result: unknown, cap = RESULT_CAP): string {
   }
   const full = JSON.stringify(result);
   if (full.length <= cap) return full;
-  const list = compactList(result);
+  const list = whole ? null : compactList(result);
   if (list) return `${list.note} ${list.json}`;
   return full.slice(0, cap) + "… (truncated — fetch details with a narrower tool call)";
 }
@@ -175,10 +178,9 @@ export function createLoopEngine(ctx: Context): Engine {
       const profileId = options.profile ?? io.llm.profiles()[0]?.id;
       if (!profileId) return { stop: "error", error: "no language model profile configured" };
       const model = io.llm.forProfile(profileId);
-      const tools: ToolSpec[] = model.capabilities.tools ? io.tools
-        .describe()
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
+      const described = io.tools.describe().sort((a, b) => a.name.localeCompare(b.name));
+      const tools: ToolSpec[] = model.capabilities.tools ? described.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
+      const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
       const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
       // A workflow that finished on the user's answer may have spoken last. A request may not end on the
       // assistant: thinking-mode endpoints read it as an unfinished turn and refuse it without its reasoning.
@@ -260,7 +262,7 @@ export function createLoopEngine(ctx: Context): Engine {
             if (key && memo.has(key)) return { id: call.id, suspended: false, content: "(identical to an earlier call this turn — nothing has changed since; use the result you already have)", invalid: false };
             try {
               const result = await io.tools.execute(call.name, call.args);
-              const content = isSuspended(result) ? result.note : render(result, call.name === "diagram_schema" || call.name === "open_playbook" ? 100_000 : RESULT_CAP);
+              const content = isSuspended(result) ? result.note : render(result, whole.has(call.name));
               if (key) memo.set(key, content);
               return { id: call.id, suspended: isSuspended(result), content, invalid: false };
             } catch (err) {

@@ -108,6 +108,17 @@ describe("tool registry", () => {
   });
 });
 
+describe("whole results", () => {
+  it("tells every surface which tools answer with reference to read whole", async () => {
+    const { ctx } = await fresh({ plugins: [Tools] });
+    ctx.tools.register(defineTool({ name: "a_schema", title: "Schema", description: "test", input: z.object({}), whole: true, execute: () => [] }));
+    ctx.tools.register(defineTool({ name: "a_listing", title: "Listing", description: "test", input: z.object({}), execute: () => [] }));
+    const described = new Map(ctx.tools.describe().map((t) => [t.name, t]));
+    expect(described.get("a_schema")?.whole).toBe(true);
+    expect(described.get("a_listing")).not.toHaveProperty("whole");
+  });
+});
+
 describe("compactList", () => {
   it("answers only for a list of records", () => {
     for (const result of [{ a: 1 }, [], [1, 2], [{ a: 1 }, 2], [[1]], "text", null]) expect(compactList(result)).toBeNull();

@@ -1636,6 +1636,7 @@ export class Agent extends Service {
         title: "Open a playbook",
         description: "Load the full body of one playbook from the index into view.",
         input: z.object({ id: z.string().min(1) }),
+        whole: true,
         execute: ({ id }, inv) => {
           const source = resolvePlaybook({ ...this.playbooks.get(id), project: inv.projectId ? this.projectPlaybooks.get(inv.projectId)?.get(id) : undefined }, this.settingsOf().playbookChoices[id]);
           if (!source) throw new Error(`unknown playbook "${id}" — available: ${this.playbookIndex(inv.projectId).map((e) => e.id).join(", ") || "(none)"}`);

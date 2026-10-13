@@ -50,6 +50,12 @@ describe("render", () => {
     expect(out.length).toBeLessThan(17_000);
   });
 
+  it("reads a tool's reference whole, list or not", () => {
+    const list = Array.from({ length: 12 }, (_, i) => item(i + 1));
+    expect(render(list, true)).toBe(JSON.stringify(list));
+    expect(render({ body: "y".repeat(10_000) }, true)).not.toContain("truncated");
+  });
+
   it("reads a text answer as written, line breaks and all", () => {
     expect(render("exit 0\nhello\nworld")).toBe("exit 0\nhello\nworld");
   });

@@ -60,6 +60,8 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   mcp?: boolean;
   /** True when the tool only reads: MCP clients such as Codex then run it without asking (`readOnlyHint`). */
   readOnly?: boolean;
+  /** The result is reference the model needs in full — a schema, a playbook: never compacted into short rows, and the loop reads up to 100k characters of it. */
+  whole?: boolean;
   /**
    * Listed to an in-process agent only on threads of this surface (the
    * troubleshooter's tools: "doctor"), so no other conversation carries it.
@@ -86,6 +88,7 @@ export interface ToolDescriptor {
   title: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  whole?: boolean;
 }
 
 declare module "cordis" {
@@ -174,7 +177,7 @@ export class Tools extends Service {
   }
 
   describe(): ToolDescriptor[] {
-    return this.list().map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: z.toJSONSchema(t.input) }));
+    return this.list().map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: z.toJSONSchema(t.input), ...(t.whole ? { whole: true } : {}) }));
   }
 
   /** Validate, pass the tools/pre-execute gate, run, and report the outcome. */

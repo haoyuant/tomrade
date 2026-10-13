@@ -141,6 +141,7 @@ describe("the MCP surface", () => {
     };
     for (const [name, result] of Object.entries(results))
       ctx.tools.register(defineTool({ name, title: name, description: "test", input: z.object({}), execute: () => result }));
+    ctx.tools.register(defineTool({ name: "schema_list", title: "Schema", description: "test", input: z.object({}), whole: true, execute: () => results.long_list }));
     const client = new Client({ name: "l", version: "0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
     const texts = async (name: string) => ((await client.callTool({ name, arguments: {} })).content as { text: string }[]).map((c) => c.text);
@@ -153,6 +154,8 @@ describe("the MCP surface", () => {
       expect(rows[0]).toEqual({ key: "TOM-1", title: "Ticket 1", body: "x".repeat(160) + "…" });
       expect(await texts("long_record")).toEqual([JSON.stringify(results.long_record)]);
       expect(await texts("long_text")).toEqual([results.long_text]);
+      // A tool whose result is reference is never shortened.
+      expect(await texts("schema_list")).toEqual([JSON.stringify(results.long_list)]);
     } finally {
       await client.close();
       await ctx.fiber.dispose();
