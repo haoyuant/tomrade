@@ -67,6 +67,7 @@ const run = async () => {
   check("a module with something under it folds from a button on the left", (await $(`['files', 'backlog', 'plugin:demo.links'].every((id) => document.querySelector(\`[data-module="\${id}"] .side-module-head\`)?.firstElementChild?.classList.contains('side-module-fold'))`)) === true);
   check("one without keeps that room, so every title starts at the same x", (await $(`(() => { if (document.querySelector('[data-module="routines"] .side-module-fold')) return false; return new Set([...document.querySelectorAll('.side-module-title')].map((n) => Math.round(n.getBoundingClientRect().left))).size === 1; })()`)) === true);
   check("the gap between any two modules is the same", (await $(`(() => { const ms = [...document.querySelectorAll('.side-scroll > .side-module')]; const gaps = ms.slice(1).map((m, i) => Math.round(m.getBoundingClientRect().top - ms[i].getBoundingClientRect().bottom)); return new Set(gaps).size === 1 ? gaps[0] : gaps; })()`)) === 20);
+  check("a hairline sits between modules, inset like the head row", (await $(`(() => { const ms = [...document.querySelectorAll('.side-scroll > .side-module')]; const first = getComputedStyle(ms[0], '::before').content; const rest = ms.slice(1).map((m) => { const c = getComputedStyle(m, '::before'); const head = m.querySelector('.side-module-head').getBoundingClientRect(); return c.content !== 'none' && parseFloat(c.borderTopWidth) <= 1 && Math.abs(m.getBoundingClientRect().left + parseFloat(c.left) - head.left) < 1 && Math.abs(m.getBoundingClientRect().right - parseFloat(c.right) - (head.right - parseFloat(getComputedStyle(m.querySelector('.side-module-head')).paddingRight))) < 1; }); return first === 'none' && rest.every(Boolean); })()`)) === true);
   check("a plugin's module draws its rows", ((await text('[data-module="plugin:demo.links"] .side-row[data-row="docs"]')) ?? "").includes("docs.example.com"));
   await press(`document.querySelector('[data-module="plugin:demo.links"] .side-row[data-row="docs"]')`);
   await sleep(600);
@@ -144,6 +145,48 @@ const run = async () => {
   check("and its toast offers undo", (await $(`!!document.querySelector('.toast .toast-undo, .toast button')`)) === true);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await sleep(500);
+
+  // ── real mouse input: dnd-kit drags a handle on press unless told otherwise ──
+  const centre = (sel) => $(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  const mouse = (type, { x, y }, held) => win.webContents.sendInputEvent({ type, x, y, button: "left", clickCount: 1, ...(held ? { modifiers: ["leftButtonDown"] } : {}) });
+  const click = async (sel) => {
+    const at = await centre(sel);
+    mouse("mouseMove", at);
+    mouse("mouseDown", at);
+    await sleep(60);
+    mouse("mouseUp", at);
+    await sleep(300);
+  };
+  await click('[data-module="backlog"] .side-module-fold');
+  check("a real click on the fold button folds, it does not start a drag", (await $(`!document.querySelector('.side-backlog .side-views') && !document.querySelector('.side-module.dragging')`)) === true);
+  await click('[data-module="backlog"] .side-module-fold');
+  check("and a second click unfolds", (await $(`!!document.querySelector('.side-backlog .side-views')`)) === true);
+  await click('[data-module="routines"] .side-templates');
+  await sleep(500);
+  check("a real click on a module title still opens it", (await $(`document.querySelector('.side-templates')?.getAttribute('aria-current')`)) === "true");
+  await click('.side-backlog-home');
+  await sleep(500);
+  await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
+  await sleep(200);
+  {
+    const from = await centre('[data-module="routines"] .side-module-head');
+    const to = await centre('[data-module="files"] .side-module-head');
+    mouse("mouseMove", from);
+    mouse("mouseDown", from);
+    for (let i = 1; i <= 12; i++) {
+      mouse("mouseMove", { x: from.x, y: Math.round(from.y + ((to.y - 8 - from.y) * i) / 12) }, true);
+      await sleep(30);
+    }
+    await sleep(200);
+    mouse("mouseUp", { x: to.x, y: to.y - 8 });
+    await sleep(500);
+  }
+  check("dragging a module head moves it", JSON.stringify((await modules()).slice(0, 2)) === JSON.stringify(["routines", "files"]), await modules());
+  await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
+  await sleep(200);
+  await $(`localStorage.removeItem('tomrade.sidebar.layout'); true`);
+  await win.webContents.reload();
+  await sleep(3000);
 
   // ── folding and order, kept on this machine ───────────────────────────
   await press(`document.querySelector('[data-module="backlog"] .side-module-fold')`);

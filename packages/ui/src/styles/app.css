@@ -453,6 +453,12 @@ strong { font-weight: var(--font-weight-medium); }
 /* every module: a head row (fold chevron or its room, then the title) and a
    body; one gap between modules whatever each holds, so none reads as nearer */
 .side-scroll > .side-module + .side-module { margin-top: var(--space-5); }
+/* a hairline centred in that gap, with the head row's own insets */
+.side-module { position: relative; }
+.side-scroll > .side-module + .side-module::before {
+  content: ""; position: absolute; left: 0; right: var(--space-2);
+  top: calc(var(--space-5) / -2); border-top: 0.5px solid var(--border);
+}
 .side-module-head { min-height: 30px; gap: 2px; padding: 0 var(--space-2) 0 0; cursor: grab; }
 .side-module-fold, .side-module-fold-space { flex-shrink: 0; width: 20px; height: 20px; }
 .side-module-head .side-module-fold { width: 20px; height: 20px; color: var(--meta); }

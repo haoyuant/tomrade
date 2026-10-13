@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { KeyboardSensor, PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
 import { useSortable } from "@dnd-kit/react/sortable";
 import type { SidebarModuleView, SidebarRow } from "@tomradex/contributions";
 import { ICON_IDS, Icon, type IconId } from "~/components/icons";
@@ -12,6 +13,13 @@ import { openSettingsPane } from "~/lib/settingsHost";
 import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
+
+/**
+ * The head is the handle, and a mouse on a handle drags at once by default —
+ * which would swallow the fold button's and the title's clicks. A few pixels of
+ * travel first keeps a click a click.
+ */
+const MODULE_SENSORS = [PointerSensor.configure({ activationConstraints: [new PointerActivationConstraints.Distance({ value: 5 })] }), KeyboardSensor];
 
 /** Built-in modules, in their default order; contributed ones follow, `plugin:<id>`. */
 export const BUILTIN_MODULES = ["files", "routines", "backlog"] as const;
@@ -97,7 +105,7 @@ export function SidebarModule({
   children?: ReactNode;
 }) {
   const { t } = useI18n();
-  const { ref, handleRef, isDragging } = useSortable({ id, index, type: "module", accept: "module" });
+  const { ref, handleRef, isDragging } = useSortable({ id, index, type: "module", accept: "module", sensors: MODULE_SENSORS });
   return (
     <div ref={ref as (node: HTMLElement | null) => void} className={`side-group side-module${className ? ` ${className}` : ""}${isDragging ? " dragging" : ""}`} data-module={id}>
       <ContextMenu
