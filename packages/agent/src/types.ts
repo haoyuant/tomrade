@@ -21,7 +21,8 @@ export interface FocusRef {
 export type Block =
   | { type: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[] }
   | { type: "media"; media: import("./media.js").MediaRef; caption?: string }
-  | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number }
+  | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number;
+      commandResult?: { status: "success" | "no-match" | "condition-false" | "failed" | "declined" | "timed-out" | "interrupted"; exitCode: number | null; output: string } }
   | { type: "question"; id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean }
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
   | { type: "status"; text: string }

@@ -1,4 +1,20 @@
 import type { Block, ThreadMessage } from "@tomradex/agent";
+import type { MessageKey } from "./i18n";
+
+export function traceState(block: Extract<Block, { type: "trace" }>): { failed: boolean; icon: "i-check" | "i-warn" | "i-stop" | "i-clock" | "i-search"; label: MessageKey | null } {
+  const status = block.commandResult?.status;
+  if (!status) return { failed: !block.ok, icon: block.ok ? "i-check" : "i-warn", label: null };
+  const states = {
+    success: { failed: false, icon: "i-check", label: "agentPanel.commandSuccess" },
+    "no-match": { failed: false, icon: "i-search", label: "agentPanel.commandNoMatch" },
+    "condition-false": { failed: false, icon: "i-search", label: "agentPanel.commandConditionFalse" },
+    failed: { failed: true, icon: "i-warn", label: "agentPanel.commandFailed" },
+    declined: { failed: false, icon: "i-stop", label: "agentPanel.commandDeclined" },
+    "timed-out": { failed: false, icon: "i-clock", label: "agentPanel.commandTimedOut" },
+    interrupted: { failed: false, icon: "i-stop", label: "agentPanel.commandInterrupted" }
+  } as const;
+  return states[status];
+}
 
 /** Steps kept open at the end of a run of them; earlier successful ones fold. */
 const OPEN_STEPS = 3;

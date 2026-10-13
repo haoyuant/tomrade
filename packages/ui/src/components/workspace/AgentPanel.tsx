@@ -13,7 +13,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { foldSteps } from "~/lib/steps";
+import { foldSteps, traceState } from "~/lib/steps";
 import { conducts, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
@@ -140,17 +140,24 @@ function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: strin
 const OP_GLYPH = { created: "+", updated: "~", deleted: "–" } as const;
 
 function Trace({ block }: { block: Block & { type: "trace" } }) {
+  const { t } = useI18n();
+  const state = traceState(block);
+  const result = block.commandResult;
   // the arguments are printed once someone opens the row, not for every folded one
   const [open, setOpen] = useState(false);
   return (
-    <details className={`trace-row${block.ok ? "" : " failed"}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details className={`trace-row${state.failed ? " failed" : ""}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
-        <Icon name={block.ok ? "i-check" : "i-warn"} size={11} />
+        <Icon name={state.icon} size={11} />
         <span className="t-tool num">{block.tool}</span>
         <span className="t-sum">{block.summary}</span>
+        {state.label && <span>{t(state.label)}</span>}
         {block.ms > 0 && <span className="t-ms num">{block.ms < 1000 ? `${block.ms}ms` : `${(block.ms / 1000).toFixed(1)}s`}</span>}
       </summary>
-      {open && <pre>{JSON.stringify(block.args, null, 2)}</pre>}
+      {open && <>
+        <pre>{JSON.stringify(block.args, null, 2)}</pre>
+        {result && <pre>{t("agentPanel.commandExitCode", { code: result.exitCode ?? t("agentPanel.commandExitUnknown") })}{"\n"}{result.output.trim() ? result.output : t("agentPanel.commandNoOutput")}</pre>}
+      </>}
     </details>
   );
 }

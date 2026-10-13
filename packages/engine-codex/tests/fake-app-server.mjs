@@ -19,7 +19,26 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     const id = String(++n); active = id;
     send({ id: m.id, result: { turn: { id } } });
     send({ method: 'turn/started', params: { threadId: 'fake-session', turn: { id } } });
-    if (m.params.input[0].text.includes('WAIT_FOREVER')) continue;
+    if (m.params.input[0].text.includes('WAIT_FOREVER')) {
+      send({ method: 'item/started', params: { threadId: 'fake-session', turnId: id, item: { type: 'commandExecution', id: 'waiting-'+id, command: 'npm test', status: 'inProgress' } } });
+      for (const delta of ['partial\n', 'output\n']) send({ method: 'item/commandExecution/outputDelta', params: { threadId: 'fake-session', turnId: id, itemId: 'waiting-'+id, delta } });
+      continue;
+    }
+    if (m.params.input[0].text.includes('COMMAND_RESULTS')) {
+      const commands = [
+        { command: 'rg missing src', status: 'failed', exitCode: 1, aggregatedOutput: '' },
+        { command: 'npm test', status: 'failed', exitCode: 1, aggregatedOutput: 'FAIL: assertion\n' },
+        { command: 'npm test', status: 'failed', exitCode: 2, aggregatedOutput: '' },
+        { command: 'npm test', status: 'declined', exitCode: null, aggregatedOutput: '' },
+        { command: 'npm test', status: 'failed', exitCode: 124, aggregatedOutput: 'Command timed out' }
+      ];
+      for (const [index, value] of commands.entries()) {
+        const item = { type: 'commandExecution', id: 'command-'+id+'-'+index, ...value };
+        send({ method: 'item/started', params: { threadId: 'fake-session', turnId: id, item: { ...item, status: 'inProgress' } } });
+        const completed = { method: 'item/completed', params: { threadId: 'fake-session', turnId: id, item } };
+        send(completed); send(completed);
+      }
+    }
     if (m.params.input[0].text.includes('REQUEST_PERMISSION')) {
       permissionTurn = id;
       send({ id: 'permission-request', method: 'item/commandExecution/requestApproval', params: { threadId: 'fake-session', turnId: id, command: 'npm test', cwd: process.cwd() } });
