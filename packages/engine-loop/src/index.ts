@@ -30,6 +30,12 @@ const RESULT_CAP = 6000;
 const TEXT_RESULT_CAP = 20_000;
 const LIST_CAP = 16000;
 const TEXT_CAP = 160;
+/** Tokens a request may carry before older tool results in the turn are dropped; under every window we ship. */
+const CONTEXT_BUDGET = 64_000;
+/** Where dropping stops, so it does not happen again on the very next step. */
+const CONTEXT_TARGET = 40_000;
+/** The latest tool-result messages are never dropped: the model is working from them. */
+const KEEP_RECENT_RESULTS = 2;
 
 /**
  * Arguments an adapter could not parse arrive as `{ __raw }`. Validating them reported every
@@ -130,6 +136,33 @@ export function historyMessages(messages: ThreadMessage[], io?: TurnIO, accepted
   return out;
 }
 
+const sizeOf = (messages: Message[]): number => {
+  let n = 0;
+  for (const m of messages)
+    for (const b of m.content)
+      n += b.type === "text" ? b.text.length : b.type === "tool_result" ? b.content.length : b.type === "tool_call" ? JSON.stringify(b.args ?? {}).length : 0;
+  return n;
+};
+
+/**
+ * Drops the oldest tool results of the turn, in place, until about `free` characters are gone;
+ * the latest `keep` result messages stay whole. Returns the characters freed.
+ */
+export function elideOldResults(messages: Message[], free: number, keep = KEEP_RECENT_RESULTS): number {
+  const holders = messages.filter((m) => m.content.some((b) => b.type === "tool_result"));
+  let freed = 0;
+  for (const m of holders.slice(0, Math.max(0, holders.length - keep))) {
+    for (const b of m.content) {
+      if (freed >= free) return freed;
+      if (b.type !== "tool_result" || b.content.length < 200) continue;
+      const before = b.content.length;
+      b.content = `(result dropped to make room — it was ${before} characters; call the tool again if you still need it)`;
+      freed += before - b.content.length;
+    }
+  }
+  return freed;
+}
+
 const system = (input: TurnInput, io: TurnIO, options: LoopOptions): string =>
   [IDENTITY, ...promptSections(input, io, { playbooks: options.guidance === "auto" })].join("\n\n");
 
@@ -186,8 +219,16 @@ export function createLoopEngine(ctx: Context): Engine {
       let invalidStreak = 0;
       // What each read call answered this turn; a write clears it, since the answer may have changed.
       const memo = new Map<string, string>();
+      // What the last request cost in input tokens; 0 until a provider reports it.
+      let lastInput = 0;
 
       for (let step = 1; step <= options.maxSteps; step += 1) {
+        const chars = sizeOf(messages);
+        // Characters per token varies by language; trust what the provider measured when it said.
+        const tokens = Math.max(lastInput, Math.ceil(chars / 4));
+        if (tokens > CONTEXT_BUDGET && elideOldResults(messages, Math.ceil(chars * (1 - CONTEXT_TARGET / tokens))) > 0)
+          // A remembered answer may be one just dropped; the model must be free to ask again.
+          memo.clear();
         const collected = await collect(
           model.chat(
             {
@@ -202,6 +243,7 @@ export function createLoopEngine(ctx: Context): Engine {
           ),
           (delta) => io.delta(delta)
         );
+        lastInput = collected.usage.inputTokens;
         usage.inputTokens += collected.usage.inputTokens;
         usage.outputTokens += collected.usage.outputTokens;
         io.progress(usage);
@@ -230,6 +272,13 @@ export function createLoopEngine(ctx: Context): Engine {
         if (!collected.toolCalls.length) return { stop: "end", usage };
 
         messages.push(assistantMessage(collected));
+        // Calls in a reply cut at the limit may be cut too, and still parse — a write_file with half the file. None is run.
+        if (collected.stop === "max_tokens") {
+          invalidStreak += 1;
+          const cut = `ERROR: your reply reached the output limit (${options.maxTokens} tokens) before this call was complete, so it was not run. Send it again in smaller pieces — for a long file, write part of it and append the rest.`;
+          messages.push(toolResultsMessage(collected.toolCalls.map((call) => ({ id: call.id, content: cut, isError: true }))));
+          continue;
+        }
         const results = await Promise.all(
           collected.toolCalls.map(async (call) => {
             const broken = brokenJson(call.name, call.args);
