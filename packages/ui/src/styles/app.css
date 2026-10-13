@@ -372,6 +372,8 @@ strong { font-weight: var(--font-weight-medium); }
   background: var(--bg);
   border-right: 1px solid var(--border);
 }
+/* the sidebar reads one step larger than the page: its type scale shifts up 1px */
+.sidebar, .side-rail { --text-xs: 13px; --text-sm: 14px; --text-base: 16px; }
 .side-scroll {
   flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column;
@@ -395,7 +397,7 @@ strong { font-weight: var(--font-weight-medium); }
   border: 0; border-left: 2px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent; color: var(--fg-2);
-  font-family: var(--font-display); font-size: 14px; line-height: 1.3;
+  font-family: var(--font-display); font-size: 15px; line-height: 1.3;
   transition: background-color var(--motion-fast) var(--ease-standard);
 }
 .side-row:hover { background: var(--surface-warm); color: var(--fg); }
@@ -438,7 +440,7 @@ strong { font-weight: var(--font-weight-medium); }
 .side-foot .side-row { color: var(--meta); }
 /* project settings: pinned under the scrolling body, a step bolder and larger than a nav row */
 .side-settings { flex-shrink: 0; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); }
-.side-project-settings { font-size: 15px; font-weight: 600; color: var(--fg); }
+.side-project-settings { font-size: 16px; font-weight: 600; color: var(--fg); }
 .side-project-settings .ico { color: var(--fg-2); }
 .side-project-settings:hover .ico { color: var(--fg); }
 
@@ -484,9 +486,9 @@ strong { font-weight: var(--font-weight-medium); }
 /* two lines: icon and count stay on the name's line, so the list starts where the views do */
 .side-row.is-workstream { align-items: flex-start; }
 .side-row.is-workstream > .ico { margin-top: 2px; }
-.side-row.is-workstream > .side-count { line-height: 18px; }
+.side-row.is-workstream > .side-count { line-height: 19.5px; }
 .side-ws-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.side-ws-repo { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 11px; line-height: 1.3; color: var(--meta); }
+.side-ws-repo { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.3; color: var(--meta); }
 .side-ws-repo svg { flex-shrink: 0; }
 .side-ws-repo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-ws-repo.is-none { font-style: italic; }
@@ -2228,7 +2230,7 @@ button.kref { cursor: pointer; }
 .side-mark.is-deleted { background: transparent; box-shadow: inset 0 0 0 1.5px var(--meta); }
 .side-mark.is-conflicted, .side-mark.is-state { background: var(--danger); }
 .side-mark.is-state.is-offline, .side-mark.is-state.is-diverged { background: var(--warn); }
-.side-change { flex-shrink: 0; min-width: 10px; font: 600 10px/1 var(--font-mono); text-align: center; color: var(--warn); }
+.side-change { flex-shrink: 0; min-width: 10px; font: 600 11px/1 var(--font-mono); text-align: center; color: var(--warn); }
 .side-change.is-deleted { color: var(--meta); text-decoration: line-through; }
 .side-change.is-conflicted { color: var(--danger); }
 .side-files-empty-placeholder { display: flex; align-items: center; gap: var(--space-2); padding: 7px var(--space-2) 7px 10px; color: var(--meta); font-size: var(--text-sm); opacity: 0.6; pointer-events: none; }
@@ -2382,7 +2384,7 @@ button.kref { cursor: pointer; }
 .notes-search-field { display: flex; align-items: center; gap: var(--space-2); margin: 0 var(--space-1); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
 .notes-search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .notes-search-field .ico { color: var(--meta); flex-shrink: 0; }
-.notes-search-input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 14px; outline: none; }
+.notes-search-input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 15px; outline: none; }
 .notes-search-input:focus-visible { box-shadow: none; }
 .notes-search-input::placeholder { color: var(--meta); }
 .notes-search-input::-webkit-search-cancel-button { display: none; }

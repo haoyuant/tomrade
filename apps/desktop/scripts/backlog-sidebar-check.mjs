@@ -147,7 +147,11 @@ const run = async () => {
   await sleep(500);
 
   // ── real mouse input: dnd-kit drags a handle on press unless told otherwise ──
-  const centre = (sel) => $(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  const centre = async (sel) => {
+    const at = await $(`(() => { const n = document.querySelector(${JSON.stringify(sel)}); if (!n) return null; n.scrollIntoView({ block: "nearest" }); const r = n.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    if (!at) throw new Error(`nothing matches ${sel}`);
+    return at;
+  };
   const mouse = (type, { x, y }, held) => win.webContents.sendInputEvent({ type, x, y, button: "left", clickCount: 1, ...(held ? { modifiers: ["leftButtonDown"] } : {}) });
   const click = async (sel) => {
     const at = await centre(sel);
