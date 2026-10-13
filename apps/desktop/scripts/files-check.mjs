@@ -116,7 +116,7 @@ const run = async () => {
   await wait(() => has(".proj"), "projects home");
   await $(`location.hash = '#/p/${project.id}'; true`);
   await wait(() => has(".side-files"), "sidebar");
-  check("the files tree sits above the views", await $(`(() => { const s = document.querySelector('.sidebar'); const groups = [...s.querySelectorAll('.side-group')]; return groups[0]?.classList.contains('side-files') && groups[1]?.classList.contains('side-views'); })()`));
+  check("the files tree sits above routines, then the views", await $(`(() => { const s = document.querySelector('.sidebar'); const groups = [...s.querySelectorAll('.side-group')]; return groups[0]?.classList.contains('side-files') && groups[1]?.classList.contains('side-routines') && groups[2]?.classList.contains('side-views'); })()`));
   await wait(() => $(`document.querySelectorAll('.side-row.is-file').length >= 2`), "tree rows");
   check("top-level folders are listed, folded", (await $(`[...document.querySelectorAll('.side-row.is-file')].map(n => n.dataset.file).join()`)) === "docs,site");
   await click('.side-row.is-file[data-file="docs"] .chev');

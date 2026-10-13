@@ -74,6 +74,7 @@ export const templates = {
     openTicket: "open",
     openThread: "open the conversation",
     paletteOpen: "Routines…",
+    openAria: "Open routines",
     paletteRun: "Run routine · {{name}}"
   },
   zh: {
@@ -151,6 +152,7 @@ export const templates = {
     openTicket: "打开",
     openThread: "打开对话",
     paletteOpen: "例行事务…",
+    openAria: "打开例行事务",
     paletteRun: "运行例行事务 · {{name}}"
   }
 };

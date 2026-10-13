@@ -295,7 +295,7 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} onOpenProjectSettings={openProjectSettings} />
+        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} templatesOpen={templatesOpen} onOpenProjectSettings={openProjectSettings} />
         <div className="main-col">
           <TabStrip />
           {ws.filePath !== null ? (
