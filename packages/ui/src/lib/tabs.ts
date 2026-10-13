@@ -4,7 +4,8 @@ import { useSyncExternalStore } from "react";
  * A project's tab strip. The Backlog tab is always there and never closes; it
  * remembers which view or workstream it was last showing. Every file opened
  * gets a tab of its own; folders share one browsing tab, which follows the
- * folder last opened. Kept per project in this browser only — a convenience,
+ * folder last opened. Routines, once opened, has one tab of its own beside
+ * Backlog until it is closed. Kept per project in this browser only — a convenience,
  * like a folded sidebar, not something that travels.
  */
 export type BacklogPlace = { kind: "view"; id: string } | { kind: "workstream"; id: string };
@@ -18,10 +19,12 @@ export interface FileTab {
 
 export interface TabsState {
   backlog: BacklogPlace | null;
+  /** The Routines tab is open. */
+  routines: boolean;
   tabs: FileTab[];
 }
 
-const EMPTY: TabsState = { backlog: null, tabs: [] };
+const EMPTY: TabsState = { backlog: null, routines: false, tabs: [] };
 const storageKey = (projectId: string) => `tomrade.tabs.${projectId}`;
 
 const cache = new Map<string, TabsState>();
@@ -36,7 +39,7 @@ function read(projectId: string): TabsState {
     if (raw && Array.isArray(raw.tabs)) {
       const tabs = raw.tabs.filter((t): t is FileTab => !!t && (t.kind === "file" || t.kind === "folder") && typeof t.path === "string");
       const backlog = raw.backlog && (raw.backlog.kind === "view" || raw.backlog.kind === "workstream") && typeof raw.backlog.id === "string" ? raw.backlog : null;
-      state = { backlog, tabs: onlyOneFolder(tabs) };
+      state = { backlog, routines: raw.routines === true, tabs: onlyOneFolder(tabs) };
     }
   } catch {
     // storage blocked or garbled: start with the Backlog tab alone
@@ -83,6 +86,12 @@ export function rememberBacklog(projectId: string, place: BacklogPlace): void {
   const state = read(projectId);
   if (state.backlog?.kind === place.kind && state.backlog.id === place.id) return;
   write(projectId, { ...state, backlog: place });
+}
+
+/** The Routines tab opens, or closes. */
+export function setRoutinesTab(projectId: string, open: boolean): void {
+  const state = read(projectId);
+  if (state.routines !== open) write(projectId, { ...state, routines: open });
 }
 
 /**

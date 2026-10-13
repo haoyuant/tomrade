@@ -98,6 +98,9 @@ export interface WorkspaceValue {
   /** On the Files screen: the open path, "" for the root. Null anywhere else. */
   filePath: string | null;
   openFile: (path: string) => void;
+  /** On the Routines screen. */
+  routines: boolean;
+  openRoutines: () => void;
 
   /** A field's options in its display order: statuses, priorities urgent-first, epics, workstreams, custom options, the checkbox's one tick. Labels list the project's vocabulary. */
   optionsOf: (fieldId: string) => FieldOptionView[];
@@ -227,6 +230,7 @@ export function WorkspaceProvider({
   viewId,
   boardId,
   filePath,
+  routines = false,
   children
 }: {
   projectId: string;
@@ -234,6 +238,8 @@ export function WorkspaceProvider({
   viewId?: string;
   boardId?: string;
   filePath?: string;
+  /** The Routines screen, which names no view either. */
+  routines?: boolean;
   children: (value: WorkspaceValue) => ReactNode;
 }) {
   const navigate = useNavigate();
@@ -260,10 +266,10 @@ export function WorkspaceProvider({
   const workstream = boardId ? (boards.data?.find((b) => b.id === boardId) ?? null) : null;
   const virtual = !!boardId;
   const inFiles = filePath !== undefined;
-  // The Files screen shows no view, but the sidebar still counts them; it borrows the first.
-  const savedView = views.data?.find((v) => v.id === viewId) ?? (inFiles ? [...(views.data ?? [])].sort((a, b) => a.rank - b.rank)[0] : undefined);
+  // Files and Routines show no view, but the sidebar still counts them; they borrow the first.
+  const savedView = views.data?.find((v) => v.id === viewId) ?? (inFiles || routines ? [...(views.data ?? [])].sort((a, b) => a.rank - b.rank)[0] : undefined);
   const view = useMemo(() => (virtual ? (workstream ? workstreamView(workstream) : undefined) : savedView), [virtual, workstream, savedView]);
-  const placeKey = inFiles ? "files" : (viewId ?? `ws:${boardId}`);
+  const placeKey = inFiles ? "files" : routines ? "routines" : (viewId ?? `ws:${boardId}`);
 
   const saved = useMemo(() => (view ? draftOf(view) : null), [view]);
   const savedCanon = saved ? canon(saved) : null;
@@ -361,6 +367,7 @@ export function WorkspaceProvider({
     [navigate, projectId]
   );
   const openFile = useCallback((path: string) => void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: path } }), [navigate, projectId]);
+  const openRoutines = useCallback(() => void navigate({ to: "/p/$projectId/r", params: { projectId } }), [navigate, projectId]);
 
   const value = useMemo<WorkspaceValue | null>(() => {
     if (!project || !view || !saved || !live) return null;
@@ -419,6 +426,8 @@ export function WorkspaceProvider({
       workstream,
       filePath: inFiles ? filePath : null,
       openFile,
+      routines,
+      openRoutines,
       filterCount: live.query.filter.length,
       search,
       searchElsewhere: terms.length ? found.length - visible.length : 0,
@@ -456,6 +465,8 @@ export function WorkspaceProvider({
     openView,
     openWorkstream,
     openFile,
+    routines,
+    openRoutines,
     virtual,
     workstream,
     inFiles,

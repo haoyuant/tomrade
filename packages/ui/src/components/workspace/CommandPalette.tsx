@@ -103,7 +103,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     { label: t("commandPalette.redoLastUndo"), kb: keyLabel("redo"), run: actions.redo },
     { label: t("commandPalette.history"), kb: undefined, run: actions.openHistory },
     ...LAYOUTS.map((l) => ({ label: t("commandPalette.layoutAction", { layout: LAYOUT_LABEL[l].label }), kb: undefined, run: () => ws.setLayout(l) })),
-    ...(ws.filePath === null ? [{ label: t("commandPalette.searchTickets"), kb: keyLabel("searchTickets"), run: actions.searchTickets }] : []),
+    ...(ws.filePath === null && !ws.routines ? [{ label: t("commandPalette.searchTickets"), kb: keyLabel("searchTickets"), run: actions.searchTickets }] : []),
     { label: t("commandPalette.clearFilters"), kb: undefined, run: () => ws.setQuery({ ...ws.query, filter: [] }) },
     { label: t("commandPalette.viewSettings"), kb: undefined, run: actions.openViewSettings },
     { label: t("commandPalette.fields"), kb: undefined, run: actions.openFields },
