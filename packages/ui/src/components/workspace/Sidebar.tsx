@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
@@ -8,6 +8,7 @@ import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { Hint } from "~/components/ui/hint";
 import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
+import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, SidebarModule, useSidebarLayout, useSidebarModules } from "./SidebarModules";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateBoard, useCreateView, useRepos, useUpdateView } from "~/lib/queries";
@@ -260,88 +261,152 @@ function WorkstreamsHelp({ onManage, onClose }: { onManage: () => void; onClose:
   );
 }
 
-const backlogOpenKey = "tomrade.sidebar.backlogOpen";
-
-/**
- * The backlog as one module: its saved views and the workstreams it is split
- * into (its fields are edited from the view head). The head is the module's door —
- * it lands on the first view — and folds the module away.
- */
-function BacklogModule({ onOpenFields }: { onOpenFields: (fieldId?: string, boardId?: string) => void }) {
+/** The backlog's head is its door: it lands on the first view. */
+function BacklogHead() {
   const { t } = useI18n();
-  const { project, views, boards, openView, filePath, routines } = useWorkspace();
-  const repos = useRepos(project.id);
+  const { views, openView, filePath, routines } = useWorkspace();
   const here = filePath === null && !routines;
-  const [open, setOpen] = useState(() => {
-    try {
-      return localStorage.getItem(backlogOpenKey) !== "0";
-    } catch {
-      return true;
-    }
-  });
-  const toggle = () => {
-    setOpen(!open);
-    try {
-      localStorage.setItem(backlogOpenKey, open ? "0" : "1");
-    } catch {
-      // only a remembered fold; nothing to lose
-    }
-  };
+  return (
+    <>
+      <button type="button" className="side-label-btn side-module-btn side-backlog-home" aria-current={here} onClick={() => !here && views[0] && openView(views[0].id)}>
+        <Icon name="i-board" size={14} />
+        <Eyebrow className="side-label side-module-title">{t("sidebar.backlogEyebrow")}</Eyebrow>
+      </button>
+      <Spacer />
+    </>
+  );
+}
+
+/** The backlog's saved views and the workstreams it is split into (its fields open from the view head). */
+function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardId?: string) => void }) {
+  const { t } = useI18n();
+  const { project, boards } = useWorkspace();
+  const repos = useRepos(project.id);
   const [helpOpen, setHelpOpen] = useState(false);
   const editWorkstream = (boardId?: string) => onOpenFields("board", boardId);
   const repoOf = (b: Board) => (repos.data ?? []).find((r) => r.id === b.repoId) ?? null;
 
   return (
-    <div className="side-group side-module side-backlog">
-      <div className="side-label-row side-module-head">
-        <button type="button" className="side-label-btn side-module-btn side-backlog-home" aria-current={here} onClick={() => !here && views[0] && openView(views[0].id)}>
-          <Icon name="i-board" size={14} />
-          <Eyebrow className="side-label side-module-title">{t("sidebar.backlogEyebrow")}</Eyebrow>
-        </button>
-        <Spacer />
-        <button type="button" className="btn btn-icon side-module-toggle" aria-expanded={open} aria-label={t(open ? "sidebar.collapseBacklog" : "sidebar.expandBacklog")} title={t(open ? "sidebar.collapseBacklog" : "sidebar.expandBacklog")} onClick={toggle}>
-          <Icon name="i-chevdown" size={13} style={open ? undefined : { transform: "rotate(-90deg)" }} />
-        </button>
-      </div>
-      {open && (
-        <div className="side-module-body">
-          <div className="side-sub side-views">
-            <div className="side-sub-label">
-              <span>{t("sidebar.viewsEyebrow")}</span>
-            </div>
-            <ViewList />
-            <NewViewRow />
-          </div>
-          <div className="side-sub side-workstreams">
-            <div className="side-sub-label">
-              <span>{t("sidebar.workstreamsEyebrow")}</span>
-              <button
-                type="button"
-                className="btn btn-icon side-ws-help-btn"
-                aria-expanded={helpOpen}
-                title={t("sidebar.workstreamsHelpTitle")}
-                aria-label={t("sidebar.workstreamsHelpTitle")}
-                onClick={() => setHelpOpen(!helpOpen)}
-              >
-                <Icon name="i-info" size={13} />
-              </button>
-              <Spacer />
-              <button type="button" className="btn btn-icon side-ws-manage" aria-haspopup="dialog" title={t("sidebar.manageWorkstreams")} aria-label={t("sidebar.manageWorkstreams")} onClick={() => editWorkstream()}>
-                <Icon name="i-sliders" size={13} />
-              </button>
-            </div>
-            {helpOpen && <WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} />}
-            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              {boards.map((b) => (
-                <WorkstreamRow key={b.id} board={b} repo={repoOf(b)} onEdit={() => editWorkstream(b.id)} />
-              ))}
-            </div>
-            <NewWorkstreamRow onEdit={editWorkstream} />
-            {boards.length === 1 && <Hint id="hint.workstreams">{t("sidebar.workstreamsHint")}</Hint>}
-          </div>
+    <>
+      <div className="side-sub side-views">
+        <div className="side-sub-label">
+          <span>{t("sidebar.viewsEyebrow")}</span>
         </div>
-      )}
-    </div>
+        <ViewList />
+        <NewViewRow />
+      </div>
+      <div className="side-sub side-workstreams">
+        <div className="side-sub-label">
+          <span>{t("sidebar.workstreamsEyebrow")}</span>
+          <button
+            type="button"
+            className="btn btn-icon side-ws-help-btn"
+            aria-expanded={helpOpen}
+            title={t("sidebar.workstreamsHelpTitle")}
+            aria-label={t("sidebar.workstreamsHelpTitle")}
+            onClick={() => setHelpOpen(!helpOpen)}
+          >
+            <Icon name="i-info" size={13} />
+          </button>
+          <Spacer />
+          <button type="button" className="btn btn-icon side-ws-manage" aria-haspopup="dialog" title={t("sidebar.manageWorkstreams")} aria-label={t("sidebar.manageWorkstreams")} onClick={() => editWorkstream()}>
+            <Icon name="i-sliders" size={13} />
+          </button>
+        </div>
+        {helpOpen && <WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} />}
+        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {boards.map((b) => (
+            <WorkstreamRow key={b.id} board={b} repo={repoOf(b)} onEdit={() => editWorkstream(b.id)} />
+          ))}
+        </div>
+        <NewWorkstreamRow onEdit={editWorkstream} />
+        {boards.length === 1 && <Hint id="hint.workstreams">{t("sidebar.workstreamsHint")}</Hint>}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The modules in this machine's order. Each is drawn by the shared shell, so a
+ * contributed module folds, drags and spaces exactly like a built-in one.
+ */
+function ModuleList({ onOpenFields, onOpenTemplates }: { onOpenFields: (fieldId?: string, boardId?: string) => void; onOpenTemplates: () => void }) {
+  const { t } = useI18n();
+  const { project, routines } = useWorkspace();
+  const layout = useSidebarLayout();
+  const contributed = useSidebarModules(project.id).data ?? [];
+  const ids = layout.arrange([...BUILTIN_MODULES, ...contributed.map((m) => `plugin:${m.id}`)]);
+  // the drag shows its order live; the drop is what is saved
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
+  const shown = dragOrder ?? ids;
+
+  const moveBy = (id: string, by: -1 | 1) => {
+    const next = [...ids];
+    const at = next.indexOf(id);
+    const to = at + by;
+    if (at < 0 || to < 0 || to >= next.length) return;
+    [next[at], next[to]] = [next[to]!, next[at]!];
+    layout.setOrder(next);
+  };
+
+  const shell = (id: string, index: number, name: string, head: ReactNode, body?: ReactNode, className?: string) => (
+    <SidebarModule
+      key={id}
+      id={id}
+      index={index}
+      name={name}
+      className={className}
+      head={head}
+      foldable={body !== undefined}
+      folded={layout.folded(id)}
+      onToggle={() => layout.toggle(id)}
+      onMove={(by) => moveBy(id, by)}
+      onResetOrder={layout.resetOrder}
+      canMove={{ up: index > 0, down: index < shown.length - 1 }}
+    >
+      {body}
+    </SidebarModule>
+  );
+
+  const render = (id: string, index: number) => {
+    if (id === "files")
+      return (
+        <FilesTree key={id}>{(head, body) => shell(id, index, t("files.eyebrow"), head, body, "side-files")}</FilesTree>
+      );
+    if (id === "routines")
+      return shell(
+        id,
+        index,
+        t("templates.label"),
+        <button type="button" className="side-label-btn side-module-btn side-templates" aria-current={routines} aria-label={t("templates.openAria")} data-testid="open-templates" onClick={onOpenTemplates}>
+          <Icon name="i-alarm" size={14} />
+          <Eyebrow className="side-label side-module-title">{t("templates.label")}</Eyebrow>
+        </button>,
+        undefined,
+        "side-routines"
+      );
+    if (id === "backlog") return shell(id, index, t("sidebar.backlogEyebrow"), <BacklogHead />, <BacklogBody onOpenFields={onOpenFields} />, "side-backlog");
+    const module = contributed.find((m) => `plugin:${m.id}` === id);
+    if (!module) return null;
+    return shell(id, index, module.title, <PluginModuleHead module={module} projectId={project.id} />, module.rows ? <PluginModuleBody module={module} projectId={project.id} /> : undefined, "side-plugin");
+  };
+
+  return (
+    <DragDropProvider
+      onDragStart={() => setDragOrder(ids)}
+      onDragOver={(event) => {
+        // only modules reorder here; the views list keeps its own drags
+        if (event.operation.source?.type !== "module") return;
+        setDragOrder((current) => move(current ?? ids, event));
+      }}
+      onDragEnd={(event) => {
+        const order = dragOrder;
+        setDragOrder(null);
+        if (!event.canceled && order && event.operation.source?.type === "module") layout.setOrder(order);
+      }}
+    >
+      {shown.map(render)}
+    </DragDropProvider>
   );
 }
 
@@ -366,7 +431,6 @@ export function Sidebar({
   onOpenProjectSettings: () => void;
 }) {
   const { t } = useI18n();
-  const { routines } = useWorkspace();
   const sidebar = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem(sidebarWidthKey);
@@ -427,26 +491,7 @@ export function Sidebar({
             <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
           </button>
         </div>
-        <div className="side-group side-files">
-          <FilesTree />
-        </div>
-        {/* a project-level place like Files, not part of the backlog's views */}
-        <div className="side-group side-routines">
-          <div className="side-label-row">
-            <button
-              type="button"
-              className="side-label-btn side-module-btn side-templates"
-              aria-current={routines}
-              aria-label={t("templates.openAria")}
-              data-testid="open-templates"
-              onClick={onOpenTemplates}
-            >
-              <Icon name="i-alarm" size={14} />
-              <Eyebrow className="side-label side-module-title">{t("templates.label")}</Eyebrow>
-            </button>
-          </div>
-        </div>
-        <BacklogModule onOpenFields={onOpenFields} />
+        <ModuleList onOpenFields={onOpenFields} onOpenTemplates={onOpenTemplates} />
       </div>
       {/* pinned below the scrolling body so it is always where people look for it */}
       <div className="side-settings">

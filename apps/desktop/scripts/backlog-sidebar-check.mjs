@@ -42,6 +42,9 @@ const run = async () => {
   ctx.settings.set({ ...ctx.settings.get(), language: process.env.TOMRADE_LANG ?? "en", onboarding: { seen: ["*"] } });
   const { project, boardIds } = seedDesignProject({ dbFor: (id) => ctx.db.for(id), items: ctx.items, projects: ctx.projects, boards: ctx.boards, views: ctx.views, fields: ctx.fields, gitRepos: ctx.repos });
   await ctx.storage.ready;
+  const ran = [];
+  ctx.contributions.command({ id: "demo.links.open", title: "Open link", run: () => (ran.push("open"), { toast: "demo link opened" }) });
+  ctx.contributions.sidebarModule({ id: "demo.links", title: "Links", icon: "i-link", rows: () => [{ id: "docs", label: "Docs", icon: "i-file", detail: "docs.example.com", count: 3, command: "demo.links.open" }] });
   const boards = ctx.boards.list(project.id);
   const views = ctx.views.listForProject(project.id);
   const bound = boardIds.get("bd-ui");
@@ -58,8 +61,16 @@ const run = async () => {
   await sleep(3000);
 
   // ── one Backlog module ────────────────────────────────────────────────
-  const order = await $(`[...document.querySelectorAll('.side-scroll > .side-group')].map((g) => ['side-files', 'side-routines', 'side-backlog'].find((c) => g.classList.contains(c)) ?? g.className)`);
-  check("the sidebar is three modules: files, routines, backlog", JSON.stringify(order) === JSON.stringify(["side-files", "side-routines", "side-backlog"]), order);
+  const modules = () => $(`[...document.querySelectorAll('.side-scroll > .side-module')].map((g) => g.dataset.module)`);
+  const order = await modules();
+  check("the sidebar is modules: files, routines, backlog, then a plugin's", JSON.stringify(order) === JSON.stringify(["files", "routines", "backlog", "plugin:demo.links"]), order);
+  check("a module with something under it folds from a button on the left", (await $(`['files', 'backlog', 'plugin:demo.links'].every((id) => document.querySelector(\`[data-module="\${id}"] .side-module-head\`)?.firstElementChild?.classList.contains('side-module-fold'))`)) === true);
+  check("one without keeps that room, so every title starts at the same x", (await $(`(() => { if (document.querySelector('[data-module="routines"] .side-module-fold')) return false; return new Set([...document.querySelectorAll('.side-module-title')].map((n) => Math.round(n.getBoundingClientRect().left))).size === 1; })()`)) === true);
+  check("the gap between any two modules is the same", (await $(`(() => { const ms = [...document.querySelectorAll('.side-scroll > .side-module')]; const gaps = ms.slice(1).map((m, i) => Math.round(m.getBoundingClientRect().top - ms[i].getBoundingClientRect().bottom)); return new Set(gaps).size === 1 ? gaps[0] : gaps; })()`)) === 20);
+  check("a plugin's module draws its rows", ((await text('[data-module="plugin:demo.links"] .side-row[data-row="docs"]')) ?? "").includes("docs.example.com"));
+  await press(`document.querySelector('[data-module="plugin:demo.links"] .side-row[data-row="docs"]')`);
+  await sleep(600);
+  check("and a row runs the command it names", ran.length === 1);
   check("the backlog module is headed Backlog", (await text(".side-backlog-home .side-label")) === say.backlog);
   check("views and workstreams sit inside it", (await $(`['.side-views', '.side-workstreams'].every((s) => document.querySelector(s)?.closest('.side-backlog'))`)) === true);
   check("fields left the sidebar for the view head, right of View", (await $(`!document.querySelector('.sidebar .side-fields') && document.querySelector('.view-settings-btn')?.nextElementSibling?.classList.contains('view-fields-btn')`)) === true);
@@ -67,7 +78,7 @@ const run = async () => {
   check("every workstream is listed", (await $(`document.querySelectorAll('.side-row.is-workstream').length`)) === boards.length);
   check("the sidebar never scrolls sideways", (await $(`(() => { const sc = document.querySelector('.side-scroll'); return sc.scrollWidth <= sc.clientWidth; })()`)) === true);
   check("the views and the workstreams start the same distance under their labels", (await $(`(() => { const gap = (sel) => { const g = document.querySelector(sel); return Math.round(g.querySelector('.side-row .ico').getBoundingClientRect().top - g.querySelector('.side-sub-label').getBoundingClientRect().bottom); }; return gap('.side-views') === gap('.side-workstreams'); })()`)) === true);
-  check("files, routines and backlog share one module head style", (await $(`new Set([...document.querySelectorAll('.side-module-title')].map((n) => { const c = getComputedStyle(n); return c.fontSize + c.fontWeight; })).size === 1 && document.querySelectorAll('.side-module-title').length === 3`)) === true);
+  check("files, routines and backlog share one module head style", (await $(`new Set([...document.querySelectorAll('.side-module-title')].map((n) => { const c = getComputedStyle(n); return c.fontSize + c.fontWeight; })).size === 1 && document.querySelectorAll('.side-module-title').length === 4`)) === true);
   check("a workstream row is two short lines, not a tall block", (await $(`document.querySelector('.side-ws-container')?.getBoundingClientRect().height`)) < 56);
   await shot("backlog-sidebar-01");
 
@@ -134,13 +145,32 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await sleep(500);
 
-  // ── the module folds ──────────────────────────────────────────────────
-  await press(`document.querySelector('.side-module-toggle')`);
+  // ── folding and order, kept on this machine ───────────────────────────
+  await press(`document.querySelector('[data-module="backlog"] .side-module-fold')`);
   await sleep(200);
   check("the backlog folds away", (await $(`!document.querySelector('.side-backlog .side-views')`)) === true);
-  await press(`document.querySelector('.side-module-toggle')`);
+  await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
   await sleep(200);
-  check("and comes back", (await $(`!!document.querySelector('.side-backlog .side-views')`)) === true);
+  check("so do files", (await $(`!document.querySelector('[data-module="files"] .side-module-body')`)) === true);
+  const menuPick = async (moduleId, nth) => {
+    await $(`(() => { const h = document.querySelector('[data-module="${moduleId}"] .side-module-head'); const r = h.getBoundingClientRect(); h.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 30, clientY: r.top + 8, button: 2 })); return true; })()`);
+    await sleep(300);
+    await press(`document.querySelectorAll('.menu.is-floating [role=menuitem]')[${nth}]`);
+    await sleep(300);
+  };
+  await menuPick("backlog", 0);
+  await menuPick("backlog", 0);
+  check("a module moves up from its menu", JSON.stringify(await modules()) === JSON.stringify(["backlog", "files", "routines", "plugin:demo.links"]), await modules());
+  await shot("backlog-sidebar-07-moved");
+  await win.webContents.reload();
+  await sleep(3000);
+  check("the order and the folds survive a reload", JSON.stringify(await modules()) === JSON.stringify(["backlog", "files", "routines", "plugin:demo.links"]) && (await $(`!document.querySelector('.side-backlog .side-views') && !document.querySelector('[data-module="files"] .side-module-body')`)) === true, await modules());
+  await menuPick("backlog", 2);
+  await press(`document.querySelector('[data-module="backlog"] .side-module-fold')`);
+  await press(`document.querySelector('[data-module="files"] .side-module-fold')`);
+  await sleep(300);
+  check("resetting puts the default order back", JSON.stringify(await modules()) === JSON.stringify(["files", "routines", "backlog", "plugin:demo.links"]), await modules());
+  check("and unfolding brings the backlog back", (await $(`!!document.querySelector('.side-backlog .side-views')`)) === true);
   await press(`document.querySelector('[data-testid="open-templates"]')`);
   await sleep(700);
   await press(`document.querySelector('.side-backlog-home')`);

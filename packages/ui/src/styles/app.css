@@ -450,8 +450,20 @@ strong { font-weight: var(--font-weight-medium); }
 .side-label-btn.side-module-btn:hover, .side-label-btn.side-module-btn[aria-current="true"],
 .side-label-btn.side-module-btn:hover .side-module-title,
 .side-label-btn.side-module-btn[aria-current="true"] .side-module-title { color: var(--fg); }
-.side-module-toggle .ico, .side-module-toggle svg { transition: transform var(--motion-fast) var(--ease-standard); }
-.side-module-body { display: flex; flex-direction: column; gap: var(--space-3); }
+/* every module: a head row (fold chevron or its room, then the title) and a
+   body; one gap between modules whatever each holds, so none reads as nearer */
+.side-scroll > .side-module + .side-module { margin-top: var(--space-5); }
+.side-module-head { min-height: 30px; gap: 2px; padding: 0 var(--space-2) 0 0; cursor: grab; }
+.side-module-fold, .side-module-fold-space { flex-shrink: 0; width: 20px; height: 20px; }
+.side-module-head .side-module-fold { width: 20px; height: 20px; color: var(--meta); }
+.side-module-head .side-module-fold:hover { color: var(--fg); }
+.side-module-fold svg { transition: transform var(--motion-fast) var(--ease-standard); }
+.side-module.dragging { opacity: 0.55; }
+.side-module.dragging .side-module-head { cursor: grabbing; }
+.side-label-btn.side-module-btn.is-static { cursor: inherit; }
+.side-module-body { display: flex; flex-direction: column; gap: var(--space-3); margin-top: 2px; }
+.side-module-empty { margin: 0; padding: 4px 10px; font-size: var(--text-xs); color: var(--meta); }
+.side-row .side-row-noico { width: 15px; flex-shrink: 0; }
 .side-sub-label {
   display: flex; align-items: center; gap: 2px;
   min-height: 24px; padding: 0 var(--space-2) 0 10px;
@@ -2191,7 +2203,7 @@ button.kref { cursor: pointer; }
  * panel with both sides whole. */
 .side-label-btn { border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
 .side-label-btn .side-label { padding: 0; }
-.side-templates { display: inline-flex; align-items: center; gap: 6px; color: var(--meta); }
+.side-templates { display: inline-flex; align-items: center; }
 .side-templates:hover, .side-templates[aria-current="true"] { color: var(--fg); }
 .side-label-btn:hover .side-label,
 .side-label-btn[aria-current="true"] .side-label,
@@ -2213,7 +2225,7 @@ button.kref { cursor: pointer; }
 .side-change { flex-shrink: 0; min-width: 10px; font: 600 10px/1 var(--font-mono); text-align: center; color: var(--warn); }
 .side-change.is-deleted { color: var(--meta); text-decoration: line-through; }
 .side-change.is-conflicted { color: var(--danger); }
-.side-files-empty-placeholder { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-2); color: var(--meta); font-size: var(--text-sm); opacity: 0.6; pointer-events: none; }
+.side-files-empty-placeholder { display: flex; align-items: center; gap: var(--space-2); padding: 7px var(--space-2) 7px 10px; color: var(--meta); font-size: var(--text-sm); opacity: 0.6; pointer-events: none; }
 .side-files-empty-placeholder .ico { opacity: 0.7; }
 
 .files-region { --files-gutter: var(--space-6); }

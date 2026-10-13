@@ -35,6 +35,7 @@ export const ContributesSchema = z
     statusItems: z.array(z.string()).default([]),
     sections: z.array(z.string()).default([]),
     graphs: z.array(z.string()).default([]),
+    sidebarModules: z.array(z.string()).default([]),
     playbooks: z.array(z.string()).default([]),
     settings: z.array(z.string()).default([]),
     surfaces: z.array(z.string()).default([]),

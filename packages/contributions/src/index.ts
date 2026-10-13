@@ -148,6 +148,48 @@ export interface SectionView {
   text?: string;
 }
 
+/** One row under a sidebar module's head. */
+export interface SidebarRow {
+  /** Stable within its module. */
+  id: string;
+  label: string;
+  /** Icon id from the renderer's sprite; unknown ids draw nothing. */
+  icon?: string;
+  /** A second, quieter line under the label — a path, a state. */
+  detail?: string;
+  /** A number or a short word at the row's end. */
+  count?: number | string;
+  /** The row runs this palette command with the project in scope. */
+  command?: string;
+  /** The row opens this link in the browser. */
+  href?: string;
+}
+
+/**
+ * A module of the project sidebar, beside Files, Routines and the backlog. The
+ * renderer draws the head, the fold button and the rows, and the person decides
+ * where it sits; the plugin says only what is in it and what clicking does.
+ */
+export interface SidebarModule {
+  id: string;
+  title: Words;
+  /** Icon id from the renderer's sprite, drawn before the title. */
+  icon?: string;
+  /** Clicking the head runs this command with the project in scope. */
+  command?: string;
+  /** The rows under the head, computed per project. Without it the module is a single door; null hides it in that project. */
+  rows?(scope: { projectId: string }): SidebarRow[] | null | Promise<SidebarRow[] | null>;
+}
+
+export interface SidebarModuleView {
+  id: string;
+  title: string;
+  icon?: string;
+  command?: string;
+  /** Absent: a door with nothing to fold. */
+  rows?: SidebarRow[];
+}
+
 export interface ImageBox {
   x: number;
   y: number;
@@ -200,6 +242,7 @@ declare module "@tomradex/ipc" {
     "contributions.graphs": () => GraphInfo[];
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
     "contributions.assistantAccessories": () => AssistantAccessory[];
+    "contributions.sidebarModules": (projectId: string) => SidebarModuleView[];
   }
   interface Broadcasts {
     "contributions.changed": () => void;
@@ -216,6 +259,7 @@ export class Contributions extends Service {
   private sectionMap = new Map<string, Section>();
   private graphMap = new Map<string, GraphSpec>();
   private assistantAccessoryMap = new Map<string, AssistantAccessory>();
+  private sidebarModuleMap = new Map<string, SidebarModule>();
   private notify: () => void = () => {};
 
   constructor(ctx: Context) {
@@ -232,6 +276,7 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.graphs", () => ctx.contributions.graphs());
       ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
       ctx.ipc.handle("contributions.assistantAccessories", () => ctx.contributions.assistantAccessories());
+      ctx.ipc.handle("contributions.sidebarModules", (projectId) => ctx.contributions.sidebarModules(projectId));
       this.notify = () => ctx.ipc.send("contributions.changed");
       return () => {
         this.notify = () => {};
@@ -263,6 +308,10 @@ export class Contributions extends Service {
     return this.add(this.assistantAccessoryMap, def, "assistantAccessory");
   }
 
+  sidebarModule(def: SidebarModule): () => void {
+    return this.add(this.sidebarModuleMap, def, "sidebarModule");
+  }
+
   commands(): CommandView[] {
     return [...this.commandMap.values()].map((c) => ({ id: c.id, title: said(c.title)!, ...(c.group ? { group: said(c.group) } : {}), ...(c.shortcut ? { shortcut: c.shortcut } : {}) }));
   }
@@ -287,6 +336,16 @@ export class Contributions extends Service {
   async statusItems(scope: { projectId?: string }): Promise<StatusItemView[]> {
     const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, command: s.command, title: said(s.title), icon: s.icon, align: s.align, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
     return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}), ...(t.command ? { command: t.command } : {}), ...(t.title ? { title: t.title } : {}), ...(t.icon ? { icon: t.icon } : {}), ...(t.align ? { align: t.align } : {}) }] : []));
+  }
+
+  async sidebarModules(projectId: string): Promise<SidebarModuleView[]> {
+    const modules = [...this.sidebarModuleMap.values()];
+    const rows = await Promise.all(modules.map((m) => (m.rows ? this.isolated(`sidebar module ${m.id}`, () => m.rows!({ projectId }), null) : undefined)));
+    return modules.flatMap((m, i) => {
+      // a module whose rows failed or said null is not shown in this project
+      if (m.rows && !rows[i]) return [];
+      return [{ id: m.id, title: said(m.title)!, ...(m.icon ? { icon: m.icon } : {}), ...(m.command ? { command: m.command } : {}), ...(m.rows ? { rows: rows[i]! } : {}) }];
+    });
   }
 
   graphs(): GraphInfo[] {
