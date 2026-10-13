@@ -445,8 +445,11 @@ strong { font-weight: var(--font-weight-medium); }
 /* a module: one door in the sidebar (Files, Routines, Backlog). The backlog's
    head lands on its first view and folds the module; its parts sit under small
    sub-labels so they read as one thing, not three groups */
-.side-module-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--meta); }
-.side-module-btn:hover, .side-module-btn[aria-current="true"] { color: var(--fg); }
+.side-label-btn.side-module-btn { display: inline-flex; align-items: center; gap: 7px; color: var(--fg-2); }
+.side-label-btn.side-module-btn .side-module-title { font-size: var(--text-sm); font-weight: 600; letter-spacing: 1px; color: var(--fg-2); }
+.side-label-btn.side-module-btn:hover, .side-label-btn.side-module-btn[aria-current="true"],
+.side-label-btn.side-module-btn:hover .side-module-title,
+.side-label-btn.side-module-btn[aria-current="true"] .side-module-title { color: var(--fg); }
 .side-module-toggle .ico, .side-module-toggle svg { transition: transform var(--motion-fast) var(--ease-standard); }
 .side-module-body { display: flex; flex-direction: column; gap: var(--space-3); }
 .side-sub-label {
@@ -456,11 +459,14 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .side-sub-label .btn-icon { width: 22px; height: 22px; color: var(--meta); }
 .side-sub-label .btn-icon:hover { color: var(--fg); }
-.side-backlog .side-fields { color: var(--meta); }
 
 /* a workstream row carries where its code lives on a second line; its
    settings button takes the count's place on hover */
 .side-ws-container { position: relative; }
+/* two lines: icon and count stay on the name's line, so the list starts where the views do */
+.side-row.is-workstream { align-items: flex-start; }
+.side-row.is-workstream > .ico { margin-top: 2px; }
+.side-row.is-workstream > .side-count { line-height: 18px; }
 .side-ws-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .side-ws-repo { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 11px; line-height: 1.3; color: var(--meta); }
 .side-ws-repo svg { flex-shrink: 0; }

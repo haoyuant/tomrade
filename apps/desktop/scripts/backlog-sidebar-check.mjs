@@ -29,6 +29,11 @@ const check = (name, cond, detail) => {
   if (!cond && detail !== undefined) console.log(`  saw ${JSON.stringify(detail)}`);
 };
 
+const zh = process.env.TOMRADE_LANG === "zh";
+const say = zh
+  ? { what: "一条工作线", repo: "自己的代码仓库", connect: "连接仓库", backlog: "工作项" }
+  : { what: "one line of work", repo: "its own repository", connect: "Connect a repository", backlog: "Backlog" };
+
 const run = async () => {
   const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }]] });
   ctx.hub.configure(path.join(work, "hub"));
@@ -55,11 +60,14 @@ const run = async () => {
   // ── one Backlog module ────────────────────────────────────────────────
   const order = await $(`[...document.querySelectorAll('.side-scroll > .side-group')].map((g) => ['side-files', 'side-routines', 'side-backlog'].find((c) => g.classList.contains(c)) ?? g.className)`);
   check("the sidebar is three modules: files, routines, backlog", JSON.stringify(order) === JSON.stringify(["side-files", "side-routines", "side-backlog"]), order);
-  check("the backlog module is headed Backlog", (await text(".side-backlog-home .side-label")) === "Backlog");
-  check("views, workstreams and fields all sit inside it", (await $(`['.side-views', '.side-workstreams', '.side-fields'].every((s) => document.querySelector(s)?.closest('.side-backlog'))`)) === true);
+  check("the backlog module is headed Backlog", (await text(".side-backlog-home .side-label")) === say.backlog);
+  check("views and workstreams sit inside it", (await $(`['.side-views', '.side-workstreams'].every((s) => document.querySelector(s)?.closest('.side-backlog'))`)) === true);
+  check("fields left the sidebar for the view head, right of View", (await $(`!document.querySelector('.sidebar .side-fields') && document.querySelector('.view-settings-btn')?.nextElementSibling?.classList.contains('view-fields-btn')`)) === true);
   check("its head reads as current on a view", (await $(`document.querySelector('.side-backlog-home')?.getAttribute('aria-current')`)) === "true");
   check("every workstream is listed", (await $(`document.querySelectorAll('.side-row.is-workstream').length`)) === boards.length);
   check("the sidebar never scrolls sideways", (await $(`(() => { const sc = document.querySelector('.side-scroll'); return sc.scrollWidth <= sc.clientWidth; })()`)) === true);
+  check("the views and the workstreams start the same distance under their labels", (await $(`(() => { const gap = (sel) => { const g = document.querySelector(sel); return Math.round(g.querySelector('.side-row .ico').getBoundingClientRect().top - g.querySelector('.side-sub-label').getBoundingClientRect().bottom); }; return gap('.side-views') === gap('.side-workstreams'); })()`)) === true);
+  check("files, routines and backlog share one module head style", (await $(`new Set([...document.querySelectorAll('.side-module-title')].map((n) => { const c = getComputedStyle(n); return c.fontSize + c.fontWeight; })).size === 1 && document.querySelectorAll('.side-module-title').length === 3`)) === true);
   check("a workstream row is two short lines, not a tall block", (await $(`document.querySelector('.side-ws-container')?.getBoundingClientRect().height`)) < 56);
   await shot("backlog-sidebar-01");
 
@@ -86,8 +94,8 @@ const run = async () => {
   // ── the help popover ──────────────────────────────────────────────────
   await press(`document.querySelector('.side-ws-help-btn')`);
   await sleep(300);
-  check("the help explains what a workstream is", ((await text(".side-ws-help")) ?? "").includes("one line of work"));
-  check("and that each can point at its own repository", ((await text(".side-ws-help")) ?? "").includes("its own repository"));
+  check("the help explains what a workstream is", ((await text(".side-ws-help")) ?? "").includes(say.what));
+  check("and that each can point at its own repository", ((await text(".side-ws-help")) ?? "").includes(say.repo));
   await shot("backlog-sidebar-04-help");
   check("the help opens in place, never clipped sideways", (await $(`(() => { const sc = document.querySelector('.side-scroll'); return sc.scrollWidth <= sc.clientWidth; })()`)) === true);
   await press(`document.querySelector('.side-ws-help-manage')`);
@@ -102,8 +110,29 @@ const run = async () => {
   await $(`(() => { const i = document.querySelector('.side-workstreams input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Docs'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
   await sleep(900);
   check("a new workstream lands in the list", (await $(`[...document.querySelectorAll('.side-workstreams .side-name')].some((n) => n.textContent === 'Docs')`)) === true);
-  check("and its toast offers to connect a repository", (await $(`[...document.querySelectorAll('.toast button')].some((b) => b.textContent === 'Connect a repository')`)) === true);
+  check("and its toast offers to connect a repository", (await $(`[...document.querySelectorAll('.toast button')].some((b) => b.textContent === ${JSON.stringify(say.connect)})`)) === true);
   await shot("backlog-sidebar-05-created");
+
+  // ── removing asks first ───────────────────────────────────────────────
+  const docs = ctx.boards.list(project.id).find((b) => b.name === "Docs");
+  await press(`document.querySelector('.side-row.is-workstream[data-board="${docs.id}"]')?.closest('.side-ws-container')?.querySelector('.side-ws-edit')`);
+  await sleep(900);
+  await press(`document.querySelector('.fld-ws[data-board="${docs.id}"] .fld-ws-remove')`);
+  await sleep(500);
+  check("removing a workstream opens a confirmation", (await $(`!!document.querySelector('.ws-remove-confirm')`)) === true);
+  check("cancel holds the focus", (await $(`document.activeElement?.classList.contains('btn-secondary') && !!document.activeElement.closest('[role=dialog]')?.querySelector('.ws-remove')`)) === true);
+  await shot("backlog-sidebar-06-remove");
+  await press(`document.activeElement`);
+  await sleep(500);
+  check("cancelling keeps it", !!ctx.boards.list(project.id).find((b) => b.id === docs.id) && (await $(`!document.querySelector('.ws-remove-confirm')`)) === true);
+  await press(`document.querySelector('.fld-ws[data-board="${docs.id}"] .fld-ws-remove')`);
+  await sleep(500);
+  await press(`document.querySelector('.ws-remove-confirm')`);
+  await sleep(900);
+  check("confirming removes it", !ctx.boards.list(project.id).find((b) => b.id === docs.id));
+  check("and its toast offers undo", (await $(`!!document.querySelector('.toast .toast-undo, .toast button')`)) === true);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await sleep(500);
 
   // ── the module folds ──────────────────────────────────────────────────
   await press(`document.querySelector('.side-module-toggle')`);

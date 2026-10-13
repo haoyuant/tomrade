@@ -192,7 +192,7 @@ const run = async () => {
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(1000);
   check("its toast undoes the create", repos.boards.list(project.id).length === workstreamsBefore);
-  check("the sidebar foot offers fields", (await $(`!!document.querySelector('.side-scroll .side-fields')`)) === true);
+  check("the view head offers fields", (await $(`!!document.querySelector('.view-head .view-fields-btn')`)) === true);
   check("project settings appear once, pinned below the scrolling body", (await $(`document.querySelectorAll('.side-project-settings').length === 1 && !document.querySelector('.side-scroll .side-project-settings') && document.querySelector('.sidebar').lastElementChild.contains(document.querySelector('.side-project-settings'))`)) === true);
   check("…bolder and larger than a nav row, with an accessible name", (await $(`(() => { const b = document.querySelector('.side-project-settings'); const row = document.querySelector('.side-row.is-view'); const cs = getComputedStyle(b); return Number(cs.fontWeight) >= 600 && parseFloat(cs.fontSize) > parseFloat(getComputedStyle(row).fontSize) && b.getAttribute('aria-label') === 'Project settings'; })()`)) === true);
 
@@ -871,7 +871,7 @@ const run = async () => {
   await sleep(500);
 
   // ── fields: workstreams are the Workstream field's options ──────────
-  await press(`document.querySelector('.side-fields')`);
+  await press(`document.querySelector('.view-fields-btn')`);
   await sleep(900);
   check("the Fields sheet lists the built-ins and the project's own", (await $(`document.querySelectorAll('.fld-row.is-builtin').length`)) === 9 && (await $(`document.querySelectorAll('.fld-row:not(.is-builtin)').length`)) === repos.fields.custom(project.id).length);
   await press(`document.querySelector('button.fld-row[data-field="board"]')`);

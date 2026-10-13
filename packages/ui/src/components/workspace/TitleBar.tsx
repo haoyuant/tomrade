@@ -177,7 +177,7 @@ function ViewName({ editRequest }: { editRequest: number }) {
  */
 const READINESS_KEY = { empty: "codeLink.readiness_empty", scaffolded: "codeLink.readiness_scaffolded", unknown: "codeLink.readiness_unknown" } as const;
 
-export function ViewHead({ onOpenViewSettings, onEditWorkstream }: { onOpenViewSettings: () => void; onEditWorkstream: (boardId: string) => void }) {
+export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }: { onOpenViewSettings: () => void; onOpenFields: () => void; onEditWorkstream: (boardId: string) => void }) {
   const ws = useWorkspace();
   const { t, tx } = useI18n();
   const repos = useRepos(ws.project.id);
@@ -299,6 +299,11 @@ export function ViewHead({ onOpenViewSettings, onEditWorkstream }: { onOpenViewS
       <button type="button" className="btn btn-ghost view-settings-btn" aria-haspopup="dialog" title={t("titleBar.viewSettingsTitle")} onClick={onOpenViewSettings}>
         <Icon name="i-sliders" size={14} />
         <span className="lbl">{t("titleBar.viewSettings")}</span>
+      </button>
+      {/* fields are what every view is built from, so their door sits beside the view's own settings */}
+      <button type="button" className="btn btn-ghost view-fields-btn" aria-haspopup="dialog" title={t("titleBar.fieldsTitle")} onClick={onOpenFields}>
+        <Icon name="i-bars" size={14} />
+        <span className="lbl">{t("titleBar.fields")}</span>
       </button>
       {!ws.virtual && (
       <div className="menu-wrap">

@@ -103,6 +103,7 @@ export function Workspace() {
     setFieldsBoard(boardId ?? null);
     setFieldsOpen(true);
   }, []);
+  const openFieldsList = useCallback(() => openFields(), [openFields]);
   const editWorkstream = useCallback((boardId: string) => openFields("board", boardId), [openFields]);
   /** false: closed; true: the sheet; a name: the sheet scrolled to that block. */
   const [projectSettings, setProjectSettings] = useState<boolean | "repositories" | "files">(false);
@@ -305,7 +306,7 @@ export function Workspace() {
             <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
           ) : (
             <section className="board-region" data-layout={ws.layout}>
-              <ViewHeadRegion onOpenViewSettings={openViewSettings} onEditWorkstream={editWorkstream} />
+              <ViewHeadRegion onOpenViewSettings={openViewSettings} onOpenFields={openFieldsList} onEditWorkstream={editWorkstream} />
               <QueryBarRegion />
               {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
               {ws.itemsError ? (

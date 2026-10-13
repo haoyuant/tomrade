@@ -263,8 +263,8 @@ function WorkstreamsHelp({ onManage, onClose }: { onManage: () => void; onClose:
 const backlogOpenKey = "tomrade.sidebar.backlogOpen";
 
 /**
- * The backlog as one module: its saved views, the workstreams it is split
- * into, and the fields both are built from. The head is the module's door —
+ * The backlog as one module: its saved views and the workstreams it is split
+ * into (its fields are edited from the view head). The head is the module's door —
  * it lands on the first view — and folds the module away.
  */
 function BacklogModule({ onOpenFields }: { onOpenFields: (fieldId?: string, boardId?: string) => void }) {
@@ -295,8 +295,8 @@ function BacklogModule({ onOpenFields }: { onOpenFields: (fieldId?: string, boar
     <div className="side-group side-module side-backlog">
       <div className="side-label-row side-module-head">
         <button type="button" className="side-label-btn side-module-btn side-backlog-home" aria-current={here} onClick={() => !here && views[0] && openView(views[0].id)}>
-          <Icon name="i-board" size={13} />
-          <Eyebrow className="side-label">{t("sidebar.backlogEyebrow")}</Eyebrow>
+          <Icon name="i-board" size={14} />
+          <Eyebrow className="side-label side-module-title">{t("sidebar.backlogEyebrow")}</Eyebrow>
         </button>
         <Spacer />
         <button type="button" className="btn btn-icon side-module-toggle" aria-expanded={open} aria-label={t(open ? "sidebar.collapseBacklog" : "sidebar.expandBacklog")} title={t(open ? "sidebar.collapseBacklog" : "sidebar.expandBacklog")} onClick={toggle}>
@@ -339,10 +339,6 @@ function BacklogModule({ onOpenFields }: { onOpenFields: (fieldId?: string, boar
             <NewWorkstreamRow onEdit={editWorkstream} />
             {boards.length === 1 && <Hint id="hint.workstreams">{t("sidebar.workstreamsHint")}</Hint>}
           </div>
-          <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
-            <Icon className="ico" name="i-sliders" size={14} />
-            <span className="side-name">{t("sidebar.fields")}</span>
-          </button>
         </div>
       )}
     </div>
@@ -351,7 +347,7 @@ function BacklogModule({ onOpenFields }: { onOpenFields: (fieldId?: string, boar
 
 /**
  * The project's modules, each one door: its files, its routines, and its
- * backlog (views, workstreams, fields).
+ * backlog (views, workstreams).
  * Leaving the project is chrome work — home and the switcher, both in the
  * titlebar. Collapsed, it is the same rail the assistant folds to, and the view
  * head grows its own switcher.
@@ -439,14 +435,14 @@ export function Sidebar({
           <div className="side-label-row">
             <button
               type="button"
-              className="side-label-btn side-templates"
+              className="side-label-btn side-module-btn side-templates"
               aria-current={routines}
               aria-label={t("templates.openAria")}
               data-testid="open-templates"
               onClick={onOpenTemplates}
             >
-              <Icon name="i-alarm" size={13} />
-              <Eyebrow className="side-label">{t("templates.label")}</Eyebrow>
+              <Icon name="i-alarm" size={14} />
+              <Eyebrow className="side-label side-module-title">{t("templates.label")}</Eyebrow>
             </button>
           </div>
         </div>

@@ -294,8 +294,9 @@ export function FilesTree() {
     <>
       <div className="side-label-row">
         {syncActions.confirmation}
-        <button type="button" className="side-label-btn side-files-home" aria-current={filePath === ""} onClick={() => openFile("")}>
-          <Eyebrow className="side-label">{t("files.eyebrow")}</Eyebrow>
+        <button type="button" className="side-label-btn side-module-btn side-files-home" aria-current={filePath === ""} onClick={() => openFile("")}>
+          <Icon name="i-folder" size={14} />
+          <Eyebrow className="side-label side-module-title">{t("files.eyebrow")}</Eyebrow>
         </button>
         {state.warn && !unavailable && <span className={`side-mark is-state is-${stateKey}`} title={state.label} data-state={stateKey} />}
         <Spacer />

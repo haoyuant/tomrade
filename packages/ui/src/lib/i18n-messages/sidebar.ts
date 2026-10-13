@@ -53,18 +53,18 @@ export const sidebar = {
     newWorkstreamNameAria: "新工作流名称",
     workstreamNamePlaceholder: "工作流名称…",
     createdWorkstreamToast: "已创建工作流 {{name}}",
-    backlogEyebrow: "Backlog",
-    collapseBacklog: "收起 Backlog",
-    expandBacklog: "展开 Backlog",
+    backlogEyebrow: "工作项",
+    collapseBacklog: "收起工作项",
+    expandBacklog: "展开工作项",
     noRepo: "未连接仓库",
     editWorkstream: "工作流设置",
     connectRepo: "连接仓库",
     editWorkstreamAria: "工作流 {{name}} 的设置",
     closeHelp: "关闭",
     workstreamsHelpTitle: "什么是工作流？",
-    workstreamsHelpWhat: "工作流是这个 Backlog 里的一条工作线——比如应用、官网、文档。每个工单都恰好属于一个工作流，每个工作流都有自己的页面，点一下就能切换过去。",
+    workstreamsHelpWhat: "工作流是项目里的一条工作线——比如应用、官网、文档。每个工单都恰好属于一个工作流，每个工作流都有自己的页面，点一下就能切换过去。",
     workstreamsHelpRepo: "每个工作流都可以指向自己的代码仓库，以及仓库里的某个文件夹。点 Start 时，工单的编码智能体就在那里运行——所以一个项目可以横跨多个仓库。",
     workstreamsHelpExample: "例如：应用 → acme/app，官网 → acme/site，文档 → acme/app 的 docs/。",
-    workstreamsHint: "工作涉及多个部分或多个仓库时，可以把 Backlog 拆成几个工作流——每个工作流都能连接自己的仓库。"
+    workstreamsHint: "工作涉及多个部分或多个仓库时，可以把工作项分到几个工作流里——每个工作流都能连接自己的仓库。"
   }
 };
