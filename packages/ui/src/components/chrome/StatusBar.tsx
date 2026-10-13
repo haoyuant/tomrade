@@ -151,7 +151,7 @@ export function StatusBar({
       )}
       {onHistory && (
         <button type="button" className="btn btn-ghost status-history" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onHistory} title={t("statusBar.historyTitle")}>
-          <Icon name="i-clock" size={13} /> {t("statusBar.history")}
+          <Icon name="i-history" size={13} /> {t("statusBar.history")}
         </button>
       )}
       <Spacer />

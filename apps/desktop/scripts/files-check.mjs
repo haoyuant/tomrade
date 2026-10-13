@@ -402,6 +402,7 @@ const run = async () => {
 
   // Usage sits between them since TOM-47
   check("the title bar offers History right beside Settings", (await $(`(() => { const h = document.querySelector('.titlebar .title-history'); const near = [h?.nextElementSibling, h?.nextElementSibling?.nextElementSibling]; return !!h && near.some((n) => n?.querySelector('use')?.getAttribute('href') === '#i-gear'); })()`)) === true);
+  check("History and Routines carry different icons", (await $(`(() => { const href = (sel) => document.querySelector(sel + ' use')?.getAttribute('href'); const h = href('.titlebar .title-history'), s = href('.statusbar .status-history'), r = href('.side-templates'); return h === '#i-history' && s === h && !!r && r !== h; })()`)) === true);
   await click(".titlebar .title-history");
   await wait(() => has('[data-testid="history-list"] .hist-row'), "history window");
   const histRows = () => $(`[...document.querySelectorAll('[data-testid="history-list"] .hist-row')].map((r) => r.dataset.ref.split(':')[0] + '|' + r.dataset.undone + '|' + r.querySelector('.hist-text').textContent)`);

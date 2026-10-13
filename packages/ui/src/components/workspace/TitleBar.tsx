@@ -104,7 +104,7 @@ export function TitleBar({
         aria-label={t("titleBar.historyAria")}
         aria-busy={historyBusy}
       >
-        <Icon name={historyBusy ? "i-sync" : "i-clock"} size={17} className={historyBusy ? "is-spinning" : undefined} />
+        <Icon name={historyBusy ? "i-sync" : "i-history"} size={17} className={historyBusy ? "is-spinning" : undefined} />
       </button>
       <button type="button" className="btn btn-icon no-drag" onClick={onOpenUsage} title={t("usage.label")} aria-label={t("usage.label")} data-testid="titlebar-usage">
         <Icon name="i-bars" size={17} />

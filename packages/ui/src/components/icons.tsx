@@ -44,6 +44,7 @@ export const ICON_IDS = [
   "i-pen",
   "i-sliders",
   "i-clock",
+  "i-history",
   "i-send",
   "i-stop",
   "i-graph",
@@ -120,6 +121,7 @@ export function IconSprite() {
         <symbol id="i-pen" viewBox="0 0 14 14"><path d="M9.3 2.4 11.6 4.7 5.3 11 2.4 11.6 3 8.7Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></symbol>
         <symbol id="i-sliders" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M1.9 4.6h10.2M1.9 9.4h10.2"/></g><g fill="currentColor"><circle cx="5.2" cy="4.6" r="1.7"/><circle cx="9" cy="9.4" r="1.7"/></g></symbol>
         <symbol id="i-clock" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.2"/><path d="M7 4.2V7l2 1.4"/></g></symbol>
+        <symbol id="i-history" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1.9 7a5.1 5.1 0 1 0 5.1-5.1 5.6 5.6 0 0 0-3.9 1.6L1.9 4.7"/><path d="M1.9 1.9v2.8h2.8"/><path d="M7 4.3V7l1.9 1.1"/></g></symbol>
         <symbol id="i-graph" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="3.2" cy="3.4" r="1.7"/><circle cx="10.8" cy="5.4" r="1.7"/><circle cx="5.6" cy="10.6" r="1.7"/><path d="M4.8 4 9.2 4.9M4.4 9.2 3.5 5.1M7.2 9.9 9.7 6.8" strokeLinecap="round"/></g></symbol>
         {/* code: a branch leaving the line, a pull request coming back, a prompt, a folder */}
         <symbol id="i-branch" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="4.6" r="1.5"/><path d="M3.6 4.7v4.6M10.4 6.1c0 2.4-2.4 3-4.6 3.2"/></g></symbol>
