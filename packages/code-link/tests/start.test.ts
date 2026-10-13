@@ -87,7 +87,7 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
   };
 }
 
-async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string } = {}) {
+async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const turns: TurnInput[] = [];
@@ -102,7 +102,7 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
       Contributions,
       Agent,
       enginePlugin,
-      [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git" }]
+      [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git", defaultsPath: opts.defaultsPath ?? path.join(hubDir, "code-link.json") }]
     ]
   });
   await settle();
@@ -879,6 +879,54 @@ describe("starting a ticket", () => {
     await untilRunsSettle(agent);
     expect(agent.store.thread(project.id, result.threadId)?.options).toBeNull();
     expect(world.turns.at(-1)?.options).toBeUndefined();
+  });
+});
+
+describe("remembering the start configuration", () => {
+  it("remembers what a start ran with and hands it back after a restart", async () => {
+    const where = path.join(root, `code-link-defaults-${n++}.json`);
+    const world = await machine(codeRepo(), { defaultsPath: where });
+    const { codeLink, ctx, project, repo, checkout, agent, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    expect(codeLink.startDefaults()).toBeNull();
+
+    const first = ticket("Pick a model");
+    expect(await codeLink.start(project.id, first.id, { mode: "run", options: { model: "opus", effort: "high" } })).toMatchObject({ ok: true });
+    await untilRunsSettle(agent);
+    expect(codeLink.startDefaults()).toEqual({ mode: "run", engine: "fake-code", options: { model: "opus", effort: "high" } });
+
+    // A General ticket carries its method along with the surface and the agent.
+    const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "Prepare the workshop", workType: "general", status: "todo", by: "human" });
+    expect(await codeLink.start(project.id, general.id, { mode: "run", playbook: "task.assist" })).toMatchObject({ ok: true });
+    await untilRunsSettle(agent);
+    expect(codeLink.startDefaults()).toEqual({ mode: "run", engine: "fake-code", playbook: "task.assist" });
+
+    // Starting again on a machine that just booted reads the file: the memory is not in-process state.
+    const restarted = await machine(codeRepo(), { defaultsPath: where });
+    expect(restarted.codeLink.startDefaults()).toEqual({ mode: "run", engine: "fake-code", playbook: "task.assist" });
+
+    // A gate the user had to clear is not a configuration that ran, so it is not remembered.
+    const fresh = await machine(null, { defaultsPath: where });
+    const gated = fresh.ticket("No repository yet");
+    expect(await fresh.codeLink.start(fresh.project.id, gated.id, { mode: "terminal", engine: "other" })).toMatchObject({ ok: false, gate: "workstream" });
+    expect(fresh.codeLink.startDefaults()).toEqual({ mode: "run", engine: "fake-code", playbook: "task.assist" });
+  });
+
+  it("hands back only what still fits: an agent or a knob the person has since removed is dropped", async () => {
+    const where = path.join(root, `code-link-defaults-${n++}.json`);
+    // Written by a version that had an engine and an option this machine does not have now.
+    fs.writeFileSync(where, JSON.stringify({ mode: "terminal", engine: "vanished-agent", options: { model: "gone", effort: "high" }, permissionMode: "acceptEdits", updatedAt: Date.now() }));
+    const world = await machine(codeRepo(), { defaultsPath: where });
+    const { codeLink } = world;
+    // The memory still loads, so the dialog can keep what it recognises and its own default covers the rest.
+    expect(codeLink.startDefaults()).toEqual({ mode: "terminal", engine: "vanished-agent", options: { model: "gone", effort: "high" }, permissionMode: "acceptEdits" });
+    // Nothing usable at all reads as no memory, and a start still runs rather than failing on it.
+    fs.writeFileSync(where, JSON.stringify({ mode: "run", updatedAt: Date.now() }));
+    expect(codeLink.startDefaults()).toBeNull();
+    const item = world.ticket("Still starts");
+    await world.ctx.repos.setCheckout(world.repo!.remote, world.checkout!);
+    expect(await codeLink.start(world.project.id, item.id, { mode: "run" })).toMatchObject({ ok: true });
+    await untilRunsSettle(world.agent);
   });
 });
 

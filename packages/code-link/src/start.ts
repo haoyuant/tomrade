@@ -68,6 +68,9 @@ export type StartResult =
       launched: boolean;
       /** Headless mode: the run that was started. */
       runId?: string;
+      /** The engine it actually ran with — the one picked for it when the caller named none, so a
+       *  remembered configuration is not left without an agent. */
+      engine: string;
       /** Headless mode: the thread waits on the person's answer to this, so nothing was sent — show it instead. */
       waitingOn?: string;
       /** Conditions that do not prevent local work, but constrain what the agent may do. */
@@ -267,12 +270,12 @@ export class Starter {
     if (opts.mode === "run") {
       if (asked) {
         this.host.notify(projectId);
-        return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, ...(warnings.length ? { warnings } : {}) };
+        return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, engine: engineId, ...(warnings.length ? { warnings } : {}) };
       }
       const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prompt }).runId;
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);
-      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, ...(warnings.length ? { warnings } : {}) };
+      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, engine: engineId, ...(warnings.length ? { warnings } : {}) };
     }
 
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), terminalPrompt);
@@ -282,7 +285,7 @@ export class Starter {
     const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);
-    return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, ...(warnings.length ? { warnings } : {}) };
+    return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, engine: engineId, ...(warnings.length ? { warnings } : {}) };
   }
 
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */
@@ -334,7 +337,7 @@ export class Starter {
       live ??
       store.createSession(projectId, { repoId: "", delivery: delivery.sequence, branch: "", itemIds: [item.id], mode, agent: engineId, threadId: thread.id, device: ctx.hub.deviceId, externalId });
     if (prepared.continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
-    const base = { ok: true as const, continued: prepared.continued, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: prepared.cwd, mode: opts.mode };
+    const base = { ok: true as const, continued: prepared.continued, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: prepared.cwd, mode: opts.mode, engine: engineId };
 
     if (opts.mode === "run") {
       const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prepared.opener }).runId;

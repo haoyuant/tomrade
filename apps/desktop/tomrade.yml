@@ -274,6 +274,9 @@ plugins:
     name: "@tomradex/code-link"
     config:
       scanMs: 120000
+      # What the Start dialog last ran with, remembered per machine (never synced):
+      # the agents it names are installed here or nowhere.
+      defaultsPath: "${userData}/code-link.json"
   # Routines (templates in code): tickets (a daily to-do, the week's chores, a checklist) or a
   # prompt to the assistant, run by hand or on schedules. Templates travel with
   # the project; schedules run on this machine while Tomrade is open.
