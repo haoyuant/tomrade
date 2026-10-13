@@ -7,7 +7,7 @@ import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/c
 import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
 import { useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
-import { useRemoveView, useUpdateView } from "~/lib/queries";
+import { useRemoveView, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
@@ -177,9 +177,12 @@ function ViewName({ editRequest }: { editRequest: number }) {
  */
 const READINESS_KEY = { empty: "codeLink.readiness_empty", scaffolded: "codeLink.readiness_scaffolded", unknown: "codeLink.readiness_unknown" } as const;
 
-export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => void }) {
+export function ViewHead({ onOpenViewSettings, onEditWorkstream }: { onOpenViewSettings: () => void; onEditWorkstream: (boardId: string) => void }) {
   const ws = useWorkspace();
   const { t, tx } = useI18n();
+  const repos = useRepos(ws.project.id);
+  const wsRepo = ws.workstream?.repoId ? (repos.data ?? []).find((r) => r.id === ws.workstream!.repoId) ?? null : null;
+  const wsPath = ws.workstream?.repoPath.replace(/^\/+|\/+$/g, "") ?? "";
   // A workstream page says what its repository is ready for: empty repositories bootstrap first.
   const repoStates = useRepoStates(ws.project.id);
   const readiness = ws.workstream?.repoId ? (repoStates.data ?? []).find((r) => r.repoId === ws.workstream!.repoId) ?? null : null;
@@ -227,6 +230,20 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
               }}
             />
           ))}
+          <MenuHead title={t("titleBar.workstreamsGroup")} />
+          {ws.boards.map((b) => (
+            <MenuRadioItem
+              key={b.id}
+              checked={ws.virtual && ws.workstream?.id === b.id}
+              name={b.name}
+              mark={<Icon name={viewIcon(b.icon)} size={13} />}
+              count={ws.owned.filter((i) => i.boardId === b.id).length}
+              onSelect={() => {
+                setSwitcherOpen(false);
+                ws.openWorkstream(b.id);
+              }}
+            />
+          ))}
         </Menu>
       </div>
       <Icon className="view-ico" name={viewIcon(ws.view.icon)} size={16} />
@@ -239,6 +256,19 @@ export function ViewHead({ onOpenViewSettings }: { onOpenViewSettings: () => voi
       )}
       <div className="board-facts">
         {ws.virtual && <span className="tag neutral view-kind">{FIELD_LABEL.board}</span>}
+        {ws.virtual && ws.workstream && (
+          // where this workstream's coding agents start; unbound, it is the way to bind it
+          <button
+            type="button"
+            className={`tag ws-repo-chip num${wsRepo ? " faint" : " is-none"}`}
+            aria-haspopup="dialog"
+            data-tip={wsRepo ? t("titleBar.workstreamRepoTip") : t("titleBar.workstreamNoRepoTip")}
+            onClick={() => onEditWorkstream(ws.workstream!.id)}
+          >
+            <Icon name={wsRepo ? "i-branch" : "i-link"} size={11} />
+            {wsRepo ? (wsPath ? `${wsRepo.name}/${wsPath}` : wsRepo.name) : t("titleBar.workstreamConnectRepo")}
+          </button>
+        )}
         {readiness && (
           <span className="tag faint readiness" title={readiness.remoteDetail ?? readiness.summary ?? undefined}>
             {readiness.remote === "unreachable" ? t("codeLink.remoteUnreachable") : t(READINESS_KEY[readiness.readiness])}

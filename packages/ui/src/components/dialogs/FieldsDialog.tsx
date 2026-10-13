@@ -452,13 +452,25 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
  * issue belongs to one, so a workstream that still holds issues asks where
  * they go before it leaves, and the last one never can.
  */
-function WorkstreamEditor({ projectId, items, onOpenRepositories }: { projectId: string; items: Item[]; onOpenRepositories?: () => void }) {
+function WorkstreamEditor({ projectId, items, focusBoardId, onOpenRepositories }: { projectId: string; items: Item[]; focusBoardId?: string | null; onOpenRepositories?: () => void }) {
   const { t, tx } = useI18n();
   const toast = useToast();
   const boards = useBoards(projectId);
   const create = useCreateBoard(projectId);
   const [newName, setNewName] = useState("");
   const list = boards.data ?? [];
+  const editor = useRef<HTMLDivElement>(null);
+  const ready = list.some((b) => b.id === focusBoardId);
+
+  // opened for one workstream: bring its card into view, on its repository choice
+  useEffect(() => {
+    if (!focusBoardId || !ready) return;
+    const card = editor.current?.querySelector<HTMLElement>(`.fld-ws[data-board="${focusBoardId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ block: "center" });
+    card.classList.add("is-focus");
+    card.querySelector<HTMLElement>("select")?.focus();
+  }, [focusBoardId, ready]);
 
   const add = () => {
     const name = newName.trim();
@@ -470,7 +482,7 @@ function WorkstreamEditor({ projectId, items, onOpenRepositories }: { projectId:
   };
 
   return (
-    <div className="fld-editor stack-3" data-editor="workstream">
+    <div ref={editor} className="fld-editor stack-3" data-editor="workstream">
       <p className="meta-txt dense">{t("fieldsDialog.workstreamNote")}</p>
       <p className="meta-txt dense">
         {t("fieldsDialog.workstreamRepoNote")}
@@ -522,6 +534,7 @@ export function FieldsDialog({
   open,
   onOpenChange,
   initialFieldId = null,
+  initialBoardId = null,
   onOpenRepositories
 }: {
   projectId: string;
@@ -530,6 +543,8 @@ export function FieldsDialog({
   onOpenChange: (open: boolean) => void;
   /** The field to land on — "board" opens straight onto the workstream editor. */
   initialFieldId?: string | null;
+  /** With "board": the workstream whose card to land on. */
+  initialBoardId?: string | null;
   /** Where "Repositories…" lands: the project's settings, after this sheet has closed. */
   onOpenRepositories?: () => void;
 }) {
@@ -588,7 +603,7 @@ export function FieldsDialog({
               f.id === "board" ? (
                 <div key={f.id} className="fld-item">
                   <FieldRow def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
-                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} onOpenRepositories={openRepositories} />}
+                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} />}
                 </div>
               ) : (
                 <FieldRow key={f.id} def={f} count={null} />

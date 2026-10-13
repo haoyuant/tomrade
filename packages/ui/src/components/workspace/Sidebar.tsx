@@ -2,14 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
-import type { Board, View } from "@tomradex/domain";
+import type { Board, Repo, View } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Hint } from "~/components/ui/hint";
 import { FilesTree } from "~/components/files/FilesTree";
 import { InlineNameRow } from "./InlineNameRow";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateBoard, useCreateView, useUpdateView } from "~/lib/queries";
+import { useCreateBoard, useCreateView, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
@@ -141,31 +142,52 @@ function NewViewRow() {
 
 /**
  * A workstream row is a place: its page shows everything in the workstream as
- * a board by status, unsaved, and reads as current instead of any view.
+ * a board by status, unsaved, and reads as current instead of any view. Its
+ * second line says where its code lives, so the repository binding is never a
+ * hidden setting.
  */
-function WorkstreamRow({ board }: { board: Board }) {
+function WorkstreamRow({ board, repo, onEdit }: { board: Board; repo: Repo | null; onEdit: () => void }) {
   const { t } = useI18n();
   const { owned, openWorkstream, virtual, workstream } = useWorkspace();
   const current = virtual && workstream?.id === board.id;
   const count = owned.filter((i) => i.boardId === board.id).length;
+  const path = board.repoPath.replace(/^\/+|\/+$/g, "");
   return (
-    <button
-      type="button"
-      className="side-row is-workstream"
-      data-board={board.id}
-      aria-current={current}
-      title={t("sidebar.openWorkstreamTitle", { name: board.name })}
-      onClick={() => !current && openWorkstream(board.id)}
-    >
-      <Icon className="ico" name={viewIcon(board.icon)} size={15} />
-      <span className="side-name">{board.name}</span>
-      <span className="side-count num">{count}</span>
-    </button>
+    <div className="side-ws-container">
+      <button
+        type="button"
+        className="side-row is-workstream"
+        data-board={board.id}
+        aria-current={current}
+        title={t("sidebar.openWorkstreamTitle", { name: board.name })}
+        onClick={() => !current && openWorkstream(board.id)}
+      >
+        <Icon className="ico" name={viewIcon(board.icon)} size={15} />
+        <span className="side-ws-text">
+          <span className="side-name">{board.name}</span>
+          <span className={`side-ws-repo num${repo ? "" : " is-none"}`}>
+            <Icon name="i-branch" size={11} />
+            <span className="side-ws-repo-name">{repo ? (path ? `${repo.name}/${path}` : repo.name) : t("sidebar.noRepo")}</span>
+          </span>
+        </span>
+        <span className="side-count num">{count}</span>
+      </button>
+      <button
+        type="button"
+        className="btn btn-icon side-ws-edit"
+        aria-haspopup="dialog"
+        title={repo ? t("sidebar.editWorkstream") : t("sidebar.connectRepo")}
+        aria-label={t("sidebar.editWorkstreamAria", { name: board.name })}
+        onClick={onEdit}
+      >
+        <Icon name={repo ? "i-sliders" : "i-link"} size={13} />
+      </button>
+    </div>
   );
 }
 
 /** Creating a workstream is a real write: it becomes an option of the Workstream field at once, and stays undoable. */
-function NewWorkstreamRow() {
+function NewWorkstreamRow({ onEdit }: { onEdit: (boardId: string) => void }) {
   const { t, tx } = useI18n();
   const { project } = useWorkspace();
   const create = useCreateBoard(project.id);
@@ -190,7 +212,12 @@ function NewWorkstreamRow() {
       {
         onSuccess: (board) => {
           setEditing(false);
-          toast({ body: <>{tx("sidebar.createdWorkstreamToast", { name: <span className="num">{trimmed}</span> })}</>, onUndo: () => undoWrite({ id: board.id, stamp: board.updatedAt }) });
+          toast({
+            body: <>{tx("sidebar.createdWorkstreamToast", { name: <span className="num">{trimmed}</span> })}</>,
+            onUndo: () => undoWrite({ id: board.id, stamp: board.updatedAt }),
+            // a new workstream has no code yet; say where that is set, right when it matters
+            actions: [{ label: t("sidebar.connectRepo"), run: () => onEdit(board.id) }]
+          });
         },
         onError: (err) => toast(errorSpec(err))
       }
@@ -201,8 +228,130 @@ function NewWorkstreamRow() {
 }
 
 /**
- * The project's files and routines, its saved views, its workstreams, and the
- * door to its fields.
+ * What a workstream is and what binding a repository buys — opened in place
+ * beside the list it explains, so the sidebar's scroll box never clips it.
+ */
+function WorkstreamsHelp({ onManage, onClose }: { onManage: () => void; onClose: () => void }) {
+  const { t } = useI18n();
+  const card = useRef<HTMLDivElement>(null);
+  // opened low in a long sidebar, it would land below the fold
+  useEffect(() => {
+    card.current?.scrollIntoView({ block: "nearest" });
+  }, []);
+  return (
+    <div ref={card} className="side-ws-help" role="note" aria-label={t("sidebar.workstreamsHelpTitle")}>
+      <div className="side-ws-help-head">
+        <strong>{t("sidebar.workstreamsHelpTitle")}</strong>
+        <Spacer />
+        <button type="button" className="btn btn-icon side-ws-help-close" aria-label={t("sidebar.closeHelp")} onClick={onClose}>
+          <Icon name="i-close" size={12} />
+        </button>
+      </div>
+      <p>{t("sidebar.workstreamsHelpWhat")}</p>
+      <p>
+        <Icon name="i-branch" size={12} /> {t("sidebar.workstreamsHelpRepo")}
+      </p>
+      <p className="side-ws-help-example">{t("sidebar.workstreamsHelpExample")}</p>
+      <button type="button" className="btn btn-ghost side-ws-help-manage" onClick={onManage}>
+        <Icon name="i-sliders" size={13} />
+        {t("sidebar.manageWorkstreams")}
+      </button>
+    </div>
+  );
+}
+
+const backlogOpenKey = "tomrade.sidebar.backlogOpen";
+
+/**
+ * The backlog as one module: its saved views, the workstreams it is split
+ * into, and the fields both are built from. The head is the module's door —
+ * it lands on the first view — and folds the module away.
+ */
+function BacklogModule({ onOpenFields }: { onOpenFields: (fieldId?: string, boardId?: string) => void }) {
+  const { t } = useI18n();
+  const { project, views, boards, openView, filePath, routines } = useWorkspace();
+  const repos = useRepos(project.id);
+  const here = filePath === null && !routines;
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(backlogOpenKey) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem(backlogOpenKey, open ? "0" : "1");
+    } catch {
+      // only a remembered fold; nothing to lose
+    }
+  };
+  const [helpOpen, setHelpOpen] = useState(false);
+  const editWorkstream = (boardId?: string) => onOpenFields("board", boardId);
+  const repoOf = (b: Board) => (repos.data ?? []).find((r) => r.id === b.repoId) ?? null;
+
+  return (
+    <div className="side-group side-module side-backlog">
+      <div className="side-label-row side-module-head">
+        <button type="button" className="side-label-btn side-module-btn side-backlog-home" aria-current={here} onClick={() => !here && views[0] && openView(views[0].id)}>
+          <Icon name="i-board" size={13} />
+          <Eyebrow className="side-label">{t("sidebar.backlogEyebrow")}</Eyebrow>
+        </button>
+        <Spacer />
+        <button type="button" className="btn btn-icon side-module-toggle" aria-expanded={open} aria-label={t(open ? "sidebar.collapseBacklog" : "sidebar.expandBacklog")} title={t(open ? "sidebar.collapseBacklog" : "sidebar.expandBacklog")} onClick={toggle}>
+          <Icon name="i-chevdown" size={13} style={open ? undefined : { transform: "rotate(-90deg)" }} />
+        </button>
+      </div>
+      {open && (
+        <div className="side-module-body">
+          <div className="side-sub side-views">
+            <div className="side-sub-label">
+              <span>{t("sidebar.viewsEyebrow")}</span>
+            </div>
+            <ViewList />
+            <NewViewRow />
+          </div>
+          <div className="side-sub side-workstreams">
+            <div className="side-sub-label">
+              <span>{t("sidebar.workstreamsEyebrow")}</span>
+              <button
+                type="button"
+                className="btn btn-icon side-ws-help-btn"
+                aria-expanded={helpOpen}
+                title={t("sidebar.workstreamsHelpTitle")}
+                aria-label={t("sidebar.workstreamsHelpTitle")}
+                onClick={() => setHelpOpen(!helpOpen)}
+              >
+                <Icon name="i-info" size={13} />
+              </button>
+              <Spacer />
+              <button type="button" className="btn btn-icon side-ws-manage" aria-haspopup="dialog" title={t("sidebar.manageWorkstreams")} aria-label={t("sidebar.manageWorkstreams")} onClick={() => editWorkstream()}>
+                <Icon name="i-sliders" size={13} />
+              </button>
+            </div>
+            {helpOpen && <WorkstreamsHelp onManage={() => (setHelpOpen(false), editWorkstream())} onClose={() => setHelpOpen(false)} />}
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {boards.map((b) => (
+                <WorkstreamRow key={b.id} board={b} repo={repoOf(b)} onEdit={() => editWorkstream(b.id)} />
+              ))}
+            </div>
+            <NewWorkstreamRow onEdit={editWorkstream} />
+            {boards.length === 1 && <Hint id="hint.workstreams">{t("sidebar.workstreamsHint")}</Hint>}
+          </div>
+          <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
+            <Icon className="ico" name="i-sliders" size={14} />
+            <span className="side-name">{t("sidebar.fields")}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The project's modules, each one door: its files, its routines, and its
+ * backlog (views, workstreams, fields).
  * Leaving the project is chrome work — home and the switcher, both in the
  * titlebar. Collapsed, it is the same rail the assistant folds to, and the view
  * head grows its own switcher.
@@ -216,12 +365,12 @@ export function Sidebar({
 }: {
   open: boolean;
   onToggle: (open: boolean) => void;
-  onOpenFields: (fieldId?: string) => void;
+  onOpenFields: (fieldId?: string, boardId?: string) => void;
   onOpenTemplates: () => void;
   onOpenProjectSettings: () => void;
 }) {
   const { t } = useI18n();
-  const { boards, routines } = useWorkspace();
+  const { routines } = useWorkspace();
   const sidebar = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem(sidebarWidthKey);
@@ -301,34 +450,7 @@ export function Sidebar({
             </button>
           </div>
         </div>
-        <div className="side-group side-views">
-          <div className="side-label-row">
-            <Eyebrow className="side-label">{t("sidebar.viewsEyebrow")}</Eyebrow>
-          </div>
-          <ViewList />
-          <NewViewRow />
-        </div>
-        <div className="side-group side-workstreams">
-          <div className="side-label-row">
-            <Eyebrow className="side-label">{t("sidebar.workstreamsEyebrow")}</Eyebrow>
-            <Spacer />
-            <button type="button" className="btn btn-icon side-ws-manage" aria-haspopup="dialog" title={t("sidebar.manageWorkstreams")} aria-label={t("sidebar.manageWorkstreams")} onClick={() => onOpenFields("board")}>
-              <Icon name="i-sliders" size={13} />
-            </button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            {boards.map((b) => (
-              <WorkstreamRow key={b.id} board={b} />
-            ))}
-          </div>
-          <NewWorkstreamRow />
-        </div>
-        <div className="side-group side-foot">
-          <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
-            <Icon className="ico" name="i-sliders" size={14} />
-            <span className="side-name">{t("sidebar.fields")}</span>
-          </button>
-        </div>
+        <BacklogModule onOpenFields={onOpenFields} />
       </div>
       {/* pinned below the scrolling body so it is always where people look for it */}
       <div className="side-settings">

@@ -969,7 +969,7 @@ workstream that still holds issues, or is the project's last, refuses to go.
 Agents reach them through `list_workstreams`, `create_workstream`,
 `update_workstream` and `remove_workstream` (which takes a `moveTo` for the
 issues a doomed workstream still holds); the renderer offers the same in the
-sidebar's Workstreams group and the Fields sheet.
+sidebar's Backlog module (under Workstreams) and the Fields sheet.
 
 A workstream may **stand for a code repository**: `Board.repoId` names a row of
 `ctx.repos` (shared with the project — the remote URL is its identity) and

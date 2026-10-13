@@ -97,10 +97,13 @@ export function Workspace() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** Which field the Fields sheet lands on; null for the list. */
   const [fieldsFocus, setFieldsFocus] = useState<string | null>(null);
-  const openFields = useCallback((fieldId?: string) => {
+  const [fieldsBoard, setFieldsBoard] = useState<string | null>(null);
+  const openFields = useCallback((fieldId?: string, boardId?: string) => {
     setFieldsFocus(fieldId ?? null);
+    setFieldsBoard(boardId ?? null);
     setFieldsOpen(true);
   }, []);
+  const editWorkstream = useCallback((boardId: string) => openFields("board", boardId), [openFields]);
   /** false: closed; true: the sheet; a name: the sheet scrolled to that block. */
   const [projectSettings, setProjectSettings] = useState<boolean | "repositories" | "files">(false);
   const [projectMenu, setProjectMenu] = useState(false);
@@ -302,7 +305,7 @@ export function Workspace() {
             <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
           ) : (
             <section className="board-region" data-layout={ws.layout}>
-              <ViewHeadRegion onOpenViewSettings={openViewSettings} />
+              <ViewHeadRegion onOpenViewSettings={openViewSettings} onEditWorkstream={editWorkstream} />
               <QueryBarRegion />
               {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
               {ws.itemsError ? (
@@ -374,7 +377,7 @@ export function Workspace() {
           searchTickets: () => requestAnimationFrame(() => focusTicketSearch())
         }}
       />
-      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} onOpenRepositories={() => setProjectSettings("repositories")} />
+      <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} initialBoardId={fieldsBoard} onOpenRepositories={() => setProjectSettings("repositories")} />
       <CodeInboxDialog
         projectId={ws.project.id}
         open={codeInbox}

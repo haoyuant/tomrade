@@ -58,8 +58,10 @@ workstream, updated…) or one the project added — and a view is a *layout*
 and the Fields sheet is where its options are renamed and retired. The sidebar
 answers "which view", never "which container".
 
-**Leaving a project is titlebar chrome.** The sidebar holds the project's
-files, its views and the door to its fields, and nothing else. Home *leaves* the project, the switcher
+**Leaving a project is titlebar chrome.** The sidebar is the project's
+modules, one door each — Files, Routines, and Backlog, which holds the saved
+views, the workstreams (each row naming the repository its code lives in) and
+the door to the fields — and nothing else. Home *leaves* the project, the switcher
 *rebinds* it — two jobs, two controls, separated by a hairline not a slash.
 Configuring one is chrome too: the switcher's foot inside a project, the card's
 own gear on the projects grid, and nowhere in the sidebar.
