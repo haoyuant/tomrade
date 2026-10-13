@@ -32,6 +32,15 @@ const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (pro
 
 const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
+/** A finished run's tokens, split the same way Settings → Usage adds them up. */
+const runTokensLabel = (t: Translate, run: RunView): string | null => {
+  const k = run.tokens;
+  if (!k) return null;
+  return k.cacheReadTokens + k.cacheWriteTokens > 0
+    ? t("agentPanel.tokensSplit", { input: tokens(k.inputTokens), uncached: tokens(k.uncachedInputTokens), read: tokens(k.cacheReadTokens), write: tokens(k.cacheWriteTokens), output: tokens(k.outputTokens) })
+    : t("agentPanel.tokensNew", { input: tokens(k.inputTokens), output: tokens(k.outputTokens) });
+};
+
 /** `fill` puts the prompt in the composer to finish; otherwise the prompt is sent as is. */
 type Starter = { label: MessageKey; prompt?: MessageKey; icon: IconId; fill?: boolean };
 
@@ -240,7 +249,7 @@ function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy, hint }: { blo
   const { t } = useI18n();
   const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null,
     run.endedAt != null ? `${Math.round((run.endedAt - run.startedAt) / 1000)}s` : null,
-    run.usage ? `↑${tokens(run.usage.inputTokens)} ↓${tokens(run.usage.outputTokens)}` : null,
+    runTokensLabel(t, run),
     run.metrics?.readyMs != null ? `init ${Math.round(run.metrics.readyMs / 1000)}s` : null,
     run.metrics?.firstTokenMs != null ? `first ${Math.round(run.metrics.firstTokenMs / 1000)}s` : null].filter(Boolean).join(" · ") : "";
   return (
@@ -276,9 +285,10 @@ function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy, hint }: { blo
 }
 
 function RunMetrics({ run }: { run: RunView | undefined }) {
+  const { t } = useI18n();
   if (!run || run.endedAt == null) return null;
   const elapsed = `${Math.max(0, Math.round((run.endedAt - run.startedAt) / 1000))}s`;
-  const usage = run.usage ? `↑${tokens(run.usage.inputTokens)} ↓${tokens(run.usage.outputTokens)}` : null;
+  const usage = runTokensLabel(t, run);
   const timings = [run.metrics?.readyMs != null ? `init ${Math.round(run.metrics.readyMs / 1000)}s` : null,
     run.metrics?.firstTokenMs != null ? `first ${Math.round(run.metrics.firstTokenMs / 1000)}s` : null].filter(Boolean).join(" · ");
   return <p className="meta-txt num" style={{ margin: "8px 0 0 22px" }}>{elapsed}{usage ? ` · ${usage}` : ""}{timings ? ` · ${timings}` : ""}</p>;

@@ -15,6 +15,9 @@ function UsageTable({ rows }: { rows: EngineUsage[] }) {
           <th>{t("usage.engine")}</th>
           <th className="num">{t("usage.runs")}</th>
           <th className="num">{t("usage.input")}</th>
+          <th className="num">{t("usage.uncached")}</th>
+          <th className="num">{t("usage.cacheRead")}</th>
+          <th className="num">{t("usage.cacheWrite")}</th>
           <th className="num">{t("usage.output")}</th>
           <th className="num">{t("usage.spend")}</th>
         </tr>
@@ -25,6 +28,9 @@ function UsageTable({ rows }: { rows: EngineUsage[] }) {
             <td>{r.title}</td>
             <td className="num">{r.runs.toLocaleString()}</td>
             <td className="num">{r.inputTokens.toLocaleString()}</td>
+            <td className="num">{r.uncachedInputTokens.toLocaleString()}</td>
+            <td className="num">{r.cacheReadTokens.toLocaleString()}</td>
+            <td className="num">{r.cacheWriteTokens.toLocaleString()}</td>
             <td className="num">{r.outputTokens.toLocaleString()}</td>
             <td className="num">{r.costUsd === null ? <span className="meta-txt">{t("usage.unknown")}</span> : usd(r.costUsd)}</td>
           </tr>
@@ -46,6 +52,7 @@ export function UsagePane() {
         <UsageTable rows={usage.data?.today ?? []} />
         <Eyebrow>{t("usage.week")}</Eyebrow>
         <UsageTable rows={usage.data?.week ?? []} />
+        <p className="meta-txt">{t("usage.notCounted")}</p>
         <p className="meta-txt">{t("usage.ticketNote")}</p>
       </div>
     </>
