@@ -10,7 +10,7 @@ import type {} from "@tomradex/settings";
 import type { Author, Board, Item, Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/storage";
 import { listDecisions } from "./decisions.js";
-import { branchFor } from "./keys.js";
+import { branchFor, titleSlug } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
@@ -155,8 +155,11 @@ export class Starter {
     }
     const delivery = store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
     const deliveryLinks = store.links(projectId, item.id).filter((link) => link.delivery === delivery.sequence);
-    const baseBranch = branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title);
-    const plannedBranch = deliveryLinks.find((link) => link.repoId === repo.id && link.branch)?.branch ?? (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
+    const placed = deliveryLinks.find((link) => link.repoId === repo.id && link.branch)?.branch ?? null;
+    // A branch that already exists is reused untouched; only a new one needs a slug,
+    // and only a CJK title needs the model for it.
+    const baseBranch = placed ?? branchFor(state?.branchTemplate ?? "{key}/{slug}", item.key, item.title, await titleSlug(this.host.ctx.get("llm") ?? null, item.title));
+    const plannedBranch = placed ?? (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
     if (probe && probe.state !== "offline" && (state?.agentPush ?? true)) {
       const pushed = await this.host.git(["push", "--dry-run", "origin", `HEAD:refs/heads/${plannedBranch}`], { cwd: placement.checkout, ok: true });
       if (pushed.code !== 0) {

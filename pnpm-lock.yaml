@@ -425,6 +425,9 @@ importers:
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
