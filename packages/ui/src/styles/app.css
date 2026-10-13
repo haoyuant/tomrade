@@ -371,6 +371,10 @@ strong { font-weight: var(--font-weight-medium); }
   display: flex; flex-direction: column;
   background: var(--bg);
   border-right: 1px solid var(--border);
+}
+.side-scroll {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
   overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
   padding: 0 var(--space-3) var(--space-3);
@@ -432,6 +436,11 @@ strong { font-weight: var(--font-weight-medium); }
 .side-row.is-workstream[aria-current="true"] .side-name { color: var(--accent); }
 .side-foot { margin-top: auto; padding-top: var(--space-4); }
 .side-foot .side-row { color: var(--meta); }
+/* project settings: pinned under the scrolling body, a step bolder and larger than a nav row */
+.side-settings { flex-shrink: 0; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); }
+.side-project-settings { font-size: 15px; font-weight: 600; color: var(--fg); }
+.side-project-settings .ico { color: var(--fg-2); }
+.side-project-settings:hover .ico { color: var(--fg); }
 
 /* ─── tabs ───────────────────────────────────────────────────────────── */
 /* The column beside the sidebar: the tab strip over whatever the open tab shows.
@@ -1316,7 +1325,8 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
   padding-top: var(--space-3);
 }
 .ai-rail { background: var(--surface); border-left: 1px solid var(--border); }
-.side-rail { background: var(--bg); border-right: 1px solid var(--border); }
+.side-rail { background: var(--bg); border-right: 1px solid var(--border); padding-bottom: var(--space-3); }
+.rail-project-settings { margin-top: auto; color: var(--fg-2); }
 .rail-btn { position: relative; }
 .rail-badge {
   position: absolute; top: -3px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px;
