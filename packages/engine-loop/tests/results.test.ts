@@ -8,11 +8,11 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { fresh } from "@tomradex/testkit";
-import { Tools } from "@tomradex/tools";
+import { Tools, compactRow } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
 import { fakeChat, type ChatEvent, type ChatModel, type ChatRequest } from "@tomradex/llm";
-import loop, { compactRow, elideOldResults, render } from "@tomradex/engine-loop";
+import loop, { elideOldResults, render } from "@tomradex/engine-loop";
 import type { Message } from "@tomradex/llm";
 
 const item = (n: number) => ({
