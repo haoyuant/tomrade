@@ -201,7 +201,8 @@ function NewWorkstreamRow() {
 }
 
 /**
- * The project's saved views, its workstreams, and the door to its fields.
+ * The project's files and routines, its saved views, its workstreams, and the
+ * door to its fields.
  * Leaving the project is chrome work — home and the switcher, both in the
  * titlebar. Collapsed, it is the same rail the assistant folds to, and the view
  * head grows its own switcher.
@@ -211,12 +212,14 @@ export function Sidebar({
   onToggle,
   onOpenFields,
   onOpenTemplates,
+  templatesOpen,
   onOpenProjectSettings
 }: {
   open: boolean;
   onToggle: (open: boolean) => void;
   onOpenFields: (fieldId?: string) => void;
   onOpenTemplates: () => void;
+  templatesOpen: boolean;
   onOpenProjectSettings: () => void;
 }) {
   const { t } = useI18n();
@@ -280,6 +283,22 @@ export function Sidebar({
       <div className="side-group side-files">
         <FilesTree />
       </div>
+      {/* a project-level place like Files, not part of the backlog's views */}
+      <div className="side-group side-routines">
+        <div className="side-label-row">
+          <button
+            type="button"
+            className="side-label-btn side-templates"
+            aria-haspopup="dialog"
+            aria-expanded={templatesOpen}
+            aria-label={t("templates.openAria")}
+            data-testid="open-templates"
+            onClick={onOpenTemplates}
+          >
+            <Eyebrow className="side-label">{t("templates.label")}</Eyebrow>
+          </button>
+        </div>
+      </div>
       <div className="side-group side-views">
         <div className="side-label-row">
           <Eyebrow className="side-label">{t("sidebar.viewsEyebrow")}</Eyebrow>
@@ -303,10 +322,6 @@ export function Sidebar({
         <NewWorkstreamRow />
       </div>
       <div className="side-group side-foot">
-        <button type="button" className="side-row side-add side-templates" aria-haspopup="dialog" data-testid="open-templates" onClick={onOpenTemplates}>
-          <Icon className="ico" name="i-clock" size={14} />
-          <span className="side-name">{t("templates.label")}</span>
-        </button>
         <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
           <Icon className="ico" name="i-sliders" size={14} />
           <span className="side-name">{t("sidebar.fields")}</span>
