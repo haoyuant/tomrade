@@ -60,7 +60,8 @@ function useExpanded(projectId: string, current: string | null) {
  * the region, and the label row carries the sync state and the two ways files
  * come in — a native picker, or a new folder.
  */
-export function FilesTree() {
+/** Hands its head and its tree to the sidebar's module shell, which owns folding and order. */
+export function FilesTree({ children: frame }: { children: (head: ReactNode, body: ReactNode) => ReactNode }) {
   const { t } = useI18n();
   const { project, filePath, openFile } = useWorkspace();
   const toast = useToast();
@@ -290,12 +291,12 @@ export function FilesTree() {
       ];
     });
 
-  return (
-    <>
-      <div className="side-label-row">
+  const head = (
+      <>
         {syncActions.confirmation}
-        <button type="button" className="side-label-btn side-files-home" aria-current={filePath === ""} onClick={() => openFile("")}>
-          <Eyebrow className="side-label">{t("files.eyebrow")}</Eyebrow>
+        <button type="button" className="side-label-btn side-module-btn side-files-home" aria-current={filePath === ""} onClick={() => openFile("")}>
+          <Icon name="i-folder" size={14} />
+          <Eyebrow className="side-label side-module-title">{t("files.eyebrow")}</Eyebrow>
         </button>
         {state.warn && !unavailable && <span className={`side-mark is-state is-${stateKey}`} title={state.label} data-state={stateKey} />}
         <Spacer />
@@ -333,8 +334,9 @@ export function FilesTree() {
             <Icon name="i-paste" size={13} />
           </button>
         )}
-      </div>
-      {searching ? (
+      </>
+  );
+  const body = searching ? (
         <NotesSearch />
       ) : (
       <div
@@ -376,7 +378,6 @@ export function FilesTree() {
           </div>
         )}
       </div>
-      )}
-    </>
-  );
+      );
+  return frame(head, body);
 }

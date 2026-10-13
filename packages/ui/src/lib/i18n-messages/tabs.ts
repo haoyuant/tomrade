@@ -9,7 +9,7 @@ export const tabs = {
   },
   zh: {
     strip: "打开的标签页",
-    backlog: "Backlog",
+    backlog: "工作项",
     close: "关闭 {{name}}",
     closeOthers: "关闭其他标签页",
     closeAll: "关闭所有文件标签页",

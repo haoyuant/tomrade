@@ -53,4 +53,25 @@ describe("contributions", () => {
     expect(ctx.contributions.assistantAccessories()).toEqual([]);
     await expect(ctx.contributions.run("demo.ack", {})).rejects.toThrow(/Unknown command/);
   });
+
+  it("a plugin adds sidebar modules: a door alone, or rows per project, and a module whose rows fail is left out", async () => {
+    const { ctx, project } = await fresh({ plugins: [Contributions] });
+    const fiber = await ctx.plugin({
+      name: "demo",
+      inject: ["contributions"],
+      apply(ctx) {
+        ctx.contributions.sidebarModule({ id: "demo.door", title: () => "Door", icon: "i-plug", command: "demo.open" });
+        ctx.contributions.sidebarModule({ id: "demo.list", title: "List", rows: ({ projectId }) => [{ id: "a", label: projectId, count: 2, detail: "first" }] });
+        ctx.contributions.sidebarModule({ id: "demo.hidden", title: "Hidden", rows: () => null });
+        ctx.contributions.sidebarModule({ id: "demo.broken", title: "Broken", rows: () => { throw new Error("boom"); } });
+      }
+    });
+
+    expect(await ctx.contributions.sidebarModules(project.id)).toEqual([
+      { id: "demo.door", title: "Door", icon: "i-plug", command: "demo.open" },
+      { id: "demo.list", title: "List", rows: [{ id: "a", label: project.id, count: 2, detail: "first" }] }
+    ]);
+    await fiber.dispose();
+    expect(await ctx.contributions.sidebarModules(project.id)).toEqual([]);
+  });
 });

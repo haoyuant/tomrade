@@ -188,6 +188,15 @@ export interface SectionRow {
   href?: string;
   command?: string;
 }
+export interface SidebarRow {
+  id: string;
+  label: string;
+  icon?: string;
+  detail?: string;
+  count?: number | string;
+  command?: string;
+  href?: string;
+}
 export interface GraphEdge {
   from: string;
   to: string;
@@ -204,6 +213,8 @@ export interface ContributionsApi {
   statusItem(def: { id: string; text(scope: { projectId?: string }): Maybe<string | null>; title?: string; icon?: string; align?: "start" | "end" }): Promise<Disposer>;
   section(def: { id: string; title: string; render(item: Item): Maybe<{ rows?: SectionRow[]; text?: string } | null> }): Promise<Disposer>;
   graph(def: { id: string; title: string; icon?: string; edits?: "blocks"; compute(items: Item[], scope: { projectId: string }): Maybe<GraphEdge[]> }): Promise<Disposer>;
+  /** A module in the project sidebar. Without `rows` it is a single door; rows returning null hide it in that project. */
+  sidebarModule(def: { id: string; title: string; icon?: string; command?: string; rows?(scope: { projectId: string }): Maybe<SidebarRow[] | null> }): Promise<Disposer>;
 }
 
 export interface PlaybookSpec {

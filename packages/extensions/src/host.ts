@@ -315,6 +315,12 @@ export class Host {
             host.call(() => {
               host.own(def.id, "graph");
               return host.disposerOf(c().graph({ id: def.id, title: def.title, icon: def.icon, edits: def.edits, compute: host.back(def.compute, `graph ${def.id}`, { ms: RENDER_MS }) }));
+            }),
+          sidebarModule: (def) =>
+            host.call(() => {
+              host.own(def.id, "sidebar module");
+              const rows = def.rows ? host.back(def.rows, `sidebar module ${def.id}`, { ms: RENDER_MS }) : undefined;
+              return host.disposerOf(c().sidebarModule({ id: def.id, title: def.title, icon: def.icon, command: def.command, ...(rows ? { rows } : {}) }));
             })
         };
       },

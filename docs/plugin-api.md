@@ -969,7 +969,7 @@ workstream that still holds issues, or is the project's last, refuses to go.
 Agents reach them through `list_workstreams`, `create_workstream`,
 `update_workstream` and `remove_workstream` (which takes a `moveTo` for the
 issues a doomed workstream still holds); the renderer offers the same in the
-sidebar's Workstreams group and the Fields sheet.
+sidebar's Backlog module (under Workstreams) and the Fields sheet.
 
 A workstream may **stand for a code repository**: `Board.repoId` names a row of
 `ctx.repos` (shared with the project — the remote URL is its identity) and
@@ -1499,6 +1499,7 @@ ctx.contributions.badge({ id: "hello", compute: (items) => ({ [items[0]?.id]: [{
 ctx.contributions.statusItem({ id: "hello", text: ({ projectId }) => "hello" });
 ctx.contributions.section({ id: "hello", title: "Hello", render: (item) => ({ rows: [{ label: "Key", value: item.key }] }) });
 ctx.contributions.graph({ id: "hello", title: "Hello", icon: "i-graph", compute: (items) => items.flatMap((i) => (i.parentId ? [{ from: i.parentId, to: i.id }] : [])) });
+ctx.contributions.sidebarModule({ id: "hello", title: "Hello", icon: "i-link", rows: ({ projectId }) => [{ id: "docs", label: "Docs", detail: "docs.example.com", count: 3, command: "hello.say" }] });
 ctx.contributions.assistantAccessory({ id: "hello.pet", kind: "animated-pet", title: "Helper", stateChannel: "hello.pet.state", changedChannel: "hello.pet.changed", width: 96, height: 72, animations: { idle: { source: "data:image/gif;base64,…", type: "image/gif", box: { x: 12, y: 30, width: 280, height: 200 } } } });
 ```
 
@@ -1533,6 +1534,16 @@ reduced motion, and removes the stage when the contribution disappears. `stateCh
 thread and `changedChannel` broadcasts `(threadId, { mood })`; naming both in
 the descriptor keeps the renderer independent of the feature package.
 `@tomradex/pet` is the shipped example.
+
+A **sidebar module** sits in the project sidebar beside Files, Routines and the
+backlog, drawn by the same shell: its head (icon and title, running `command`
+when clicked) and, when it has `rows`, a fold button on the left and the rows
+under it — each a label with an optional `icon`, a quieter `detail` line, a
+`count`, and a `command` to run or an `href` to open. `rows` is computed per
+project; returning null hides the module there, and a module without `rows` is
+a single door. Where it sits and whether it is folded is the person's choice,
+kept on their machine: they drag modules by the head or move them from its
+right-click menu, and a module the saved order has not met yet lands at the end.
 
 A **graph** is what a view with the Graph layout draws: the renderer puts the
 same issue cards on an interactive canvas with the plugin's edges as arrows,
