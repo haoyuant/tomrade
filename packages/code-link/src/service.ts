@@ -345,6 +345,7 @@ export class CodeLink extends Service {
       const before = intent.before as Item | null;
       const after = intent.after as Item | null;
       if (!before || !after || before.status === after.status) return;
+      if (after.status === "done") this.archiveCompletedSessions(intent.projectId);
       const open = new Set(["backlog", "todo", "doing", "verifying"]);
       if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
         this.store.ensureActiveDelivery(intent.projectId, intent.id, after.updatedAt);
@@ -374,6 +375,9 @@ export class CodeLink extends Service {
       for (const projectId of this.ctx.db.openIds()) placeTerminalThreads(projectId);
       ctx.on("db/opened", placeTerminalThreads);
       ctx.on("storage/imported", placeTerminalThreads);
+      for (const projectId of this.ctx.db.openIds()) this.archiveCompletedSessions(projectId);
+      ctx.on("db/opened", (projectId) => this.archiveCompletedSessions(projectId));
+      ctx.on("storage/imported", (projectId) => this.archiveCompletedSessions(projectId));
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
       ctx.on("agent/run-started", (_run, thread) => {
         this.running.set(thread.id, thread);
@@ -392,6 +396,7 @@ export class CodeLink extends Service {
       });
       ctx.on("agent/run-ended", (run, thread) => {
         this.running.delete(thread.id);
+        this.archiveCompletedSessions(thread.projectId);
         const session = this.sessionOf(thread);
         if (!session) return;
         const externalId = ctx.agent.store.external(thread.projectId, thread.id)[run.engine];
@@ -528,6 +533,25 @@ export class CodeLink extends Service {
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
     return this.store.sessions(projectId, itemId ? { itemId } : {});
+  }
+
+  private archiveCompletedSessions(projectId: string): void {
+    const agent = this.ctx.get("agent");
+    if (!agent) return;
+    const running = new Set(agent.activeRuns().map(({ thread }) => thread.id));
+    let changed = false;
+    for (const session of this.store.sessions(projectId)) {
+      // Shared sessions stay available while any associated ticket still needs work.
+      if (!session.itemIds.length || !session.itemIds.every(id => this.ctx.items.get(projectId, id)?.status === "done")) continue;
+      if (session.threadId && running.has(session.threadId)) continue;
+      this.sessions.end(projectId, session.id, "ended", true);
+      const thread = session.threadId ? agent.store.thread(projectId, session.threadId) : null;
+      if (thread && !thread.archived) {
+        agent.archiveThread(projectId, thread.id);
+        changed = true;
+      }
+    }
+    if (changed) this.notify(projectId);
   }
 
   lastScanAt(projectId: string): number | null {
@@ -808,6 +832,7 @@ export class CodeLink extends Service {
   }
 
   private async doScan(projectId: string): Promise<ScanSummary> {
+    this.archiveCompletedSessions(projectId);
     const summary: ScanSummary = { repos: 0, scanned: 0, offline: 0, links: 0, changed: 0, proposals: 0, skipped: [] };
     const prefix = this.prefixOf(projectId);
     try {
