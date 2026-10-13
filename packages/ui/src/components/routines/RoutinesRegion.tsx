@@ -72,11 +72,12 @@ export function RoutinesRegion({ projectId, onOpenIssue, onOpenThread }: { proje
   );
 }
 
-/** One routine at a glance; the switch turns all its schedules on or off together. */
+/** One routine at a glance; the switch turns all its schedules on or off together, and the bin asks once before deleting. */
 function RoutineCard({ projectId, template, schedules, onOpen }: { projectId: string; template: Template; schedules: Schedule[]; onOpen: () => void }) {
   const { t, locale } = useI18n();
   const toast = useToast();
-  const { reschedule } = useTemplateActions(projectId);
+  const { reschedule, remove } = useTemplateActions(projectId);
+  const [confirming, setConfirming] = useState(false);
   const runs = useTemplateRuns(projectId, template.id);
   const last = runs.data?.[0];
   const on = schedules.some((s) => s.enabled);
@@ -113,6 +114,16 @@ function RoutineCard({ projectId, template, schedules, onOpen }: { projectId: st
             onClick={toggle}
           />
         )}
+        <button
+          type="button"
+          className="btn btn-icon is-danger routine-card-del"
+          aria-label={`${t("templates.remove")} · ${template.name}`}
+          title={t("templates.remove")}
+          aria-pressed={confirming}
+          onClick={() => setConfirming((v) => !v)}
+        >
+          <Icon name="i-trash" size={14} />
+        </button>
       </div>
       {template.description && <p className="meta-txt dense routine-card-desc">{template.description}</p>}
       <div className="routine-card-when">
@@ -123,9 +134,28 @@ function RoutineCard({ projectId, template, schedules, onOpen }: { projectId: st
         </span>
         {schedules.length > 0 && <span className="meta-txt">· {on && next ? t("templates.next", { when: nextLabel(next, locale) }) : t("templates.paused")}</span>}
       </div>
-      <p className={last && !last.ok ? "meta-txt dense template-failed" : "meta-txt dense"}>
-        {last ? t(last.ok ? "templates.lastRun" : "templates.lastFailed", { when: agoLabel(last.at) }) : t("templates.never")}
-      </p>
+      {confirming ? (
+        <div className="row routine-card-confirm" role="group" aria-label={t("templates.removeSure")}>
+          <span className="meta-txt">{t("templates.removeSure")}</span>
+          <Spacer />
+          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(false)}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            data-testid="routine-delete"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(template.id, { onError: (err) => toast(errorSpec(err)) })}
+          >
+            {t("common.delete")}
+          </button>
+        </div>
+      ) : (
+        <p className={last && !last.ok ? "meta-txt dense template-failed" : "meta-txt dense"}>
+          {last ? t(last.ok ? "templates.lastRun" : "templates.lastFailed", { when: agoLabel(last.at) }) : t("templates.never")}
+        </p>
+      )}
     </div>
   );
 }

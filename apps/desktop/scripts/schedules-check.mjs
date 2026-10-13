@@ -211,6 +211,15 @@ const run = async () => {
   check("deleting asks twice, then takes its schedules with it", !ctx.schedules.template(project.id, own.id) && ctx.schedules.schedules(project.id, own.id).length === 0);
   check("and the dialog and the card go with it", (await $(`!document.querySelector('[role="dialog"]') && !document.querySelector('[data-template="${own.id}"]')`)) === true);
 
+  // ── a card's bin asks once, then deletes ──────────────────────────────
+  await press(`document.querySelector('[data-template="${daily.id}"] .routine-card-del')`);
+  await sleep(300);
+  check("the bin on a card asks before deleting, without opening it", (await $(`!!document.querySelector('[data-template="${daily.id}"] [data-testid="routine-delete"]') && !document.querySelector('[role="dialog"]')`)) === true && !!ctx.schedules.template(project.id, daily.id));
+  await shot("templates-07-card-delete");
+  await press(`document.querySelector('[data-template="${daily.id}"] [data-testid="routine-delete"]')`);
+  await sleep(700);
+  check("confirming deletes the routine and its schedules, and its card goes", !ctx.schedules.template(project.id, daily.id) && ctx.schedules.schedules(project.id, daily.id).length === 0 && (await $(`!document.querySelector('[data-template="${daily.id}"]')`)) === true);
+
   // ── the tab closes like a file's ──────────────────────────────────────
   await press(`document.querySelector('[data-tab="routines"] .tab-close')`);
   await sleep(600);
