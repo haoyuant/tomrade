@@ -22,7 +22,9 @@ const PACKAGES = [
     integrity: "sha512-SeEi/4hdcHNgA9UWlefZl7ZZpm3dzi2OoxNjDHsBJ9o298LNOtbL4DGKgitlEj6uCTccvtw6f2hlCkTPVJ2RXg==",
     into: ".",
     // Its system prompt points the model at the README and docs.
-    keep: ["package.json", "README.md", "docs", "dist/bundle"]
+    keep: ["package.json", "README.md", "docs", "dist/bundle"],
+    // Screenshots for people (2.4 MB); the model reads the text around them.
+    drop: ["docs/images"]
   },
   {
     spec: "@silvia-odwyer/photon-node@0.3.4",
@@ -39,7 +41,7 @@ const PACKAGES = [
 ];
 
 const stamp = path.join(target, ".fetched");
-const wanted = PACKAGES.map((p) => `${p.spec} ${p.integrity}`).join("\n");
+const wanted = PACKAGES.map((p) => [p.spec, p.integrity, ...(p.drop ?? [])].join(" ")).join("\n");
 if (fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8") === wanted) {
   console.log("vendor/pi is up to date");
   process.exit(0);
@@ -84,6 +86,7 @@ try {
     for (const entry of pkg.keep ?? fs.readdirSync(from)) {
       fs.cpSync(path.join(from, entry), path.join(into, entry), { recursive: true });
     }
+    for (const entry of pkg.drop ?? []) fs.rmSync(path.join(into, entry), { recursive: true, force: true });
   }
   // The npm package ships no licence file; this is the one from its v1.1.0 tag.
   fs.copyFileSync(path.join(here, "vendor/pi-LICENSE"), path.join(target, "LICENSE"));
