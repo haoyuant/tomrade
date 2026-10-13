@@ -119,6 +119,9 @@ importers:
       '@tomradex/items':
         specifier: workspace:*
         version: link:../../packages/items
+      '@tomradex/keybindings':
+        specifier: workspace:*
+        version: link:../../packages/keybindings
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -1211,6 +1214,22 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/keybindings:
+    dependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/llm:
     dependencies:
       '@anthropic-ai/sdk':
@@ -2059,6 +2078,9 @@ importers:
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/keybindings':
+        specifier: workspace:*
+        version: link:../keybindings
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm

@@ -10,6 +10,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { LanguageSwitch } from "~/components/ui/language-switch";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { AboutPane } from "./AboutPane";
+import { KeybindingsPane } from "./KeybindingsPane";
 import { UsagePane } from "./UsagePane";
 import { HubPane } from "./HubPane";
 import { LocalCliSection } from "./LocalCliSection";
@@ -26,7 +27,7 @@ import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { openExternal, reveal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
 import { readableError } from "~/lib/toast";
-import { shortcut } from "~/lib/keys";
+import { keyLabel } from "~/lib/keybindings";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { useSettingsSheet } from "~/lib/settingsHost";
 
@@ -83,7 +84,7 @@ function ThemePreview({ customThemes }: { customThemes: CustomTheme[] }) {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["theme", "themeAutomation", "customThemes", "language", "models", "agent", "mcpServers", "updates", "onboarding"]);
+const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "language", "models", "agent", "mcpServers", "updates", "onboarding"]);
 
 /** Whether a section stays on this machine or follows the Hub folder — said on every card, so nobody has to guess. */
 function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
@@ -447,6 +448,18 @@ export function SettingsDialog({
         </>
       )
     },
+    // Only while the keybindings row runs: without it there is nowhere to keep a rebinding.
+    ...(sections.data?.some((s) => s.id === "keybindings")
+      ? [
+          {
+            id: "keybindings",
+            label: t("shortcuts.title"),
+            icon: "i-keyboard" as IconId,
+            group: "app" as const,
+            render: () => (settings.data ? <KeybindingsPane settings={settings.data} onSave={(next) => save.mutateAsync(next)} scopeTag={<ScopeTag scope={scopeOf("keybindings")} />} /> : null)
+          }
+        ]
+      : []),
     {
       id: "assistant",
       label: t("settingsDialog.assistantLabel"),
@@ -497,7 +510,7 @@ export function SettingsDialog({
               <ul className="dash">
                 <li>{t("settingsDialog.lockedFieldsBullet")}</li>
                 <li>{t("settingsDialog.oplogBullet")}</li>
-                <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>{shortcut("⌘Z")}</Num> })}</li>
+                <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>{keyLabel("undo")}</Num> })}</li>
               </ul>
             </div>
           </div>

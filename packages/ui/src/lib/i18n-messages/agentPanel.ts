@@ -36,7 +36,7 @@ export const agentPanel = {
     revert: "Revert",
     whatChanged: "what changed",
 
-    expandAssistant: "Expand assistant — ⌘J",
+    expandAssistant: "Expand assistant — [[cmd:assistant]]",
     waitingBadge: "{{n}} waiting for you",
     searchThreads: "Find a conversation…",
     noThreadsMatch: "No conversation matches",
@@ -96,7 +96,7 @@ export const agentPanel = {
     archiveThread: "Archive thread",
     deleteThread: "Delete thread",
     deleteThreadConfirm: "Delete this thread permanently?",
-    collapsePanel: "Collapse panel — ⌘J",
+    collapsePanel: "Collapse panel — [[cmd:assistant]]",
     collapseAssistantAria: "Collapse assistant panel",
 
     introMessage: "I can read this board and write to it. Every write I make is attributed, grouped by run, and revertible in one click.",
@@ -164,7 +164,7 @@ export const agentPanel = {
     revert: "撤销",
     whatChanged: "查看变更内容",
 
-    expandAssistant: "展开助手 — ⌘J",
+    expandAssistant: "展开助手 — [[cmd:assistant]]",
     waitingBadge: "{{n}} 个在等你",
     searchThreads: "查找对话…",
     noThreadsMatch: "没有匹配的对话",
@@ -224,7 +224,7 @@ export const agentPanel = {
     archiveThread: "归档对话",
     deleteThread: "删除对话",
     deleteThreadConfirm: "永久删除这个对话？",
-    collapsePanel: "收起面板 — ⌘J",
+    collapsePanel: "收起面板 — [[cmd:assistant]]",
     collapseAssistantAria: "收起助手面板",
 
     introMessage: "我可以读取这个看板并对它进行写入。我做出的每一次写入都会标明来源、按运行归组，并且可以一键撤销。",

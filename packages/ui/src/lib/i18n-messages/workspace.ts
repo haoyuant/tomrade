@@ -7,7 +7,7 @@ export const workspace = {
     nothingToRedo: "Nothing left to redo",
     undoing: "Undoing…",
     redoing: "Redoing…",
-    undoingLong: "Still undoing — the files store is putting things back. Repeated ⌘Z presses are ignored until it is done.",
+    undoingLong: "Still undoing — the files store is putting things back. Repeated [[cmd:undo]] presses are ignored until it is done.",
     redoingLong: "Still redoing — the files store is applying the change again. Repeated presses are ignored until it is done.",
     untitledView: "View {{n}}",
     createdViewToast: "Created view {{name}}"
@@ -20,7 +20,7 @@ export const workspace = {
     nothingToRedo: "没有可重做的操作了",
     undoing: "撤销中…",
     redoing: "重做中…",
-    undoingLong: "仍在撤销 — 文件存储正在恢复内容。完成前重复按 ⌘Z 会被忽略。",
+    undoingLong: "仍在撤销 — 文件存储正在恢复内容。完成前重复按 [[cmd:undo]] 会被忽略。",
     redoingLong: "仍在重做 — 文件存储正在重新应用改动。完成前重复按键会被忽略。",
     untitledView: "视图 {{n}}",
     createdViewToast: "已创建视图 {{name}}"

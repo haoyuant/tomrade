@@ -9,7 +9,7 @@ import { filesKeys } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { usePurgeItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
-import { shortcut } from "~/lib/keys";
+import { keyLabel } from "~/lib/keybindings";
 
 /** The plain-English list of what goes with the issue, and what does not. */
 function consequences(item: Item, items: Item[], t: (key: MessageKey, vars?: Record<string, string | number>) => string): string[] {
@@ -106,7 +106,7 @@ export function DeleteIssueDialog({
           }
           onOpenChange(false);
           onDeleted?.();
-          toast({ body: <>{tx("deleteIssueDialog.deletedToast", { key: <span className="num">{item.key}</span>, cmdz: <span className="num">{shortcut("⌘Z")}</span> })}</> });
+          toast({ body: <>{tx("deleteIssueDialog.deletedToast", { key: <span className="num">{item.key}</span>, cmdz: <span className="num">{keyLabel("undo")}</span> })}</> });
         },
         onError: (err) =>
           toast({
@@ -138,7 +138,7 @@ export function DeleteIssueDialog({
               <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>
                 {tx("deleteIssueDialog.notUndoable", {
                   strong: <strong>{t("deleteIssueDialog.notUndoableStrong")}</strong>,
-                  cmdz: <span className="num">{shortcut("⌘Z")}</span>
+                  cmdz: <span className="num">{keyLabel("undo")}</span>
                 })}
               </p>
             </div>

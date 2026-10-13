@@ -29,7 +29,7 @@ import {
 import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
-import { shortcut } from "~/lib/keys";
+import { keyLabel } from "~/lib/keybindings";
 import { useSettingsHost } from "~/lib/settingsHost";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
@@ -269,7 +269,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
               ))}
             </div>
             <p className="meta-txt dense" style={{ marginTop: "var(--space-4)" }}>
-              {tx("detailPane.ledgerFooter", { cmdz: <span className="num">{shortcut("⌘Z")}</span> })}
+              {tx("detailPane.ledgerFooter", { cmdz: <span className="num">{keyLabel("undo")}</span> })}
             </p>
           </div>
         </main>

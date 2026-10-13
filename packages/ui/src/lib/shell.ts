@@ -30,6 +30,10 @@ declare module "@tomradex/ipc" {
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
     "shell.about": () => AboutInfo;
+    /** Native save dialog, then the text written there. The chosen path, or null when cancelled. */
+    "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
+    /** Native open dialog for one text file, read back. Null when cancelled. */
+    "shell.openTextFile": (opts: { title?: string; extensions?: string[] }) => { path: string; text: string } | null;
   }
 }
 

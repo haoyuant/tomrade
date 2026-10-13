@@ -26,9 +26,11 @@ import { DetailPane } from "./DetailPane";
 import { GraphView } from "./GraphView";
 import { QueryBar, focusTicketSearch } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
+import { TabStrip } from "./TabStrip";
 import { Table } from "./Table";
 import { TitleBar, ViewHead } from "./TitleBar";
 import { ShortcutsDialog } from "~/components/dialogs/ShortcutsDialog";
+import { hitChord, isBare, type CommandId } from "~/lib/keybindings";
 
 // Opening a ticket re-renders this screen for its detail pane; the regions beside it hold still.
 const SidebarRegion = memo(Sidebar);
@@ -224,38 +226,44 @@ export function Workspace() {
       // key it already handled, and on a Mac every Ctrl chord (Ctrl-K, -N, -P, -B move the caret there).
       const editing = !!focused?.isContentEditable;
       if (editing && e.defaultPrevented) return;
-      const meta = e.metaKey || (e.ctrlKey && !(editing && /Mac/i.test(navigator.platform)));
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(focused?.tagName ?? "") || editing;
-      const key = e.key.toLowerCase();
-      if (meta && key === "k") {
+      // A bare key ("N", "/") is a letter being typed anywhere text goes, and behind a sheet it is the sheet's.
+      const on = (id: CommandId) => {
+        const chord = hitChord(e, id, { lenientCtrl: !editing });
+        return !!chord && (!isBare(chord) || (!typing && !anyOverlay));
+      };
+      if (on("palette")) {
         e.preventDefault();
         setPalette(true);
-      } else if (meta && e.shiftKey && key === "f") {
+      } else if (on("searchNotes")) {
         e.preventDefault();
         notesSearch.open();
-      } else if (meta && key === "f" && !anyOverlay) {
+      } else if (on("searchTickets") && !anyOverlay) {
         if (focusTicketSearch()) e.preventDefault();
-      } else if (meta && key === "b") {
+      } else if (on("sidebar")) {
         e.preventDefault();
         setSideOpen((v) => !v);
-      } else if (meta && key === "n") {
+      } else if (on("newTicket")) {
         e.preventDefault();
         setNewIssue(true);
-      } else if (meta && key === "p") {
+      } else if (on("switchProject")) {
         e.preventDefault();
         setProjectMenu(true);
-      } else if (meta && e.key === ",") {
+      } else if (on("settings")) {
         e.preventDefault();
         setSettings("");
-      } else if (meta && key === "z" && !e.shiftKey) {
+      } else if (on("undo")) {
         // a text field owns its own undo stack; never preventDefault over it
         if (typing) return;
         e.preventDefault();
         runUndo();
-      } else if (meta && ((key === "z" && e.shiftKey) || key === "y")) {
+      } else if (on("redo")) {
         if (typing) return;
         e.preventDefault();
         runRedo();
+      } else if (on("shortcuts") && !anyOverlay) {
+        e.preventDefault();
+        setShortcutsOpen(true);
       } else if (e.key === "Escape" && !anyOverlay && !e.defaultPrevented) {
         // Radix and the inline composers consume Escape first; defaultPrevented
         // is how an inner layer says it already handled it
@@ -267,14 +275,6 @@ export function Workspace() {
           ws.select(null);
           if (fromPane) requestAnimationFrame(() => document.querySelector<HTMLElement>(`.card[data-id="${selectedId}"], .tbl-row[data-id="${selectedId}"] .tbl-title`)?.focus());
         }
-      } else if (key === "n" && !meta && !typing && !anyOverlay) {
-        e.preventDefault();
-        setNewIssue(true);
-      } else if (e.key === "/" && !meta && !typing && !anyOverlay) {
-        if (focusTicketSearch()) e.preventDefault();
-      } else if (e.key === "?" && !meta && !typing && !anyOverlay) {
-        e.preventDefault();
-        setShortcutsOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -296,30 +296,33 @@ export function Workspace() {
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
         <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} onOpenProjectSettings={openProjectSettings} />
-        {ws.filePath !== null ? (
-          <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
-        ) : (
-          <section className="board-region" data-layout={ws.layout}>
-            <ViewHeadRegion onOpenViewSettings={openViewSettings} />
-            <QueryBarRegion />
-            {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
-            {ws.itemsError ? (
-              <div className="items-error" role="alert">
-                <p>{t("workspace.itemsReadFailed")}</p>
-                <code className="route-error-detail">{ws.itemsError}</code>
-                <button type="button" className="btn btn-secondary" onClick={ws.retryItems}>
-                  {t("common.tryAgain")}
-                </button>
-              </div>
-            ) : ws.layout === "graph" ? (
-              <GraphRegion />
-            ) : ws.layout === "table" ? (
-              <TableRegion onConflict={setConflict} />
-            ) : (
-              <BoardRegion onConflict={setConflict} />
-            )}
-          </section>
-        )}
+        <div className="main-col">
+          <TabStrip />
+          {ws.filePath !== null ? (
+            <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
+          ) : (
+            <section className="board-region" data-layout={ws.layout}>
+              <ViewHeadRegion onOpenViewSettings={openViewSettings} />
+              <QueryBarRegion />
+              {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
+              {ws.itemsError ? (
+                <div className="items-error" role="alert">
+                  <p>{t("workspace.itemsReadFailed")}</p>
+                  <code className="route-error-detail">{ws.itemsError}</code>
+                  <button type="button" className="btn btn-secondary" onClick={ws.retryItems}>
+                    {t("common.tryAgain")}
+                  </button>
+                </div>
+              ) : ws.layout === "graph" ? (
+                <GraphRegion />
+              ) : ws.layout === "table" ? (
+                <TableRegion onConflict={setConflict} />
+              ) : (
+                <BoardRegion onConflict={setConflict} />
+              )}
+            </section>
+          )}
+        </div>
 
         {selected && (
           <DetailPane
@@ -338,7 +341,14 @@ export function Workspace() {
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)} />
 
-      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+        onCustomize={() => {
+          setShortcutsOpen(false);
+          setSettings("keybindings");
+        }}
+      />
       <CommandPalette
         open={palette}
         onOpenChange={setPalette}

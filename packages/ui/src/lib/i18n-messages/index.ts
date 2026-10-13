@@ -42,6 +42,7 @@ import { theme } from "./theme";
 import { titleBar } from "./titleBar";
 import { toast } from "./toast";
 import { shortcuts } from "./shortcuts";
+import { tabs } from "./tabs";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
 import { graphView } from "./graphView";
@@ -75,6 +76,7 @@ export const en = {
   destination: destination.en,
   toast: toast.en,
   shortcuts: shortcuts.en,
+  tabs: tabs.en,
 
   hubSetup: hubSetup.en,
   hubPane: hubPane.en,
@@ -135,6 +137,7 @@ export const zh: typeof en = {
   destination: destination.zh,
   toast: toast.zh,
   shortcuts: shortcuts.zh,
+  tabs: tabs.zh,
 
   hubSetup: hubSetup.zh,
   hubPane: hubPane.zh,

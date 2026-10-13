@@ -4,6 +4,7 @@ import type { FocusRef } from "@tomradex/agent";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
 import { onOpenRequest, takeOpenRequest } from "~/lib/attention";
 import { usePanelOpen } from "~/lib/panel";
+import { hits } from "~/lib/keybindings";
 
 /**
  * What the mounted screen teaches the global panel while it is on screen. The
@@ -85,7 +86,7 @@ export function ProjectShell() {
   // ⌘J is chrome, not screen behavior: the panel toggles from every screen.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+      if (hits(e, "assistant", { lenientCtrl: !(document.activeElement as HTMLElement | null)?.isContentEditable })) {
         e.preventDefault();
         setAiOpen((v) => !v);
       }

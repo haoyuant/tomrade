@@ -1,10 +1,11 @@
-import { createContext, Fragment, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { createContext, Fragment, useCallback, useContext, useLayoutEffect, useMemo, type ReactNode } from "react";
 import type { AppSettings, LanguagePreference } from "@tomradex/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { en, zh } from "./i18n-messages";
 import { setDomainLocale } from "./domain";
 import { shortcut } from "./keys";
+import { announceKeymap, formatChord, isCommandId, primeKeymap, resolveKeymap, type Keymap } from "./keybindings";
 
 export type Locale = "en" | "zh";
 
@@ -23,9 +24,22 @@ function lookupIn(dict: Messages, path: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * A message names a command's keys as [[cmd:<id>]], filled from the person's
+ * keymap; a command they unbound drops out, with the " — " that introduced it.
+ */
+function withKeys(text: string, map: Keymap): string {
+  return text.replace(/( — )?\[\[cmd:(\w+)\]\]/g, (whole, lead: string | undefined, id: string) => {
+    const chord = isCommandId(id) ? map[id][0] : undefined;
+    return chord ? `${lead ?? ""}${formatChord(chord)}` : lead ? "" : "—";
+  });
+}
+
+const DEFAULT_KEYMAP = resolveKeymap(undefined);
+
 /** A key missing from the active locale falls back to English before falling back to the raw key. Shortcuts are written for this platform. */
-function lookup(locale: Locale, path: string): string {
-  return shortcut(lookupIn(DICTS[locale], path) ?? lookupIn(DICTS.en, path) ?? path);
+function lookup(locale: Locale, path: string, map: Keymap = DEFAULT_KEYMAP): string {
+  return withKeys(shortcut(lookupIn(DICTS[locale], path) ?? lookupIn(DICTS.en, path) ?? path), map);
 }
 
 function interpolate(template: string, vars?: Record<string, string | number>): string {
@@ -75,6 +89,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const preference = settings.data?.language ?? "system";
   const locale = resolveLocale(preference);
+  // The keymap rides on the settings this provider already reads: every label naming a key follows a rebinding.
+  const overrides = (settings.data?.keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides;
+  const overridesKey = JSON.stringify(overrides ?? {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const map = useMemo(() => resolveKeymap(overrides), [overridesKey]);
+  primeKeymap(map);
+  useLayoutEffect(announceKeymap, [map]);
 
   // Keeps ~/lib/domain's mutable label tables (status, priority, group, provenance, relative
   // time…) in step with the active locale before children read them this render — cheaper
@@ -82,11 +103,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   setDomainLocale(locale);
   if (typeof document !== "undefined") document.documentElement.lang = locale;
 
-  const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key), vars), [locale]);
+  const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map]);
 
   const tx = useCallback(
     (key: MessageKey, vars?: Record<string, ReactNode>): ReactNode => {
-      const template = lookup(locale, key);
+      const template = lookup(locale, key, map);
       if (!vars) return template;
       const parts = template.split(/(\{\{\s*\w+\s*\}\})/g);
       return parts.map((part, i) => {
@@ -95,7 +116,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         return part ? <Fragment key={i}>{part}</Fragment> : null;
       });
     },
-    [locale]
+    [locale, map]
   );
 
   const setPreference = useCallback(
