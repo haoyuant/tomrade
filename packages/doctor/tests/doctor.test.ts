@@ -176,6 +176,16 @@ describe("the troubleshooter", () => {
     const models = checklist.rows.find((r) => r.id === "models");
     expect(models?.state).toBe("warn");
   });
+  it("reads the account's sync status, an object, into its row and facts", async () => {
+    const { ctx, project } = await boot();
+    ctx.provide("cloudHub", { info: () => ({ user: { id: "u", email: "a@b.co" }, status: { state: "error", location: "a@b.co", lastSyncAt: null, detail: "fetch failed" }, pending: 2 }) } as never);
+    const thread = ctx.doctor.start(project.id, null);
+    const run = await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+    expect(run.status).not.toBe("failed");
+    const sync = (cardsOf(ctx, project.id, thread.id).find((c) => c.schema === "checklist")!.data as ChecklistCard).rows.find((r) => r.id === "sync");
+    expect(sync).toMatchObject({ state: "warn", line: expect.stringContaining("error (fetch failed)") });
+    expect(ctx.doctor.latest(thread.id)?.facts.sync).toBe("error");
+  });
 });
 
 describe("an agent looking into it", () => {
