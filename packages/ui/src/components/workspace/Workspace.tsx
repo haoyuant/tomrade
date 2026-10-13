@@ -4,7 +4,6 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
-import { TemplatesDialog } from "~/components/dialogs/TemplatesDialog";
 import { HistoryDialog } from "~/components/dialogs/HistoryDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
@@ -20,6 +19,7 @@ import { useCreateView, useRedo, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast } from "~/lib/onboarding";
 import { FilesRegion } from "~/components/files/FilesRegion";
+import { RoutinesRegion } from "~/components/routines/RoutinesRegion";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
@@ -92,8 +92,6 @@ export function Workspace() {
   useSettingsHost(setSettings);
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
-  const openTemplates = useCallback(() => setTemplatesOpen(true), []);
   const [codeInbox, setCodeInbox] = useState(false);
   const [history, setHistory] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -125,13 +123,15 @@ export function Workspace() {
         ...(selected ? [{ kind: "item", id: selected.id, key: selected.key, title: selected.title }] : []),
         ws.filePath !== null
           ? { kind: "file", id: ws.filePath || "/", title: ws.filePath ? ws.filePath.slice(ws.filePath.lastIndexOf("/") + 1) : t("files.home") }
-          : { kind: "view", id: ws.view.id, title: ws.view.name }
+          : ws.routines
+            ? { kind: "routines", id: "routines", title: t("templates.title") }
+            : { kind: "view", id: ws.view.id, title: ws.view.name }
       ],
       boardId: ws.workstream?.id ?? null,
       onOpenRepositories: () => setProjectSettings("repositories")
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id, ws.filePath]
+    [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id, ws.filePath, ws.routines]
   );
   useScreenBinding(binding);
 
@@ -293,11 +293,13 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} templatesOpen={templatesOpen} onOpenProjectSettings={openProjectSettings} />
+        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={ws.openRoutines} onOpenProjectSettings={openProjectSettings} />
         <div className="main-col">
           <TabStrip />
           {ws.filePath !== null ? (
             <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
+          ) : ws.routines ? (
+            <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
           ) : (
             <section className="board-region" data-layout={ws.layout}>
               <ViewHeadRegion onOpenViewSettings={openViewSettings} />
@@ -364,25 +366,12 @@ export function Workspace() {
           openAbout: () => setSettings("about"),
           openViewSettings: () => setViewSettings(true),
           openFields: () => openFields(),
-          openTemplates,
+          openTemplates: ws.openRoutines,
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true),
           openCodeInbox: () => setCodeInbox(true),
           // the closing palette hands focus back to its trigger; take it after that
           searchTickets: () => requestAnimationFrame(() => focusTicketSearch())
-        }}
-      />
-      <TemplatesDialog
-        projectId={ws.project.id}
-        open={templatesOpen}
-        onOpenChange={setTemplatesOpen}
-        onOpenIssue={(id) => {
-          setTemplatesOpen(false);
-          ws.select(id);
-        }}
-        onOpenThread={(id) => {
-          setTemplatesOpen(false);
-          showThread(id);
         }}
       />
       <FieldsDialog projectId={ws.project.id} projectName={ws.project.name} open={fieldsOpen} onOpenChange={setFieldsOpen} initialFieldId={fieldsFocus} onOpenRepositories={() => setProjectSettings("repositories")} />

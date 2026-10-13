@@ -75,14 +75,19 @@ export const templates = {
     openThread: "open the conversation",
     paletteOpen: "Routines…",
     openAria: "Open routines",
-    paletteRun: "Run routine · {{name}}"
+    paletteRun: "Run routine · {{name}}",
+    onSchedule: "Run on schedule",
+    lastRun: "last run {{when}}",
+    lastFailed: "last run failed {{when}}",
+    moreSchedules: "+{{n}} more",
+    open: "Open {{name}}"
   },
   zh: {
     label: "例行事务",
     title: "例行事务",
     lede: "一次次重复做的事：每日待办、每周家务、清单，或者要问助手的问题。随时手动运行，也可以给它定个时间。",
     off: "例行事务插件已关闭。可以在 设置 → 管理插件 里打开。",
-    suggestions: "推荐",
+    suggestions: "推荐模板",
     yours: "我的例行事务",
     none: "还没有——从推荐里挑一个，或者自己建一个。",
     new: "新建例行事务",
@@ -153,6 +158,11 @@ export const templates = {
     openThread: "打开对话",
     paletteOpen: "例行事务…",
     openAria: "打开例行事务",
-    paletteRun: "运行例行事务 · {{name}}"
+    paletteRun: "运行例行事务 · {{name}}",
+    onSchedule: "按时自动运行",
+    lastRun: "上次运行 {{when}}",
+    lastFailed: "上次运行失败 {{when}}",
+    moreSchedules: "另有 {{n}} 个",
+    open: "打开 {{name}}"
   }
 };

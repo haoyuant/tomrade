@@ -1,8 +1,9 @@
 /**
- * Routines (templates) regression: a suggestion is added from the sidebar and run, a
- * template of the person's own (two tickets) is written, scheduled every three
- * days and run, the palette offers it, a schedule fires on its own, and a
- * deleted template takes its schedules with it.
+ * Routines (templates) regression: the sidebar opens the Routines screen in a tab
+ * of its own, a suggestion is added from it and run, a template of the person's
+ * own (two tickets) is written, scheduled every three days and run, its card's
+ * switch pauses and resumes the schedule, the palette offers it, a schedule
+ * fires on its own, and a deleted template takes its schedules with it.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:schedules
@@ -53,6 +54,11 @@ const run = async () => {
   const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   const weekday = today.toLocaleDateString("en", { weekday: "long" });
   const editor = () => $(`document.querySelector('[data-testid="template-editor"]')?.textContent ?? ''`);
+  const escape = async () => {
+    await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+    await sleep(400);
+  };
+  const openCard = (id) => press(`document.querySelector('[data-template="${id}"] .routine-card-open')`);
 
   // ── from the sidebar, the suggestions first ───────────────────────────
   check(
@@ -61,19 +67,25 @@ const run = async () => {
   );
   await press(`document.querySelector('[data-testid="open-templates"]')`);
   await sleep(700);
-  check("the sidebar opens Routines on its suggestions", (await $(`!!document.querySelector('[data-suggestion="daily-todo"]')`)) === true);
-  check("its entry reads as open while Routines is", (await $(`document.querySelector('[data-testid="open-templates"]')?.getAttribute('aria-expanded')`)) === "true");
-  check("everyday ones come first, not only coding", ((await $(`document.querySelector('.dlg-body .eyebrow')?.textContent`)) ?? "").trim() === "Everyday");
+  check("the sidebar opens Routines as a screen, not a dialog", (await $(`!!document.querySelector('[data-testid="routines-region"]') && !document.querySelector('[role="dialog"]') && location.hash.endsWith('/r')`)) === true, await $(`location.hash`));
+  check("in a tab of its own beside Backlog", (await $(`(() => { const tab = document.querySelector('.tab-strip [data-tab="routines"]'); return tab?.getAttribute('aria-selected') === 'true' && tab.previousElementSibling?.dataset.tab === 'backlog' && document.querySelector('[data-tab="backlog"]').getAttribute('aria-selected') === 'false'; })()`)) === true);
+  check("its entry reads as current while Routines is", (await $(`document.querySelector('[data-testid="open-templates"]')?.getAttribute('aria-current')`)) === "true");
+  check("no view reads as current there", (await $(`!document.querySelector('.side-row.is-view[aria-current="true"]')`)) === true);
+  check("with no routines yet, it says so above the suggestions", /None yet/.test(await $(`document.querySelector('[data-testid="routines-region"]').textContent`)) && (await $(`!!document.querySelector('.routines-suggestions [data-suggestion="daily-todo"]')`)) === true);
+  check("everyday ones come first, not only coding", ((await $(`document.querySelector('.routines-suggestions .eyebrow')?.textContent`)) ?? "").trim() === "Everyday");
   await shot("templates-01-suggestions");
   await press(`document.querySelector('[data-testid="suggestion-add-daily-todo"]')`);
   await sleep(900);
   const [daily] = ctx.schedules.templates(project.id);
   check("Add makes it the project's own template, with its schedule", daily?.name === "Daily to-do" && ctx.schedules.schedules(project.id, daily.id)[0]?.cadence.kind === "daily", { daily, schedules: ctx.schedules.schedules(project.id) });
-  check("and opens it, saying when it runs", /every day at 08:00/.test(await editor()) && /next /.test(await editor()), await editor());
+  check("and opens it in a dialog, saying when it runs", /every day at 08:00/.test(await editor()) && /next /.test(await editor()) && (await $(`!!document.querySelector('[role="dialog"] [data-testid="template-editor"]')`)) === true, await editor());
   await press(`document.querySelector('[data-testid="template-run"]')`);
   await sleep(1000);
   check("Run now makes today's to-do, its date filled in, on To Do", ctx.items.list({ projectId: project.id }).some((i) => i.title === `To-do · ${weekday} ${ymd}` && i.status === "todo" && i.workType === "general"), titles());
   check("and the run is listed", /by hand/.test(await editor()), await editor());
+  await escape();
+  check("its card shows its schedule, its switch on, and the run", (await $(`(() => { const c = document.querySelector('[data-template="${daily.id}"]'); return !!c && /every day at 08:00/.test(c.textContent) && /last run/.test(c.textContent) && c.querySelector('.switch')?.getAttribute('aria-checked') === 'true'; })()`)) === true, await $(`document.querySelector('[data-template="${daily.id}"]')?.textContent`));
+  check("its suggestion now reads as added", /Added/.test(await $(`document.querySelector('[data-suggestion="daily-todo"]').textContent`)));
 
   // ── your own: two tickets, then a schedule ────────────────────────────
   await press(`document.querySelector('[data-testid="template-new"]')`);
@@ -130,6 +142,7 @@ const run = async () => {
   check("the size is remembered", !!kept && JSON.parse(kept).w > tiny.w, kept);
   await shot("templates-04-resized");
   // a new routine has no schedules yet, so its tickets get the whole width
+  await escape();
   await press(`document.querySelector('[data-testid="template-new"]')`);
   await sleep(300);
   await press(`document.querySelector('[data-testid="template-add-ticket"]')`);
@@ -137,7 +150,9 @@ const run = async () => {
   const cards = await $(`[...document.querySelectorAll('.template-ticket')].map((n) => { const r = n.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) }; })`);
   check("a new routine on a wide sheet lays its tickets side by side", cards.length === 2 && cards[1].x > cards[0].x && cards[1].y === cards[0].y, cards);
   await shot("templates-05-new-wide");
-  await press(`document.querySelector('[data-template="${own.id}"]')`);
+  await escape();
+  check("a card without a schedule has no switch and runs by hand", (await $(`(() => { const c = document.querySelector('[data-template="${own.id}"]'); return !!c && !c.querySelector('.switch') && /run when you need it/.test(c.textContent); })()`)) === true);
+  await openCard(own.id);
   await sleep(300);
   await $(`document.querySelector('.dlg-grip').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   await sleep(100);
@@ -157,10 +172,23 @@ const run = async () => {
   await press(`document.querySelector('[data-testid="template-run"]')`);
   await sleep(1000);
   check("running it makes both tickets", titles().includes(`Plan meals for ${weekday}`) && titles().includes("Tidy the desk"), titles());
+  await escape();
+  await shot("templates-06-cards");
+
+  // ── the card's switch pauses its schedules, and turns them back on ────
+  const ownSwitch = `document.querySelector('[data-template="${own.id}"] .switch')`;
+  await press(ownSwitch);
+  await sleep(700);
+  const paused = ctx.schedules.schedules(project.id, own.id)[0];
+  check("switching a card off pauses its schedule: it will not run on its own", paused?.enabled === false && paused.nextRunAt === null && (await $(`${ownSwitch}.getAttribute('aria-checked')`)) === "false", paused);
+  check("the switch does not open the card", (await $(`!document.querySelector('[role="dialog"]')`)) === true);
+  check("the card says it is off", /· off/.test(await $(`document.querySelector('[data-template="${own.id}"]').textContent`)));
+  await press(ownSwitch);
+  await sleep(700);
+  const resumed = ctx.schedules.schedules(project.id, own.id)[0];
+  check("and switching it on schedules the next run again", resumed?.enabled === true && typeof resumed.nextRunAt === "number" && (await $(`${ownSwitch}.getAttribute('aria-checked')`)) === "true", resumed);
 
   // ── from the palette ──────────────────────────────────────────────────
-  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
-  await sleep(400);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));true`);
   await sleep(500);
   check("the palette can run a template", (await $(`[...document.querySelectorAll('.palette-row')].some((r) => r.textContent?.includes('Run routine · Sunday reset'))`)) === true);
@@ -174,13 +202,28 @@ const run = async () => {
   check("when it comes due it runs on its own", ctx.schedules.runs(project.id, daily.id)[0]?.trigger === "schedule");
   await press(`document.querySelector('[data-testid="open-templates"]')`);
   await sleep(600);
-  await press(`document.querySelector('[data-template="${own.id}"]')`);
+  await openCard(own.id);
   await sleep(500);
   await press(`[...document.querySelectorAll('[data-testid="template-editor"] button')].find((b) => b.textContent === 'Delete routine')`);
   await sleep(200);
   await press(`[...document.querySelectorAll('[data-testid="template-editor"] button')].find((b) => b.textContent === 'Delete it and its schedules?')`);
   await sleep(700);
   check("deleting asks twice, then takes its schedules with it", !ctx.schedules.template(project.id, own.id) && ctx.schedules.schedules(project.id, own.id).length === 0);
+  check("and the dialog and the card go with it", (await $(`!document.querySelector('[role="dialog"]') && !document.querySelector('[data-template="${own.id}"]')`)) === true);
+
+  // ── a card's bin asks once, then deletes ──────────────────────────────
+  await press(`document.querySelector('[data-template="${daily.id}"] .routine-card-del')`);
+  await sleep(300);
+  check("the bin on a card asks before deleting, without opening it", (await $(`!!document.querySelector('[data-template="${daily.id}"] [data-testid="routine-delete"]') && !document.querySelector('[role="dialog"]')`)) === true && !!ctx.schedules.template(project.id, daily.id));
+  await shot("templates-07-card-delete");
+  await press(`document.querySelector('[data-template="${daily.id}"] [data-testid="routine-delete"]')`);
+  await sleep(700);
+  check("confirming deletes the routine and its schedules, and its card goes", !ctx.schedules.template(project.id, daily.id) && ctx.schedules.schedules(project.id, daily.id).length === 0 && (await $(`!document.querySelector('[data-template="${daily.id}"]')`)) === true);
+
+  // ── the tab closes like a file's ──────────────────────────────────────
+  await press(`document.querySelector('[data-tab="routines"] .tab-close')`);
+  await sleep(600);
+  check("closing the Routines tab goes back to Backlog", (await $(`!document.querySelector('[data-tab="routines"]') && document.querySelector('[data-tab="backlog"]').getAttribute('aria-selected') === 'true' && !document.querySelector('[data-testid="routines-region"]')`)) === true);
   check("harness reached the end", true);
 };
 

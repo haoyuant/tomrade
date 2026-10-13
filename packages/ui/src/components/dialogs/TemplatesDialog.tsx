@@ -19,82 +19,57 @@ const draftOf = (t: Template): Draft => ({ name: t.name, description: t.descript
 const valid = (d: Draft) => !!d.name.trim() && (d.action.kind === "tickets" ? d.action.items.length > 0 && d.action.items.every((i) => i.title.trim()) : !!d.action.prompt.trim());
 
 /**
- * What a person does again and again, kept once: tickets to make (a day's
- * to-do, the week's chores, a checklist) or a question for the assistant. Each
- * runs when pressed, and on any schedules it is given.
+ * One routine, opened from its card on the Routines screen: what it does, its
+ * schedules and its recent runs. `templateId` "new" makes one; null is shut.
  */
-export function TemplatesDialog({
+export function RoutineDialog({
   projectId,
-  open,
+  templateId,
   onOpenChange,
+  onCreated,
   onOpenIssue,
   onOpenThread
 }: {
   projectId: string;
-  open: boolean;
+  templateId: string | null;
   onOpenChange: (open: boolean) => void;
+  onCreated: (id: string) => void;
   onOpenIssue: (id: string) => void;
   onOpenThread: (id: string) => void;
 }) {
   const { t } = useI18n();
   const templates = useTemplates(projectId);
   const schedules = useSchedules(projectId);
-  const [selected, setSelected] = useState<string>("suggestions");
-  const all = templates.data ?? [];
-  // A template deleted elsewhere takes its editor with it; one just made is not in the list until it refreshes.
-  const seen = useRef(new Set<string>());
+  const current = (templates.data ?? []).find((x) => x.id === templateId) ?? null;
+  // Deleted elsewhere: the dialog goes with it. One just made waits for the list to catch up.
+  const seen = useRef(false);
   useEffect(() => {
-    const ids = new Set(all.map((x) => x.id));
-    if (seen.current.has(selected) && !ids.has(selected)) setSelected("suggestions");
-    seen.current = ids;
-  }, [all, selected]);
-  const scheduled = new Set((schedules.data ?? []).filter((s) => s.enabled).map((s) => s.templateId));
-  const current = all.find((x) => x.id === selected) ?? null;
+    if (current) seen.current = true;
+    else if (seen.current && templateId !== "new") {
+      seen.current = false;
+      onOpenChange(false);
+    }
+  }, [current, templateId, onOpenChange]);
+  const open = templateId !== null && (templateId === "new" || !!current);
+  const title = current?.name ?? t("templates.new");
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label={t("templates.title")} className="sheet-templates" resizable="templates">
-      <DialogHead title={t("templates.title")} />
-      <div className="dlg-split">
-        <nav className="dlg-nav" aria-label={t("templates.title")}>
-          <div className="side-group">
-            <button type="button" className="side-row" aria-current={selected === "suggestions"} data-testid="templates-suggestions" onClick={() => setSelected("suggestions")}>
-              <Icon className="ico" name="i-leaf" size={14} />
-              <span className="side-name">{t("templates.suggestions")}</span>
-            </button>
-          </div>
-          <div className="side-group">
-            <Eyebrow className="side-label">{t("templates.yours")}</Eyebrow>
-            {all.map((x) => (
-              <button key={x.id} type="button" className="side-row" aria-current={selected === x.id} data-template={x.id} onClick={() => setSelected(x.id)}>
-                <Icon className="ico" name={scheduled.has(x.id) ? "i-clock" : "i-stack"} size={14} />
-                <span className="side-name">{x.name}</span>
-              </button>
-            ))}
-            <button type="button" className="side-row side-add" aria-current={selected === "new"} data-testid="template-new" onClick={() => setSelected("new")}>
-              <Icon className="ico" name="i-plus" size={14} />
-              <span className="side-name">{t("templates.new")}</span>
-            </button>
-          </div>
-        </nav>
-        <DialogBody className="template-body">
-          {templates.isError ? (
-            <p className="meta-txt">{t("templates.off")}</p>
-          ) : selected === "suggestions" ? (
-            <SuggestionsPane projectId={projectId} templates={all} onOpen={setSelected} />
-          ) : selected !== "new" && !current ? null : (
-            <TemplateEditor
-              key={selected}
-              projectId={projectId}
-              template={current}
-              schedules={(schedules.data ?? []).filter((s) => s.templateId === current?.id)}
-              onSaved={setSelected}
-              onDeleted={() => setSelected("suggestions")}
-              onOpenIssue={onOpenIssue}
-              onOpenThread={onOpenThread}
-            />
-          )}
-        </DialogBody>
-      </div>
+    <Dialog open={open} onOpenChange={onOpenChange} label={title} className="sheet-templates" resizable="templates">
+      <DialogHead title={title} />
+      <DialogBody className="template-body">
+        {open && (
+          <TemplateEditor
+            key={templateId}
+            projectId={projectId}
+            template={current}
+            schedules={(schedules.data ?? []).filter((s) => s.templateId === current?.id)}
+            onSaved={(id) => templateId === "new" && onCreated(id)}
+            onDeleted={() => onOpenChange(false)}
+            onOpenIssue={onOpenIssue}
+            onOpenThread={onOpenThread}
+          />
+        )}
+      </DialogBody>
     </Dialog>
   );
 }
@@ -102,7 +77,7 @@ export function TemplatesDialog({
 const GROUPS = ["everyday", "work", "coding"] as const;
 const GROUP_WORD: Record<(typeof GROUPS)[number], MessageKey> = { everyday: "templates.groupEveryday", work: "templates.groupWork", coding: "templates.groupCoding" };
 
-function SuggestionsPane({ projectId, templates, onOpen }: { projectId: string; templates: Template[]; onOpen: (id: string) => void }) {
+export function SuggestionsPane({ projectId, templates, onOpen }: { projectId: string; templates: Template[]; onOpen: (id: string) => void }) {
   const { t, locale } = useI18n();
   const toast = useToast();
   const gallery = useSuggestions(locale);
@@ -112,7 +87,7 @@ function SuggestionsPane({ projectId, templates, onOpen }: { projectId: string; 
     addSuggestion.mutate({ id: s.id, withSchedule: !!s.cadence }, { onSuccess: ({ template }) => onOpen(template.id), onError: (err) => toast(errorSpec(err)) });
   return (
     <>
-      <SectionHead title={t("templates.suggestions")}>{t("templates.lede")}</SectionHead>
+      <SectionHead title={t("templates.suggestions")} />
       {GROUPS.map((group) => {
         const items = (gallery.data ?? []).filter((s) => s.group === group);
         if (!items.length) return null;
@@ -463,7 +438,7 @@ function SchedulesBlock({ projectId, templateId, schedules }: { projectId: strin
       {!schedules.length && !adding && <p className="meta-txt">{t("templates.noSchedules")}</p>}
       {schedules.map((s) => (
         <div key={s.id} className="cfg-row" data-schedule={s.id}>
-          <Icon name="i-clock" size={14} />
+          <Icon name="i-alarm" size={14} />
           <span className="cfg-name">{cadenceLabel(s.cadence, locale)}</span>
           <span className="meta-txt">{s.enabled && s.nextRunAt ? t("templates.next", { when: nextLabel(s.nextRunAt, locale) }) : t("templates.paused")}</span>
           <Spacer />

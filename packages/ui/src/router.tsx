@@ -99,6 +99,20 @@ const filesRoute = createRoute({
   }
 });
 
+/** The project's routines: its own tab, like Files. */
+const routinesRoute = createRoute({
+  getParentRoute: () => projectShellRoute,
+  path: "r",
+  component: function RoutinesRoute() {
+    const { projectId } = routinesRoute.useParams();
+    return (
+      <WorkspaceProvider projectId={projectId} routines>
+        {() => <Workspace />}
+      </WorkspaceProvider>
+    );
+  }
+});
+
 const issueRoute = createRoute({
   getParentRoute: () => projectShellRoute,
   path: "i/$itemId",
@@ -108,7 +122,7 @@ const issueRoute = createRoute({
   }
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectShellRoute.addChildren([projectIndexRoute, viewRoute, workstreamRoute, filesRoute, issueRoute])]);
+const routeTree = rootRoute.addChildren([indexRoute, projectShellRoute.addChildren([projectIndexRoute, viewRoute, workstreamRoute, filesRoute, routinesRoute, issueRoute])]);
 
 // Hash history: the production build is loaded from file://, where a path-based
 // history has nothing to resolve a reload against.

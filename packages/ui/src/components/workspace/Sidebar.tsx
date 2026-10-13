@@ -15,8 +15,8 @@ import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
 
 function ViewRow({ view, index }: { view: View; index: number }) {
-  const { items, view: active, openView, virtual, filePath } = useWorkspace();
-  const current = !virtual && filePath === null && view.id === active.id;
+  const { items, view: active, openView, virtual, filePath, routines } = useWorkspace();
+  const current = !virtual && filePath === null && !routines && view.id === active.id;
   const { ref, isDragging } = useSortable({ id: view.id, index, type: "view", accept: "view" });
   return (
     <button
@@ -212,18 +212,16 @@ export function Sidebar({
   onToggle,
   onOpenFields,
   onOpenTemplates,
-  templatesOpen,
   onOpenProjectSettings
 }: {
   open: boolean;
   onToggle: (open: boolean) => void;
   onOpenFields: (fieldId?: string) => void;
   onOpenTemplates: () => void;
-  templatesOpen: boolean;
   onOpenProjectSettings: () => void;
 }) {
   const { t } = useI18n();
-  const { boards } = useWorkspace();
+  const { boards, routines } = useWorkspace();
   const sidebar = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem(sidebarWidthKey);
@@ -293,12 +291,12 @@ export function Sidebar({
             <button
               type="button"
               className="side-label-btn side-templates"
-              aria-haspopup="dialog"
-              aria-expanded={templatesOpen}
+              aria-current={routines}
               aria-label={t("templates.openAria")}
               data-testid="open-templates"
               onClick={onOpenTemplates}
             >
+              <Icon name="i-alarm" size={13} />
               <Eyebrow className="side-label">{t("templates.label")}</Eyebrow>
             </button>
           </div>

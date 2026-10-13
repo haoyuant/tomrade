@@ -960,6 +960,28 @@ strong { font-weight: var(--font-weight-medium); }
 .template-tickets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: var(--space-3); align-items: start; }
 .template-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
 .template-card { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Routines screen: the person's routines as cards, suggestions below */
+.routines-head .view-ico { color: var(--meta); }
+.routines-main { flex: 1; min-height: 0; overflow: auto; padding: var(--space-6) var(--space-6) var(--space-12); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.routine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-8); }
+.routines-none { margin-bottom: var(--space-8); }
+.routine-card { position: relative; display: flex; flex-direction: column; gap: var(--space-2); cursor: pointer; transition: border-color .12s; }
+.routine-card:hover { border-color: var(--meta); }
+.routine-card-top { gap: var(--space-2); align-items: center; min-width: 0; }
+/* the name is the card's one button; it stretches over the whole card, and the switch sits above it */
+.routine-card-open { border: 0; padding: 0; background: transparent; color: var(--fg); text-align: left; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routine-card-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.routine-card-open:focus-visible { outline: none; }
+.routine-card:has(.routine-card-open:focus-visible) { box-shadow: var(--focus-ring); }
+.routine-card .switch, .routine-card-del, .routine-card-confirm { position: relative; z-index: 1; }
+.routine-card-del { margin-right: -6px; }
+.routine-card-del[aria-pressed="true"] { color: var(--danger); background: var(--surface-warm); }
+.routine-card-confirm { gap: var(--space-2); align-items: center; cursor: default; }
+.routine-card-confirm .btn { padding: 3px 10px; }
+.routine-card-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.routine-card-when { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--fg-2); flex-wrap: wrap; }
+.routine-card-when svg { color: var(--meta); flex-shrink: 0; }
+.routine-card.is-on .routine-card-when svg { color: var(--accent); }
 .template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
 .template-days button { min-width: 44px; }
 .template-failed { color: var(--danger); }
@@ -1806,7 +1828,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .panel + .panel { margin-top: var(--space-3); }
 /* ...but not when they are grid siblings — the margin would offset the
  * second card and defeat grid stretch, leaving mismatched heights. */
-.grid-2 > .panel + .panel, .grid-3 > .panel + .panel, .template-tickets > .panel + .panel, .template-gallery > .panel + .panel { margin-top: 0; }
+.grid-2 > .panel + .panel, .grid-3 > .panel + .panel, .template-tickets > .panel + .panel, .template-gallery > .panel + .panel, .routine-grid > .panel + .panel { margin-top: 0; }
 .sec-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-4); }
 .sec-title { font-size: var(--text-xl); line-height: var(--leading-tight); }
 .sec-lede { font-size: var(--text-base); line-height: var(--leading-body); color: var(--muted); max-width: 62ch; }
@@ -2108,6 +2130,8 @@ button.kref { cursor: pointer; }
  * panel with both sides whole. */
 .side-label-btn { border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
 .side-label-btn .side-label { padding: 0; }
+.side-templates { display: inline-flex; align-items: center; gap: 6px; color: var(--meta); }
+.side-templates:hover, .side-templates[aria-current="true"] { color: var(--fg); }
 .side-label-btn:hover .side-label,
 .side-label-btn[aria-current="true"] .side-label,
 .side-label-btn[aria-expanded="true"] .side-label { color: var(--fg); }
