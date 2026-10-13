@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
-import { onStartRequest, useCodeDeliveries, useCodeSessions, useStartTicket } from "~/lib/codeLink";
+import { onStartRequest, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
 import { engineStateLabel } from "~/lib/localCli";
@@ -112,8 +112,11 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
 
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
   const otherCommand = ((settings.data?.codeLink as { otherCommand?: string } | undefined)?.otherCommand ?? "").trim();
+  // How Start was last left on this machine, before this ticket's own thread says anything.
+  const defaults = useStartDefaults();
+  const rememberedStart = defaults.data ?? null;
   const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
-  const mode = chosenMode ?? (latest?.mode === "terminal" ? "terminal" : "run");
+  const mode: StartOptions["mode"] = chosenMode ?? ((latest?.mode ?? rememberedStart?.mode) === "terminal" ? "terminal" : "run");
   const capability = general ? "general" : "code";
   // An agent Tomrade drives over ACP has no terminal session to open.
   const candidates = useMemo(
@@ -122,7 +125,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   );
   const otherAllowed = mode === "terminal" && !!otherCommand;
   const [chosenEngine, setChosenEngine] = useState<string | null>(null);
-  const remembered = latest?.agent ?? thread?.engine ?? null;
+  const remembered = latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null;
   const engineId =
     chosenEngine && (candidates.some((engine) => engine.id === chosenEngine) || (chosenEngine === "other" && otherAllowed))
       ? chosenEngine
@@ -134,20 +137,22 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const globalOptions = (agentSettings?.engines?.[engineId] ?? {}) as Record<string, unknown>;
   const globalValue = (key: string) => (typeof globalOptions[key] === "string" && globalOptions[key] ? (globalOptions[key] as string) : "");
 
-  // Knobs: the thread's own overrides when it runs on this engine, then whatever the user changes here.
+  // Knobs: the thread's own overrides when it runs on this engine, then what the last start here used, then what the user changes now.
   const [chosenPicks, setChosenPicks] = useState<Record<string, string> | null>(null);
   const threadPicks = useMemo(() => {
     const out: Record<string, string> = {};
     if (thread && thread.engine === engineId) for (const [key, value] of Object.entries(thread.options ?? {})) if (typeof value === "string") out[key] = value;
+    else if (rememberedStart?.engine === engineId) for (const [key, value] of Object.entries(rememberedStart.options ?? {})) if (typeof value === "string") out[key] = value;
     return out;
-  }, [thread, engineId]);
+  }, [thread, engineId, rememberedStart]);
   const pickValues = chosenPicks ?? threadPicks;
   const setPick = (key: string, value: string) => setChosenPicks({ ...pickValues, [key]: value });
   const pickTitle = (pick: EnginePick) => (pick.key === "model" || pick.key === "profile" ? t("agentPanel.modelHead") : pick.key === "effort" ? t("agentPanel.effortHead") : pick.title);
 
   const permissionModes = !general && mode === "run" ? engine?.permissionModes : undefined;
   const [chosenPermission, setChosenPermission] = useState<string | null>(null);
-  const permissionMode = permissionModes ? (chosenPermission ?? (thread?.engine === engineId ? thread?.permissionMode : null) ?? permissionModes.default) : undefined;
+  const rememberedPermission = thread?.engine === engineId ? thread?.permissionMode : rememberedStart?.engine === engineId ? rememberedStart.permissionMode : null;
+  const permissionMode = permissionModes ? (chosenPermission ?? rememberedPermission ?? permissionModes.default) : undefined;
 
   // General work: the method, recommended by the assistant unless the delivery already has one; the user's pick always wins.
   const methods = useMemo(() => ticketMethods(playbooks.data, "general"), [playbooks.data]);
@@ -163,8 +168,8 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
       .finally(() => { if (!cancelled) setRecommending(false); });
     return () => { cancelled = true; };
   }, [general, projectId, item.title, item.body]);
-  // A method the delivery already runs, or the ticket already names, stays; the recommendation is one click away. A ticket with none takes it.
-  const playbook = chosenPlaybook ?? thread?.execution?.playbook.id ?? item.playbookId ?? recommendation?.playbookId ?? "task.assist";
+  // A method the delivery already runs, or the ticket already names, stays; then the last start here; the recommendation is one click away.
+  const playbook = chosenPlaybook ?? thread?.execution?.playbook.id ?? item.playbookId ?? rememberedStart?.playbook ?? recommendation?.playbookId ?? "task.assist";
   const recommended = recommendation?.playbookId ?? null;
   const method = (id: string) => methodWords(t, id, methods.find((entry) => entry.id === id));
   const recommendedTitle = recommended ? method(recommended).title : null;
@@ -238,6 +243,9 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
               </button>
             </div>
             <p className="meta-txt">{t(mode === "run" ? (general ? "codeLink.startHereGeneralHint" : "codeLink.startHereHint") : general ? "codeLink.startTerminalGeneralHint" : "codeLink.startTerminalHint")}</p>
+            {rememberedStart && !latest && !thread && (
+              <p className="meta-txt" data-testid="start-remembered">{t("codeLink.rememberedHint")}</p>
+            )}
           </Field>
 
           <Field label={t("codeLink.agentHead")} htmlFor="stEngine">

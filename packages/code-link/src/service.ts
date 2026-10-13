@@ -21,6 +21,7 @@ import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { writeConnectFiles } from "./connect.js";
+import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
@@ -121,6 +122,8 @@ declare module "@tomradex/ipc" {
     "codeLink.connect": (projectId: string, repoId: string) => ConnectResult;
     /** Install or sign in to a local agent in a terminal, with the command its engine declares. */
     "codeLink.setupInTerminal": (engineId: string, step: "install" | "signIn") => { launched: boolean; command: string };
+    /** What the Start dialog last ran with on this machine, so it opens the way it was left. */
+    "codeLink.startDefaults": () => StartDefaultsView | null;
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -136,7 +139,9 @@ export const CodeLinkConfig = z.preprocess(
     /** How often sessions are checked against the clock and their process; 0 turns it off. */
     sweepMs: z.number().int().min(0).default(30_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
-    fetch: z.boolean().default(true)
+    fetch: z.boolean().default(true),
+    /** Where the Start dialog's last used configuration rests, beside the settings file. Null keeps none. */
+    defaultsPath: z.string().nullish()
   })
 );
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
@@ -232,6 +237,8 @@ export class CodeLink extends Service {
   private readonly worktrees = new Map<string, string>();
   /** Threads with a run going, so a question raised mid-run finds its session: agent events name only the thread. */
   private readonly running = new Map<string, ThreadSummary>();
+  /** What the Start dialog last ran with on this machine (see `defaults.ts`). */
+  private readonly defaults: StartDefaultsStore;
 
   constructor(
     ctx: Context,
@@ -240,6 +247,7 @@ export class CodeLink extends Service {
     super(ctx, "codeLink");
     this.home = ctx;
     this.git = gitRunner(config.gitBinary);
+    this.defaults = new StartDefaultsStore(config.defaultsPath ?? null);
   }
 
   [Service.init]() {
@@ -434,6 +442,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connect", (projectId, repoId) => ctx.codeLink.connect(projectId, repoId));
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
+      ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
 
@@ -612,8 +621,17 @@ export class CodeLink extends Service {
   }
 
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
-  start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
-    return this.starter.start(projectId, itemId, opts);
+  async start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
+    const result = await this.starter.start(projectId, itemId, opts);
+    // Only what actually started is remembered, with the engine it settled on: a gate the user had to
+    // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
+    if (result.ok) this.defaults.write({ mode: opts.mode, engine: result.engine, options: opts.options, permissionMode: opts.permissionMode, playbook: opts.playbook });
+    return result;
+  }
+
+  /** What the Start dialog last ran with on this machine; null when nothing usable is remembered. */
+  startDefaults(): StartDefaultsView | null {
+    return this.defaults.read();
   }
 
   /** Bind again the tokens of this machine's live terminal sessions — the ones a restart would otherwise have orphaned. Returns how many. */

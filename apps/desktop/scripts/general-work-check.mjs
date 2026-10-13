@@ -140,6 +140,27 @@ try {
   fs.writeFileSync(path.join(work, "start-dialog-coding.png"), (await win.webContents.capturePage()).toPNG());
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
+
+  // How the machine remembers Start: a file beside the settings file, not a settings section. Written
+  // here as a previous session would have left it, then read back by the next dialog -- no restart needed
+  // to prove the read, but the file is read from disk every time the dialog opens.
+  fs.writeFileSync(path.join(work, "code-link.json"), JSON.stringify({ mode: "run", engine: "unboxed", options: { droid: "on" }, permissionMode: "workspace", updatedAt: Date.now() }));
+  await js(`location.hash = '#/p/${project.id}/i/${coding.id}'; true`);
+  await wait(() => has('[data-testid="start-ticket"]'));
+  await click('[data-testid="start-ticket"]');
+  await wait(() => has('[data-testid="start-dialog"]'));
+  assert("the dialog opens on the agent and permission the last start here used", await js(`document.querySelector('#stEngine').value === 'unboxed' && document.querySelector('#stPermission')?.value === 'workspace'`));
+  assert("the dialog says the choices came from the last start", await has('[data-testid="start-remembered"]'));
+  fs.writeFileSync(path.join(work, "start-dialog-remembered.png"), (await win.webContents.capturePage()).toPNG());
+  // A file a person has since edited, or an older Tomrade wrote, with nothing usable left: the dialog still opens on defaults.
+  fs.writeFileSync(path.join(work, "code-link.json"), JSON.stringify({ mode: "run", updatedAt: Date.now() }));
+  await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
+  await click('[data-testid="start-ticket"]');
+  await wait(() => has('[data-testid="start-dialog"]'));
+  assert("nothing usable is remembered, the dialog opens on defaults without a word about it", await js(`document.querySelector('#stEngine').value === 'unboxed' && !document.querySelector('[data-testid="start-remembered"]')`));
+  await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+  await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
   assert("renderer has no errors", errors.length === 0);
   console.log(`Screenshots and isolated fixture: ${work}`);
   win.destroy();

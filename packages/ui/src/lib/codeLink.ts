@@ -12,8 +12,13 @@ export const codeLinkKeys = {
   remoteIdentity: (remote: string) => ["codeLink", "remoteIdentity", remote] as const,
   proposals: (projectId: string, itemId?: string) => ["codeLink", projectId, "proposals", itemId ?? ""] as const,
   unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
-  worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const
+  worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const,
+  startDefaults: ["codeLink", "startDefaults"] as const
 };
+
+/** How the Start dialog was left on this machine; null before anything was started here. */
+export const useStartDefaults = () =>
+  useQuery({ queryKey: codeLinkKeys.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
 
 export const useCodeLinks = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: codeLinkKeys.links(projectId, itemId), queryFn: () => invoke("codeLink.links", projectId, itemId) });
@@ -59,6 +64,8 @@ export function useStartTicket(projectId: string) {
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
       void qc.invalidateQueries({ queryKey: ["agent", "threads", projectId] });
+      // The start remembered how it ran on this machine; the next dialog opens the same way.
+      void qc.invalidateQueries({ queryKey: codeLinkKeys.startDefaults });
       invalidateWorkspace(qc, projectId);
     }
   });
