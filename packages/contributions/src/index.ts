@@ -67,6 +67,10 @@ export interface StatusItem {
   command?: string;
   /** Hover text. */
   title?: Words;
+  /** Icon id from the renderer's sprite, drawn before the text; unknown names draw nothing. */
+  icon?: string;
+  /** Which end of the bar it sits at; absent, the left cluster after the live items. */
+  align?: "start" | "end";
 }
 
 export interface StatusItemView {
@@ -75,6 +79,8 @@ export interface StatusItemView {
   opens?: string;
   command?: string;
   title?: string;
+  icon?: string;
+  align?: "start" | "end";
 }
 
 export interface GraphEdge {
@@ -279,8 +285,8 @@ export class Contributions extends Service {
   }
 
   async statusItems(scope: { projectId?: string }): Promise<StatusItemView[]> {
-    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, command: s.command, title: said(s.title), text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
-    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}), ...(t.command ? { command: t.command } : {}), ...(t.title ? { title: t.title } : {}) }] : []));
+    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, command: s.command, title: said(s.title), icon: s.icon, align: s.align, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
+    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}), ...(t.command ? { command: t.command } : {}), ...(t.title ? { title: t.title } : {}), ...(t.icon ? { icon: t.icon } : {}), ...(t.align ? { align: t.align } : {}) }] : []));
   }
 
   graphs(): GraphInfo[] {

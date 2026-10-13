@@ -200,8 +200,10 @@ const run = async () => {
   check("the failed conversation moves to that agent", moved?.engine === "loop", moved?.engine);
   check("which answers the same message", after.filter((m) => m.role === "user").at(-1)?.block.text === "my secret plan" && after.at(-1)?.block.type === "text" && after.at(-1).block.text === "pong", after.at(-1)?.block);
 
-  // ── the bottom bar starts one with nothing failed ────────────────────
-  check("the bottom bar always offers Troubleshoot", await $(`!!${button("Troubleshoot", "document.querySelector('.statusbar')")}`));
+  // ── the bottom bar starts one with nothing failed, on its right, with a bug ─
+  const entry = await $(`(() => { const b = ${button("Troubleshoot", "document.querySelector('.statusbar')")}; if (!b) return null; const bar = document.querySelector('.statusbar'); const kids = [...bar.children]; return { right: kids.indexOf(b) > kids.findIndex((n) => n.classList.contains('spacer')), bug: !!b.querySelector('use[href="#i-bug"]'), label: b.getAttribute('aria-label') }; })()`);
+  check("the bottom bar always offers Troubleshoot", !!entry);
+  check("on the right of the bar, with a bug and a label", !!entry && entry.right && entry.bug && !!entry.label, entry);
   await press(button("Troubleshoot", "document.querySelector('.statusbar')"));
   await sleep(1000);
   const general = ctx.agent.store.threads(project.id, ["doctor"]).find((t) => t.id !== doctorThread.id);

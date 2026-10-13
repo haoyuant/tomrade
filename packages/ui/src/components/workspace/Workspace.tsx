@@ -288,8 +288,6 @@ export function Workspace() {
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
         onOpenUsage={() => setSettings("usage")}
-        onOpenHistory={() => setHistory(true)}
-        historyBusy={busy !== null}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />

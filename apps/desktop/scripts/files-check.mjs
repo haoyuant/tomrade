@@ -400,9 +400,10 @@ const run = async () => {
   await wait(async () => (await lastToast()) === "Deleted docs (copy) again", "redo toast");
   check("⇧⌘Z redoes the delete", !(await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')) && (await lastToast()) === "Deleted docs (copy) again");
 
-  // Usage sits between them since TOM-47
-  check("the title bar offers History right beside Settings", (await $(`(() => { const h = document.querySelector('.titlebar .title-history'); const near = [h?.nextElementSibling, h?.nextElementSibling?.nextElementSibling]; return !!h && near.some((n) => n?.querySelector('use')?.getAttribute('href') === '#i-gear'); })()`)) === true);
-  await click(".titlebar .title-history");
+  // The history window opens from the bottom bar; the header no longer carries a History button (TOM-71).
+  check("the title bar no longer offers History", (await has('.titlebar .title-history')) === false);
+  check("the bottom bar offers History", (await has('.statusbar .status-history')) === true);
+  await click(".statusbar .status-history");
   await wait(() => has('[data-testid="history-list"] .hist-row'), "history window");
   const histRows = () => $(`[...document.querySelectorAll('[data-testid="history-list"] .hist-row')].map((r) => r.dataset.ref.split(':')[0] + '|' + r.dataset.undone + '|' + r.querySelector('.hist-text').textContent)`);
   let rows = await histRows();

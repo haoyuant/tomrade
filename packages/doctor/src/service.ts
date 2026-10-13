@@ -231,7 +231,8 @@ export class Doctor extends Service {
     });
     ctx.inject(["contributions"], (ctx) => {
       ctx.contributions.command({ id: "doctor.troubleshoot", title: () => this.words().command, group: () => this.words().commandGroup, run: (scope) => this.troubleshoot(scope.projectId) });
-      ctx.contributions.statusItem({ id: "doctor", text: () => this.words().statusItem, title: () => this.words().statusTitle, command: "doctor.troubleshoot" });
+      // On the right, with a bug: diagnostics, not an ordinary setting.
+      ctx.contributions.statusItem({ id: "doctor", text: () => this.words().statusItem, title: () => this.words().statusTitle, command: "doctor.troubleshoot", icon: "i-bug", align: "end" });
       // The developer answered, or decided: said where the person already looks, until they read it.
       ctx.contributions.command({ id: "doctor.reports", title: () => this.words().reportsCommand, group: () => this.words().commandGroup, run: () => ({ settingsPane: "about" }) });
       ctx.contributions.statusItem({ id: "doctor-replies", text: () => (this.unread ? this.words().statusReplies(this.unread) : null), command: "doctor.reports" });

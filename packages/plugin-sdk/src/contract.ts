@@ -201,7 +201,7 @@ type Maybe<T> = T | Promise<T>;
 export interface ContributionsApi {
   command(def: { id: string; title: string; group?: string; shortcut?: string; run(scope: CommandScope): Maybe<{ toast?: string } | void> }): Promise<Disposer>;
   badge(def: { id: string; compute(items: Item[], scope: { projectId: string }): Maybe<Record<string, Badge[]>> }): Promise<Disposer>;
-  statusItem(def: { id: string; text(scope: { projectId?: string }): Maybe<string | null> }): Promise<Disposer>;
+  statusItem(def: { id: string; text(scope: { projectId?: string }): Maybe<string | null>; title?: string; icon?: string; align?: "start" | "end" }): Promise<Disposer>;
   section(def: { id: string; title: string; render(item: Item): Maybe<{ rows?: SectionRow[]; text?: string } | null> }): Promise<Disposer>;
   graph(def: { id: string; title: string; icon?: string; edits?: "blocks"; compute(items: Item[], scope: { projectId: string }): Maybe<GraphEdge[]> }): Promise<Disposer>;
 }
