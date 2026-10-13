@@ -192,7 +192,9 @@ const run = async () => {
   await $(`document.querySelector('.toast .btn-ghost').click();true`);
   await sleep(1000);
   check("its toast undoes the create", repos.boards.list(project.id).length === workstreamsBefore);
-  check("the sidebar foot offers fields and project settings", (await $(`!!document.querySelector('.side-fields') && !!document.querySelector('.side-project-settings')`)) === true);
+  check("the sidebar foot offers fields", (await $(`!!document.querySelector('.side-scroll .side-fields')`)) === true);
+  check("project settings appear once, pinned below the scrolling body", (await $(`document.querySelectorAll('.side-project-settings').length === 1 && !document.querySelector('.side-scroll .side-project-settings') && document.querySelector('.sidebar').lastElementChild.contains(document.querySelector('.side-project-settings'))`)) === true);
+  check("…bolder and larger than a nav row, with an accessible name", (await $(`(() => { const b = document.querySelector('.side-project-settings'); const row = document.querySelector('.side-row.is-view'); const cs = getComputedStyle(b); return Number(cs.fontWeight) >= 600 && parseFloat(cs.fontSize) > parseFloat(getComputedStyle(row).fontSize) && b.getAttribute('aria-label') === 'Project settings'; })()`)) === true);
 
   // ── the roster is sortable: a drop writes the view's rank ────────────
   const rosterBefore = repos.views.listForProject(project.id).map((v) => v.id);
@@ -1279,6 +1281,7 @@ const run = async () => {
   check("⌘B collapses the sidebar to its rail", (await $(`!!document.querySelector('.side-rail') && !document.querySelector('.sidebar')`)) === true);
   check("a railed sidebar hands view switching to the view head", (await $(`getComputedStyle(document.querySelector('.board-nav')).display`)) !== "none");
   check("the collapsed sidebar is remembered", (await $(`localStorage.getItem('tomrade.sidebar.open')`)) === "0");
+  check("the rail keeps project settings as a labelled gear", (await $(`document.querySelector('.side-rail .rail-project-settings')?.getAttribute('aria-label')`)) === "Project settings");
   await shot("18-sidebar-railed");
   await press(`document.querySelector('.side-rail .btn-icon')`);
   await sleep(600);

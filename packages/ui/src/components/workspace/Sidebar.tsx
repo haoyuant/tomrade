@@ -257,6 +257,9 @@ export function Sidebar({
           <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
         </button>
         <span className="rail-label">{t("sidebar.projectRailLabel")}</span>
+        <button type="button" className="btn btn-icon rail-project-settings" aria-haspopup="dialog" title={t("sidebar.projectSettings")} aria-label={t("sidebar.projectSettings")} onClick={onOpenProjectSettings}>
+          <Icon name="i-gear" size={17} />
+        </button>
       </div>
     );
   }
@@ -274,60 +277,65 @@ export function Sidebar({
         title={t("sidebar.resizeSidebar")}
         onMouseDown={startResize}
       />
-      <div className="side-head">
-        <Spacer />
-        <button type="button" className="btn btn-icon" title={t("sidebar.collapseSidebar")} aria-label={t("sidebar.collapseSidebar")} onClick={() => onToggle(false)}>
-          <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
-        </button>
-      </div>
-      <div className="side-group side-files">
-        <FilesTree />
-      </div>
-      {/* a project-level place like Files, not part of the backlog's views */}
-      <div className="side-group side-routines">
-        <div className="side-label-row">
-          <button
-            type="button"
-            className="side-label-btn side-templates"
-            aria-haspopup="dialog"
-            aria-expanded={templatesOpen}
-            aria-label={t("templates.openAria")}
-            data-testid="open-templates"
-            onClick={onOpenTemplates}
-          >
-            <Eyebrow className="side-label">{t("templates.label")}</Eyebrow>
-          </button>
-        </div>
-      </div>
-      <div className="side-group side-views">
-        <div className="side-label-row">
-          <Eyebrow className="side-label">{t("sidebar.viewsEyebrow")}</Eyebrow>
-        </div>
-        <ViewList />
-        <NewViewRow />
-      </div>
-      <div className="side-group side-workstreams">
-        <div className="side-label-row">
-          <Eyebrow className="side-label">{t("sidebar.workstreamsEyebrow")}</Eyebrow>
+      <div className="side-scroll">
+        <div className="side-head">
           <Spacer />
-          <button type="button" className="btn btn-icon side-ws-manage" aria-haspopup="dialog" title={t("sidebar.manageWorkstreams")} aria-label={t("sidebar.manageWorkstreams")} onClick={() => onOpenFields("board")}>
-            <Icon name="i-sliders" size={13} />
+          <button type="button" className="btn btn-icon" title={t("sidebar.collapseSidebar")} aria-label={t("sidebar.collapseSidebar")} onClick={() => onToggle(false)}>
+            <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
           </button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {boards.map((b) => (
-            <WorkstreamRow key={b.id} board={b} />
-          ))}
+        <div className="side-group side-files">
+          <FilesTree />
         </div>
-        <NewWorkstreamRow />
+        {/* a project-level place like Files, not part of the backlog's views */}
+        <div className="side-group side-routines">
+          <div className="side-label-row">
+            <button
+              type="button"
+              className="side-label-btn side-templates"
+              aria-haspopup="dialog"
+              aria-expanded={templatesOpen}
+              aria-label={t("templates.openAria")}
+              data-testid="open-templates"
+              onClick={onOpenTemplates}
+            >
+              <Eyebrow className="side-label">{t("templates.label")}</Eyebrow>
+            </button>
+          </div>
+        </div>
+        <div className="side-group side-views">
+          <div className="side-label-row">
+            <Eyebrow className="side-label">{t("sidebar.viewsEyebrow")}</Eyebrow>
+          </div>
+          <ViewList />
+          <NewViewRow />
+        </div>
+        <div className="side-group side-workstreams">
+          <div className="side-label-row">
+            <Eyebrow className="side-label">{t("sidebar.workstreamsEyebrow")}</Eyebrow>
+            <Spacer />
+            <button type="button" className="btn btn-icon side-ws-manage" aria-haspopup="dialog" title={t("sidebar.manageWorkstreams")} aria-label={t("sidebar.manageWorkstreams")} onClick={() => onOpenFields("board")}>
+              <Icon name="i-sliders" size={13} />
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            {boards.map((b) => (
+              <WorkstreamRow key={b.id} board={b} />
+            ))}
+          </div>
+          <NewWorkstreamRow />
+        </div>
+        <div className="side-group side-foot">
+          <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
+            <Icon className="ico" name="i-sliders" size={14} />
+            <span className="side-name">{t("sidebar.fields")}</span>
+          </button>
+        </div>
       </div>
-      <div className="side-group side-foot">
-        <button type="button" className="side-row side-add side-fields" aria-haspopup="dialog" onClick={() => onOpenFields()}>
-          <Icon className="ico" name="i-sliders" size={14} />
-          <span className="side-name">{t("sidebar.fields")}</span>
-        </button>
-        <button type="button" className="side-row side-add side-project-settings" aria-haspopup="dialog" onClick={onOpenProjectSettings}>
-          <Icon className="ico" name="i-gear" size={14} />
+      {/* pinned below the scrolling body so it is always where people look for it */}
+      <div className="side-settings">
+        <button type="button" className="side-row side-project-settings" aria-haspopup="dialog" aria-label={t("sidebar.projectSettings")} onClick={onOpenProjectSettings}>
+          <Icon className="ico" name="i-gear" size={17} />
           <span className="side-name">{t("sidebar.projectSettings")}</span>
         </button>
       </div>
