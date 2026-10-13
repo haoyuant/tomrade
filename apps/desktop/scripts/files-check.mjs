@@ -403,6 +403,7 @@ const run = async () => {
   // The history window opens from the bottom bar; the header no longer carries a History button (TOM-71).
   check("the title bar no longer offers History", (await has('.titlebar .title-history')) === false);
   check("the bottom bar offers History", (await has('.statusbar .status-history')) === true);
+  check("History and Routines carry different icons", (await $(`(() => { const href = (sel) => document.querySelector(sel + ' use')?.getAttribute('href'); const s = href('.statusbar .status-history'), r = href('.side-templates'); return s === '#i-history' && !!r && r !== s; })()`)) === true);
   await click(".statusbar .status-history");
   await wait(() => has('[data-testid="history-list"] .hist-row'), "history window");
   const histRows = () => $(`[...document.querySelectorAll('[data-testid="history-list"] .hist-row')].map((r) => r.dataset.ref.split(':')[0] + '|' + r.dataset.undone + '|' + r.querySelector('.hist-text').textContent)`);
