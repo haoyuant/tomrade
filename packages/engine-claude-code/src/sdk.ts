@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { claudeMediaInput, describeFailure, looksRateLimited, resetTime } from "@tomradex/agent";
-import { ClaudeCodeOptions } from "./legacy.js";
+import { claudeMediaInput, describeFailure, looksRateLimited, resetTime, stepHint, stepSummary } from "@tomradex/agent";
+import { ClaudeCodeOptions, retryReason } from "./legacy.js";
 import { localCli, spawnCli, type CliLaunch } from "./locate.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
 import { sessionSystem, turnPrompt } from "./system.js";
@@ -80,6 +80,8 @@ export class ClaudeRuntime implements Runtime {
     let finish!: (result: TurnResult) => void;
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seenTools = new Set<string>();
+    // Claude Code's own tools, from the call until their result comes back.
+    const running = new Map<string, { name: string; args: unknown; at: number }>();
     const live = new LiveUsage();
     // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
     let limit: { until: number | null; text: string | null } | null = null;
@@ -99,10 +101,13 @@ export class ClaudeRuntime implements Runtime {
           metrics.readyMs ??= performance.now() - start;
       } else if (message.type === "system" && message.subtype === "compact_boundary") {
         metrics.compactions!++;
+      } else if (message.type === "system" && message.subtype === "api_retry") {
+        io.progress(live.retry());
+        io.retry?.({ attempt: message.attempt, max: message.max_retries, reason: retryReason(message), delayMs: message.retry_delay_ms });
       } else if (message.type === "stream_event") {
         // Subagent requests count too: the final figures include them.
-        const running = live.observe(message.event as Parameters<LiveUsage["observe"]>[0]);
-        if (running) io.progress(running);
+        const counted = live.observe(message.event as Parameters<LiveUsage["observe"]>[0], message.parent_tool_use_id);
+        if (counted) io.progress(counted);
         const event = message.event;
         if (!message.parent_tool_use_id && event.type === "content_block_delta" && event.delta.type === "text_delta") {
           metrics.firstTokenMs ??= performance.now() - start;
@@ -116,13 +121,28 @@ export class ClaudeRuntime implements Runtime {
           const said = message.message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(" ").trim();
           limit = { until: limit?.until ?? null, text: said || limit?.text || null };
         }
+        io.retry?.(null);
         for (const block of message.message.content) {
           if (block.type === "text" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
           if (block.type === "tool_use" && !seenTools.has(block.id)) {
             seenTools.add(block.id); metrics.toolCalls!++;
-            if (!block.name.startsWith("mcp__")) io.emit({ type: "trace", tool: block.name, args: block.input, ok: true, summary: "run by Claude Code itself", ms: 0 });
+            // Tomrade's own tools are traced by the gateway they run through.
+            if (!block.name.startsWith("mcp__")) {
+              running.set(block.id, { name: block.name, args: block.input, at: Date.now() });
+              const hint = stepHint(block.input, 60);
+              io.activity?.(hint ? `${block.name} · ${hint}` : block.name);
+            }
           }
         }
+      } else if (message.type === "user" && !message.parent_tool_use_id && Array.isArray(message.message.content)) {
+        for (const block of message.message.content) {
+          const call = block.type === "tool_result" ? running.get(block.tool_use_id) : undefined;
+          if (!call || block.type !== "tool_result") continue;
+          running.delete(block.tool_use_id);
+          const ok = !block.is_error;
+          io.emit({ type: "trace", tool: call.name, args: call.args, ok, summary: stepSummary(call.args, block.content, ok), ms: Date.now() - call.at });
+        }
+        if (!running.size) io.activity?.(null);
       } else if (message.type === "result") {
         const costUsd = Math.max(0, message.total_cost_usd - this.cost);
         this.cost = message.total_cost_usd;

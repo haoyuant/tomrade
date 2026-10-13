@@ -241,9 +241,12 @@ export function createLoopEngine(ctx: Context): Engine {
             },
             io.signal
           ),
-          (delta) => io.delta(delta)
+          (delta) => io.delta(delta),
+          ({ attempt, max, reason, delayMs }) => io.retry?.({ attempt, max, reason, delayMs })
         );
         lastInput = collected.usage.inputTokens;
+        // a reply with only tool calls streams no text; it still means the request went through
+        io.retry?.(null);
         usage.inputTokens += collected.usage.inputTokens;
         usage.outputTokens += collected.usage.outputTokens;
         io.progress(usage);

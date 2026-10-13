@@ -229,7 +229,9 @@ export function useRevertRun(projectId: string, threadId: string | null) {
  */
 export interface RunProgress {
   runId: string;
-  activity: string | null;
+  /** Undefined: the event did not say; null: nothing is running. */
+  activity?: string | null;
+  retry?: Extract<AgentEvent, { type: "progress" }>["retry"];
   usage: { inputTokens: number; outputTokens: number } | null;
   elapsedMs?: number;
   metrics?: ThreadDetail["runs"][number]["metrics"];
@@ -261,7 +263,7 @@ export function useAgentEvents(
           onDelta(event.runId, event.text);
           break;
         case "progress":
-          onProgress({ runId: event.runId, activity: event.activity !== undefined ? event.activity : null, usage: event.usage ?? null, elapsedMs: event.elapsedMs, metrics: event.metrics });
+          onProgress({ runId: event.runId, activity: event.activity, retry: event.retry, usage: event.usage ?? null, elapsedMs: event.elapsedMs, metrics: event.metrics });
           break;
         case "message":
           if (event.message.block.type === "text" && event.message.role === "agent") onDelta(event.message.runId ?? "", null);

@@ -86,6 +86,12 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     expect(two.metrics?.runtime).toBe("warm");
     expect(two.resume).toBe(one.resume);
 
+    const retries: unknown[] = [];
+    io.retry = (state) => retries.push(state);
+    input.input = { kind: "text", text: "FLAKY" };
+    expect((await engine.turn(input, io)).stop).toBe("end");
+    expect(retries).toEqual([{ attempt: 1, max: 3, reason: "529 overloaded", delayMs: 2000 }, null]);
+
     const abort = new AbortController(); io.signal = abort.signal;
     input.input = { kind: "text", text: "WAIT_FOREVER" };
     const waiting = engine.turn(input, io);

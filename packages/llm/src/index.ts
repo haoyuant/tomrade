@@ -36,7 +36,8 @@ export type ModelTest = { ok: true } | { ok: false; kind: ModelErrorKind; detail
 /** One token from `model`, or why not. A timeout reads as the address, not the key. */
 export async function probe(model: ChatModel, timeoutMs = 20_000): Promise<ModelTest> {
   try {
-    for await (const _event of model.chat({ system: "Reply with one word.", messages: [userMessage("ping")], maxTokens: 1 }, AbortSignal.timeout(timeoutMs))) break;
+    // a retry is not an answer: the request it announces may still fail
+    for await (const event of model.chat({ system: "Reply with one word.", messages: [userMessage("ping")], maxTokens: 1 }, AbortSignal.timeout(timeoutMs))) if (event.type !== "retry") break;
     return { ok: true };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

@@ -170,6 +170,61 @@ const run = async () => {
   await sleep(800);
   check("picking it brings it back", ctx.agent.store.thread(alpha.id, filler.id)?.archived === false);
   await sleep(3500);
+
+  // ── every step shown, long runs folded, retries said out loud ─────────
+  ctx.agent.engine({
+    id: "flaky",
+    title: "Flaky",
+    author: "ai:flaky",
+    available: async () => ({ ok: true }),
+    async turn(_input, io) {
+      io.activity("Bash · pnpm test");
+      await sleep(900);
+      io.activity(null);
+      for (let i = 1; i <= 7; i++) io.emit({ type: "trace", tool: "Bash", args: { command: `step ${i}` }, ok: i !== 3, summary: i === 3 ? `step ${i} — exit 1` : `step ${i}`, ms: 40 * i });
+      await sleep(600);
+      io.retry({ attempt: 1, max: 3, reason: "connection dropped", delayMs: 4000 });
+      await sleep(1200);
+      io.retry({ attempt: 2, max: 3, reason: "connection dropped", delayMs: 9000 });
+      await sleep(1500);
+      io.emit({ type: "text", text: "recovered and done" });
+      return { stop: "end" };
+    }
+  });
+  const shot = async (name) => {
+    if (!process.env.TOMRADE_SHOTS) return;
+    fs.mkdirSync(process.env.TOMRADE_SHOTS, { recursive: true });
+    fs.writeFileSync(path.join(process.env.TOMRADE_SHOTS, name), (await win.webContents.capturePage()).toPNG());
+  };
+  const line = () => $(`(() => { const w = document.querySelector('.ai-scroll .working'); return w ? { retrying: w.classList.contains('retrying'), text: w.textContent } : null; })()`);
+  await newThread();
+  await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  const flakyThread = ctx.agent.store.threads(alpha.id)[0];
+  ctx.agent.setEngine(alpha.id, flakyThread.id, "flaky");
+  await sleep(500);
+  await send("flaky");
+  await sleep(500);
+  check("a running tool shows on the working line", (await line())?.text.includes("Bash · pnpm test"), await line());
+  await sleep(800);
+  let now = await line();
+  check("and leaves it once it ends", now && !now.text.includes("pnpm test"), now);
+  await sleep(1000);
+  now = await line();
+  check("a failed request reads as a retry, with the count and why", now?.retrying && /retry 1\/3/.test(now.text) && now.text.includes("connection dropped") && /next try in \ds/.test(now.text), now);
+  const folds = await $(`[...document.querySelectorAll('.ai-scroll .trace-fold')].map((f) => ({ summary: f.querySelector('summary')?.textContent, open: f.open, rows: f.querySelectorAll('.trace-row').length }))`);
+  check("earlier steps fold, around the failed one", folds.length === 1 && folds[0].summary === "2 earlier steps" && !folds[0].open && folds[0].rows === 2, folds);
+  check("the failed step and the last ones stay open", (await $(`[...document.querySelectorAll('.ai-scroll .trace-row')].filter((r) => !r.closest('.trace-fold')).map((r) => r.querySelector('.t-sum')?.textContent)`)).join("|") === "step 3 — exit 1|step 4|step 5|step 6|step 7");
+  await shot("retrying.png");
+  await sleep(1300);
+  check("the next retry counts on", /retry 2\/3/.test((await line())?.text ?? ""), await line());
+  await sleep(1500);
+  const row = await $(`document.querySelector('.ai-scroll .retry-row')?.textContent ?? null`);
+  check("once through, the stretch of retries stays in the transcript", /failed 2× \(connection dropped\) · recovered after \d+s/.test(row ?? ""), row);
+  check("and the line is gone with the run", !(await line()));
+  await press(`document.querySelector('.ai-scroll .trace-fold > summary')`);
+  await sleep(300);
+  await shot("finished.png");
   check("harness reached the end", true);
 };
 
