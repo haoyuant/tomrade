@@ -28,7 +28,7 @@ export {
 export { BRIEF_FILES, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, type ScanResult, type ScannedBranch } from "./scanner.js";
 export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput, type RemoteFailure, type RemoteIdentity, type RemoteProbe } from "./remote.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
-export { DEFAULT_BRANCH_TEMPLATE, branchFor, keysInText, parseBranch, slugify } from "./keys.js";
+export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, keysInText, parseBranch, slugify, titleSlug, usableSlug } from "./keys.js";
 export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult } from "./start.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 export { Sessions, HOOK_EVENTS, describeTool, hooksSettings, piExtension, sessionContext, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";

@@ -8,7 +8,7 @@ import type {} from "@tomradex/storage";
 import type { Item } from "@tomradex/domain";
 import { defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
 import { covered, listDecisions, recordDecision } from "./decisions.js";
-import { DEFAULT_BRANCH_TEMPLATE, branchFor } from "./keys.js";
+import { DEFAULT_BRANCH_TEMPLATE, branchFor, titleSlug } from "./keys.js";
 import { sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
@@ -140,7 +140,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       description:
         "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. One session may own only one ticket; start a separate session for another ticket.",
       input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
-      execute: (args, inv) => {
+      execute: async (args, inv) => {
         const projectId = requireProjectId("claim_ticket", args.projectId, inv);
         const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
         if (!item) throw new Error(`claim_ticket: no ticket ${args.key} in this project`);
@@ -164,8 +164,12 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.
-        const baseBranch = branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title);
-        const branch = existing?.branch || (session?.delivery === delivery.sequence ? session.branch : "") || (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
+        // Only a branch that has to be invented needs a slug, and only a CJK title needs the model.
+        const settled = existing?.branch || (session?.delivery === delivery.sequence ? session.branch : "");
+        const baseBranch = settled
+          ? ""
+          : branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title, await titleSlug(ctx.get("llm") ?? null, item.title));
+        const branch = settled || (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
         if (repoId) host.store.upsertLink(projectId, { itemId: item.id, repoId, branch, delivery: delivery.sequence }, { source: "mcp", lastSeenAt: Date.now() });
         if (session) host.attach(projectId, session.id, item.id, branch, delivery.sequence);
         if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, inv.by);

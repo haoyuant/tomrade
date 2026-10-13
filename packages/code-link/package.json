@@ -27,6 +27,7 @@
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "@tomradex/repos": "workspace:*",
     "@tomradex/settings": "workspace:*",
