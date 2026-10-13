@@ -66,7 +66,7 @@ export function TemplatesDialog({
             <Eyebrow className="side-label">{t("templates.yours")}</Eyebrow>
             {all.map((x) => (
               <button key={x.id} type="button" className="side-row" aria-current={selected === x.id} data-template={x.id} onClick={() => setSelected(x.id)}>
-                <Icon className="ico" name={scheduled.has(x.id) ? "i-clock" : "i-stack"} size={14} />
+                <Icon className="ico" name={scheduled.has(x.id) ? "i-alarm" : "i-stack"} size={14} />
                 <span className="side-name">{x.name}</span>
               </button>
             ))}
@@ -463,7 +463,7 @@ function SchedulesBlock({ projectId, templateId, schedules }: { projectId: strin
       {!schedules.length && !adding && <p className="meta-txt">{t("templates.noSchedules")}</p>}
       {schedules.map((s) => (
         <div key={s.id} className="cfg-row" data-schedule={s.id}>
-          <Icon name="i-clock" size={14} />
+          <Icon name="i-alarm" size={14} />
           <span className="cfg-name">{cadenceLabel(s.cadence, locale)}</span>
           <span className="meta-txt">{s.enabled && s.nextRunAt ? t("templates.next", { when: nextLabel(s.nextRunAt, locale) }) : t("templates.paused")}</span>
           <Spacer />

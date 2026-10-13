@@ -299,6 +299,7 @@ export function Sidebar({
               data-testid="open-templates"
               onClick={onOpenTemplates}
             >
+              <Icon name="i-alarm" size={13} />
               <Eyebrow className="side-label">{t("templates.label")}</Eyebrow>
             </button>
           </div>

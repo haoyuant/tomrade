@@ -2108,6 +2108,8 @@ button.kref { cursor: pointer; }
  * panel with both sides whole. */
 .side-label-btn { border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
 .side-label-btn .side-label { padding: 0; }
+.side-templates { display: inline-flex; align-items: center; gap: 6px; color: var(--meta); }
+.side-templates:hover, .side-templates[aria-expanded="true"] { color: var(--fg); }
 .side-label-btn:hover .side-label,
 .side-label-btn[aria-current="true"] .side-label,
 .side-label-btn[aria-expanded="true"] .side-label { color: var(--fg); }

@@ -45,6 +45,7 @@ export const ICON_IDS = [
   "i-sliders",
   "i-clock",
   "i-history",
+  "i-alarm",
   "i-send",
   "i-stop",
   "i-graph",
@@ -122,6 +123,8 @@ export function IconSprite() {
         <symbol id="i-sliders" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M1.9 4.6h10.2M1.9 9.4h10.2"/></g><g fill="currentColor"><circle cx="5.2" cy="4.6" r="1.7"/><circle cx="9" cy="9.4" r="1.7"/></g></symbol>
         <symbol id="i-clock" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.2"/><path d="M7 4.2V7l2 1.4"/></g></symbol>
         <symbol id="i-history" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1.9 7a5.1 5.1 0 1 0 5.1-5.1 5.6 5.6 0 0 0-3.9 1.6L1.9 4.7"/><path d="M1.9 1.9v2.8h2.8"/><path d="M7 4.3V7l1.9 1.1"/></g></symbol>
+        {/* routines: an alarm clock, apart from the plain clock (dates, Recently updated) and History */}
+        <symbol id="i-alarm" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="7.6" r="4.4"/><path d="M7 5.4v2.2l1.5.9"/><path d="M1.7 3.7 3.6 1.9M12.3 3.7 10.4 1.9"/><path d="M3.9 11 2.9 12.2M10.1 11l1 1.2"/></g></symbol>
         <symbol id="i-graph" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="3.2" cy="3.4" r="1.7"/><circle cx="10.8" cy="5.4" r="1.7"/><circle cx="5.6" cy="10.6" r="1.7"/><path d="M4.8 4 9.2 4.9M4.4 9.2 3.5 5.1M7.2 9.9 9.7 6.8" strokeLinecap="round"/></g></symbol>
         {/* code: a branch leaving the line, a pull request coming back, a prompt, a folder */}
         <symbol id="i-branch" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="4.6" r="1.5"/><path d="M3.6 4.7v4.6M10.4 6.1c0 2.4-2.4 3-4.6 3.2"/></g></symbol>
