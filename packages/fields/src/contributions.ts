@@ -28,6 +28,8 @@ export function registerTools(ctx: Context): void {
       description:
         "List the fields items in a project can carry: built-in (status, priority, epic, labels, workstream…) and custom. Custom values are written through update_item's `fields` map, keyed by field id; a select takes an option id.",
       input: z.object({ projectId: z.string().optional() }),
+      // Options and what each field can do are the point; there is no per-field tool to fetch them from.
+      whole: true,
       execute: ({ projectId }, inv) => ctx.fields.list(requireProjectId("list_fields", projectId, inv))
     })
   );

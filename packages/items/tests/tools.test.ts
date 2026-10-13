@@ -96,6 +96,18 @@ describe("list_items tool", () => {
     expect(await run("count_items", {})).toMatchObject({ count: 60 });
   });
 
+  it("lists rows without the project, the number the key repeats, or a lock that is not set", async () => {
+    const { run, items, board, project } = await withTools();
+    const open = items.create({ projectId: project.id, title: "Open", boardId: board.id, by: "human" });
+    const locked = items.create({ projectId: project.id, title: "Locked", boardId: board.id, by: "human" });
+    items.update(project.id, locked.id, { humanLocked: true } as Parameters<typeof items.update>[2], "human");
+    const rows = new Map(((await run("list_items", {})) as Record<string, unknown>[]).map((row) => [row.id, row]));
+    for (const row of rows.values()) for (const gone of ["projectId", "keyNum"]) expect(row).not.toHaveProperty(gone);
+    expect(rows.get(open.id)).not.toHaveProperty("humanLocked");
+    expect(rows.get(locked.id)).toMatchObject({ key: locked.key, humanLocked: true, rank: expect.any(Number), version: 2 });
+    expect(await run("get_item", { id: open.id })).toMatchObject({ projectId: project.id, keyNum: open.keyNum, humanLocked: false });
+  });
+
   it("counts tickets exactly and returns compact breakdowns without listing rows", async () => {
     const { run, items, boards, board, project } = await withTools();
     const cloud = boards.create({ projectId: project.id, name: "Cloud" });

@@ -15,6 +15,9 @@ const listInput = readInput.extend({ limit: z.number().int().positive().optional
 /** A page an agent can read; anything larger is asked for. count_items answers the quantity questions. */
 const DEFAULT_LIST_LIMIT = 50;
 
+/** An item as a listing shows it: less the project the caller named, the number its key repeats, and a lock that is not set. */
+const listed = ({ projectId: _project, keyNum: _keyNum, humanLocked, ...row }: Item) => (humanLocked ? { ...row, humanLocked } : row);
+
 /** The legacy scalar filters, applied after a clause query so both styles compose. */
 function matchesSimple(item: Item, f: Simple): boolean {
   if (f.boardId !== undefined && item.boardId !== f.boardId) return false;
@@ -77,7 +80,7 @@ export function registerTools(ctx: Context): void {
         `List backlog items, at most \`limit\` rows (default ${DEFAULT_LIST_LIMIT}; raise it for more). To find items about a topic, search with one or two distinctive words, then try synonyms (goal/target, sign-in/login): search matches title and body in any script, every word must appear, and when no item has them all the items with some of them come back instead, best matches first; a "quoted phrase" must appear contiguously. Filters (board, status, kind, priority, label, parent, filter clauses) narrow the set; sort keys only reorder it, so never repeat a search with another sort. Omit projectId to use the current project. Use count_items for totals and breakdowns; do not fetch rows merely to count them.`,
       input: listInput,
       readOnly: true,
-      execute: ({ limit = DEFAULT_LIST_LIMIT, ...args }, inv) => find("list_items", args, inv, { limit, widen: true }).items
+      execute: ({ limit = DEFAULT_LIST_LIMIT, ...args }, inv) => find("list_items", args, inv, { limit, widen: true }).items.map(listed)
     })
   );
 

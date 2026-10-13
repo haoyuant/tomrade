@@ -10,7 +10,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import type { Author } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/tools";
-import type { Tools } from "@tomradex/tools";
+import { LONG_RESULT, compactList, type Tools } from "@tomradex/tools";
 
 export const MCP_SERVER_NAME = "tomrade";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -35,12 +35,22 @@ export const McpConfig = z.object({
 });
 export type McpConfig = z.infer<typeof McpConfig>;
 
+const block = (text: string) => ({ type: "text" as const, text });
+
 /**
  * A tool that already speaks prose is passed through as it is; anything else
  * is compact JSON. Indenting a result costs the model roughly a third more
- * context for nothing it reads.
+ * context for nothing it reads. A long list of records comes back as the loop
+ * reads it — its note, then rows that are still valid JSON — unless the tool
+ * declares its result reference read whole; any other long result stays
+ * whole, for the client to size.
  */
-const textResult = (data: unknown) => ({ content: [{ type: "text" as const, text: typeof data === "string" ? data : JSON.stringify(data) }] });
+function textResult(data: unknown, whole?: boolean) {
+  if (typeof data === "string") return { content: [block(data)] };
+  const json = JSON.stringify(data);
+  const list = !whole && json && json.length > LONG_RESULT ? compactList(data) : null;
+  return { content: list ? [block(list.note), block(list.json)] : [block(json)] };
+}
 const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
 
 /**
@@ -282,9 +292,9 @@ export class Mcp extends Service {
           if (token) {
             const binding = this.bindings.get(token);
             if (!binding) throw new Error("No active run for this runtime");
-            return textResult(await binding.execute(tool.name, args, extra.signal));
+            return textResult(await binding.execute(tool.name, args, extra.signal), tool.whole);
           }
-          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }));
+          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }), tool.whole);
         } catch (e) {
           return errorResult(e);
         }

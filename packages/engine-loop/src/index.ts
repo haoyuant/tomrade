@@ -3,7 +3,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import { HOUSE_RULES, focusSuffix, isSuspended, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
-import { ToolInputError } from "@tomradex/tools";
+import { LONG_RESULT, ToolInputError, compactList } from "@tomradex/tools";
 
 export const LoopOptions = z.object({
   /** auto: the playbook index guides the model; none: the bare loop. */
@@ -25,17 +25,17 @@ const HISTORY_LIMIT = 48;
 
 /** Tools that only read; an identical call within one turn returns the same thing, so it is not run twice. */
 const READ_TOOL = /^(list|get|count|find|read|open)_|^diagram_schema$/;
-const RESULT_CAP = 6000;
+const RESULT_CAP = LONG_RESULT;
 /** A tool that answers in text (the shell) has already sized it; the cap is only a backstop. */
 const TEXT_RESULT_CAP = 20_000;
-const LIST_CAP = 16000;
-const TEXT_CAP = 160;
 /** Tokens a request may carry before older tool results in the turn are dropped; under every window we ship. */
 const CONTEXT_BUDGET = 64_000;
 /** Where dropping stops, so it does not happen again on the very next step. */
 const CONTEXT_TARGET = 40_000;
 /** The latest tool-result messages are never dropped: the model is working from them. */
 const KEEP_RECENT_RESULTS = 2;
+/** How much of a tool's reference the loop reads (ToolDefinition.whole). */
+const WHOLE_CAP = 100_000;
 
 /**
  * Arguments an adapter could not parse arrive as `{ __raw }`. Validating them reported every
@@ -56,27 +56,9 @@ function brokenJson(name: string, args: unknown): string | null {
   return `${name}: the arguments were not valid JSON (${problem}), near: …${raw.slice(Math.max(0, at - 60), at + 30)}… Send the whole call again as one valid JSON object; inside strings, escape double quotes as \\".`;
 }
 
-/** One row of a long list, shorn of what a listing does not need: empties, nested records, the tail of long text. */
-export function compactRow(row: unknown): unknown {
-  if (typeof row !== "object" || row === null || Array.isArray(row)) return row;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(row)) {
-    if (v === null || v === undefined) continue;
-    if (typeof v === "string") out[k] = v.length > TEXT_CAP ? v.slice(0, TEXT_CAP) + "…" : v;
-    else if (Array.isArray(v)) {
-      if (v.length && v.every((x) => typeof x !== "object")) out[k] = v;
-    } else if (typeof v !== "object") out[k] = v;
-  }
-  return out;
-}
-
-/**
- * A tool result as the model reads it. A list that does not fit is not cut
- * mid-record — that read as "there is more, query again" and sent weaker
- * models re-slicing the same rows by status and sort — every row stays in a
- * shortened form, and only past the list cap do rows drop, with the count first.
- */
-export function render(result: unknown, cap = RESULT_CAP): string {
+/** A tool result as the model reads it; a long list of records comes back compacted (see compactList), unless the tool's result is reference read whole. */
+export function render(result: unknown, whole = false): string {
+  const cap = whole ? WHOLE_CAP : RESULT_CAP;
   // Read as written: a JSON-escaped string turns every line break of command output into \n.
   if (typeof result === "string") {
     const limit = Math.max(cap, TEXT_RESULT_CAP);
@@ -84,17 +66,8 @@ export function render(result: unknown, cap = RESULT_CAP): string {
   }
   const full = JSON.stringify(result);
   if (full.length <= cap) return full;
-  if (Array.isArray(result) && result.length && result.every((r) => typeof r === "object" && r !== null && !Array.isArray(r))) {
-    const rows = result.map(compactRow);
-    let kept = rows.length;
-    let body = JSON.stringify(rows);
-    while (body.length > LIST_CAP && kept > 1) {
-      kept = Math.min(kept - 1, Math.floor((kept * LIST_CAP) / body.length));
-      body = JSON.stringify(rows.slice(0, kept));
-    }
-    const head = kept < rows.length ? `(${rows.length} items; showing the first ${kept} — narrow the search or use count_items) ` : `(all ${rows.length} items; long text shortened and nested detail dropped — get_item for one item's full record) `;
-    return head + body;
-  }
+  const list = whole ? null : compactList(result);
+  if (list) return `${list.note} ${list.json}`;
   return full.slice(0, cap) + "… (truncated — fetch details with a narrower tool call)";
 }
 
@@ -205,10 +178,9 @@ export function createLoopEngine(ctx: Context): Engine {
       const profileId = options.profile ?? io.llm.profiles()[0]?.id;
       if (!profileId) return { stop: "error", error: "no language model profile configured" };
       const model = io.llm.forProfile(profileId);
-      const tools: ToolSpec[] = model.capabilities.tools ? io.tools
-        .describe()
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
+      const described = io.tools.describe().sort((a, b) => a.name.localeCompare(b.name));
+      const tools: ToolSpec[] = model.capabilities.tools ? described.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
+      const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
       const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
       // A workflow that finished on the user's answer may have spoken last. A request may not end on the
       // assistant: thinking-mode endpoints read it as an unfinished turn and refuse it without its reasoning.
@@ -290,7 +262,7 @@ export function createLoopEngine(ctx: Context): Engine {
             if (key && memo.has(key)) return { id: call.id, suspended: false, content: "(identical to an earlier call this turn — nothing has changed since; use the result you already have)", invalid: false };
             try {
               const result = await io.tools.execute(call.name, call.args);
-              const content = isSuspended(result) ? result.note : render(result, call.name === "diagram_schema" || call.name === "open_playbook" ? 100_000 : RESULT_CAP);
+              const content = isSuspended(result) ? result.note : render(result, whole.has(call.name));
               if (key) memo.set(key, content);
               return { id: call.id, suspended: isSuspended(result), content, invalid: false };
             } catch (err) {

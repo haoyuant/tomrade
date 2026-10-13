@@ -8,11 +8,11 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { fresh } from "@tomradex/testkit";
-import { Tools } from "@tomradex/tools";
+import { Tools, compactRow } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
 import { fakeChat, type ChatEvent, type ChatModel, type ChatRequest } from "@tomradex/llm";
-import loop, { compactRow, elideOldResults, render } from "@tomradex/engine-loop";
+import loop, { elideOldResults, render } from "@tomradex/engine-loop";
 import type { Message } from "@tomradex/llm";
 
 const item = (n: number) => ({
@@ -48,6 +48,12 @@ describe("render", () => {
     const out = render(Array.from({ length: 400 }, (_, i) => item(i + 1)));
     expect(out).toMatch(/^\(400 items; showing the first \d+ /);
     expect(out.length).toBeLessThan(17_000);
+  });
+
+  it("reads a tool's reference whole, list or not", () => {
+    const list = Array.from({ length: 12 }, (_, i) => item(i + 1));
+    expect(render(list, true)).toBe(JSON.stringify(list));
+    expect(render({ body: "y".repeat(10_000) }, true)).not.toContain("truncated");
   });
 
   it("reads a text answer as written, line breaks and all", () => {
