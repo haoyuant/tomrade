@@ -1,5 +1,15 @@
 export const agentPanel = {
   en: {
+    commandSuccess: "Completed",
+    commandNoMatch: "No matches",
+    commandConditionFalse: "Condition false",
+    commandFailed: "Command failed",
+    commandDeclined: "Declined",
+    commandTimedOut: "Timed out",
+    commandInterrupted: "Interrupted",
+    commandExitCode: "Exit code: {{code}}",
+    commandExitUnknown: "unavailable",
+    commandNoOutput: "No output",
     imageApi: "OpenAI Images API (generate / edit)",
     expandMedia: "Expand",
     attachMedia: "Attach media (or paste/drop)",
@@ -137,6 +147,16 @@ export const agentPanel = {
     repositoriesLink: "Repositories…"
   },
   zh: {
+    commandSuccess: "已完成",
+    commandNoMatch: "无匹配",
+    commandConditionFalse: "条件不成立",
+    commandFailed: "命令失败",
+    commandDeclined: "被拒绝",
+    commandTimedOut: "超时",
+    commandInterrupted: "中断",
+    commandExitCode: "退出码：{{code}}",
+    commandExitUnknown: "未收到",
+    commandNoOutput: "无输出",
     imageApi: "OpenAI 图像接口（生成 / 编辑）",
     expandMedia: "放大查看",
     attachMedia: "添加附件（也可粘贴或拖放）",

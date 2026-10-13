@@ -117,7 +117,7 @@ export class CodexRuntime implements Runtime {
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seen = new Set<string>();
     // Steps Codex is running itself, until they complete.
-    const started = new Set<string>();
+    const started = new Map<string, Json>();
     // Codex says each failed attempt before it gives up; the last few explain the failure.
     const attempts: Json[] = [];
     this.failure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : error.message,
@@ -155,7 +155,10 @@ export class CodexRuntime implements Runtime {
         if (retry) io.retry?.(retry);
       } else if (method === "item/started") {
         const step = codexStep(params.item);
-        if (step) { started.add(params.item.id); io.activity?.(step.label); }
+        if (step) { started.set(params.item.id, params.item); io.activity?.(step.label); }
+      } else if (method === "item/commandExecution/outputDelta") {
+        const item = started.get(params.itemId);
+        if (item) item.aggregatedOutput = ((item.aggregatedOutput ?? "") + params.delta).slice(-8000);
       } else if (method === "item/agentMessage/delta") {
         metrics.firstTokenMs ??= performance.now() - start;
         io.delta(params.delta);
@@ -167,8 +170,9 @@ export class CodexRuntime implements Runtime {
         if (item.type === "agentMessage" && item.text?.trim()) io.emit({ type: "text", text: item.text.trim() });
         if (item.type === "contextCompaction") metrics.compactions!++;
         if (["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall"].includes(item.type)) metrics.toolCalls!++;
-        const step = codexStep(item);
-        if (step) io.emit({ type: "trace", tool: step.tool, args: step.args, ok: step.ok, summary: step.summary, ms: step.ms });
+        const pending = started.get(item.id);
+        const step = codexStep({ ...pending, ...item, aggregatedOutput: item.aggregatedOutput ?? pending?.aggregatedOutput });
+        if (step) { const { label: _, ...trace } = step; io.emit({ type: "trace", ...trace }); }
         if (started.delete(item.id) && !started.size) io.activity?.(null);
       } else if (method === "turn/completed" && params.turn.id === turnId) {
         finish({ stop: cancelled || params.turn.status === "interrupted" ? "cancelled" : params.turn.status === "failed" ? "error" : binding.asked() ? "asked" : "end",
@@ -223,6 +227,13 @@ export class CodexRuntime implements Runtime {
       return { stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error),
         details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, usage, metrics };
     } finally {
+      for (const item of started.values()) {
+        if (item.type !== "commandExecution") continue;
+        const step = codexStep({ ...item, status: "interrupted" })!;
+        const { label: _, ...trace } = step;
+        io.emit({ type: "trace", ...trace });
+      }
+      if (started.size) io.activity?.(null);
       io.signal.removeEventListener("abort", abort); clearTimeout(interruptTimer);
       this.notification = undefined; this.failure = undefined; this.activeIO = undefined;
       await binding.release();
