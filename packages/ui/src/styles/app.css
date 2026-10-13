@@ -507,7 +507,7 @@ strong { font-weight: var(--font-weight-medium); }
 .main-col > .board-region { flex: 1 1 0; min-width: 0; }
 .tab-strip {
   display: flex; align-items: stretch; gap: 2px;
-  height: 36px; flex-shrink: 0; padding: 4px var(--space-2) 0;
+  height: 36px; flex-shrink: 0; padding: 4px var(--space-2) 0 0;
   border-bottom: 1px solid var(--border);
   /* a step darker than the page, so the open tab — in the page's own colour — reads as joined to it */
   background: color-mix(in srgb, var(--surface-warm) 70%, var(--bg));
@@ -526,6 +526,9 @@ strong { font-weight: var(--font-weight-medium); }
   transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .tab.is-backlog { padding-right: 12px; }
+/* the strip starts flush at the sidebar's edge; that border already draws the first tab's left side */
+.tab:first-child { border-left: 0; border-top-left-radius: 0; }
+.tab:first-child[aria-selected="true"]::before { left: 0; border-top-left-radius: 0; }
 .tab:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--fg); }
 /* the open tab sits on the line below it, joined to what it shows */
 .tab[aria-selected="true"] { background: var(--bg); color: var(--fg); border-color: var(--border); margin-bottom: -1px; cursor: default; }

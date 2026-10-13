@@ -81,7 +81,7 @@ export const shortcuts = {
     closeTab: "关闭文件标签页",
     nextTab: "下一个标签页",
     prevTab: "上一个标签页",
-    backlogTab: "回到 Backlog 标签页",
+    backlogTab: "回到工作项标签页",
     customize: "修改按键…",
     paneIntro: "点一条命令的按键，就能录入新的按键。你的按键随设置一起保存；Hub 同步时，也会跟着你到其他电脑。",
     record: "按下新的按键…",
