@@ -129,6 +129,39 @@ describe("the MCP surface", () => {
     }
   });
 
+  it("hands a long list of records over compacted, as the loop reads it, and leaves anything else whole", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const row = (n: number) => ({ key: `TOM-${n}`, title: `Ticket ${n}`, body: "x".repeat(600), parentId: null, evidence: { resources: [] } });
+    const results: Record<string, unknown> = {
+      short_list: [row(1)],
+      long_list: Array.from({ length: 30 }, (_, i) => row(i + 1)),
+      long_record: { body: "y".repeat(10_000) },
+      long_text: "z".repeat(30_000)
+    };
+    for (const [name, result] of Object.entries(results))
+      ctx.tools.register(defineTool({ name, title: name, description: "test", input: z.object({}), execute: () => result }));
+    ctx.tools.register(defineTool({ name: "schema_list", title: "Schema", description: "test", input: z.object({}), whole: true, execute: () => results.long_list }));
+    const client = new Client({ name: "l", version: "0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+    const texts = async (name: string) => ((await client.callTool({ name, arguments: {} })).content as { text: string }[]).map((c) => c.text);
+    try {
+      expect(await texts("short_list")).toEqual([JSON.stringify([row(1)])]);
+      const [note, json] = await texts("long_list");
+      expect(note).toMatch(/^\(all 30 items; /);
+      const rows = JSON.parse(json!) as Record<string, unknown>[];
+      expect(rows).toHaveLength(30);
+      expect(rows[0]).toEqual({ key: "TOM-1", title: "Ticket 1", body: "x".repeat(160) + "…" });
+      expect(await texts("long_record")).toEqual([JSON.stringify(results.long_record)]);
+      expect(await texts("long_text")).toEqual([results.long_text]);
+      // A tool whose result is reference is never shortened.
+      expect(await texts("schema_list")).toEqual([JSON.stringify(results.long_list)]);
+    } finally {
+      await client.close();
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("scopes a /mcp/<projectId> session to that project, and leaves the bare endpoint unscoped", async () => {
     const { ctx, project } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();

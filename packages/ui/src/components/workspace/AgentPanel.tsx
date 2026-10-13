@@ -13,6 +13,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { foldSteps } from "~/lib/steps";
 import { conducts, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
@@ -54,7 +55,21 @@ const STARTERS: { fresh: Starter[]; backlog: Starter[] } = {
   ]
 };
 
-/** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far. */
+type Translate = ReturnType<typeof useI18n>["t"];
+
+const duration = (t: Translate, ms: number) => {
+  const secs = Math.max(0, Math.round(ms / 1000));
+  return secs < 60 ? t("agentPanel.secondsShort", { n: secs }) : t("agentPanel.minSecShort", { m: Math.floor(secs / 60), s: String(secs % 60).padStart(2, "0") });
+};
+
+/** Engines say why a request failed in English; the common causes read in the person's language. */
+const retryReason = (t: Translate, reason: string) => {
+  if (reason === "connection dropped") return t("agentPanel.reasonDropped");
+  const silent = /^no response in (\d+)s$/.exec(reason);
+  return silent ? t("agentPanel.reasonNoResponse", { s: silent[1] }) : reason;
+};
+
+/** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
 function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; progress: RunProgress | null; streaming: boolean }) {
   const { t } = useI18n();
   const [, setTick] = useState(0);
@@ -62,24 +77,46 @@ function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; pr
     const timer = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, []);
-  const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-  const label = progress?.activity ?? (streaming ? t("agentPanel.writing") : t("agentPanel.thinking"));
+  const retry = progress?.retry ?? null;
+  const label = retry
+    ? retry.max ? t("agentPanel.retrying", { n: retry.attempt, max: retry.max }) : t("agentPanel.retryingOpen", { n: retry.attempt })
+    : progress?.activity ?? (streaming ? t("agentPanel.writing") : t("agentPanel.thinking"));
+  const left = retry?.delayMs !== undefined ? retry.since + retry.delayMs - Date.now() : 0;
   return (
-    <p className="working" aria-live="off">
+    <p className={`working${retry ? " retrying" : ""}`} aria-live={retry ? "polite" : "off"}>
       <span className="w-tick" />
+      {retry && <Icon name="i-warn" size={11} />}
       <span className="num w-label">{label}</span>
-      <span className="w-dots">
-        <span />
-        <span />
-        <span />
-      </span>
+      {retry ? (
+        <span className="w-why">
+          {retryReason(t, retry.reason)} · {left > 0 ? t("agentPanel.retryNextIn", { s: Math.ceil(left / 1000) }) : t("agentPanel.retryWaiting")}
+        </span>
+      ) : (
+        <span className="w-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+      )}
       <span className="num w-meta">
-        {secs < 60 ? t("agentPanel.secondsShort", { n: secs }) : t("agentPanel.minSecShort", { m: Math.floor(secs / 60), s: String(secs % 60).padStart(2, "0") })}
+        {duration(t, Date.now() - startedAt)}
         {progress?.usage ? ` · ↑${tokens(progress.usage.inputTokens)} ↓${tokens(progress.usage.outputTokens)} tok` : ""}
       </span>
     </p>
   );
 }
+
+/** A stretch of failed model requests, kept in the transcript once it is over. Never folded. */
+function RetryRow({ block }: { block: Block & { type: "retry" } }) {
+  const { t } = useI18n();
+  return (
+    <p className={`retry-row${block.recovered ? "" : " failed"}`}>
+      <Icon name="i-warn" size={11} />
+      <span>{t(block.recovered ? "agentPanel.retryRecovered" : "agentPanel.retryGaveUp", { n: block.attempts, reason: retryReason(t, block.reason), time: duration(t, block.ms) })}</span>
+    </p>
+  );
+}
+
 
 const KEY_RE = /([A-Z][A-Z0-9]{1,9}-\d+)/g;
 
@@ -106,7 +143,7 @@ function Trace({ block }: { block: Block & { type: "trace" } }) {
   // the arguments are printed once someone opens the row, not for every folded one
   const [open, setOpen] = useState(false);
   return (
-    <details className="trace-row" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details className={`trace-row${block.ok ? "" : " failed"}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <Icon name={block.ok ? "i-check" : "i-warn"} size={11} />
         <span className="t-tool num">{block.tool}</span>
@@ -390,6 +427,8 @@ function Row({ projectId, m, runs, cards, engines, retryEngines, pending, byKey,
       />
     ) : b.type === "status" ? (
       <p className="ai-pending">{b.text}</p>
+    ) : b.type === "retry" ? (
+      <RetryRow block={b} />
     ) : null;
   return (
     <div className="turn turn-ai">
@@ -490,7 +529,12 @@ export function AgentPanel({
     setLive((prev) => (text === null ? null : prev && prev.runId === runId ? { runId, text: prev.text + text } : { runId, text }));
   }, []);
   const onProgress = useCallback((next: RunProgress | null) => {
-    setProgress((prev) => (next === null ? null : { runId: next.runId, activity: next.activity ?? prev?.activity ?? null, usage: next.usage ?? prev?.usage ?? null }));
+    setProgress((prev) => {
+      if (next === null) return null;
+      const same = prev?.runId === next.runId ? prev : null;
+      // null clears (the tool ended, the retry went through); only an absent field keeps what was there
+      return { runId: next.runId, activity: next.activity !== undefined ? next.activity : same?.activity ?? null, retry: next.retry !== undefined ? next.retry : same?.retry ?? null, usage: next.usage ?? same?.usage ?? null };
+    });
   }, []);
   useAgentEvents(projectId, threadId, onDelta, onProgress);
 
@@ -668,6 +712,7 @@ export function AgentPanel({
   // The hint about undoing rides on the newest set of changes only.
   const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
   const newestLast = [...(detail.data?.messages ?? [])].reverse();
+  const folded = useMemo(() => foldSteps(detail.data?.messages ?? []), [detail.data?.messages]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
   const lastAskedBlock = newestLast.find((m) => m.role === "user" && m.block.type === "text")?.block;
   const lastAsked = lastAskedBlock?.type === "text" ? lastAskedBlock.text : null;
@@ -885,7 +930,15 @@ export function AgentPanel({
             </div>
           </div>
         )}
-        {(detail.data?.messages ?? []).map((m) => (
+        {folded.map((entry) => "fold" in entry ? (
+          <details key={`fold-${entry.fold[0].id}`} className="trace-fold">
+            <summary>
+              <Icon name="i-chev" size={10} />
+              <span>{t("agentPanel.earlierSteps", { n: entry.fold.length })}</span>
+            </summary>
+            {entry.fold.map((m) => <TranscriptRow key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={answerRow} onRevert={revertRow} onOpenSettings={settingsRow} engines={engines.data} retryEngines={retryEngines} onCardAction={cardActionRow} cards={cards} busy={busy} />)}
+          </details>
+        ) : (m => (
           <TranscriptRow
             key={m.id}
             projectId={projectId}
@@ -908,7 +961,7 @@ export function AgentPanel({
             busy={busy}
             hint={m.id === lastChangesId}
           />
-        ))}
+        ))(entry))}
         {live?.text && (
           <div className="turn turn-ai">
             <div className="turn-mark">

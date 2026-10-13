@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { ConflictError } from "@tomradex/domain";
 import { fresh } from "@tomradex/testkit";
-import { Tools, ToolInputError, UnknownToolError, defineTool } from "@tomradex/tools";
+import { Tools, ToolInputError, UnknownToolError, compactList, defineTool } from "@tomradex/tools";
 
 const BACKLOG_TOOLS = [
   "add_delivery_resource",
@@ -105,5 +105,23 @@ describe("tool registry", () => {
     expect(() => ctx.tools.register(echo)).toThrow(/already registered/);
     await fiber.dispose();
     expect(ctx.tools.has("echo")).toBe(false);
+  });
+});
+
+describe("whole results", () => {
+  it("tells every surface which tools answer with reference to read whole", async () => {
+    const { ctx } = await fresh({ plugins: [Tools] });
+    ctx.tools.register(defineTool({ name: "a_schema", title: "Schema", description: "test", input: z.object({}), whole: true, execute: () => [] }));
+    ctx.tools.register(defineTool({ name: "a_listing", title: "Listing", description: "test", input: z.object({}), execute: () => [] }));
+    const described = new Map(ctx.tools.describe().map((t) => [t.name, t]));
+    expect(described.get("a_schema")?.whole).toBe(true);
+    expect(described.get("a_listing")).not.toHaveProperty("whole");
+  });
+});
+
+describe("compactList", () => {
+  it("answers only for a list of records", () => {
+    for (const result of [{ a: 1 }, [], [1, 2], [{ a: 1 }, 2], [[1]], "text", null]) expect(compactList(result)).toBeNull();
+    expect(compactList([{ a: 1, b: null }])).toEqual({ note: "(all 1 items; long text shortened and nested detail dropped — get_item for one item's full record)", json: '[{"a":1}]' });
   });
 });

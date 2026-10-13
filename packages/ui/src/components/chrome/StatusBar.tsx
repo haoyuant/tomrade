@@ -1,5 +1,5 @@
 import type { Item, OplogEntry } from "@tomradex/domain";
-import { Icon } from "~/components/icons";
+import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuHead, MenuStackItem } from "~/components/ui/menu";
 import { useAttention, useOpenAttention } from "~/lib/attention";
@@ -117,6 +117,35 @@ export function StatusBar({
       onError: reportError
     });
 
+  const iconOf = (icon: string | undefined): IconId | null => (icon && (ICON_IDS as readonly string[]).includes(icon) ? (icon as IconId) : null);
+  const itemOf = (s: NonNullable<typeof plugins.data>[number]) => {
+    const icon = iconOf(s.icon);
+    return (
+      <button
+        type="button"
+        className="status-item status-link"
+        key={s.id}
+        title={s.title}
+        aria-label={s.title ?? s.text}
+        disabled={!!s.command && runCommand.isPending}
+        onClick={() => (s.command ? run(s.command) : s.opens && onOpen?.(s.opens))}
+      >
+        {icon && <Icon name={icon} size={13} />}
+        {s.text}
+      </button>
+    );
+  };
+  const endItems = plugins.data?.filter((s) => s.align === "end") ?? [];
+  const plainItem = (s: NonNullable<typeof plugins.data>[number]) => {
+    const icon = iconOf(s.icon);
+    return (
+      <span className="status-item" key={s.id}>
+        {icon && <Icon name={icon} size={13} />}
+        {s.text}
+      </span>
+    );
+  };
+
   return (
     <footer className="statusbar">
       <span className="status-item">
@@ -124,21 +153,7 @@ export function StatusBar({
       </span>
       <NeedsYou projectId={projectId} />
       {latest && <Ribbon entry={latest} />}
-      {plugins.data?.map((s) =>
-        s.command ? (
-          <button type="button" className="status-item status-link" key={s.id} title={s.title} disabled={runCommand.isPending} onClick={() => run(s.command!)}>
-            {s.text}
-          </button>
-        ) : s.opens && onOpen ? (
-          <button type="button" className="status-item status-link" key={s.id} onClick={() => onOpen(s.opens!)}>
-            {s.text}
-          </button>
-        ) : (
-          <span className="status-item" key={s.id}>
-            {s.text}
-          </span>
-        )
-      )}
+      {plugins.data?.filter((s) => s.align !== "end").map((s) => (s.command || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
       {onUndo && (
         <button type="button" className="btn btn-ghost status-undo" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} disabled={busy !== null} aria-busy={busy === "undo"} title={t("statusBar.undoTitle")}>
           <Icon name={busy === "undo" ? "i-sync" : "i-undo"} size={13} className={busy === "undo" ? "is-spinning" : undefined} /> {busy === "undo" ? t("workspace.undoing") : t("toast.undo")}
@@ -155,6 +170,7 @@ export function StatusBar({
         </button>
       )}
       <Spacer />
+      {endItems.map((s) => (s.command || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
       {children}
     </footer>
   );

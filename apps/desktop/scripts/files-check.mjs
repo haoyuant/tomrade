@@ -116,7 +116,7 @@ const run = async () => {
   await wait(() => has(".proj"), "projects home");
   await $(`location.hash = '#/p/${project.id}'; true`);
   await wait(() => has(".side-files"), "sidebar");
-  check("the files tree sits above the views", await $(`(() => { const s = document.querySelector('.sidebar'); const groups = [...s.querySelectorAll('.side-group')]; return groups[0]?.classList.contains('side-files') && groups[1]?.classList.contains('side-views'); })()`));
+  check("the files tree sits above routines, then the views", await $(`(() => { const s = document.querySelector('.sidebar'); const groups = [...s.querySelectorAll('.side-group')]; return groups[0]?.classList.contains('side-files') && groups[1]?.classList.contains('side-routines') && groups[2]?.classList.contains('side-views'); })()`));
   await wait(() => $(`document.querySelectorAll('.side-row.is-file').length >= 2`), "tree rows");
   check("top-level folders are listed, folded", (await $(`[...document.querySelectorAll('.side-row.is-file')].map(n => n.dataset.file).join()`)) === "docs,site");
   await click('.side-row.is-file[data-file="docs"] .chev');
@@ -400,10 +400,11 @@ const run = async () => {
   await wait(async () => (await lastToast()) === "Deleted docs (copy) again", "redo toast");
   check("⇧⌘Z redoes the delete", !(await has('[data-testid="file-table"] .file-row[data-file="docs (copy)"]')) && (await lastToast()) === "Deleted docs (copy) again");
 
-  // Usage sits between them since TOM-47
-  check("the title bar offers History right beside Settings", (await $(`(() => { const h = document.querySelector('.titlebar .title-history'); const near = [h?.nextElementSibling, h?.nextElementSibling?.nextElementSibling]; return !!h && near.some((n) => n?.querySelector('use')?.getAttribute('href') === '#i-gear'); })()`)) === true);
-  check("History and Routines carry different icons", (await $(`(() => { const href = (sel) => document.querySelector(sel + ' use')?.getAttribute('href'); const h = href('.titlebar .title-history'), s = href('.statusbar .status-history'), r = href('.side-templates'); return h === '#i-history' && s === h && !!r && r !== h; })()`)) === true);
-  await click(".titlebar .title-history");
+  // The history window opens from the bottom bar; the header no longer carries a History button (TOM-71).
+  check("the title bar no longer offers History", (await has('.titlebar .title-history')) === false);
+  check("the bottom bar offers History", (await has('.statusbar .status-history')) === true);
+  check("History and Routines carry different icons", (await $(`(() => { const href = (sel) => document.querySelector(sel + ' use')?.getAttribute('href'); const s = href('.statusbar .status-history'), r = href('.side-templates'); return s === '#i-history' && !!r && r !== s; })()`)) === true);
+  await click(".statusbar .status-history");
   await wait(() => has('[data-testid="history-list"] .hist-row'), "history window");
   const histRows = () => $(`[...document.querySelectorAll('[data-testid="history-list"] .hist-row')].map((r) => r.dataset.ref.split(':')[0] + '|' + r.dataset.undone + '|' + r.querySelector('.hist-text').textContent)`);
   let rows = await histRows();

@@ -40,6 +40,10 @@ function handle(m) {
     send({ type: 'extension_ui_request', id: dialog, method: 'confirm', title: 'Pi wants to use bash', message: '{"command":"npm test"}' });
     return;
   }
+  if (m.message.includes('FLAKY')) {
+    send({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: '529 overloaded' });
+    send({ type: 'auto_retry_end', success: true, attempt: 2 });
+  }
   if (m.message.includes('FAIL')) {
     send({ type: 'message_end', message: assistant('', { stopReason: 'error', errorMessage: '401 invalid api key', content: [] }) });
     settle();

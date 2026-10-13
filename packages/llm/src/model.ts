@@ -46,6 +46,8 @@ export type ChatEvent =
   | { type: "media"; media: MediaData }
   | { type: "tool_call"; id: string; name: string; args: unknown }
   | { type: "usage"; inputTokens?: number; outputTokens?: number }
+  /** The request failed before anything streamed and is sent again after `delayMs`; `attempt` counts the retries. */
+  | { type: "retry"; attempt: number; max: number; reason: string; delayMs: number }
   | { type: "stop"; reason: StopReason };
 
 export interface ChatCapabilities {
@@ -74,7 +76,7 @@ export interface Collected {
 }
 
 /** Drain one turn; `onText` sees deltas as they stream. */
-export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta: string) => void): Promise<Collected> {
+export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta: string) => void, onRetry?: (retry: ChatEvent & { type: "retry" }) => void): Promise<Collected> {
   const out: Collected = { text: "", toolCalls: [], stop: "end", usage: { inputTokens: 0, outputTokens: 0 } };
   for await (const event of events) {
     if (event.type === "text") {
@@ -87,6 +89,8 @@ export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta:
     } else if (event.type === "usage") {
       out.usage.inputTokens += event.inputTokens ?? 0;
       out.usage.outputTokens += event.outputTokens ?? 0;
+    } else if (event.type === "retry") {
+      onRetry?.(event);
     } else {
       out.stop = event.reason;
     }

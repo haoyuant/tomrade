@@ -24,6 +24,7 @@ import {
   type AgentEvent,
   type AgentPolicy,
   type Block,
+  type RetryState,
   type CardView,
   type Engine,
   type CliCheck,
@@ -267,6 +268,8 @@ interface RunCtx {
   partial: { text: string };
   /** Whether the wall clock, not the person, ended the run, and what the clock allowed. */
   clock: { timedOut: boolean; limitMs: number };
+  /** Stores a stretch of retries still open when the turn ends. */
+  settleRetry: (recovered: boolean) => void;
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -1111,7 +1114,19 @@ export class Agent extends Service {
       waivers: this.store.waivers(thread.projectId, thread.id),
       scratch: new Map()
     };
+    // A stretch of failed model requests: live on the working line while it lasts, one stored row once it ends.
+    let retrying: (RetryState & { since: number; first: number }) | null = null;
+    const settleRetry = (recovered: boolean) => {
+      if (!retrying) return;
+      const { attempt, max, reason, first } = retrying;
+      retrying = null;
+      this.appendAndBroadcast(thread.projectId, thread.id, "agent", { type: "retry", attempts: attempt, ...(max ? { max } : {}), reason, ms: Date.now() - first, recovered }, run.id);
+      progress({});
+    };
     const emit = (block: Block) => {
+      // anything the model said or did means a request went through; an error means the retries ran out
+      if (block.type === "error") settleRetry(false);
+      else if (block.type !== "note" && block.type !== "status" && block.type !== "changes") settleRetry(true);
       // the engine kept what it streamed; nothing is left to rescue
       if (block.type === "text") partial.text = "";
       this.appendAndBroadcast(thread.projectId, thread.id, block.type === "note" ? "system" : "agent", block, run.id);
@@ -1127,7 +1142,8 @@ export class Agent extends Service {
         streamedSinceReport = 0;
       }
       const usage = { inputTokens: reported.inputTokens, outputTokens: reported.outputTokens + Math.ceil(streamedSinceReport / 4) };
-      this.broadcast(thread.id, { type: "progress", runId: run.id, elapsedMs: Math.round(performance.now() - startedAt), ...p, usage });
+      const retry = retrying ? { attempt: retrying.attempt, ...(retrying.max ? { max: retrying.max } : {}), reason: retrying.reason, ...(retrying.delayMs !== undefined ? { delayMs: retrying.delayMs } : {}), since: retrying.since } : null;
+      this.broadcast(thread.id, { type: "progress", runId: run.id, elapsedMs: Math.round(performance.now() - startedAt), ...p, retry, usage });
     };
     progress({});
     const requestPermission: NonNullable<TurnIO["requestPermission"]> = (text, options, signal) => {
@@ -1168,6 +1184,7 @@ export class Agent extends Service {
       }),
       execute: async (name: string, args: unknown): Promise<unknown> => {
         const t0 = Date.now();
+        settleRetry(true);
         progress({ activity: name });
         try {
           const result = await this.ctx.tools.execute(name, args, { by: engine.author, projectId: thread.projectId, run: handle, signal: abort.signal, ask: (text, options) => requestPermission(text, options) });
@@ -1201,12 +1218,22 @@ export class Agent extends Service {
       permissionMode: (mode) => { handle.scratch.set("permissionMode", mode); this.broadcast(thread.id, { type: "permission-mode", mode }); },
       requestPermission,
       delta: (text) => {
+        settleRetry(true);
         partial.text += text;
         streamedSinceReport += text.length;
         this.broadcast(thread.id, { type: "delta", runId: run.id, text });
         progress({});
       },
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
+      activity: (label) => {
+        if (label) settleRetry(true);
+        progress({ activity: label });
+      },
+      retry: (state) => {
+        if (!state) return settleRetry(true);
+        retrying = { ...state, since: Date.now(), first: retrying?.first ?? Date.now() };
+        progress({});
+      },
       tools,
       playbooks: { index: () => this.playbookIndex(thread.projectId), open: (id) => this.openPlaybook(id, thread.projectId) },
       workflows: {
@@ -1223,7 +1250,7 @@ export class Agent extends Service {
       signal: abort.signal,
       resume: this.store.external(thread.projectId, thread.id)[engine.id]
     };
-    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock };
+    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry };
   }
 
   /** The ticket a code thread implements, as the engine should hear about it. */
@@ -1309,6 +1336,7 @@ export class Agent extends Service {
         result = { stop: "error", error: message(err), details: describeFailure({ error: err }) };
       }
     } finally {
+      rc.settleRetry(result?.stop !== "error" && result?.stop !== "cancelled" && !!result);
       this.finish(rc, await this.runFollowUps(rc, result ?? { stop: "error", error: "engine returned nothing" }));
     }
   }
@@ -1608,6 +1636,7 @@ export class Agent extends Service {
         title: "Open a playbook",
         description: "Load the full body of one playbook from the index into view.",
         input: z.object({ id: z.string().min(1) }),
+        whole: true,
         execute: ({ id }, inv) => {
           const source = resolvePlaybook({ ...this.playbooks.get(id), project: inv.projectId ? this.projectPlaybooks.get(inv.projectId)?.get(id) : undefined }, this.settingsOf().playbookChoices[id]);
           if (!source) throw new Error(`unknown playbook "${id}" — available: ${this.playbookIndex(inv.projectId).map((e) => e.id).join(", ") || "(none)"}`);

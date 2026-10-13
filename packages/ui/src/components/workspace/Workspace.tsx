@@ -288,14 +288,12 @@ export function Workspace() {
         onNewIssue={() => setNewIssue(true)}
         onOpenSettings={() => setSettings("")}
         onOpenUsage={() => setSettings("usage")}
-        onOpenHistory={() => setHistory(true)}
-        historyBusy={busy !== null}
         projectMenuOpen={projectMenu}
         setProjectMenuOpen={setProjectMenu}
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} onOpenProjectSettings={openProjectSettings} />
+        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={openTemplates} templatesOpen={templatesOpen} onOpenProjectSettings={openProjectSettings} />
         <div className="main-col">
           <TabStrip />
           {ws.filePath !== null ? (

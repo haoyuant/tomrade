@@ -55,9 +55,14 @@ const run = async () => {
   const editor = () => $(`document.querySelector('[data-testid="template-editor"]')?.textContent ?? ''`);
 
   // ── from the sidebar, the suggestions first ───────────────────────────
+  check(
+    "Routines is its own entry beside Files, not in the backlog's foot",
+    (await $(`(() => { const b = document.querySelector('[data-testid="open-templates"]'); return !!b?.closest('.side-routines') && !b.closest('.side-foot') && b.closest('.side-group')?.previousElementSibling?.classList.contains('side-files') && b.getAttribute('aria-label') === 'Open routines'; })()`)) === true
+  );
   await press(`document.querySelector('[data-testid="open-templates"]')`);
   await sleep(700);
   check("the sidebar opens Routines on its suggestions", (await $(`!!document.querySelector('[data-suggestion="daily-todo"]')`)) === true);
+  check("its entry reads as open while Routines is", (await $(`document.querySelector('[data-testid="open-templates"]')?.getAttribute('aria-expanded')`)) === "true");
   check("everyday ones come first, not only coding", ((await $(`document.querySelector('.dlg-body .eyebrow')?.textContent`)) ?? "").trim() === "Everyday");
   await shot("templates-01-suggestions");
   await press(`document.querySelector('[data-testid="suggestion-add-daily-todo"]')`);

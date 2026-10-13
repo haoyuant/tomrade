@@ -39,7 +39,13 @@ export function withPromptTools(model: ChatModel): ChatModel {
         return;
       }
       const flattened: Message[] = request.messages.map((m) => ({ role: m.role, content: m.content.map(asText) }));
-      const inner = await collect(model.chat({ ...request, system: request.system + renderTools(request.tools), messages: flattened, tools: undefined }, signal));
+      // Retries pass straight through; the rest is read whole before the fence can be parsed.
+      const events: ChatEvent[] = [];
+      for await (const event of model.chat({ ...request, system: request.system + renderTools(request.tools), messages: flattened, tools: undefined }, signal)) {
+        if (event.type === "retry") yield event;
+        else events.push(event);
+      }
+      const inner = await collect((async function* () { yield* events; })());
       const match = FENCE.exec(inner.text);
       const before = match ? inner.text.slice(0, match.index).trim() : inner.text;
       if (before) yield { type: "text", delta: before };
