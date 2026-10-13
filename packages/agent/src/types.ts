@@ -27,6 +27,8 @@ export type Block =
   | { type: "status"; text: string }
   | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
   | { type: "note"; text: string }
+  /** One stretch of failed model requests, stored once it ends: recovered, or the run gave up. */
+  | { type: "retry"; attempts: number; max?: number; reason: string; ms: number; recovered: boolean }
   /** `details`: what the engine knew beyond the one line, folded under it so it can be read and copied. */
   | { type: "error"; text: string; details?: string };
 
@@ -158,7 +160,7 @@ export type AgentEvent =
   | { type: "run"; run: RunView }
   | { type: "message"; message: ThreadMessage }
   | { type: "delta"; runId: string; text: string }
-  | { type: "progress"; runId: string; activity?: string | null; usage?: { inputTokens: number; outputTokens: number }; elapsedMs?: number; metrics?: RunView["metrics"] }
+  | { type: "progress"; runId: string; activity?: string | null; retry?: (RetryState & { since: number }) | null; usage?: { inputTokens: number; outputTokens: number }; elapsedMs?: number; metrics?: RunView["metrics"] }
   | { type: "card"; card: CardView }
   | { type: "pending"; pending: PendingView | null }
   | { type: "done"; run: RunView };
@@ -253,6 +255,15 @@ export interface TurnInput {
   workdir?: { remote: string; branch: string; worktree: string | null };
 }
 
+/** A model request failed and the engine is trying again; `attempt` counts the retries so far. */
+export interface RetryState {
+  attempt: number;
+  max?: number;
+  reason: string;
+  /** How long until the next try, when the engine says. */
+  delayMs?: number;
+}
+
 export interface TurnIO {
   media?: {
     read(id: string): import("./media.js").MediaContent;
@@ -267,6 +278,10 @@ export interface TurnIO {
   delta(text: string): void;
   /** Live token totals for the working line; call whenever the count grows. */
   progress(usage: { inputTokens?: number; outputTokens?: number }): void;
+  /** A tool the engine runs itself is under way (Tomrade's own tools report through `tools`); null when it ends. */
+  activity?(label: string | null): void;
+  /** A model request failed and will be tried again; null once one goes through. */
+  retry?(state: RetryState | null): void;
   tools: {
     describe(): ToolDescriptor[];
     /** Run-bound and ledgered; throws on refusal or failure so the engine can feed the error back. */

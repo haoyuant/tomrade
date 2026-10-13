@@ -25,6 +25,16 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     n++;
     send({ type: 'system', subtype: 'init', session_id: session, model: 'fixed-model', tools: [], mcp_servers: [], uuid: 'init-'+n });
     if (m.message.content.includes('WAIT_FOREVER')) continue;
+    if (m.message.content.includes('FLAKY')) {
+      // an attempt that drops mid-stream, the SDK's retry notice, then one round of Claude Code's own Bash
+      send({ type: 'stream_event', session_id: session, parent_tool_use_id: null, uuid: 'dropped-'+n,
+        event: { type: 'message_start', message: { id: 'dropped-'+n, usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 20, cache_creation_input_tokens: 4 } } } });
+      send({ type: 'system', subtype: 'api_retry', attempt: 1, max_retries: 10, retry_delay_ms: 500, error_status: null, error: 'unknown', session_id: session, uuid: 'retry-'+n });
+      send({ type: 'assistant', session_id: session, parent_tool_use_id: null, uuid: 'tool-'+n,
+        message: { id: 'tool-'+n, role: 'assistant', content: [{ type: 'tool_use', id: 'bash-'+n, name: 'Bash', input: { command: 'ls -la', description: 'List files' } }], usage: { input_tokens: 10, output_tokens: 1 } } });
+      send({ type: 'user', session_id: session, parent_tool_use_id: null, uuid: 'result-tool-'+n,
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'bash-'+n, content: 'total 0', is_error: false }] } });
+    }
     send({ type: 'stream_event', session_id: session, parent_tool_use_id: null, uuid: 'start-'+n,
       event: { type: 'message_start', message: { id: 'msg-'+n, usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 20, cache_creation_input_tokens: 4 } } } });
     send({ type: 'stream_event', session_id: session, parent_tool_use_id: null, uuid: 'delta-'+n,

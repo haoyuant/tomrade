@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { attachedMedia, describeFailure, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, describeFailure, stepHint, stepSummary, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { bridgeSource } from "./bridge.js";
@@ -193,22 +193,33 @@ export class PiRuntime implements Runtime {
           io.progress(counted());
           break;
         }
-        case "tool_execution_start":
+        case "tool_execution_start": {
           if (!event.parentToolCallId) metrics.toolCalls!++;
           calls.set(event.toolCallId, event.args);
-          break;
-        case "tool_execution_end":
           // Tomrade's own tools are traced by the gateway they run through.
           if (!String(event.toolName).startsWith("mcp__tomrade__")) {
-            io.emit({ type: "trace", tool: event.toolName, args: calls.get(event.toolCallId) ?? {}, ok: !event.isError, summary: "run by Pi itself", ms: Math.round(event.durationMs ?? 0) });
+            const hint = stepHint(event.args, 60);
+            io.activity?.(hint ? `${event.toolName} · ${hint}` : event.toolName);
+          }
+          break;
+        }
+        case "tool_execution_end":
+          if (!String(event.toolName).startsWith("mcp__tomrade__")) {
+            const args = calls.get(event.toolCallId) ?? {};
+            io.emit({ type: "trace", tool: event.toolName, args, ok: !event.isError, summary: stepSummary(args, event.result, !event.isError), ms: Math.round(event.durationMs ?? 0) });
           }
           calls.delete(event.toolCallId);
+          if (!calls.size) io.activity?.(null);
           break;
         case "compaction_end":
           if (event.result) { metrics.compactions!++; add(event.result.usage); }
           break;
+        case "auto_retry_start":
+          io.retry?.({ attempt: event.attempt ?? 1, ...(event.maxAttempts ? { max: event.maxAttempts } : {}), reason: String(event.errorMessage ?? "request failed"), ...(event.delayMs !== undefined ? { delayMs: event.delayMs } : {}) });
+          break;
         case "auto_retry_end":
           if (!event.success) retryError = event.finalError;
+          else io.retry?.(null);
           break;
         case "agent_settled":
           if (cancelled || event.aborted) finish(result("cancelled"));

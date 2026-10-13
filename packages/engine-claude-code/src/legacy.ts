@@ -10,7 +10,7 @@ import { localAvailability } from "./availability.js";
 import { claudeSignedIn, runJsonl } from "./cli.js";
 import { localCli } from "./locate.js";
 import { buildSystem, promptOf } from "./system.js";
-import { claudeMediaInput, looksRateLimited, resetTime } from "@tomradex/agent";
+import { claudeMediaInput, looksRateLimited, resetTime, stepHint, stepSummary } from "@tomradex/agent";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
 
 export const ClaudeCodeOptions = z.object({
@@ -31,11 +31,25 @@ export const ClaudeCodeOptions = z.object({
 });
 export type ClaudeCodeOptions = z.infer<typeof ClaudeCodeOptions>;
 
+/** Why Claude Code is sending a request again (its `api_retry` message), in a few words. */
+export function retryReason(message: { error_status: number | null; error: string; no_response?: { waited_ms: number } }): string {
+  if (message.no_response) return `no response in ${Math.round(message.no_response.waited_ms / 1000)}s`;
+  if (message.error_status === null) return "connection dropped";
+  return `${message.error.replace(/_/g, " ")} (HTTP ${message.error_status})`;
+}
+
 interface StreamLine extends ResultCounters {
   type?: string;
   subtype?: string;
   session_id?: string;
-  message?: { content?: ({ type: string; text?: string; name?: string; input?: unknown } | Record<string, unknown>)[]; usage?: ApiUsage };
+  parent_tool_use_id?: string | null;
+  attempt?: number;
+  max_retries?: number;
+  retry_delay_ms?: number;
+  error_status?: number | null;
+  error?: string;
+  no_response?: { waited_ms: number };
+  message?: { content?: ({ type: string; text?: string; name?: string; id?: string; input?: unknown; tool_use_id?: string; is_error?: boolean; content?: unknown } | Record<string, unknown>)[]; usage?: ApiUsage };
   event?: { type?: string; delta?: { type?: string; text?: string }; message?: { usage?: ApiUsage }; usage?: ApiUsage };
   result?: unknown;
   is_error?: boolean;
@@ -132,6 +146,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       const live = new LiveUsage();
+      const running = new Map<string, { name: string; args: unknown; at: number }>();
       const metrics: import("@tomradex/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
       const started = performance.now();
       let costUsd: number | undefined;
@@ -150,20 +165,36 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
             if (line.type === "system" && line.subtype === "init") {
               session = line.session_id;
               metrics.readyMs = performance.now() - started;
+            } else if (line.type === "system" && line.subtype === "api_retry") {
+              io.progress(live.retry());
+              io.retry?.({ attempt: line.attempt ?? 1, max: line.max_retries, reason: retryReason({ error_status: line.error_status ?? null, error: line.error ?? "unknown", no_response: line.no_response }), delayMs: line.retry_delay_ms });
             } else if (line.type === "stream_event") {
-              const running = live.observe(line.event);
-              if (running) io.progress(running);
+              const counted = live.observe(line.event, line.parent_tool_use_id ?? null);
+              if (counted) io.progress(counted);
               if (line.event?.type === "content_block_delta" && line.event.delta?.type === "text_delta" && line.event.delta.text) {
                 metrics.firstTokenMs ??= performance.now() - started;
                 io.delta(line.event.delta.text);
               }
             } else if (line.type === "assistant") {
+              io.retry?.(null);
               // A streamed reply arrives as one assistant line per content block, each with a partial usage; the totals come with the result.
               for (const block of line.message?.content ?? []) {
                 if (block.type === "text" && typeof block.text === "string" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
-                else if (block.type === "tool_use" && typeof block.name === "string" && !block.name.startsWith("mcp__"))
-                  io.emit({ type: "trace", tool: block.name, args: block.input ?? {}, ok: true, summary: "run by Claude Code itself", ms: 0 });
+                else if (block.type === "tool_use" && typeof block.name === "string" && typeof block.id === "string" && !block.name.startsWith("mcp__")) {
+                  running.set(block.id, { name: block.name, args: block.input ?? {}, at: Date.now() });
+                  const hint = stepHint(block.input, 60);
+                  io.activity?.(hint ? `${block.name} · ${hint}` : block.name);
+                }
               }
+            } else if (line.type === "user" && !line.parent_tool_use_id) {
+              for (const block of line.message?.content ?? []) {
+                const call = block.type === "tool_result" && typeof block.tool_use_id === "string" ? running.get(block.tool_use_id) : undefined;
+                if (!call) continue;
+                running.delete(block.tool_use_id as string);
+                const ok = !block.is_error;
+                io.emit({ type: "trace", tool: call.name, args: call.args, ok, summary: stepSummary(call.args, block.content, ok), ms: Date.now() - call.at });
+              }
+              if (!running.size) io.activity?.(null);
             } else if (line.type === "result") {
               session = line.session_id ?? session;
               costUsd = line.total_cost_usd;

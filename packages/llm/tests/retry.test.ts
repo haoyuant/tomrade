@@ -42,6 +42,26 @@ describe("retries", () => {
     await expect(ask()).rejects.toThrow("429");
     expect(hits).toBe(3);
   });
+  it("announces each retry before trying again", async () => {
+    hits = 0;
+    plan = [503, 429];
+    const retries: unknown[] = [];
+    const out = await collect(new OpenAiCompatible({ baseURL: base, apiKey: "k", model: "m", retryDelayMs: 5 }).chat({ system: "s", messages: [userMessage("ping")] }), undefined, (r) => retries.push(r));
+    expect(out.text).toBe("pong");
+    expect(retries).toEqual([
+      { type: "retry", attempt: 1, max: 2, reason: "HTTP 503", delayMs: 5 },
+      { type: "retry", attempt: 2, max: 2, reason: "HTTP 429", delayMs: 15 }
+    ]);
+  });
+  it("names the socket error when the connection fails", async () => {
+    const closed = http.createServer();
+    await new Promise<void>((r) => closed.listen(0, "127.0.0.1", r));
+    const port = (closed.address() as AddressInfo).port;
+    await new Promise<void>((r) => closed.close(() => r()));
+    const retries: { reason: string }[] = [];
+    await expect(collect(new OpenAiCompatible({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "k", model: "m", retryDelayMs: 1 }).chat({ system: "s", messages: [userMessage("ping")] }), undefined, (r) => retries.push(r))).rejects.toBeDefined();
+    expect(retries.map((r) => r.reason)).toEqual(["ECONNREFUSED", "ECONNREFUSED"]);
+  });
   it("does not retry a request refused on its merits", async () => {
     hits = 0;
     plan = [400];

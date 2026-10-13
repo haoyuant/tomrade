@@ -58,3 +58,32 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
     expect(requests.some((r) => r.request?.subtype === "interrupt")).toBe(true);
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
+
+it("reports the SDK's retries, drops the failed attempt from the live count, and traces its own tools with their results", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-retry-"));
+  const bin = path.join(dir, "claude");
+  const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createClaudeCodeEngine(ctx);
+  const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "FLAKY" }, messages: [], cards: [], brief: "", pending: null,
+    options: { command: bin, model: "fixed-model" } };
+  const blocks: unknown[] = [];
+  const retries: unknown[] = [];
+  const activity: (string | null)[] = [];
+  const progressed: number[] = [];
+  const io: TurnIO = { emit: (b) => blocks.push(b), delta() {}, progress: (u) => progressed.push(u.inputTokens ?? 0), signal: new AbortController().signal,
+    retry: (r) => retries.push(r), activity: (a) => activity.push(a),
+    tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+    run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
+  try {
+    const result = await engine.turn(input, io);
+    expect(result.stop, result.error).toBe("end");
+    expect(retries[0]).toEqual({ attempt: 1, max: 10, reason: "connection dropped", delayMs: 500 });
+    // the dropped attempt's prompt leaves the total instead of counting twice
+    expect(Math.max(...progressed)).toBe(34);
+    expect(activity).toEqual(["Bash · ls -la", null]);
+    expect(blocks).toContainEqual(expect.objectContaining({ type: "trace", tool: "Bash", ok: true, summary: "ls -la" }));
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+}, 15_000);

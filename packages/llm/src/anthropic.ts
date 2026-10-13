@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { inputMimes, type InputModality, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
 import { LlmError } from "./errors.js";
+import { fetchFailure, pause } from "./openai.js";
 
 export interface AnthropicConfig {
   apiKey: string;
@@ -29,6 +30,9 @@ function toMessages(request: ChatRequest): { role: "user" | "assistant"; content
     .filter((m) => m.content.length > 0);
 }
 
+const RETRIES = 2;
+const TRANSIENT = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
+
 const stopOf = (reason: string | null | undefined): StopReason =>
   reason === "tool_use" ? "tool_use" : reason === "max_tokens" ? "max_tokens" : reason === "refusal" ? "refusal" : "end";
 
@@ -39,7 +43,8 @@ export class AnthropicModel implements ChatModel {
   private readonly client: Anthropic;
 
   constructor(private readonly config: AnthropicConfig) {
-    this.client = new Anthropic({ apiKey: config.apiKey, ...(config.baseURL ? { baseURL: config.baseURL } : {}) });
+    // Retried here instead of inside the SDK, so each attempt can be told to the person waiting.
+    this.client = new Anthropic({ apiKey: config.apiKey, maxRetries: 0, ...(config.baseURL ? { baseURL: config.baseURL } : {}) });
   }
 
   async *chat(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
@@ -47,7 +52,7 @@ export class AnthropicModel implements ChatModel {
       if (block.type === "media" && !this.capabilities.mediaInput.includes(block.media.mime)) throw new LlmError(`This model profile does not accept ${block.media.mime}`);
     }
     const choice = request.toolChoice;
-    const stream = await this.client.messages.create(
+    const send = () => this.client.messages.create(
       {
         model: this.config.model,
         max_tokens: request.maxTokens ?? 16000,
@@ -64,6 +69,21 @@ export class AnthropicModel implements ChatModel {
       },
       { signal }
     );
+    let stream!: Awaited<ReturnType<typeof send>>;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        stream = await send();
+        break;
+      } catch (err) {
+        const status = err instanceof Anthropic.APIError ? err.status : undefined;
+        const transient = err instanceof Anthropic.APIConnectionError || (status !== undefined && TRANSIENT.has(status));
+        if (signal?.aborted || !transient || attempt > RETRIES) throw err;
+        const after = Number((err as { headers?: Headers }).headers?.get?.("retry-after"));
+        const delayMs = Number.isFinite(after) && after > 0 && after <= 20 ? after * 1000 : 1000 * 3 ** (attempt - 1);
+        yield { type: "retry", attempt, max: RETRIES, reason: status ? `HTTP ${status}` : fetchFailure(err), delayMs };
+        await pause(delayMs, signal);
+      }
+    }
 
     let stop: StopReason = "end";
     let tool: { id: string; name: string; json: string } | null = null;

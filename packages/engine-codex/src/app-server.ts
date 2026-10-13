@@ -5,6 +5,7 @@ import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent
 import { codexMediaInput, describeFailure, publishNativeImage } from "@tomradex/agent";
 import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
+import { codexRetry, codexStep } from "./steps.js";
 
 type Json = Record<string, any>;
 type Counters = { inputTokens: number; outputTokens: number; cachedInputTokens: number; cacheWriteInputTokens?: number };
@@ -115,6 +116,8 @@ export class CodexRuntime implements Runtime {
     let finish!: (value: TurnResult) => void;
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seen = new Set<string>();
+    // Steps Codex is running itself, until they complete.
+    const started = new Set<string>();
     // Codex says each failed attempt before it gives up; the last few explain the failure.
     const attempts: Json[] = [];
     this.failure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : error.message,
@@ -146,8 +149,14 @@ export class CodexRuntime implements Runtime {
         io.progress(usage);
       }
       if (params.turnId && turnId && params.turnId !== turnId) return;
-      if (method === "error") { attempts.push(params); if (attempts.length > 3) attempts.shift(); }
-      else if (method === "item/agentMessage/delta") {
+      if (method === "error") {
+        attempts.push(params); if (attempts.length > 3) attempts.shift();
+        const retry = codexRetry(params);
+        if (retry) io.retry?.(retry);
+      } else if (method === "item/started") {
+        const step = codexStep(params.item);
+        if (step) { started.add(params.item.id); io.activity?.(step.label); }
+      } else if (method === "item/agentMessage/delta") {
         metrics.firstTokenMs ??= performance.now() - start;
         io.delta(params.delta);
       } else if (method === "item/completed") {
@@ -158,6 +167,9 @@ export class CodexRuntime implements Runtime {
         if (item.type === "agentMessage" && item.text?.trim()) io.emit({ type: "text", text: item.text.trim() });
         if (item.type === "contextCompaction") metrics.compactions!++;
         if (["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall"].includes(item.type)) metrics.toolCalls!++;
+        const step = codexStep(item);
+        if (step) io.emit({ type: "trace", tool: step.tool, args: step.args, ok: step.ok, summary: step.summary, ms: step.ms });
+        if (started.delete(item.id) && !started.size) io.activity?.(null);
       } else if (method === "turn/completed" && params.turn.id === turnId) {
         finish({ stop: cancelled || params.turn.status === "interrupted" ? "cancelled" : params.turn.status === "failed" ? "error" : binding.asked() ? "asked" : "end",
           error: params.turn.error?.message, resume: this.session, usage, metrics,
