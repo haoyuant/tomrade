@@ -87,3 +87,72 @@ it("reports the SDK's retries, drops the failed attempt from the live count, and
     expect(blocks).toContainEqual(expect.objectContaining({ type: "trace", tool: "Bash", ok: true, summary: "ls -la" }));
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
+
+it("steers a running turn through the SDK's input queue, waits out a steer that missed the turn, and drops unread ones on a stop", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-steer-"));
+  const log = path.join(dir, "requests.jsonl");
+  const bin = path.join(dir, "claude");
+  const fake = path.resolve("packages/engine-claude-code/tests/fake-claude-steer.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createClaudeCodeEngine(ctx);
+  expect(engine.steers).toBe(true);
+  const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "TOOL_STEER" }, messages: [], cards: [], brief: null, pending: null,
+    options: { command: bin }, env: { TOMRADE_TEST_LOG: log } };
+  const order: string[] = [];
+  let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+  const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
+    tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+    run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
+    steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+  const requests = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+  const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 10_000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
+  try {
+    // while a tool runs: joins the same CLI turn, placed after the tool's result
+    let turn = engine.turn(input, io);
+    await when(() => order.includes("trace") || (fs.existsSync(log) && requests().some((r) => r.type === "user")));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
+    let result = await turn;
+    expect(result.stop, result.error).toBe("end");
+    expect(order).toEqual(["trace", "steered:s1", "agent:took: make it blue"]);
+    const steer = requests().filter((r) => r.type === "user").at(-1);
+    expect(steer).toMatchObject({ priority: "next" });
+    expect(steer.message.content).toMatch(/^make it blue\n\n\(Sent while you were working/);
+    expect(await forward!({ id: "late", text: "too late" })).toBe(false);
+
+    // during the last reply: the CLI answers it in a turn of its own, which this turn waits for
+    order.length = 0;
+    input.input = { kind: "text", text: "LATE_STEER" }; io.resume = result.resume;
+    turn = engine.turn(input, io);
+    await when(() => order.includes("agent:first answer"));
+    expect(await forward!({ id: "s2", text: "end with an emoji" })).toBe(true);
+    result = await turn;
+    expect(result.stop).toBe("end");
+    expect(order).toEqual(["agent:first answer", "steered:s2", "agent:only the addition: end with an emoji"]);
+    expect(result.costUsd).toBeCloseTo(0.04);
+
+    // the next turn is not disturbed by what came before
+    order.length = 0;
+    input.input = { kind: "text", text: "hello" };
+    expect((await engine.turn(input, io)).stop).toBe("end");
+    expect(order).toEqual(["agent:hello"]);
+
+    // a stop with a steer still unread ends the process rather than leave it queued to run
+    const abort = new AbortController(); io.signal = abort.signal;
+    order.length = 0;
+    input.input = { kind: "text", text: "HOLD_STEER" };
+    turn = engine.turn(input, io);
+    await when(() => order.includes("trace") || requests().filter((r) => r.type === "user").some((r) => JSON.stringify(r).includes("HOLD_STEER")));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await forward!({ id: "s3", text: "never read" })).toBe(true);
+    abort.abort();
+    expect((await turn).stop).toBe("cancelled");
+    expect(order).not.toContain("steered:s3");
+    io.signal = new AbortController().signal;
+    input.input = { kind: "text", text: "hello" };
+    expect((await engine.turn(input, io)).stop).toBe("end");
+    expect(requests().filter((r) => r.spawn)).toHaveLength(2);
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+}, 30_000);
