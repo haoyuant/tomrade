@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
@@ -35,6 +36,16 @@ export function sdkLaunch(launch: CliLaunch, onStderr?: (data: string) => void):
     }
   };
 }
+
+/** A steer goes into the CLI's queue as written, plus a word for when it lands after the reply was finished. */
+const steerPrompt = (text: string) =>
+  `${text}\n\n(Sent while you were working. If your reply is already finished, answer only what this adds or changes; do not repeat it.)`;
+
+/** Which of the client's messages a CLI turn answers, when the CLI stamps it (null when it does not). */
+const consumedBy = (message: SDKMessage): string[] | null => {
+  const stamped = message as { user_message_uuids?: string[]; user_message_uuid?: string };
+  return stamped.user_message_uuids ?? (stamped.user_message_uuid ? [stamped.user_message_uuid] : null);
+};
 
 export class ClaudeRuntime implements Runtime {
   token: string;
@@ -83,10 +94,32 @@ export class ClaudeRuntime implements Runtime {
     // Claude Code's own tools, from the call until their result comes back.
     const running = new Map<string, { name: string; args: unknown; at: number }>();
     const live = new LiveUsage();
+    // Messages sent into this turn, by the uuid they carry into the CLI's queue. One that the
+    // turn ends without reading runs as a turn of its own right after: this turn waits for it.
+    const steers = new Map<string, string>();
+    const unplaced = new Set<string>();
+    const consumed = new Set<string>();
+    let prompted = false;
+    let over = false;
+    const place = (uuids: Iterable<string>) => {
+      for (const uuid of uuids) if (unplaced.delete(uuid)) io.steered?.(steers.get(uuid)!);
+    };
+    const waiting = () => [...steers.keys()].filter((uuid) => !consumed.has(uuid));
+    io.steerTo?.(async (steer) => {
+      if (!prompted || over || cancelled || !this.alive) return false;
+      const uuid = randomUUID();
+      steers.set(uuid, steer.id); unplaced.add(uuid);
+      this.queue.push({ type: "user", message: { role: "user", content: steerPrompt(steer.text) }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "next" });
+      return true;
+    });
+    // A turn can span the CLI's turns for late steers: their figures add up.
+    const sum = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, cacheKnown: false };
     // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
     let limit: { until: number | null; text: string | null } | null = null;
     const abort = () => {
       cancelled = true;
+      // A plain interrupt leaves queued messages to run afterwards; ending the process drops them (the session resumes next turn).
+      if (waiting().length) { this.close(); return; }
       // A protocol interrupt is scoped to this turn. Kill only on timeout.
       void this.query?.interrupt().catch(() => this.close());
       interruptTimer ??= setTimeout(() => this.close(), 3000).unref();
@@ -94,6 +127,8 @@ export class ClaudeRuntime implements Runtime {
     this.onFailure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error),
       details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, metrics });
     this.onMessage = (message) => {
+      // the first frame of a CLI turn names the messages it answers: a late steer is read there
+      if (message.type !== "result") { const answers = consumedBy(message); if (answers) place(answers.filter((uuid) => steers.has(uuid))); }
       if (message.type === "system" && message.subtype === "init") {
         this.session = message.session_id;
         metrics.providerModel = message.model;
@@ -143,19 +178,31 @@ export class ClaudeRuntime implements Runtime {
           io.emit({ type: "trace", tool: call.name, args: call.args, ok, summary: stepSummary(call.args, block.content, ok), ms: Date.now() - call.at });
         }
         if (!running.size) io.activity?.(null);
+        // what was queued while the tools ran rides into the next request
+        if (message.message.content.some((block) => block.type === "tool_result")) place([...unplaced]);
       } else if (message.type === "result") {
-        const costUsd = Math.max(0, message.total_cost_usd - this.cost);
+        sum.cost += Math.max(0, message.total_cost_usd - this.cost);
         this.cost = message.total_cost_usd;
         this.session = message.session_id;
-        const { turn, cumulative } = turnTokens(message, this.tokens);
+        const { turn: part, cumulative } = turnTokens(message, this.tokens);
         this.tokens = cumulative ?? this.tokens;
+        sum.input += part.input; sum.output += part.output; sum.cacheRead += part.cacheRead; sum.cacheWrite += part.cacheWrite;
+        sum.cacheKnown ||= cacheKnown(message);
+        const turn = { input: sum.input, output: sum.output, cacheRead: sum.cacheRead, cacheWrite: sum.cacheWrite };
+        const costUsd = sum.cost;
         metrics.uncachedInputTokens = turn.input;
-        if (cacheKnown(message)) {
+        if (sum.cacheKnown) {
           metrics.cacheReadTokens = turn.cacheRead;
           metrics.cacheWriteTokens = turn.cacheWrite;
         }
         const usage = { inputTokens: promptTokens(turn), outputTokens: turn.output };
         io.progress(usage);
+        const answered = consumedBy(message);
+        // an older CLI does not say what it read: nothing is waited for
+        for (const uuid of answered ?? steers.keys()) consumed.add(uuid);
+        place([...unplaced].filter((uuid) => consumed.has(uuid)));
+        if (!message.is_error && !cancelled && waiting().length) return;
+        over = true;
         const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
         const error = message.subtype === "success" ? (message.is_error ? message.result || undefined : undefined) : message.errors.join("\n");
         const limited = message.is_error && !cancelled ? (limit ?? (looksRateLimited(error) ? { until: null, text: null } : null)) : null;
@@ -236,7 +283,9 @@ export class ClaudeRuntime implements Runtime {
       const content = input.input.kind === "text" && input.input.attachments?.length
         ? claudeMediaInput(input, io, prompt) as SDKUserMessage["message"]["content"]
         : prompt;
-      this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "" });
+      // with a uuid of its own, so the CLI says on each result which messages that turn answered
+      this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid: randomUUID() });
+      prompted = true;
       const result = await done;
       // The SDK's maxBudgetUsd is query-wide. Reopen budgeted sessions on the
       // next turn to preserve Tomrade's existing per-run budget exactly.

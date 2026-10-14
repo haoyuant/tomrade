@@ -136,8 +136,15 @@ export function elideOldResults(messages: Message[], free: number, keep = KEEP_R
   return freed;
 }
 
-/** What the person sent while the turn ran, worded so the model takes it as a change of course. */
-const steering = (texts: string[]) => ({ type: "text" as const, text: texts.map((t) => `(The user added while you were working: ${t})`).join("\n") });
+/**
+ * What the person sent while the turn ran, worded so the model takes it as a change of course.
+ * After a finished reply the model must not write it again: the person has already read it.
+ */
+export const steering = (texts: string[], afterReply = false) => ({
+  type: "text" as const,
+  text: texts.map((t) => `(The user added while you were working: ${t})`).join("\n") +
+    (afterReply ? "\n(Your reply above is already on the user's screen. Answer only what this adds or changes; do not repeat it.)" : "")
+});
 
 const system = (input: TurnInput, io: TurnIO, options: LoopOptions): string =>
   [IDENTITY, ...promptSections(input, io, { playbooks: options.guidance === "auto" })].join("\n\n");
@@ -252,7 +259,7 @@ export function createLoopEngine(ctx: Context): Engine {
           // A message that came in while the model wrote its last reply still belongs to this turn.
           const late = io.takeSteers?.() ?? [];
           if (!late.length) return { stop: "end", usage };
-          messages.push(assistantMessage(collected), { role: "user", content: [steering(late)] });
+          messages.push(assistantMessage(collected), { role: "user", content: [steering(late, !!collected.text.trim())] });
           continue;
         }
 

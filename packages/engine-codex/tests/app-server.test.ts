@@ -86,3 +86,44 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
     expect(changed.filter((r) => r.method === "thread/resume").at(-1).params).toMatchObject({ approvalPolicy: "never", sandbox: "danger-full-access" });
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+it("steers a running turn with turn/steer and records the message where Codex adds it", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-steer-"));
+  const log = path.join(dir, "requests.jsonl");
+  const bin = path.join(dir, "codex");
+  const fake = path.resolve("packages/engine-codex/tests/fake-app-server.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}'\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createCodexEngine(ctx);
+  expect(engine.steers).toBe(true);
+  const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "STEER_TAKE" }, messages: [], cards: [], brief: null, pending: null,
+    options: { command: bin }, env: { TOMRADE_TEST_LOG: log } };
+  const order: string[] = [];
+  let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+  const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
+    tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+    run: { id: "run", threadId: "thread", projectId: "project", author: "ai:codex", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
+    steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+  const requests = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+  try {
+    const turn = engine.turn(input, io);
+    while (!fs.existsSync(log) || !requests().some((r) => r.method === "turn/start")) await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
+    expect((await turn).stop).toBe("end");
+    // the prompt's own userMessage item is not mistaken for the steer
+    expect(order).toEqual(["steered:s1", "agent:took: make it blue"]);
+    expect(requests().find((r) => r.method === "turn/steer").params).toMatchObject({ threadId: "fake-session", expectedTurnId: "1", clientUserMessageId: "s1", input: [{ type: "text", text: "make it blue" }] });
+    expect(await forward!({ id: "late", text: "too late" })).toBe(false);
+
+    // the older `codex exec` transport cannot take one
+    input.options = { command: bin, transport: "cli" };
+    input.input = { kind: "text", text: "hi" };
+    forward = undefined;
+    void engine.turn(input, io).catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await forward!({ id: "s2", text: "anything" })).toBe(false);
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+}, 30_000);
+

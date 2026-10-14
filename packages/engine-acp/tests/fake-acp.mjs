@@ -19,6 +19,11 @@ const sessions = new Map();
 let nextRequest = 1000;
 const asked = new Map();
 let waiting;
+// Steering: CodeBuddy's session/steer buffer, Hermes' /steer queue, and the turn they join.
+let running;
+let steers = [];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await sleep(20); };
 
 let buffer = '';
 process.stdin.on('data', (chunk) => {
@@ -79,8 +84,24 @@ function handle(m) {
     case 'session/cancel':
       if (waiting) { send({ id: waiting, result: { stopReason: 'cancelled' } }); waiting = undefined; }
       return;
-    case 'session/prompt':
+    case 'session/steer':
+      if (style === 'hermes') return send({ id: m.id, error: { code: -32601, message: 'Method not found' } });
+      if (!running) return send({ id: m.id, result: { steered: false, reason: 'idle' } });
+      if (p.expectedRequestId && p.expectedRequestId !== running) return send({ id: m.id, result: { steered: false, reason: 'stale' } });
+      steers.push({ id: p.clientUserMessageId, text: p.contentBlocks.map((b) => b.text).join('') });
+      return send({ id: m.id, result: { steered: true, ownerRequestId: running } });
+    case 'session/prompt': {
+      const said = p.prompt.filter((b) => b.type === 'text').map((b) => b.text).join('');
+      if (style === 'hermes' && said.startsWith('/steer ')) {
+        const steer = said.slice('/steer '.length);
+        // idle: Hermes runs the steer as a prompt of its own
+        if (!running) return void prompt(m.id, { ...p, prompt: [{ type: 'text', text: 'FRESH ' + steer }] });
+        steers.push({ text: steer });
+        update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '⏩ Steer queued for the active turn: ' + steer.slice(0, 80) + (steer.length > 80 ? '...' : '') } });
+        return send({ id: m.id, result: { stopReason: 'end_turn' } });
+      }
       return void prompt(m.id, p).catch((error) => send({ id: m.id, error: { code: -32603, message: String(error) } }));
+    }
     default:
       if (m.id !== undefined) send({ id: m.id, error: { code: -32601, message: `unknown ${m.method}` } });
   }
@@ -98,7 +119,39 @@ async function prompt(id, p) {
   const usage = (input, output, hit) => ({ sessionUpdate: 'usage_update', used: input, size: 1000, cost: { amount: 0.25 * sessions.get(sid).turns, currency: 'USD' },
     _meta: { usage: { prompt_tokens: input, completion_tokens: output, prompt_cache_hit_tokens: hit } } });
   sessions.get(sid).turns++;
-  if (text.includes('WAIT_FOREVER')) { waiting = id; return; }
+  if (text.includes('WAIT_FOREVER')) { waiting = id; running = 'run-' + id; return; }
+  if (text.startsWith('FRESH ')) {
+    await sleep(200);
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'fresh: ' + text.slice(6) } });
+    return send({ id, result: { stopReason: 'end_turn', usage: { inputTokens: 7, outputTokens: 1 } } });
+  }
+  if (text.includes('STEER_TOOL')) {
+    // a tool runs; what was steered in meanwhile is read before the next model request
+    running = 'run-' + id; steers = [];
+    update(sid, { sessionUpdate: 'tool_call', toolCallId: 's1', title: 'sleep 1', name: 'Bash', kind: 'execute', rawInput: { command: 'sleep 1' } });
+    await until(() => steers.length > 0);
+    await sleep(100);
+    if (style !== 'hermes') update(sid, { sessionUpdate: 'tool_call_update', toolCallId: 's1', status: 'completed' });
+    const read = steers.splice(0);
+    for (const s of read) if (s.id) update(sid, { sessionUpdate: 'user_message_chunk', messageId: s.id, content: { type: 'text', text: s.text } });
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'took: ' + read.map((s) => s.text).join(' + ') } });
+    running = undefined;
+    return send({ id, result: { stopReason: 'end_turn' } });
+  }
+  if (text.includes('STEER_LATE')) {
+    // the last reply is being written: a steer now has no model request left to join, and is dropped
+    running = 'run-' + id; steers = [];
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'part one' } });
+    await until(() => steers.length > 0);
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ', part two' } });
+    running = undefined; steers = [];
+    return send({ id, result: { stopReason: 'end_turn' } });
+  }
+  if (text.includes('STEER_IDLE')) {
+    // the turn ends before anything is steered
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'quick' } });
+    return send({ id, result: { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 1 } } });
+  }
   if (text.includes('CRASH')) process.exit(3);
   if (text.includes('FAIL')) return send({ id, error: { code: -32000, message: 'Authentication required' } });
   if (text.includes('REFUSE_SAYING')) return send({ id, result: { stopReason: 'refusal', _meta: { reason: 'upstream said no' } } });

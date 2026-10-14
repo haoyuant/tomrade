@@ -105,4 +105,51 @@ describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
       server.close();
     }
   }, 90_000);
+
+  it("takes a message sent mid-turn into the same turn, before its next model request", async () => {
+    const requests: { messages: { role: string; content: unknown }[] }[] = [];
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const request = JSON.parse(body) as { tools?: { function: { name: string } }[]; messages: { role: string; content: unknown }[] };
+        requests.push(request);
+        const chunk = (delta: unknown, finish: string | null = null) => `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: "fake", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+        const listItems = (request.tools ?? []).map((t) => t.function.name).find((name) => name.endsWith("list_items"));
+        // the first reply takes a moment, so the message arrives while the turn runs
+        setTimeout(() => {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          if (listItems && !request.messages.some((m) => m.role === "tool")) res.end(chunk({ role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: listItems, arguments: "{}" } }] }) + chunk({}, "tool_calls") + "data: [DONE]\n\n");
+          else res.end(chunk({ role: "assistant", content: "Blue it is." }) + chunk({}, "stop") + "data: [DONE]\n\n");
+        }, requests.length === 1 ? 1500 : 0);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const { ctx, items, project, board, useModel } = await boot(bundled);
+      useModel({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "sk-secret", model: "fake-model" });
+      items.create({ projectId: project.id, boardId: board.id, title: "Ship the water reminder", by: "human" });
+      const thread = ctx.agent.newThread(project.id, "pi-builtin");
+      const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "Paint the items" });
+      const t0 = Date.now();
+      while (requests.length < 1) {
+        if (Date.now() - t0 > 30_000) throw new Error("pi never asked the model");
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(await ctx.agent.steer(project.id, thread.id, "s1", "make it blue")).toBe(true);
+      while (ctx.agent.store.run(project.id, runId)?.status === "running") {
+        if (Date.now() - t0 > 60_000) throw new Error("the run did not settle");
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(ctx.agent.store.run(project.id, runId)?.status).toBe("done");
+      expect(requests).toHaveLength(2);
+      expect(JSON.stringify(requests[1].messages.at(-1))).toContain("make it blue");
+      const said = ctx.agent.store.messages(project.id, thread.id).map((m) => (m.block.type === "text" ? `${m.role}${m.block.steerId ? "(steer)" : ""}:${m.block.text}` : `${m.role}:${m.block.type}`));
+      expect(said.slice(-3)).toEqual(["agent:trace", "user(steer):make it blue", "agent:Blue it is."]);
+      expect(ctx.agent.store.runs(project.id, thread.id)).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  }, 90_000);
 });
