@@ -416,6 +416,30 @@ const run = async () => {
   check("and the turn it left was stopped", ctx.agent.store.runs(alpha.id, runningThread).at(-1)?.status === "cancelled", ctx.agent.store.runs(alpha.id, runningThread).at(-1)?.status);
   await shot("slash.png");
 
+  // ── the guide: a head button and /help ───────────────────────────────
+  await press(`document.querySelector('.ai-head button[aria-label="Guide"]')`);
+  await sleep(400);
+  const guide = await $(`[...document.querySelectorAll('.menu .guide-row')].map((r) => r.textContent)`);
+  await shot("guide.png");
+  check("the guide button lists what the composer does", guide.length === 10 && ["Shift+Enter", "⌘/Ctrl+Enter", "Esc", "↑ ↓", "/new · /clear", "/help"].every((k) => guide.some((g) => g.startsWith(k))) && guide.some((g) => /steer/.test(g)) && guide.some((g) => /queue the message/.test(g)), guide);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  const helpThread = ctx.agent.store.threads(alpha.id)[0].id;
+  const storedBefore = ctx.agent.thread(alpha.id, helpThread).messages.length;
+  await setDraft("/help");
+  await sleep(150);
+  check("/help is in the command menu", (await menu()).some((r) => r.name === "/help"));
+  await key({});
+  await sleep(500);
+  const helpText = await $(`document.querySelector('.ai-scroll .guide-turn .guide-text')?.textContent ?? null`);
+  check("/help prints the guide as text in the conversation", (await draftNow()) === "" && !!helpText && helpText.includes("/new · /clear") && helpText.includes("Shift+Enter") && helpText.split("\n").length === 10, helpText);
+  check("and sends nothing to the agent", ctx.agent.thread(alpha.id, helpThread).messages.length === storedBefore && !(await panel()).working);
+  await shot("help.png");
+  await newThread();
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  check("another conversation does not carry it", !(await $(`!!document.querySelector('.ai-scroll .guide-turn')`)));
+
   // ── the thread list: searchable, says what runs, keeps the archive ───
   for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
   await newThread();
