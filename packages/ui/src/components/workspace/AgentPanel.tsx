@@ -28,7 +28,21 @@ const MIN_W = 352;
 const MAX_W = 616;
 /** Until someone drags it: room for a conversation without taking the board's second column at 1440px. */
 const DEFAULT_W = 440;
-const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}` };
+const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}` };
+const HISTORY_CAP = 100;
+
+/** What the person sent in this project, oldest first: ↑ in the composer walks back through it. */
+const readHistory = (projectId: string): string[] => {
+  try {
+    const list = JSON.parse(localStorage.getItem(STORE.history(projectId)) ?? "[]");
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+  } catch { return []; }
+};
+const remember = (projectId: string, text: string) => {
+  const list = readHistory(projectId);
+  if (list[list.length - 1] === text) return;
+  localStorage.setItem(STORE.history(projectId), JSON.stringify([...list, text].slice(-HISTORY_CAP)));
+};
 
 const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
@@ -592,6 +606,8 @@ export function AgentPanel({
   const editQueue = (id: string, fn: (q: Queued[]) => Queued[]) => setQueues((prev) => ({ ...prev, [id]: fn(prev[id] ?? []) }));
   // The run the last send started: until the thread shows it, the run before it says nothing about whether to go on.
   const [sentRun, setSentRun] = useState<string | null>(null);
+  // Where ↑/↓ stands in the history (null: not browsing) and the draft it set aside.
+  const browsing = useRef<{ at: number; stash: string } | null>(null);
   // Sent into the running turn and not yet read by the agent; whatever the turn ends without reading joins the queue.
   const [steering, setSteering] = useState<Record<string, Queued[]>>({});
   const steeringNow = threadId ? (steering[threadId] ?? []) : [];
@@ -772,7 +788,7 @@ export function AgentPanel({
   }, []);
 
   const pickThread = (id: string) => {
-    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); setAskReopen(false); }
+    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); setAskReopen(false); browsing.current = null; }
     setChosenThread(id);
     localStorage.setItem(STORE.thread(projectId), id);
   };
@@ -806,16 +822,36 @@ export function AgentPanel({
       const focusNow = queued ? queued.focus : sendFocus;
       const { runId } = await send.mutateAsync({ threadId: target, text, focus: focusNow.length ? focusNow : undefined, attachments: refs.length ? refs : undefined });
       setSentRun(runId);
-      if (!queued) { setDraft(""); setAttachments([]); }
+      if (!queued) { if (text) remember(projectId, text); setDraft(""); setAttachments([]); }
       return true;
     } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); return false; }
     finally { sending.current = false; setUploading(false); }
+  };
+
+  /** ↑ on the first line steps back through what was sent, ↓ on the last line forward, past the newest back to the draft. */
+  const recall = (el: HTMLTextAreaElement, step: -1 | 1): boolean => {
+    if (el.selectionStart !== el.selectionEnd) return false;
+    const value = el.value;
+    if (step < 0 ? value.slice(0, el.selectionStart).includes("\n") : value.slice(el.selectionEnd).includes("\n")) return false;
+    const list = readHistory(projectId);
+    const now = browsing.current;
+    if (step < 0 && !list.length) return false;
+    if (step > 0 && !now) return false;
+    const at = now ? now.at + step : list.length - 1;
+    if (at < 0) return true;
+    const stash = now?.stash ?? draft;
+    const text = at >= list.length ? stash : list[at];
+    browsing.current = at >= list.length ? null : { at, stash };
+    setDraft(text);
+    requestAnimationFrame(() => el.setSelectionRange(text.length, text.length));
+    return true;
   };
 
   const enqueue = () => {
     const text = draft.trim();
     if (!threadId || !text || attachments.length || blocked) return;
     editQueue(threadId, (q) => [...q, { id: crypto.randomUUID(), text, focus: sendFocus }]);
+    remember(projectId, text);
     setDraft("");
   };
   const steer = async (inThread: string, entry: Queued) => {
@@ -831,6 +867,7 @@ export function AgentPanel({
   const steerDraft = () => {
     const text = draft.trim();
     if (!threadId || !runningRun || !text || attachments.length || blocked) return;
+    remember(projectId, text);
     setDraft("");
     void steer(threadId, { id: crypto.randomUUID(), text, focus: sendFocus });
   };
@@ -1183,10 +1220,14 @@ export function AgentPanel({
             disabled={archivedNow}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => { browsing.current = null; setDraft(e.target.value); }}
             onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;
+              if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && recall(e.currentTarget, e.key === "ArrowUp" ? -1 : 1)) {
+                e.preventDefault();
+                return;
+              }
               // Esc stops the turn like the Stop button; what is queued stays, held
               if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
               if (e.key !== "Enter" || e.shiftKey) return;
