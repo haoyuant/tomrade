@@ -44,6 +44,8 @@ export const hermes: AcpAgent<HermesOptions> = {
   httpMcp: "always",
   // Its `session/resume` opens a fresh session when the old one is gone; `session/load` says so.
   reopen: "load",
+  // a `/steer` prompt sent alongside lands after its next tool result (acp_adapter/commands.py)
+  steer: "slash",
   usage: "turn",
   signIn: "run `hermes setup` to choose a provider and add its key",
   diagnostics: {

@@ -54,6 +54,12 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
    * context size is known.
    */
   usage?: "turn" | "session" | ((update: Record<string, any>) => RequestUsage | null);
+  /**
+   * How it takes a message sent while a turn runs, which ACP itself has no word for: its own
+   * `session/steer` method ("method", CodeBuddy), or a `/steer` prompt sent alongside ("slash",
+   * Hermes). Absent: such messages wait for the turn to end.
+   */
+  steer?: "method" | "slash";
   /** Whether its CLI can also be handed a ticket in a terminal (code link has a template for it). */
   terminal?: boolean;
   setup?: EngineSetup;

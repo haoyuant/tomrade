@@ -114,6 +114,8 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   // "default" asks before the first use of every tool, so Tomrade decides what a read-only or ask turn lets through.
   mode: (policy) => (policy === "full-access" ? "bypassPermissions" : "default"),
   usage: codebuddyUsage,
+  // `session/steer` (CodeBuddy 2.134+); an older CLI refuses the method and the message waits for the turn
+  steer: "method",
   failure: codebuddyFailure,
   signIn: "run `codebuddy` and /login with your WorkBuddy account",
   diagnostics: {
