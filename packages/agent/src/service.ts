@@ -199,7 +199,7 @@ declare module "@tomradex/ipc" {
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
     /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
-    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => boolean;
+    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => Promise<boolean>;
     "agent.showing": (threadId: string) => void;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
     /** `fresh` looks for each engine's CLI again instead of answering from a recent probe. */
@@ -276,6 +276,8 @@ interface RunCtx {
   settleRetry: (recovered: boolean) => void;
   /** Sent into this turn and not yet handed to the model. */
   steers: { id: string; text: string }[];
+  /** Where the engine's agent takes them instead, when it queues them itself. */
+  forward: ((steer: { id: string; text: string }) => Promise<boolean>) | null;
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -1089,11 +1091,16 @@ export class Agent extends Service {
   }
 
   /** A message for the running turn: held until the engine reaches a point where the model reads it. */
-  steer(projectId: string, threadId: string, steerId: string, text: string): boolean {
+  async steer(projectId: string, threadId: string, steerId: string, text: string): Promise<boolean> {
     const rc = this.activeByThread.get(threadId);
     if (!rc || rc.projectId !== projectId || !rc.engine.steers || rc.abort.signal.aborted || !text.trim()) return false;
-    rc.steers.push({ id: steerId, text: text.trim() });
-    return true;
+    const steer = { id: steerId, text: text.trim() };
+    rc.steers.push(steer);
+    if (!rc.forward) return true;
+    const taken = await rc.forward(steer).catch(() => false);
+    const at = rc.steers.indexOf(steer);
+    if (!taken && at >= 0) rc.steers.splice(at, 1);
+    return taken;
   }
 
   cancel(runId: string): boolean {
@@ -1307,9 +1314,17 @@ export class Agent extends Service {
         const taken = steers.splice(0);
         for (const s of taken) this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
         return taken.map((s) => s.text);
+      },
+      steerTo: (forward) => { rc.forward = forward; },
+      steered: (id) => {
+        const at = steers.findIndex((s) => s.id === id);
+        if (at < 0) return;
+        const [s] = steers.splice(at, 1);
+        this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
       }
     };
-    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry, steers };
+    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry, steers, forward: null };
+    return rc;
   }
 
   private itemOf(projectId: string, itemId: string): Item | null {

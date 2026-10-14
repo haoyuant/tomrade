@@ -24,7 +24,7 @@ async function setup(steps: ((steer: () => void) => ChatEvent[])[]) {
   };
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], fakeChat(model), [Agent, { mediaDir: path.join(root, "media") }], loop] });
   const thread = ctx.agent.newThread(project.id, "loop");
-  const taken: boolean[] = [];
+  const taken: Promise<boolean>[] = [];
   steer = () => void taken.push(ctx.agent.steer(project.id, thread.id, "s1", "make it blue"));
   const done = async () => {
     await ctx.fiber.dispose();
@@ -44,7 +44,7 @@ it("hands a message sent mid-turn to the model after the running tool, in the sa
   try {
     const run = ctx.agent.send(project.id, thread.id, { kind: "text", text: "paint it" });
     await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).toBe("done");
-    expect(taken).toEqual([true]);
+    expect(await Promise.all(taken)).toEqual([true]);
     expect(requests).toHaveLength(2);
     expect(userTexts(requests[1]).at(-1)).toContain("make it blue");
     const blocks = ctx.agent.thread(project.id, thread.id).messages.map((m) => `${m.role}:${m.block.type}${m.block.type === "text" ? ":" + m.block.text : ""}`);
@@ -72,11 +72,11 @@ it("keeps the turn going when the message lands while the model writes its last 
 it("refuses a message when nothing runs or the engine cannot be steered", async () => {
   const { ctx, project, thread, done } = await setup([]);
   try {
-    expect(ctx.agent.steer(project.id, thread.id, "x", "hello")).toBe(false);
+    expect(await ctx.agent.steer(project.id, thread.id, "x", "hello")).toBe(false);
     ctx.agent.engine({ id: "still", title: "Still", author: "ai:still", available: async () => ({ ok: true }), turn: async (_input, io) => { await new Promise((r) => setTimeout(r, 200)); io.emit({ type: "text", text: "ok" }); return { stop: "end" }; } });
     ctx.agent.setEngine(project.id, thread.id, "still");
     const run = ctx.agent.send(project.id, thread.id, { kind: "text", text: "go" });
-    expect(ctx.agent.steer(project.id, thread.id, "y", "hello")).toBe(false);
+    expect(await ctx.agent.steer(project.id, thread.id, "y", "hello")).toBe(false);
     await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).toBe("done");
     expect((await ctx.agent.engineViews()).find((e) => e.id === "loop")?.steers).toBe(true);
   } finally { await done(); }

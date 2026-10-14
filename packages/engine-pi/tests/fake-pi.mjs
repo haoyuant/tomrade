@@ -7,6 +7,9 @@ const usage = (input, output) => ({ input, output, cacheRead: 7, cacheWrite: 1, 
 const assistant = (text, extra = {}) => ({ role: 'assistant', content: [{ type: 'text', text }], provider: 'fake', model: 'fixed-model', usage: usage(10, 3), stopReason: 'stop', ...extra });
 let waiting;
 let dialog;
+// STEER_HOLD keeps a steer queued (as pi does mid-tool); STEER_TAKE reads it right away
+let steerMode;
+let queued = [];
 let buffer = '';
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
@@ -26,6 +29,21 @@ function handle(m) {
     send({ type: 'message_end', message: assistant(m.confirmed ? 'ran it' : 'skipped it') });
     settle();
   }
+  if (m.type === 'steer') {
+    send({ id: m.id, type: 'response', command: 'steer', success: true, data: { disposition: 'queued' } });
+    if (steerMode === 'hold') { queued.push(m.message); return; }
+    send({ type: 'message_start', message: { role: 'user', content: m.message, timestamp: Date.now() } });
+    send({ type: 'message_end', message: { role: 'user', content: m.message, timestamp: Date.now() } });
+    send({ type: 'message_end', message: assistant('took: ' + m.message) });
+    waiting = undefined; steerMode = undefined;
+    settle();
+    return;
+  }
+  if (m.type === 'clear_queue') {
+    send({ id: m.id, type: 'response', command: 'clear_queue', success: true, data: { steering: queued, followUp: [] } });
+    queued = [];
+    return;
+  }
   if (m.type === 'abort') {
     send({ id: m.id, type: 'response', command: 'abort', success: true });
     if (waiting) { waiting = undefined; settle(true); }
@@ -34,6 +52,7 @@ function handle(m) {
   send({ id: m.id, type: 'response', command: 'prompt', success: true, data: { disposition: 'started' } });
   send({ type: 'agent_start' });
   if (m.message.includes('WAIT_FOREVER')) { waiting = m.id; return; }
+  if (m.message.includes('STEER_TAKE') || m.message.includes('STEER_HOLD')) { waiting = m.id; steerMode = m.message.includes('STEER_HOLD') ? 'hold' : 'take'; return; }
   if (m.message.includes('REQUEST_PERMISSION')) {
     dialog = 'ui-' + m.id;
     send({ type: 'tool_execution_start', toolCallId: 'call-bash', toolName: 'bash', args: { command: 'npm test' } });

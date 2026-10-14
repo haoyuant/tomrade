@@ -306,6 +306,13 @@ export interface TurnIO {
    * the model reads next (between tool calls); what it returns enters the transcript there.
    */
   takeSteers?(): string[];
+  /**
+   * For an engine whose agent keeps its own steering queue (pi, Codex, Claude Code): `forward`
+   * gets each message sent into this turn and resolves whether the agent took it. Call
+   * `steered(id)` when the agent reads it; that is where it enters the transcript.
+   */
+  steerTo?(forward: (steer: { id: string; text: string }) => Promise<boolean>): void;
+  steered?(id: string): void;
 }
 
 export interface TurnResult {
