@@ -66,3 +66,55 @@ export function parsePetStage(raw: string | null, petHeight: number): PetStageGe
 }
 
 export const serializePetStage = (geometry: PetStageGeometry) => JSON.stringify(geometry);
+
+/**
+ * Where the pet stands inside its zone: each axis is a fraction of the free room
+ * (zone minus pet), so a remembered spot resolves against whatever size the zone
+ * has now and can never land outside it.
+ */
+export const PET_POSITION_KEY = "tomrade.pet.position";
+/** One arrow-key press, in pixels of the pet's own travel. */
+export const PET_NUDGE = 8;
+
+export interface PetPosition {
+  x: number;
+  y: number;
+}
+
+/** Centred across, standing on the zone's floor: where the pet sits until it is moved. */
+export const PET_POSITION_CENTER: PetPosition = { x: 0.5, y: 1 };
+
+const unit = (value: number, fallback: number) => (Number.isFinite(value) ? Math.round(clamp(value, 0, 1) * 10_000) / 10_000 : fallback);
+
+export const clampPosition = (position: PetPosition): PetPosition => ({ x: unit(position.x, PET_POSITION_CENTER.x), y: unit(position.y, PET_POSITION_CENTER.y) });
+
+/** The pet moved by a pointer drag or a nudge; an axis with no free room stays where it is. */
+export function movePosition(from: PetPosition, deltaX: number, deltaY: number, free: { width: number; height: number }): PetPosition {
+  return clampPosition({
+    x: free.width > 0 ? from.x + deltaX / free.width : from.x,
+    y: free.height > 0 ? from.y + deltaY / free.height : from.y
+  });
+}
+
+/** CSS offsets inside the pet's room; percentages follow the room, so a resize needs no recompute. */
+export const petOffset = (position: PetPosition, petWidth: number, petHeight: number) => ({
+  left: `calc((100% - ${petWidth}px) * ${position.x})`,
+  top: `calc((100% - ${petHeight}px) * ${position.y})`
+});
+
+/** Stored position, or the centre when it is missing or malformed. */
+export function parsePetPosition(raw: string | null): PetPosition {
+  if (!raw) return PET_POSITION_CENTER;
+  try {
+    const value = JSON.parse(raw) as { x?: unknown; y?: unknown };
+    if (typeof value !== "object" || value === null) return PET_POSITION_CENTER;
+    return clampPosition({
+      x: typeof value.x === "number" ? value.x : PET_POSITION_CENTER.x,
+      y: typeof value.y === "number" ? value.y : PET_POSITION_CENTER.y
+    });
+  } catch {
+    return PET_POSITION_CENTER;
+  }
+}
+
+export const serializePetPosition = (position: PetPosition) => JSON.stringify(position);

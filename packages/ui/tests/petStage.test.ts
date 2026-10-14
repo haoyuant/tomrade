@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   PET_MAX_ZOOM,
   PET_MIN_ZOOM,
+  PET_POSITION_CENTER,
   PET_STAGE_BORDER,
   PET_STAGE_HANDLE,
   PET_STAGE_MAX_HEIGHT,
@@ -10,10 +11,14 @@ import {
   clampStageHeight,
   clampZoom,
   heightFromDrag,
+  movePosition,
+  parsePetPosition,
   parsePetStage,
   petDrawScale,
   petHeightOf,
+  petOffset,
   petStageDefault,
+  serializePetPosition,
   serializePetStage,
   stepZoom
 } from "../src/lib/petStage";
@@ -79,4 +84,33 @@ it("keeps what was stored, and falls back on anything else", () => {
   expect(parsePetStage("{ not json", PET.height)).toEqual(petStageDefault(PET.height));
   expect(parsePetStage(JSON.stringify({ height: 9_999, zoom: 9 }), PET.height)).toEqual({ height: PET_STAGE_MAX_HEIGHT, zoom: PET_MAX_ZOOM });
   expect(parsePetStage(JSON.stringify({ zoom: 0.25 }), PET.height)).toEqual({ height: petStageDefault(PET.height).height, zoom: PET_MIN_ZOOM });
+});
+
+it("moves the pet by exactly the distance the pointer travelled", () => {
+  const free = { width: 200, height: 50 };
+  expect(movePosition({ x: 0.5, y: 1 }, 20, -25, free)).toEqual({ x: 0.6, y: 0.5 });
+});
+
+it("never lets a drag take the pet out of its zone", () => {
+  const free = { width: 200, height: 50 };
+  expect(movePosition(PET_POSITION_CENTER, 10_000, 10_000, free)).toEqual({ x: 1, y: 1 });
+  expect(movePosition(PET_POSITION_CENTER, -10_000, -10_000, free)).toEqual({ x: 0, y: 0 });
+});
+
+it("keeps an axis where it is when the pet fills the zone along it", () => {
+  expect(movePosition({ x: 0.3, y: 0.8 }, 40, 40, { width: 0, height: -12 })).toEqual({ x: 0.3, y: 0.8 });
+});
+
+it("resolves a remembered spot against the zone it has now, so a resize cannot strand the pet", () => {
+  const position = { x: 1, y: 0 };
+  expect(petOffset(position, 100, 80)).toEqual({ left: "calc((100% - 100px) * 1)", top: "calc((100% - 80px) * 0)" });
+  expect(petOffset(PET_POSITION_CENTER, 100, 80)).toEqual({ left: "calc((100% - 100px) * 0.5)", top: "calc((100% - 80px) * 1)" });
+});
+
+it("keeps a stored position, and falls back on the centre for anything else", () => {
+  expect(parsePetPosition(serializePetPosition({ x: 0.25, y: 0.5 }))).toEqual({ x: 0.25, y: 0.5 });
+  expect(parsePetPosition(null)).toEqual(PET_POSITION_CENTER);
+  expect(parsePetPosition("{ not json")).toEqual(PET_POSITION_CENTER);
+  expect(parsePetPosition(JSON.stringify({ x: 7, y: -3 }))).toEqual({ x: 1, y: 0 });
+  expect(parsePetPosition(JSON.stringify({ x: 0.1 }))).toEqual({ x: 0.1, y: PET_POSITION_CENTER.y });
 });
