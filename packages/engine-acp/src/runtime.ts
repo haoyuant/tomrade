@@ -8,6 +8,13 @@ import { AcpConnection, AcpError, AUTH_REQUIRED, type AcpPeer } from "./connecti
 
 type Json = Record<string, any>;
 
+/** What Hermes answers a `/steer` with (acp_adapter/commands.py): said to the client, never part of the reply. */
+const STEER_QUEUED = "⏩ Steer queued for the active turn: ";
+const STEER_SAID = /^(⏩ Steer queued for the active turn: |⚠️ Steer failed: |No active turn — queued for the next turn\.)/;
+
+/** A steer as the agent gets it: as written, plus a word for when it lands after the reply was finished. */
+const steerText = (text: string) => `${text}\n\n(Sent while you were working. If your reply is already finished, answer only what this adds or changes; do not repeat it.)`;
+
 /** Kinds that only look; a read-only turn lets them through. */
 const LOOKS = new Set(["read", "search", "think", "fetch"]);
 
@@ -277,6 +284,47 @@ export class AcpRuntime implements Runtime {
     };
     const live = () => (counted ? { inputTokens: tokens.input, outputTokens: tokens.output } : context !== undefined ? { inputTokens: context } : {});
 
+    // Messages sent into this turn, until the agent reads them (TOM-111). CodeBuddy says so with a
+    // user_message_chunk carrying the id it was given. Hermes only says it queued one; it reads it
+    // before its next model request, so one acknowledged while a tool ran is read by the next
+    // output, and one acknowledged mid-reply only after a tool that reply calls.
+    const forwarded = new Map<string, string>();
+    const acknowledged: { id: string; armed: boolean }[] = [];
+    const answering: Promise<void>[] = [];
+    // `/steer` prompts Hermes has not answered yet, by message id
+    const unanswered = new Set<string>();
+    let owner: string | undefined;
+    let over = false;
+    let lastWasTool = false;
+    const steered = (id: string) => {
+      if (!forwarded.delete(id)) return;
+      flush();
+      io.steered?.(id);
+    };
+    const readArmed = () => {
+      for (const entry of acknowledged.filter((a) => a.armed)) { acknowledged.splice(acknowledged.indexOf(entry), 1); steered(entry.id); }
+    };
+    if (this.agent.steer) io.steerTo?.(async (steer) => {
+      if (!prompted || over || cancelled || !this.conn?.alive) return false;
+      const text = steerText(steer.text);
+      forwarded.set(steer.id, text);
+      try {
+        if (this.agent.steer === "method") {
+          const answer = await this.conn.request("session/steer", { sessionId: this.session, contentBlocks: [{ type: "text", text }], clientUserMessageId: steer.id, ...(owner ? { expectedRequestId: owner } : {}) });
+          if (answer?.steered === true) { owner = typeof answer.ownerRequestId === "string" ? answer.ownerRequestId : owner; return true; }
+        } else {
+          // Answered at once while the turn runs; after it, Hermes runs it as a prompt of its own, which this turn waits out.
+          unanswered.add(steer.id);
+          answering.push(this.conn.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: `/steer ${text}` }] }, 0)
+            .then((response) => this.account(response?.usage, add), () => {})
+            .finally(() => unanswered.delete(steer.id)));
+          return true;
+        }
+      } catch {}
+      forwarded.delete(steer.id);
+      return false;
+    });
+
     const finishCall = (call: Call, ok: boolean) => {
       call.done = true;
       // Tomrade's own tools are traced by the gateway they run through.
@@ -300,8 +348,23 @@ export class AcpRuntime implements Runtime {
 
     this.listener = (update) => {
       switch (update.sessionUpdate) {
+        case "user_message_chunk": {
+          const id = update.messageId ?? update._meta?.["codebuddy.ai/messageId"];
+          if (typeof id === "string" && forwarded.has(id)) steered(id);
+          break;
+        }
         case "agent_message_chunk":
           if (update.content?.type !== "text" || typeof update.content.text !== "string") break;
+          if (this.agent.steer === "slash" && STEER_SAID.test(update.content.text)) {
+            if (update.content.text.startsWith(STEER_QUEUED)) {
+              const preview = update.content.text.slice(STEER_QUEUED.length).replace(/\.\.\.$/, "");
+              const id = [...forwarded].find(([sent, said]) => !acknowledged.some((a) => a.id === sent) && said.startsWith(preview))?.[0];
+              if (id) acknowledged.push({ id, armed: lastWasTool });
+            }
+            break;
+          }
+          readArmed();
+          lastWasTool = false;
           if (update.messageId && messageId && update.messageId !== messageId) flush();
           messageId = update.messageId ?? messageId;
           metrics.firstTokenMs ??= performance.now() - start;
@@ -311,6 +374,9 @@ export class AcpRuntime implements Runtime {
         case "tool_call":
         case "tool_call_update":
           if (typeof update.toolCallId === "string") track(update);
+          // a reply that calls a tool is followed by another model request, which reads what was queued
+          for (const entry of acknowledged) entry.armed = true;
+          lastWasTool = true;
           break;
         case "usage_update": {
           if (typeof update.used === "number") context = update.used;
@@ -342,7 +408,8 @@ export class AcpRuntime implements Runtime {
 
     const abort = () => {
       cancelled = true;
-      if (!prompted) { this.close(); return; }
+      // An agent may go on with a message it queued once the turn is cancelled; ending it drops them (the session reopens next turn).
+      if (!prompted || forwarded.size) { this.close(); return; }
       this.conn?.notify("session/cancel", { sessionId: this.session });
       abortTimer ??= setTimeout(() => this.close(), 5000).unref();
     };
@@ -355,6 +422,14 @@ export class AcpRuntime implements Runtime {
       const blocks = this.prompt(input, io);
       prompted = true;
       const response = await this.conn!.request("session/prompt", { sessionId: this.session, prompt: blocks }, 0);
+      // a /steer Hermes never acknowledged arrived after the turn: it runs as a prompt of its own, part of this turn
+      if (!cancelled && answering.length) {
+        for (const id of [...unanswered]) if (!acknowledged.some((a) => a.id === id)) steered(id);
+        await Promise.all(answering);
+      }
+      over = true;
+      // what was acknowledged and then followed by a model request was read; the rest was dropped and goes back to the person
+      readArmed();
       flush();
       // Hermes never reports a call's end; a turn that finished ran every call nobody refused.
       if (!cancelled) for (const [id, call] of this.calls) if (!call.done) finishCall(call, !this.refusedCalls.has(id));

@@ -280,4 +280,115 @@ describe("an ACP agent as an engine", () => {
     const result = await engine.turn(turnInput({ env: { TOMRADE_TEST_LOG: log, FAKE_CAPS: "{}" } }), io);
     expect(result).toMatchObject({ stop: "error", error: "Fake takes no MCP server over HTTP, so it cannot reach Tomrade's tools" });
   });
+
+  describe("steering", () => {
+    const steering = (style?: string) => {
+      const { io, blocks, deltas } = turnIO();
+      const order: string[] = [];
+      io.emit = (block) => { blocks.push(block); order.push(block.type === "text" ? `agent:${block.text}` : block.type); };
+      let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+      io.steerTo = (fn) => { forward = fn; };
+      io.steered = (id) => order.push(`steered:${id}`);
+      const env = { TOMRADE_TEST_LOG: log, ...(style ? { FAKE_STYLE: style } : {}) };
+      return { io, order, deltas, env, forward: (id: string, text: string) => forward!({ id, text }) };
+    };
+    const hermesMode = (policy: string) => (policy === "full-access" ? "dont_ask" : "default");
+    const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 5000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
+
+    it("hands a message to CodeBuddy's session/steer and records it at the agent's receipt", async () => {
+      const engine = createAcpEngine(ctx, spec({ steer: "method" }));
+      expect(engine.steers).toBe(true);
+      const { io, order, env, forward } = steering();
+      const turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_TOOL" }, env }), io);
+      await when(() => fs.existsSync(log) && sent("session/prompt").length > 0);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await forward("s1", "make it blue")).toBe(true);
+      expect(await forward("s2", "and shiny")).toBe(true);
+      expect((await turn).stop).toBe("end");
+      expect(order).toEqual(["trace", "steered:s1", "steered:s2", expect.stringMatching(/^agent:took: make it blue\n\n\(Sent while you were working.*\+ and shiny/s)]);
+      const [first, second] = sent("session/steer").map((r) => r.params);
+      expect(first).toMatchObject({ contentBlocks: [{ type: "text", text: expect.stringMatching(/^make it blue\n\n\(Sent while you were working/) }], clientUserMessageId: "s1" });
+      expect(first.expectedRequestId).toBeUndefined();
+      // the next joins only the run the first one joined
+      expect(second.expectedRequestId).toMatch(/^run-/);
+      // idle once the turn is over
+      expect(await forward("s3", "late")).toBe(false);
+    });
+
+    it("leaves a CodeBuddy steer the turn never read to go back to the queue, and refuses an idle one", async () => {
+      const engine = createAcpEngine(ctx, spec({ steer: "method" }));
+      const { io, order, env, forward } = steering();
+      let turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_LATE" }, env }), io);
+      await when(() => order.length > 0 || (fs.existsSync(log) && sent("session/prompt").length > 0));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await forward("s1", "end with an emoji")).toBe(true);
+      expect((await turn).stop).toBe("end");
+      expect(order).toEqual(["agent:part one, part two"]);
+
+      order.length = 0;
+      turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_IDLE" }, env }), io);
+      const answered = await turn;
+      expect(answered.stop).toBe("end");
+      expect(await forward("s2", "too late")).toBe(false);
+    });
+
+    it("sends Hermes a /steer alongside, keeps its acknowledgement out of the reply, and records it where Hermes reads it", async () => {
+      const engine = createAcpEngine(ctx, spec({ steer: "slash", mode: hermesMode }));
+      const { io, order, deltas, env, forward } = steering("hermes");
+      const turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_TOOL" }, env }), io);
+      await when(() => order.includes("trace") || (fs.existsSync(log) && sent("session/prompt").length > 0));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await forward("s1", "make it blue")).toBe(true);
+      const result = await turn;
+      expect(result.stop).toBe("end");
+      expect(order).toEqual(["steered:s1", expect.stringMatching(/^agent:took: make it blue\n\n\(Sent while/), "trace"]);
+      expect(deltas.join("")).not.toContain("Steer queued");
+      expect(sent("session/prompt").map((r) => r.params.prompt[0].text).filter((t: string) => t.startsWith("/steer"))).toEqual([expect.stringMatching(/^\/steer make it blue\n\n\(Sent while/)]);
+    });
+
+    it("leaves a Hermes steer acknowledged mid-reply unread when no tool follows, and waits out one that arrived as the turn ended", async () => {
+      const engine = createAcpEngine(ctx, spec({ steer: "slash", usage: "turn", mode: hermesMode }));
+      const { io, order, deltas, env, forward } = steering("hermes");
+      let turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_LATE" }, env }), io);
+      await when(() => deltas.length > 0);
+      expect(await forward("s1", "end with an emoji")).toBe(true);
+      expect((await turn).stop).toBe("end");
+      expect(order).toEqual(["agent:part one, part two"]);
+      expect(deltas.join("")).not.toContain("Steer queued");
+
+      // the turn is answered before the /steer: Hermes runs it as a prompt of its own, and this turn takes it in
+      order.length = 0;
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => { release = resolve; });
+      const original = io.delta;
+      io.delta = (text) => { original(text); if (text === "quick") void forward("s2", "one more thing").then(() => release()); };
+      turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_IDLE" }, env }), io);
+      await hold;
+      const result = await turn;
+      expect(result.stop).toBe("end");
+      expect(order).toEqual(["agent:quick", "steered:s2", expect.stringMatching(/^agent:fresh: one more thing\n\n\(Sent while/)]);
+      expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 2 });
+    });
+
+    it("ends the agent on a stop while a steer is unread, rather than leave it queued to run", async () => {
+      const engine = createAcpEngine(ctx, spec({ steer: "method" }));
+      const { io, env, forward } = steering();
+      const abort = new AbortController(); io.signal = abort.signal;
+      const turn = engine.turn(turnInput({ input: { kind: "text", text: "WAIT_FOREVER" }, env }), io);
+      await when(() => fs.existsSync(log) && sent("session/prompt").length > 0);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await forward("s1", "never read")).toBe(true);
+      abort.abort();
+      expect((await turn).stop).toBe("cancelled");
+      expect(sent("session/cancel")).toHaveLength(0);
+      io.signal = new AbortController().signal;
+      expect((await engine.turn(turnInput({ env }), io)).stop).toBe("end");
+      expect(requests().filter((r) => r.spawn)).toHaveLength(2);
+    });
+
+    it("leaves an agent that declares no steering to the queue", () => {
+      expect(createAcpEngine(ctx, spec()).steers).toBeUndefined();
+    });
+  });
 });
+
