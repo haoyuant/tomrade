@@ -19,6 +19,10 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     const id = String(++n); active = id;
     send({ id: m.id, result: { turn: { id } } });
     send({ method: 'turn/started', params: { threadId: 'fake-session', turn: { id } } });
+    if (m.params.input[0].text.includes('STEER_TAKE')) {
+      send({ method: 'item/started', params: { threadId: 'fake-session', turnId: id, item: { type: 'userMessage', id: 'prompt-'+id, clientId: null, content: m.params.input } } });
+      continue;
+    }
     if (m.params.input[0].text.includes('WAIT_FOREVER')) {
       send({ method: 'item/started', params: { threadId: 'fake-session', turnId: id, item: { type: 'commandExecution', id: 'waiting-'+id, command: 'npm test', status: 'inProgress' } } });
       for (const delta of ['partial\n', 'output\n']) send({ method: 'item/commandExecution/outputDelta', params: { threadId: 'fake-session', turnId: id, itemId: 'waiting-'+id, delta } });
@@ -54,6 +58,14 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
       send(image); send(image);
     }
     send({ method: 'turn/completed', params: { threadId: 'fake-session', turn: { id, status: 'completed' } } });
+  }
+  if (m.method === 'turn/steer') {
+    if (m.params.expectedTurnId !== active) { send({ id: m.id, error: { code: -32600, message: 'no active turn to steer' } }); continue; }
+    send({ id: m.id, result: { turnId: active } });
+    send({ method: 'item/started', params: { threadId: 'fake-session', turnId: active, item: { type: 'userMessage', id: 'steer-'+m.params.clientUserMessageId, clientId: m.params.clientUserMessageId, content: m.params.input } } });
+    send({ method: 'item/completed', params: { threadId: 'fake-session', turnId: active, item: { id: 'took-'+active, type: 'agentMessage', text: 'took: ' + m.params.input[0].text } } });
+    send({ method: 'turn/completed', params: { threadId: 'fake-session', turn: { id: active, status: 'completed' } } });
+    active = undefined;
   }
   if (m.method === 'turn/interrupt') {
     send({ id: m.id, result: {} });

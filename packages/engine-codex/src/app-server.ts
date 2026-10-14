@@ -120,6 +120,21 @@ export class CodexRuntime implements Runtime {
     const started = new Map<string, Json>();
     // Codex says each failed attempt before it gives up; the last few explain the failure.
     const attempts: Json[] = [];
+    // Messages sent into this turn with turn/steer, until Codex adds them to the conversation.
+    const forwarded = new Map<string, string>();
+    let over = false;
+    io.steerTo?.(async (steer) => {
+      if (!turnId || over || cancelled || !this.alive) return false;
+      // known before the request: Codex may add it to the conversation before it answers
+      forwarded.set(steer.id, steer.text);
+      try {
+        await this.request("turn/steer", { threadId: this.session, expectedTurnId: turnId, clientUserMessageId: steer.id, input: [{ type: "text", text: steer.text, text_elements: [] }] });
+        return true;
+      } catch (error) {
+        forwarded.delete(steer.id);
+        throw error;
+      }
+    });
     this.failure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : error.message,
       details: cancelled ? undefined : describeFailure({ error, attempts: attempts.length ? attempts : undefined, stderr: this.stderr }), resume: this.session, usage, metrics });
     const abort = () => {
@@ -153,6 +168,11 @@ export class CodexRuntime implements Runtime {
         attempts.push(params); if (attempts.length > 3) attempts.shift();
         const retry = codexRetry(params);
         if (retry) io.retry?.(retry);
+      } else if (method === "item/started" && params.item.type === "userMessage") {
+        // a steer Codex has put into the conversation: that is where the model reads it
+        const text = (params.item.content ?? []).filter((part: Json) => part.type === "text").map((part: Json) => part.text).join("").trim();
+        const id = forwarded.has(params.item.clientId) ? params.item.clientId : [...forwarded].find(([, said]) => said === text)?.[0];
+        if (id) { forwarded.delete(id); io.steered?.(id); }
       } else if (method === "item/started") {
         const step = codexStep(params.item);
         if (step) { started.set(params.item.id, params.item); io.activity?.(step.label); }
@@ -175,6 +195,7 @@ export class CodexRuntime implements Runtime {
         if (step) { const { label: _, ...trace } = step; io.emit({ type: "trace", ...trace }); }
         if (started.delete(item.id) && !started.size) io.activity?.(null);
       } else if (method === "turn/completed" && params.turn.id === turnId) {
+        over = true;
         finish({ stop: cancelled || params.turn.status === "interrupted" ? "cancelled" : params.turn.status === "failed" ? "error" : binding.asked() ? "asked" : "end",
           error: params.turn.error?.message, resume: this.session, usage, metrics,
           ...(params.turn.status === "failed" && !cancelled ? { details: describeFailure({ error: params.turn.error, attempts: attempts.length ? attempts : undefined, stderr: this.stderr }) } : {}) });
