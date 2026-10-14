@@ -17,6 +17,8 @@ export function createCodexEngine(ctx: Context): Engine {
   ctx.effect(() => () => pool.close());
   return {
     ...baseline,
+    // app-server takes messages mid-turn (turn/steer)
+    steers: true,
     media: options => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", ...(CodexOptions.parse(options ?? {}).transport === "app-server" ? ["audio/mpeg", "audio/wav"] : [])], output: ["image"] }),
     permissionModes: { default: "full-access", choices: [
       { value: "full-access", label: "Full access" }, { value: "workspace", label: "Workspace" },
@@ -34,7 +36,11 @@ export function createCodexEngine(ctx: Context): Engine {
     },
     async turn(input, io) {
       const options = CodexOptions.parse(input.options ?? {});
-      if (options.transport === "cli") return baseline.turn(input, io);
+      if (options.transport === "cli") {
+        // `codex exec` has no way in once a turn runs: what is sent goes back to the queue
+        io.steerTo?.(async () => false);
+        return baseline.turn(input, io);
+      }
       if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
       return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
         () => new CodexRuntime(ctx, input), input, io);
