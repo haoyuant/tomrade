@@ -410,7 +410,8 @@ export class Starter {
   }
 
   /** A local coding agent that is installed and ready; the in-app model never qualifies. */
-  async pickEngine(agent: Agent, wanted?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
+  async pickEngine(agent: Agent, asked?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
+    const wanted = asked && agent.answering(asked);
     const inside = terminal && wanted ? insideOnly(agent, wanted) : null;
     if (inside) return { ok: false, reason: inside };
     const only = !terminal && wanted ? agent.codeEngines().find((e) => e.id === wanted && e.terminalOnly) : undefined;
@@ -446,6 +447,6 @@ export type { RepoStateView };
 
 /** Why an engine cannot be handed a ticket in a terminal, or null when it can. */
 function insideOnly(agent: Agent, engineId: string): string | null {
-  const engine = agent.codeEngines().find((e) => e.id === engineId);
+  const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
   return engine?.terminal === false ? `${engine.title} runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link` : null;
 }

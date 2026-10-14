@@ -117,6 +117,29 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
   ctx.tools.register(
     defineTool({
+      name: "offer_start",
+      title: "Offer to start a ticket",
+      description:
+        "You do not change code or carry out tickets yourself. When the user wants a ticket implemented (code changed, a document written, any ticket's work done), make sure a ticket describes it — create one if needed — then call this: the user gets a Start button that opens the Start dialog, where they pick the agent, where it works and its permissions. Then end your turn.",
+      input: z.object({ key: z.string().describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      mcp: false,
+      readOnly: true,
+      execute: (args, inv) => {
+        const projectId = requireProjectId("offer_start", args.projectId, inv);
+        const agent = ctx.get("agent");
+        if (!inv.run || !agent) throw new Error("offer_start: only a conversation in Tomrade can offer Start");
+        const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
+        if (!item) throw new Error(`offer_start: no ticket ${args.key} in this project`);
+        if (item.kind !== "ticket") throw new Error(`offer_start: ${item.key} is an epic — offer one of its tickets`);
+        if (item.status === "done" || item.status === "cancelled") throw new Error(`offer_start: ${item.key} is ${item.status} — reopen it first`);
+        agent.setCard(inv.run.id, { id: `start-${item.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
+        return { offered: item.key, note: "A Start button is in the conversation; the user starts the ticket from there. End your turn." };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
       name: "note_progress",
       title: "Note progress on the ticket",
       description: "One line about where the work stands (\"tests green, wiring the API next\"). Shown on the ticket while the session runs. Applies to this session's ticket unless `key` is given.",

@@ -209,6 +209,10 @@ plugins:
       playbooksDir: "${userData}/playbooks"
       mediaDir: "${userData}/agent-media"
   # Engines are conductors; several can be installed, a thread picks one.
+  # Tomrade: the one in-app choice — the loop holds backlog conversations, the built-in pi implements tickets.
+  - id: engine-tomrade
+    name: "@tomradex/engine-loop/tomrade"
+    implements: [engine]
   - id: engine-loop
     name: "@tomradex/engine-loop"
     implements: [engine]

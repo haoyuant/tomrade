@@ -3,7 +3,7 @@ import type { Cadence, Schedule, Suggestion, Template, TemplateInput, TicketSpec
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Spacer, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
-import { useEngines } from "~/lib/agent";
+import { findEngine, useEngines } from "~/lib/agent";
 import { agoLabel, PRIORITIES, PRIORITY_LABEL } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { cadenceLabel, dayNames, nextLabel, useSchedules, useSuggestions, useTemplateActions, useTemplateRuns, useTemplates } from "~/lib/templates";
@@ -279,7 +279,7 @@ function TemplateEditor({
               <select
                 id="tplEngine"
                 className="select"
-                value={draft.action.engine ?? ""}
+                value={findEngine(engines.data, draft.action.engine)?.id ?? draft.action.engine ?? ""}
                 onChange={(e) => set({ action: { ...(draft.action as Extract<Draft["action"], { kind: "assistant" }>), engine: e.target.value || null } })}
               >
                 <option value="">{t("templates.defaultEngine")}</option>

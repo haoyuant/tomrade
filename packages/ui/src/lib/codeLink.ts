@@ -146,12 +146,19 @@ export const permissionHint = (t: (key: MessageKey) => string, value: string | u
 export const isFullAccess = (value: string | undefined): boolean => value === "full-access" || value === "bypassPermissions";
 
 // A start that stopped somewhere without a dialog (a section's Continue, the palette) asks the ticket's own Start button to open.
-const startRequests = new Map<string, Set<(mode: "run" | "terminal") => void>>();
+// null only opens the dialog, for the person to choose; a mode also starts at once.
+type StartListener = (mode: "run" | "terminal" | null) => void;
+const startRequests = new Map<string, Set<StartListener>>();
+// An offer taken while its ticket is still opening waits for the first Start button that mounts.
+const waitingOffers = new Map<string, number>();
 
-export function onStartRequest(itemId: string, listener: (mode: "run" | "terminal") => void): () => void {
+export function onStartRequest(itemId: string, listener: StartListener): () => void {
   const set = startRequests.get(itemId) ?? new Set();
   set.add(listener);
   startRequests.set(itemId, set);
+  const at = waitingOffers.get(itemId);
+  waitingOffers.delete(itemId);
+  if (at !== undefined && Date.now() - at < 10_000) listener(null);
   return () => set.delete(listener);
 }
 
@@ -160,4 +167,11 @@ export function requestStart(itemId: string, mode: "run" | "terminal"): boolean 
   const listeners = [...(startRequests.get(itemId) ?? [])];
   listeners.at(-1)?.(mode);
   return listeners.length > 0;
+}
+
+/** Opens the ticket's Start dialog — now, or once the ticket being opened shows its Start button. */
+export function offerStart(itemId: string): void {
+  const listeners = [...(startRequests.get(itemId) ?? [])];
+  if (listeners.length) listeners.at(-1)!(null);
+  else waitingOffers.set(itemId, Date.now());
 }
