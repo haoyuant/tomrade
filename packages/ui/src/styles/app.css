@@ -1433,6 +1433,13 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .slash-row.is-on { background: var(--surface-warm); }
 .slash-name { font-size: var(--text-sm); }
 .slash-hint { font-size: var(--text-sm); color: var(--meta); }
+/* the composer guide: the head button's menu and /help */
+.agent-guide { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px 8px; max-width: 380px; }
+.guide-row { display: grid; grid-template-columns: 104px 1fr; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.4; }
+.guide-row kbd { font-size: 12px; color: var(--fg); white-space: nowrap; }
+.guide-row span { color: var(--meta); }
+.guide-head { display: flex; align-items: center; justify-content: space-between; }
+.guide-text { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; line-height: 1.5; color: var(--fg); }
 .ai-queued.is-steering { border-style: solid; border-color: var(--accent); }
 .turn-steer { display: block; font-size: 11px; color: var(--accent); margin-bottom: 2px; }
 .ai-queued .q-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }

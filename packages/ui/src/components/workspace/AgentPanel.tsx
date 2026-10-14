@@ -81,13 +81,43 @@ const STARTERS: { fresh: Starter[]; backlog: Starter[] } = {
 type Translate = ReturnType<typeof useI18n>["t"];
 
 /** What a slash command may do to the panel. */
-type SlashContext = { newThread: () => void };
+type SlashContext = { newThread: () => void; help: () => void };
 type SlashCommand = { name: string; aliases?: string[]; hint: MessageKey; run: (c: SlashContext) => void };
 
 /** Typed as `/name` at the start of the composer; anything else starting with `/` is sent as written. */
 const SLASH_COMMANDS: SlashCommand[] = [
-  { name: "new", aliases: ["clear"], hint: "agentPanel.slashNew", run: (c) => c.newThread() }
+  { name: "new", aliases: ["clear"], hint: "agentPanel.slashNew", run: (c) => c.newThread() },
+  { name: "help", hint: "agentPanel.slashHelp", run: (c) => c.help() }
 ];
+
+/** What the composer does — one list for the guide button and /help. */
+const GUIDE: { keys: string; text: MessageKey }[] = [
+  { keys: "Enter", text: "agentPanel.guideSend" },
+  { keys: "Shift+Enter", text: "agentPanel.guideNewline" },
+  { keys: "Enter", text: "agentPanel.guideQueue" },
+  { keys: "⌘/Ctrl+Enter", text: "agentPanel.guideSteer" },
+  { keys: "Esc", text: "agentPanel.guideStop" },
+  { keys: "↑ ↓", text: "agentPanel.guideHistory" },
+  { keys: "/", text: "agentPanel.guideSlash" },
+  { keys: "/new · /clear", text: "agentPanel.guideNew" },
+  { keys: "/help", text: "agentPanel.guideHelp" },
+  { keys: "+", text: "agentPanel.guideAttach" }
+];
+
+function GuideList() {
+  const { t } = useI18n();
+  return (
+    <div className="agent-guide">
+      {GUIDE.map((g) => (
+        <div className="guide-row" key={g.text}>
+          <kbd className="num">{g.keys}</kbd>
+          <span>{t(g.text)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const slashCommand = (text: string): SlashCommand | undefined => {
   const name = /^\/(\S+)$/.exec(text.trim())?.[1]?.toLowerCase();
   return name ? SLASH_COMMANDS.find((c) => c.name === name || c.aliases?.includes(name)) : undefined;
@@ -622,6 +652,8 @@ export function AgentPanel({
   // The slash menu: open while the draft is `/` plus a partial name, until Esc.
   const [slashClosed, setSlashClosed] = useState(false);
   const [slashAt, setSlashAt] = useState(0);
+  // /help shows the guide at the foot of the conversation it was typed in; nothing is sent
+  const [helpIn, setHelpIn] = useState<string | null>(null);
   // Where ↑/↓ stands in the history (null: not browsing) and the draft it set aside.
   const browsing = useRef<{ at: number; stash: string } | null>(null);
   // Sent into the running turn and not yet read by the agent; whatever the turn ends without reading joins the queue.
@@ -873,6 +905,11 @@ export function AgentPanel({
       if (runningRun) cancel.mutate(runningRun.id);
       setDraft("");
       void openThread({ boardId }).then((th) => pickThread(th.id));
+    },
+    help: () => {
+      setDraft("");
+      following.current = true;
+      setHelpIn(threadId ?? "");
     }
   };
   const runSlash = (command: SlashCommand) => {
@@ -1054,6 +1091,19 @@ export function AgentPanel({
         <h2 style={{ fontSize: "var(--text-base)" }}>{t("agentPanel.assistantLabel")}</h2>
         <Spacer />
         <Menu
+          label={t("agentPanel.guideTitle")}
+          align="end"
+          wide
+          trigger={
+            <button type="button" className="btn btn-icon" title={t("agentPanel.guide")} aria-label={t("agentPanel.guide")}>
+              <Icon name="i-keyboard" size={14} />
+            </button>
+          }
+        >
+          <MenuHead title={t("agentPanel.guideTitle")} />
+          <GuideList />
+        </Menu>
+        <Menu
           label={t("agentPanel.threadsLabel")}
           align="end"
           trigger={
@@ -1209,6 +1259,22 @@ export function AgentPanel({
             </div>
             <div className="turn-body">
               <p>{live.text}</p>
+            </div>
+          </div>
+        )}
+        {helpIn !== null && helpIn === (threadId ?? "") && (
+          <div className="turn turn-ai guide-turn">
+            <div className="turn-mark">
+              <span className="prov-tick" style={{ height: 12 }} />
+            </div>
+            <div className="turn-body">
+              <p className="guide-head">
+                {t("agentPanel.guideTitle")}
+                <button type="button" className="btn btn-icon" title={t("common.close")} aria-label={t("common.close")} onClick={() => setHelpIn(null)}>
+                  <Icon name="i-close" size={11} />
+                </button>
+              </p>
+              <pre className="guide-text">{GUIDE.map((g) => `${g.keys.padEnd(14)}${t(g.text)}`).join("\n")}</pre>
             </div>
           </div>
         )}
