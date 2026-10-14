@@ -607,6 +607,10 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "会话")?.value).toMatch(/^空闲 · 由 Tomrade 运行/);
     expect((await ctx.contributions.statusItems({ projectId: project.id })).find((s) => s.id === "code-link")?.text).toMatch(/^代码：1 个会话/);
     expect(ctx.contributions.commands().find((c) => c.id === "code-link.start-run")).toMatchObject({ title: "在这里开始工作项", group: "代码" });
+    // The agent reads the brief in English but answers in the language the person reads Tomrade in.
+    const brief = agent.store.messages(project.id, started.threadId)[0]?.block;
+    expect(brief?.type === "text" && brief.text).toContain("write everything the person will read");
+    expect(brief?.type === "text" && brief.text).toContain("Simplified Chinese");
   });
 
   it("archives completed code conversations while retaining their messages and links", async () => {
@@ -1206,6 +1210,8 @@ describe("starting a General ticket", () => {
     expect(prompt).toContain("You are delivering");
     expect(prompt).toContain("Selected playbook document.write");
     expect(prompt).toContain(`Working directory: ${opened.cwd}`);
+    // A General ticket started in Code Link answers in the language the person reads Tomrade in.
+    expect(prompt).toContain("the person reads Tomrade in English");
     expect(agent.store.thread(project.id, run.threadId)).toMatchObject({ surface: "code", execution: { playbook: { id: "document.write" } } });
     expect(ctx.items.get(project.id, item.id)?.playbookId).toBe("document.write");
     const sessions = codeLink.sessionsOf(project.id, item.id);

@@ -13,7 +13,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { foldSteps, traceState } from "~/lib/steps";
+import { foldSteps, startBriefId, traceState } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
@@ -538,6 +538,22 @@ function Row(props: Parameters<typeof RowBody>[0]) {
   );
 }
 
+/**
+ * The brief that opened a ticket's session, folded: it is the machine's words,
+ * long and fixed, and nobody reads it twice. The person's own messages stay
+ * as they are — this is only the first line they did not write.
+ */
+function StartBrief({ m }: { m: ThreadMessage }) {
+  const { t } = useI18n();
+  const text = m.block.type === "text" ? m.block.text : "";
+  return (
+    <details className="turn turn-user turn-brief">
+      <summary>{t("agentPanel.startBrief")}</summary>
+      <p>{text}</p>
+    </details>
+  );
+}
+
 function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
@@ -1018,6 +1034,8 @@ export function AgentPanel({
   const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
   const newestLast = [...(detail.data?.messages ?? [])].reverse();
   const folded = useMemo(() => foldSteps(detail.data?.messages ?? []), [detail.data?.messages]);
+  // The kickoff brief is machine-written and long: it opens folded, so the person's own exchange stays in view.
+  const briefId = useMemo(() => startBriefId(detail.data?.messages ?? [], !!detail.data?.thread.itemId), [detail.data?.messages, detail.data?.thread.itemId]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
   const lastAskedBlock = newestLast.find((m) => m.role === "user" && m.block.type === "text")?.block;
   const lastAsked = lastAskedBlock?.type === "text" ? lastAskedBlock.text : null;
@@ -1258,6 +1276,8 @@ export function AgentPanel({
             </summary>
             {entry.fold.map((m) => <TranscriptRow key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={answerRow} onRevert={revertRow} onOpenSettings={settingsRow} engines={engines.data} retryEngines={retryEngines} onCardAction={cardActionRow} cards={cards} busy={busy} />)}
           </details>
+        ) : entry.id === briefId ? (
+          <StartBrief key={entry.id} m={entry} />
         ) : (m => (
           <TranscriptRow
             key={m.id}

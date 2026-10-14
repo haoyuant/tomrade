@@ -47,3 +47,18 @@ export function foldSteps(messages: ThreadMessage[]): (ThreadMessage | { fold: T
   }
   return out;
 }
+
+/**
+ * The message that opened a ticket's session: the machine-written brief, not
+ * the person's words. It is long and English by design, so the panel folds it
+ * behind a label instead of pushing the real conversation off the screen.
+ * Recognized by the opener the starter wrote — firstPrompt, continuePrompt or
+ * the bootstrap one — so a person's own message is never folded.
+ */
+export function startBriefId(messages: ThreadMessage[], ticketThread: boolean): string | null {
+  if (!ticketThread) return null;
+  const first = messages[0];
+  const block = first?.block;
+  if (first?.role !== "user" || block?.type !== "text" || block.steerId) return null;
+  return /^(Implement|Continue|Bootstrap) [A-Z][A-Z0-9]*-\d+ — /.test(block.text) ? first.id : null;
+}
