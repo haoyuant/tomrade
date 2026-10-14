@@ -1390,10 +1390,9 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
   border-bottom: 1px solid var(--border-soft);
 }
 /* the pet's own room; the drag strip below it is what the person grabs */
-.pet-stage-pet {
-  flex: 1; min-height: 0; overflow: hidden;
-  display: flex; align-items: flex-end; justify-content: center;
-}
+.pet-stage-pet { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+/* the pet stands where the person put it, as fractions of the room's free space */
+.pet-stage-actor { position: absolute; cursor: grab; outline-offset: 2px; }
 .pet-stage-resize { flex: 0 0 6px; cursor: ns-resize; }
 .pet-stage-resize:hover { background: var(--accent); opacity: 0.28; }
 /* pet size lives here, out of the way until the zone is pointed at */

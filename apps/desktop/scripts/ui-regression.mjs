@@ -1274,6 +1274,41 @@ const run = async () => {
   await sleep(150);
   const reset = await stage();
   check("double-clicking the handle resets the zone and the pet", Math.abs(reset.zone - natural.zone) <= 1 && reset.zoom === "100%" && reset.stored === '{"height":127,"zoom":1}', reset);
+  // The pet itself can be dragged anywhere in its zone, and a right-click puts it back in the centre.
+  const petSpot = () =>
+    $(`(() => {
+      const room = document.querySelector('.pet-stage-pet').getBoundingClientRect();
+      const pet = document.querySelector('.pet-stage-actor').getBoundingClientRect();
+      return { dx: pet.left + pet.width / 2 - (room.left + room.width / 2), inside: pet.left >= room.left - 1 && pet.right <= room.right + 1, stored: localStorage.getItem('tomrade.pet.position') };
+    })()`);
+  const dragPetBody = (dx, dy) =>
+    $(`(() => {
+      const pet = document.querySelector('.pet-stage-actor');
+      const box = pet.getBoundingClientRect();
+      const at = (x, y) => ({ bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      pet.dispatchEvent(new MouseEvent('mousedown', at(box.left + 10, box.top + 10)));
+      window.dispatchEvent(new MouseEvent('mousemove', at(box.left + 10 + ${dx}, box.top + 10 + ${dy})));
+      window.dispatchEvent(new MouseEvent('mouseup', at(box.left + 10 + ${dx}, box.top + 10 + ${dy})));
+      return true;
+    })()`);
+  const petCentred = await petSpot();
+  check("the pet starts petCentred across its zone", Math.abs(petCentred.dx) <= 1 && petCentred.inside, petCentred);
+  await dragPetBody(-30, 0);
+  await sleep(150);
+  const petMoved = await petSpot();
+  check("dragging the pet moves it by the distance dragged", Math.abs(petMoved.dx + 30) <= 1, petMoved);
+  check("and the petSpot is remembered", (petMoved.stored ?? "").includes('"x":'), petMoved.stored);
+  await dragPetBody(-10_000, 0);
+  await sleep(150);
+  const petEdge = await petSpot();
+  check("the pet cannot be dragged out of its zone", petEdge.inside && petEdge.dx < petMoved.dx, petEdge);
+  await $(`document.querySelector('.pet-stage-actor').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 40 }))`);
+  await sleep(200);
+  check("right-clicking the pet offers to put it petBack", (await $(`[...document.querySelectorAll('.menu-row .m-name')].map(n => n.textContent).join('|')`)) === "Reset to centre");
+  await press(`document.querySelector('.menu-row')`);
+  await sleep(200);
+  const petBack = await petSpot();
+  check("choosing it brings the pet petBack to the centre", Math.abs(petBack.dx) <= 1 && petBack.inside, petBack);
   await shot("18b-pet-zone")
   // The workstream is a chip beside the engine's, opening a menu — not a form field.
   await press(`document.querySelector('.ai-knobs .ai-ws')`);

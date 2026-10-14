@@ -1,18 +1,27 @@
 import type { AssistantAccessory } from "@tomradex/contributions";
 import { useCallback, useRef, useState } from "react";
 import { Icon } from "~/components/icons";
+import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { useI18n } from "~/lib/i18n";
 import { useAccessoryState } from "~/lib/pet";
 import {
   PET_MAX_ZOOM,
   PET_MIN_ZOOM,
+  PET_NUDGE,
+  PET_POSITION_CENTER,
+  PET_POSITION_KEY,
   PET_STAGE_KEY,
   heightFromDrag,
+  movePosition,
+  parsePetPosition,
   parsePetStage,
   petDrawScale,
+  petOffset,
   petStageDefault,
+  serializePetPosition,
   serializePetStage,
   stepZoom,
+  type PetPosition,
   type PetStageGeometry
 } from "~/lib/petStage";
 import { PetCanvas } from "./PetCanvas";
@@ -30,6 +39,50 @@ export function PetStage({ accessory, threadId }: { accessory: AssistantAccessor
     setGeometry(next);
     localStorage.setItem(PET_STAGE_KEY, serializePetStage(next));
   }, []);
+
+  const [position, setPosition] = useState<PetPosition>(() => parsePetPosition(localStorage.getItem(PET_POSITION_KEY)));
+  const place = useRef(position);
+  const room = useRef<HTMLDivElement>(null);
+  // The room the pet can still move in, at the size it is drawn right now.
+  const petSize = useRef({ width: 0, height: 0 });
+
+  const placePet = useCallback((next: PetPosition) => {
+    place.current = next;
+    setPosition(next);
+    localStorage.setItem(PET_POSITION_KEY, serializePetPosition(next));
+  }, []);
+
+  const freeRoom = () => ({
+    width: (room.current?.clientWidth ?? 0) - petSize.current.width,
+    height: (room.current?.clientHeight ?? 0) - petSize.current.height
+  });
+
+  const startMove = useCallback(
+    (event: React.MouseEvent) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const [startX, startY, from] = [event.clientX, event.clientY, place.current];
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "grabbing";
+      const onMove = (e: MouseEvent) => placePet(movePosition(from, e.clientX - startX, e.clientY - startY, freeRoom()));
+      const onUp = () => {
+        document.body.style.userSelect = "";
+        document.body.style.cursor = "";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [placePet]
+  );
+
+  const onPetKey = (event: React.KeyboardEvent) => {
+    const step = { ArrowLeft: [-PET_NUDGE, 0], ArrowRight: [PET_NUDGE, 0], ArrowUp: [0, -PET_NUDGE], ArrowDown: [0, PET_NUDGE] }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    placePet(movePosition(place.current, step[0], step[1], freeRoom()));
+  };
 
   const startResize = useCallback(
     (event: React.MouseEvent) => {
@@ -57,16 +110,30 @@ export function PetStage({ accessory, threadId }: { accessory: AssistantAccessor
   if (!animation) return null;
   const scale = petDrawScale(geometry, accessory.height);
   const percent = Math.round(geometry.zoom * 100);
+  const [petWidth, petHeight] = [Math.round(accessory.width * scale), Math.round(accessory.height * scale)];
+  petSize.current = { width: petWidth, height: petHeight };
   return (
     <div className="pet-stage" data-pet-state={mood} style={{ height: geometry.height }}>
-      <div className="pet-stage-pet">
-        <PetCanvas
-          className="pet-canvas"
-          animation={animation}
-          width={Math.round(accessory.width * scale)}
-          height={Math.round(accessory.height * scale)}
-          label={`${accessory.title}: ${mood}`}
-        />
+      <div className="pet-stage-pet" ref={room}>
+        <ContextMenu
+          label={accessory.title}
+          trigger={
+            <div
+              className="pet-stage-actor"
+              role="group"
+              tabIndex={0}
+              aria-label={t("agentPanel.petMove")}
+              title={t("agentPanel.petMove")}
+              style={{ ...petOffset(position, petWidth, petHeight), width: petWidth, height: petHeight }}
+              onMouseDown={startMove}
+              onKeyDown={onPetKey}
+            >
+              <PetCanvas className="pet-canvas" animation={animation} width={petWidth} height={petHeight} label={`${accessory.title}: ${mood}`} />
+            </div>
+          }
+        >
+          <ContextMenuActionItem icon={<Icon name="i-undo" size={13} />} name={t("agentPanel.petRecenter")} onSelect={() => placePet(PET_POSITION_CENTER)} />
+        </ContextMenu>
       </div>
       <div className="pet-stage-tools">
         <button
