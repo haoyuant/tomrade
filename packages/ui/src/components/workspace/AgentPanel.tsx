@@ -392,7 +392,7 @@ function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, on
 /** A message written while a run works: it goes out by itself once the run ends well. */
 type Queued = { id: string; text: string; focus: FocusRef[] };
 
-function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow }: { entry: Queued; held: boolean; canSend: boolean; onSave: (text: string) => void; onRemove: () => void; onSendNow: () => void }) {
+function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow, onSteer }: { entry: Queued; held: boolean; canSend: boolean; onSave: (text: string) => void; onRemove: () => void; onSendNow: () => void; onSteer?: () => void }) {
   const { t } = useI18n();
   const [editing, setEditing] = useState<string | null>(null);
   return (
@@ -423,6 +423,9 @@ function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow }: { entr
         {held && canSend && (
           <button type="button" className="btn btn-ghost btn-xs" onClick={onSendNow}>{t("agentPanel.queuedSendNow")}</button>
         )}
+        {onSteer && (
+          <button type="button" className="btn btn-ghost btn-xs" title={t("agentPanel.steerNowTitle")} onClick={onSteer}>{t("agentPanel.steerNow")}</button>
+        )}
         <button type="button" className="btn btn-icon" title={t("agentPanel.queuedEdit")} aria-label={t("agentPanel.queuedEdit")} onClick={() => setEditing(editing === null ? entry.text : null)}>
           <Icon name="i-pen" size={11} />
         </button>
@@ -436,7 +439,21 @@ function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow }: { entr
 
 const TranscriptRow = memo(Row);
 
-function Row({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
+function Row(props: Parameters<typeof RowBody>[0]) {
+  const { t } = useI18n();
+  const b = props.m.block;
+  if (props.m.role !== "user" || b.type !== "text" || !b.steerId) return <RowBody {...props} />;
+  // sent into the running turn: it sits where the agent read it, and says so
+  return (
+    <div className="turn turn-user is-steer">
+      <span className="turn-rule" />
+      <span className="turn-steer">{t("agentPanel.steered")}</span>
+      <p>{b.text}</p>
+    </div>
+  );
+}
+
+function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -575,6 +592,9 @@ export function AgentPanel({
   const editQueue = (id: string, fn: (q: Queued[]) => Queued[]) => setQueues((prev) => ({ ...prev, [id]: fn(prev[id] ?? []) }));
   // The run the last send started: until the thread shows it, the run before it says nothing about whether to go on.
   const [sentRun, setSentRun] = useState<string | null>(null);
+  // Sent into the running turn and not yet read by the agent; whatever the turn ends without reading joins the queue.
+  const [steering, setSteering] = useState<Record<string, Queued[]>>({});
+  const steeringNow = threadId ? (steering[threadId] ?? []) : [];
   // What rides along as "(viewing: …)": follow tracks the screen, pinned holds
   // a snapshot across navigation, off sends nothing. Session state on purpose —
   // the panel never unmounts inside a project, so it survives navigation.
@@ -798,6 +818,34 @@ export function AgentPanel({
     editQueue(threadId, (q) => [...q, { id: crypto.randomUUID(), text, focus: sendFocus }]);
     setDraft("");
   };
+  const steer = async (inThread: string, entry: Queued) => {
+    const taken = !!engine?.steers && await invoke("agent.steer", projectId, inThread, entry.id, entry.text).catch(() => false);
+    if (taken) {
+      setSteering((prev) => ({ ...prev, [inThread]: [...(prev[inThread] ?? []), entry] }));
+      editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
+      return;
+    }
+    if (!(queues[inThread] ?? []).some((x) => x.id === entry.id)) editQueue(inThread, (q) => [...q, entry]);
+    toast({ body: t("agentPanel.steerQueued", { name: engine?.title ?? currentEngineId }) });
+  };
+  const steerDraft = () => {
+    const text = draft.trim();
+    if (!threadId || !runningRun || !text || attachments.length || blocked) return;
+    setDraft("");
+    void steer(threadId, { id: crypto.randomUUID(), text, focus: sendFocus });
+  };
+  const steeredIds = useMemo(() => new Set((detail.data?.messages ?? []).flatMap((m) => (m.block.type === "text" && m.block.steerId ? [m.block.steerId] : []))), [detail.data?.messages]);
+  useEffect(() => {
+    if (!threadId || !steeringNow.length) return;
+    const left = steeringNow.filter((s) => !steeredIds.has(s.id));
+    if (runningRun) {
+      if (left.length !== steeringNow.length) setSteering((prev) => ({ ...prev, [threadId]: left }));
+      return;
+    }
+    setSteering((prev) => ({ ...prev, [threadId]: [] }));
+    if (left.length) editQueue(threadId, (q) => [...left, ...q]);
+  }, [threadId, steeringNow, steeredIds, runningRun]);
+
   const sendQueued = async (inThread: string, entry: Queued) => {
     editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
     // a send that did not go keeps its place at the head
@@ -1112,7 +1160,14 @@ export function AgentPanel({
             onSave={(text) => editQueue(threadId, (q) => q.map((x) => (x.id === entry.id ? { ...x, text } : x)))}
             onRemove={() => editQueue(threadId, (q) => q.filter((x) => x.id !== entry.id))}
             onSendNow={() => void sendQueued(threadId, entry)}
+            onSteer={runningRun && engine?.steers ? () => void steer(threadId, entry) : undefined}
           />
+        ))}
+        {steeringNow.map((entry) => (
+          <div key={entry.id} className="ai-queued is-steering">
+            <span className="q-state">{t("agentPanel.steering")}</span>
+            <p className="q-text" title={entry.text}>{entry.text}</p>
+          </div>
         ))}
         <div className="ai-composer" data-busy={busy || undefined}>
           <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
@@ -1124,7 +1179,7 @@ export function AgentPanel({
             ref={composer}
             className="ai-input"
             rows={1}
-            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t("agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
             disabled={archivedNow}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
@@ -1136,7 +1191,8 @@ export function AgentPanel({
               if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
               if (e.key !== "Enter" || e.shiftKey) return;
               e.preventDefault();
-              if (runningRun) enqueue();
+              if (runningRun && (e.metaKey || e.ctrlKey)) steerDraft();
+              else if (runningRun) enqueue();
               else void doSend();
             }}
           />

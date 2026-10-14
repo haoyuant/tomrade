@@ -19,7 +19,7 @@ export interface FocusRef {
 
 /** Everything the panel knows how to draw. Engines emit these; the UI has no engine-specific code. */
 export type Block =
-  | { type: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[] }
+  | { type: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[]; /** Sent into a running turn; the id the panel gave it. */ steerId?: string }
   | { type: "media"; media: import("./media.js").MediaRef; caption?: string }
   | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number;
       commandResult?: { status: "success" | "no-match" | "condition-false" | "failed" | "declined" | "timed-out" | "interrupted"; exitCode: number | null; output: string } }
@@ -301,6 +301,11 @@ export interface TurnIO {
   signal: AbortSignal;
   /** This engine's external session id from the previous turn, if it stored one. */
   resume?: string;
+  /**
+   * Messages the person sent into this running turn, for an engine that `steers`. Call it where
+   * the model reads next (between tool calls); what it returns enters the transcript there.
+   */
+  takeSteers?(): string[];
 }
 
 export interface TurnResult {
@@ -441,6 +446,8 @@ export interface Engine {
   terminalOnly?: boolean;
   /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
   usesModels?: boolean;
+  /** True: it takes messages sent while a turn runs (io.takeSteers); otherwise the panel queues them. */
+  steers?: boolean;
   /** What the troubleshooter may read about this engine beyond `available()`. */
   diagnostics?: EngineDiagnostics;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
@@ -479,6 +486,7 @@ export interface EngineView {
   terminal?: boolean;
   terminalOnly?: boolean;
   usesModels?: boolean;
+  steers?: boolean;
   setup?: EngineSetup;
 }
 

@@ -198,6 +198,8 @@ declare module "@tomradex/ipc" {
     "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
     "agent.cancel": (runId: string) => boolean;
+    /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
+    "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => boolean;
     "agent.showing": (threadId: string) => void;
     "agent.revert": (projectId: string, runId: string) => UndoRunResult;
     /** `fresh` looks for each engine's CLI again instead of answering from a recent probe. */
@@ -272,6 +274,8 @@ interface RunCtx {
   clock: { timedOut: boolean; limitMs: number };
   /** Stores a stretch of retries still open when the turn ends. */
   settleRetry: (recovered: boolean) => void;
+  /** Sent into this turn and not yet handed to the model. */
+  steers: { id: string; text: string }[];
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -406,6 +410,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
+      ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text) => ctx.agent.steer(projectId, threadId, steerId, text));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));
       ctx.ipc.handle("agent.revert", (projectId, runId) => ctx.agent.revert(projectId, runId));
       ctx.ipc.handle("agent.engines", (opts) => ctx.agent.engineViews(opts?.fresh));
@@ -586,7 +591,7 @@ export class Agent extends Service {
       [...this.engines.values()].map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
@@ -1083,6 +1088,14 @@ export class Agent extends Service {
     return { runId: run.id };
   }
 
+  /** A message for the running turn: held until the engine reaches a point where the model reads it. */
+  steer(projectId: string, threadId: string, steerId: string, text: string): boolean {
+    const rc = this.activeByThread.get(threadId);
+    if (!rc || rc.projectId !== projectId || !rc.engine.steers || rc.abort.signal.aborted || !text.trim()) return false;
+    rc.steers.push({ id: steerId, text: text.trim() });
+    return true;
+  }
+
   cancel(runId: string): boolean {
     const rc = this.activeById.get(runId);
     if (rc) {
@@ -1139,6 +1152,7 @@ export class Agent extends Service {
     const wall = { left: thread.itemId ? this.config.codeMaxWallMs : this.config.maxWallMs, since: Date.now(), timer: undefined as NodeJS.Timeout | undefined };
     const clock = { timedOut: false, limitMs: wall.left };
     const partial = { text: "" };
+    const steers: RunCtx["steers"] = [];
     const runClock = () => { wall.since = Date.now(); wall.timer = setTimeout(() => { clock.timedOut = true; abort.abort(); }, Math.max(0, wall.left)); };
     const holdClock = () => { clearTimeout(wall.timer); wall.left -= Date.now() - wall.since; };
     runClock();
@@ -1287,9 +1301,15 @@ export class Agent extends Service {
       llm,
       run: handle,
       signal: abort.signal,
-      resume: this.store.external(thread.projectId, thread.id)[engine.id]
+      resume: this.store.external(thread.projectId, thread.id)[engine.id],
+      takeSteers: () => {
+        if (abort.signal.aborted) return [];
+        const taken = steers.splice(0);
+        for (const s of taken) this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
+        return taken.map((s) => s.text);
+      }
     };
-    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry };
+    return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry, steers };
   }
 
   private itemOf(projectId: string, itemId: string): Item | null {

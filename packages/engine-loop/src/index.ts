@@ -136,6 +136,9 @@ export function elideOldResults(messages: Message[], free: number, keep = KEEP_R
   return freed;
 }
 
+/** What the person sent while the turn ran, worded so the model takes it as a change of course. */
+const steering = (texts: string[]) => ({ type: "text" as const, text: texts.map((t) => `(The user added while you were working: ${t})`).join("\n") });
+
 const system = (input: TurnInput, io: TurnIO, options: LoopOptions): string =>
   [IDENTITY, ...promptSections(input, io, { playbooks: options.guidance === "auto" })].join("\n\n");
 
@@ -146,6 +149,7 @@ export function createLoopEngine(ctx: Context): Engine {
     id: "loop",
     title: "Tomrade loop",
     usesModels: true,
+    steers: true,
     media: options => {
       const parsed = LoopOptions.parse(options ?? {});
       const llm = ctx.get("llm");
@@ -244,7 +248,13 @@ export function createLoopEngine(ctx: Context): Engine {
             usage
           };
         }
-        if (!collected.toolCalls.length) return { stop: "end", usage };
+        if (!collected.toolCalls.length) {
+          // A message that came in while the model wrote its last reply still belongs to this turn.
+          const late = io.takeSteers?.() ?? [];
+          if (!late.length) return { stop: "end", usage };
+          messages.push(assistantMessage(collected), { role: "user", content: [steering(late)] });
+          continue;
+        }
 
         messages.push(assistantMessage(collected));
         // Calls in a reply cut at the limit may be cut too, and still parse — a write_file with half the file. None is run.
@@ -273,8 +283,14 @@ export function createLoopEngine(ctx: Context): Engine {
         );
         if (collected.toolCalls.some((call) => !READ_TOOL.test(call.name))) memo.clear();
         invalidStreak = results.some((r) => r.invalid) ? invalidStreak + 1 : 0;
-        messages.push(toolResultsMessage(results));
-        if (results.some((r) => r.suspended)) return { stop: "asked", usage };
+        const answered = toolResultsMessage(results);
+        if (results.some((r) => r.suspended)) {
+          messages.push(answered);
+          return { stop: "asked", usage };
+        }
+        const steered = io.takeSteers?.() ?? [];
+        if (steered.length) answered.content.push(steering(steered));
+        messages.push(answered);
         if (step === options.maxSteps - 1)
           messages.push({ role: "user", content: [{ type: "text", text: "(budget nearly spent: wrap up — summarize what happened, make no more writes)" }] });
       }
