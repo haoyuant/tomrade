@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CodeLink, covered, firstPrompt, listDecisions, recordDecision } from "@tomradex/code-link";
+import { CodeLink, continuePrompt, covered, firstPrompt, listDecisions, recordDecision } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -83,5 +83,16 @@ describe("decision notes", () => {
     const shot = items.update(project.id, item.id, { body: "Badge overlaps: ![shot](tomrade-file://0f1e2d3c-4b5a-4968-8776-655443322110)" }, "human");
     const linked = firstPrompt({ item: shot, repo, state: null, branch: "tom-1/cart-badge", blockers: [], bootstrap: false, mcpUrl: null });
     expect(linked).toContain("get_item lists them under attachments");
+  });
+
+  it("tell the agent which language the person reads, from Tomrade's own setting", () => {
+    const item = { key: "TOM-1", title: "Cart badge", body: null, status: "todo", labels: [], blockedBy: [], blocks: [] } as never;
+    const repo = { name: "app", remote: "git@github.com:acme/app.git", defaultBranch: "main" } as never;
+    const base = { item, repo, state: null, branch: "tom-1/cart-badge", blockers: [], bootstrap: false, mcpUrl: null };
+    expect(firstPrompt({ ...base, locale: "zh" })).toContain("Tomrade in Simplified Chinese");
+    expect(firstPrompt({ ...base, locale: "en" })).toContain("Tomrade in English");
+    // A session started before the language was known still says something: English, the app's fallback.
+    expect(firstPrompt(base)).toContain("Tomrade in English");
+    expect(continuePrompt(item as never, repo as never, null, null, "human", false, "zh")).toContain("Tomrade in Simplified Chinese");
   });
 });

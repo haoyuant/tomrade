@@ -1484,6 +1484,12 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .turn-user { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
 .turn-user .turn-rule { width: 28px; height: 1px; background: var(--border); }
 .turn-user p { font-size: 14px; line-height: var(--leading-dense); color: var(--fg-2); text-align: right; max-width: 88%; }
+/* the machine-written brief that opened a ticket's session: folded, and read left to right */
+.turn-brief { align-items: flex-start; }
+.turn-brief > summary { cursor: pointer; list-style: none; font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); }
+.turn-brief > summary::-webkit-details-marker { display: none; }
+.turn-brief > summary:hover { color: var(--fg-2); }
+.turn-brief > p { text-align: left; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn-ai { display: grid; grid-template-columns: 14px 1fr; gap: var(--space-2); }
 .turn-mark { display: flex; justify-content: center; padding-top: 6px; }
 .turn-ai .turn-body { font-size: var(--text-base); line-height: var(--leading-body); color: var(--fg-2); min-width: 0; }
