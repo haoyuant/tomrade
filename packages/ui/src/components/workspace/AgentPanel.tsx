@@ -3,6 +3,7 @@ import type { AgentSettings, Block, CardAction, CardView, ChecklistCard, EngineP
 import { modelErrorKind, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
+import { AssistantWidgets } from "./AssistantWidgets";
 import { PetStage } from "./PetStage";
 import { SetupCard } from "./SetupCard";
 import { AgentMedia } from "./AgentMedia";
@@ -1337,6 +1338,7 @@ export function AgentPanel({
         {(accessories.data ?? []).map((accessory) => (
           <PetStage key={accessory.id} accessory={accessory} threadId={threadId} />
         ))}
+        <AssistantWidgets />
         {threadId && queue.map((entry) => (
           <QueuedRow
             key={entry.id}

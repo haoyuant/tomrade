@@ -2568,3 +2568,11 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 }
 .keys-note .ico, .keys-note svg { color: var(--warn); flex-shrink: 0; }
 .keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }
+
+.assistant-widget { position: relative; border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 8px 10px 10px; background: var(--surface); overflow: hidden; }
+.assistant-widget-body { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.assistant-widget-title, .assistant-widget-detail { font-size: 11px; color: var(--muted); }
+.assistant-widget-text { font-variant-numeric: tabular-nums; font-size: 20px; }
+.assistant-widget-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.assistant-widget-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--border-soft); }
+.assistant-widget-progress > div { height: 100%; background: var(--accent); transition: width 0.3s; }

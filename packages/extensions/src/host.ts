@@ -316,6 +316,16 @@ export class Host {
               host.own(def.id, "graph");
               return host.disposerOf(c().graph({ id: def.id, title: def.title, icon: def.icon, edits: def.edits, compute: host.back(def.compute, `graph ${def.id}`, { ms: RENDER_MS }) }));
             }),
+          assistantWidget: (def) =>
+            host.call(() => {
+              host.own(def.id, "assistant widget");
+              const render = host.back(def.render, `assistant widget ${def.id}`, { ms: RENDER_MS });
+              return host.disposerOf(c().assistantWidget({ id: def.id, title: def.title, render: async () => {
+                const content = await render();
+                for (const action of content?.actions ?? []) host.own(action.command, "widget command");
+                return content;
+              } }));
+            }),
           sidebarModule: (def) =>
             host.call(() => {
               host.own(def.id, "sidebar module");
@@ -352,6 +362,7 @@ export class Host {
                 height: spec.height,
                 transparent: spec.transparent,
                 alwaysOnTop: spec.alwaysOnTop,
+                focusable: spec.focusable,
                 clickThrough: spec.clickThrough,
                 initialState: spec.initialState,
                 onMessage: onMessage ? (m) => within(ns, () => onMessage(m as never), true) : undefined

@@ -207,7 +207,17 @@ export interface GraphEdge {
 type Maybe<T> = T | Promise<T>;
 
 /** Ids must equal the namespace or start with it followed by `.`, `-` or `_`. */
+export interface AssistantWidgetContent {
+  text: string;
+  detail?: string;
+  /** Fraction from 0 to 1. */
+  progress?: number;
+  actions?: { title: string; command: string }[];
+}
+
 export interface ContributionsApi {
+  /** A compact row below the pet, refreshed once per second. Null hides it. */
+  assistantWidget(def: { id: string; title: string; render(): Maybe<AssistantWidgetContent | null> }): Promise<Disposer>;
   command(def: { id: string; title: string; group?: string; shortcut?: string; run(scope: CommandScope): Maybe<{ toast?: string } | void> }): Promise<Disposer>;
   badge(def: { id: string; compute(items: Item[], scope: { projectId: string }): Maybe<Record<string, Badge[]>> }): Promise<Disposer>;
   statusItem(def: { id: string; text(scope: { projectId?: string }): Maybe<string | null>; title?: string; icon?: string; align?: "start" | "end" }): Promise<Disposer>;
@@ -240,6 +250,8 @@ export interface SurfaceSpec {
   height: number;
   transparent?: boolean;
   alwaysOnTop?: boolean;
+  /** Allow keyboard input; defaults to false for passive widgets. */
+  focusable?: boolean;
   clickThrough?: boolean;
   initialState?: unknown;
   /** Messages the document sends; a person is driving, so writes made here are theirs. */
