@@ -57,6 +57,9 @@ import { describeFailure, redactSecrets } from "./failure.js";
 import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
+/** Which of these threads a plugin opened, and what to call that: thread id → label. */
+export type ThreadOrigins = (projectId: string, threads: ThreadSummary[]) => Iterable<[string, string]>;
+
 export interface WorkdirStatus {
   cwd: string | null;
   remote: string | null;
@@ -307,6 +310,7 @@ export class Agent extends Service {
   private workflows = new Map<string, WorkflowSpec>();
   private followUps = new Map<string, TurnFollowUp>();
   private playbooks = new Map<string, PlaybookVariants>();
+  private readonly origins = new Set<ThreadOrigins>();
   /** Playbooks read from each project's shared copy; refreshed when a run starts. */
   private projectPlaybooks = new Map<string, Map<string, Playbook>>();
   private permissions = new Map<string, { pending: PendingView; answer(value: string | null): void }>();
@@ -377,7 +381,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.threads", (projectId) => {
         const running = new Set(ctx.agent.activeRuns().map((a) => a.thread.id));
         const parked = new Map(ctx.agent.store.allParked(projectId).map((p) => [p.threadId, p.until]));
-        return ctx.agent.store.threads(projectId, PANEL_SURFACES).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
+        return ctx.agent.withOrigins(projectId, ctx.agent.store.threads(projectId, PANEL_SURFACES)).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
       ctx.ipc.handle("agent.usage", () => ctx.agent.usage());
@@ -391,7 +395,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
-      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.store.archivedThreads(projectId, PANEL_SURFACES));
+      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.withOrigins(projectId, ctx.agent.store.archivedThreads(projectId, PANEL_SURFACES)));
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
@@ -441,6 +445,28 @@ export class Agent extends Service {
       this.engines.set(engine.id, engine);
       return () => this.engines.delete(engine.id);
     }, `agent.engine(${engine.id})`);
+  }
+
+  /** A plugin names the conversations it opened (thread id → a short label in the person's language). */
+  threadOrigins(provider: ThreadOrigins): () => void {
+    return this.ctx.effect(() => {
+      this.origins.add(provider);
+      return () => void this.origins.delete(provider);
+    });
+  }
+
+  /** The threads with what each plugin says opened them. */
+  withOrigins(projectId: string, threads: ThreadSummary[]): ThreadSummary[] {
+    if (!this.origins.size || !threads.length) return threads;
+    const labels = new Map<string, string[]>();
+    for (const provider of this.origins) {
+      try {
+        for (const [id, label] of provider(projectId, threads)) labels.set(id, [...(labels.get(id) ?? []), label]);
+      } catch (err) {
+        this.ctx.logger.warn(`thread origins failed: ${message(err)}`);
+      }
+    }
+    return threads.map((th) => (labels.has(th.id) ? { ...th, origins: labels.get(th.id) } : th));
   }
 
   playbook(playbook: Omit<Playbook, "tools"> & { tools?: string[] }): () => void {

@@ -59,6 +59,11 @@ const run = async () => {
   const base = process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/";
   await win.loadURL(`${base}#/p/${alpha.id}`);
   const $ = (js) => win.webContents.executeJavaScript(js, true);
+  const shot = async (name) => {
+    if (!process.env.TOMRADE_SHOTS) return;
+    fs.mkdirSync(process.env.TOMRADE_SHOTS, { recursive: true });
+    fs.writeFileSync(path.join(process.env.TOMRADE_SHOTS, name), (await win.webContents.capturePage()).toPNG());
+  };
   const go = (projectId) => $(`location.hash = '#/p/${projectId}';true`);
   const press = (expr) =>
     $(`(() => { const n = ${expr}; if (!n) return false; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
@@ -158,6 +163,21 @@ const run = async () => {
   await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation 3'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(300);
   check("typing narrows the list", (await $(`[...document.querySelectorAll('.menu-row.is-radio')].filter((r) => r.closest('.menu-foot') === null).map((r) => r.querySelector('.m-name')?.textContent)`)).join("|") === "Filler conversation 3");
+  // What opened a conversation, said by the plugin that did, shows as chips after its title.
+  const tagged = ctx.agent.store.threads(alpha.id).find((th) => th.title === "Filler conversation 5");
+  ctx.agent.threadOrigins((_p, list) => list.filter((th) => th.id === tagged.id).map((th) => [th.id, "Routine"]));
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await sleep(600);
+  await threads();
+  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(300);
+  const chips = await $(`[...document.querySelectorAll('.menu-row.is-radio')].map((r) => ({ name: r.querySelector('.m-name')?.textContent, chips: [...r.querySelectorAll('.m-chip')].map((c) => c.textContent) })).filter((r) => r.chips.length)`);
+  check("a conversation a plugin opened carries its chip after the title", chips.length === 1 && chips[0].name === "Filler conversation 5" && chips[0].chips.join() === "Routine", chips);
+  await shot("origin-chips.png");
+  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation 3'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(300);
   const filler = ctx.agent.store.threads(alpha.id).find((th) => th.title === "Filler conversation 3");
   ctx.agent.archiveThread(alpha.id, filler.id);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
@@ -223,11 +243,6 @@ const run = async () => {
       return { stop: "end" };
     }
   });
-  const shot = async (name) => {
-    if (!process.env.TOMRADE_SHOTS) return;
-    fs.mkdirSync(process.env.TOMRADE_SHOTS, { recursive: true });
-    fs.writeFileSync(path.join(process.env.TOMRADE_SHOTS, name), (await win.webContents.capturePage()).toPNG());
-  };
   const line = () => $(`(() => { const w = document.querySelector('.ai-scroll .working'); return w ? { retrying: w.classList.contains('retrying'), text: w.textContent } : null; })()`);
   await newThread();
   await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);

@@ -109,6 +109,8 @@ export interface ThreadSummary {
   archived: boolean;
   /** A person brought it back from the archive: it stays open until they put it away again. */
   restored?: boolean;
+  /** What opened it, in the person's words — each named by the plugin that did; chips beside the title. */
+  origins?: string[];
   createdAt: number;
   updatedAt: number;
 }

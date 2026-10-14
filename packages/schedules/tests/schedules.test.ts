@@ -107,6 +107,11 @@ it("asks the assistant in a conversation of its own", async () => {
     for (let i = 0; i < 200 && !t.heard.length; i++) await new Promise((r) => setImmediate(r));
     expect(t.heard).toEqual(["Plan Monday 2026-10-12"]);
     expect(t.ctx.agent.store.thread(t.project.id, run.threadId!)).toMatchObject({ title: "Plan my day", engine: "echo" });
+    // The thread list says a routine opened it; a conversation the person opened says nothing.
+    const plain = t.ctx.agent.newThread(t.project.id, "echo");
+    const listed = t.ctx.agent.withOrigins(t.project.id, t.ctx.agent.store.threads(t.project.id));
+    expect(listed.find((th) => th.id === run.threadId)?.origins).toEqual(["Routine"]);
+    expect(listed.find((th) => th.id === plain.id)?.origins).toBeUndefined();
   } finally {
     await t.ctx.fiber.dispose();
   }
