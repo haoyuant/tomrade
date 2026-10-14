@@ -416,7 +416,7 @@ export class Doctor extends Service {
     const text = brief(diagnosis, failing, this.locale());
     const messages = investigationMessages(input.messages, session.startSeq, text);
     const first = !session.resume && messages.length <= 1;
-    const raw = this.ctx.agent.optionsOf({ options: null }, engineId) ?? {};
+    const raw = this.ctx.agent.optionsOf({ options: null }, engineId);
     const result = await engine.turn(
       {
         ...input,

@@ -950,11 +950,14 @@ export class Agent extends Service {
   }
 
   /** The engine's settings with the thread's overrides on top — what a turn runs with. */
-  optionsOf(thread: Pick<ThreadSummary, "options">, engineId: string): unknown {
+  optionsOf(thread: Pick<ThreadSummary, "options">, engineId: string): object {
     const base = this.settingsOf().engines[engineId];
+    const saved = base && typeof base === "object" ? (base as Record<string, unknown>) : {};
     const overrides = thread.options;
-    if (!overrides || !Object.keys(overrides).length) return base;
-    return { ...(base && typeof base === "object" ? (base as Record<string, unknown>) : {}), ...overrides };
+    // Never undefined: an engine that has never been configured still has object options, which is
+    // what its schema expects (each field optional or defaulted).
+    if (!overrides || !Object.keys(overrides).length) return saved;
+    return { ...saved, ...overrides };
   }
 
   // ── the turn ───────────────────────────────────────────────────────────────

@@ -539,6 +539,34 @@ describe("the knobs a thread opens on", () => {
     expect(thread.options).toBeNull();
   });
 
+  it("takes empty overrides for an engine that has never been configured", async () => {
+    const { agent, project } = await boot([]);
+    const thread = agent.newThread(project.id, "loop");
+
+    expect(agent.optionsOf(agent.store.thread(project.id, thread.id)!, "loop")).toEqual({});
+    // An empty override set is not a preference: it is stored as none, and the engine's settings stay in charge.
+    expect(agent.setOptions(project.id, thread.id, {}).options).toBeNull();
+    expect(agent.optionsOf(agent.store.thread(project.id, thread.id)!, "loop")).toEqual({});
+  });
+
+  it("starts a thread whose engine has an options schema but no saved settings", async () => {
+    const { agent, project } = await boot([]);
+    // The built-in agent's shape: every field optional, so an empty object is the default everything.
+    agent.engine({
+      id: "knobs",
+      title: "Knobs",
+      author: "ai:test",
+      available: async () => ({ ok: true }),
+      options: z.object({ profile: z.string().optional(), effort: z.string().optional() }),
+      turn: async () => ({ stop: "end" })
+    });
+    const thread = agent.newThread(project.id, "knobs");
+
+    // What the Start dialog sends when model and effort both stay default.
+    expect(() => agent.setOptions(project.id, thread.id, {})).not.toThrow();
+    expect(agent.optionsOf(agent.store.thread(project.id, thread.id)!, "knobs")).toEqual({});
+  });
+
   it("drops options the engine rejects rather than leaving a thread that cannot run", async () => {
     const { agent, project } = await boot([]);
     const thread = agent.newThread(project.id, "loop", null, { options: { effort: 42 } });
