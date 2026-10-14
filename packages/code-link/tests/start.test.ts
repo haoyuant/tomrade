@@ -699,6 +699,110 @@ describe("starting a ticket", () => {
     await untilRunsSettle(agent);
   });
 
+  it("puts away a finished ticket's threads that never got a session, once, and leaves one a person brought back", async () => {
+    const { codeLink, ctx, agent, project, ticket } = await machine(codeRepo());
+    const item = ticket("Left a stray thread");
+    const stray = agent.store.createThread(project.id, "fake-code", "Stray", null, item.id, "tom-stray", "assistant");
+    ctx.items.update(project.id, item.id, { status: "done" }, "human");
+    expect(agent.store.thread(project.id, stray.id)?.archived).toBe(true);
+    agent.unarchiveThread(project.id, stray.id, { restored: true });
+    await codeLink.scan(project.id);
+    expect(agent.store.thread(project.id, stray.id)).toMatchObject({ archived: false, restored: true });
+  });
+
+  it("never brings a finished ticket's worktree back on its own; only reopening and starting it does", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Finished and tidied");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    await ctx.tools.execute("link_code", { key: item.key, branch: started.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    expect(agent.store.thread(project.id, started.threadId)?.archived).toBe(true);
+    // The person tidies up after the merge.
+    git(["worktree", "remove", "--force", started.worktree!], checkout!);
+    git(["branch", "-D", started.branch], checkout!);
+
+    // Looking at the conversation reports; it does not make anything.
+    expect(await agent.workdir(project.id, started.threadId)).toMatchObject({ cwd: null, problem: null });
+    await codeLink.scan(project.id);
+    expect(fs.existsSync(started.worktree!)).toBe(false);
+    expect(git(["branch", "--list", started.branch], checkout!)).toBe("");
+
+    // Archived means read-only.
+    expect(() => agent.send(project.id, started.threadId, { kind: "text", text: "one more thing" })).toThrow(/archived/);
+    // Brought back by hand, a turn still does not quietly recreate finished work.
+    agent.unarchiveThread(project.id, started.threadId, { restored: true });
+    expect(await agent.workdir(project.id, started.threadId)).toMatchObject({ cwd: null, code: "finished" });
+    expect(await agent.workdir(project.id, started.threadId, { create: true })).toMatchObject({ cwd: null, code: "finished" });
+    expect(fs.existsSync(started.worktree!)).toBe(false);
+
+    expect(() => agent.send(project.id, started.threadId, { kind: "text", text: "one more thing" })).toThrow(/Reopen it/);
+
+    // Bringing the work back is the person's call: reopen the ticket and continue this conversation.
+    ctx.items.update(project.id, item.id, { status: "doing" }, "human");
+    const again = await codeLink.start(project.id, item.id, { mode: "run", threadId: started.threadId, message: "one more thing" });
+    expect(again).toMatchObject({ ok: true, continued: true, threadId: started.threadId, branch: `${started.branch}-2` });
+    if (!again.ok) return;
+    expect(fs.existsSync(again.worktree!)).toBe(true);
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], again.worktree!)).toBe(`${started.branch}-2`);
+    expect(agent.store.thread(project.id, started.threadId)).toMatchObject({ branch: `${started.branch}-2`, restored: false });
+    await untilRunsSettle(agent);
+    expect(agent.store.messages(project.id, started.threadId).some((m) => m.role === "user" && m.block.type === "text" && m.block.text.endsWith("one more thing"))).toBe(true);
+  });
+
+  it("does not rebuild the worktree of a conversation whose ticket was deleted", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Deleted later");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    ctx.items.delete(project.id, item.id, "human");
+    git(["worktree", "remove", "--force", started.worktree!], checkout!);
+    expect(await agent.workdir(project.id, started.threadId, { create: true })).toMatchObject({ cwd: null, code: "finished" });
+    expect(fs.existsSync(started.worktree!)).toBe(false);
+  });
+
+  it("moves a kept worktree onto the reopened delivery's branch, and refuses while it has uncommitted work", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Reopened with its worktree");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    await ctx.tools.execute("link_code", { key: item.key, branch: started.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    agent.unarchiveThread(project.id, started.threadId, { restored: true });
+    ctx.items.update(project.id, item.id, { status: "doing" }, "human");
+    fs.writeFileSync(path.join(started.worktree!, "scratch.txt"), "half done\n");
+    expect(await codeLink.start(project.id, item.id, { mode: "run", threadId: started.threadId })).toMatchObject({ ok: false, gate: "workdir", message: expect.stringContaining("uncommitted") });
+    expect(agent.store.thread(project.id, started.threadId)?.branch).toBe(started.branch);
+    fs.rmSync(path.join(started.worktree!, "scratch.txt"));
+    const again = await codeLink.start(project.id, item.id, { mode: "run", threadId: started.threadId });
+    expect(again).toMatchObject({ ok: true, threadId: started.threadId, worktree: started.worktree, branch: `${started.branch}-2` });
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], started.worktree!)).toBe(`${started.branch}-2`);
+    await untilRunsSettle(agent);
+  });
+
+  it("leaves no thread behind when a Start is refused at the working folder", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, hubDir, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    // Nothing can be made under the Hub's worktrees folder.
+    fs.rmSync(path.join(hubDir, "worktrees"), { recursive: true, force: true });
+    fs.writeFileSync(path.join(hubDir, "worktrees"), "");
+    const item = ticket("Refused at the folder");
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir" });
+    expect(agent.store.threadsForItem(project.id, item.id)).toEqual([]);
+    fs.rmSync(path.join(hubDir, "worktrees"));
+    const retried = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(retried.ok).toBe(true);
+    expect(agent.store.threadsForItem(project.id, item.id)).toHaveLength(1);
+    await untilRunsSettle(agent);
+  });
+
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;

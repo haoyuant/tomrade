@@ -19,7 +19,10 @@ const en = {
   continueAfterLimit: "The usage limit has lifted. Continue where you left off.",
   proposeRule: (rule: string) => `Add this to the project's rules, for every agent from now on?\n\n${rule}`,
   addRule: "Add rule",
-  skipRule: "Don't add"
+  skipRule: "Don't add",
+  archivedReadOnly: "This conversation is archived. Restore it from the archive to keep talking.",
+  reopenToContinue: (key: string) => `${key} is done. Reopen it to keep working in this conversation.`,
+  finishedNoWorktree: (key: string) => `${key} is done and its worktree is gone. Reopen the ticket and Start it to bring the work back.`
 };
 
 export type AgentWords = typeof en;
@@ -42,7 +45,10 @@ const zh: AgentWords = {
   continueAfterLimit: "用量限制已经解除，请从刚才停下的地方继续。",
   proposeRule: (rule: string) => `把这条加进项目规则吗？以后这个项目里的所有智能体都会遵守：\n\n${rule}`,
   addRule: "加入规则",
-  skipRule: "不加"
+  skipRule: "不加",
+  archivedReadOnly: "这段对话已归档。从归档里恢复后才能继续对话。",
+  reopenToContinue: (key: string) => `${key} 已完成。重新打开工单后才能在这段对话里继续。`,
+  finishedNoWorktree: (key: string) => `${key} 已完成，它的 worktree 也已删除。重新打开这张工单再开始，才会把工作带回来。`
 };
 
 export const AGENT_WORDS: Record<Locale, AgentWords> = { en, zh };

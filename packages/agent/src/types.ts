@@ -107,6 +107,8 @@ export interface ThreadSummary {
   /** Engine option overrides chosen for this thread (model, effort…); merged over the engine's settings. */
   options?: Record<string, unknown> | null;
   archived: boolean;
+  /** A person brought it back from the archive: it stays open until they put it away again. */
+  restored?: boolean;
   createdAt: number;
   updatedAt: number;
 }

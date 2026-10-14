@@ -133,7 +133,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   attempt    INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 )`
-  }
+  },
+  // A person brought the thread back from the archive; automatic archiving leaves it alone.
+  { version: 13, up: "ALTER TABLE plugin_agent_threads ADD COLUMN restored INTEGER NOT NULL DEFAULT 0" }
 ];
 
 interface ThreadRow {
@@ -149,6 +151,7 @@ interface ThreadRow {
   surface: string;
   permission_mode: string | null;
   archived: number;
+  restored: number;
   external_json: string;
   waivers_json: string;
   created_at: number;
@@ -206,6 +209,7 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   permissionMode: r.permission_mode,
   options: r.options_json ? JSON.parse(r.options_json) : null,
   archived: r.archived === 1,
+  restored: r.restored === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at
 });
@@ -275,8 +279,8 @@ export class AgentStore {
     return (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 1 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[]).map(toThread);
   }
 
-  setArchived(projectId: string, id: string, archived: boolean): void {
-    this.db(projectId).prepare("UPDATE plugin_agent_threads SET archived = ?, updated_at = ? WHERE id = ?").run(archived ? 1 : 0, Date.now(), id);
+  setArchived(projectId: string, id: string, archived: boolean, opts: { restored?: boolean } = {}): void {
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET archived = ?, restored = ?, updated_at = ? WHERE id = ?").run(archived ? 1 : 0, !archived && opts.restored ? 1 : 0, Date.now(), id);
   }
 
   deleteThread(projectId: string, id: string): void {

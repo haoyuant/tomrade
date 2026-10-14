@@ -171,6 +171,38 @@ const run = async () => {
   check("picking it brings it back", ctx.agent.store.thread(alpha.id, filler.id)?.archived === false);
   await sleep(3500);
 
+  // ── archived while on screen: stays until the person moves on, read-only ──
+  await newThread();
+  await send("linger");
+  await sleep(3800);
+  const lingerId = ctx.agent.store.threads(alpha.id)[0].id;
+  const archivedNote = () => $(`[...document.querySelectorAll('.ai-workdir')].some((p) => p.textContent?.includes('Archived.'))`);
+  const inputDisabled = () => $(`document.querySelector('.ai-input')?.disabled ?? null`);
+  // What code link does when a ticket is done: archive, then tell the windows.
+  ctx.agent.archiveThread(alpha.id, lingerId);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await sleep(800);
+  seen = await panel();
+  check("a conversation archived while open stays on screen", seen.lines.join("|") === LINES.join("|"), seen);
+  check("and says it is archived", await archivedNote());
+  check("and takes no more messages", (await inputDisabled()) === true && (await $(`document.querySelector('.ai-send')?.disabled ?? null`)) === true);
+  await press(`[...document.querySelectorAll('.ai-workdir button')].find((b) => b.textContent === 'Bring it back')`);
+  await sleep(800);
+  check("bringing it back opens the composer again", (await inputDisabled()) === false && !(await archivedNote()));
+  check("and marks it as kept by the person", ctx.agent.store.thread(alpha.id, lingerId)?.restored === true);
+  ctx.agent.archiveThread(alpha.id, lingerId);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await sleep(800);
+  await newThread();
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  check("moving to another conversation lets it go", (await panel()).lines.length === 0 && !(await archivedNote()));
+  await threads();
+  const lingerTitle = ctx.agent.store.thread(alpha.id, lingerId)?.title;
+  check("and it is not in the list any more", !(await $(`[...document.querySelectorAll('.menu-row.is-radio')].filter((r) => r.closest('.menu-foot') === null).some((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(lingerTitle)})`)), lingerTitle);
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+
   // ── every step shown, long runs folded, retries said out loud ─────────
   ctx.agent.engine({
     id: "flaky",

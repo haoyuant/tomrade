@@ -63,7 +63,7 @@ export interface WorkdirStatus {
   branch: string | null;
   worktree: string | null;
   problem: string | null;
-  code: "no-checkout" | "no-repos" | "error" | null;
+  code: "no-checkout" | "no-repos" | "finished" | "error" | null;
 }
 
 export interface PlaybookRecommendation {
@@ -392,7 +392,7 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
       ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.store.archivedThreads(projectId, PANEL_SURFACES));
-      ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId));
+      ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
@@ -843,7 +843,7 @@ export class Agent extends Service {
     // The ticket's Method field says what actually runs.
     if (item.playbookId !== selected.id) patch.playbookId = selected.id;
     if (Object.keys(patch).length) items!.update(projectId, itemId, patch, "human");
-    const where = await this.workdir(projectId, thread.id);
+    const where = await this.workdir(projectId, thread.id, { create: true, revive: true });
     if (!where.cwd) throw new Error(where.problem ?? "no working folder for this delivery");
     const ticket = { key: item.key, title: item.title, body: item.body, waitsOn };
     // A terminal agent gets no system prompt from Tomrade, so whatever an
@@ -873,9 +873,10 @@ export class Agent extends Service {
     return true;
   }
 
-  unarchiveThread(projectId: string, threadId: string): boolean {
+  /** `restored`: a person brought it back by hand, so automatic archiving leaves it alone from now on. */
+  unarchiveThread(projectId: string, threadId: string, opts: { restored?: boolean } = {}): boolean {
     if (!this.store.thread(projectId, threadId)) return false;
-    this.store.setArchived(projectId, threadId, false);
+    this.store.setArchived(projectId, threadId, false, opts);
     return true;
   }
 
@@ -887,8 +888,12 @@ export class Agent extends Service {
     return true;
   }
 
-  /** Where the thread's engine works, resolved through the workstream's repository and this machine's checkout of it. */
-  async workdir(projectId: string, threadId: string): Promise<WorkdirStatus> {
+  /**
+   * Where the thread's engine works, resolved through the workstream's repository and this machine's checkout of it.
+   * Only a run or a Start may `create` a missing worktree; looking never does. A finished thread
+   * (archived, or its ticket done) gets its worktree back only through `revive` — a fresh Start.
+   */
+  async workdir(projectId: string, threadId: string, opts: { create?: boolean; revive?: boolean } = {}): Promise<WorkdirStatus> {
     const none: WorkdirStatus = { cwd: null, remote: null, branch: null, worktree: null, problem: null, code: null };
     const thread = this.store.thread(projectId, threadId);
     if (thread?.execution) {
@@ -900,12 +905,22 @@ export class Agent extends Service {
     }
     if (!thread?.boardId) return none;
     const repos = this.ctx.get("repos") as
-      | { workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null }): Promise<{ cwd: string; worktree: string | null; branch: string; repo: { remote: string } } | null> }
+      | { workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null; create?: boolean }): Promise<{ cwd: string | null; worktree: string | null; branch: string; repo: { remote: string } } | null> }
       | undefined;
     if (!repos) return { ...none, problem: "the repos plugin is not loaded", code: "no-repos" };
     try {
-      const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch });
+      // A ticket that is done, or no longer there at all, has nothing left to rebuild.
+      const ticket = thread.itemId ? this.itemOf(projectId, thread.itemId) : null;
+      const finished = thread.archived || (!!thread.itemId && (!ticket || ticket.status === "done"));
+      const create = !!opts.create && (!finished || !!opts.revive);
+      const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch, create });
       if (!view) return none;
+      if (!view.cwd) {
+        // Not there and not made. Unfinished work gets it on its first run; finished work only through a new Start.
+        const refused = finished && !thread.archived && !opts.revive;
+        const key = ticket?.key ?? thread.title;
+        return { ...none, remote: view.repo.remote, branch: view.branch, problem: refused ? this.words().finishedNoWorktree(key) : null, code: refused ? "finished" : null };
+      }
       return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
     } catch (err) {
       const remote = (err as { remote?: string }).remote ?? null;
@@ -998,6 +1013,10 @@ export class Agent extends Service {
   send(projectId: string, threadId: string, input: UserInput): { runId: string } {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
+    if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words().archivedReadOnly);
+    const ticket = thread.itemId && !thread.execution && !this.activeByThread.has(threadId) ? this.itemOf(projectId, thread.itemId) : null;
+    // A done ticket's conversation changes nothing until the ticket is reopened.
+    if (ticket?.status === "done") throw new Error(this.words().reopenToContinue(ticket.key));
     if (thread.execution && this.generalTakeovers.has(`${projectId}:${thread.itemId}`)) throw new Error("Human takeover is in progress; wait for the agent to stop");
     const permission = this.permissions.get(threadId);
     if (permission && input.kind === "answer") {
@@ -1247,6 +1266,10 @@ export class Agent extends Service {
     return { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry };
   }
 
+  private itemOf(projectId: string, itemId: string): Item | null {
+    return (this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined)?.get(projectId, itemId) ?? null;
+  }
+
   /** The ticket a code thread implements, as the engine should hear about it. */
   private ticketOf(thread: ThreadSummary): TurnInput["ticket"] {
     if (!thread.itemId) return undefined;
@@ -1288,7 +1311,7 @@ export class Agent extends Service {
       const engineOptions = this.optionsOf(rc.thread, rc.engine.id);
       const pending = this.store.pending(rc.projectId, rc.threadId);
       // A thread on a workstream runs where that workstream's code is; a missing checkout stops the run before the engine starts.
-      const where = await this.workdir(rc.projectId, rc.threadId);
+      const where = await this.workdir(rc.projectId, rc.threadId, { create: true });
       if (where.problem) throw new Error(where.problem);
       const modes = rc.engine.permissionModes;
       const selectedMode = rc.thread.itemId && modes ? rc.thread.permissionMode ?? modes.default : undefined;

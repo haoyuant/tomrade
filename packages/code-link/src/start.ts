@@ -34,6 +34,10 @@ export interface StartOptions {
   permissionMode?: string;
   /** Start although tickets this one waits on are still open; the agent is told which. */
   allowBlocked?: boolean;
+  /** Carry this conversation on the ticket into the current delivery — a reopened ticket continued where it was talked about. */
+  threadId?: string;
+  /** Headless runs only: the person's own words, sent after the brief. */
+  message?: string;
 }
 
 export type StartResult =
@@ -205,17 +209,26 @@ export class Starter {
 
     // An open thread on this ticket is continued, not duplicated.
     const links = store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === delivery.sequence && l.branch);
-    const previous = links.map((l) => (l.threadId ? agent.store.thread(projectId, l.threadId) : null)).find((t) => !!t) ?? null;
+    const linked = links.map((l) => (l.threadId ? agent.store.thread(projectId, l.threadId) : null)).find((t) => !!t) ?? null;
+    // A conversation from an earlier delivery comes along on this delivery's own branch: the old one is delivered.
+    const named = !linked && opts.threadId ? agent.store.thread(projectId, opts.threadId) : null;
+    const carried = named?.itemId === item.id ? named : null;
+    const previous = linked ?? carried;
     let continued = false;
+    let fresh: string | null = null;
     let thread = previous;
-    let branch = previous?.branch ?? links[0]?.branch ?? "";
+    let branch = carried ? plannedBranch : previous?.branch ?? links[0]?.branch ?? "";
+    const carriedFrom = carried?.branch ?? null;
+    if (carried) agent.store.touchThread(projectId, carried.id, { branch });
+    const uncarry = () => { if (carried) agent.store.touchThread(projectId, carried.id, { branch: carriedFrom }); };
     // An open question takes any message as its answer, and switching engines would drop it: the thread
     // is left as it is and the question handed back, for the person to answer in the conversation.
     const asked = thread && opts.mode === "run" && !agent.activeRuns().some((a) => a.thread.id === thread!.id) ? agent.store.pending(projectId, thread.id)?.question : undefined;
     if (thread) {
       continued = true;
-      // continuing a conversation someone archived brings it back, so the run is not out of sight
-      if (thread.archived) {
+      // continuing a conversation someone archived brings it back, so the run is not out of sight;
+      // and once started again it is put away like any other when the ticket is done
+      if (thread.archived || thread.restored) {
         agent.unarchiveThread(projectId, thread.id);
         thread = agent.store.thread(projectId, thread.id)!;
       }
@@ -227,18 +240,39 @@ export class Starter {
     } else {
       branch = plannedBranch;
       thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}`, surface });
+      fresh = thread.id;
     }
-    if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
-      if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
-      if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
+    // A thread made for this Start and then refused has no link to find it by: it goes, so a retry does not leave it behind.
+    const discard = () => { if (fresh) agent.deleteThread(projectId, fresh); };
+    let where: Awaited<ReturnType<typeof agent.workdir>>;
+    try {
+      if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
+        if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
+        if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
+      }
+      // Start is the person asking for the work, so a finished ticket's worktree may come back here.
+      where = await agent.workdir(projectId, thread.id, { create: true, revive: true });
+    } catch (err) {
+      discard();
+      uncarry();
+      throw err;
     }
-
-    const where = await agent.workdir(projectId, thread.id);
-    if (where.problem || !where.cwd) return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", ...onRepo };
+    if (where.problem || !where.cwd) {
+      discard();
+      uncarry();
+      return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", ...onRepo };
+    }
+    if (carried && where.worktree) {
+      const moved = await this.moveWorktree(where.worktree, branch, repo.defaultBranch);
+      if (moved) {
+        uncarry();
+        return { ok: false, gate: "workdir", message: moved, ...onRepo };
+      }
+    }
     this.host.worktrees.set(thread.id, where.worktree ?? where.cwd);
 
     const now = Date.now();
-    const link = store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch, delivery: delivery.sequence }, { threadId: thread.id, source: continued ? undefined : "start", lastSeenAt: now });
+    const link = store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch, delivery: delivery.sequence }, { threadId: thread.id, source: continued && !carried ? undefined : "start", lastSeenAt: now });
     if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, "human");
 
     const onThread = store.sessions(projectId, { itemId: item.id, delivery: delivery.sequence }).filter((s) => s.threadId === thread!.id);
@@ -265,7 +299,8 @@ export class Starter {
     const basePrompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local)
       : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local });
-    const prompt = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
+    const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
+    const prompt = opts.message?.trim() && opts.mode === "run" ? `${briefed}\n\n${opts.message.trim()}` : briefed;
     // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
     const rules = agent.rules(projectId);
     const terminalPrompt = rules ? `${prompt}\n\n${rulesSection(rules)}` : prompt;
@@ -289,6 +324,19 @@ export class Starter {
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);
     return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  /** A carried conversation's worktree onto the new delivery's branch, from the default branch; the reason it cannot, or null. */
+  private async moveWorktree(worktree: string, branch: string, defaultBranch: string): Promise<string | null> {
+    const git = this.host.git;
+    const head = (await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: worktree, ok: true })).stdout.trim();
+    if (head === branch) return null;
+    if ((await git(["status", "--porcelain"], { cwd: worktree, ok: true })).stdout.trim()) return `${worktree} has uncommitted changes on ${head} — commit or discard them first, so the new delivery starts clean on ${branch}`;
+    await git(["fetch", "--quiet", "origin", defaultBranch], { cwd: worktree, ok: true });
+    const from = (await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${defaultBranch}`], { cwd: worktree, ok: true })).code === 0 ? `origin/${defaultBranch}` : defaultBranch;
+    const exists = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
+    const switched = await git(exists ? ["switch", branch] : ["switch", "-c", branch, from], { cwd: worktree, ok: true });
+    return switched.code === 0 ? null : `could not move ${worktree} onto ${branch}: ${(switched.stderr ?? "").trim() || "git switch failed"}`;
   }
 
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */

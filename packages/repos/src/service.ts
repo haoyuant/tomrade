@@ -53,6 +53,9 @@ export interface WorkdirView {
   branch: string;
 }
 
+/** A thread's worktree that is not on this machine, asked about without leave to make it. */
+export type MissingWorkdir = Omit<WorkdirView, "cwd"> & { cwd: null };
+
 declare module "@tomradex/ipc" {
   interface Channels {
     "repos.list": (projectId: string) => Repo[];
@@ -391,7 +394,9 @@ export class Repos extends Service {
    * detached at the remote's default branch, under the Hub where the user can
    * open it; or the checkout itself when the user chose that for the workstream.
    */
-  async workdirFor(projectId: string, boardId: string, threadId: string, opts: { branch?: string | null } = {}): Promise<WorkdirView | null> {
+  async workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null; create?: true }): Promise<WorkdirView | null>;
+  async workdirFor(projectId: string, boardId: string, threadId: string, opts: { branch?: string | null; create: boolean }): Promise<WorkdirView | MissingWorkdir | null>;
+  async workdirFor(projectId: string, boardId: string, threadId: string, opts: { branch?: string | null; create?: boolean } = {}): Promise<WorkdirView | MissingWorkdir | null> {
     const board = this.db(projectId).prepare("SELECT repo_id, repo_path FROM boards WHERE id = ?").get(boardId) as { repo_id: string | null; repo_path: string } | undefined;
     if (!board?.repo_id) return null;
     const repo = this.get(projectId, board.repo_id);
@@ -408,6 +413,8 @@ export class Repos extends Service {
     const hubDir = this.hub.dir;
     if (!hubDir) throw new Error("Choose the Hub folder first");
     const worktree = path.join(hubDir, "worktrees", slugOf(repo.name), threadId);
+    // Looking never writes: a worktree that is not there is reported, not made.
+    if (opts.create === false && !fs.existsSync(worktree)) return { repo, cwd: null, worktree: null, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
     if (!fs.existsSync(worktree)) {
       const g = new GitFolder(this.runGit, placement.checkout);
       await g.fetch(repo.defaultBranch);
@@ -443,7 +450,7 @@ export class Repos extends Service {
     // A workstream's folder may not exist yet — an empty repository, or one being
     // bootstrapped into a monorepo layout. In Tomrade's own worktree it can be made.
     const cwd = path.join(worktree, sub);
-    fs.mkdirSync(cwd, { recursive: true });
+    if (opts.create !== false) fs.mkdirSync(cwd, { recursive: true });
     return { repo, cwd, worktree, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
   }
 
