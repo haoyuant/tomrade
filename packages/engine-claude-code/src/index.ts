@@ -12,6 +12,8 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
   ctx.effect(() => () => pool.close());
   return {
     ...baseline,
+    // the SDK session takes messages mid-turn through its input queue
+    steers: true,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "auto", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },
@@ -20,7 +22,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     ] },
     async turn(input, io) {
       const options = ClaudeCodeOptions.parse(input.options ?? {});
-      if (options.transport === "cli") return baseline.turn(input, io);
+      if (options.transport === "cli") {
+        // `claude -p` has no way in once a turn runs: what is sent goes back to the queue
+        io.steerTo?.(async () => false);
+        return baseline.turn(input, io);
+      }
       if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
       return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
         () => new ClaudeRuntime(ctx, input), input, io);
