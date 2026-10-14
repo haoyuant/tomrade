@@ -80,6 +80,19 @@ const STARTERS: { fresh: Starter[]; backlog: Starter[] } = {
 
 type Translate = ReturnType<typeof useI18n>["t"];
 
+/** What a slash command may do to the panel. */
+type SlashContext = { newThread: () => void };
+type SlashCommand = { name: string; aliases?: string[]; hint: MessageKey; run: (c: SlashContext) => void };
+
+/** Typed as `/name` at the start of the composer; anything else starting with `/` is sent as written. */
+const SLASH_COMMANDS: SlashCommand[] = [
+  { name: "new", aliases: ["clear"], hint: "agentPanel.slashNew", run: (c) => c.newThread() }
+];
+const slashCommand = (text: string): SlashCommand | undefined => {
+  const name = /^\/(\S+)$/.exec(text.trim())?.[1]?.toLowerCase();
+  return name ? SLASH_COMMANDS.find((c) => c.name === name || c.aliases?.includes(name)) : undefined;
+};
+
 const duration = (t: Translate, ms: number) => {
   const secs = Math.max(0, Math.round(ms / 1000));
   return secs < 60 ? t("agentPanel.secondsShort", { n: secs }) : t("agentPanel.minSecShort", { m: Math.floor(secs / 60), s: String(secs % 60).padStart(2, "0") });
@@ -606,6 +619,9 @@ export function AgentPanel({
   const editQueue = (id: string, fn: (q: Queued[]) => Queued[]) => setQueues((prev) => ({ ...prev, [id]: fn(prev[id] ?? []) }));
   // The run the last send started: until the thread shows it, the run before it says nothing about whether to go on.
   const [sentRun, setSentRun] = useState<string | null>(null);
+  // The slash menu: open while the draft is `/` plus a partial name, until Esc.
+  const [slashClosed, setSlashClosed] = useState(false);
+  const [slashAt, setSlashAt] = useState(0);
   // Where ↑/↓ stands in the history (null: not browsing) and the draft it set aside.
   const browsing = useRef<{ at: number; stash: string } | null>(null);
   // Sent into the running turn and not yet read by the agent; whatever the turn ends without reading joins the queue.
@@ -845,6 +861,23 @@ export function AgentPanel({
     setDraft(text);
     requestAnimationFrame(() => el.setSelectionRange(text.length, text.length));
     return true;
+  };
+
+  const slashTerm = /^\/(\S*)$/.exec(draft)?.[1]?.toLowerCase();
+  const slashMatches = slashTerm === undefined || slashClosed ? [] : SLASH_COMMANDS.filter((c) => [c.name, ...(c.aliases ?? [])].some((n) => n.startsWith(slashTerm)));
+  const slashPick = slashMatches[Math.min(slashAt, slashMatches.length - 1)];
+  const slashContext: SlashContext = {
+    newThread: () => {
+      // a new conversation leaves a running turn behind only if the person says so
+      if (runningRun && !window.confirm(t("agentPanel.slashNewStops"))) return;
+      if (runningRun) cancel.mutate(runningRun.id);
+      setDraft("");
+      void openThread({ boardId }).then((th) => pickThread(th.id));
+    }
+  };
+  const runSlash = (command: SlashCommand) => {
+    setSlashAt(0);
+    command.run(slashContext);
   };
 
   const enqueue = () => {
@@ -1206,6 +1239,25 @@ export function AgentPanel({
             <p className="q-text" title={entry.text}>{entry.text}</p>
           </div>
         ))}
+        {slashPick && (
+          <div className="slash-menu" role="listbox" aria-label={t("agentPanel.slashMenu")}>
+            {slashMatches.map((c) => (
+              <button
+                key={c.name}
+                type="button"
+                role="option"
+                aria-selected={c === slashPick}
+                className={c === slashPick ? "slash-row is-on" : "slash-row"}
+                // keeps the keyboard in the composer
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => runSlash(c)}
+              >
+                <span className="slash-name num">/{c.name}{c.aliases?.length ? ` · /${c.aliases.join(" · /")}` : ""}</span>
+                <span className="slash-hint">{t(c.hint)}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="ai-composer" data-busy={busy || undefined}>
           <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
             addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
@@ -1220,10 +1272,20 @@ export function AgentPanel({
             disabled={archivedNow}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
-            onChange={(e) => { browsing.current = null; setDraft(e.target.value); }}
+            onChange={(e) => { browsing.current = null; setSlashClosed(false); setSlashAt(0); setDraft(e.target.value); }}
             onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;
+              if (slashPick) {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSlashAt((slashMatches.indexOf(slashPick) + (e.key === "ArrowUp" ? -1 : 1) + slashMatches.length) % slashMatches.length);
+                  return;
+                }
+                if (e.key === "Tab") { e.preventDefault(); setDraft(`/${slashPick.name}`); return; }
+                if (e.key === "Escape") { e.preventDefault(); setSlashClosed(true); return; }
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runSlash(slashPick); return; }
+              }
               if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && recall(e.currentTarget, e.key === "ArrowUp" ? -1 : 1)) {
                 e.preventDefault();
                 return;
@@ -1232,7 +1294,9 @@ export function AgentPanel({
               if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
               if (e.key !== "Enter" || e.shiftKey) return;
               e.preventDefault();
-              if (runningRun && (e.metaKey || e.ctrlKey)) steerDraft();
+              const command = slashCommand(draft);
+              if (command) runSlash(command);
+              else if (runningRun && (e.metaKey || e.ctrlKey)) steerDraft();
               else if (runningRun) enqueue();
               else void doSend();
             }}

@@ -365,6 +365,57 @@ const run = async () => {
   check("after a restart ↑ still brings it back", (await draftNow()) === "hist two", await draftNow());
   await setDraft("");
 
+  // ── slash commands ───────────────────────────────────────────────────
+  const menu = () => $(`[...document.querySelectorAll('.slash-menu .slash-row')].map((r) => ({ name: r.querySelector('.slash-name')?.textContent, on: r.getAttribute('aria-selected') === 'true' }))`);
+  const threadCount = () => ctx.agent.store.threads(alpha.id).length;
+  await onEngine("slow");
+  await setDraft("/");
+  await sleep(200);
+  let rows = await menu();
+  await shot("slash-menu.png");
+  check("/ opens the command menu", rows.length >= 1 && rows[0].name === "/new · /clear" && rows[0].on, rows);
+  await setDraft("/cl");
+  await sleep(200);
+  await up();
+  await sleep(150);
+  check("the menu narrows by name or alias, and ↑ moves in it instead of the history", (await menu()).length === 1 && (await draftNow()) === "/cl", await draftNow());
+  await key({ key: "Tab" });
+  await sleep(150);
+  check("Tab completes the command", (await draftNow()) === "/new", await draftNow());
+  await key({ key: "Escape" });
+  await sleep(150);
+  check("Esc closes the menu and keeps the text", (await menu()).length === 0 && (await draftNow()) === "/new");
+  let before = threadCount();
+  const oldThread = ctx.agent.store.threads(alpha.id)[0].id;
+  await key({});
+  await sleep(800);
+  check("/new opens a new conversation", threadCount() === before + 1 && (await draftNow()) === "" && (await panel()).lines.length === 0 && (await asked()).length === 0);
+  check("and the old one stays in the list", ctx.agent.store.threads(alpha.id).some((th) => th.id === oldThread));
+  await setDraft("/clea");
+  await sleep(150);
+  before = threadCount();
+  await key({});
+  await sleep(800);
+  check("Enter on the menu runs the picked command (/clear is /new)", threadCount() === before + 1 && (await draftNow()) === "");
+  await send("/xyz is not a command");
+  await sleep(500);
+  check("an unknown /word goes out as an ordinary message", (await asked()).includes("/xyz is not a command") && (await panel()).working);
+  await $(`window.confirm = () => false;true`);
+  before = threadCount();
+  await setDraft("/new");
+  await key({ key: "Escape" });
+  await key({});
+  await sleep(500);
+  check("/new while a turn runs asks first, and a no leaves everything as it was", threadCount() === before && (await panel()).working && (await draftNow()) === "/new");
+  await $(`window.confirm = () => true;true`);
+  const runningThread = ctx.agent.store.threads(alpha.id)[0].id;
+  await key({});
+  await sleep(1200);
+  check("a yes opens a new conversation", threadCount() === before + 1 && (await draftNow()) === "");
+  await sleep(3500); // the stand-in engine finishes its sleeps before the stop lands
+  check("and the turn it left was stopped", ctx.agent.store.runs(alpha.id, runningThread).at(-1)?.status === "cancelled", ctx.agent.store.runs(alpha.id, runningThread).at(-1)?.status);
+  await shot("slash.png");
+
   // ── the thread list: searchable, says what runs, keeps the archive ───
   for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
   await newThread();
