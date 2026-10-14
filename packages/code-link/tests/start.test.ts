@@ -1219,3 +1219,31 @@ describe("starting a General ticket", () => {
     dispose();
   });
 });
+
+it("lets the assistant offer Start as a card instead of doing the work itself", async () => {
+  const { ctx, project, agent, ticket } = await machine(null);
+  const item = ticket("Fix the login form");
+  const results: unknown[] = [];
+  ctx.agent.engine({
+    id: "offering",
+    title: "Offering",
+    author: "ai:test",
+    available: async () => ({ ok: true }),
+    async turn(_input, io) {
+      for (const key of [item.key, "TOM-999"]) results.push(await io.tools.execute("offer_start", { key }).catch((err: Error) => err.message));
+      return { stop: "end" };
+    }
+  });
+  try {
+    expect(ctx.tools.get("offer_start")?.mcp).toBe(false);
+    const thread = agent.newThread(project.id, "offering");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "fix the login form" });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(results).toEqual([expect.objectContaining({ offered: item.key }), expect.stringContaining("no ticket TOM-999")]);
+    const cards = agent.thread(project.id, thread.id).messages.flatMap((m) => (m.block.type === "card" ? [m.block] : []));
+    expect(cards).toEqual([expect.objectContaining({ schema: "start", data: { itemId: item.id, key: item.key, title: "Fix the login form" } })]);
+    expect(ctx.items.get(project.id, item.id)?.status).toBe("todo");
+  } finally {
+    await ctx.fiber.dispose();
+  }
+});

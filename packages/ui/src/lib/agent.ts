@@ -66,13 +66,17 @@ export const methodWords = (t: (key: MessageKey) => string, id: string, entry?: 
 
 export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
 
+/** The engine answering for an id a thread, run or setting holds — itself, or the engine that took it in. */
+export const findEngine = (engines: EngineView[] | undefined, id: string | null | undefined): EngineView | undefined =>
+  id ? (engines?.find((e) => e.id === id) ?? engines?.find((e) => e.includes?.includes(id))) : undefined;
+
 /** An engine with no capabilities conducts only the threads its plugin opens — the troubleshooter's: no list offers it. */
 export const conducts = (engine: Pick<EngineView, "capabilities">): boolean => engine.capabilities.length > 0;
 
 export const usePlaybooks = (projectId?: string) =>
   useQuery({ queryKey: agentKeys.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });
 
-const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
+const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
 
 /**
  * Surfaces playbook id collisions the user has not ruled on: one toast per id,

@@ -61,7 +61,8 @@ const run = async () => {
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work, locale: "en-US" },
     // This machine may have a local agent signed in, which would make the screen unnecessary.
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
+    // Tomrade hands its backlog turns to the built-in pi here too, so the turn below runs the bundled agent.
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "engine-tomrade", config: { backlog: "pi-builtin" } }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
@@ -114,7 +115,7 @@ const run = async () => {
   check("as the first profile, on a model the provider lists", profiles[0]?.id === "deepseek" && profiles[0].model === "deepseek-v4-flash" && profiles[0].apiKey === "sk-good-from-shell-1a2b", profiles);
   const done = await texts('[data-testid="setup-done"] .setup-row');
   const bundled = fs.existsSync(path.join(dir, "../vendor/pi/dist/bundle/cli.js"));
-  check("it says what that unlocked", done.includes("Assistant: Tomrade loop") && done.includes("Planning uses: DeepSeek") && (!bundled || done.includes("Start hands tickets to: Built-in agent")), done);
+  check("it says what that unlocked", done.includes("Assistant: Tomrade") && done.includes("Planning uses: DeepSeek") && (!bundled || done.includes("Start hands tickets to: Tomrade")), done);
   check("and points at the sample project next", (await text('[data-testid="setup-open-tour"]')) === "Open the sample project" && (await has('[data-testid="setup-continue"]')));
   await shot("setup-03-done");
   await click('[data-testid="setup-open-tour"]');
@@ -128,10 +129,11 @@ const run = async () => {
   } else {
     // Pi talks to the model itself, past this process's fetch: point the profile at the stand-in.
     ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ ...profiles[0], baseURL: `${fake}/v1` }], roles: { worker: "" } } });
-    const view = (await ctx.agent.engineViews(true)).find((e) => e.id === "pi-builtin");
-    check("the built-in agent is ready with nothing installed", view?.ok === true, view);
+    // Tomrade answers for the built-in pi; "code" among what it can do means pi itself is ready.
+    const view = (await ctx.agent.engineViews(true)).find((e) => e.id === "tomrade");
+    check("the built-in agent is ready with nothing installed", view?.ok === true && view.capabilities.includes("code"), view);
     const project = ctx.projects.list()[0];
-    const thread = ctx.agent.newThread(project.id, "pi-builtin");
+    const thread = ctx.agent.newThread(project.id, "tomrade");
     const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "How many items are there?" });
     await wait(() => ctx.agent.store.run(project.id, runId)?.status !== "running", "built-in run", 600);
     const runDone = ctx.agent.store.run(project.id, runId);

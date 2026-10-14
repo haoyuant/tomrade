@@ -1410,7 +1410,7 @@ export class CodeLink extends Service {
     if (!session.threadId) return;
     const agent = this.ctx.get("agent");
     if (!agent?.store.thread(session.projectId, session.threadId)) return;
-    const who = agent.codeEngines().find((engine) => engine.id === session.agent)?.title ?? session.agent;
+    const who = agent.codeEngines().find((engine) => engine.id === agent.answering(session.agent))?.title ?? session.agent;
     const text = moment.kind === "said" ? `${who}: ${moment.text}` : moment.kind === "failed" ? `${who} stopped: ${moment.text}` : `${who} session ended${moment.text ? ` (${moment.text})` : ""}.`;
     const message = agent.store.appendMessage(session.projectId, session.threadId, "system", { type: "note", text }, null);
     this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });

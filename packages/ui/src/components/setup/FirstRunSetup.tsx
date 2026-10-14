@@ -5,6 +5,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { useProjects, useSettings } from "~/lib/queries";
+import { findEngine } from "~/lib/agent";
 import { setupRows, useSetup } from "~/lib/setup";
 import { DetectedModels } from "./DetectedModels";
 import { LocalAgentSetup } from "./LocalAgentSetup";
@@ -24,7 +25,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   const [settings, setSettings] = useState<{ engine?: string } | null>(null);
   const names = (list: { title: string }[]) => list.map((e) => e.title).join(" · ");
   // The engine the panel will open threads on: the chosen default when it can run, else the first that can.
-  const assistant = state ? (state.assistant.find((e) => e.id === preferred) ?? state.assistant[0]) : undefined;
+  const assistant = state ? (findEngine(state.assistant, preferred) ?? state.assistant[0]) : undefined;
   const sample = projects.data?.find((p) => p.sample);
 
   return (

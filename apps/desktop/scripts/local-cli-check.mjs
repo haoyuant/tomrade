@@ -120,7 +120,7 @@ const run = async () => {
   check("the dialog opens", await wait(() => has('[data-testid="start-dialog"]'), "start dialog"));
   const options = await $(`[...document.querySelectorAll('#stEngine option')].map((o) => o.textContent)`);
   check("each agent says why in a few words, not the CLI's error", options.includes("Codex — Not signed in") && options.includes("Claude Code — Not signed in"), options);
-  check("the built-in agent comes first, waiting for a model", options[0] === "Built-in agent — No model connected", options);
+  check("Tomrade comes first, waiting for a model", options[0] === "Tomrade — No model connected", options);
   await $(`(() => { const s = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'claude-code'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   check("and the chosen one is explained under the list", (await text('[data-testid="start-engine-not-ready"]'))?.startsWith("Claude Code isn't ready: Not signed in."), await text('[data-testid="start-engine-not-ready"]'));
   await shot("local-cli-01-start-not-ready");
@@ -190,7 +190,7 @@ const run = async () => {
   await ctx.agent.engineViews(true);
   await escape();
   await $(`location.hash = '#/p/${project.id}';true`);
-  const loopTitle = await titleOf("loop");
+  const loopTitle = await titleOf("tomrade");
   check("the panel's engine chip opens its picker", await wait(() => has('.ai-knobs .chip-btn[title="Who conducts this thread"]'), "engine chip") && (await openEnginePicker()));
   check("an engine with no model is greyed and says so", await wait(async () => (await rowPart(loopTitle, ".m-sub")) === "Not set up yet · No model connected", "loop row"), await rowPart(loopTitle, ".m-sub"));
   check("a signed-out agent is greyed and says why", (await $(`${engineRow("Claude Code")}?.classList.contains('is-unready')`)) && (await rowPart("Claude Code", ".m-sub")) === "Not set up yet · Not signed in", await rowPart("Claude Code", ".m-sub"));
@@ -255,7 +255,9 @@ const run = async () => {
   await openEnginePicker();
   check("the built-in engine can be picked", await wait(async () => (await $(`${engineRow(loopTitle)}?.classList.contains('is-unready')`)) === false, "loop ready"));
   if (fs.existsSync(path.join(dir, "../vendor/pi/dist/bundle/cli.js"))) {
-    check("and so can the built-in agent, with nothing installed", (await $(`${engineRow("Built-in agent")}?.classList.contains('is-unready')`)) === false, await rowPart("Built-in agent", ".m-sub"));
+    // Tomrade answers for the bundled pi: Start's work is open to it once pi itself is ready.
+    const tomrade = (await ctx.agent.engineViews()).find((e) => e.id === "tomrade");
+    check("and it takes Start's work too, with nothing installed", tomrade?.capabilities.includes("code") === true, tomrade);
   }
   check("an agent found only in WSL is greyed too", (await rowPart("Codex", ".m-sub")) === "Not set up yet · Only installed in WSL", await rowPart("Codex", ".m-sub"));
   const order = await $(`[...document.querySelectorAll('.menu-row.is-radio')].map((r) => r.classList.contains('is-unready'))`);

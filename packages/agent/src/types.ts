@@ -396,6 +396,8 @@ export interface EngineAvailability {
   need?: EngineNeed;
   /** Present for engines that drive a CLI installed on this machine. */
   cli?: LocalCliStatus;
+  /** What it can take on right now, when only part of it is ready; absent means all its capabilities. */
+  capabilities?: EngineCapability[];
 }
 
 /**
@@ -431,6 +433,11 @@ export interface Engine {
   author: Author;
   /** Absent means `["backlog"]`. */
   capabilities?: EngineCapability[];
+  /**
+   * Engines this one runs in their place: pickers list it alone, and a thread
+   * or setting naming one of them is answered by this engine.
+   */
+  includes?: string[];
   /**
    * No model judges what the user types: free text while a workflow waits is
    * taken as that workflow's answer. A model engine instead reads the reply with
@@ -495,6 +502,8 @@ export interface EngineView {
   usesModels?: boolean;
   steers?: boolean;
   setup?: EngineSetup;
+  /** Engines it answers for: a thread, run or setting may still name one of them. */
+  includes?: string[];
 }
 
 export interface WorkflowQuestion {

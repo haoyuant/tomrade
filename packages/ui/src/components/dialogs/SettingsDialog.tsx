@@ -3,7 +3,7 @@ import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tom
 import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
 import { useQueryClient } from "@tanstack/react-query";
-import { agentKeys, conducts, useEngines, usePlaybooks } from "~/lib/agent";
+import { agentKeys, conducts, findEngine, useEngines, usePlaybooks } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomradex/settings";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -630,7 +630,7 @@ const PRESETS = [
 ];
 
 const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
-const EMPTY_AGENT: AgentSettings = { defaultEngine: "loop", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
+const EMPTY_AGENT: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
 function AssistantPane({
@@ -765,7 +765,7 @@ function AssistantPane({
             <EngineRow
               key={e.id}
               engine={e}
-              isDefault={agent.defaultEngine === e.id}
+              isDefault={findEngine(engines.data, agent.defaultEngine)?.id === e.id}
               focused={focusEngine === e.id}
               onMakeDefault={() => saveAgent({ ...agent, defaultEngine: e.id })}
               options={(agent.engines[e.id] ?? {}) as Record<string, unknown>}

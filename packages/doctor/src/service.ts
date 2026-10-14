@@ -380,7 +380,7 @@ export class Doctor extends Service {
 
   /** Agents that could look into it: ready, able to hold a conversation, and not the one that failed. */
   async investigators(topic: Topic): Promise<string[]> {
-    const engines = this.ctx.agent.allEngines().filter((e) => e.id !== ENGINE_ID && e.id !== topic.engineId && !e.terminalOnly && (e.capabilities ?? ["backlog"]).includes("backlog"));
+    const engines = this.ctx.agent.allEngines().filter((e) => e.id !== ENGINE_ID && e.id !== (topic.engineId && this.ctx.agent.answering(topic.engineId)) && !e.terminalOnly && (e.capabilities ?? ["backlog"]).includes("backlog"));
     const states = await Promise.all(engines.map(async (e) => ({ id: e.id, ok: (await e.available().catch(() => null))?.ok === true })));
     return states.filter((s) => s.ok).map((s) => s.id);
   }
