@@ -488,7 +488,12 @@ export function AgentPanel({
   const boardsQ = useBoards(projectId);
   const accessories = useAssistantAccessories();
   const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
-  const threadId = (chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null) ?? threads.data?.[0]?.id ?? null;
+  // A conversation archived while on screen (its ticket finished) stays until the person opens another or the app restarts.
+  const shown = useRef<string | null>(null);
+  const listed = chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null;
+  const lingering = !listed && chosenThread && shown.current === chosenThread ? chosenThread : null;
+  const threadId = listed ?? lingering ?? threads.data?.[0]?.id ?? null;
+  shown.current = threadId;
   // Whatever follows the conversation on screen — the desktop pet — is told which one this is.
   useEffect(() => {
     if (threadId) void invoke("agent.showing", threadId).catch(() => {});
@@ -557,7 +562,8 @@ export function AgentPanel({
 
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
   const busy = !!runningRun || send.isPending || answer.isPending || uploading;
-  const blocked = !!workdirProblem;
+  const archivedNow = !!detail.data?.thread.archived;
+  const blocked = !!workdirProblem || archivedNow;
   const pending = detail.data?.pending ?? null;
   // Stable between renders, so a streamed reply re-renders its own line and not every row above it.
   const runs = useMemo(() => new Map((detail.data?.runs ?? []).map((r) => [r.id, r])), [detail.data?.runs]);
@@ -1002,13 +1008,14 @@ export function AgentPanel({
           <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
             addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
           }} />
-          <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
+          <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || archivedNow || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
           {/* typing stays open while the agent works — the next message can wait in here; only sending waits */}
           <textarea
             ref={composer}
             className="ai-input"
             rows={1}
-            placeholder={pending ? t("agentPanel.answerPlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : pending ? t("agentPanel.answerPlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+            disabled={archivedNow}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -1040,6 +1047,14 @@ export function AgentPanel({
           {attachments.map((file, index) => <AgentAttachment key={`${file.name}-${index}`} file={file} disabled={busy} remove={() => setAttachments(previous => previous.filter((_, i) => i !== index))} />)}
         </div>}
         {attachmentError && <p className="ai-error" role="alert">{attachmentError}</p>}
+        {archivedNow && threadId && (
+          <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span>{t("agentPanel.archivedHere")}</span>
+            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={unarchive.isPending} onClick={() => unarchive.mutate(threadId)}>
+              {t("agentPanel.restoreThread")}
+            </button>
+          </p>
+        )}
         {threadBoardId && (
           <p className={workdirProblem ? "ai-workdir is-problem meta-txt dense" : "ai-workdir meta-txt dense num"} style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             {workdirProblem ? (

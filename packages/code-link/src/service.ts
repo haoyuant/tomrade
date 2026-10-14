@@ -544,21 +544,31 @@ export class CodeLink extends Service {
     return this.store.sessions(projectId, itemId ? { itemId } : {});
   }
 
+  /**
+   * A finished ticket's work is put away once: its sessions end, and its threads — with a session or
+   * without one — go to the archive. A running thread waits for its run to end; a thread a person
+   * brought back from the archive stays where they put it.
+   */
   private archiveCompletedSessions(projectId: string): void {
     const agent = this.ctx.get("agent");
     if (!agent) return;
     const running = new Set(agent.activeRuns().map(({ thread }) => thread.id));
+    const done = (itemId: string) => this.ctx.items.get(projectId, itemId)?.status === "done";
+    const sessions = this.store.sessions(projectId);
     let changed = false;
-    for (const session of this.store.sessions(projectId)) {
+    for (const session of sessions) {
       // Shared sessions stay available while any associated ticket still needs work.
-      if (!session.itemIds.length || !session.itemIds.every(id => this.ctx.items.get(projectId, id)?.status === "done")) continue;
+      if (session.state === "ended" || !session.itemIds.length || !session.itemIds.every(done)) continue;
       if (session.threadId && running.has(session.threadId)) continue;
       this.sessions.end(projectId, session.id, "ended", true);
-      const thread = session.threadId ? agent.store.thread(projectId, session.threadId) : null;
-      if (thread && !thread.archived) {
-        agent.archiveThread(projectId, thread.id);
-        changed = true;
-      }
+      changed = true;
+    }
+    for (const thread of agent.store.threads(projectId, null)) {
+      if (!thread.itemId || thread.restored || running.has(thread.id)) continue;
+      const shared = sessions.filter((session) => session.threadId === thread.id).flatMap((session) => session.itemIds);
+      if (![thread.itemId, ...shared].every(done)) continue;
+      agent.archiveThread(projectId, thread.id);
+      changed = true;
     }
     if (changed) this.notify(projectId);
   }

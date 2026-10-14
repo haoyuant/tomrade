@@ -207,6 +207,7 @@ export class Starter {
     const links = store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === delivery.sequence && l.branch);
     const previous = links.map((l) => (l.threadId ? agent.store.thread(projectId, l.threadId) : null)).find((t) => !!t) ?? null;
     let continued = false;
+    let fresh: string | null = null;
     let thread = previous;
     let branch = previous?.branch ?? links[0]?.branch ?? "";
     // An open question takes any message as its answer, and switching engines would drop it: the thread
@@ -214,8 +215,9 @@ export class Starter {
     const asked = thread && opts.mode === "run" && !agent.activeRuns().some((a) => a.thread.id === thread!.id) ? agent.store.pending(projectId, thread.id)?.question : undefined;
     if (thread) {
       continued = true;
-      // continuing a conversation someone archived brings it back, so the run is not out of sight
-      if (thread.archived) {
+      // continuing a conversation someone archived brings it back, so the run is not out of sight;
+      // and once started again it is put away like any other when the ticket is done
+      if (thread.archived || thread.restored) {
         agent.unarchiveThread(projectId, thread.id);
         thread = agent.store.thread(projectId, thread.id)!;
       }
@@ -227,14 +229,26 @@ export class Starter {
     } else {
       branch = plannedBranch;
       thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}`, surface });
+      fresh = thread.id;
     }
-    if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
-      if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
-      if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
+    // A thread made for this Start and then refused has no link to find it by: it goes, so a retry does not leave it behind.
+    const discard = () => { if (fresh) agent.deleteThread(projectId, fresh); };
+    let where: Awaited<ReturnType<typeof agent.workdir>>;
+    try {
+      if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
+        if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
+        if (opts.permissionMode && opts.mode === "run") agent.setPermissionMode(projectId, thread.id, opts.permissionMode);
+      }
+      // Start is the person asking for the work, so a finished ticket's worktree may come back here.
+      where = await agent.workdir(projectId, thread.id, { create: true, revive: true });
+    } catch (err) {
+      discard();
+      throw err;
     }
-
-    const where = await agent.workdir(projectId, thread.id);
-    if (where.problem || !where.cwd) return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", ...onRepo };
+    if (where.problem || !where.cwd) {
+      discard();
+      return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", ...onRepo };
+    }
     this.host.worktrees.set(thread.id, where.worktree ?? where.cwd);
 
     const now = Date.now();

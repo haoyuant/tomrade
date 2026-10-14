@@ -77,6 +77,9 @@ if (window.tomrade) {
   });
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: ["codeLink", projectId] });
+    // A finished ticket's conversations may have just been archived.
+    void queryClient.invalidateQueries({ queryKey: ["agent", "threads", projectId] });
+    void queryClient.invalidateQueries({ queryKey: ["agent", "thread", projectId] });
     void queryClient.invalidateQueries({ queryKey: ["contributions"] });
     invalidateProject(queryClient, projectId);
   });

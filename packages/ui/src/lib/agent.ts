@@ -25,7 +25,14 @@ export const useArchivedThreads = (projectId: string, enabled: boolean) =>
 export function useUnarchiveThread(projectId: string) {
   const qc = useQueryClient();
   const report = useErrorToast();
-  return useMutation({ onError: report, mutationFn: (threadId: string) => invoke("agent.unarchiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) }) });
+  return useMutation({
+    onError: report,
+    mutationFn: (threadId: string) => invoke("agent.unarchiveThread", projectId, threadId),
+    onSuccess: (_ok, threadId) => {
+      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, threadId) });
+    }
+  });
 }
 
 // Events only patch the thread on screen, so a cached one missed whatever its run did meanwhile
