@@ -226,6 +226,22 @@ export interface AssistantAccessory {
   animations: Record<string, AccessoryAnimation>;
 }
 
+export interface AssistantWidgetContent {
+  text: string;
+  detail?: string;
+  progress?: number;
+  actions?: { title: string; command: string }[];
+}
+export interface AssistantWidget {
+  id: string;
+  title: string;
+  render(): AssistantWidgetContent | null | Promise<AssistantWidgetContent | null>;
+}
+export interface AssistantWidgetView extends AssistantWidgetContent {
+  id: string;
+  title: string;
+}
+
 declare module "cordis" {
   interface Context {
     contributions: Contributions;
@@ -241,6 +257,7 @@ declare module "@tomradex/ipc" {
     "contributions.sections": (projectId: string, itemId: string) => SectionView[];
     "contributions.graphs": () => GraphInfo[];
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
+    "contributions.assistantWidgets": () => AssistantWidgetView[];
     "contributions.assistantAccessories": () => AssistantAccessory[];
     "contributions.sidebarModules": (projectId: string) => SidebarModuleView[];
   }
@@ -258,6 +275,7 @@ export class Contributions extends Service {
   private statusMap = new Map<string, StatusItem>();
   private sectionMap = new Map<string, Section>();
   private graphMap = new Map<string, GraphSpec>();
+  private assistantWidgetMap = new Map<string, AssistantWidget>();
   private assistantAccessoryMap = new Map<string, AssistantAccessory>();
   private sidebarModuleMap = new Map<string, SidebarModule>();
   private notify: () => void = () => {};
@@ -275,6 +293,7 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.sections", (projectId, itemId) => ctx.contributions.sectionsFor(projectId, itemId));
       ctx.ipc.handle("contributions.graphs", () => ctx.contributions.graphs());
       ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
+      ctx.ipc.handle("contributions.assistantWidgets", () => ctx.contributions.assistantWidgets());
       ctx.ipc.handle("contributions.assistantAccessories", () => ctx.contributions.assistantAccessories());
       ctx.ipc.handle("contributions.sidebarModules", (projectId) => ctx.contributions.sidebarModules(projectId));
       this.notify = () => ctx.ipc.send("contributions.changed");
@@ -302,6 +321,18 @@ export class Contributions extends Service {
 
   graph(def: GraphSpec): () => void {
     return this.add(this.graphMap, def, "graph");
+  }
+
+  assistantWidget(def: AssistantWidget): () => void {
+    return this.add(this.assistantWidgetMap, def, "assistantWidget");
+  }
+
+  async assistantWidgets(): Promise<AssistantWidgetView[]> {
+    const rows = await Promise.all([...this.assistantWidgetMap.values()].map(async (w) => {
+      const content = await this.isolated(`assistant widget ${w.id}`, () => w.render(), null);
+      return content ? { ...content, id: w.id, title: w.title } : null;
+    }));
+    return rows.filter((row): row is AssistantWidgetView => row !== null);
   }
 
   assistantAccessory(def: AssistantAccessory): () => void {

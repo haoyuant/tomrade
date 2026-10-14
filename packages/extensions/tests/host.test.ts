@@ -24,6 +24,21 @@ async function world(plugin: Parameters<typeof sdk>[0]) {
 }
 
 describe("the extension host", () => {
+  it("isolates assistant widget failures, scopes their commands, and removes them on unload", async () => {
+    const { ctx, fiber } = await world(definePlugin({
+      inject: ["contributions"],
+      async apply(p) {
+        await p.contributions.assistantWidget({ id: "demo.timer", title: "Timer", render: () => ({ text: "25:00", actions: [{ title: "Start", command: "demo.start" }] }) });
+        await p.contributions.assistantWidget({ id: "demo.hidden", title: "Hidden", render: () => null });
+        await p.contributions.assistantWidget({ id: "demo.broken", title: "Broken", render: () => { throw new Error("boom"); } });
+        await p.contributions.assistantWidget({ id: "demo.foreign", title: "Foreign", render: () => ({ text: "bad", actions: [{ title: "Other", command: "other.start" }] }) });
+      }
+    }));
+    expect(await ctx.contributions.assistantWidgets()).toEqual([{ id: "demo.timer", title: "Timer", text: "25:00", actions: [{ title: "Start", command: "demo.start" }] }]);
+    await fiber.dispose();
+    expect(await ctx.contributions.assistantWidgets()).toEqual([]);
+  });
+
   it("answers every call with a Promise and writes as the plugin, stamped with its namespace", async () => {
     let seen: PluginContext | null = null;
     const { oplog, project, board } = await world(

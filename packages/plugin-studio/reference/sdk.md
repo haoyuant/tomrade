@@ -54,13 +54,14 @@ await ctx.tools.register(defineTool({
 - `badge({ id, compute: async (items, {projectId}) => ({ [itemId]: [{ id, label, tone: "faint"|"neutral"|"strong", title? }] }) })`
 - `statusItem({ id, text: async ({projectId}) => string | null })`
 - `section({ id, title, render: async (item) => ({ rows: [{ label, value, mono?, href?, command?, state? }], text? }) | null })`
+- `assistantWidget({ id, title, render: () => ({ text, detail?, progress?, actions: [{ title, command }] }) | null })` — compact row below the pet; polls once per second, commands must belong to your namespace.
 - `graph({ id, title, icon?, compute: async (items) => [{ from, to, tone?, title? }] })`
 
 ## agent
 `ctx.agent.playbook({ id: `${ns}.how`, title, when: "one line", body: "markdown steps", tools: [...] })`.
 
 ## surfaces
-`ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, onMessage })` → handle with `setState`, `close`. Documents are files in the package (put them in `static/`).
+`ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, onMessage })` → handle with `setState`, `close`. Documents are files in the package (put them in `static/`).
 
 ## events and lifetime
 `ctx.on("write", e => …)` (`{projectId, entity, op, id, by, via}`) · `ctx.on("project.opened", id => …)` · `ctx.on("settings.changed", …)`

@@ -1523,6 +1523,15 @@ the mono face, and `state` puts a mark before the value — `live` breathes,
 `waiting` blinks, `ended`/`lost` are hollow — still declarative, still drawn by
 the renderer.
 
+An **assistant widget** is a compact row below the pet, in normal layout flow
+so it cannot cover the pet. Extensions register
+`ctx.contributions.assistantWidget({ id: "hello.timer", title: "Timer", render: () => ({ text: "25:00", detail: "Focus", progress: 0.25, actions: [{ title: "Start", command: "hello.start" }] }) })`.
+`render` may be async or return null to hide the row; it is isolated with the
+same two-second limit as other extension renderers. The renderer polls once
+per second while the panel is visible. Progress is a fraction from 0 to 1;
+actions run registered commands in the plugin's namespace as the person.
+Widgets and their callbacks disappear when the plugin unloads.
+
 An `animated-pet` **assistant accessory** reserves the renderer-owned stage
 directly above the composer. Each state is a still or animated image (GIF,
 WebP, APNG, PNG, JPEG or AVIF) given as a URL with its MIME `type`; the
@@ -1574,6 +1583,9 @@ ctx.inject(["ipc"], (ctx) => {
 The renderer calls `invoke("hello.count", projectId)` and gets the declared
 return type. Every renderer write is a human write; channel handlers pass
 `"human"` as the author.
+
+Surface documents that need keyboard input can pass `focusable: true` to
+`ctx.surfaces.open`. The default is false for passive desktop widgets.
 
 ## Auxiliary desktop surfaces
 

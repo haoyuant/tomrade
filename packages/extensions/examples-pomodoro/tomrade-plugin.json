@@ -1,0 +1,47 @@
+{
+  "id": "local/pomodoro",
+  "version": "0.1.0",
+  "title": "Pomodoro · 番茄钟",
+  "description": "宠物区番茄钟，可拖动桌面浮窗，自定义专注与休息规则。",
+  "license": "MIT",
+  "author": {
+    "name": "local"
+  },
+  "engines": {
+    "sdk": "^0.2.1"
+  },
+  "main": "dist/index.js",
+  "permissions": {
+    "network": [],
+    "fs": "none",
+    "exec": false
+  },
+  "authoredBy": "agent",
+  "inject": [
+    "settings",
+    "contributions",
+    "tools"
+  ],
+  "optional": [
+    "surfaces"
+  ],
+  "contributes": {
+    "tools": [
+      "pomodoro_control",
+      "pomodoro_status"
+    ],
+    "commands": [
+      "pomodoro.mode",
+      "pomodoro.reset",
+      "pomodoro.settings",
+      "pomodoro.skip",
+      "pomodoro.toggle"
+    ],
+    "assistantWidgets": [
+      "pomodoro.timer"
+    ],
+    "settings": [
+      "pomodoro"
+    ]
+  }
+}
