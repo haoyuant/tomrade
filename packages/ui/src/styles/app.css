@@ -1417,6 +1417,17 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .ai-input:focus-visible { box-shadow: none; }
 .ai-input::placeholder { color: var(--meta); }
 .ai-send:disabled { opacity: 0.45; cursor: default; }
+/* messages waiting for the running turn, stacked above the composer */
+.ai-queued {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: 4px 4px 4px 10px; border: 1px dashed var(--border); border-radius: var(--radius-md);
+  font-size: var(--text-sm); color: var(--fg);
+}
+.ai-queued .q-state { flex-shrink: 0; font-size: 11px; color: var(--accent); }
+.ai-queued[data-held] .q-state { color: var(--meta); }
+.ai-queued .q-text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-queued .q-edit { flex: 1; min-width: 0; resize: none; font-size: var(--text-sm); }
+.ai-queued .q-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 /* the knobs under the composer sit right; the context chip owns the left */
 .ai-knobs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
 .chip-btn.is-quiet { color: var(--meta); }

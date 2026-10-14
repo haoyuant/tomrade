@@ -141,16 +141,95 @@ const run = async () => {
   await key({ shiftKey: true });
   await sleep(150);
   check("Shift+Enter does not send", (await draftNow()) === "the next message\nwith a second line");
+  const queued = () => $(`[...document.querySelectorAll('.ai-queued')].map((q) => ({ text: q.querySelector('.q-text')?.textContent ?? null, held: q.hasAttribute('data-held') }))`);
+  const asked = () => $(`[...document.querySelectorAll('.ai-scroll .turn-user p')].map((p) => p.textContent)`);
   await key({});
   await sleep(300);
-  check("Enter while the run works keeps the draft for later", (await draftNow()) === "the next message\nwith a second line" && (await panel()).working);
+  let q = await queued();
+  check("Enter while the run works queues the message", (await draftNow()) === "" && q.length === 1 && q[0].text === "the next message\nwith a second line" && !q[0].held && (await panel()).working, q);
+  check("and the composer says what Enter does now", /Queue a message/.test(await $(`document.querySelector('.ai-input').placeholder`)));
   await $(`(() => { const b = document.createElement('input'); b.id = 'elsewhere'; document.body.appendChild(b); b.focus(); return true; })()`);
   await sleep(4200);
-  check("a run that ends leaves the keyboard where the person put it", (await $(`document.activeElement?.id`)) === "elsewhere" && !(await panel()).working);
+  check("once the turn ends, the queued message goes out by itself", (await queued()).length === 0 && (await asked()).includes("the next message\nwith a second line") && (await panel()).working, await asked());
+  check("and the keyboard stays where the person put it", (await $(`document.activeElement?.id`)) === "elsewhere");
+
+  // ── several waiting, edited, removed ─────────────────────────────────
+  await setDraft("queued A");
   await key({});
-  await sleep(400);
-  check("once it has ended, Enter sends the waiting draft", (await draftNow()) === "" && (await panel()).working);
+  await setDraft("queued B");
+  await key({});
+  await sleep(200);
+  check("several messages can wait in order", (await queued()).map((x) => x.text).join("|") === "queued A|queued B", await queued());
+  await shot("queued.png");
+  await press(`document.querySelectorAll('.ai-queued')[1].querySelector('button[aria-label="Edit queued message"]')`);
+  await sleep(200);
+  await $(`(() => { const i = document.querySelector('.ai-queued .q-edit'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'queued B, edited'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
+  await sleep(200);
+  await press(`document.querySelectorAll('.ai-queued')[0].querySelector('button[aria-label="Remove queued message"]')`);
+  await sleep(200);
+  check("a queued message can be edited and another removed", (await queued()).map((x) => x.text).join("|") === "queued B, edited", await queued());
+  await sleep(4300);
+  let said = await asked();
+  check("what is left goes out after the turn", said.includes("queued B, edited") && !said.includes("queued A") && (await queued()).length === 0, said);
   await sleep(4000);
+
+  // ── a stop holds the queue ───────────────────────────────────────────
+  await send("fifth");
+  await sleep(400);
+  await setDraft("after the stop");
+  await key({});
+  await sleep(200);
+  await $(`document.querySelector('.ai-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  await sleep(3500); // the stand-in engine finishes its sleeps before the stop lands
+  q = await queued();
+  await shot("queue-held.png");
+  check("Esc stops the turn and the queue stays, held", !(await panel()).working && q.length === 1 && q[0].held && !(await asked()).includes("after the stop"), q);
+  await press(`[...document.querySelectorAll('.ai-queued button')].find((b) => b.textContent === 'Send now')`);
+  await sleep(500);
+  check("a held message can be sent by hand", (await asked()).includes("after the stop") && (await queued()).length === 0 && (await panel()).working);
+  await sleep(4000);
+
+  // ── a failure or a question holds it too ─────────────────────────────
+  ctx.agent.engine({
+    id: "mixed",
+    title: "Mixed",
+    author: "ai:mixed",
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      const text = input.input.kind === "text" ? input.input.text : "";
+      await sleep(900);
+      if (text.startsWith("fail")) return { stop: "error", error: "boom" };
+      if (text.startsWith("ask")) {
+        await io.tools.execute("ask_user", { question: "Which one?", options: ["A", "B"] });
+        return { stop: "asked" };
+      }
+      io.emit({ type: "text", text: "fine" });
+      return { stop: "end" };
+    }
+  });
+  await newThread();
+  await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(300);
+  ctx.agent.setEngine(alpha.id, ctx.agent.store.threads(alpha.id)[0].id, "mixed");
+  await sleep(500);
+  await send("fail please");
+  await sleep(300);
+  await setDraft("after the failure");
+  await key({});
+  await sleep(1500);
+  q = await queued();
+  check("a failed turn holds the queue", q.length === 1 && q[0].held && !(await asked()).includes("after the failure"), q);
+  await press(`document.querySelector('.ai-queued button[aria-label="Remove queued message"]')`);
+  await sleep(200);
+  await send("ask me");
+  await sleep(300);
+  await setDraft("after the question");
+  await key({});
+  await sleep(1500);
+  q = await queued();
+  check("a question waiting for the person holds the queue", q.length === 1 && q[0].held && !(await asked()).includes("after the question") && (await $(`!!document.querySelector('.q-ask:not(.done)')`)), q);
+  await press(`document.querySelector('.ai-queued button[aria-label="Remove queued message"]')`);
+  await sleep(200);
 
   // ── the thread list: searchable, says what runs, keeps the archive ───
   for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
