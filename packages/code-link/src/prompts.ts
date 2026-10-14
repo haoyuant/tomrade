@@ -20,7 +20,19 @@ export interface FirstPromptInput {
   completionPolicy?: "merge" | "human";
   /** The checkout has no origin: nothing is pushed and there is no pull request. */
   local?: boolean;
+  /** Tomrade's own language, so the agent's output matches what the person reads in the app. */
+  locale?: "en" | "zh";
 }
+
+/**
+ * One line, no extra turn: the person reads the app in this language, so the
+ * agent writes its output in it. Worded as the cheapest nudge — the agent
+ * still reads the English brief and the code, it only answers in this language.
+ */
+export const languageLine = (locale: "en" | "zh" = "en") =>
+  locale === "zh"
+    ? "Language: the person reads Tomrade in Simplified Chinese — write everything the person will read (your replies, note_progress, questions, reports) in Simplified Chinese; keep code, identifiers, commands, file paths and commit messages as they are."
+    : "Language: the person reads Tomrade in English — write everything the person will read (your replies, note_progress, questions, reports) in English; keep code, identifiers, commands, file paths and commit messages as they are.";
 
 const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human", local = false) =>
   [
@@ -47,6 +59,7 @@ export function firstPrompt(input: FirstPromptInput): string {
   const accepted = (input.decisions ?? []).filter((d) => d.status === "accepted");
   const parts = [
     `${bootstrap ? "Bootstrap" : "Implement"} ${item.key} — "${item.title}".`,
+    languageLine(input.locale),
     `Follow the playbook first: open_playbook("${playbook}").`,
     "",
     "Ticket:",
@@ -72,9 +85,10 @@ export function firstPrompt(input: FirstPromptInput): string {
 }
 
 /** Picking a thread back up: where it stopped, what the branch looks like now. */
-export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false): string {
+export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false, locale: "en" | "zh" = "en"): string {
   const parts = [
     `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
+    languageLine(locale),
     "",
     "Ticket:",
     item.body?.trim() || "(no description)",
