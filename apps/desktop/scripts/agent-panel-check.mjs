@@ -318,6 +318,53 @@ const run = async () => {
   check("it then goes out after the turn", (await asked()).includes("queue me instead"));
   await sleep(4000);
 
+  // ── ↑ brings back what was sent ──────────────────────────────────────
+  await onEngine("slow");
+  await send("hist one");
+  await sleep(4000);
+  await send("hist two");
+  await sleep(4000);
+  await send("hist two");
+  await sleep(4000);
+  const up = (extra = {}) => key({ key: "ArrowUp", ...extra });
+  const down = () => key({ key: "ArrowDown" });
+  const stored = () => $(`JSON.parse(localStorage.getItem('tomrade.agent.history.${alpha.id}') ?? '[]')`);
+  check("the same message twice in a row is remembered once", (await stored()).slice(-2).join("|") === "hist one|hist two", (await stored()).slice(-3));
+  await setDraft("");
+  await up();
+  await sleep(150);
+  check("↑ in an empty composer brings back the last message sent", (await draftNow()) === "hist two", await draftNow());
+  await up();
+  await sleep(150);
+  check("↑ again goes further back", (await draftNow()) === "hist one", await draftNow());
+  await down();
+  await sleep(150);
+  check("↓ comes forward", (await draftNow()) === "hist two", await draftNow());
+  await down();
+  await sleep(150);
+  check("and past the newest, back to the empty draft", (await draftNow()) === "", await draftNow());
+  await setDraft("half a thought");
+  await up();
+  await sleep(150);
+  await down();
+  await sleep(150);
+  check("a draft set aside by ↑ comes back with ↓", (await draftNow()) === "half a thought", await draftNow());
+  await setDraft("line one\nline two");
+  await up();
+  await sleep(150);
+  check("↑ off the first line of a longer message leaves it alone", (await draftNow()) === "line one\nline two", await draftNow());
+  await setDraft("拼");
+  await up({ isComposing: true });
+  await sleep(150);
+  check("↑ while an input method is composing leaves it alone", (await draftNow()) === "拼", await draftNow());
+  await setDraft("");
+  await win.webContents.reloadIgnoringCache();
+  await sleep(3000);
+  await up();
+  await sleep(150);
+  check("after a restart ↑ still brings it back", (await draftNow()) === "hist two", await draftNow());
+  await setDraft("");
+
   // ── the thread list: searchable, says what runs, keeps the archive ───
   for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
   await newThread();
