@@ -1385,28 +1385,9 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .ai-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
 .pet-stage {
-  height: 112px; position: relative; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;
-  display: flex; flex-direction: column;
+  height: 112px; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;
+  display: flex; align-items: flex-end; justify-content: center;
   border-bottom: 1px solid var(--border-soft);
-}
-/* the pet's own room; the drag strip below it is what the person grabs */
-.pet-stage-pet { flex: 1; min-height: 0; overflow: hidden; position: relative; }
-/* the pet stands where the person put it, as fractions of the room's free space */
-.pet-stage-actor { position: absolute; cursor: grab; outline-offset: 2px; }
-.pet-stage-resize { flex: 0 0 6px; cursor: ns-resize; }
-.pet-stage-resize:hover { background: var(--accent); opacity: 0.28; }
-/* pet size lives here, out of the way until the zone is pointed at */
-.pet-stage-tools {
-  position: absolute; top: 2px; right: 4px; z-index: 1;
-  display: flex; align-items: center; gap: 2px;
-  opacity: 0; pointer-events: none; transition: opacity 0.12s;
-}
-.pet-stage:hover .pet-stage-tools, .pet-stage-tools:focus-within { opacity: 1; pointer-events: auto; }
-.pet-stage-tools .btn-icon { width: 20px; height: 20px; color: var(--meta); }
-.pet-stage-tools .btn-icon:hover { color: var(--fg); background: var(--surface-warm); }
-.pet-zoom-label {
-  padding: 1px 4px; border: 1px solid var(--border-soft); border-radius: 4px; background: var(--surface);
-  font-size: var(--text-sm); color: var(--meta); cursor: default;
 }
 .pet-canvas { display: block; flex: 0 0 auto; }
 /* Settings › Pet: the profiles on this machine and the one being edited. */

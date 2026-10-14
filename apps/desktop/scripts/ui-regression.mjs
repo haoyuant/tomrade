@@ -26,9 +26,9 @@ fs.mkdirSync(SHOTS, { recursive: true });
 app.setPath("userData", WORK);
 
 const results = [];
-const check = (name, cond, detail) => {
+const check = (name, cond) => {
   results.push({ name, pass: !!cond });
-  console.log(`${cond ? "PASS" : "FAIL"}: ${name}${cond || detail === undefined ? "" : ` · ${JSON.stringify(detail)}`}`);
+  console.log(`${cond ? "PASS" : "FAIL"}: ${name}`);
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -1220,96 +1220,6 @@ const run = async () => {
   );
   check("the embedded pet stage sits immediately above the composer", (await $(`document.querySelector('.ai-foot > .pet-stage + .ai-composer') !== null`)) === true);
   check("the embedded pet exposes its task state", (await $(`document.querySelector('.pet-stage')?.dataset.petState`)) === "idle");
-  // The pet zone is the person's to size: a dragged height and a wish for a bigger pet, both kept.
-  const stage = () =>
-    $(`(() => {
-      const zone = document.querySelector('.pet-stage');
-      const room = document.querySelector('.pet-stage-pet');
-      const canvas = document.querySelector('.pet-canvas');
-      if (!zone || !room || !canvas) return null;
-      return {
-        zone: zone.getBoundingClientRect().height,
-        room: room.getBoundingClientRect().height,
-        pet: canvas.getBoundingClientRect().height,
-        zoom: document.querySelector('.pet-zoom-label')?.textContent ?? '',
-        stored: localStorage.getItem('tomrade.pet.stage')
-      };
-    })()`);
-  const dragPetHandle = (dy) =>
-    $(`(() => {
-      const handle = document.querySelector('.pet-stage-resize');
-      if (!handle) return false;
-      const from = handle.getBoundingClientRect().top + 2;
-      const at = (y) => ({ bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: y });
-      handle.dispatchEvent(new MouseEvent('mousedown', at(from)));
-      window.dispatchEvent(new MouseEvent('mousemove', at(from + ${dy})));
-      window.dispatchEvent(new MouseEvent('mouseup', at(from + ${dy})));
-      return true;
-    })()`);
-  const zoomPet = async (times) => {
-    for (let i = 0; i < times; i++) {
-      await press(`[...document.querySelectorAll('.pet-stage-tools .btn-icon')].pop()`);
-      await sleep(80);
-    }
-  };
-  const natural = await stage();
-  check("the pet zone starts at a height that shows the whole pet", natural.pet <= natural.room && natural.zoom === "100%", natural);
-  await dragPetHandle(140);
-  await sleep(150);
-  const grown = await stage();
-  check("dragging the pet zone's handle makes it taller", Math.abs(grown.zone - natural.zone - 140) <= 1, grown);
-  check("and the height is remembered", (grown.stored ?? "").includes(`"height":${Math.round(grown.zone)}`), grown.stored);
-  await zoomPet(4);
-  const big = await stage();
-  check("the pet zooms to twice its own size", big.zoom === "200%" && Math.abs(big.pet - natural.pet * 2) <= 2, big);
-  check("and never spills out of its zone", big.pet <= big.room, big);
-  check("with the zoom remembered too", (big.stored ?? "").includes('"zoom":2'), big.stored);
-  await shot("18c-pet-zoom-2x");
-  // A zone too short for the zoom limits the pet instead of clipping it.
-  await dragPetHandle(-100);
-  await sleep(150);
-  const short = await stage();
-  check("a short zone caps a 2× wish rather than letting the pet overflow", short.zoom === "200%" && short.pet <= short.room && short.pet < big.pet, short);
-  await $(`document.querySelector('.pet-stage-resize').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
-  await sleep(150);
-  const reset = await stage();
-  check("double-clicking the handle resets the zone and the pet", Math.abs(reset.zone - natural.zone) <= 1 && reset.zoom === "100%" && reset.stored === '{"height":127,"zoom":1}', reset);
-  // The pet itself can be dragged anywhere in its zone, and a right-click puts it back in the centre.
-  const petSpot = () =>
-    $(`(() => {
-      const room = document.querySelector('.pet-stage-pet').getBoundingClientRect();
-      const pet = document.querySelector('.pet-stage-actor').getBoundingClientRect();
-      return { dx: pet.left + pet.width / 2 - (room.left + room.width / 2), inside: pet.left >= room.left - 1 && pet.right <= room.right + 1, stored: localStorage.getItem('tomrade.pet.position') };
-    })()`);
-  const dragPetBody = (dx, dy) =>
-    $(`(() => {
-      const pet = document.querySelector('.pet-stage-actor');
-      const box = pet.getBoundingClientRect();
-      const at = (x, y) => ({ bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
-      pet.dispatchEvent(new MouseEvent('mousedown', at(box.left + 10, box.top + 10)));
-      window.dispatchEvent(new MouseEvent('mousemove', at(box.left + 10 + ${dx}, box.top + 10 + ${dy})));
-      window.dispatchEvent(new MouseEvent('mouseup', at(box.left + 10 + ${dx}, box.top + 10 + ${dy})));
-      return true;
-    })()`);
-  const petCentred = await petSpot();
-  check("the pet starts petCentred across its zone", Math.abs(petCentred.dx) <= 1 && petCentred.inside, petCentred);
-  await dragPetBody(-30, 0);
-  await sleep(150);
-  const petMoved = await petSpot();
-  check("dragging the pet moves it by the distance dragged", Math.abs(petMoved.dx + 30) <= 1, petMoved);
-  check("and the petSpot is remembered", (petMoved.stored ?? "").includes('"x":'), petMoved.stored);
-  await dragPetBody(-10_000, 0);
-  await sleep(150);
-  const petEdge = await petSpot();
-  check("the pet cannot be dragged out of its zone", petEdge.inside && petEdge.dx < petMoved.dx, petEdge);
-  await $(`document.querySelector('.pet-stage-actor').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 40 }))`);
-  await sleep(200);
-  check("right-clicking the pet offers to put it petBack", (await $(`[...document.querySelectorAll('.menu-row .m-name')].map(n => n.textContent).join('|')`)) === "Reset to centre");
-  await press(`document.querySelector('.menu-row')`);
-  await sleep(200);
-  const petBack = await petSpot();
-  check("choosing it brings the pet petBack to the centre", Math.abs(petBack.dx) <= 1 && petBack.inside, petBack);
-  await shot("18b-pet-zone")
   // The workstream is a chip beside the engine's, opening a menu — not a form field.
   await press(`document.querySelector('.ai-knobs .ai-ws')`);
   await sleep(500);
