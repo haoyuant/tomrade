@@ -1427,6 +1427,8 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .ai-queued[data-held] .q-state { color: var(--meta); }
 .ai-queued .q-text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-queued .q-edit { flex: 1; min-width: 0; resize: none; font-size: var(--text-sm); }
+.ai-queued.is-steering { border-style: solid; border-color: var(--accent); }
+.turn-steer { display: block; font-size: 11px; color: var(--accent); margin-bottom: 2px; }
 .ai-queued .q-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 /* the knobs under the composer sit right; the context chip owns the left */
 .ai-knobs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }

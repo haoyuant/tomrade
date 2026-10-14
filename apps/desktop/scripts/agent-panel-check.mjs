@@ -49,6 +49,34 @@ const run = async () => {
       return { stop: "end" };
     }
   });
+  // registered before the window opens: the panel reads the engine list once
+  ctx.agent.engine({
+    id: "steerable",
+    title: "Steerable",
+    author: "ai:steerable",
+    steers: true,
+    available: async () => ({ ok: true }),
+    async turn(_input, io) {
+      for (let i = 0; i < 4; i++) {
+        await sleep(800);
+        const heard = io.takeSteers();
+        if (heard.length) io.emit({ type: "text", text: `heard: ${heard.join(" + ")}` });
+      }
+      io.emit({ type: "text", text: "steady" });
+      return { stop: "end" };
+    }
+  });
+  ctx.agent.engine({
+    id: "deaf",
+    title: "Deaf",
+    author: "ai:deaf",
+    steers: true,
+    available: async () => ({ ok: true }),
+    async turn() {
+      await sleep(1200);
+      return { stop: "end" };
+    }
+  });
   const settings = ctx.settings.get();
   ctx.settings.set({ ...settings, language: "en", agent: { ...settings.agent, defaultEngine: "slow" } });
 
@@ -141,7 +169,7 @@ const run = async () => {
   await key({ shiftKey: true });
   await sleep(150);
   check("Shift+Enter does not send", (await draftNow()) === "the next message\nwith a second line");
-  const queued = () => $(`[...document.querySelectorAll('.ai-queued')].map((q) => ({ text: q.querySelector('.q-text')?.textContent ?? null, held: q.hasAttribute('data-held') }))`);
+  const queued = () => $(`[...document.querySelectorAll('.ai-queued:not(.is-steering)')].map((q) => ({ text: q.querySelector('.q-text')?.textContent ?? null, held: q.hasAttribute('data-held') }))`);
   const asked = () => $(`[...document.querySelectorAll('.ai-scroll .turn-user p')].map((p) => p.textContent)`);
   await key({});
   await sleep(300);
@@ -230,6 +258,65 @@ const run = async () => {
   check("a question waiting for the person holds the queue", q.length === 1 && q[0].held && !(await asked()).includes("after the question") && (await $(`!!document.querySelector('.q-ask:not(.done)')`)), q);
   await press(`document.querySelector('.ai-queued button[aria-label="Remove queued message"]')`);
   await sleep(200);
+
+  // ── steering: into the running turn, or queued when the engine cannot take it ──
+  const onEngine = async (id) => {
+    await newThread();
+    await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+    await sleep(300);
+    // through the panel's own menu, so what it shows is what runs
+    const title = { steerable: "Steerable", deaf: "Deaf", slow: "Slow" }[id];
+    await press(`[...document.querySelectorAll('.ai-knobs .chip-btn')].at(-1)`);
+    await sleep(400);
+    await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(title)})`);
+    await sleep(600);
+    return ctx.agent.store.threads(alpha.id)[0].id;
+  };
+  const agentSaid = () => $(`[...document.querySelectorAll('.ai-scroll .turn-ai .turn-body p')].map((p) => p.textContent)`);
+  const steerKey = () => key({ metaKey: true });
+  let steerThread = await onEngine("steerable");
+  await send("paint it");
+  await sleep(300);
+  check("a steerable engine says ⌘Enter steers", /steers now/.test(await $(`document.querySelector('.ai-input').placeholder`)));
+  await setDraft("make it blue");
+  await steerKey();
+  await sleep(150);
+  check("⌘Enter while it works sends into the turn, not the queue", (await draftNow()) === "" && (await queued()).length === 0 && (await $(`document.querySelector('.ai-queued.is-steering')?.textContent ?? ''`)).includes("make it blue"));
+  await sleep(1200);
+  check("the agent reads it inside the same turn", (await agentSaid()).includes("heard: make it blue") && (await panel()).working, await agentSaid());
+  check("and it sits in the transcript where it was read, marked as steering", await $(`(() => { const s = document.querySelector('.ai-scroll .turn-user.is-steer'); return !!s && s.textContent.includes('make it blue') && s.textContent.includes('Steered mid-turn'); })()`));
+  await shot("steered.png");
+  await setDraft("and shiny");
+  await key({});
+  await sleep(200);
+  await press(`[...document.querySelectorAll('.ai-queued button')].find((b) => b.textContent === 'Steer now')`);
+  await sleep(1200);
+  check("a queued message can be steered in", (await agentSaid()).includes("heard: and shiny") && (await queued()).length === 0, await agentSaid());
+  await sleep(2500);
+  check("all of it was one run", ctx.agent.store.runs(alpha.id, steerThread).length === 1);
+
+  steerThread = await onEngine("deaf");
+  await send("one");
+  await sleep(300);
+  await setDraft("too late");
+  await steerKey();
+  await sleep(2500);
+  said = await asked();
+  check("a steer the turn ended without reading goes out next, as a message", said.includes("too late") && !(await $(`!!document.querySelector('.ai-scroll .turn-user.is-steer')`)) && ctx.agent.store.runs(alpha.id, steerThread).length === 2, said);
+  await sleep(1500);
+
+  await onEngine("slow");
+  await send("not steerable");
+  await sleep(300);
+  await setDraft("queue me instead");
+  await steerKey();
+  await sleep(400);
+  q = await queued();
+  check("an engine that cannot be steered queues the message and says so", q.length === 1 && q[0].text === "queue me instead" && (await $(`document.body.textContent.includes("can't take messages mid-turn")`)), q);
+  check("and offers no Steer now", !(await $(`[...document.querySelectorAll('.ai-queued button')].some((b) => b.textContent === 'Steer now')`)));
+  await sleep(4200);
+  check("it then goes out after the turn", (await asked()).includes("queue me instead"));
+  await sleep(4000);
 
   // ── the thread list: searchable, says what runs, keeps the archive ───
   for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
