@@ -18,6 +18,8 @@ export function createPiEngine(ctx: Context): Engine {
     title: "Pi",
     author: "ai:pi",
     capabilities: ["backlog", "code", "general"],
+    // pi queues messages sent mid-turn itself (RPC steer)
+    steers: true,
     options: PiOptions,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
     permissionModes: PERMISSION_MODES,

@@ -136,3 +136,47 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     expect((await engine.turn(input, io)).metrics?.runtime).toBe("cold");
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+it("hands a message sent mid-turn to pi's own queue, records it where pi reads it, and clears what is left before a stop", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-steer-"));
+  const log = path.join(dir, "requests.jsonl");
+  const bin = path.join(dir, "pi");
+  const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createPiEngine(ctx);
+  expect(engine.steers).toBe(true);
+  const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "STEER_TAKE" }, messages: [], cards: [], brief: null, pending: null,
+    options: { command: bin, model: "fake/fixed-model" }, env: { TOMRADE_TEST_LOG: log } };
+  const order: string[] = [];
+  let forward: ((steer: { id: string; text: string }) => Promise<boolean>) | undefined;
+  const io: TurnIO = { emit: (block) => order.push(block.type === "text" ? `agent:${block.text}` : block.type), delta() {}, progress() {}, signal: new AbortController().signal,
+    tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+    run: { id: "run", threadId: "thread", projectId: "project", author: "ai:pi", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
+    steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
+  const requests = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+  try {
+    const turn = engine.turn(input, io);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
+    expect((await turn).stop).toBe("end");
+    expect(order).toEqual(["steered:s1", "agent:took: make it blue"]);
+    expect(requests().find((r) => r.type === "steer")).toMatchObject({ message: "make it blue" });
+    // the turn is over: pi is not asked to take another
+    expect(await forward!({ id: "late", text: "too late" })).toBe(false);
+
+    const abort = new AbortController(); io.signal = abort.signal;
+    order.length = 0;
+    input.input = { kind: "text", text: "STEER_HOLD" };
+    const held = engine.turn(input, io);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await forward!({ id: "s2", text: "never read" })).toBe(true);
+    abort.abort();
+    expect((await held).stop).toBe("cancelled");
+    expect(order).not.toContain("steered:s2");
+    const after = requests().filter((r) => r.type === "clear_queue" || r.type === "abort").map((r) => r.type);
+    expect(after).toEqual(["clear_queue", "abort"]);
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+}, 30_000);
+

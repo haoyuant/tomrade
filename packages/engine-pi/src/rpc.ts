@@ -168,11 +168,30 @@ export class PiRuntime implements Runtime {
       metrics: { ...metrics, uncachedInputTokens: total.input, cacheReadTokens: total.cacheRead, cacheWriteTokens: total.cacheWrite }
     });
     const calls = new Map<string, unknown>();
+    // Messages sent into this turn that pi has queued and not yet put before the model.
+    const forwarded: { id: string; text: string }[] = [];
+    let settled = false;
+    io.steerTo?.(async (steer) => {
+      if (!prompted || settled || cancelled || !this.alive) return false;
+      const reply = await this.request("steer", { message: steer.text });
+      if (reply.disposition !== "queued") return false;
+      forwarded.push(steer);
+      return true;
+    });
     this.onFailure = (error) => finish(cancelled ? result("cancelled") : result("error", error.message, describeFailure({ error, stderr: this.stderr })));
     // The model's last reply without its text: provider, model, stop reason and Pi's own error words.
     const lastSaid = () => { if (!last) return undefined; const { content: _, ...rest } = last; return rest; };
     this.onEvent = (event) => {
       switch (event.type) {
+        case "message_start": {
+          // pi puts a queued steer before the model as a user message: that is where it was read
+          const message = event.message;
+          if (message?.role !== "user" || !forwarded.length) break;
+          const text = (typeof message.content === "string" ? message.content : (message.content ?? []).filter((b: Json) => b.type === "text").map((b: Json) => b.text).join("")).trim();
+          const at = forwarded.findIndex((s) => s.text === text);
+          if (at >= 0) io.steered?.(forwarded.splice(at, 1)[0].id);
+          break;
+        }
         case "message_update": {
           const update = event.assistantMessageEvent;
           if (update?.type === "text_delta") {
@@ -222,6 +241,7 @@ export class PiRuntime implements Runtime {
           else io.retry?.(null);
           break;
         case "agent_settled":
+          settled = true;
           if (cancelled || event.aborted) finish(result("cancelled"));
           else if (last?.stopReason === "error") finish(result("error", last.errorMessage ?? retryError ?? "Pi reported an error", describeFailure({ reply: lastSaid(), retries: retryError, stderr: this.stderr })));
           else if (last?.stopReason === "length") finish(result("error", "The model reached its output limit before it finished"));
@@ -232,7 +252,9 @@ export class PiRuntime implements Runtime {
     const abort = () => {
       cancelled = true;
       if (!prompted) { this.close(); return; }
-      void this.request("abort").catch(() => this.close());
+      // pi carries on with queued messages after an abort; the ones it has not read go back to the person
+      const cleared = forwarded.length ? this.request("clear_queue").catch(() => ({})) : Promise.resolve({});
+      void cleared.then(() => this.request("abort")).catch(() => this.close());
       abortTimer ??= setTimeout(() => this.close(), 5000).unref();
     };
     io.signal.addEventListener("abort", abort, { once: true });
