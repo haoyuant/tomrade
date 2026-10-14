@@ -752,6 +752,20 @@ describe("starting a ticket", () => {
     expect(agent.store.messages(project.id, started.threadId).some((m) => m.role === "user" && m.block.type === "text" && m.block.text.endsWith("one more thing"))).toBe(true);
   });
 
+  it("does not rebuild the worktree of a conversation whose ticket was deleted", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Deleted later");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    ctx.items.delete(project.id, item.id, "human");
+    git(["worktree", "remove", "--force", started.worktree!], checkout!);
+    expect(await agent.workdir(project.id, started.threadId, { create: true })).toMatchObject({ cwd: null, code: "finished" });
+    expect(fs.existsSync(started.worktree!)).toBe(false);
+  });
+
   it("moves a kept worktree onto the reopened delivery's branch, and refuses while it has uncommitted work", async () => {
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
     await ctx.repos.setCheckout(repo!.remote, checkout!);

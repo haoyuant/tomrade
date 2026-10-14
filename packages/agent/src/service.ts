@@ -909,14 +909,16 @@ export class Agent extends Service {
       | undefined;
     if (!repos) return { ...none, problem: "the repos plugin is not loaded", code: "no-repos" };
     try {
-      const finished = thread.archived || (!!thread.itemId && this.itemOf(projectId, thread.itemId)?.status === "done");
+      // A ticket that is done, or no longer there at all, has nothing left to rebuild.
+      const ticket = thread.itemId ? this.itemOf(projectId, thread.itemId) : null;
+      const finished = thread.archived || (!!thread.itemId && (!ticket || ticket.status === "done"));
       const create = !!opts.create && (!finished || !!opts.revive);
       const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch, create });
       if (!view) return none;
       if (!view.cwd) {
         // Not there and not made. Unfinished work gets it on its first run; finished work only through a new Start.
         const refused = finished && !thread.archived && !opts.revive;
-        const key = thread.itemId ? this.itemOf(projectId, thread.itemId)?.key ?? thread.title : thread.title;
+        const key = ticket?.key ?? thread.title;
         return { ...none, remote: view.repo.remote, branch: view.branch, problem: refused ? this.words().finishedNoWorktree(key) : null, code: refused ? "finished" : null };
       }
       return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
