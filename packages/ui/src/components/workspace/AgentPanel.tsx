@@ -26,9 +26,9 @@ import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { ChecklistBlock, FindingBlock } from "./DoctorCards";
 
 const MIN_W = 352;
-const MAX_W = 616;
-/** Until someone drags it: room for a conversation without taking the board's second column at 1440px. */
-const DEFAULT_W = 440;
+const MAX_W = 924;
+/** Until someone drags it: the former ceiling; the CSS max-width still yields to the board on narrow windows. */
+const DEFAULT_W = 616;
 const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}` };
 const HISTORY_CAP = 100;
 
