@@ -563,7 +563,7 @@ const run = async () => {
   await sleep(900);
   check("a card opens the detail pane", (await $(`!!document.querySelector('.detail')`)) === true);
   // sidebar, board, detail and assistant side by side: nothing runs off the window or under a neighbour
-  await $(`localStorage.setItem("tomrade.ai.width", "616"); true`);
+  await $(`localStorage.setItem("tomrade.ai.width", "924"); true`);
   if (await $(`!!document.querySelector('.ai-rail button')`)) await press(`document.querySelector('.ai-rail button')`);
   await sleep(500);
   check("with the detail open, a wide assistant gives way so all four panes fit", (await $(`(() => {
