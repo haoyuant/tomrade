@@ -173,10 +173,13 @@ export class PiRuntime implements Runtime {
     let settled = false;
     io.steerTo?.(async (steer) => {
       if (!prompted || settled || cancelled || !this.alive) return false;
-      const reply = await this.request("steer", { message: steer.text });
-      if (reply.disposition !== "queued") return false;
+      // known before the request: pi may put it before the model before it answers
       forwarded.push(steer);
-      return true;
+      const reply = await this.request("steer", { message: steer.text }).catch(() => ({}) as Json);
+      if (reply.disposition === "queued") return true;
+      const at = forwarded.indexOf(steer);
+      if (at >= 0) forwarded.splice(at, 1);
+      return false;
     });
     this.onFailure = (error) => finish(cancelled ? result("cancelled") : result("error", error.message, describeFailure({ error, stderr: this.stderr })));
     // The model's last reply without its text: provider, model, stop reason and Pi's own error words.
