@@ -2,6 +2,8 @@ import path from "node:path";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
+import { Agent } from "@tomradex/agent";
+import { Im } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 
 export interface TestCheck {
@@ -47,7 +49,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const check = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, ...(detail ? { detail } : {}) });
 
   const p = input.plugin;
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions] });
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, Agent, Im] });
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
     w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "A sample issue", by: "human" }),

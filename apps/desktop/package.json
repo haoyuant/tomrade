@@ -108,7 +108,8 @@
     "cordis": "4.0.0-rc.8",
     "electron-updater": "6.8.10",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@tomradex/im": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

@@ -1,0 +1,35 @@
+{
+  "name": "@tomradex/im",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "IM transports over the existing Tomrade Agent: bindings, authorized inputs and reliable replies",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
+    "@tomradex/projects": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

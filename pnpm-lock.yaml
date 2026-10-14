@@ -113,6 +113,9 @@ importers:
       '@tomradex/hub-cloud':
         specifier: workspace:*
         version: link:../../packages/hub-cloud
+      '@tomradex/im':
+        specifier: workspace:*
+        version: link:../../packages/im
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -959,6 +962,9 @@ importers:
       '@tomradex/fields':
         specifier: workspace:*
         version: link:../fields
+      '@tomradex/im':
+        specifier: workspace:*
+        version: link:../im
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
@@ -1169,6 +1175,43 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+
+  packages/im:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomradex/projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
 
   packages/ipc:
     dependencies:
@@ -1492,9 +1535,15 @@ importers:
 
   packages/plugin-host:
     dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
+      '@tomradex/im':
+        specifier: workspace:*
+        version: link:../im
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

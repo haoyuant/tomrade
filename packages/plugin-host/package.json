@@ -22,7 +22,9 @@
     "@tomradex/settings": "workspace:*",
     "@tomradex/testkit": "workspace:*",
     "@tomradex/tools": "workspace:*",
-    "cordis": "4.0.0-rc.8"
+    "cordis": "4.0.0-rc.8",
+    "@tomradex/im": "workspace:*",
+    "@tomradex/agent": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.0",

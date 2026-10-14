@@ -76,6 +76,8 @@ modules:
     title: Routines
   - id: pet
     title: Pet
+  - id: im
+    title: IM connections
   - id: webSearch
     title: Web search
 
@@ -95,6 +97,9 @@ contracts:
   - id: files
     title: File sharing
     registry: files.register
+  - id: im
+    title: IM adapters
+    registry: im.register
   - id: webSearch
     title: Web search
     registry: webSearch.register
@@ -208,6 +213,8 @@ plugins:
     config:
       playbooksDir: "${userData}/playbooks"
       mediaDir: "${userData}/agent-media"
+  - id: im
+    name: "@tomradex/im"
   # Engines are conductors; several can be installed, a thread picks one.
   - id: engine-loop
     name: "@tomradex/engine-loop"

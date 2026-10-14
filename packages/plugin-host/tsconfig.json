@@ -3,13 +3,31 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../contributions" },
-    { "path": "../settings" },
-    { "path": "../testkit" },
-    { "path": "../tools" }
+    {
+      "path": "../contributions"
+    },
+    {
+      "path": "../settings"
+    },
+    {
+      "path": "../testkit"
+    },
+    {
+      "path": "../tools"
+    },
+    {
+      "path": "../im"
+    },
+    {
+      "path": "../agent"
+    }
   ]
 }

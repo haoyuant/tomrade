@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { ImApi } from "./im.js";
 import type {
   Author,
   Board,
@@ -29,7 +30,7 @@ import type {
 export type Disposer = () => void;
 
 /** The services a plugin names in `inject` (required) or `optional`. */
-export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "oplog";
+export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "oplog" | "im";
 
 export interface Logger {
   debug(...args: unknown[]): void;
@@ -300,6 +301,7 @@ export interface PluginContext {
   readonly tools: ToolsApi;
   readonly contributions: ContributionsApi;
   readonly agent: AgentApi;
+  readonly im: ImApi;
   readonly surfaces: SurfacesApi;
   readonly oplog: OplogApi;
   on<K extends keyof Events>(event: K, listener: Events[K]): Disposer;
