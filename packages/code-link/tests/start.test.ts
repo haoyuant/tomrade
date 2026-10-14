@@ -1000,7 +1000,8 @@ describe("starting a ticket", () => {
     await codeLink.start(project.id, item.id, { mode: "run", options: {} });
     await untilRunsSettle(agent);
     expect(agent.store.thread(project.id, result.threadId)?.options).toBeNull();
-    expect(world.turns.at(-1)?.options).toBeUndefined();
+    // The turn sees no overrides as an empty object, which is what an engine's options schema takes.
+    expect(world.turns.at(-1)?.options).toEqual({});
   });
 });
 
