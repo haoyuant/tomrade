@@ -389,6 +389,51 @@ function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, on
   );
 }
 
+/** A message written while a run works: it goes out by itself once the run ends well. */
+type Queued = { id: string; text: string; focus: FocusRef[] };
+
+function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow }: { entry: Queued; held: boolean; canSend: boolean; onSave: (text: string) => void; onRemove: () => void; onSendNow: () => void }) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState<string | null>(null);
+  return (
+    <div className="ai-queued" data-held={held || undefined}>
+      <span className="q-state">{t(held ? "agentPanel.queuedHeld" : "agentPanel.queued")}</span>
+      {editing === null ? (
+        <p className="q-text" title={entry.text}>{entry.text}</p>
+      ) : (
+        <textarea
+          className="input q-edit"
+          aria-label={t("agentPanel.queuedEdit")}
+          autoFocus
+          rows={Math.min(4, editing.split("\n").length)}
+          value={editing}
+          onChange={(e) => setEditing(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); }
+            else if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (editing.trim()) onSave(editing.trim()); else onRemove();
+              setEditing(null);
+            }
+          }}
+        />
+      )}
+      <span className="q-actions">
+        {held && canSend && (
+          <button type="button" className="btn btn-ghost btn-xs" onClick={onSendNow}>{t("agentPanel.queuedSendNow")}</button>
+        )}
+        <button type="button" className="btn btn-icon" title={t("agentPanel.queuedEdit")} aria-label={t("agentPanel.queuedEdit")} onClick={() => setEditing(editing === null ? entry.text : null)}>
+          <Icon name="i-pen" size={11} />
+        </button>
+        <button type="button" className="btn btn-icon" title={t("agentPanel.queuedRemove")} aria-label={t("agentPanel.queuedRemove")} onClick={onRemove}>
+          <Icon name="i-trash" size={11} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
 const TranscriptRow = memo(Row);
 
 function Row({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
@@ -524,6 +569,12 @@ export function AgentPanel({
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const sending = useRef(false);
+  // Per thread, in memory: what waits for the running turn to end.
+  const [queues, setQueues] = useState<Record<string, Queued[]>>({});
+  const queue = threadId ? (queues[threadId] ?? []) : [];
+  const editQueue = (id: string, fn: (q: Queued[]) => Queued[]) => setQueues((prev) => ({ ...prev, [id]: fn(prev[id] ?? []) }));
+  // The run the last send started: until the thread shows it, the run before it says nothing about whether to go on.
+  const [sentRun, setSentRun] = useState<string | null>(null);
   // What rides along as "(viewing: …)": follow tracks the screen, pinned holds
   // a snapshot across navigation, off sends nothing. Session state on purpose —
   // the panel never unmounts inside a project, so it survives navigation.
@@ -716,25 +767,51 @@ export function AgentPanel({
   // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
   const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
 
-  const doSend = async (text = draft.trim()) => {
-    if ((!text && !attachments.length) || busy || blocked || sending.current) return;
-    if (doneTicket) { setAskReopen(true); return; }
-    if (attachments.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return; }
+  /** `queued` sends a waiting message as it was written: its own focus, no attachments, the draft left alone. */
+  const doSend = async (text = draft.trim(), queued?: Queued) => {
+    const files = queued ? [] : attachments;
+    if ((!text && !files.length) || busy || blocked || sending.current) return false;
+    if (doneTicket) { setAskReopen(true); return false; }
+    if (files.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return false; }
     sending.current = true; setUploading(true); setAttachmentError(null);
     try {
       let target = threadId;
       if (!target) target = (await openThread({ boardId })).id;
       else if (detail.data?.messages.length === 0 && !usable(currentEngineId) && usable(defaultEngine)) await setEngine.mutateAsync({ threadId: target, engineId: defaultEngine });
       pickThread(target);
-      const refs = await Promise.all(attachments.map(async file => invoke("agent.media.upload", projectId, target!, {
+      const refs = await Promise.all(files.map(async file => invoke("agent.media.upload", projectId, target!, {
         name: file.name, mime: file.type, base64: await readAttachment(file)
       })));
       following.current = true;
-      await send.mutateAsync({ threadId: target, text, focus: sendFocus.length ? sendFocus : undefined, attachments: refs.length ? refs : undefined });
-      setDraft(""); setAttachments([]);
-    } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
+      const focusNow = queued ? queued.focus : sendFocus;
+      const { runId } = await send.mutateAsync({ threadId: target, text, focus: focusNow.length ? focusNow : undefined, attachments: refs.length ? refs : undefined });
+      setSentRun(runId);
+      if (!queued) { setDraft(""); setAttachments([]); }
+      return true;
+    } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); return false; }
     finally { sending.current = false; setUploading(false); }
   };
+
+  const enqueue = () => {
+    const text = draft.trim();
+    if (!threadId || !text || attachments.length || blocked) return;
+    editQueue(threadId, (q) => [...q, { id: crypto.randomUUID(), text, focus: sendFocus }]);
+    setDraft("");
+  };
+  const sendQueued = async (inThread: string, entry: Queued) => {
+    editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
+    // a send that did not go keeps its place at the head
+    if (!(await doSend(entry.text, entry))) editQueue(inThread, (q) => [entry, ...q.filter((x) => x.id !== entry.id)]);
+  };
+  // Waiting messages go on only after a turn that ended well: a stop, a failure or a question holds them.
+  const runList = detail.data?.runs ?? [];
+  const lastRun = runList[runList.length - 1];
+  const caughtUp = !sentRun || runList.some((r) => r.id === sentRun);
+  const queueHeld = !lastRun || lastRun.status !== "done" || !!pending || !!doneTicket || blocked;
+  useEffect(() => {
+    if (!threadId || !queue.length || busy || queueHeld || !caughtUp || sending.current) return;
+    void sendQueued(threadId, queue[0]);
+  }, [threadId, queue, busy, queueHeld, caughtUp]);
 
   const reopenAndSend = async () => {
     if (!doneTicket || !threadId || reopening) return;
@@ -1026,26 +1103,41 @@ export function AgentPanel({
         {(accessories.data ?? []).map((accessory) => (
           <PetStage key={accessory.id} accessory={accessory} threadId={threadId} />
         ))}
+        {threadId && queue.map((entry) => (
+          <QueuedRow
+            key={entry.id}
+            entry={entry}
+            held={!runningRun && queueHeld}
+            canSend={!busy}
+            onSave={(text) => editQueue(threadId, (q) => q.map((x) => (x.id === entry.id ? { ...x, text } : x)))}
+            onRemove={() => editQueue(threadId, (q) => q.filter((x) => x.id !== entry.id))}
+            onSendNow={() => void sendQueued(threadId, entry)}
+          />
+        ))}
         <div className="ai-composer" data-busy={busy || undefined}>
           <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
             addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
           }} />
           <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || archivedNow || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
-          {/* typing stays open while the agent works — the next message can wait in here; only sending waits */}
+          {/* typing stays open while the agent works; Enter then queues the message for when the turn ends */}
           <textarea
             ref={composer}
             className="ai-input"
             rows={1}
-            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t("agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
             disabled={archivedNow}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
             onKeyDown={(e) => {
-              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+              if (e.nativeEvent.isComposing) return;
+              // Esc stops the turn like the Stop button; what is queued stays, held
+              if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
+              if (e.key !== "Enter" || e.shiftKey) return;
               e.preventDefault();
-              void doSend();
+              if (runningRun) enqueue();
+              else void doSend();
             }}
           />
           {runningRun ? (
