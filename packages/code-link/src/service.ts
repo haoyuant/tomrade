@@ -387,6 +387,8 @@ export class CodeLink extends Service {
       ctx.on("db/opened", (projectId) => this.archiveCompletedSessions(projectId));
       ctx.on("storage/imported", (projectId) => this.archiveCompletedSessions(projectId));
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
+      // A thread on a ticket is one Start opened.
+      ctx.agent.threadOrigins((_projectId, threads) => threads.filter((th) => th.itemId).map((th) => [th.id, this.words().origin] as [string, string]));
       ctx.on("agent/run-started", (_run, thread) => {
         this.running.set(thread.id, thread);
         const session = this.sessionOf(thread);

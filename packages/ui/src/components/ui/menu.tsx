@@ -94,7 +94,8 @@ export function MenuRadioItem({
   count,
   actions,
   unready,
-  title
+  title,
+  chips
 }: {
   checked: boolean;
   onSelect: () => void;
@@ -107,18 +108,28 @@ export function MenuRadioItem({
   unready?: string;
   /** The whole of a `sub` that may not fit. */
   title?: string;
+  /** Short labels after the name, as chips. */
+  chips?: string[];
 }) {
+  const named = chips?.length ? (
+    <span className="m-line">
+      <span className="m-name">{name}</span>
+      {chips.map((chip) => <span key={chip} className="tag neutral m-chip">{chip}</span>)}
+    </span>
+  ) : (
+    <span className="m-name">{name}</span>
+  );
   return (
     <RadixMenu.Item className={cn("menu-row is-radio", unready && "is-unready")} role="menuitemradio" aria-checked={checked} title={title} onSelect={onSelect}>
       <Check />
       {mark && <span className="m-mark">{mark}</span>}
       {sub ? (
         <span className="m-stack">
-          <span className="m-name">{name}</span>
+          {named}
           <span className="m-sub">{sub}</span>
         </span>
       ) : (
-        <span className="m-name">{name}</span>
+        named
       )}
       {count !== undefined && <span className="m-count">{count}</span>}
       {actions && <span className="m-actions" onClick={(event) => event.stopPropagation()}>{actions}</span>}

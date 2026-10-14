@@ -902,6 +902,7 @@ export function AgentPanel({
               key={th.id}
               checked={th.id === threadId}
               name={th.title || t("agentPanel.newThread")}
+              chips={th.origins}
               sub={[attentionOf.has(th.id) ? attentionLabel(attentionOf.get(th.id)!) : th.running ? t("agentPanel.threadRunning") : th.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(th.parkedUntil) }) : null, timeAgo(th.updatedAt)].filter(Boolean).join(" · ")}
               onSelect={() => pickThread(th.id)}
               actions={
@@ -925,6 +926,7 @@ export function AgentPanel({
                   key={th.id}
                   checked={false}
                   name={th.title || t("agentPanel.newThread")}
+                  chips={th.origins}
                   sub={timeAgo(th.updatedAt)}
                   onSelect={() => unarchive.mutate(th.id, { onSuccess: () => pickThread(th.id) })}
                   actions={

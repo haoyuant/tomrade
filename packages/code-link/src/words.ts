@@ -12,6 +12,7 @@ const STATUS = {
 
 const en = {
   section: "Code",
+  origin: "Code Link",
   group: "Code",
   delivery: "Delivery",
   deliveryState: (state: string) => ({ active: "active", completed: "completed", cancelled: "cancelled" })[state] ?? state,
@@ -98,6 +99,7 @@ export type CodeWords = typeof en;
 
 const zh: CodeWords = {
   section: "代码",
+  origin: "Code Link",
   group: "代码",
   delivery: "交付",
   deliveryState: (state: string) => ({ active: "进行中", completed: "已完成", cancelled: "已取消" })[state] ?? state,

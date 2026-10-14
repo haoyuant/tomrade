@@ -787,6 +787,19 @@ describe("starting a ticket", () => {
     await untilRunsSettle(agent);
   });
 
+  it("names the conversations a Start opened in the thread list", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const started = await codeLink.start(project.id, ticket("Named in the list").id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const plain = agent.newThread(project.id);
+    const listed = agent.withOrigins(project.id, agent.store.threads(project.id));
+    expect(listed.find((th) => th.id === started.threadId)?.origins).toEqual(["Code Link"]);
+    expect(listed.find((th) => th.id === plain.id)?.origins).toBeUndefined();
+    await untilRunsSettle(agent);
+  });
+
   it("leaves no thread behind when a Start is refused at the working folder", async () => {
     const { codeLink, ctx, agent, project, repo, checkout, hubDir, ticket } = await machine(codeRepo());
     await ctx.repos.setCheckout(repo!.remote, checkout!);

@@ -185,6 +185,8 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * time missed while it was closed or asleep runs once when it is back, unless
  * the schedule says to skip it.
  */
+const ORIGIN = { en: "Routine", zh: "例行事务" } as const;
+
 export class Schedules extends Service {
   static provide = "schedules";
   static inject = ["db", "items", "boards", "agent"];
@@ -224,6 +226,14 @@ export class Schedules extends Service {
       ctx.on("schedules/changed", (projectId) => ctx.ipc.send("schedules.changed", projectId));
     });
     this.home.inject(["tools"], (ctx) => this.registerTools(ctx));
+    // A conversation a routine's run opened says so in the thread list.
+    this.home.agent.threadOrigins((projectId, threads) => {
+      if (!this.home.db.has(projectId)) return [];
+      const ids = new Set(threads.map((th) => th.id));
+      const rows = this.db(projectId).prepare("SELECT DISTINCT thread_id FROM plugin_schedules_runs WHERE thread_id IS NOT NULL").all() as { thread_id: string }[];
+      const label = ORIGIN[this.locale()];
+      return rows.filter((r) => ids.has(r.thread_id)).map((r) => [r.thread_id, label] as [string, string]);
+    });
   }
 
   private locale(): "en" | "zh" {
