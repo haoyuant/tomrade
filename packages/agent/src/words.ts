@@ -21,6 +21,7 @@ const en = {
   addRule: "Add rule",
   skipRule: "Don't add",
   archivedReadOnly: "This conversation is archived. Restore it from the archive to keep talking.",
+  reopenToContinue: (key: string) => `${key} is done. Reopen it to keep working in this conversation.`,
   finishedNoWorktree: (key: string) => `${key} is done and its worktree is gone. Reopen the ticket and Start it to bring the work back.`
 };
 
@@ -46,6 +47,7 @@ const zh: AgentWords = {
   addRule: "加入规则",
   skipRule: "不加",
   archivedReadOnly: "这段对话已归档。从归档里恢复后才能继续对话。",
+  reopenToContinue: (key: string) => `${key} 已完成。重新打开工单后才能在这段对话里继续。`,
   finishedNoWorktree: (key: string) => `${key} 已完成，它的 worktree 也已删除。重新打开这张工单再开始，才会把工作带回来。`
 };
 

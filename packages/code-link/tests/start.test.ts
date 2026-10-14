@@ -738,12 +738,38 @@ describe("starting a ticket", () => {
     expect(await agent.workdir(project.id, started.threadId, { create: true })).toMatchObject({ cwd: null, code: "finished" });
     expect(fs.existsSync(started.worktree!)).toBe(false);
 
-    // Bringing the work back is the person's call: reopen the ticket and Start it again.
+    expect(() => agent.send(project.id, started.threadId, { kind: "text", text: "one more thing" })).toThrow(/Reopen it/);
+
+    // Bringing the work back is the person's call: reopen the ticket and continue this conversation.
     ctx.items.update(project.id, item.id, { status: "doing" }, "human");
-    const again = await codeLink.start(project.id, item.id, { mode: "run" });
-    expect(again.ok).toBe(true);
+    const again = await codeLink.start(project.id, item.id, { mode: "run", threadId: started.threadId, message: "one more thing" });
+    expect(again).toMatchObject({ ok: true, continued: true, threadId: started.threadId, branch: `${started.branch}-2` });
     if (!again.ok) return;
     expect(fs.existsSync(again.worktree!)).toBe(true);
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], again.worktree!)).toBe(`${started.branch}-2`);
+    expect(agent.store.thread(project.id, started.threadId)).toMatchObject({ branch: `${started.branch}-2`, restored: false });
+    await untilRunsSettle(agent);
+    expect(agent.store.messages(project.id, started.threadId).some((m) => m.role === "user" && m.block.type === "text" && m.block.text.endsWith("one more thing"))).toBe(true);
+  });
+
+  it("moves a kept worktree onto the reopened delivery's branch, and refuses while it has uncommitted work", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Reopened with its worktree");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    await ctx.tools.execute("link_code", { key: item.key, branch: started.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    agent.unarchiveThread(project.id, started.threadId, { restored: true });
+    ctx.items.update(project.id, item.id, { status: "doing" }, "human");
+    fs.writeFileSync(path.join(started.worktree!, "scratch.txt"), "half done\n");
+    expect(await codeLink.start(project.id, item.id, { mode: "run", threadId: started.threadId })).toMatchObject({ ok: false, gate: "workdir", message: expect.stringContaining("uncommitted") });
+    expect(agent.store.thread(project.id, started.threadId)?.branch).toBe(started.branch);
+    fs.rmSync(path.join(started.worktree!, "scratch.txt"));
+    const again = await codeLink.start(project.id, item.id, { mode: "run", threadId: started.threadId });
+    expect(again).toMatchObject({ ok: true, threadId: started.threadId, worktree: started.worktree, branch: `${started.branch}-2` });
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], started.worktree!)).toBe(`${started.branch}-2`);
     await untilRunsSettle(agent);
   });
 

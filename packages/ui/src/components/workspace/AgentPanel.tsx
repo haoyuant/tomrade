@@ -515,7 +515,8 @@ export function AgentPanel({
   const pickedBoardId = threadBoardId ?? (threadId ? null : (boardId ?? null));
   const pickedBoard = pickedBoardId ? (boardsQ.data ?? []).find((b) => b.id === pickedBoardId) : undefined;
   const workdir = useWorkdir(projectId, threadId, !!threadBoardId);
-  const workdirProblem = threadBoardId ? (workdir.data?.problem ?? null) : null;
+  // "finished" is answered by reopening the ticket at send time, not by blocking the composer.
+  const workdirProblem = threadBoardId && workdir.data?.code !== "finished" ? (workdir.data?.problem ?? null) : null;
 
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -563,6 +564,10 @@ export function AgentPanel({
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
   const busy = !!runningRun || send.isPending || answer.isPending || uploading;
   const archivedNow = !!detail.data?.thread.archived;
+  // A done ticket's conversation, brought back by hand: its next message first reopens the ticket.
+  const doneTicket = !archivedNow && !detail.data?.thread.execution && detail.data?.thread.itemId ? (itemsQ.data ?? []).find((i) => i.id === detail.data!.thread.itemId && i.status === "done") ?? null : null;
+  const [askReopen, setAskReopen] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const blocked = !!workdirProblem || archivedNow;
   const pending = detail.data?.pending ?? null;
   // Stable between renders, so a streamed reply re-renders its own line and not every row above it.
@@ -696,7 +701,7 @@ export function AgentPanel({
   }, []);
 
   const pickThread = (id: string) => {
-    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); }
+    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); setAskReopen(false); }
     setChosenThread(id);
     localStorage.setItem(STORE.thread(projectId), id);
   };
@@ -713,6 +718,7 @@ export function AgentPanel({
 
   const doSend = async (text = draft.trim()) => {
     if ((!text && !attachments.length) || busy || blocked || sending.current) return;
+    if (doneTicket) { setAskReopen(true); return; }
     if (attachments.some(file => !acceptedMedia.includes(file.type))) { setAttachmentError(t("agentPanel.unsupportedAttachment")); return; }
     sending.current = true; setUploading(true); setAttachmentError(null);
     try {
@@ -728,6 +734,20 @@ export function AgentPanel({
       setDraft(""); setAttachments([]);
     } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
     finally { sending.current = false; setUploading(false); }
+  };
+
+  const reopenAndSend = async () => {
+    if (!doneTicket || !threadId || reopening) return;
+    setReopening(true); setAttachmentError(null);
+    try {
+      await invoke("items.update", projectId, doneTicket.id, { status: "doing" }, doneTicket.version);
+      const result = await invoke("codeLink.start", projectId, doneTicket.id, { mode: "run", engine: detail.data?.thread.engine, threadId, message: draft.trim() });
+      if (!result.ok) { setAttachmentError(result.message); return; }
+      following.current = true;
+      setDraft(""); setAskReopen(false);
+      pickThread(result.threadId);
+    } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
+    finally { setReopening(false); }
   };
 
   // Hidden once anything is typed or attached, so a click never overwrites the user's own words.
@@ -1014,7 +1034,7 @@ export function AgentPanel({
             ref={composer}
             className="ai-input"
             rows={1}
-            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : pending ? t("agentPanel.answerPlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
             disabled={archivedNow}
             aria-label={t("agentPanel.messageAria")}
             value={draft}
@@ -1047,6 +1067,13 @@ export function AgentPanel({
           {attachments.map((file, index) => <AgentAttachment key={`${file.name}-${index}`} file={file} disabled={busy} remove={() => setAttachments(previous => previous.filter((_, i) => i !== index))} />)}
         </div>}
         {attachmentError && <p className="ai-error" role="alert">{attachmentError}</p>}
+        {askReopen && doneTicket && (
+          <p className="ai-workdir meta-txt dense" role="alertdialog" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span>{t("agentPanel.reopenAsk", { key: doneTicket.key })}</span>
+            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={reopening} onClick={() => void reopenAndSend()}>{t("agentPanel.reopenAndSend")}</button>
+            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={reopening} onClick={() => setAskReopen(false)}>{t("common.cancel")}</button>
+          </p>
+        )}
         {archivedNow && threadId && (
           <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span>{t("agentPanel.archivedHere")}</span>

@@ -1012,6 +1012,9 @@ export class Agent extends Service {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words().archivedReadOnly);
+    const ticket = thread.itemId && !thread.execution && !this.activeByThread.has(threadId) ? this.itemOf(projectId, thread.itemId) : null;
+    // A done ticket's conversation changes nothing until the ticket is reopened.
+    if (ticket?.status === "done") throw new Error(this.words().reopenToContinue(ticket.key));
     if (thread.execution && this.generalTakeovers.has(`${projectId}:${thread.itemId}`)) throw new Error("Human takeover is in progress; wait for the agent to stop");
     const permission = this.permissions.get(threadId);
     if (permission && input.kind === "answer") {
