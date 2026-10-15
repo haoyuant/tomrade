@@ -26,6 +26,7 @@ export {
   type CliCheck,
   type EngineMcpLink,
   type McpLinkView,
+  type McpProjectApproval,
   type CliSource,
   type Engine,
   type EngineAvailability,

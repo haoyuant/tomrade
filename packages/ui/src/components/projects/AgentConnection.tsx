@@ -14,6 +14,9 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   if (hint && (dismissed || !view || view.state === "connected")) return null;
   const url = connect.data?.url ?? view?.url;
   const state = view?.state;
+  // Per Claude Code config folder when this Tomrade knows them; the single answer otherwise.
+  const approvals = view?.claudeApprovals ?? (view?.claudeApproval ? [{ profile: "", state: view.claudeApproval, command: "claude" }] : []);
+  const unapproved = approvals.filter((a) => a.state !== "approved");
   return (
     <div className="stack-2 repo-agent-connection" data-testid="repo-agent-connection" data-state={state} style={{ marginTop: "var(--space-3)" }}>
       <div className="row">
@@ -22,11 +25,12 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
       </div>
       {view?.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t(view.instance === "packaged" ? "repositories.connectionPackaged" : "repositories.connectionDevelopment")} · {view.mcpUrl}</p>}
       {view?.configuredUrl && view.configuredUrl !== view.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t("repositories.connectionElsewhere", { url: view.configuredUrl })}</p>}
-      {state === "connected" && view?.claudeApproval && view.claudeApproval !== "approved" && (
-        <p className="meta-txt dense cli-warn repo-agent-approval" data-approval={view.claudeApproval}>
-          {t(view.claudeApproval === "pending" ? "repositories.claudeApprovalPending" : "repositories.claudeApprovalRejected")}
+      {state === "connected" && unapproved.map((approval) => (
+        <p className="meta-txt dense cli-warn repo-agent-approval" data-approval={approval.state} data-profile={approval.profile || undefined} key={approval.profile}>
+          {approvals.length > 1 && <><strong className="mono">{approval.profile.split(/[\\/]/).filter(Boolean).at(-1)}</strong> · </>}
+          {t(approval.state === "pending" ? "repositories.claudeApprovalPending" : "repositories.claudeApprovalRejected", { command: approval.command })}
         </p>
-      )}
+      ))}
       {state && state !== "connected" && <>
         <p className="meta-txt dense">{t("repositories.connectionFiles")}</p>
         <button type="button" className="btn btn-secondary repo-agent-connect" disabled={connect.isPending || state === "no-checkout" || state === "unavailable"} onClick={() => connect.mutate()}>

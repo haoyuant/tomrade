@@ -7,12 +7,14 @@ import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
-import engineClaudeCode, { claudeProjectServerApproval } from "@tomradex/engine-claude-code";
+import engineClaudeCode, { claudeConfigDirOf, claudeConfigDirs, claudeProjectServerApproval } from "@tomradex/engine-claude-code";
 
 const saved = process.env.CLAUDE_CONFIG_DIR;
+const savedHome = process.env.HOME;
 afterEach(() => {
   if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = saved;
+  process.env.HOME = savedHome;
   delete process.env.FAKE_MCP_FAIL;
 });
 
@@ -90,5 +92,80 @@ describe("whether Claude Code loads a repository's .mcp.json server", () => {
     fs.mkdirSync(path.join(repo, ".claude"));
     fs.writeFileSync(path.join(repo, ".claude", "settings.local.json"), JSON.stringify({ enableAllProjectMcpServers: true }));
     expect(claudeProjectServerApproval(repo, "tomrade", env)).toBe("approved");
+  });
+});
+
+describe("Claude Code accounts kept in separate config folders", () => {
+  it("knows a session's config folder by where its transcript is", () => {
+    expect(claudeConfigDirOf("/Users/a/.claude-tom/projects/-Users-a-repo/d5095123.jsonl")).toBe("/Users/a/.claude-tom");
+    expect(claudeConfigDirOf("/Users/a/.claude/projects/-Users-a-repo/x.jsonl")).toBe("/Users/a/.claude");
+    expect(claudeConfigDirOf("/Users/a/notes/x.jsonl")).toBeNull();
+  });
+
+  it("finds the folders beside the default one, those sessions reported, and its own first", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-claude-home-"));
+    fs.writeFileSync(path.join(home, ".claude.json"), "{}");
+    for (const name of [".claude-tom", ".claude-alt"]) {
+      fs.mkdirSync(path.join(home, name));
+      fs.writeFileSync(path.join(home, name, ".claude.json"), "{}");
+    }
+    // Not a config folder: no .claude.json inside.
+    fs.mkdirSync(path.join(home, ".claude-backup"));
+    const all = claudeConfigDirs({}, home);
+    expect(all[0]).toBe(path.join(home, ".claude"));
+    expect(all.slice(1).sort()).toEqual([path.join(home, ".claude-alt"), path.join(home, ".claude-tom")]);
+    expect(claudeConfigDirs({ CLAUDE_CONFIG_DIR: path.join(home, ".claude-tom") }, home)[0]).toBe(path.join(home, ".claude-tom"));
+    expect(claudeConfigDirs({}, home, ["/Volumes/work/claude"])).toContain("/Volumes/work/claude");
+  });
+
+  async function accounts() {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-claude-home-"));
+    process.env.HOME = home;
+    for (const name of [".claude-tom", ".claude-alt"]) {
+      fs.mkdirSync(path.join(home, name));
+      fs.writeFileSync(path.join(home, name, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+    }
+    const env = await setup();
+    // Tomrade itself runs with neither account's CLAUDE_CONFIG_DIR, as an app opened from the Dock does.
+    fs.writeFileSync(path.join(home, ".claude.json"), "{}");
+    delete process.env.CLAUDE_CONFIG_DIR;
+    const read = (name: string) => JSON.parse(fs.readFileSync(path.join(home, name, ".claude.json"), "utf8"));
+    return { ...env, home, read };
+  }
+
+  it("connects one account without touching the others", async () => {
+    const { ctx, home, read, link } = await accounts();
+    const tom = path.join(home, ".claude-tom");
+    const view = await link.status();
+    expect(view.profile).toBe(path.join(home, ".claude"));
+    expect(view.profiles!.map((p) => p.profile)).toEqual(expect.arrayContaining([tom, path.join(home, ".claude-alt")]));
+    expect(view.profiles!.find((p) => p.profile === tom)).toMatchObject({ state: "missing", file: path.join(tom, ".claude.json") });
+    expect(view.profiles!.find((p) => p.profile === tom)!.manual.connect).toBe(`CLAUDE_CONFIG_DIR=~/.claude-tom claude mcp add --scope user --transport http tomrade ${ctx.mcp.url}`);
+
+    const after = await link.connect(tom);
+    expect(after.profiles!.find((p) => p.profile === tom)).toMatchObject({ state: "connected" });
+    expect(read(".claude-tom")).toMatchObject({ numStartups: 1, mcpServers: { tomrade: { url: ctx.mcp.url } } });
+    expect(read(".claude-alt").mcpServers).toBeUndefined();
+    expect(JSON.parse(fs.readFileSync(path.join(home, ".claude.json"), "utf8")).mcpServers).toBeUndefined();
+
+    expect((await link.disconnect(tom)).profiles!.find((p) => p.profile === tom)).toMatchObject({ state: "missing" });
+    expect(read(".claude-tom").mcpServers.tomrade).toBeUndefined();
+    await ctx.fiber.dispose();
+  });
+
+  it("answers whether each account loads the repository's server, and learns accounts from transcripts", async () => {
+    const { ctx, home, link } = await accounts();
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-claude-repo-"));
+    const tom = path.join(home, ".claude-tom");
+    fs.writeFileSync(path.join(tom, ".claude.json"), JSON.stringify({ projects: { [repo]: { enabledMcpjsonServers: ["tomrade"] } } }));
+    const approvals = link.projectApprovals!(repo);
+    expect(approvals.find((a) => a.profile === tom)).toEqual({ profile: tom, state: "approved", command: "CLAUDE_CONFIG_DIR=~/.claude-tom claude" });
+    expect(approvals.find((a) => a.profile === path.join(home, ".claude-alt"))).toMatchObject({ state: "pending" });
+    expect(approvals.find((a) => a.profile === path.join(home, ".claude"))).toEqual({ profile: path.join(home, ".claude"), state: "pending", command: "claude" });
+
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-claude-elsewhere-"));
+    link.sawTranscript!(path.join(elsewhere, "projects", "-repo", "s.jsonl"));
+    expect((await link.status()).profiles!.map((p) => p.profile)).toContain(elsewhere);
+    await ctx.fiber.dispose();
   });
 });

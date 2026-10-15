@@ -211,8 +211,8 @@ declare module "@tomradex/ipc" {
     "agent.checkCli": (engineId: string, file: string) => CliCheck;
     /** Whether the engine's own user-level configuration reaches this Tomrade's MCP server. */
     "agent.mcpLink": (engineId: string) => McpLinkView;
-    "agent.linkMcp": (engineId: string) => McpLinkView;
-    "agent.unlinkMcp": (engineId: string) => McpLinkView;
+    "agent.linkMcp": (engineId: string, profile?: string) => McpLinkView;
+    "agent.unlinkMcp": (engineId: string, profile?: string) => McpLinkView;
     /** One real turn on the engine in a hidden thread of this project: does it answer? */
     "agent.tryEngine": (projectId: string | null, engineId: string) => EngineTry;
     "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
@@ -465,8 +465,8 @@ export class Agent extends Service {
         return link;
       };
       ctx.ipc.handle("agent.mcpLink", (engineId) => mcpLink(engineId).status());
-      ctx.ipc.handle("agent.linkMcp", (engineId) => mcpLink(engineId).connect());
-      ctx.ipc.handle("agent.unlinkMcp", (engineId) => mcpLink(engineId).disconnect());
+      ctx.ipc.handle("agent.linkMcp", (engineId, profile) => mcpLink(engineId).connect(profile));
+      ctx.ipc.handle("agent.unlinkMcp", (engineId, profile) => mcpLink(engineId).disconnect(profile));
       ctx.ipc.handle("agent.tryEngine", (projectId, engineId) => {
         // Settings opened outside a project: any open project holds the hidden thread as well.
         const where = projectId ?? ctx.db.openIds()[0];

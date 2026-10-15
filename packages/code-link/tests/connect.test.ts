@@ -167,8 +167,9 @@ describe("connecting a repository", () => {
     const asked: string[] = [];
     const missing = { state: "missing", url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } } as const;
     ctx.agent.engine({ id: "claude-code", title: "Claude Code", author: "ai:claude-code", available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }),
-      mcpLink: { status: async () => missing, connect: async () => missing, disconnect: async () => missing, projectApproval: (dir) => { asked.push(dir); return "pending"; } } });
-    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "connected", claudeApproval: "pending" });
+      mcpLink: { status: async () => missing, connect: async () => missing, disconnect: async () => missing, projectApproval: (dir) => { asked.push(dir); return "pending"; },
+        projectApprovals: () => [{ profile: "/h/.claude-tom", state: "approved", command: "CLAUDE_CONFIG_DIR=~/.claude-tom claude" }] } });
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "connected", claudeApproval: "pending", claudeApprovals: [{ profile: "/h/.claude-tom", state: "approved" }] });
     expect(asked).toEqual([checkout]);
     ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
     expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ committed: false, message: "已连接" });
@@ -305,6 +306,17 @@ describe("a developer's own Claude Code session", () => {
     // A hook from somewhere Tomrade does not know is ignored.
     expect(await post({ hook_event_name: "SessionStart", session_id: "x", cwd: os.tmpdir() })).toBe(200);
     expect(codeLink.sessionsOf(project.id)).toHaveLength(1);
+  });
+
+  it("tells Claude Code which config folder a session ran under, from its transcript", async () => {
+    const { ctx, checkout } = await machine();
+    const seen: string[] = [];
+    const missing = { state: "missing", url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } } as const;
+    ctx.agent.engine({ id: "claude-code", title: "Claude Code", author: "ai:claude-code", available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }),
+      mcpLink: { status: async () => missing, connect: async () => missing, disconnect: async () => missing, sawTranscript: (file) => seen.push(file) } });
+    const transcript = "/Users/a/.claude-tom/projects/-repo/cli-7.jsonl";
+    await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: "cli-7", cwd: checkout, transcript_path: transcript }) });
+    expect(seen).toEqual([transcript]);
   });
 
   it("turns a branch nobody's ticket names into a ticket, linked from the start", async () => {

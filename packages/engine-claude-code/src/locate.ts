@@ -457,8 +457,9 @@ export class CliLocator {
   }
 
   /** Runs `args` on the CLI `command` names — a sign-in check. */
-  async run(command: string | undefined, args: string[], timeoutMs: number): Promise<CliRunResult> {
-    return this.host.run(await this.launch(command), args, timeoutMs);
+  async run(command: string | undefined, args: string[], timeoutMs: number, envFor?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv): Promise<CliRunResult> {
+    const launch = await this.launch(command);
+    return this.host.run(envFor ? { ...launch, env: (base) => envFor(launch.env(base)) } : launch, args, timeoutMs);
   }
 
   private found(opts: { manual?: string; fresh?: boolean }): Promise<{ status: LocalCliStatus; dirs: string[] }> {

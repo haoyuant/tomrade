@@ -434,10 +434,22 @@ export interface EngineSetup {
  */
 export interface EngineMcpLink {
   status(): Promise<McpLinkView>;
-  connect(): Promise<McpLinkView>;
-  disconnect(): Promise<McpLinkView>;
+  /** `profile` names one of `status().profiles`; without it, the agent's own (the first). Answers as `status()` does. */
+  connect(profile?: string): Promise<McpLinkView>;
+  disconnect(profile?: string): Promise<McpLinkView>;
   /** Whether the agent will load a `tomrade` server a repository's own config declares; some ask once per folder first. */
   projectApproval?(dir: string): "approved" | "rejected" | "pending";
+  /** The same, for each of its profiles. */
+  projectApprovals?(dir: string): McpProjectApproval[];
+  /** A session of the agent started somewhere — its transcript names the profile it ran under. */
+  sawTranscript?(file: string): void;
+}
+
+export interface McpProjectApproval {
+  profile: string;
+  state: "approved" | "rejected" | "pending";
+  /** How to start the agent under that profile, for the person to run in the checkout. */
+  command: string;
 }
 
 export interface McpLinkView {
@@ -453,6 +465,10 @@ export interface McpLinkView {
   manual: { connect: string; disconnect: string };
   /** Why the last step could not be done or the state could not be read. */
   error?: string;
+  /** The configuration folder this describes, for an agent that has several (CLAUDE_CONFIG_DIR per account). */
+  profile?: string;
+  /** Every profile, this one first, when there is more than one. */
+  profiles?: McpLinkView[];
 }
 
 /** A path the person typed or picked, run once to see whether it is the CLI. */

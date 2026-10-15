@@ -796,8 +796,10 @@ export class CodeLink extends Service {
     const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl);
     const configuredUrl = current.configuredUrl;
     if (current.connected) {
-      const claudeApproval = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.projectApproval?.(cwd);
-      return { ...base, agents: current.agents, configuredUrl, state: "connected", ...(claudeApproval ? { claudeApproval } : {}) };
+      const link = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink;
+      const claudeApproval = link?.projectApproval?.(cwd);
+      const claudeApprovals = link?.projectApprovals?.(cwd);
+      return { ...base, agents: current.agents, configuredUrl, state: "connected", ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };
     }
     for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
       if (!(await exists(pendingRef))) continue;
@@ -1549,9 +1551,11 @@ export class CodeLink extends Service {
 
   /** A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's checkout. */
   private externalEvent(payload: unknown): void {
-    const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string; tomrade_agent?: string };
+    const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string };
     if (!p.cwd || !p.session_id) return;
     const agent = p.tomrade_agent === "codex" ? "codex" : "claude-code";
+    // Where the transcript lives tells which of the person's Claude Code accounts ran it.
+    if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);
     const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
     for (const [threadId, dir] of this.worktrees) {

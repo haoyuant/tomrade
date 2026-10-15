@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { Git } from "@tomradex/storage";
+import type { McpProjectApproval } from "@tomradex/agent";
 import { CODEX_HOOK_EVENTS, hookCommand } from "./connect.js";
 import { HOOK_EVENTS } from "./sessions.js";
 
@@ -24,6 +25,8 @@ export interface ConnectionView {
   agents: AgentConnectionView[];
   /** Once connected: whether Claude Code in the checkout loads the committed `.mcp.json` server, which it asks about once. */
   claudeApproval?: "approved" | "rejected" | "pending";
+  /** The same for each Claude Code config folder in use here, with the command that starts Claude Code under it. */
+  claudeApprovals?: McpProjectApproval[];
 }
 
 const FILES = [".mcp.json", ".claude/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"];

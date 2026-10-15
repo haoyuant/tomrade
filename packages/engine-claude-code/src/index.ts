@@ -43,7 +43,7 @@ export { ClaudeCodeOptions, claudeCodeEngineInfo, retryReason } from "./engine.j
 export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
 export { localAvailability, chosenCommand } from "./availability.js";
 export { claudeLentModel } from "./lend.js";
-export { MCP_NAME, claudeMcpLink, claudeProjectServerApproval, claudeUserFile, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
+export { MCP_NAME, claudeConfigDirOf, claudeConfigDirs, claudeMcpLink, claudeProfileEnv, claudeProjectServerApproval, claudeUserFile, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
 export { bashRuleMatches, claudeCommands, userSettingsFile } from "./permissions.js";
 export {
   CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,

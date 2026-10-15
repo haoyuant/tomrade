@@ -1,7 +1,7 @@
 export const repositories = {
   en: {
-    claudeApprovalPending: "Claude Code has not approved this repository's tomrade server yet, so it does not load it. Run `claude` in the checkout and approve tomrade when it asks.",
-    claudeApprovalRejected: "Claude Code was told not to load this repository's tomrade server. Run `claude mcp reset-project-choices` in the checkout, then `claude`, and approve tomrade.",
+    claudeApprovalPending: "Claude Code has not approved this repository's tomrade server yet, so it does not load it. Run `{{command}}` in the checkout and approve tomrade when it asks.",
+    claudeApprovalRejected: "Claude Code was told not to load this repository's tomrade server. Run `{{command}} mcp reset-project-choices` in the checkout, then `{{command}}`, and approve tomrade.",
     agentTools: "MCP tools configured",
     agentInstructions: "Instructions only",
     agentNotConfigured: "Not configured",
@@ -101,8 +101,8 @@ export const repositories = {
     tomradeAccountMissing: "This checkout uses Tomrade's GitHub account, which is not connected. Connect it under Storage."
   },
   zh: {
-    claudeApprovalPending: "Claude Code 还没有批准这个仓库的 tomrade 服务器，所以不会加载它。在仓库目录里运行 `claude`，出现询问时批准 tomrade。",
-    claudeApprovalRejected: "Claude Code 被设置为不加载这个仓库的 tomrade 服务器。在仓库目录里运行 `claude mcp reset-project-choices`，再运行 `claude` 并批准 tomrade。",
+    claudeApprovalPending: "Claude Code 还没有批准这个仓库的 tomrade 服务器，所以不会加载它。在仓库目录里运行 `{{command}}`，出现询问时批准 tomrade。",
+    claudeApprovalRejected: "Claude Code 被设置为不加载这个仓库的 tomrade 服务器。在仓库目录里运行 `{{command}} mcp reset-project-choices`，再运行 `{{command}}` 并批准 tomrade。",
     agentTools: "已配置 MCP 工具",
     agentInstructions: "仅有说明文档",
     agentNotConfigured: "未配置",

@@ -12,13 +12,17 @@ export const MCP_NAME = "tomrade";
 /** What a person (or a test) needs to know about one agent's user-level MCP configuration. */
 export interface UserMcpConfig {
   /** The file the agent keeps it in. */
-  file(): string;
+  file(profile?: string): string;
   /** The address its `tomrade` entry names; null when there is none; throws when the file cannot be read. */
-  configuredUrl(): string | null;
+  configuredUrl(profile?: string): string | null;
   add(url: string): string[];
   remove(): string[];
   cli: CliLocator;
   engineId: string;
+  /** An agent with several configuration folders: each one, the agent's own first. */
+  profiles?(): string[];
+  /** The environment that points the CLI at `profile`, and the same as a shell prefix (empty for the agent's own). */
+  profileEnv?(profile: string): { env(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv; prefix: string };
 }
 
 const failure = (result: CliRunResult): string | null =>
@@ -28,52 +32,99 @@ const failure = (result: CliRunResult): string | null =>
 export function userMcpLink(ctx: Context, config: UserMcpConfig): EngineMcpLink {
   const name = config.cli.name;
   const quote = (args: string[]) => [name, ...args].map((arg) => (/^[\w./:@=-]+$/.test(arg) ? arg : `"${arg}"`)).join(" ");
-  const view = (error?: string): McpLinkView => {
+  const profiles = () => config.profiles?.() ?? [];
+  const one = (profile: string | undefined, error?: string): McpLinkView => {
     const url = ctx.mcp.url;
-    const manual = { connect: quote(config.add(url ?? "<url>")), disconnect: quote(config.remove()) };
+    const prefix = profile ? (config.profileEnv?.(profile).prefix ?? "") : "";
+    const manual = { connect: prefix + quote(config.add(url ?? "<url>")), disconnect: prefix + quote(config.remove()) };
+    const file = config.file(profile);
+    const where = profile ? { profile } : {};
     let configuredUrl: string | null = null;
     try {
-      configuredUrl = config.configuredUrl();
+      configuredUrl = config.configuredUrl(profile);
     } catch (cause) {
-      return { state: "unavailable", url, configuredUrl, file: config.file(), manual, error: error ?? `Cannot read ${config.file()}: ${cause instanceof Error ? cause.message : String(cause)}` };
+      return { state: "unavailable", url, configuredUrl, file, manual, ...where, error: error ?? `Cannot read ${file}: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
     // A stale entry has to go before the new one is added.
     if (configuredUrl) manual.connect = `${manual.disconnect}; ${manual.connect}`;
     const state = !url ? "unavailable" : configuredUrl === url ? "connected" : configuredUrl ? "stale" : "missing";
-    return { state, url, configuredUrl, file: config.file(), manual, ...(error ? { error } : {}) };
+    return { state, url, configuredUrl, file, manual, ...where, ...(error ? { error } : {}) };
   };
-  const run = async (args: string[]): Promise<string | null> => {
+  /** The agent's own profile, with every profile listed when there are several; `error` goes on the one it is about. */
+  const view = (error?: string, about?: string): McpLinkView => {
+    const all = profiles();
+    const own = all[0];
+    if (all.length < 2) return one(own, error);
+    const listed = all.map((profile) => one(profile, profile === (about ?? own) ? error : undefined));
+    return { ...listed[0]!, profiles: listed };
+  };
+  const run = async (args: string[], profile: string | undefined): Promise<string | null> => {
     try {
-      return failure(await config.cli.run(chosenCommand(ctx, config.engineId), args, 30_000));
+      const env = profile && config.profileEnv ? config.profileEnv(profile).env : undefined;
+      return failure(await config.cli.run(chosenCommand(ctx, config.engineId), args, 30_000, env));
     } catch (cause) {
       return cause instanceof Error ? cause.message : String(cause);
     }
   };
+  const pick = (profile?: string) => (profile && profiles().includes(profile) ? profile : profiles()[0]);
   return {
     async status() {
       return view();
     },
-    async connect() {
+    async connect(profile) {
+      const target = pick(profile);
       const url = ctx.mcp.url;
-      if (!url) return view("Tomrade's MCP server is not running");
-      const before = view();
-      if (before.state === "connected") return before;
+      if (!url) return view("Tomrade's MCP server is not running", target);
+      const before = one(target);
+      if (before.state === "connected") return view();
       if (before.configuredUrl) {
-        const error = await run(config.remove());
-        if (error) return view(error);
+        const error = await run(config.remove(), target);
+        if (error) return view(error, target);
       }
-      return view((await run(config.add(url))) ?? undefined);
+      return view((await run(config.add(url), target)) ?? undefined, target);
     },
-    async disconnect() {
-      if (!view().configuredUrl) return view();
-      return view((await run(config.remove())) ?? undefined);
+    async disconnect(profile) {
+      const target = pick(profile);
+      if (!one(target).configuredUrl) return view();
+      return view((await run(config.remove(), target)) ?? undefined, target);
     }
   };
 }
 
+const defaultConfigDir = (home = os.homedir()) => path.join(home, ".claude");
+
 /** Claude Code keeps user-scope servers in `.claude.json`, beside CLAUDE_CONFIG_DIR's settings or in the home folder. */
 export function claudeUserFile(env: NodeJS.ProcessEnv = process.env): string {
   return env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, ".claude.json") : path.join(os.homedir(), ".claude.json");
+}
+
+/** The environment Claude Code needs to run under one config folder: none for the default `~/.claude`. */
+export function claudeProfileEnv(dir: string, home = os.homedir()): NodeJS.ProcessEnv {
+  return path.resolve(dir) === defaultConfigDir(home) ? {} : { CLAUDE_CONFIG_DIR: path.resolve(dir) };
+}
+
+/** The config folder a session ran under, from its transcript: `<dir>/projects/<folder>/<session>.jsonl`. */
+export function claudeConfigDirOf(transcript: string): string | null {
+  const parts = path.resolve(transcript).split(path.sep);
+  return parts.length > 3 && parts.at(-3) === "projects" && parts.at(-1)!.endsWith(".jsonl") ? parts.slice(0, -3).join(path.sep) || path.sep : null;
+}
+
+/**
+ * Every Claude Code config folder in use here, the one this process would use
+ * first. Several accounts are often one alias each (`CLAUDE_CONFIG_DIR=~/.claude-work claude`),
+ * which an app opened from the Dock never sees: such folders are found beside
+ * the default one, and from the transcripts sessions report through their hooks.
+ */
+export function claudeConfigDirs(env: NodeJS.ProcessEnv = process.env, home = os.homedir(), seen: Iterable<string> = []): string[] {
+  const own = env.CLAUDE_CONFIG_DIR ? path.resolve(env.CLAUDE_CONFIG_DIR) : defaultConfigDir(home);
+  let beside: string[] = [];
+  try {
+    beside = fs.readdirSync(home).filter((name) => /^\.claude[-_.]./.test(name)).map((name) => path.join(home, name)).filter((dir) => fs.existsSync(path.join(dir, ".claude.json")));
+  } catch {
+    // An unreadable home folder hides only these.
+  }
+  const usedDefault = fs.existsSync(path.join(home, ".claude.json")) ? [defaultConfigDir(home)] : [];
+  return [...new Set([own, ...usedDefault, ...[...seen].map((dir) => path.resolve(dir)), ...beside])];
 }
 
 function readJson(file: string): Record<string, unknown> {
@@ -88,14 +139,43 @@ const urlOf = (server: unknown): string | null => {
 };
 
 export function claudeMcpLink(ctx: Context, cli: CliLocator): EngineMcpLink {
-  return { ...userMcpLink(ctx, {
-    engineId: "claude-code",
-    cli,
-    file: () => claudeUserFile(),
-    configuredUrl: () => urlOf((readJson(claudeUserFile()).mcpServers as Record<string, unknown> | undefined)?.[MCP_NAME]),
-    add: (url) => ["mcp", "add", "--scope", "user", "--transport", "http", MCP_NAME, url],
-    remove: () => ["mcp", "remove", "--scope", "user", MCP_NAME]
-  }), projectApproval: (dir) => claudeProjectServerApproval(dir) };
+  // Folders seen only through a session's hooks; the alias that set them is invisible from here.
+  const seen = new Set<string>();
+  const profiles = () => claudeConfigDirs(process.env, os.homedir(), seen);
+  const envOf = (profile?: string) => (profile ? claudeProfileEnv(profile) : process.env);
+  const own = () => profiles()[0]!;
+  const prefixOf = (profile: string) => {
+    if (profile === own()) return "";
+    const dir = claudeProfileEnv(profile).CLAUDE_CONFIG_DIR;
+    const home = os.homedir();
+    const shown = dir && dir.startsWith(home + path.sep) ? `~${dir.slice(home.length)}` : dir;
+    return dir ? `CLAUDE_CONFIG_DIR=${/\s/.test(shown!) ? `"${shown}"` : shown} ` : "env -u CLAUDE_CONFIG_DIR ";
+  };
+  return {
+    ...userMcpLink(ctx, {
+      engineId: "claude-code",
+      cli,
+      profiles,
+      profileEnv: (profile) => ({
+        env: (base) => {
+          const { CLAUDE_CONFIG_DIR: _, ...rest } = base;
+          return { ...rest, ...claudeProfileEnv(profile) };
+        },
+        prefix: prefixOf(profile)
+      }),
+      file: (profile) => claudeUserFile(envOf(profile)),
+      configuredUrl: (profile) => urlOf((readJson(claudeUserFile(envOf(profile))).mcpServers as Record<string, unknown> | undefined)?.[MCP_NAME]),
+      add: (url) => ["mcp", "add", "--scope", "user", "--transport", "http", MCP_NAME, url],
+      remove: () => ["mcp", "remove", "--scope", "user", MCP_NAME]
+    }),
+    projectApproval: (dir) => claudeProjectServerApproval(dir),
+    projectApprovals: (dir) =>
+      profiles().map((profile) => ({ profile, state: claudeProjectServerApproval(dir, MCP_NAME, claudeProfileEnv(profile)), command: `${prefixOf(profile)}claude` })),
+    sawTranscript: (file) => {
+      const dir = claudeConfigDirOf(file);
+      if (dir) seen.add(dir);
+    }
+  };
 }
 
 /**

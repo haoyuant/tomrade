@@ -13,7 +13,8 @@ export const mcpLink = {
     disconnect: "Disconnect",
     working: "Working…",
     failed: "Could not change {{title}}'s settings: {{error}}",
-    manual: "To do it by hand, run:"
+    manual: "To do it by hand, run:",
+    profiles: "{{title}} keeps a separate configuration for each account on this machine. Connect the ones whose sessions should reach Tomrade."
   },
   zh: {
     title: "你自己开的会话",
@@ -29,6 +30,7 @@ export const mcpLink = {
     disconnect: "断开",
     working: "处理中…",
     failed: "无法修改 {{title}} 的设置：{{error}}",
-    manual: "手动操作可以运行："
+    manual: "手动操作可以运行：",
+    profiles: "这台电脑上的 {{title}} 每个账号各有一份配置。需要连到 Tomrade 的账号，分别连接。"
   }
 };
