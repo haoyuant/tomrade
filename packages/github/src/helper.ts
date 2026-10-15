@@ -82,12 +82,27 @@ const readsOtherSettings = (value: string, settings: string): boolean => {
   }
 };
 
-/** Repoint a checkout whose helper still lives under a Hub folder at the userData one. */
+/**
+ * A helper hands off to the Electron that wrote it. When that build was deleted (a dev checkout or
+ * worktree that is gone), every git call that reaches the helper fails with "cannot execute".
+ */
+const helperRunnable = (value: string): boolean => {
+  const helper = /^!'(.*)'$/.exec(value)?.[1]?.replace(/'\\''/g, "'");
+  if (!helper) return true;
+  try {
+    const target = /\bexec '((?:[^']|'\\'')*)'/.exec(fs.readFileSync(helper, "utf8"))?.[1]?.replace(/'\\''/g, "'");
+    return !target || fs.existsSync(target);
+  } catch {
+    return false;
+  }
+};
+
+/** Repoint a checkout whose helper still lives under a Hub folder at the userData one, or whose helper can no longer run. */
 export async function migrateGithubCredential(git: Git, checkout: string, settings: string): Promise<boolean> {
   const result = await git(["config", "--local", "--get-all", key], { cwd: checkout, ok: true });
   if (result.code !== 0) return false;
   const current = credentialCommand(settings);
-  const stale = result.stdout.split("\n").map((line) => line.trimEnd()).some((line) => !!line && line !== current && namesOurHelper(line) && !readsOtherSettings(line, settings));
+  const stale = result.stdout.split("\n").map((line) => line.trimEnd()).some((line) => !!line && line !== current && namesOurHelper(line) && (!readsOtherSettings(line, settings) || !helperRunnable(line)));
   if (!stale) return false;
   await installGithubCredential(git, checkout, settings);
   return true;

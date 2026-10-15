@@ -118,6 +118,8 @@ declare module "@tomradex/ipc" {
     "codeLink.remoteIdentity": (remote: string) => RemoteIdentity;
     "codeLink.githubCredentialAccount": (projectId: string, repoId: string) => string | null;
     "codeLink.useGithubCredential": (projectId: string, repoId: string) => RepoStateView;
+    /** Check origin again from this checkout now, first repairing a credential helper that can no longer run. */
+    "codeLink.recheckRemote": (projectId: string, repoId: string) => RepoStateView;
     "codeLink.setRepoPolicy": (projectId: string, repoId: string, patch: RepoPolicyPatch) => RepoStateView;
     /** Whether each installed coding agent's own settings let it run gh pr merge here. */
     "codeLink.mergeChecks": (projectId: string, repoId: string) => MergeCheckView[];
@@ -451,6 +453,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.remoteIdentity", (remote) => ctx.codeLink.remoteIdentity(remote));
       ctx.ipc.handle("codeLink.githubCredentialAccount", (projectId, repoId) => ctx.codeLink.githubCredentialAccount(projectId, repoId));
       ctx.ipc.handle("codeLink.useGithubCredential", (projectId, repoId) => ctx.codeLink.useGithubCredential(projectId, repoId));
+      ctx.ipc.handle("codeLink.recheckRemote", (projectId, repoId) => ctx.codeLink.recheckRemote(projectId, repoId));
       ctx.ipc.handle("codeLink.setRepoPolicy", (projectId, repoId, patch) => ctx.codeLink.setRepoPolicy(projectId, repoId, patch));
       ctx.ipc.handle("codeLink.mergeChecks", (projectId, repoId) => ctx.codeLink.mergeChecks(projectId, repoId));
       ctx.ipc.handle("codeLink.allowMerge", (projectId, repoId, engineId) => ctx.codeLink.allowMerge(projectId, repoId, engineId));
@@ -542,8 +545,20 @@ export class CodeLink extends Service {
     const origin = await new GitFolder(this.git, checkout).remoteUrl();
     if (!origin || !githubHttps(origin) || normalizeRemote(origin) !== normalizeRemote(repo.remote)) throw new Error("The checkout's origin has changed. Choose the checkout again.");
     await this.ctx.github.installHelper(this.git, checkout);
+    return this.probeAndRecord(projectId, repoId, checkout, repo.defaultBranch);
+  }
+
+  async recheckRemote(projectId: string, repoId: string): Promise<RepoStateView> {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    const checkout = repo ? this.ctx.repos.checkout(repo.remote).checkout : null;
+    if (!repo || !checkout || !fs.existsSync(checkout)) throw new Error("Choose this repository's checkout first.");
+    await this.migrateCredentialHelpers(projectId);
+    return this.probeAndRecord(projectId, repoId, checkout, repo.defaultBranch);
+  }
+
+  private async probeAndRecord(projectId: string, repoId: string, checkout: string, branch: string): Promise<RepoStateView> {
     await this.inFlight.get(projectId);
-    const probe = await probeRemote(this.git, checkout, repo.defaultBranch);
+    const probe = await probeRemote(this.git, checkout, branch);
     const reachable = probe.state !== "offline";
     const state = this.store.upsertRepoState(projectId, repoId, {
       remote: reachable ? "ok" : "unreachable",

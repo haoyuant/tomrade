@@ -164,3 +164,19 @@ it("leaves a checkout on another Tomrade's helper, and still moves an old Hub he
   expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(true);
   expect(await usesTomradeCredential(f.git, f.dir, f.settings)).toBe(true);
 });
+
+it("repairs a checkout whose other-Tomrade helper can no longer run, because the build that wrote it was deleted", async () => {
+  const f = await fixture();
+  const dev = path.join(f.dir, "dev data");
+  const devSettings = path.join(dev, "settings.json");
+  fs.mkdirSync(dev);
+  fs.writeFileSync(devSettings, JSON.stringify({ github: { token: "dev-token" } }));
+  await installGithubCredential(f.git, f.dir, devSettings);
+  expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(false);
+
+  const script = path.join(dev, "bin", "tomrade-credential");
+  fs.writeFileSync(script, fs.readFileSync(script, "utf8").replace(process.execPath, path.join(f.dir, "removed-worktree", "Electron")));
+  expect(await migrateGithubCredential(f.git, f.dir, f.settings)).toBe(true);
+  expect(await usesTomradeCredential(f.git, f.dir, f.settings)).toBe(true);
+  expect((await f.fill()).stdout).toContain("password=test-token-one");
+});

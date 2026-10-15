@@ -4,6 +4,7 @@ import { DeliveryStore } from "@tomradex/db";
 import type { ItemStatus } from "@tomradex/domain";
 import { DEFAULT_BRANCH_TEMPLATE } from "./keys.js";
 import type { PrState } from "./rules.js";
+import { classifyRemoteFailure, type RemoteFailure } from "./remote.js";
 
 export const MIGRATIONS = [
   {
@@ -198,6 +199,8 @@ export interface RepoStateView {
   readiness: Readiness;
   remote: RemoteState;
   remoteDetail: string | null;
+  /** Why origin is unreachable, read from the detail; null while it is not. */
+  remoteCause: RemoteFailure | null;
   /** Last time this machine reached origin successfully. */
   remoteAt: number | null;
   hasBrief: boolean;
@@ -371,6 +374,7 @@ const toRepo = (r: RepoRow): RepoStateView => ({
   readiness: r.readiness as Readiness,
   remote: r.remote as RemoteState,
   remoteDetail: r.remote_detail,
+  remoteCause: r.remote === "unreachable" ? classifyRemoteFailure(r.remote_detail ?? "") : null,
   remoteAt: r.remote_at,
   hasBrief: r.has_brief === 1,
   manifests: JSON.parse(r.manifests_json) as string[],
@@ -648,12 +652,15 @@ export class CodeLinkStore {
   upsertRepoState(projectId: string, repoId: string, patch: RepoStatePatch): RepoStateView {
     const existing = this.repoState(projectId, repoId);
     const now = Date.now();
+    const remote = patch.remote ?? existing?.remote ?? "unknown";
+    const remoteDetail = patch.remoteDetail === undefined ? (existing?.remoteDetail ?? null) : patch.remoteDetail;
     const next: RepoStateView = {
       repoId,
       projectId,
       readiness: patch.readiness ?? existing?.readiness ?? "unknown",
-      remote: patch.remote ?? existing?.remote ?? "unknown",
-      remoteDetail: patch.remoteDetail === undefined ? (existing?.remoteDetail ?? null) : patch.remoteDetail,
+      remote,
+      remoteDetail,
+      remoteCause: remote === "unreachable" ? classifyRemoteFailure(remoteDetail ?? "") : null,
       remoteAt: patch.remoteAt === undefined ? (existing?.remoteAt ?? null) : patch.remoteAt,
       hasBrief: patch.hasBrief ?? existing?.hasBrief ?? false,
       manifests: patch.manifests ?? existing?.manifests ?? [],

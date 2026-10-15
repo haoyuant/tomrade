@@ -63,6 +63,14 @@ export const repositories = {
     credentialConnected: "This checkout and its worktrees now use Tomrade's GitHub account. Origin is reachable.",
     credentialStillUnreachable: "Git credentials updated, but origin is still unreachable. Check the account's repository access and your network.",
     noCredential: "no credential for {{host}}",
+    cause_network: "Could not reach the server — check your connection or proxy, then check again.",
+    cause_credentials: "The server turned the credentials down, or none were offered. Connect your GitHub account, or check its access to this repository.",
+    cause_helper: "A credential helper in this checkout's git config no longer exists (left by a Tomrade build that was removed). Checking again replaces it.",
+    cause_unknown: "Origin could not be reached for a reason git did not name. The detail above is what it said.",
+    recheck: "Check again",
+    rechecking: "Checking origin…",
+    recheckOk: "Origin is reachable.",
+    recheckStill: "Origin is still unreachable.",
     tomradeAccountMissing: "This checkout uses Tomrade's GitHub account, which is not connected. Connect it under Storage."
   },
   zh: {
@@ -129,6 +137,14 @@ export const repositories = {
     credentialConnected: "此 checkout 及其 worktree 已使用 Tomrade 的 GitHub 账户，origin 可访问。",
     credentialStillUnreachable: "Git 凭据已更新，但 origin 仍不可访问。请检查账户的仓库权限和网络。",
     noCredential: "没有 {{host}} 的凭据",
+    cause_network: "连不上服务器——请检查网络或代理，然后重新检查。",
+    cause_credentials: "服务器拒绝了凭据，或没有提供凭据。请连接你的 GitHub 账户，或检查它对这个仓库的权限。",
+    cause_helper: "这个 checkout 的 git 配置里有一个凭据助手已经不存在（由已被删除的 Tomrade 构建留下）。重新检查会把它替换掉。",
+    cause_unknown: "origin 连不上，git 没有说明原因。上面的详情就是它的原话。",
+    recheck: "重新检查",
+    rechecking: "正在检查 origin…",
+    recheckOk: "origin 可以访问。",
+    recheckStill: "origin 仍然无法访问。",
     tomradeAccountMissing: "此 checkout 使用 Tomrade 的 GitHub 账户，但该账户尚未连接。请在「存储」中连接。"
   }
 };

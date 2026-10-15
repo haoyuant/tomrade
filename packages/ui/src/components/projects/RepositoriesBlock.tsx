@@ -4,7 +4,7 @@ import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
-import { useAllowMerge, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRemoteIdentity, useRepoStates, useSetRepoPolicy } from "~/lib/codeLink";
+import { useAllowMerge, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRecheckRemote, useRemoteIdentity, useRepoStates, useSetRepoPolicy } from "~/lib/codeLink";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import {
@@ -18,12 +18,13 @@ import {
   useRepos,
   useSelectCheckout,
   useSetRunInCheckout,
+  useStorageProviders,
   useUpdateBoard,
   useUpdateRepo
 } from "~/lib/queries";
 import { pickDirectory, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
-import { message } from "./destination";
+import { ConnectionPanel, message } from "./destination";
 
 /** Enter or blur commits, Escape restores — the one-line rename the Fields sheet uses. */
 function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { value: string; ariaLabel: string; className?: string; placeholder?: string; onSave: (next: string) => void }) {
@@ -182,12 +183,14 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
   const identity = useRemoteIdentity(repo.remote, !!checkout?.checkout);
   const account = useGithubCredentialAccount(projectId, repo.id, !!checkout?.checkout && remoteState?.remote === "unreachable");
   const useCredential = useGithubCredential(projectId, repo.remote);
+  const recheck = useRecheckRemote(projectId, repo.remote);
+  const github = useStorageProviders().data?.find((p) => p.id === "github");
   const [picking, setPicking] = useState(false);
   const [cloneTarget, setCloneTarget] = useState<{ parent: string; dir: string; origin?: string } | null>(null);
   useEffect(() => {
     if (checkout?.checkout) setCloneTarget(null);
   }, [checkout?.checkout]);
-  const busy = update.isPending || remove.isPending || selectCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending || useCredential.isPending;
+  const busy = update.isPending || remove.isPending || selectCheckout.isPending || clearCheckout.isPending || setRun.isPending || clone.isPending || useCredential.isPending || recheck.isPending;
   const fail = (error: unknown) => toast({ body: message(error) });
 
   const choose = async () => {
@@ -307,6 +310,22 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
               ? t("repositories.tomradeAccountMissing")
               : t("repositories.noCredential", { host: identity.data.host })}
         </p>
+      )}
+      {checkout?.checkout && remoteState?.remote === "unreachable" && (
+        <div className="stack-2 repo-remote-fix" data-testid="repo-remote-fix">
+          <p className="meta-txt dense">{t(`repositories.cause_${remoteState.remoteCause ?? "unknown"}` as MessageKey)}</p>
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-secondary repo-recheck"
+              disabled={busy}
+              onClick={() => recheck.mutate(repo.id, { onSuccess: (state) => toast({ body: t(state.remote === "ok" ? "repositories.recheckOk" : "repositories.recheckStill") }), onError: fail })}
+            >
+              {recheck.isPending ? t("repositories.rechecking") : t("repositories.recheck")}
+            </button>
+          </div>
+          {remoteState.remoteCause === "credentials" && !account.data && github?.connection && <ConnectionPanel provider={github} />}
+        </div>
       )}
       {checkout?.checkout && remoteState?.remote === "unreachable" && account.data && (
         <button

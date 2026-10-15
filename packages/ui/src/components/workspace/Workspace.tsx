@@ -5,6 +5,7 @@ import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { SyncIssuesDialog } from "~/components/dialogs/SyncIssuesDialog";
 import { SyncIssuesChip } from "~/components/chrome/SyncIssuesChip";
+import { RepoIssuesChip } from "~/components/chrome/RepoIssuesChip";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
 import { HistoryDialog } from "~/components/dialogs/HistoryDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
@@ -348,6 +349,7 @@ export function Workspace() {
 
       <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)}>
         <SyncIssuesChip projectId={ws.project.id} onOpen={() => setSyncIssues(true)} />
+        <RepoIssuesChip projectId={ws.project.id} onOpen={() => setProjectSettings("repositories")} />
       </StatusBar>
       <SyncIssuesDialog projectId={ws.project.id} open={syncIssues} onOpenChange={setSyncIssues} onOpenIssue={ws.select} />
 
