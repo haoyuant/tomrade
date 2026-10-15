@@ -1,5 +1,7 @@
-# Every v<semver> tag builds the installers on all three systems and attaches
-# them, with the update manifests, to a draft release, which is published by hand. macOS builds are signed
+# Every v<semver> tag builds the installers on all three systems, uploads them
+# to download.tomrade.com/<version>/ and attaches the update manifests to a
+# draft release, which is published by hand. Publishing has the site's mirror
+# write the manifests that point at the new version. macOS builds are signed
 # with the Developer ID certificate and notarized; the secrets are listed in
 # docs/releasing.md.
 name: Release
@@ -50,9 +52,8 @@ jobs:
           security find-identity -v -p codesigning "$kc" | grep -q "Developer ID Application" \
             || { echo "::error::The keychain has no valid Developer ID Application identity"; exit 1; }
 
-  # The builds upload to this draft themselves. Through artifacts every
-  # installer would cross the Mac's line three times: up as an artifact, down
-  # to the release job, and up again to the release.
+  # The builds put their update manifests on this draft themselves; the
+  # installers go to R2.
   draft:
     name: Draft release
     runs-on: [self-hosted, macOS, ARM64]
@@ -177,9 +178,25 @@ jobs:
             xcrun stapler validate "$dmg"
           done
 
-      # Straight onto the draft, replacing what an earlier attempt put there.
-      # The Mac update manifests wait for the release job, which merges the two.
-      - name: Upload to the draft
+      # Straight from this Mac to download.tomrade.com/<version>/, once. Through
+      # the release, every installer crossed the Mac's line three times: up to
+      # GitHub, down to the site's mirror, up to R2. Nothing names these files
+      # until the release is published and the mirror writes the manifests.
+      - name: Upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::error::Secret CLOUDFLARE_API_TOKEN is not set"; exit 1; fi
+          shopt -s nullglob
+          files=(apps/desktop/release/*.{dmg,zip,exe,AppImage,blockmap})
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers to upload"; exit 1; fi
+          node apps/desktop/scripts/upload-r2.mjs "${GITHUB_REF_NAME#v}" "${files[@]}"
+
+      # Only the update manifests go on the draft: the mirror reads them from
+      # there. The Mac ones wait for the release job, which merges the two.
+      - name: Upload the update manifests to the draft
+        if: ${{ !startsWith(matrix.slug, 'mac-') }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -187,10 +204,10 @@ jobs:
         run: |
           shopt -s nullglob
           files=()
-          for f in apps/desktop/release/*.{dmg,zip,exe,AppImage,blockmap,yml}; do
+          for f in apps/desktop/release/*.yml; do
             case "$(basename "$f")" in builder-debug.yml|*-mac.yml) ;; *) files+=("$f") ;; esac
           done
-          if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers to upload"; exit 1; fi
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::No update manifests to upload"; exit 1; fi
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
