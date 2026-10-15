@@ -1458,7 +1458,22 @@ const { greeting } = ctx.settings.get().hello as { greeting: string };
 validates each registered section against its schema and persists the file.
 The settings dialog draws a card for every section it does not lay out by hand,
 from the schema's JSON Schema: strings, numbers, booleans and enums; a string
-with `format: "password"` is masked.
+with `format: "password"` is masked. `show(id)` opens Settings on a section
+from outside the window — a click in a desktop surface: it broadcasts
+`settings.show`, the renderer turns Settings to that pane, and the desktop shell
+brings the main window forward. Extensions call `ctx.settings.show()` for their
+own section.
+
+Extensions speak the app's language, not their own. A section's `title`,
+`description` and the schema's `.meta({ title })` / `.describe()` are the
+English; `words: { zh: { title, description, fields: { key: { title,
+description, options } } } }` gives the card in Chinese, as built-ins do.
+`ctx.settings.locale()` is the language now (`"en"` or `"zh"`); it is a setting,
+so `settings.changed` fires when the person switches it. Titles the app draws —
+commands and their group, status item and section titles, sidebar modules —
+take a `Localized`: a string, or `{ en, zh }` picked each time it is shown.
+Text a callback returns (a status item's `text` and `menu`, a surface's state)
+is the plugin's to put in `locale()`.
 
 A section has a **scope**. `machine` (the default) stays in
 `<userData>/settings.json`: credentials, paths, binaries. `user` follows the
@@ -1516,21 +1531,19 @@ project first, so it works from the projects home too; `settingsPane` opens
 Settings on that pane); sections in the
 detail pane and the issue sheet. Registering or
 unregistering any of them broadcasts `contributions.changed`, and the renderer
-refetches. A section row may carry `href` — its value opens that link in the
+refetches. A status item may also give `until`, an epoch ms the renderer counts
+down to after the text (`mm:ss`, in the same run of text so the two share a line) without polling; when it
+arrives the bar re-reads the item. `menu` lists `{ title, command, icon? }`
+actions; with it, a click opens them as a menu instead of running `command`,
+and it is re-read with the text so its entries can follow state. State that changes outside a command run —
+a timer phase, a click in a desktop surface — calls
+`ctx.contributions.refresh()` so every window re-reads. Extensions name their
+status item's `command` in their own namespace. A section row may carry `href` — its value opens that link in the
 browser — or `command`, the id of a palette command the value runs with the
 item in scope; `icon` (a sprite id) leads the label, `mono` sets the value in
 the mono face, and `state` puts a mark before the value — `live` breathes,
 `waiting` blinks, `ended`/`lost` are hollow — still declarative, still drawn by
 the renderer.
-
-An **assistant widget** is a compact row below the pet, in normal layout flow
-so it cannot cover the pet. Extensions register
-`ctx.contributions.assistantWidget({ id: "hello.timer", title: "Timer", render: () => ({ text: "25:00", detail: "Focus", progress: 0.25, actions: [{ title: "Start", command: "hello.start" }] }) })`.
-`render` may be async or return null to hide the row; it is isolated with the
-same two-second limit as other extension renderers. The renderer polls once
-per second while the panel is visible. Progress is a fraction from 0 to 1;
-actions run registered commands in the plugin's namespace as the person.
-Widgets and their callbacks disappear when the plugin unloads.
 
 An `animated-pet` **assistant accessory** reserves the renderer-owned stage
 directly above the composer. Each state is a still or animated image (GIF,
@@ -1586,6 +1599,11 @@ return type. Every renderer write is a human write; channel handlers pass
 
 Surface documents that need keyboard input can pass `focusable: true` to
 `ctx.surfaces.open`. The default is false for passive desktop widgets.
+`anchor` names where it first appears: on top of the app element marked
+`data-surface-anchor` with that name, left edges aligned — `"sidebar-foot"` is
+just above the sidebar's Project settings. When the element is not on screen
+(another page, a collapsed sidebar) it opens at the bottom-right of the work
+area, as without one.
 
 ## Auxiliary desktop surfaces
 

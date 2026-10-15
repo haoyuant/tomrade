@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
 import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities } from "@tomradex/desktop-surface";
+import type {} from "@tomradex/settings";
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";
@@ -17,6 +18,8 @@ interface OpenSurface {
   loaded: boolean;
   controller: DesktopSurface;
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const isWayland = (): boolean =>
   process.platform === "linux" &&
@@ -53,6 +56,14 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     };
     ipcMain.on(INTERACTIVE_CHANNEL, onInteractive);
     ipcMain.on(MESSAGE_CHANNEL, onMessage);
+    // A surface that asks for Settings is outside the window; the window comes forward to show it.
+    this.ctx.on("settings/show", () => {
+      const win = this.mainWindow();
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    });
     app.on("before-quit", onQuit);
     autoUpdater.on("before-quit-for-update", onQuit);
     return () => {
@@ -125,6 +136,14 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     record = { spec, win, contentsId: win.webContents.id, state: spec.initialState, loaded: false, controller };
     this.openById.set(spec.id, record);
     this.openByContents.set(record.contentsId, record);
+    // Registered first, so the search for the app window cannot land on this surface.
+    if (spec.anchor && caps.programmaticPosition) void this.anchorOf(spec.anchor).then((at) => {
+      if (!at || win.isDestroyed()) return;
+      const area = screen.getDisplayMatching({ x: at.x, y: at.y, width: 1, height: 1 }).workArea;
+      const x = Math.max(area.x, Math.min(area.x + area.width - spec.width, at.x));
+      const y = Math.max(area.y, Math.min(area.y + area.height - spec.height, at.y - spec.height));
+      win.setPosition(Math.round(x), Math.round(y), false);
+    });
 
     win.webContents.on("did-finish-load", () => {
       if (win.isDestroyed()) return;
@@ -138,6 +157,30 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
 
     this.ctx.effect(() => () => this.destroy(record), `desktopSurfaces.open(${spec.id})`);
     return controller;
+  }
+
+  /** The Tomrade window: not a surface, not a dialog. */
+  private mainWindow(): BrowserWindow | undefined {
+    return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !w.getParentWindow() && w.isFocusable() && !this.openByContents.has(w.webContents.id));
+  }
+
+  /** The anchor's top-left on screen, once the window has drawn it; null when it never shows. */
+  private async anchorOf(name: string): Promise<{ x: number; y: number } | null> {
+    const win = this.mainWindow();
+    if (!win || win.isMinimized() || !win.isVisible()) return null;
+    const selector = JSON.stringify(`[data-surface-anchor=${JSON.stringify(name)}]`);
+    const js = `(() => { const r = document.querySelector(${selector})?.getBoundingClientRect(); return r && r.width ? { x: r.left, y: r.top } : null; })()`;
+    // At launch the window may still be loading or routing; give it a few seconds.
+    for (let tries = 0; tries < 20 && !win.isDestroyed(); tries++) {
+      const at = win.webContents.isLoading() ? null : ((await win.webContents.executeJavaScript(js, true).catch(() => null)) as { x: number; y: number } | null);
+      if (at) {
+        const content = win.getContentBounds();
+        const zoom = win.webContents.getZoomFactor();
+        return { x: content.x + at.x * zoom, y: content.y + at.y * zoom };
+      }
+      await sleep(250);
+    }
+    return null;
   }
 
   private forget(surface: OpenSurface): void {

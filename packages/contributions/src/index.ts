@@ -71,6 +71,17 @@ export interface StatusItem {
   icon?: string;
   /** Which end of the bar it sits at; absent, the left cluster after the live items. */
   align?: "start" | "end";
+  /** A moment (epoch ms) the item counts down to: the renderer draws the remaining mm:ss after the text, ticking locally. */
+  until?(scope: { projectId?: string }): number | null | Promise<number | null>;
+  /** Clicking opens these actions instead of running `command`; re-read with the text, so it can follow state. */
+  menu?(scope: { projectId?: string }): StatusMenuEntry[] | null | Promise<StatusMenuEntry[] | null>;
+}
+
+export interface StatusMenuEntry {
+  title: string;
+  command: string;
+  /** Icon id from the renderer's sprite. */
+  icon?: string;
 }
 
 export interface StatusItemView {
@@ -81,6 +92,8 @@ export interface StatusItemView {
   title?: string;
   icon?: string;
   align?: "start" | "end";
+  until?: number;
+  menu?: StatusMenuEntry[];
 }
 
 export interface GraphEdge {
@@ -226,22 +239,6 @@ export interface AssistantAccessory {
   animations: Record<string, AccessoryAnimation>;
 }
 
-export interface AssistantWidgetContent {
-  text: string;
-  detail?: string;
-  progress?: number;
-  actions?: { title: string; command: string }[];
-}
-export interface AssistantWidget {
-  id: string;
-  title: string;
-  render(): AssistantWidgetContent | null | Promise<AssistantWidgetContent | null>;
-}
-export interface AssistantWidgetView extends AssistantWidgetContent {
-  id: string;
-  title: string;
-}
-
 declare module "cordis" {
   interface Context {
     contributions: Contributions;
@@ -257,7 +254,6 @@ declare module "@tomradex/ipc" {
     "contributions.sections": (projectId: string, itemId: string) => SectionView[];
     "contributions.graphs": () => GraphInfo[];
     "contributions.graph": (id: string, scope: { projectId: string }) => GraphEdge[];
-    "contributions.assistantWidgets": () => AssistantWidgetView[];
     "contributions.assistantAccessories": () => AssistantAccessory[];
     "contributions.sidebarModules": (projectId: string) => SidebarModuleView[];
   }
@@ -275,7 +271,6 @@ export class Contributions extends Service {
   private statusMap = new Map<string, StatusItem>();
   private sectionMap = new Map<string, Section>();
   private graphMap = new Map<string, GraphSpec>();
-  private assistantWidgetMap = new Map<string, AssistantWidget>();
   private assistantAccessoryMap = new Map<string, AssistantAccessory>();
   private sidebarModuleMap = new Map<string, SidebarModule>();
   private notify: () => void = () => {};
@@ -293,7 +288,6 @@ export class Contributions extends Service {
       ctx.ipc.handle("contributions.sections", (projectId, itemId) => ctx.contributions.sectionsFor(projectId, itemId));
       ctx.ipc.handle("contributions.graphs", () => ctx.contributions.graphs());
       ctx.ipc.handle("contributions.graph", (id, scope) => ctx.contributions.graphEdges(id, scope));
-      ctx.ipc.handle("contributions.assistantWidgets", () => ctx.contributions.assistantWidgets());
       ctx.ipc.handle("contributions.assistantAccessories", () => ctx.contributions.assistantAccessories());
       ctx.ipc.handle("contributions.sidebarModules", (projectId) => ctx.contributions.sidebarModules(projectId));
       this.notify = () => ctx.ipc.send("contributions.changed");
@@ -321,18 +315,6 @@ export class Contributions extends Service {
 
   graph(def: GraphSpec): () => void {
     return this.add(this.graphMap, def, "graph");
-  }
-
-  assistantWidget(def: AssistantWidget): () => void {
-    return this.add(this.assistantWidgetMap, def, "assistantWidget");
-  }
-
-  async assistantWidgets(): Promise<AssistantWidgetView[]> {
-    const rows = await Promise.all([...this.assistantWidgetMap.values()].map(async (w) => {
-      const content = await this.isolated(`assistant widget ${w.id}`, () => w.render(), null);
-      return content ? { ...content, id: w.id, title: w.title } : null;
-    }));
-    return rows.filter((row): row is AssistantWidgetView => row !== null);
   }
 
   assistantAccessory(def: AssistantAccessory): () => void {
@@ -365,8 +347,18 @@ export class Contributions extends Service {
   }
 
   async statusItems(scope: { projectId?: string }): Promise<StatusItemView[]> {
-    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({ id: s.id, opens: s.opens, command: s.command, title: said(s.title), icon: s.icon, align: s.align, text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null) })));
-    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}), ...(t.command ? { command: t.command } : {}), ...(t.title ? { title: t.title } : {}), ...(t.icon ? { icon: t.icon } : {}), ...(t.align ? { align: t.align } : {}) }] : []));
+    const texts = await Promise.all([...this.statusMap.values()].map(async (s) => ({
+      id: s.id, opens: s.opens, command: s.command, title: said(s.title), icon: s.icon, align: s.align,
+      text: await this.isolated(`status item ${s.id}`, () => s.text(scope), null),
+      until: s.until ? await this.isolated(`status item ${s.id} until`, () => s.until!(scope), null) : null,
+      menu: s.menu ? await this.isolated(`status item ${s.id} menu`, () => s.menu!(scope), null) : null
+    })));
+    return texts.flatMap((t) => (t.text ? [{ id: t.id, text: t.text, ...(t.opens ? { opens: t.opens } : {}), ...(t.command ? { command: t.command } : {}), ...(t.title ? { title: t.title } : {}), ...(t.icon ? { icon: t.icon } : {}), ...(t.align ? { align: t.align } : {}), ...(Number.isFinite(t.until) ? { until: t.until! } : {}), ...(t.menu?.length ? { menu: t.menu } : {}) }] : []));
+  }
+
+  /** State behind a contribution changed outside a command run (a timer phase, a desktop click): every window re-reads. */
+  changed(): void {
+    this.notify();
   }
 
   async sidebarModules(projectId: string): Promise<SidebarModuleView[]> {

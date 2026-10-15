@@ -27,6 +27,11 @@ export interface DesktopSurfaceSpec {
   visibleOnAllWorkspaces?: boolean;
   /** The surface document may mark opaque pixels interactive through the generic preload bridge. */
   clickThrough?: boolean;
+  /**
+   * Where it first appears: on top of the app window's element marked `data-surface-anchor` with this name,
+   * left edges aligned. Not on screen (another page, a collapsed sidebar), the bottom-right of the work area.
+   */
+  anchor?: string;
   initialState?: unknown;
   /** Messages from the isolated surface document, owned and interpreted by the feature. */
   onMessage?(message: unknown): void;

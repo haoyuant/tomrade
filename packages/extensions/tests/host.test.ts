@@ -24,19 +24,29 @@ async function world(plugin: Parameters<typeof sdk>[0]) {
 }
 
 describe("the extension host", () => {
-  it("isolates assistant widget failures, scopes their commands, and removes them on unload", async () => {
+  it("passes a status item's command, countdown and look through, scoped to the namespace, and refreshes on demand", async () => {
+    let refresh: () => Promise<void> = async () => {};
     const { ctx, fiber } = await world(definePlugin({
       inject: ["contributions"],
       async apply(p) {
-        await p.contributions.assistantWidget({ id: "demo.timer", title: "Timer", render: () => ({ text: "25:00", actions: [{ title: "Start", command: "demo.start" }] }) });
-        await p.contributions.assistantWidget({ id: "demo.hidden", title: "Hidden", render: () => null });
-        await p.contributions.assistantWidget({ id: "demo.broken", title: "Broken", render: () => { throw new Error("boom"); } });
-        await p.contributions.assistantWidget({ id: "demo.foreign", title: "Foreign", render: () => ({ text: "bad", actions: [{ title: "Other", command: "other.start" }] }) });
+        refresh = () => p.contributions.refresh();
+        await p.contributions.statusItem({ id: "demo.timer", text: () => "Focus", icon: "i-clock", align: "end", title: "Timer", command: "demo.toggle", until: () => 1_000, menu: () => [{ title: "Skip", command: "demo.skip", icon: "i-redo" }] });
+        await p.contributions.statusItem({ id: "demo.stray", text: () => "Stray", menu: () => [{ title: "Other", command: "other.skip" }] });
+        await p.contributions.statusItem({ id: "demo.idle", text: () => "Idle", until: () => null });
+        await p.contributions.statusItem({ id: "demo.broken", text: () => "Late", until: () => { throw new Error("boom"); } });
+        await expect(p.contributions.statusItem({ id: "demo.foreign", text: () => "x", command: "other.toggle" })).rejects.toThrow();
       }
     }));
-    expect(await ctx.contributions.assistantWidgets()).toEqual([{ id: "demo.timer", title: "Timer", text: "25:00", actions: [{ title: "Start", command: "demo.start" }] }]);
+    expect(await ctx.contributions.statusItems({})).toEqual([
+      { id: "demo.timer", text: "Focus", icon: "i-clock", align: "end", title: "Timer", command: "demo.toggle", until: 1_000, menu: [{ title: "Skip", command: "demo.skip", icon: "i-redo" }] },
+      // a menu naming another plugin's command is dropped, the item stays
+      { id: "demo.stray", text: "Stray" },
+      { id: "demo.idle", text: "Idle" },
+      { id: "demo.broken", text: "Late" }
+    ]);
+    await expect(refresh()).resolves.toBeUndefined();
     await fiber.dispose();
-    expect(await ctx.contributions.assistantWidgets()).toEqual([]);
+    expect(await ctx.contributions.statusItems({})).toEqual([]);
   });
 
   it("answers every call with a Promise and writes as the plugin, stamped with its namespace", async () => {

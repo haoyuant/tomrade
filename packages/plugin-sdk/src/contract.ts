@@ -29,6 +29,18 @@ import type {
 
 export type Disposer = () => void;
 
+/** The languages the app speaks. */
+export type Locale = "en" | "zh";
+/** Text in the app's language: a plain string, or one per language picked each time it is shown (English is the fallback). */
+export type Localized = string | ({ en: string } & Partial<Record<Locale, string>>);
+
+/** A settings section's text in one language; fields are keyed by schema property. */
+export interface SectionWords {
+  title?: string;
+  description?: string;
+  fields?: Record<string, { title?: string; description?: string; options?: Record<string, string> }>;
+}
+
 /** The services a plugin names in `inject` (required) or `optional`. */
 export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "oplog" | "im";
 
@@ -126,12 +138,18 @@ export interface SettingsSectionSpec<T> {
   scope?: "machine" | "user";
   /** What agents may do with it through get_settings / update_settings. Defaults to read; a section holding a password is none. */
   agent?: "write" | "read" | "none";
+  /** The card in other languages; `title`, `description` and the schema's own labels are the English. */
+  words?: Partial<Record<Locale, SectionWords>>;
 }
 
 export interface SettingsApi {
   register<T>(section: SettingsSectionSpec<T>): Promise<void>;
   get<T = unknown>(id?: string): Promise<T>;
   set<T = unknown>(value: T, id?: string): Promise<void>;
+  /** Opens the app's Settings on this plugin's section, bringing the window forward — for a click outside the window. */
+  show(id?: string): Promise<void>;
+  /** The app's language now. It is a setting: `settings.changed` fires when the person switches it. */
+  locale(): Promise<Locale>;
 }
 
 export interface ToolInvocation {
@@ -208,24 +226,21 @@ export interface GraphEdge {
 type Maybe<T> = T | Promise<T>;
 
 /** Ids must equal the namespace or start with it followed by `.`, `-` or `_`. */
-export interface AssistantWidgetContent {
-  text: string;
-  detail?: string;
-  /** Fraction from 0 to 1. */
-  progress?: number;
-  actions?: { title: string; command: string }[];
-}
-
 export interface ContributionsApi {
-  /** A compact row below the pet, refreshed once per second. Null hides it. */
-  assistantWidget(def: { id: string; title: string; render(): Maybe<AssistantWidgetContent | null> }): Promise<Disposer>;
-  command(def: { id: string; title: string; group?: string; shortcut?: string; run(scope: CommandScope): Maybe<{ toast?: string } | void> }): Promise<Disposer>;
+  command(def: { id: string; title: Localized; group?: Localized; shortcut?: string; run(scope: CommandScope): Maybe<{ toast?: string } | void> }): Promise<Disposer>;
   badge(def: { id: string; compute(items: Item[], scope: { projectId: string }): Maybe<Record<string, Badge[]>> }): Promise<Disposer>;
-  statusItem(def: { id: string; text(scope: { projectId?: string }): Maybe<string | null>; title?: string; icon?: string; align?: "start" | "end" }): Promise<Disposer>;
-  section(def: { id: string; title: string; render(item: Item): Maybe<{ rows?: SectionRow[]; text?: string } | null> }): Promise<Disposer>;
+  /**
+   * A status bar item. `command` (in the plugin's namespace) runs on click, or `menu` lists actions the click
+   * opens instead; `until` returns an epoch ms the renderer counts down to after the text, without polling.
+   * Everything is re-read when `refresh()` is called.
+   */
+  statusItem(def: { id: string; text(scope: { projectId?: string }): Maybe<string | null>; title?: Localized; icon?: string; align?: "start" | "end"; command?: string; until?(scope: { projectId?: string }): Maybe<number | null>; menu?(scope: { projectId?: string }): Maybe<{ title: string; command: string; icon?: string }[] | null> }): Promise<Disposer>;
+  /** Every window re-reads this plugin's contributions — for state that changed outside a command run. */
+  refresh(): Promise<void>;
+  section(def: { id: string; title: Localized; render(item: Item): Maybe<{ rows?: SectionRow[]; text?: string } | null> }): Promise<Disposer>;
   graph(def: { id: string; title: string; icon?: string; edits?: "blocks"; compute(items: Item[], scope: { projectId: string }): Maybe<GraphEdge[]> }): Promise<Disposer>;
   /** A module in the project sidebar. Without `rows` it is a single door; rows returning null hide it in that project. */
-  sidebarModule(def: { id: string; title: string; icon?: string; command?: string; rows?(scope: { projectId: string }): Maybe<SidebarRow[] | null> }): Promise<Disposer>;
+  sidebarModule(def: { id: string; title: Localized; icon?: string; command?: string; rows?(scope: { projectId: string }): Maybe<SidebarRow[] | null> }): Promise<Disposer>;
 }
 
 export interface PlaybookSpec {
@@ -254,6 +269,8 @@ export interface SurfaceSpec {
   /** Allow keyboard input; defaults to false for passive widgets. */
   focusable?: boolean;
   clickThrough?: boolean;
+  /** First placed on top of an app element by name — `"sidebar-foot"`: just above the sidebar's Project settings. */
+  anchor?: string;
   initialState?: unknown;
   /** Messages the document sends; a person is driving, so writes made here are theirs. */
   onMessage?(message: unknown): Maybe<void>;
