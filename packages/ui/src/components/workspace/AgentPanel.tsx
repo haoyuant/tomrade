@@ -768,8 +768,8 @@ export function AgentPanel({
   const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && !e.terminalOnly && e.capabilities.includes("backlog"))?.id ?? configuredEngine);
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
   const engine = findEngine(engines.data, currentEngineId);
-  const permissionModes = detail.data?.thread.itemId ? engine?.permissionModes : undefined;
-  const selectedPermissionMode = detail.data?.thread.permissionMode ?? permissionModes?.default;
+  const permissionModes = detail.data ? engine?.permissionModes : undefined;
+  const selectedPermissionMode = detail.data?.thread.permissionMode ?? (detail.data?.thread.itemId ? permissionModes?.default : permissionModes?.mainDefault ?? permissionModes?.default);
   const activePermissionMode = runningRun ? detail.data?.activePermissionMode : undefined;
   const permissionLabel = (value?: string) => {
     const choice = permissionModes?.choices.find((c) => c.value === value);

@@ -56,8 +56,11 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
   description: string;
   input: S;
   execute(args: z.output<S>, invocation: ToolInvocation): unknown;
-  /** False keeps the tool off the MCP server, so only engines in this process can call it — for what no outside client may reach, like a shell. */
-  mcp?: boolean;
+  /**
+   * False keeps the tool off the MCP server, so only engines in this process can call it — for what no outside client may reach, like a shell.
+   * "run" serves it only to a Tomrade conversation's own agent (a run-bound session), never to an outside client.
+   */
+  mcp?: boolean | "run";
   /** True when the tool only reads: MCP clients such as Codex then run it without asking (`readOnlyHint`). */
   readOnly?: boolean;
   /** The result is reference the model needs in full — a schema, a playbook: never compacted into short rows, and the loop reads up to 100k characters of it. */
@@ -245,9 +248,9 @@ export class Tools extends Service {
     return [...this.registry.values()];
   }
 
-  /** What the MCP server offers: every tool but those kept in this process. */
-  served(): ToolDefinition[] {
-    return this.list().filter((t) => t.mcp !== false);
+  /** What the MCP server offers: every tool but those kept in this process; a conversation's own agent also gets the "run" ones. */
+  served(audience: "public" | "run" = "public"): ToolDefinition[] {
+    return this.list().filter((t) => t.mcp !== false && (t.mcp !== "run" || audience === "run"));
   }
 
   get(name: string): ToolDefinition | undefined {

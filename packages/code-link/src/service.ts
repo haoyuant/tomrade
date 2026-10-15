@@ -312,6 +312,7 @@ export class CodeLink extends Service {
       return next();
     });
     this.ctx.on("agent/prepare-turn", async (input) => {
+      if (input.purpose === "backlog") input.repositories = this.repositoriesOf(input.projectId);
       if (input.purpose === "code" && input.ticket) {
         const item = this.ctx.items.get(input.projectId, input.ticket.id);
         if (item) input.ticket.completionPolicy = this.completionPolicy(input.projectId, item);
@@ -1167,6 +1168,18 @@ export class CodeLink extends Service {
     if (!item || item.humanLocked || !["backlog", "todo", "doing"].includes(item.status)) return;
     this.ctx.items.update(projectId, itemId, { status: "verifying" }, AUTHOR);
     this.notify(projectId);
+  }
+
+  /** Each workstream's repository and its folder on this machine — what a main conversation reads the code from. */
+  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string }[] {
+    return this.ctx.boards.list(projectId).flatMap((board) => {
+      const repo = board.repoId ? this.ctx.repos.get(projectId, board.repoId) : null;
+      if (!repo) return [];
+      const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+      const subdir = board.repoPath.replace(/^\/+|\/+$/g, "");
+      const folder = checkout && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
+      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch }];
+    });
   }
 
   /** Apply the sync matrix to one ticket in one repository. */

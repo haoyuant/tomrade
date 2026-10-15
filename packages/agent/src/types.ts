@@ -260,6 +260,8 @@ export interface TurnInput {
   /** Ephemeral subprocess credentials supplied by plugins; never persist or include in prompts. */
   env?: Record<string, string>;
   workdir?: { remote: string; branch: string; worktree: string | null };
+  /** The project's workstream repositories and where they are on this machine (null: no checkout here), for a main conversation to read. */
+  repositories?: { workstream: string; name: string; path: string | null; defaultBranch: string }[];
 }
 
 /** A model request failed and the engine is trying again; `attempt` counts the retries so far. */
@@ -462,7 +464,11 @@ export interface Engine {
   options?: z.ZodType<unknown>;
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
   picks?(): EnginePick[];
-  permissionModes?: { default: string; choices: { value: string; label: string }[] };
+  /**
+   * `default` is what a ticket's session starts in; `mainDefault` what the project's main conversation starts in
+   * (it is not a ticket's worktree, so an engine may ask there before changing anything). Absent, both use `default`.
+   */
+  permissionModes?: { default: string; mainDefault?: string; choices: { value: string; label: string }[] };
   /** False: it runs only inside Tomrade, with no CLI session a person can be handed in a terminal. */
   terminal?: boolean;
   /** True: a CLI Tomrade starts only in a terminal the person sees — handed the ticket, heard over MCP, never driven turn by turn. */

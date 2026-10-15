@@ -18,7 +18,7 @@ export function createCodexEngine(ctx: Context): Engine {
     // app-server takes messages mid-turn (turn/steer)
     steers: true,
     media: options => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", ...(CodexOptions.parse(options ?? {}).transport === "app-server" ? ["audio/mpeg", "audio/wav"] : [])], output: ["image"] }),
-    permissionModes: { default: "full-access", choices: [
+    permissionModes: { default: "full-access", mainDefault: "workspace", choices: [
       { value: "full-access", label: "Full access" }, { value: "workspace", label: "Workspace" },
       { value: "read-only", label: "Read only" }, { value: "local", label: "Local rules" }
     ] },

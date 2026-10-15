@@ -121,8 +121,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-"));
       // codex has no appended-system-prompt flag; the context rides ahead of the message.
       const prompt = buildSystem(input, io, "Codex") + "\n\n---\n\nUSER MESSAGE:\n" + promptOf(input);
-      // A code turn may write in its worktree; a backlog turn reads only.
-      const mode = input.purpose !== "backlog" ? input.permissionMode : undefined;
+      const mode = input.permissionMode;
       const sandbox = mode === "full-access" ? "danger-full-access" : mode === "read-only" ? "read-only" : "workspace-write";
       const shared = [
         "--json",
@@ -145,7 +144,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       const argsFor = (resume: string | undefined, text: string) => {
         const args = resume
           ? ["exec", "resume", ...shared, resume, text]
-          : ["exec", ...shared, "-s", input.purpose !== "backlog" ? sandbox : "read-only", "-C", input.cwd ?? tmp, text];
+          : ["exec", ...shared, "-s", sandbox, "-C", input.cwd ?? tmp, text];
         if (input.input.kind === "text") for (const ref of input.input.attachments ?? []) {
           if (!io.media) throw new Error("Media input is unavailable");
           args.splice(args.length - 1, 0, "--image", io.media.path(ref.id));

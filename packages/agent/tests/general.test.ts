@@ -185,3 +185,18 @@ it("tells a delivery that its description's tomrade-file links are files get_ite
   expect(brief("Use ![logo](tomrade-file://0f1e2d3c-4b5a-4968-8776-655443322110)")).toContain("get_item lists them under attachments");
   expect(brief("Plain words")).not.toContain("tomrade-file");
 });
+
+it("tells the main conversation what it can do with the code and where the code is", () => {
+  const io = { playbooks: { index: () => [], open: () => null } } as never;
+  const base = { threadId: "t", projectId: "p", purpose: "backlog", input: { kind: "text", text: "hi" }, messages: [], cards: [], brief: null, pending: null, options: {} } as TurnInput;
+  const main = promptSections({ ...base, repositories: [
+    { workstream: "App", name: "goods-list", path: "/work/goods-list", defaultBranch: "main" },
+    { workstream: "Site", name: "site", path: null, defaultBranch: "main" }
+  ] }, io, { playbooks: false }).join("\n");
+  expect(main).toContain("never change them here: code work goes through a ticket");
+  expect(main).toContain("as the permission mode the user picked for this conversation allows");
+  expect(main).toContain("Never answer that you have no tools");
+  expect(main).toContain("- App: goods-list at /work/goods-list (default branch main)");
+  expect(main).toContain("- Site: site — no checkout on this machine");
+  expect(promptSections({ ...base, purpose: "code" }, io, { playbooks: false }).join("\n")).not.toContain("main conversation");
+});

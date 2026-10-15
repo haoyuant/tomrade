@@ -199,6 +199,24 @@ it("keeps an unsuccessful credential reprobe unreachable and does not offer acco
 });
 
 describe("starting a ticket", () => {
+  it("hands a main conversation each workstream's repository folder on this machine", async () => {
+    const world = await machine(codeRepo());
+    const { ctx, project, board, repo } = world;
+    world.boards.update(project.id, board.id, { repoPath: "mobile-app" });
+    const input = (purpose: "backlog" | "code") => ({ threadId: "t", projectId: project.id, purpose, input: { kind: "text", text: "hi" }, messages: [], cards: [], brief: null, pending: null, options: {} }) as TurnInput;
+    const before = input("backlog");
+    await ctx.parallel("agent/prepare-turn", before);
+    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main" }]);
+
+    await ctx.repos.setCheckout(repo!.remote, world.checkout!);
+    const after = input("backlog");
+    await ctx.parallel("agent/prepare-turn", after);
+    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main" }]);
+    const code = input("code");
+    await ctx.parallel("agent/prepare-turn", code);
+    expect(code.repositories).toBeUndefined();
+  });
+
   it("recognises a project rooted at the workstream's repository path", async () => {
     const local = codeRepo({ manifest: false });
     const world = await machine(local);
@@ -1316,7 +1334,9 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
     }
   });
   try {
-    expect(ctx.tools.get("offer_start")?.mcp).toBe(false);
+    // Every engine in a conversation reaches it over its run-bound session; an outside client does not.
+    expect(ctx.tools.served("run").map((t) => t.name)).toContain("offer_start");
+    expect(ctx.tools.served().map((t) => t.name)).not.toContain("offer_start");
     const thread = agent.newThread(project.id, "offering");
     const run = agent.send(project.id, thread.id, { kind: "text", text: "fix the login form" });
     await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");

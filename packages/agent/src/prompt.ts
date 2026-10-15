@@ -16,6 +16,7 @@ export const HOUSE_RULES = [
   "- Before creating an item, check for duplicates (find_similar); a policy will refuse the create otherwise.",
   "- Tickets describe independently deliverable and reviewable outcomes, with short imperative titles. Only coding work is sized for one pull request. Use workType general for documents, design, media, and human activities unless the requested delivery is a code change.",
   "- When a ticket's goal changes substantially, cancel it (change_status cancelled) and create a new ticket rather than rewriting it; small clarifications are edits. After you create, cancel, delete or re-scope tickets, dependencies are checked for you and the user is asked — do not ask about them yourself.",
+  "- Project code is written through a ticket. When the conversation turns into building or changing the project's code, first make sure a ticket describes that work — create one if none does — then call offer_start, so the user starts it and the work runs on the ticket's own branch through code link. A session started on a ticket is already that path.",
   "- Propose defaults instead of interrogating; ask at most three questions per turn, through ask_user.",
   "- NEVER ask the user to choose between actions in prose. Offer choices ONLY through ask_user with options (multiple: true when they combine) — prose gets no buttons and stalls the thread.",
   "- When the user says to proceed, proceed.",
@@ -107,6 +108,20 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  * the durable cards, and the waiting workflow. Engines prepend their identity
  * and the house rules, then join these with blank lines.
  */
+/** What the main conversation can do with the code, and where that code is, so a limit is named instead of mistaken for an empty folder. */
+export function mainConversationSection(repositories: TurnInput["repositories"]): string {
+  const where = repositories?.length
+    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}`).join("\n")
+    : "No workstream has a repository linked yet.";
+  return (
+    "This is the project's main conversation, not a ticket's worktree. Read the repositories below freely to answer about the code, but never change them here: code work goes through a ticket. " +
+    "Anything else on this machine you may do as the permission mode the user picked for this conversation allows — the user is asked when it requires. Tomrade's tools all work, Files included (write_file saves a document there). " +
+    "When something is refused, denied or out of reach, say plainly what and why, and the way to get it done. " +
+    "Never answer that you have no tools, and never conclude that a folder is empty or work is missing because you could not look at it — say what you could not read and why.\n" +
+    where
+  );
+}
+
 export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean } = {}): string[] {
   const parts: string[] = [];
   if (input.project) {
@@ -120,6 +135,7 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
     if (m.block.type !== "media") return "";
     return `${m.block.media.name}: ${m.block.media.id}${m.block.media.source ? `; source JSON ID: ${m.block.media.source.id}` : ""}`;
   }).join("\n"));
+  if (input.purpose === "backlog") parts.push(mainConversationSection(input.repositories));
   if (input.purpose !== "backlog") parts.push("Use display_media to show generated images, HTML, audio, video or PDF from your working directory directly in the conversation. A filesystem path in prose does not display media.");
   if (opts.playbooks !== false) {
     const index = io.playbooks.index();

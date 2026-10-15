@@ -11,13 +11,6 @@ import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtim
 import { sessionSystem, turnPrompt } from "./system.js";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
 
-function matchesTool(name: string, pattern: string): boolean {
-  if (pattern === name) return true;
-  if (!pattern.includes("*")) return false;
-  const escaped = pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*");
-  return new RegExp(`^${escaped}$`).test(name);
-}
-
 /**
  * The SDK starts a native path itself; a Windows `.cmd` shim needs our launch
  * (node + script), which the SDK only takes as a custom spawn.
@@ -135,7 +128,7 @@ export class ClaudeRuntime implements Runtime {
       if (message.type === "system" && message.subtype === "init") {
         this.session = message.session_id;
         metrics.providerModel = message.model;
-        if (input.purpose !== "backlog" && message.permissionMode) io.permissionMode?.(message.permissionMode);
+        if (message.permissionMode) io.permissionMode?.(message.permissionMode);
           metrics.readyMs ??= performance.now() - start;
       } else if (message.type === "system" && message.subtype === "compact_boundary") {
         metrics.compactions!++;
@@ -234,13 +227,12 @@ export class ClaudeRuntime implements Runtime {
             // Pin the registry at session creation. Without this, newer SDK
             // versions may defer remote tools behind tool-search and report a
             // perfectly healthy MCP tool as "not enabled" in a turn.
-            tools: this.ctx.tools.served().map((tool) => ({ name: tool.name, permission_policy: "always_allow" as const }))
+            tools: this.ctx.tools.served("run").map((tool) => ({ name: tool.name, permission_policy: "always_allow" as const }))
           } },
           strictMcpConfig: !code,
-          // Explicitly expose the MCP registry and the configured native
-          // tools. `allowedTools` controls approval only; `tools` controls
-          // whether a tool is included in the model's tool set.
-          tools: code ? { type: "preset", preset: "claude_code" } : ["mcp__tomrade__*", ...options.allowTools],
+          // Every purpose gets the full preset: a backlog turn that cannot read
+          // the code guesses about it. `allowedTools` controls approval only.
+          tools: { type: "preset", preset: "claude_code" },
           // MCP tools must be listed for Claude Code to expose the HTTP server's
           // dynamic tool set. They are safe to auto-approve here because every
           // request still carries this runtime's run-scoped token and the MCP
@@ -248,32 +240,26 @@ export class ClaudeRuntime implements Runtime {
           // Some SDK/CLI versions do not expand an MCP wildcard while the
           // server is discovering tools. Include the registry's concrete names
           // as well; retain the wildcard for tools registered after startup.
-          allowedTools: ["mcp__tomrade__*", ...this.ctx.tools.served().map((tool) => `mcp__tomrade__${tool.name}`)],
+          allowedTools: ["mcp__tomrade__*", ...this.ctx.tools.served("run").map((tool) => `mcp__tomrade__${tool.name}`), ...options.allowTools],
           hooks: {
             PreToolUse: [{ hooks: [async (hookInput) => {
               const tool = (hookInput as { tool_name?: string }).tool_name ?? "";
-              // Coding tools follow codePermissionMode and the user's rules.
-              // Do not apply the backlog allowlist or auto-approve them here.
-              if (code && !tool.startsWith("mcp__tomrade__")) return { continue: true };
-              const allowed = tool.startsWith("mcp__tomrade__") || options.allowTools.some((pattern) => matchesTool(tool, pattern));
+              // Native tools follow codePermissionMode and the user's rules.
+              if (!tool.startsWith("mcp__tomrade__")) return { continue: true };
               return {
                 continue: true,
-                hookSpecificOutput: {
-                  hookEventName: "PreToolUse",
-                  permissionDecision: allowed ? "allow" : "deny",
-                  permissionDecisionReason: allowed ? "Tomrade policy allows this tool" : "Tool is not enabled for this Tomrade turn"
-                }
+                hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "Tomrade policy allows this tool" }
               };
             }] }]
           },
-          canUseTool: code ? async (tool, args, request) => {
+          canUseTool: async (tool, args, request) => {
             const answer = await this.activeIO?.requestPermission?.(
               `${request.title ?? tool}\n${request.description ?? request.decisionReason ?? "Permission requested by Claude Code"}\n${JSON.stringify(args, null, 2)}`,
               ["Allow once", "Deny"], request.signal);
             return answer === "Allow once" && !request.signal.aborted && !this.activeIO?.signal.aborted ? { behavior: "allow", updatedInput: args } : { behavior: "deny", message: "Permission was denied or cancelled by the user" };
-          } : undefined,
-          permissionMode: code ? options.codePermissionMode : "dontAsk",
-          allowDangerouslySkipPermissions: code && options.codePermissionMode === "bypassPermissions",
+          },
+          permissionMode: options.codePermissionMode,
+          allowDangerouslySkipPermissions: options.codePermissionMode === "bypassPermissions",
           maxTurns: code ? options.codeMaxTurns : options.maxTurns,
           maxBudgetUsd: options.maxBudgetUsd
         };

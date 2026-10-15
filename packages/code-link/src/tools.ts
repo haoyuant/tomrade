@@ -128,7 +128,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       description:
         "You do not change code or carry out tickets yourself. When the user wants a ticket implemented (code changed, a document written, any ticket's work done), make sure a ticket describes it — create one if needed — then call this: the user gets a Start button that opens the Start dialog, where they pick the agent, where it works and its permissions. Then end your turn.",
       input: z.object({ key: z.string().describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
-      mcp: false,
+      // Every engine in a Tomrade conversation may offer Start; an outside client has no conversation to put the button in.
+      mcp: "run",
       readOnly: true,
       execute: (args, inv) => {
         const projectId = requireProjectId("offer_start", args.projectId, inv);

@@ -126,7 +126,7 @@ export class PiRuntime implements Runtime {
     this.session = io.resume ?? randomUUID();
     const bridge = path.join(this.dir, "tomrade.ts");
     const system = path.join(this.dir, "system.md");
-    const approval = input.purpose !== "backlog" && input.permissionMode === "ask";
+    const approval = input.permissionMode === "ask";
     fs.writeFileSync(bridge, bridgeSource({ url: this.ctx.mcp.url!, token: this.token, approval }), { mode: 0o600 });
     fs.writeFileSync(system, sessionSystem(input, "Pi"), { mode: 0o600 });
     const tools = toolSelection(input);

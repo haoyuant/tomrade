@@ -62,6 +62,29 @@ it("stores modes per coding thread and applies a change on the next turn without
   } finally { await ctx.fiber.dispose(); }
 });
 
+it("starts the main conversation in the engine's main default, and lets the person change it there too", async () => {
+  const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-main-modes-${Date.now()}.json` }], Agent] });
+  await settle();
+  const seen: (string | undefined)[] = [];
+  ctx.agent.engine({ id: "main-modes", title: "Main modes", author: "ai:test", available: async () => ({ ok: true }),
+    permissionModes: { default: "full", mainDefault: "ask", choices: [{ value: "full", label: "Full" }, { value: "ask", label: "Ask" }] },
+    async turn(input) { seen.push(input.permissionMode); return { stop: "end" }; } });
+  try {
+    const main = ctx.agent.newThread(project.id, "main-modes");
+    const ticket = ctx.agent.newThread(project.id, "main-modes", null, { itemId: "ticket" });
+    const run = async (threadId: string) => {
+      const { runId } = ctx.agent.send(project.id, threadId, { kind: "text", text: "go" });
+      await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).not.toBe("running");
+    };
+    await run(main.id);
+    await run(ticket.id);
+    expect(seen).toEqual(["ask", "full"]);
+    ctx.agent.setPermissionMode(project.id, main.id, "full");
+    await run(main.id);
+    expect(seen.at(-1)).toBe("full");
+  } finally { await ctx.fiber.dispose(); }
+});
+
 it("stops the run's wall clock while a permission waits, and restarts it after the answer", async () => {
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-wall-${Date.now()}.json` }], [Agent, { maxWallMs: 10_000 }]] });
   await settle();

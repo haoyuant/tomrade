@@ -37,7 +37,7 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   /** The English tail of "not found — …". */
   install: string;
   options: z.ZodType<O>;
-  permissionModes: { default: string; choices: { value: string; label: string }[] };
+  permissionModes: { default: string; mainDefault?: string; choices: { value: string; label: string }[] };
   /** What starts its ACP server on stdio. */
   args(input: TurnInput, options: O): string[];
   env?(input: TurnInput, options: O): Record<string, string>;
@@ -85,13 +85,8 @@ export const PERMISSION_CHOICES = {
   local: { value: "local", label: "Local rules" }
 } as const;
 
-/**
- * A backlog turn works through Tomrade's tools alone, so the agent's own
- * changes are refused. Under "local" the agent's own rules decide what it
- * asks, and whatever it asks goes to the person.
- */
+/** Under "local" the agent's own rules decide what it asks, and whatever it asks goes to the person. */
 export function policyOf(input: Pick<TurnInput, "purpose" | "permissionMode">, agent: Pick<AcpAgent, "permissionModes">): Policy {
-  if (input.purpose === "backlog") return "read-only";
   const mode = input.permissionMode ?? agent.permissionModes.default;
   return mode === "ask" || mode === "local" ? "ask" : mode === "read-only" ? "read-only" : "full-access";
 }

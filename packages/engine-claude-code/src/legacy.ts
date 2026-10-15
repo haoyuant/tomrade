@@ -118,8 +118,6 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       // A headless turn is a guest in the app: only our MCP server. Loading the
       // user's other MCP servers here can hold every prompt on their startup
       // timeout; terminal sessions remain the place for the user's full setup.
-      // dontAsk denies anything not allowlisted on backlog turns, while code
-      // turns work in their own worktree and accept edits.
       const code = input.purpose !== "backlog";
       const withMedia = input.input.kind === "text" && !!input.input.attachments?.length;
       // a session started without resume carries the thread's conversation so far
@@ -134,7 +132,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
         "--mcp-config",
         mcpFile,
         ...(!code ? ["--strict-mcp-config"] : []),
-        ...(!code || options.codePermissionMode ? ["--permission-mode", code ? options.codePermissionMode! : "dontAsk"] : []),
+        ...(options.codePermissionMode ? ["--permission-mode", options.codePermissionMode] : []),
         "--allowedTools",
         "mcp__tomrade__*",
         ...options.allowTools,

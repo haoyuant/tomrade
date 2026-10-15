@@ -104,7 +104,7 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
   // The WorkBuddy app's own copy of the CLI is found without any install; inside codebuddy, /login signs in.
   setup: { install: ["npm install -g @tencent-ai/codebuddy-code"], signIn: "codebuddy", signInRuns: true, docs: "https://www.workbuddy.ai/docs/cli/overview" },
   options: WorkBuddyOptions,
-  permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
+  permissionModes: { default: "full-access", mainDefault: "ask", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
   args: () => ["--acp"],
   // Every few prompts CodeBuddy titles the session with the session's own model, thinking included, and
   // answers the prompt only once the title is back — 45 s after a 3 s reply on hy4-preview. Tomrade shows no such title.

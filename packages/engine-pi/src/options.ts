@@ -12,6 +12,8 @@ export type PiOptions = z.infer<typeof PiOptions>;
 
 export const PERMISSION_MODES = {
   default: "full-access",
+  // Pi has no permissions of its own; in the main chat Tomrade asks before anything changes.
+  mainDefault: "ask",
   choices: [
     { value: "full-access", label: "Full access" },
     { value: "ask", label: "Ask permissions" },
@@ -19,12 +21,8 @@ export const PERMISSION_MODES = {
   ]
 };
 
-/**
- * The `--tools` allowlist for a turn, or null for pi's own selection. A
- * backlog turn talks to Tomrade only; read-only keeps the built-ins that look.
- */
-export function toolSelection(input: Pick<TurnInput, "purpose" | "permissionMode">): string | null {
-  if (input.purpose === "backlog") return "mcp__tomrade__*";
+/** The `--tools` allowlist for a turn, or null for pi's own selection; read-only keeps the built-ins that look. */
+export function toolSelection(input: Pick<TurnInput, "permissionMode">): string | null {
   return input.permissionMode === "read-only" ? "read,grep,find,ls,mcp__tomrade__*" : null;
 }
 

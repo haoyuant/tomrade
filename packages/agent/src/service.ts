@@ -1079,7 +1079,7 @@ export class Agent extends Service {
 
   setPermissionMode(projectId: string, threadId: string, mode: string): ThreadSummary {
     const thread = this.store.thread(projectId, threadId);
-    if (!thread?.itemId) throw new Error("Permission modes require a coding thread");
+    if (!thread) throw new Error("unknown thread");
     const choices = this.engines.get(thread.engine)?.permissionModes?.choices;
     if (!choices?.some((choice) => choice.value === mode)) throw new Error("Unsupported permission mode");
     this.store.touchThread(projectId, threadId, { permissionMode: mode });
@@ -1532,7 +1532,7 @@ export class Agent extends Service {
       const where = await this.workdir(rc.projectId, rc.threadId, { create: true });
       if (where.problem) throw new Error(where.problem);
       const modes = rc.engine.permissionModes;
-      const selectedMode = rc.thread.itemId && modes ? rc.thread.permissionMode ?? modes.default : undefined;
+      const selectedMode = modes ? rc.thread.permissionMode ?? (rc.thread.itemId ? modes.default : modes.mainDefault ?? modes.default) : undefined;
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
       const project = (this.ctx.get("projects") as { get(id: string): { name: string; keyPrefix: string } | null } | undefined)?.get(rc.projectId);
       const rules = this.rules(rc.projectId);

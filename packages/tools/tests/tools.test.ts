@@ -36,6 +36,17 @@ describe("tool registry", () => {
     expect(ctx.tools.describe().every((t) => typeof t.inputSchema === "object")).toBe(true);
   });
 
+  it("serves a run-only tool to a conversation's own agent and never to an outside client", async () => {
+    const { ctx } = await fresh({ plugins: [Tools] });
+    for (const [name, mcp] of [["kept_here", false], ["for_runs", "run"]] as const) {
+      ctx.tools.register(defineTool({ name, title: name, description: name, input: z.object({}), mcp, execute: () => null }));
+    }
+    const served = (audience?: "public" | "run") => ctx.tools.served(audience).map((t) => t.name);
+    expect(served()).not.toContain("for_runs");
+    expect(served("run")).toContain("for_runs");
+    expect([...served(), ...served("run")]).not.toContain("kept_here");
+  });
+
   it("validates arguments against the tool's schema and rejects unknown tools", async () => {
     const { ctx, project } = await fresh({ plugins: [Tools] });
     await expect(ctx.tools.execute("create_item", {}, { by: "ai:mcp", projectId: project.id })).rejects.toBeInstanceOf(ToolInputError);

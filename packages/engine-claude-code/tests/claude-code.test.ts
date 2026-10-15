@@ -55,7 +55,7 @@ describe("the Claude Code engine", () => {
     const args1 = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
     expect(args1).toContain("--output-format");
     expect(args1).toContain("mcp__tomrade__*");
-    expect(args1).toContain("dontAsk");
+    expect(args1).not.toContain("dontAsk");
     expect(args1).toContain("--model\nopus");
     expect(args1).toContain("--effort\nhigh");
     expect(args1).not.toContain("--resume");

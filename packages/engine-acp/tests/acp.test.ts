@@ -41,7 +41,8 @@ it("reads which choice a typed value means", () => {
 
 it("settles a turn's policy, and knows Tomrade's own tools under any agent's naming", () => {
   const agent = spec();
-  expect(policyOf({ purpose: "backlog", permissionMode: "full-access" }, agent)).toBe("read-only");
+  expect(policyOf({ purpose: "backlog", permissionMode: "full-access" }, agent)).toBe("full-access");
+  expect(policyOf({ purpose: "backlog", permissionMode: "read-only" }, agent)).toBe("read-only");
   expect(policyOf({ purpose: "code" }, agent)).toBe("full-access");
   expect(policyOf({ purpose: "code", permissionMode: "ask" }, agent)).toBe("ask");
   expect(policyOf({ purpose: "code", permissionMode: "local" }, agent)).toBe("ask");
@@ -215,9 +216,10 @@ describe("an ACP agent as an engine", () => {
     expect((await silent("Deny")).traces).toEqual([expect.objectContaining({ ok: false })]);
 
     fs.writeFileSync(log, "");
+    // The main chat has the agent's own tools too.
     const backlog = await run({ purpose: "backlog" });
-    expect(backlog.blocks).toContainEqual({ type: "text", text: "skipped it" });
-    expect(outcomes()).toEqual(["no", "yes"]);
+    expect(backlog.blocks).toContainEqual({ type: "text", text: "ran it" });
+    expect(outcomes()).toEqual(["yes", "yes"]);
   });
 
   it("drives an agent that offers modes and models instead of settings, and reports usage per prompt", async () => {

@@ -443,7 +443,7 @@ export class Mcp extends Service {
     const server = new McpServer({ name: MCP_SERVER_NAME, version: this.config.instance.version }, instructions ? { instructions } : undefined);
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
-    for (const tool of tools.served()) {
+    for (const tool of tools.served(token ? "run" : "public")) {
       const annotations = tool.readOnly ? { readOnlyHint: true } : undefined;
       // Strict, so a misspelt parameter is refused here with a suggestion instead of stripped before the tool sees it.
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: strictInput(tool.input), annotations }, async (args, extra) => {

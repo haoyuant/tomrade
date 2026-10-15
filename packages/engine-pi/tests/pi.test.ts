@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { bridgeSource, createPiEngine, listedModels, piSignedIn, toolSelection } from "../src/index.js";
+import { PERMISSION_MODES } from "../src/options.js";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
 import type { Block, TurnIO, TurnInput } from "@tomradex/agent";
@@ -17,11 +18,11 @@ it("reads pi's model table and its no-credential answer", () => {
   expect(listedModels("No models available.")).toEqual([]);
 });
 
-it("narrows tools for backlog and read-only turns only", () => {
-  expect(toolSelection({ purpose: "backlog" })).toBe("mcp__tomrade__*");
-  expect(toolSelection({ purpose: "code", permissionMode: "read-only" })).toBe("read,grep,find,ls,mcp__tomrade__*");
-  expect(toolSelection({ purpose: "code", permissionMode: "full-access" })).toBeNull();
-  expect(toolSelection({ purpose: "general", permissionMode: "ask" })).toBeNull();
+it("narrows tools for read-only turns only, the main chat included", () => {
+  expect(toolSelection({ permissionMode: "read-only" })).toBe("read,grep,find,ls,mcp__tomrade__*");
+  expect(toolSelection({ permissionMode: "full-access" })).toBeNull();
+  expect(toolSelection({ permissionMode: "ask" })).toBeNull();
+  expect(PERMISSION_MODES).toMatchObject({ default: "full-access", mainDefault: "ask" });
 });
 
 it("registers Tomrade's MCP server and gates only what may change something", async () => {
@@ -102,7 +103,8 @@ it("keeps one process across turns, resumes its session id, and answers permissi
 
     const spawns = requests().filter((r) => r.spawn);
     expect(spawns).toHaveLength(1);
-    expect(spawns[0].argv).toEqual(expect.arrayContaining(["--mode", "rpc", "--session-id", one.resume, "--model", "fake/fixed-model", "--thinking", "high", "--tools", "mcp__tomrade__*"]));
+    expect(spawns[0].argv).toEqual(expect.arrayContaining(["--mode", "rpc", "--session-id", one.resume, "--model", "fake/fixed-model", "--thinking", "high"]));
+    expect(spawns[0].argv).not.toContain("--tools");
     expect(spawns[0].bridge).toContain(`"X-Tomrade-Run"`);
     expect(spawns[0].bridge).toContain("const approval = false;");
     const prompts = requests().filter((r) => r.type === "prompt");
@@ -110,7 +112,8 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     expect(prompts[0].message).toContain("USER MESSAGE:\n\nhello");
     expect(requests().some((r) => r.type === "abort")).toBe(true);
 
-    input.purpose = "code"; input.permissionMode = "ask";
+    // The main chat asks too: Pi has no permissions of its own, so Tomrade's gate is what stands.
+    input.permissionMode = "ask";
     input.input = { kind: "text", text: "REQUEST_PERMISSION" };
     for (const [choice, said] of [["Allow once", "ran it"], ["Deny", "skipped it"], [null, "skipped it"]] as const) {
       blocks.length = 0;
@@ -122,10 +125,10 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     }
     const answers = requests().filter((r) => r.type === "extension_ui_response");
     expect(answers.map((r) => r.confirmed ?? (r.cancelled ? "cancelled" : undefined))).toEqual([true, false, "cancelled"]);
-    const code = requests().filter((r) => r.spawn).at(-1);
-    expect(code.argv).toEqual(expect.arrayContaining(["--session-id", one.resume]));
-    expect(code.argv).not.toContain("--tools");
-    expect(code.bridge).toContain("const approval = true;");
+    const asking = requests().filter((r) => r.spawn).at(-1);
+    expect(asking.argv).toEqual(expect.arrayContaining(["--session-id", one.resume]));
+    expect(asking.argv).not.toContain("--tools");
+    expect(asking.bridge).toContain("const approval = true;");
 
     input.input = { kind: "text", text: "FAIL" };
     const failed = await engine.turn(input, io);

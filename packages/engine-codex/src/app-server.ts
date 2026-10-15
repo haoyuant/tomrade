@@ -29,7 +29,6 @@ export class CodexRuntime implements Runtime {
   private totals?: Counters;
   private stderr = "";
   private activeIO?: TurnIO;
-  private code = false;
 
   constructor(private ctx: Context, input: TurnInput) {
     const directory = runtimeDirectory(input);
@@ -87,7 +86,7 @@ export class CodexRuntime implements Runtime {
   private async respondToRequest(msg: Json): Promise<void> {
     const io = this.activeIO;
     const params = msg.params ?? {};
-    const active = this.code && io && !io.signal.aborted && (!params.threadId || params.threadId === this.session);
+    const active = io && !io.signal.aborted && (!params.threadId || params.threadId === this.session);
     const command = msg.method === "item/commandExecution/requestApproval";
     const file = msg.method === "item/fileChange/requestApproval";
     let result: Json | undefined;
@@ -104,7 +103,7 @@ export class CodexRuntime implements Runtime {
   }
 
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
-    this.activeIO = io; this.code = input.purpose !== "backlog";
+    this.activeIO = io;
     const options = CodexOptions.parse(input.options ?? {});
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "app-server", runtime: warm ? "warm" : "cold", toolCalls: 0, compactions: 0 };
@@ -221,14 +220,14 @@ export class CodexRuntime implements Runtime {
         this.send({ method: "initialized", params: {} });
         // Read effective local/project policy even on resume: old Tomrade
         // sessions may have persisted the former forced `never` policy.
-        const local = this.code ? (await this.request("config/read", { cwd: this.cwd })).config : null;
+        const local = (await this.request("config/read", { cwd: this.cwd })).config;
         const policy = input.permissionMode === "full-access" ? { approvalPolicy: "never", sandbox: "danger-full-access", config: { sandbox_workspace_write: { network_access: true } } }
           : input.permissionMode === "workspace" ? { approvalPolicy: "on-request", sandbox: "workspace-write" }
           : input.permissionMode === "read-only" ? { approvalPolicy: "on-request", sandbox: "read-only" }
           : { approvalPolicy: local?.approval_policy ?? "on-request", sandbox: local?.sandbox_mode ?? "workspace-write" };
         const thread = {
           cwd: this.cwd, model: codexModel(options.model),
-          ...(this.code ? { ...policy, approvalsReviewer: "user" } : { approvalPolicy: "never", sandbox: "read-only" }),
+          ...policy, approvalsReviewer: "user",
           developerInstructions: sessionSystem(input, "Codex")
         };
         let response: Json;

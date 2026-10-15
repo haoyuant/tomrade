@@ -25,7 +25,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   }
 }));
 
-it.each(["code", "backlog"] as const)("exposes tools and preserves permission policy for %s turns", async (purpose) => {
+it.each(["code", "backlog"] as const)("exposes the full tool set and the person's permission policy for %s turns", async (purpose) => {
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   try {
@@ -38,9 +38,9 @@ it.each(["code", "backlog"] as const)("exposes tools and preserves permission po
     io.requestPermission = async () => choices.shift() ?? null;
     capture.decisions = [];
     expect((await engine.turn(turn, io)).stop).toBe("end");
-    expect(capture.decisions).toEqual(purpose === "code" ? ["allow", "deny", "deny"] : []);
+    expect(capture.decisions).toEqual(["allow", "deny", "deny"]);
     const options = capture.options!;
-    expect(options.tools).toEqual(purpose === "code" ? { type: "preset", preset: "claude_code" } : ["mcp__tomrade__*"]);
+    expect(options.tools).toEqual({ type: "preset", preset: "claude_code" });
     expect(options.strictMcpConfig).toBe(purpose !== "code");
     expect(options.settingSources).toEqual(["user", "project", "local"]);
     expect(options.maxTurns).toBe(purpose === "code" ? undefined : 24);
@@ -50,11 +50,9 @@ it.each(["code", "backlog"] as const)("exposes tools and preserves permission po
       return "hookSpecificOutput" in result && result.hookSpecificOutput?.hookEventName === "PreToolUse" ? result.hookSpecificOutput.permissionDecision : undefined;
     };
     for (const tool_name of ["Read", "Bash", "Glob", "Edit", "Write", "Agent", "Skill", "WebSearch", "mcp__local__lookup"]) {
-      const result = await hook(tool_name);
-      if (purpose === "code") expect(result).toBeUndefined();
-      else expect(result).toBe("deny");
+      expect(await hook(tool_name)).toBeUndefined();
     }
-    expect(options.permissionMode).toBe(purpose === "code" ? undefined : "dontAsk");
+    expect(options.permissionMode).toBeUndefined();
     expect(await hook("mcp__tomrade__get_item")).toBe("allow");
     if (purpose === "code") {
       for (const mode of ["auto", "bypassPermissions", "plan", "local"]) {

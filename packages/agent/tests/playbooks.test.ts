@@ -192,6 +192,7 @@ describe("the loop engine prompt", () => {
     for (let i = 0; i < 400 && agent.store.run(base.project.id, runId)?.status === "running"; i += 1) await new Promise((r) => setTimeout(r, 10));
     const system = model.requests[0].system ?? "";
     expect(system).toContain("House rules:");
+    expect(system).toContain("Project code is written through a ticket");
     expect(system).toContain("acme.review — the user asks for a review");
     await base.ctx.fiber.dispose();
   });
