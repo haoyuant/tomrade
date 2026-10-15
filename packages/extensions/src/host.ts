@@ -5,7 +5,7 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/im";
 import type {} from "@tomradex/boards";
-import type {} from "@tomradex/contributions";
+import type { Words } from "@tomradex/contributions";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/desktop-surface";
 import type {} from "@tomradex/fields";
@@ -26,6 +26,8 @@ import {
   type Events,
   type FieldsApi,
   type ItemsApi,
+  type Locale,
+  type Localized,
   type OplogApi,
   type PluginContext,
   type ProjectsApi,
@@ -115,6 +117,16 @@ export class Host {
 
   private own(id: string, kind: string): void {
     if (this.identity.origin === "extension") assertOwned(this.ns, id, kind);
+  }
+
+  /** The app's language; English where settings are not loaded. */
+  private locale(): Locale {
+    return (this.ctx.get("settings") as Context["settings"] | undefined)?.locale() ?? "en";
+  }
+
+  /** Per-language text becomes words the core reads each time it shows them, so a switch shows at once. */
+  private say<W extends Localized | undefined>(w: W): W extends undefined ? undefined : Words {
+    return (w === undefined || typeof w === "string" ? w : () => w[this.locale()] ?? w.en) as never;
   }
 
   private svc<K extends ServiceName>(name: K): Services[K] {
@@ -246,7 +258,7 @@ export class Host {
             host.call(() => {
               const id = section.id ?? ns;
               host.own(id, "settings section");
-              settings().register({ id, title: section.title, description: section.description, schema: section.schema, defaults: section.defaults, scope: section.scope, agent: section.agent, order: 100 });
+              settings().register({ id, title: section.title, description: section.description, schema: section.schema, defaults: section.defaults, scope: section.scope, agent: section.agent, order: 100, ...(section.words ? { words: section.words } : {}) });
             }),
           get: <T>(id?: string) => host.call(() => settings().get()[id ?? ns] as T),
           set: (value, id) =>
@@ -254,6 +266,13 @@ export class Host {
               const key = id ?? ns;
               host.own(key, "settings section");
               settings().set({ [key]: value } as never);
+            }),
+          locale: () => host.call(() => host.locale()),
+          show: (id) =>
+            host.call(() => {
+              const key = id ?? ns;
+              host.own(key, "settings section");
+              settings().show(key);
             })
         };
       },
@@ -298,7 +317,7 @@ export class Host {
             host.call(() => {
               host.own(def.id, "command");
               const run = host.back(def.run, `command ${def.id}`, { human: true, ms: COMMAND_MS });
-              return host.disposerOf(c().command({ id: def.id, title: def.title, group: def.group, shortcut: def.shortcut, run: (scope) => run(scope).then((r) => r ?? undefined) }));
+              return host.disposerOf(c().command({ id: def.id, title: host.say(def.title), group: host.say(def.group), shortcut: def.shortcut, run: (scope) => run(scope).then((r) => r ?? undefined) }));
             }),
           badge: (def) =>
             host.call(() => {
@@ -308,33 +327,38 @@ export class Host {
           statusItem: (def) =>
             host.call(() => {
               host.own(def.id, "status item");
-              return host.disposerOf(c().statusItem({ id: def.id, text: host.back(def.text, `status item ${def.id}`, { ms: RENDER_MS }) }));
+              if (def.command) host.own(def.command, "status item command");
+              const until = def.until ? host.back(def.until, `status item ${def.id} until`, { ms: RENDER_MS }) : undefined;
+              const menu = def.menu ? host.back(def.menu, `status item ${def.id} menu`, { ms: RENDER_MS }) : undefined;
+              return host.disposerOf(c().statusItem({
+                id: def.id, text: host.back(def.text, `status item ${def.id}`, { ms: RENDER_MS }), title: host.say(def.title), icon: def.icon, align: def.align, command: def.command,
+                ...(until ? { until } : {}),
+                ...(menu ? { menu: async (scope: { projectId?: string }) => {
+                  const entries = await menu(scope);
+                  for (const entry of entries ?? []) host.own(entry.command, "status menu command");
+                  return entries;
+                } } : {})
+              }));
+            }),
+          refresh: () =>
+            host.call(() => {
+              c().changed();
             }),
           section: (def) =>
             host.call(() => {
               host.own(def.id, "section");
-              return host.disposerOf(c().section({ id: def.id, title: def.title, render: host.back(def.render, `section ${def.id}`, { ms: RENDER_MS }) }));
+              return host.disposerOf(c().section({ id: def.id, title: host.say(def.title), render: host.back(def.render, `section ${def.id}`, { ms: RENDER_MS }) }));
             }),
           graph: (def) =>
             host.call(() => {
               host.own(def.id, "graph");
               return host.disposerOf(c().graph({ id: def.id, title: def.title, icon: def.icon, edits: def.edits, compute: host.back(def.compute, `graph ${def.id}`, { ms: RENDER_MS }) }));
             }),
-          assistantWidget: (def) =>
-            host.call(() => {
-              host.own(def.id, "assistant widget");
-              const render = host.back(def.render, `assistant widget ${def.id}`, { ms: RENDER_MS });
-              return host.disposerOf(c().assistantWidget({ id: def.id, title: def.title, render: async () => {
-                const content = await render();
-                for (const action of content?.actions ?? []) host.own(action.command, "widget command");
-                return content;
-              } }));
-            }),
           sidebarModule: (def) =>
             host.call(() => {
               host.own(def.id, "sidebar module");
               const rows = def.rows ? host.back(def.rows, `sidebar module ${def.id}`, { ms: RENDER_MS }) : undefined;
-              return host.disposerOf(c().sidebarModule({ id: def.id, title: def.title, icon: def.icon, command: def.command, ...(rows ? { rows } : {}) }));
+              return host.disposerOf(c().sidebarModule({ id: def.id, title: host.say(def.title), icon: def.icon, command: def.command, ...(rows ? { rows } : {}) }));
             })
         };
       },
@@ -385,6 +409,7 @@ export class Host {
                 alwaysOnTop: spec.alwaysOnTop,
                 focusable: spec.focusable,
                 clickThrough: spec.clickThrough,
+                anchor: spec.anchor,
                 initialState: spec.initialState,
                 onMessage: onMessage ? (m) => within(ns, () => onMessage(m as never), true) : undefined
               });

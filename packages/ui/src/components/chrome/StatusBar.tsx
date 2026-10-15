@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import type { Item, OplogEntry } from "@tomradex/domain";
 import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
-import { Menu, MenuHead, MenuStackItem } from "~/components/ui/menu";
+import { Menu, MenuActionItem, MenuHead, MenuStackItem } from "~/components/ui/menu";
 import { useAttention, useOpenAttention } from "~/lib/attention";
 import { agoLabel, authorLabel, timeAgo } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -30,11 +31,32 @@ function Ribbon({ entry }: { entry: OplogEntry }) {
               : "statusBar.verbUpdated";
   const sync = entry.by === "ai:sync";
   return (
-    <span className="status-item">
+    <span className="status-item status-ribbon">
       {entry.by.startsWith("ai:") && !sync && <span className="ribbon-tick" />}
-      {tx("statusBar.ribbon", { author: sync ? t("statusBar.authorSync") : authorLabel(entry.by), verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}
+      <span className="status-clip">{tx("statusBar.ribbon", { author: sync ? t("statusBar.authorSync") : authorLabel(entry.by), verb: t(verbKey), key: after?.key ?? entry.entity, time: agoLabel(entry.at) })}</span>
     </span>
   );
+}
+
+/** Counts down to a plugin's `until` locally — no polling — and asks for a fresh read once it arrives. */
+function useCountdown(until: number | undefined, onDue: () => void): string | null {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (until === undefined) return;
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [until]);
+  const left = until === undefined ? null : Math.max(0, Math.ceil((until - now) / 1000));
+  useEffect(() => {
+    if (left === 0) onDue();
+  }, [left === 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  return left === null ? null : `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
+}
+
+/** A plugin item's words and its countdown as one run of text, so the two can never sit on different lines. */
+function StatusLabel({ text, until, onDue }: { text: string; until?: number; onDue: () => void }) {
+  const left = useCountdown(until, onDue);
+  return <span className="status-label">{left ? `${text} ${left}` : text}</span>;
 }
 
 /** Everything agents wait on the person for, in every open project — longest wait first, each a way back to it. */
@@ -120,6 +142,27 @@ export function StatusBar({
   const iconOf = (icon: string | undefined): IconId | null => (icon && (ICON_IDS as readonly string[]).includes(icon) ? (icon as IconId) : null);
   const itemOf = (s: NonNullable<typeof plugins.data>[number]) => {
     const icon = iconOf(s.icon);
+    const label = <StatusLabel text={s.text} until={s.until} onDue={() => void plugins.refetch()} />;
+    if (s.menu)
+      return (
+        <Menu
+          key={s.id}
+          label={s.title ?? s.text}
+          align={s.align === "end" ? "end" : "start"}
+          trigger={
+            <button type="button" className="status-item status-link" aria-label={s.title ?? s.text} disabled={runCommand.isPending}>
+              {icon && <Icon name={icon} size={13} />}
+              {label}
+            </button>
+          }
+        >
+          {s.title && <MenuHead title={s.title} />}
+          {s.menu.map((entry) => {
+            const mark = iconOf(entry.icon);
+            return <MenuActionItem key={entry.command} icon={mark && <Icon name={mark} size={14} />} name={entry.title} onSelect={() => run(entry.command)} />;
+          })}
+        </Menu>
+      );
     return (
       <button
         type="button"
@@ -131,7 +174,7 @@ export function StatusBar({
         onClick={() => (s.command ? run(s.command) : s.opens && onOpen?.(s.opens))}
       >
         {icon && <Icon name={icon} size={13} />}
-        {s.text}
+        {label}
       </button>
     );
   };
@@ -141,7 +184,7 @@ export function StatusBar({
     return (
       <span className="status-item" key={s.id}>
         {icon && <Icon name={icon} size={13} />}
-        {s.text}
+        <StatusLabel text={s.text} until={s.until} onDue={() => void plugins.refetch()} />
       </span>
     );
   };
@@ -153,7 +196,7 @@ export function StatusBar({
       </span>
       <NeedsYou projectId={projectId} />
       {latest && <Ribbon entry={latest} />}
-      {plugins.data?.filter((s) => s.align !== "end").map((s) => (s.command || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
+      {plugins.data?.filter((s) => s.align !== "end").map((s) => (s.command || s.menu || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
       {onUndo && (
         <button type="button" className="btn btn-ghost status-undo" style={{ padding: "2px 7px", fontSize: "var(--text-xs)" }} onClick={onUndo} disabled={busy !== null} aria-busy={busy === "undo"} title={t("statusBar.undoTitle")}>
           <Icon name={busy === "undo" ? "i-sync" : "i-undo"} size={13} className={busy === "undo" ? "is-spinning" : undefined} /> {busy === "undo" ? t("workspace.undoing") : t("toast.undo")}
@@ -170,7 +213,7 @@ export function StatusBar({
         </button>
       )}
       <Spacer />
-      {endItems.map((s) => (s.command || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
+      {endItems.map((s) => (s.command || s.menu || (s.opens && onOpen) ? itemOf(s) : plainItem(s)))}
       {children}
     </footer>
   );

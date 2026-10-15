@@ -37,7 +37,7 @@ await ctx.db.get(projectId, sql, params); await ctx.db.run(projectId, sql, param
 `export: { order: "item_id" }` makes the table travel in the project's folder; `false` keeps it on this machine. `"hub"` as the target addresses the Hub's database (migrate with `scope: "hub"`).
 
 ## settings
-`register({ title, description?, schema: z.object({...}), defaults })` (id defaults to the namespace) · `get<T>()` · `set(value)`. The card is drawn from the schema; use `.describe()` on fields for labels.
+`register({ title, description?, schema: z.object({...}), defaults })` (id defaults to the namespace) · `get<T>()` · `set(value)` · `show()` opens Settings on your section (from a desktop surface click) · `locale()` is the app's language (`"en"`/`"zh"`; `settings.changed` fires on a switch). Never write two languages side by side: the schema's `.meta({ title })`/`.describe()` are English, `words: { zh: { title, description, fields: { key: { title, description } } } }` is the Chinese card, and command / status item titles take `{ en, zh }`. The card is drawn from the schema; use `.describe()` on fields for labels.
 
 ## tools — for agents
 ```ts
@@ -52,16 +52,15 @@ await ctx.tools.register(defineTool({
 ## contributions — what the person sees
 - `command({ id, title, group?, run: async ({projectId, itemId}) => ({ toast }) })` — palette; runs as the person.
 - `badge({ id, compute: async (items, {projectId}) => ({ [itemId]: [{ id, label, tone: "faint"|"neutral"|"strong", title? }] }) })`
-- `statusItem({ id, text: async ({projectId}) => string | null })`
+- `statusItem({ id, text: async ({projectId}) => string | null, icon?, align?: "end", title?, command?, until?: () => epochMs | null, menu?: () => [{ title, command, icon? }] })` — `until` counts down live after the text; `menu` makes the click open those actions; call `refresh()` when state changes outside a command.
 - `section({ id, title, render: async (item) => ({ rows: [{ label, value, mono?, href?, command?, state? }], text? }) | null })`
-- `assistantWidget({ id, title, render: () => ({ text, detail?, progress?, actions: [{ title, command }] }) | null })` — compact row below the pet; polls once per second, commands must belong to your namespace.
 - `graph({ id, title, icon?, compute: async (items) => [{ from, to, tone?, title? }] })`
 
 ## agent
 `ctx.agent.playbook({ id: `${ns}.how`, title, when: "one line", body: "markdown steps", tools: [...] })`.
 
 ## surfaces
-`ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, onMessage })` → handle with `setState`, `close`. Documents are files in the package (put them in `static/`).
+`ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, transparent?, clickThrough?, anchor?: "sidebar-foot", onMessage })` → handle with `setState`, `close`. Documents are files in the package (put them in `static/`).
 
 ## events and lifetime
 `ctx.on("write", e => …)` (`{projectId, entity, op, id, by, via}`) · `ctx.on("project.opened", id => …)` · `ctx.on("settings.changed", …)`

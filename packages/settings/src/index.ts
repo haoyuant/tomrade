@@ -70,6 +70,8 @@ declare module "cordis" {
   }
   interface Events {
     "settings/changed"(next: AppSettings, previous: AppSettings): void;
+    /** Someone outside the window (a plugin's desktop surface) asked to see this section. */
+    "settings/show"(id: string): void;
   }
 }
 
@@ -83,6 +85,8 @@ declare module "@tomradex/ipc" {
   interface Broadcasts {
     /** Changed from somewhere other than this window's own save: an agent, another machine. */
     "settings.changed": (next: AppSettings) => void;
+    /** Open Settings on this section. */
+    "settings.show": (id: string) => void;
   }
 }
 
@@ -285,6 +289,7 @@ export class Settings extends Service {
       ctx.ipc.handle("settings.sections", (locale) => ctx.settings.sections(locale === "en" || locale === "zh" ? locale : undefined));
       ctx.ipc.handle("settings.secretStorage", () => ctx.settings.secretStorage());
       ctx.on("settings/changed", (next) => ctx.ipc.send("settings.changed", next));
+      ctx.on("settings/show", (id) => ctx.ipc.send("settings.show", id));
     });
     this.home.inject(["tools", "db", "oplog", "hub"], (ctx) => agentAccess(ctx));
     // User-scope sections follow the Hub folder once there is one.
@@ -350,6 +355,12 @@ export class Settings extends Service {
   /** The language to speak to the person in — for words the backend writes, which the renderer shows as they are. */
   locale(): Locale {
     return resolveLocale(this.get().language as string | undefined, this.config.locale);
+  }
+
+  /** Asks the app window to open Settings on a registered section; the shell brings the window forward. */
+  show(id: string): void {
+    if (!this.registry.has(id)) throw new Error(`settings section "${id}" is not registered`);
+    this.home.emit("settings/show", id);
   }
 
   get(): AppSettings {

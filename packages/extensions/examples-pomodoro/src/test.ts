@@ -15,7 +15,7 @@ export default async function(t: any) {
  t.check('reset restores first focus',timer.phase === 'focus' && timer.completed === 0 && timer.remaining === 25*60_000 && timer.deadline === null);
  timer.configure({...rules,focusMinutes:30});t.check('rules update idle duration', timer.remaining === 30*60_000);
  timer.reset();timer.skip(0);t.check('skipping focus does not count a completed session', timer.completed === 0);
- const status:any = await t.tool('pomodoro_status',{});t.check('default mode is embedded',status.config.mode === 'embedded' && !status.running);
+ const status:any = await t.tool('pomodoro_status',{});t.check('desktop widget is off by default',status.config.desktop === false && !status.running);
  await t.tool('pomodoro_control',{action:'toggle'});const running:any=await t.tool('pomodoro_status',{});t.check('control starts timer',running.running);
  await t.tool('pomodoro_control',{action:'reset'});
 }

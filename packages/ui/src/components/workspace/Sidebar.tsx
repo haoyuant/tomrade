@@ -494,7 +494,7 @@ export function Sidebar({
         <ModuleList onOpenFields={onOpenFields} onOpenTemplates={onOpenTemplates} />
       </div>
       {/* pinned below the scrolling body so it is always where people look for it */}
-      <div className="side-settings">
+      <div className="side-settings" data-surface-anchor="sidebar-foot">
         <button type="button" className="side-row side-project-settings" aria-haspopup="dialog" aria-label={t("sidebar.projectSettings")} onClick={onOpenProjectSettings}>
           <Icon className="ico" name="i-gear" size={17} />
           <span className="side-name">{t("sidebar.projectSettings")}</span>

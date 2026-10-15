@@ -1468,6 +1468,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 }
 .status-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .status-link:hover { color: var(--fg); }
+.status-label { font-variant-numeric: tabular-nums; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 .usage-table th { text-align: left; font-weight: var(--font-weight-medium); color: var(--meta); font-size: var(--text-xs); padding: 0 var(--space-2) var(--space-1); border-bottom: 1px solid var(--border); }
 .usage-table td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border-soft); }
@@ -1549,6 +1550,13 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
   overflow: hidden;
 }
 .status-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* Serif words beside mono numbers ("专注 24:58", "MCP 127.0.0.1"): one baseline, so text and dotted underline line up. */
+.status-item:has(> .num) { align-items: baseline; }
+.status-item:has(> .num) > :is(svg, .live-dot, .ribbon-tick) { align-self: center; }
+/* Short of room, the last-write ribbon gives way first; nothing else in the bar shrinks, so end items stay whole. */
+.statusbar > * { flex-shrink: 0; }
+.statusbar > .status-ribbon { flex-shrink: 1; min-width: 0; }
+.status-clip { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 .ribbon-tick { width: 2px; height: 10px; background: var(--accent); border-radius: 1px; flex-shrink: 0; }
 
@@ -2548,11 +2556,3 @@ aside.detail:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 }
 .keys-note .ico, .keys-note svg { color: var(--warn); flex-shrink: 0; }
 .keys-note .btn { padding: 3px 9px; font-size: var(--text-xs); }
-
-.assistant-widget { position: relative; border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 8px 10px 10px; background: var(--surface); overflow: hidden; }
-.assistant-widget-body { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.assistant-widget-title, .assistant-widget-detail { font-size: 11px; color: var(--muted); }
-.assistant-widget-text { font-variant-numeric: tabular-nums; font-size: 20px; }
-.assistant-widget-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.assistant-widget-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--border-soft); }
-.assistant-widget-progress > div { height: 100%; background: var(--accent); transition: width 0.3s; }

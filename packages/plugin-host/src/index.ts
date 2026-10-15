@@ -82,7 +82,6 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   await guarded("badges compute", () => w.ctx.contributions.badgesFor(w.project.id));
   await guarded("status items compute", () => w.ctx.contributions.statusItems(scope));
   await guarded("sections render", () => w.ctx.contributions.sectionsFor(w.project.id, samples[0]!.id));
-  await guarded("assistant widgets compute", () => w.ctx.contributions.assistantWidgets());
   await guarded("sidebar modules compute", () => w.ctx.contributions.sidebarModules(w.project.id));
   for (const g of w.ctx.contributions.graphs()) await guarded(`graph ${g.id} computes`, () => w.ctx.contributions.graphEdges(g.id, scope));
   const failures = logs.slice(before_).filter((l) => l.includes("contributions"));

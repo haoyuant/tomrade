@@ -1,8 +1,100 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"><style>
-*{box-sizing:border-box}body{margin:0;padding:5px;font:12px system-ui;color:#eee9df;user-select:none}main{height:144px;border-radius:14px;background:#262b28;border:1px solid #697369;padding:12px;overflow:hidden;position:relative}header{display:flex;justify-content:space-between;align-items:center;cursor:grab;touch-action:none;-webkit-app-region:drag}header button{-webkit-app-region:no-drag}.clock{font-size:36px;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:1px}.line{display:flex;align-items:center;justify-content:space-between;margin:4px 0}.detail{color:#b7c3b7;font-size:11px}nav{display:flex;gap:5px}button{background:#3b453e;color:inherit;border:1px solid #647365;border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit}button:hover{background:#526052}#toggle{background:#c7dfaa;color:#263225;border-color:#c7dfaa}#progress{position:absolute;bottom:0;left:0;height:3px;background:#c7dfaa;transition:width .3s}header button{padding:2px 6px;font-size:11px}button:focus-visible{outline:2px solid #c7dfaa;outline-offset:2px}
-</style></head><body><main><header><span id="title"></span><span><button id="settings"></button> <button id="mode"></button></span></header><div class="line"><span class="clock" id="clock">25:00</span><span id="phase"></span></div><div class="detail" id="detail"></div><nav style="margin-top:7px"><button id="toggle"></button><button id="skip"></button><button id="reset"></button></nav><div id="progress"></div></main><script>
-const bridge=window.tomradeSurface;let state;
-const text=(id,v)=>document.getElementById(id).textContent=v;
-function render(){if(!state)return;const w=state.words;const left=state.running?Math.max(0,state.deadline-Date.now()):state.remaining;const s=Math.ceil(left/1000);text('clock',String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'));text('title',w.title);text('phase',w[state.phase]);text('detail',w.done+' '+state.completed);text('toggle',state.running?w.pause:w.start);for(const a of ['skip','reset','settings'])text(a,w[a]);text('mode',w.embedded);document.getElementById('progress').style.width=Math.max(0,Math.min(1,1-left/state.duration))*100+'%'}
-bridge.onState(s=>{state=s;render()});for(const action of ['toggle','skip','reset','mode','settings'])document.getElementById(action).onclick=()=>bridge.send({type:'action',action});setInterval(render,250);
-</script></body></html>
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<style>
+  /* No card: ink on the wallpaper, held legible by a soft halo in the opposite tone. Tokens follow Tomrade's Paper / Ink. */
+  :root { color-scheme: light dark; --fg: #141413; --meta: #6b6a64; --accent: #1b365d; --halo: rgba(250, 249, 245, 0.92); --serif: Charter, Georgia, Palatino, "Times New Roman", serif; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #faf9f5; --meta: oklch(0.80 0.004 106); --accent: oklch(0.68 0.11 250); --halo: rgba(20, 20, 19, 0.78); } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body { font-family: var(--serif); color: var(--fg); user-select: none; -webkit-user-select: none; }
+  main { position: absolute; inset: 10px 14px; display: flex; flex-direction: column; justify-content: center; cursor: grab; touch-action: none; }
+  main.dragging { cursor: grabbing; }
+  .halo { text-shadow: 0 0 1px var(--halo), 0 0 6px var(--halo), 0 0 14px var(--halo); }
+  .eyebrow { font-size: 11px; line-height: 1; letter-spacing: 1.2px; color: var(--meta); white-space: nowrap; }
+  :lang(en) .eyebrow { text-transform: uppercase; }
+  .clock { font-size: 50px; line-height: 1; margin-top: 6px; letter-spacing: -0.5px; transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1); }
+  /* Charter has no tabular figures; a fixed cell per digit keeps the clock from shimmying. */
+  .clock span { display: inline-block; width: 0.62em; text-align: center; }
+  .clock span.sep { width: 0.3em; }
+  body.paused .clock { opacity: 0.55; }
+  .track { position: relative; height: 1px; margin-top: 10px; background: color-mix(in srgb, var(--fg) 22%, transparent); box-shadow: 0 0 6px var(--halo); }
+  .fill { position: absolute; left: 0; top: -0.5px; height: 2px; background: var(--accent); transition: width 600ms linear; }
+  nav { display: flex; align-items: center; gap: 2px; margin: 8px -5px 0; opacity: 0; transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1); }
+  body.awake nav { opacity: 1; }
+  nav .gap { flex: 1; }
+  button { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--fg); cursor: pointer; filter: drop-shadow(0 0 2px var(--halo)) drop-shadow(0 0 5px var(--halo)); }
+  button:hover { background: color-mix(in srgb, var(--halo) 80%, transparent); color: var(--accent); }
+  svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  @media (prefers-reduced-motion: reduce) { .clock, .fill, nav { transition: none; } }
+</style>
+</head>
+<body class="paused">
+<main id="widget">
+  <div class="eyebrow halo" id="eyebrow"></div>
+  <div class="clock halo" id="clock" aria-live="off"></div>
+  <div class="track"><div class="fill" id="fill"></div></div>
+  <nav>
+    <button id="toggle" data-action="toggle"><svg id="toggle-icon" viewBox="0 0 16 16"></svg></button>
+    <button data-action="skip"><svg viewBox="0 0 16 16"><path d="M4 3.5l6 4.5-6 4.5z"/><path d="M12.5 3.5v9"/></svg></button>
+    <button data-action="reset"><svg viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg></button>
+    <span class="gap"></span>
+    <button data-action="settings"><svg viewBox="0 0 16 16"><path d="M3 4.5h6M12 4.5h1M3 11.5h1M7 11.5h6"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
+    <button data-action="desktop"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+  </nav>
+</main>
+<script>
+(() => {
+  const bridge = window.tomradeSurface, widget = document.getElementById('widget');
+  const PLAY = '<path d="M5 3.5l7 4.5-7 4.5z"/>', PAUSE = '<path d="M5.5 3.5v9M10.5 3.5v9"/>';
+  let state = null, drag = null, sleepTimer = 0;
+  const left = () => state.running ? Math.max(0, state.deadline - Date.now()) : state.remaining;
+  const render = () => {
+    if (!state) return;
+    const w = state.words, ms = left(), s = Math.ceil(ms / 1000);
+    const text = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    document.getElementById('clock').innerHTML = [...text].map(c => `<span${c === ':' ? ' class="sep"' : ''}>${c}</span>`).join('');
+    document.getElementById('fill').style.width = Math.max(0, Math.min(1, 1 - ms / state.duration)) * 100 + '%';
+    document.body.classList.toggle('paused', !state.running);
+  };
+  bridge.onState(next => {
+    state = next;
+    const w = next.words;
+    document.documentElement.lang = next.lang;
+    document.getElementById('eyebrow').textContent = [w[next.phase], next.round, next.running ? null : next.remaining < next.duration ? w.paused : null].filter(Boolean).join(' · ');
+    document.getElementById('toggle-icon').innerHTML = next.running ? PAUSE : PLAY;
+    const titles = { toggle: next.running ? w.pause : w.start, skip: w.skip, reset: w.reset, settings: w.settings, desktop: w.hide };
+    for (const b of document.querySelectorAll('button')) { b.title = titles[b.dataset.action]; b.setAttribute('aria-label', b.title); }
+    render();
+  });
+  setInterval(render, 250);
+
+  // Transparent pixels pass clicks through; the widget's own box takes them while the pointer is over it.
+  const over = e => { const r = widget.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
+  const wake = on => { clearTimeout(sleepTimer); if (on) document.body.classList.add('awake'); else sleepTimer = setTimeout(() => document.body.classList.remove('awake'), 600); };
+  addEventListener('mousemove', e => { if (drag) return; const hit = over(e); bridge.setInteractive(hit); wake(hit); });
+  addEventListener('mouseleave', () => { if (drag) return; bridge.setInteractive(false); wake(false); });
+
+  for (const b of document.querySelectorAll('button')) b.addEventListener('click', () => bridge.send({ type: 'action', action: b.dataset.action }));
+  // Dragging anywhere but a button moves the window; the grab point stays under the pointer.
+  widget.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    drag = { x: e.clientX, y: e.clientY };
+    widget.setPointerCapture(e.pointerId);
+    widget.classList.add('dragging');
+  });
+  const end = () => { drag = null; widget.classList.remove('dragging'); };
+  widget.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (e.buttons === 0) return end();
+    bridge.send({ type: 'move', x: Math.round(e.screenX - drag.x), y: Math.round(e.screenY - drag.y) });
+  });
+  widget.addEventListener('pointerup', end);
+  widget.addEventListener('pointercancel', end);
+})();
+</script>
+</body>
+</html>

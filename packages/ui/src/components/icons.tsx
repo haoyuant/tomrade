@@ -44,6 +44,7 @@ export const ICON_IDS = [
   "i-pen",
   "i-sliders",
   "i-clock",
+  "i-tomato",
   "i-history",
   "i-alarm",
   "i-send",
@@ -122,6 +123,7 @@ export function IconSprite() {
         <symbol id="i-pen" viewBox="0 0 14 14"><path d="M9.3 2.4 11.6 4.7 5.3 11 2.4 11.6 3 8.7Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></symbol>
         <symbol id="i-sliders" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M1.9 4.6h10.2M1.9 9.4h10.2"/></g><g fill="currentColor"><circle cx="5.2" cy="4.6" r="1.7"/><circle cx="9" cy="9.4" r="1.7"/></g></symbol>
         <symbol id="i-clock" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="7" cy="7" r="5.2"/><path d="M7 4.2V7l2 1.4"/></g></symbol>
+        <symbol id="i-tomato" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.4 4.4C2.6 5 1.4 6.6 1.4 8.5c0 2.5 2.5 4.3 5.6 4.3s5.6-1.8 5.6-4.3c0-1.9-1.2-3.5-3-4.1"/><path d="M7 3.7 5 3l1 1.2-2.4.6 2.3.3L7 6.2l1.1-1.1 2.3-.3-2.4-.6L9 3Z"/><path d="M7 3.7V1.6"/></g></symbol>
         <symbol id="i-history" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1.9 7a5.1 5.1 0 1 0 5.1-5.1 5.6 5.6 0 0 0-3.9 1.6L1.9 4.7"/><path d="M1.9 1.9v2.8h2.8"/><path d="M7 4.3V7l1.9 1.1"/></g></symbol>
         {/* routines: an alarm clock, apart from the plain clock (dates, Recently updated) and History */}
         <symbol id="i-alarm" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="7.6" r="4.4"/><path d="M7 5.4v2.2l1.5.9"/><path d="M1.7 3.7 3.6 1.9M12.3 3.7 10.4 1.9"/><path d="M3.9 11 2.9 12.2M10.1 11l1 1.2"/></g></symbol>

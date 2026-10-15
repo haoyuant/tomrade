@@ -1,14 +1,14 @@
 {
   "id": "local/pomodoro",
   "version": "0.1.0",
-  "title": "Pomodoro · 番茄钟",
-  "description": "宠物区番茄钟，可拖动桌面浮窗，自定义专注与休息规则。",
+  "title": "Pomodoro",
+  "description": "A status bar Pomodoro timer with a backgroundless desktop widget and adjustable focus and break lengths.",
   "license": "MIT",
   "author": {
     "name": "local"
   },
   "engines": {
-    "sdk": "^0.2.1"
+    "sdk": "^0.2.3"
   },
   "main": "dist/index.js",
   "permissions": {
@@ -31,14 +31,14 @@
       "pomodoro_status"
     ],
     "commands": [
-      "pomodoro.mode",
+      "pomodoro.desktop",
       "pomodoro.reset",
       "pomodoro.settings",
       "pomodoro.skip",
       "pomodoro.toggle"
     ],
-    "assistantWidgets": [
-      "pomodoro.timer"
+    "statusItems": [
+      "pomodoro.status"
     ],
     "settings": [
       "pomodoro"
