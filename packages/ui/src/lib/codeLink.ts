@@ -209,3 +209,14 @@ export function offerStart(itemId: string): void {
   if (listeners.length) listeners.at(-1)!(null);
   else waitingOffers.set(itemId, Date.now());
 }
+
+export const useRepositoryConnection = (projectId: string, repoId: string) =>
+  useQuery({ queryKey: ["codeLink", projectId, "connection", repoId], queryFn: () => invoke("codeLink.connection", projectId, repoId), refetchInterval: 10_000 });
+
+export function useConnectRepository(projectId: string, repoId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => invoke("codeLink.connect", projectId, repoId),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["codeLink", projectId, "connection", repoId] })
+  });
+}

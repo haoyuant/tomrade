@@ -1,3 +1,4 @@
+import { AgentConnection } from "../projects/AgentConnection";
 import { useEffect, useRef, useState } from "react";
 import type { Board, FieldDef, FieldType, Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
@@ -468,6 +469,7 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
         )}
       </div>
 
+      {repo && <AgentConnection key={repo.id} projectId={projectId} repoId={repo.id} hint />}
       <p className="meta-txt dense fld-ws-where">
         {!repo ? (
           <>

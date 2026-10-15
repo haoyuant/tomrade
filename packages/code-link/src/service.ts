@@ -21,6 +21,7 @@ import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch } from "./keys.js";
+import { inspectConnection, type ConnectionView } from "./connection.js";
 import { writeConnectFiles } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -135,7 +136,9 @@ declare module "@tomradex/ipc" {
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
     "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
-    /** Put Claude/Codex MCP config, agent instructions and hooks into the repository, on a branch, as a pull request. */
+    /** Connection evidence on the default and connection branches of the local clone. */
+    "codeLink.connection": (projectId: string, repoId: string) => ConnectionView;
+    /** Put agent configuration into the repository on its own branch. */
     "codeLink.connect": (projectId: string, repoId: string) => ConnectResult;
     /** Install or sign in to a local agent in a terminal, with the command its engine declares. */
     "codeLink.setupInTerminal": (engineId: string, step: "install" | "signIn") => { launched: boolean; command: string };
@@ -465,6 +468,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
+      ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
       ctx.ipc.handle("codeLink.connect", (projectId, repoId) => ctx.codeLink.connect(projectId, repoId));
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
@@ -771,6 +775,35 @@ export class CodeLink extends Service {
     return item;
   }
 
+  async connection(projectId: string, repoId: string): Promise<ConnectionView> {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    if (!repo) throw new Error(`unknown repository ${repoId}`);
+    const mcp = this.ctx.get("mcp");
+    const mcpUrl = mcp?.urlFor(projectId) ?? null;
+    const branch = "tomrade/connect";
+    const base = { mcpUrl, configuredUrl: null, instance: mcp?.badge().kind ?? "dev", branch, url: null } as const;
+    if (!mcpUrl || !mcp?.eventUrl) return { ...base, state: "unavailable" };
+    const cwd = this.ctx.repos.checkout(repo.remote).checkout;
+    if (!cwd || !fs.existsSync(cwd)) return { ...base, state: "no-checkout" };
+    const exists = async (ref: string) => (await this.git(["rev-parse", "--verify", "--quiet", ref], { cwd, ok: true })).code === 0;
+    const local = `refs/heads/${repo.defaultBranch}`;
+    const remote = `refs/remotes/origin/${repo.defaultBranch}`;
+    const hasLocal = await exists(local);
+    const hasRemote = await exists(remote);
+    // Prefer local work that is ahead; otherwise use the latest fetched default branch.
+    const ref = hasLocal && (!hasRemote || (await this.git(["merge-base", "--is-ancestor", remote, local], { cwd, ok: true })).code === 0) ? local : remote;
+    const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl);
+    const configuredUrl = current.configuredUrl;
+    if (current.connected) return { ...base, configuredUrl, state: "connected" };
+    for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
+      if (!(await exists(pendingRef))) continue;
+      if ((await this.git(["merge-base", "--is-ancestor", pendingRef, ref], { cwd, ok: true })).code === 0) continue;
+      const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl);
+      if (pending.connected) return { ...base, configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
+    }
+    return { ...base, configuredUrl, state: configuredUrl && configuredUrl !== mcpUrl ? "other-instance" : "unconnected" };
+  }
+
   /**
    * Connect a repository to Tomrade for everyone who clones it: Claude and
    * Codex MCP config, agent instruction files, and Claude lifecycle hooks —
@@ -780,43 +813,58 @@ export class CodeLink extends Service {
   async connect(projectId: string, repoId: string): Promise<ConnectResult> {
     const repo = this.ctx.repos.get(projectId, repoId);
     if (!repo) throw new Error(`unknown repository ${repoId}`);
-    const board = this.ctx.boards.list(projectId).find((b) => b.repoId === repoId);
-    if (!board) throw new Error(`no workstream stands for ${repo.name}`);
     const mcp = this.ctx.get("mcp");
     if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
     const placement = this.ctx.repos.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
 
     const branch = "tomrade/connect";
-    const view = await this.ctx.repos.workdirFor(projectId, board.id, `connect-${Date.now()}`, { branch });
-    if (!view?.worktree) throw new Error(`${board.name} runs in your checkout — Connect needs a worktree; switch the workstream off "run in checkout" first`);
+    const w = this.words();
+    await new GitFolder(this.git, placement.checkout).fetch(repo.defaultBranch);
+    if ((await this.connection(projectId, repoId)).state === "connected") {
+      return { branch, files: [], committed: false, pushed: false, url: null, message: w.connected };
+    }
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-connect-"));
+    const worktree = path.join(temporary, "repo");
+    const exists = async (ref: string) => (await this.git(["rev-parse", "--verify", "--quiet", ref], { cwd: placement.checkout!, ok: true })).code === 0;
+    const base = await exists(`refs/remotes/origin/${repo.defaultBranch}`) ? `origin/${repo.defaultBranch}` : repo.defaultBranch;
+    try {
+      if (await exists(`refs/heads/${branch}`)) await this.git(["worktree", "add", worktree, branch], { cwd: placement.checkout });
+      else if (await exists(`refs/remotes/origin/${branch}`)) await this.git(["worktree", "add", "-b", branch, worktree, `origin/${branch}`], { cwd: placement.checkout });
+      else if (await exists(base)) await this.git(["worktree", "add", "-b", branch, worktree, base], { cwd: placement.checkout });
+      else await this.git(["worktree", "add", "--orphan", "-b", branch, worktree], { cwd: placement.checkout });
+    } catch (error) {
+      fs.rmSync(temporary, { recursive: true, force: true });
+      throw error;
+    }
     const state = this.store.repoState(projectId, repoId);
     const project = this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
     try {
-      const files = writeConnectFiles(view.worktree, {
+      if (await exists(base)) await this.git(["merge", "--no-edit", base], { cwd: worktree });
+      const files = writeConnectFiles(worktree, {
         projectName: project?.name ?? "Tomrade project",
         mcpUrl: mcp.urlFor(projectId)!,
         eventUrl: mcp.eventUrl!,
         prefix: this.prefixOf(projectId),
         branchTemplate: state?.branchTemplate ?? "{key}/{slug}"
       });
-      const folder = new GitFolder(this.git, view.worktree);
+      const folder = new GitFolder(this.git, worktree);
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code and Codex discover Tomrade, agent instructions describe the ticket conventions, and Claude hooks report session lifecycle back."));
-      if (!committed) return { branch, files, committed: false, pushed: false, url: null, message: files.length ? "nothing new to commit" : `${repo.name} is already connected` };
-      if (!(await folder.remoteUrl())) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch} — ${repo.name} has no remote, so merge it into ${repo.defaultBranch} yourself` };
-      if (state && !state.agentPush) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch} in the checkout — pushing from Tomrade is off for ${repo.name}` };
-      const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: view.worktree, ok: true })).code === 0;
-      if (!pushed) return { branch, files, committed, pushed: false, url: null, message: `committed on ${branch}, but git push failed — check your credentials for ${repo.remote}` };
+
+      if (!(await folder.remoteUrl())) return { branch, files, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
+      if (state && !state.agentPush) return { branch, files, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
+      const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
+      if (!pushed) return { branch, files, committed, pushed: false, url: null, message: w.connectPushFailed(branch) };
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
-        const env = await this.ctx.github.environment(this.git, view.worktree);
+        const env = await this.ctx.github.environment(this.git, worktree);
         try {
-          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], view.worktree, env)).trim().split("\n").pop() ?? null;
+          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
         } catch {
           try {
-            url = (await exec("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], view.worktree, env)).trim() || null;
+            url = (await exec("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], worktree, env)).trim() || null;
           } catch {
             url = null;
           }
@@ -824,9 +872,11 @@ export class CodeLink extends Service {
       }
       url ??= compareUrl(repo.remote, repo.defaultBranch, branch);
       this.notify(projectId);
-      return { branch, files, committed, pushed, url, message: created ? `opened ${url}` : url ? `pushed ${branch} — open the pull request: ${url}` : `pushed ${branch}; open the pull request on your forge` };
+      return { branch, files, committed, pushed, url, message: created ? w.connectOpened : w.connectPushed(branch) };
     } finally {
-      await this.ctx.repos.removeWorktree(view).catch(() => {});
+      await this.git(["worktree", "remove", "--force", worktree], { cwd: placement.checkout, ok: true });
+      fs.rmSync(temporary, { recursive: true, force: true });
+      this.notify(projectId);
     }
   }
 

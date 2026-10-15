@@ -24,6 +24,7 @@ import {
 } from "~/lib/queries";
 import { pickDirectory, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { AgentConnection } from "./AgentConnection";
 import { ConnectionPanel, message } from "./destination";
 
 /** Enter or blur commits, Escape restores — the one-line rename the Fields sheet uses. */
@@ -382,6 +383,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         </div>
       )}
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
+      <AgentConnection projectId={projectId} repoId={repo.id} />
       {remoteState?.remote !== "none" && <AgentMerge projectId={projectId} repoId={repo.id} on={remoteState?.agentMerge ?? false} />}
     </div>
   );

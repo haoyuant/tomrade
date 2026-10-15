@@ -156,11 +156,15 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
     let touched = false;
     for (const event of HOOK_EVENTS) {
       const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];
-      const already = JSON.stringify(entries).includes("/sessions/event");
-      if (already) continue;
-      entries.push({ hooks: [{ type: "command", command }] });
-      hooks[event] = entries;
-      touched = true;
+      const kept = entries.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || !Array.isArray((entry as { hooks?: unknown }).hooks)) return [entry];
+        const row = entry as { hooks: { command?: string }[] };
+        const unrelated = row.hooks.filter((hook) => !hook.command?.includes("/sessions/event"));
+        return unrelated.length ? [{ ...row, hooks: unrelated }] : [];
+      });
+      kept.push({ hooks: [{ type: "command", command }] });
+      hooks[event] = kept;
+      touched ||= JSON.stringify(entries) !== JSON.stringify(kept);
     }
     if (touched) {
       fs.mkdirSync(path.dirname(settingsFile), { recursive: true });

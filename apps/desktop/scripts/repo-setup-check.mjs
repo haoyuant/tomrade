@@ -127,6 +127,17 @@ const run = async () => {
   check("another connects it again", await wait(() => ctx.boards.get(project.id, board.id).repoId === repo.id));
 
   dialog.showOpenDialog = showOpenDialog;
+  // Connect directly from this repository row; there is no selected ticket here.
+  await wait(() => $(`!!document.querySelector('[data-repo="${repo.id}"] .repo-agent-connect')`));
+  check("repository shows agent connection and target instance", await $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.textContent.includes('development build')`));
+  await press(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connect')`);
+  check("connect reports how to finish a local repository", await wait(() => $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-result')?.textContent.includes('merge it into main locally')`), 100));
+  check("connection waits for merge", await wait(() => $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.dataset.state === 'pending'`)));
+  execSync("git merge --ff-only tomrade/connect", { cwd: repoDir, stdio: "ignore" });
+  check("merged configuration becomes connected", await wait(() => $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.dataset.state === 'connected'`), 100));
+  check("connected repository no longer asks to connect", !(await $(`!!document.querySelector('[data-repo="${repo.id}"] .repo-agent-connect')`)));
+  await shot("repo-setup-03-agents-connected");
+
   check("harness reached the end", true);
 };
 

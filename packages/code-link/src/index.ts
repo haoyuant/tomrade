@@ -37,3 +37,5 @@ export { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTe
 export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 export { PLAYBOOKS } from "./playbooks.js";
 export { CodeLink as default } from "./service.js";
+
+export type { ConnectionView } from "./connection.js";

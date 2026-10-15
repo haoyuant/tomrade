@@ -114,6 +114,57 @@ describe("connecting a repository", () => {
     expect(writeConnectFiles(dir, input)).toEqual([]);
   });
 
+  it("reports committed default-branch connection, pending work, another instance and retries", async () => {
+    const { codeLink, ctx, project, repo, checkout, board, boards } = await machine();
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "unconnected", mcpUrl: ctx.mcp.urlFor(project.id) });
+    // No selected ticket, no workstream binding, and run-in-checkout do not prevent connecting.
+    boards.update(project.id, board.id, { repoId: null });
+    ctx.repos.setRunInCheckout(repo.remote, true);
+    const first = await codeLink.connect(project.id, repo.id);
+    expect(first).toMatchObject({ committed: true, pushed: true });
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "pending" });
+    const retry = await codeLink.connect(project.id, repo.id);
+    expect(retry).toMatchObject({ committed: false, pushed: true });
+    expect(retry.message).not.toContain("already connected");
+    git(["merge", "--ff-only", "tomrade/connect"], checkout);
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "connected" });
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ committed: false, message: "已连接" });
+
+    const otherUrl = "http://127.0.0.1:19091/mcp/other";
+    writeConnectFiles(checkout, { projectName: "App", mcpUrl: otherUrl, eventUrl: "http://127.0.0.1:19091/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" });
+    git(["add", "-A"], checkout);
+    git(["commit", "-m", "connect elsewhere"], checkout);
+    git(["branch", "-D", "tomrade/connect"], checkout);
+    git(["update-ref", "-d", "refs/remotes/origin/tomrade/connect"], checkout);
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "other-instance", configuredUrl: otherUrl });
+  });
+
+  it("keeps the branch and explains push-off, push failure and local merge", async () => {
+    const { codeLink, project, repo, checkout } = await machine();
+    codeLink.setRepoPolicy(project.id, repo.id, { agentPush: false });
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: false, committed: true, message: expect.stringContaining("Pushing is off") });
+    codeLink.setRepoPolicy(project.id, repo.id, { agentPush: true });
+    git(["remote", "set-url", "origin", path.join(root, "missing.git")], checkout);
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: false, committed: false, message: expect.stringContaining("pushing failed") });
+    git(["remote", "remove", "origin"], checkout);
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: false, message: expect.stringContaining("merge it into main locally") });
+    expect(git(["branch", "--show-current"], checkout)).toBe("main");
+  });
+
+  it("updates all Tomrade hooks when connecting to another instance", () => {
+    const dir = path.join(root, `reconnect-${n++}`);
+    fs.mkdirSync(dir);
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(dir, input);
+    const next = { ...input, mcpUrl: input.mcpUrl.replace("19090", "19091"), eventUrl: input.eventUrl.replace("19090", "19091") };
+    expect(writeConnectFiles(dir, next)).toContain(".claude/settings.json");
+    const hooks = fs.readFileSync(path.join(dir, ".claude/settings.json"), "utf8");
+    expect(hooks).not.toContain("19090");
+    expect(hooks).toContain(next.eventUrl);
+    expect(writeConnectFiles(dir, next)).toEqual([]);
+  });
+
   it("commits them on a branch of their own and pushes it, leaving the checkout alone", async () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
     const result = await codeLink.connect(project.id, repo.id);

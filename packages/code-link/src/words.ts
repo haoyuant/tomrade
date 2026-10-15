@@ -12,6 +12,12 @@ const STATUS = {
 
 const en = {
   untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json and .claude/settings.json, then start a new session.",
+  connected: "Connected",
+  connectLocal: (branch: string, base: string) => `Connection saved on ${branch}. This repository has no remote; merge it into ${base} locally, then start a new agent session.`,
+  connectPushOff: (branch: string) => `Connection saved on ${branch}. Pushing is off; push this branch yourself and open a pull request.`,
+  connectPushFailed: (branch: string) => `Connection saved on ${branch}, but pushing failed. Check credentials and network, then retry or push this branch yourself.`,
+  connectOpened: "Pull request opened. Merge it, update your checkout and start a new agent session.",
+  connectPushed: (branch: string) => `${branch} pushed. Open and merge its pull request, update your checkout and start a new agent session.`,
   section: "Code",
   origin: "Code Link",
   group: "Code",
@@ -102,6 +108,12 @@ export type CodeWords = typeof en;
 
 const zh: CodeWords = {
   untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json 和 .claude/settings.json，再新开会话。",
+  connected: "已连接",
+  connectLocal: (branch: string, base: string) => `连接配置已保存到 ${branch}。此仓库没有远端，请在本机将它合并到 ${base}，再新开智能体会话。`,
+  connectPushOff: (branch: string) => `连接配置已保存到 ${branch}。自动推送已关闭，请手动推送此分支并发起拉取请求。`,
+  connectPushFailed: (branch: string) => `连接配置已保存到 ${branch}，但推送失败。请检查凭据和网络后重试，或手动推送此分支。`,
+  connectOpened: "已发起拉取请求。请合并、更新本机仓库，再新开智能体会话。",
+  connectPushed: (branch: string) => `已推送 ${branch}。请发起并合并拉取请求、更新本机仓库，再新开智能体会话。`,
   section: "代码",
   origin: "Code Link",
   group: "代码",
