@@ -22,6 +22,11 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
       </div>
       {view?.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t(view.instance === "packaged" ? "repositories.connectionPackaged" : "repositories.connectionDevelopment")} · {view.mcpUrl}</p>}
       {view?.configuredUrl && view.configuredUrl !== view.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t("repositories.connectionElsewhere", { url: view.configuredUrl })}</p>}
+      {state === "connected" && view?.claudeApproval && view.claudeApproval !== "approved" && (
+        <p className="meta-txt dense cli-warn repo-agent-approval" data-approval={view.claudeApproval}>
+          {t(view.claudeApproval === "pending" ? "repositories.claudeApprovalPending" : "repositories.claudeApprovalRejected")}
+        </p>
+      )}
       {state && state !== "connected" && <>
         <p className="meta-txt dense">{t("repositories.connectionFiles")}</p>
         <button type="button" className="btn btn-secondary repo-agent-connect" disabled={connect.isPending || state === "no-checkout" || state === "unavailable"} onClick={() => connect.mutate()}>

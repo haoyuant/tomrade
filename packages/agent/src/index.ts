@@ -24,6 +24,8 @@ export {
   type ChecklistCard,
   type CliAttempt,
   type CliCheck,
+  type EngineMcpLink,
+  type McpLinkView,
   type CliSource,
   type Engine,
   type EngineAvailability,

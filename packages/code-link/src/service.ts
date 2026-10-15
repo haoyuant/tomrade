@@ -795,7 +795,10 @@ export class CodeLink extends Service {
     const ref = hasLocal && (!hasRemote || (await this.git(["merge-base", "--is-ancestor", remote, local], { cwd, ok: true })).code === 0) ? local : remote;
     const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl);
     const configuredUrl = current.configuredUrl;
-    if (current.connected) return { ...base, agents: current.agents, configuredUrl, state: "connected" };
+    if (current.connected) {
+      const claudeApproval = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.projectApproval?.(cwd);
+      return { ...base, agents: current.agents, configuredUrl, state: "connected", ...(claudeApproval ? { claudeApproval } : {}) };
+    }
     for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
       if (!(await exists(pendingRef))) continue;
       if ((await this.git(["merge-base", "--is-ancestor", pendingRef, ref], { cwd, ok: true })).code === 0) continue;

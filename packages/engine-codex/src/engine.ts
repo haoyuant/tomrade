@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Engine } from "@tomradex/agent";
 import { chosenCommand, localAvailability, localCli } from "@tomradex/engine-claude-code";
 import { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
+import { codexMcpLink } from "./mcp-link.js";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 
@@ -84,6 +85,7 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       configDir: () => codexHome()
     }),
     checkCli: (file) => cli.check(file),
+    mcpLink: codexMcpLink(ctx, cli),
     setup: { install: ["npm install -g @openai/codex"], signIn: "codex login", docs: "https://github.com/openai/codex", suggested: true }
   };
 }

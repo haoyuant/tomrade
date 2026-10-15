@@ -28,6 +28,7 @@ import {
   type CardView,
   type Engine,
   type CliCheck,
+  type McpLinkView,
   type EngineTry,
   type EngineView,
   type FocusRef,
@@ -208,6 +209,10 @@ declare module "@tomradex/ipc" {
     "agent.engines": (opts?: { fresh?: boolean }) => EngineView[];
     /** Runs a file the person picked as an engine's CLI, before it is saved. */
     "agent.checkCli": (engineId: string, file: string) => CliCheck;
+    /** Whether the engine's own user-level configuration reaches this Tomrade's MCP server. */
+    "agent.mcpLink": (engineId: string) => McpLinkView;
+    "agent.linkMcp": (engineId: string) => McpLinkView;
+    "agent.unlinkMcp": (engineId: string) => McpLinkView;
     /** One real turn on the engine in a hidden thread of this project: does it answer? */
     "agent.tryEngine": (projectId: string | null, engineId: string) => EngineTry;
     "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
@@ -454,6 +459,14 @@ export class Agent extends Service {
         if (!engine?.checkCli) throw new Error(`${engineId} does not run a local CLI`);
         return engine.checkCli(file);
       });
+      const mcpLink = (engineId: string) => {
+        const link = ctx.agent.engines.get(engineId)?.mcpLink;
+        if (!link) throw new Error(`${engineId} cannot be connected to Tomrade's MCP server`);
+        return link;
+      };
+      ctx.ipc.handle("agent.mcpLink", (engineId) => mcpLink(engineId).status());
+      ctx.ipc.handle("agent.linkMcp", (engineId) => mcpLink(engineId).connect());
+      ctx.ipc.handle("agent.unlinkMcp", (engineId) => mcpLink(engineId).disconnect());
       ctx.ipc.handle("agent.tryEngine", (projectId, engineId) => {
         // Settings opened outside a project: any open project holds the hidden thread as well.
         const where = projectId ?? ctx.db.openIds()[0];
@@ -638,7 +651,7 @@ export class Agent extends Service {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.mcpLink ? { mcpLink: true } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }

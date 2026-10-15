@@ -15,6 +15,7 @@ import { UsagePane } from "./UsagePane";
 import { HubPane } from "./HubPane";
 import { EngineTryRow } from "./EngineTryRow";
 import { LocalCliSection } from "./LocalCliSection";
+import { McpLinkSection } from "./McpLinkSection";
 import { McpServersPane } from "./McpServersPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
@@ -924,6 +925,11 @@ function EngineRow({
       {open && engine.cli && (
         <div className="eng-body">
           <LocalCliSection engine={engine} cli={engine.cli} command={typeof options.command === "string" ? options.command : ""} onSaveCommand={(value) => onCommit("command", value)} />
+        </div>
+      )}
+      {open && engine.mcpLink && (
+        <div className="eng-body">
+          <McpLinkSection engine={engine} />
         </div>
       )}
       {open && canTry && (

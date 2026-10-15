@@ -163,6 +163,13 @@ describe("connecting a repository", () => {
     expect(retry.message).not.toContain("already connected");
     git(["merge", "--ff-only", "tomrade/connect"], checkout);
     expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "connected" });
+    // Claude Code asks once per folder before it loads a committed .mcp.json server.
+    const asked: string[] = [];
+    const missing = { state: "missing", url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } } as const;
+    ctx.agent.engine({ id: "claude-code", title: "Claude Code", author: "ai:claude-code", available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }),
+      mcpLink: { status: async () => missing, connect: async () => missing, disconnect: async () => missing, projectApproval: (dir) => { asked.push(dir); return "pending"; } } });
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "connected", claudeApproval: "pending" });
+    expect(asked).toEqual([checkout]);
     ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
     expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ committed: false, message: "已连接" });
 

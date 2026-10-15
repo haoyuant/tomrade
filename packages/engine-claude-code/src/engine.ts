@@ -6,6 +6,7 @@ import type { Engine } from "@tomradex/agent";
 import { localAvailability } from "./availability.js";
 import { claudeSignedIn } from "./cli.js";
 import { localCli } from "./locate.js";
+import { claudeMcpLink } from "./mcp-link.js";
 
 // Unknown keys are dropped, so a saved `transport` from older versions is ignored.
 export const ClaudeCodeOptions = z.object({
@@ -55,6 +56,7 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       configDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
     }),
     checkCli: (file) => cli.check(file),
+    mcpLink: claudeMcpLink(ctx, cli),
     setup: {
       // The official installer first; npm still works and is what many already have.
       install: [process.platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],

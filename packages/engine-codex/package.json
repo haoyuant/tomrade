@@ -24,6 +24,7 @@
     "@tomradex/mcp": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
+    "smol-toml": "^1.9.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

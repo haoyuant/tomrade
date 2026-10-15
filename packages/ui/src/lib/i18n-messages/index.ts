@@ -25,6 +25,7 @@ import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
 import { localCli } from "./localCli";
+import { mcpLink } from "./mcpLink";
 import { newIssueDialog } from "./newIssueDialog";
 import { newProjectDialog } from "./newProjectDialog";
 import { openProjectDialog } from "./openProjectDialog";
@@ -116,6 +117,7 @@ export const en = {
   setup: setup.en,
   codeLink: codeLink.en,
   localCli: localCli.en,
+  mcpLink: mcpLink.en,
   files: files.en,
   notes: notes.en,
   history: history.en,
@@ -182,6 +184,7 @@ export const zh: typeof en = {
   setup: setup.zh,
   codeLink: codeLink.zh,
   localCli: localCli.zh,
+  mcpLink: mcpLink.zh,
   files: files.zh,
   notes: notes.zh,
   history: history.zh,

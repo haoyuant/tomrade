@@ -427,6 +427,34 @@ export interface EngineSetup {
   suggested?: boolean;
 }
 
+/**
+ * Tomrade's MCP server in the agent's own user-level configuration, so a
+ * session the person opens anywhere outside Tomrade can reach it. Written only
+ * when the person asks.
+ */
+export interface EngineMcpLink {
+  status(): Promise<McpLinkView>;
+  connect(): Promise<McpLinkView>;
+  disconnect(): Promise<McpLinkView>;
+  /** Whether the agent will load a `tomrade` server a repository's own config declares; some ask once per folder first. */
+  projectApproval?(dir: string): "approved" | "rejected" | "pending";
+}
+
+export interface McpLinkView {
+  /** `stale`: a `tomrade` server is configured but at another address (an old port, the other Tomrade). */
+  state: "connected" | "missing" | "stale" | "unavailable";
+  /** The address this Tomrade serves; null while its MCP server is not running. */
+  url: string | null;
+  /** The address the agent's configuration names, when it names one. */
+  configuredUrl: string | null;
+  /** Where the agent keeps it, for the person to look at. */
+  file: string | null;
+  /** Commands that do the same by hand, for when the CLI cannot be run from here. */
+  manual: { connect: string; disconnect: string };
+  /** Why the last step could not be done or the state could not be read. */
+  error?: string;
+}
+
 /** A path the person typed or picked, run once to see whether it is the CLI. */
 export interface CliCheck {
   ok: boolean;
@@ -481,6 +509,7 @@ export interface Engine {
   diagnostics?: EngineDiagnostics;
   /** What the engine's own configuration lets its agent run; absent when Tomrade cannot read it. */
   commands?: EngineCommands;
+  mcpLink?: EngineMcpLink;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
 }
 
@@ -567,6 +596,8 @@ export interface EngineView {
   setup?: EngineSetup;
   /** Engines it answers for: a thread, run or setting may still name one of them. */
   includes?: string[];
+  /** It can put Tomrade's MCP server in its own user-level configuration (`agent.mcpLink`). */
+  mcpLink?: boolean;
 }
 
 export interface WorkflowQuestion {

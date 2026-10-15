@@ -51,3 +51,4 @@ export default {
 export { CodexOptions, codexCanRun, codexEngineInfo, codexModel, codexSignedIn } from "./engine.js";
 export { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 export { codexLentModel } from "./lend.js";
+export { codexMcpLink, codexUserFile } from "./mcp-link.js";

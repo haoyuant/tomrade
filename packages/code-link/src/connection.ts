@@ -22,6 +22,8 @@ export interface ConnectionView {
   branch: string;
   url: string | null;
   agents: AgentConnectionView[];
+  /** Once connected: whether Claude Code in the checkout loads the committed `.mcp.json` server, which it asks about once. */
+  claudeApproval?: "approved" | "rejected" | "pending";
 }
 
 const FILES = [".mcp.json", ".claude/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"];
