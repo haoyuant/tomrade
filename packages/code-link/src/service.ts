@@ -1073,6 +1073,21 @@ export class CodeLink extends Service {
       }
     }
 
+    // A branch the scan saw with nothing of its own (renamed away, cut and dropped) and gone since was
+    // never part of the work; left in, it would hold the delivery's "every link merged" open for good.
+    // Only beside another link, and never one an agent, a session or a pull request named.
+    if (!result.offline) {
+      for (const l of previous.values()) {
+        if (seen.has(l.id) || l.source !== "scan" || !l.branch || l.ahead > 0 || l.mergedSha || l.prNumber !== null || l.prUrl || l.prState || l.threadId) continue;
+        if (result.branches.some((b) => b.name === l.branch)) continue;
+        const item = this.ctx.items.get(projectId, l.itemId);
+        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
+        if (!this.store.links(projectId, item.id).some((o) => o.id !== l.id && o.delivery === l.delivery)) continue;
+        this.store.removeLink(projectId, l.id);
+        touched.add(item.id);
+      }
+    }
+
     for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
 
     for (const [keyNum, commit] of result.mergedKeys) {
