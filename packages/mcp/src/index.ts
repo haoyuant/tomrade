@@ -10,7 +10,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import type { Author } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/tools";
-import { LONG_RESULT, compactList, type Tools } from "@tomradex/tools";
+import { LONG_RESULT, compactList, strictInput, type Tools } from "@tomradex/tools";
 
 export const MCP_SERVER_NAME = "tomrade";
 export const MCP_SERVER_VERSION = "0.0.1";
@@ -31,7 +31,9 @@ declare module "@tomradex/ipc" {
 export const McpConfig = z.object({
   host: z.string().default("127.0.0.1"),
   /** 0 picks a free port — what the UI harness uses. */
-  port: z.number().int().min(0).max(65535).default(19090)
+  port: z.number().int().min(0).max(65535).default(19090),
+  /** A tool call this slow is logged, so a hang an agent reports can be found afterwards. */
+  slowCallMs: z.number().int().nonnegative().default(10_000)
 });
 export type McpConfig = z.infer<typeof McpConfig>;
 
@@ -287,7 +289,9 @@ export class Mcp extends Service {
     if (!tools) throw new Error("the MCP server needs the tools plugin");
     for (const tool of tools.served()) {
       const annotations = tool.readOnly ? { readOnlyHint: true } : undefined;
-      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.input, annotations }, async (args, extra) => {
+      // Strict, so a misspelt parameter is refused here with a suggestion instead of stripped before the tool sees it.
+      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: strictInput(tool.input), annotations }, async (args, extra) => {
+        const started = Date.now();
         try {
           if (token) {
             const binding = this.bindings.get(token);
@@ -297,6 +301,10 @@ export class Mcp extends Service {
           return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }), tool.whole);
         } catch (e) {
           return errorResult(e);
+        } finally {
+          // Only the name and time: arguments can carry a ticket's whole text.
+          const ms = Date.now() - started;
+          if (ms >= this.config.slowCallMs) this.ctx.logger.warn(`MCP tool ${tool.name} took ${ms}ms`);
         }
       });
     }

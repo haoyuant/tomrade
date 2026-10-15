@@ -136,7 +136,7 @@ export class Items extends Service {
 
   private openTicket(projectId: string, id: string): Item {
     const item = this.get(projectId, id);
-    if (!item || item.kind !== "ticket") throw new Error("Choose a ticket");
+    if (!item || item.kind !== "ticket") throw new Error(item ? `${item.key} is an epic — deliveries belong to tickets` : `No ticket ${id} in this project`);
     if (item.status === "done" || item.status === "cancelled") throw new Error("Reopen the ticket before changing its delivery");
     return item;
   }
@@ -196,7 +196,7 @@ export class Items extends Service {
    */
   settleEvidence(projectId: string, id: string, action: "accept" | "tidy", baseVersion: number): Item {
     const item = this.get(projectId, id);
-    if (!item || item.kind !== "ticket") throw new Error("Choose a ticket");
+    if (!item || item.kind !== "ticket") throw new Error(item ? `${item.key} is an epic — deliveries belong to tickets` : `No ticket ${id} in this project`);
     const evidence = item.evidence;
     if (action === "accept") {
       const delivery = this.deliveries.current(projectId, id);
@@ -221,7 +221,7 @@ export class Items extends Service {
   reviewDelivery(projectId: string, id: string, input: z.input<typeof reviewDeliverySchema>, baseVersion: number): Item {
     const args = reviewDeliverySchema.parse(input);
     const item = this.get(projectId, id);
-    if (!item || item.kind !== "ticket") throw new Error("Choose a ticket");
+    if (!item || item.kind !== "ticket") throw new Error(item ? `${item.key} is an epic — deliveries belong to tickets` : `No ticket ${id} in this project`);
     if (item.status === "cancelled") throw new Error("Reopen the ticket before changing its delivery");
     const delivery = this.deliveries.active(projectId, id) ?? this.deliveries.current(projectId, id);
     const submission = item.evidence.submissions.filter(s => s.deliveryId === delivery?.id).at(-1);
@@ -432,13 +432,17 @@ export class Items extends Service {
     // Work an agent submitted is accepted by a person. A delivery with nothing submitted may be closed on the person's
     // word through an agent; the agent plugin refuses that to an agent that ran the delivery itself.
     const submitted = existing.evidence.submissions.some(s => s.deliveryId === active?.id);
+    const settledOn = active?.id ?? this.deliveries.current(projectId, id)?.id;
+    const lastSubmission = existing.evidence.submissions.filter(s => s.deliveryId === settledOn).at(-1);
+    const unaccepted = !!lastSubmission && !existing.evidence.reviews.some(r => r.submissionId === lastSubmission.id && r.decision === "accepted");
+    // Finishing it would stand in for the person's review and leave the evidence disagreeing with the status.
+    if (next.status === "done" && existing.status !== "done" && by.startsWith("ai:") && !evidence && unaccepted) {
+      throw new Error(`${existing.key}'s latest delivery has not been accepted — the user accepts it in the delivery panel, or tells you to and you call review_delivery with their words`);
+    }
     if (next.workType === "general" && next.status === "done" && existing.status !== "done" && by !== "human" && (hasOutputs || submitted)) throw new Error("General deliveries require human acceptance");
     if (next.status === "done" && existing.status !== "done" && hasOutputs && by !== "human") throw new Error("Artifact deliveries require human acceptance");
     // A person finishing a ticket over a delivery nobody accepted records that as their own word, so the
     // evidence never disagrees with the status (it used to, and a later sync flagged it).
-    const settledOn = active?.id ?? this.deliveries.current(projectId, id)?.id;
-    const lastSubmission = existing.evidence.submissions.filter(s => s.deliveryId === settledOn).at(-1);
-    const unaccepted = !!lastSubmission && !existing.evidence.reviews.some(r => r.submissionId === lastSubmission.id && r.decision === "accepted");
     if (next.status === "done" && existing.status !== "done" && by === "human" && !evidence && (next.workType === "general" || hasOutputs || unaccepted)) {
       const deliveryId = active?.id ?? `${id}:delivery:${(this.deliveries.current(projectId, id)?.sequence ?? 0) + 1}`;
       const submitted = existing.evidence.submissions.filter(s => s.deliveryId === deliveryId).at(-1);

@@ -23,6 +23,7 @@ const BACKLOG_TOOLS = [
   "list_projects",
   "list_workstreams",
   "remove_workstream",
+  "review_delivery",
   "submit_delivery",
   "update_item",
   "update_workstream"

@@ -28,7 +28,7 @@ describe("items (write path)", () => {
 
     const report = items.create({ projectId: project.id, boardId: board.id, title: "Confirm the booking", workType: "general", status: "doing", by: "human" });
     items.submitDelivery(project.id, report.id, { report: "Booked for Friday", artifactIds: [] }, "ai:loop");
-    expect(() => items.update(project.id, report.id, { status: "done" }, "ai:loop")).toThrow("human acceptance");
+    expect(() => items.update(project.id, report.id, { status: "done" }, "ai:loop")).toThrow("has not been accepted");
   });
 
   it("persists and queries work type independently of hierarchy", async () => {

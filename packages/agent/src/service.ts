@@ -305,6 +305,18 @@ const summarize = (value: unknown): string => {
  * the cards, suspended workflows and run-scoped undo; holds no opinion about
  * what to do next — that is the registered engine's one job.
  */
+
+/** `promise`, or a rejection once `signal` aborts — for waits that do not take a signal themselves. */
+function settleBy<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
 export class Agent extends Service {
   static provide = "agent";
   static inject = ["db", "tools", "oplog", "settings"];
@@ -360,6 +372,16 @@ export class Agent extends Service {
         const active = new DeliveryStore(this.ctx.db).active(intent.projectId, intent.id);
         if (active && this.store.threadsForItem(intent.projectId, intent.id).some((t) => t.execution?.deliveryId === active.id)) throw new Error("General deliveries require human acceptance");
       }
+      return next();
+    });
+    // A conversation that worked on a ticket relays nobody's verdict on it: that review is the person's own.
+    this.ctx.on("tools/pre-execute", (call, next) => {
+      if (call.name !== "review_delivery" || !call.run) return next();
+      const id = String((call.args as { id?: unknown }).id ?? "");
+      const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null; getByKey(projectId: string, key: string): Item | null } | undefined;
+      const item = items?.get(call.run.projectId, id) ?? items?.getByKey(call.run.projectId, id);
+      const thread = this.store.thread(call.run.projectId, call.run.threadId);
+      if (item && thread?.itemId === item.id) throw new Error(`review_delivery: this conversation works on ${item.key}, so it cannot review its delivery — the user accepts it in the delivery panel`);
       return next();
     });
     this.migrateConversationRole();
@@ -623,8 +645,16 @@ export class Agent extends Service {
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }): Promise<PlaybookRecommendation> {
-    await this.refreshProjectPlaybooks(projectId);
+  /**
+   * `withinMs` is for callers that must not wait on the worker model (an agent creating a ticket):
+   * past it, or on any failure, the keyword fallback answers instead.
+   */
+  async recommendPlaybook(projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts: { withinMs?: number; signal?: AbortSignal } = {}): Promise<PlaybookRecommendation> {
+    const started = Date.now();
+    const budget = opts.withinMs !== undefined ? AbortSignal.timeout(opts.withinMs) : undefined;
+    const signal = budget && opts.signal ? AbortSignal.any([budget, opts.signal]) : budget ?? opts.signal;
+    // The refresh can wait on storage; a budgeted caller goes with the playbooks already loaded.
+    await settleBy(this.refreshProjectPlaybooks(projectId), signal).catch(() => undefined);
     // A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket.
     const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !input.workType || entry.workTypes.includes(input.workType) : entry.source !== "plugin"));
     const words = this.words();
@@ -640,16 +670,22 @@ export class Agent extends Service {
       return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words.recommendedByType, source: "fallback", requires: selected?.requires ?? [] };
     };
     const llm = this.ctx.get("llm") as LlmService | undefined;
-    if (!llm || !candidates.length || !(await llm.worker()).ok) return fallback();
+    if (!llm || !candidates.length) return fallback();
     try {
-      const result = await llm.completeJson(recommendationSchema, {
+      if (!(await settleBy(llm.worker(), signal)).ok) return fallback();
+      const result = await settleBy(llm.completeJson(recommendationSchema, {
+        // a JSON object with one sentence of reason; no room to ramble, and no second round when there is a fallback
+        ...(budget ? { maxTokens: 400, repair: false } : {}),
+        signal,
         system: `Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
-      });
+      }), signal);
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();
       const selected = candidates.find((entry) => entry.id === result.playbookId);
       return { ...result, source: "llm", requires: selected?.requires ?? [] };
-    } catch {
+    } catch (error) {
+      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : opts.signal?.aborted ? "cancelled" : error instanceof Error ? error.message : String(error);
+      this.ctx.logger.warn(`playbook recommendation fell back to keywords after ${Date.now() - started}ms: ${why}`);
       return fallback();
     }
   }
