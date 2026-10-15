@@ -7,6 +7,7 @@ import { EMPTY_KEY, groupKeyOf, type Item, type Patch } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { useDoneGuard } from "~/lib/doneGuard";
 import { useCreateItem, usePatchItem, useSetViewRank, useSetViewRanks } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
@@ -174,6 +175,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const ws = useWorkspace();
   const { project, view, query, visible, select, ranks, columnKeys, groupSpace, groupLabel, patchFor, fieldById } = ws;
   const patch = usePatchItem(project.id);
+  const guard = useDoneGuard();
   const setRank = useSetViewRank(project.id);
   const setRanks = useSetViewRanks(project.id);
   const toast = useToast();
@@ -241,30 +243,35 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
       else setRank.mutate({ viewId: view.id, itemId: item.id, rank: manual.rank }, { onError: rankFailed });
     };
     if (!fieldPatch) return commitOrder();
-    patch.mutate(
-      { id: item.id, patch: fieldPatch, baseVersion: item.version },
-      {
-        onError: (err) => {
-          setCells(server);
-          if (err instanceof Error && /conflict/i.test(err.message)) onConflict(item.title);
-          else toast(errorSpec(err));
-        },
-        onSuccess: (written) => (
-          commitOrder(),
-          toast({
-            body: (
-              <>
-                {tx("board.movedToast", {
-                  key: <span className="num">{item.key}</span>,
-                  column: to.col !== from.col ? groupLabel(cb, to.col) : groupLabel(groupBy ?? cb, to.lane)
-                })}
-              </>
-            ),
-            onUndo: () => undoWrite({ id: item.id, stamp: written.version })
-          })
-        )
-      }
-    );
+    void guard(item, fieldPatch).then((verdict) => {
+      if (verdict === "cancel") return setCells(server);
+      // Accepting the delivery finished the ticket; the board refetches on its own.
+      if (verdict === "accepted") return commitOrder();
+      patch.mutate(
+        { id: item.id, patch: fieldPatch, baseVersion: item.version },
+        {
+          onError: (err) => {
+            setCells(server);
+            if (err instanceof Error && /conflict/i.test(err.message)) onConflict(item.title);
+            else toast(errorSpec(err));
+          },
+          onSuccess: (written) => (
+            commitOrder(),
+            toast({
+              body: (
+                <>
+                  {tx("board.movedToast", {
+                    key: <span className="num">{item.key}</span>,
+                    column: to.col !== from.col ? groupLabel(cb, to.col) : groupLabel(groupBy ?? cb, to.lane)
+                  })}
+                </>
+              ),
+              onUndo: () => undoWrite({ id: item.id, stamp: written.version })
+            })
+          )
+        }
+      );
+    });
   };
 
   /** The keyboard equivalent of a drag: one column left or right in the same lane, same write path. */

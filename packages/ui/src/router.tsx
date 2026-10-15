@@ -15,6 +15,7 @@ import { UpdateNotice } from "~/components/dialogs/UpdateNotice";
 import { TermsPrompt } from "~/components/dialogs/TermsPrompt";
 import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
+import { DoneGuardProvider } from "~/lib/doneGuard";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -22,7 +23,9 @@ const rootRoute = createRootRoute({
       <ThemeProvider>
         <ToastProvider>
           <IconSprite />
-          <AccountGate><Outlet /></AccountGate>
+          <DoneGuardProvider>
+            <AccountGate><Outlet /></AccountGate>
+          </DoneGuardProvider>
           <TermsPrompt />
           <PendingBuildWatcher />
           <UpdateNotice />
