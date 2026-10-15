@@ -54,6 +54,8 @@ const SLUG_SYSTEM = [
 
 const slugAnswer = z.object({ slug: z.string() });
 
+const SLUG_TIMEOUT_MS = 8000;
+
 /**
  * The slug half of a branch name, from the title.
  *
@@ -68,12 +70,17 @@ export async function titleSlug(llm: LlmService | null, title: string, max = SLU
   if (!trimmed) return FALLBACK_SLUG;
   if (!hasCjk(trimmed)) return slugify(trimmed, max);
   if (llm) {
+    // Start waits on this: a model that streams on (DeepSeek's JSON mode can pad to the limit) must not hold it.
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(new Error("the model did not answer in time")), SLUG_TIMEOUT_MS);
     try {
-      const out = await llm.completeJson(slugAnswer, { system: SLUG_SYSTEM, user: trimmed, temperature: 0 });
+      const out = await llm.completeJson(slugAnswer, { system: SLUG_SYSTEM, user: trimmed, temperature: 0, maxTokens: 100, signal: deadline.signal });
       const slug = usableSlug(out.slug, max);
       if (slug) return slug;
     } catch {
-      // A model that cannot answer is not a failed start: fall through.
+      // A model that cannot answer, or not in time, is not a failed start: fall through.
+    } finally {
+      clearTimeout(timer);
     }
   }
   return slugify(trimmed, max);
