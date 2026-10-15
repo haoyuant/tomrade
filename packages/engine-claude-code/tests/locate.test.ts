@@ -10,6 +10,7 @@ import {
   fileNames,
   launchFor,
   machineHost,
+  parseRegInstalls,
   parseRegPath,
   shimTarget,
   type CliHost
@@ -39,6 +40,7 @@ function setup(opts: { path?: string[]; fresh?: string[] } = {}) {
     freshPath: async () => opts.fresh ?? [],
     npmPrefix: async () => null,
     wsl: async () => null,
+    installs: async () => [],
     run: (launch, args, timeoutMs) => {
       runs.push(launch.file);
       return machine.run(launch, args, timeoutMs);
@@ -145,6 +147,8 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     expect(launch.env().ELECTRON_RUN_AS_NODE).toBe("1");
     // Chosen by hand, the same file still starts through its app.
     expect(await locator.check(file)).toEqual({ ok: true, path: file, version: "2.137.1" });
+    // An app folder that holds no install is still listed as looked in.
+    expect((await new CliLocator(NAME, host, undefined, async () => [gone]).locate()).searched).toContain(path.dirname(gone.file));
 
     const onPath = cli(path.join(root, "bin"), 'echo "2.155.0"');
     const first = setup({ path: [path.join(root, "bin")] });
@@ -204,5 +208,28 @@ describe("starting a CLI on Windows", () => {
     expect(expandWindowsVars(value, { userprofile: "C:\\Users\\a", APPDATA: "C:\\Users\\a\\AppData\\Roaming" })).toBe("C:\\Users\\a\\.local\\bin;C:\\Users\\a\\AppData\\Roaming\\npm");
     expect(expandWindowsVars("%NOPE%\\bin", {})).toBe("%NOPE%\\bin");
     expect(parseRegPath("ERROR: The system was unable to find the specified registry key or value.")).toBeNull();
+  });
+
+  it("reads where an app was installed from the uninstall entries in the registry", () => {
+    const out = [
+      "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\a1b2-c3",
+      "    DisplayName    REG_SZ    WorkBuddy AI 1.4.0",
+      "    InstallLocation    REG_SZ    D:\\软件\\WorkBuddy AI\\",
+      "",
+      "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Other",
+      "    DisplayName    REG_SZ    Something Else",
+      "    InstallLocation    REG_SZ    C:\\Other",
+      "",
+      "HKEY_LOCAL_MACHINE\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\wb",
+      "    DisplayIcon    REG_SZ    \"E:\\Tools\\WB\\WorkBuddy.exe\",0",
+      "    DisplayName    REG_SZ    WorkBuddy",
+      "",
+      "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\wb2",
+      "    DisplayName    REG_SZ    WorkBuddy",
+      "    UninstallString    REG_SZ    \"F:\\WB\\Uninstall WorkBuddy.exe\" /allusers",
+      ""
+    ].join("\r\n");
+    expect(parseRegInstalls(out, /workbuddy/i)).toEqual(["D:\\软件\\WorkBuddy AI", "E:\\Tools\\WB", "F:\\WB"]);
+    expect(parseRegInstalls("", /workbuddy/i)).toEqual([]);
   });
 });

@@ -16,14 +16,23 @@ export const WorkBuddyOptions = z.object({
 });
 export type WorkBuddyOptions = z.infer<typeof WorkBuddyOptions>;
 
-const firstFile = (candidates: string[]): string => candidates.find((file) => fs.existsSync(file)) ?? candidates[0]!;
+const RUNTIMES = ["WorkBuddyAI.exe", "WorkBuddy AI.exe", "WorkBuddy.exe"];
+
+/** The app's own exe in its install folder, whatever this version calls it; the uninstaller is not it. */
+function windowsRuntime(dir: string): string {
+  let exes: string[] = [];
+  try { exes = fs.readdirSync(dir).filter((name) => /\.exe$/i.test(name) && !/^uninstall/i.test(name)); } catch {}
+  const exe = exes.find((name) => /workbuddy/i.test(name)) ?? exes[0];
+  return path.win32.join(dir, exe ?? RUNTIMES.find((name) => fs.existsSync(path.win32.join(dir, name))) ?? RUNTIMES[0]!);
+}
 
 /**
  * The CodeBuddy Code CLI the WorkBuddy desktop app ships, and the app's own
  * Electron binary that runs it — the way WorkBuddy starts it itself, so a
- * machine with the app but no Node can still use it.
+ * machine with the app but no Node can still use it. On Windows the app can be
+ * anywhere, so where its installer registered it comes first.
  */
-export function workbuddyApps(host: Pick<CliHost, "platform" | "env" | "home">): BundledCli[] {
+export async function workbuddyApps(host: Pick<CliHost, "platform" | "env" | "home" | "installs">): Promise<BundledCli[]> {
   if (host.platform === "darwin") {
     const p = path.posix;
     return ["/Applications", p.join(host.home, "Applications")].flatMap((root) =>
@@ -38,13 +47,12 @@ export function workbuddyApps(host: Pick<CliHost, "platform" | "env" | "home">):
   if (host.platform === "win32") {
     const w = path.win32;
     const env = (key: string) => Object.entries(host.env).find(([name]) => name.toUpperCase() === key)?.[1];
-    const roots = [w.join(env("LOCALAPPDATA") ?? w.join(host.home, "AppData", "Local"), "Programs"), env("PROGRAMFILES")].filter((dir): dir is string => !!dir);
-    return roots.flatMap((root) =>
-      ["WorkBuddy AI", "WorkBuddyAI", "workbuddy-ai", "WorkBuddy"].map((folder) => ({
-        file: w.join(root, folder, "resources", "app.asar.unpacked", "cli", "bin", "codebuddy"),
-        runtime: firstFile(["WorkBuddyAI.exe", "WorkBuddy AI.exe", "WorkBuddy.exe"].map((exe) => w.join(root, folder, exe)))
-      }))
-    );
+    const local = env("LOCALAPPDATA") ?? w.join(host.home, "AppData", "Local");
+    const roots = [w.join(local, "Programs"), local, env("PROGRAMFILES"), env("PROGRAMFILES(X86)")].filter((dir): dir is string => !!dir);
+    const guessed = roots.flatMap((root) => ["WorkBuddy AI", "WorkBuddyAI", "workbuddy-ai", "WorkBuddy"].map((folder) => w.join(root, folder)));
+    const registered = await host.installs(/workbuddy/i).catch(() => []);
+    const dirs = [...registered, ...guessed].filter((dir, i, all) => all.findIndex((d) => d.toLowerCase() === dir.toLowerCase()) === i);
+    return dirs.map((dir) => ({ file: w.join(dir, "resources", "app.asar.unpacked", "cli", "bin", "codebuddy"), runtime: windowsRuntime(dir) }));
   }
   return [];
 }

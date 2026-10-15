@@ -24,6 +24,8 @@ export interface CliHost {
   npmPrefix(): Promise<string | null>;
   /** The CLI's path inside WSL, when Windows has WSL and the CLI is installed there. */
   wsl(name: string): Promise<string | null>;
+  /** Where Windows' installed-apps list says apps whose display name matches were installed; none elsewhere. */
+  installs(displayName: RegExp): Promise<string[]>;
   run(launch: CliLaunch, args: string[], timeoutMs: number): Promise<CliRunResult>;
 }
 
@@ -95,6 +97,30 @@ export function expandWindowsVars(value: string, env: NodeJS.ProcessEnv): string
 export function parseRegPath(output: string): string | null {
   const match = /^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.*)$/im.exec(output);
   return match ? match[1].trim() : null;
+}
+
+/**
+ * The install folders in `reg query …\Uninstall /s` output of the apps whose
+ * DisplayName matches: InstallLocation, else the folder of the icon or the uninstaller.
+ */
+export function parseRegInstalls(output: string, displayName: RegExp): string[] {
+  const w = path.win32;
+  const dirs: string[] = [];
+  for (const block of output.split(/\r?\n(?=HKEY_)/)) {
+    const values = new Map<string, string>();
+    for (const line of block.split(/\r?\n/)) {
+      const match = /^\s+(\S.*?)\s+REG_(?:EXPAND_)?SZ\s+(.*)$/.exec(line);
+      if (match) values.set(match[1].toLowerCase(), match[2].trim());
+    }
+    if (!displayName.test(values.get("displayname") ?? "")) continue;
+    // DisplayIcon is `"C:\…\App.exe",0`; UninstallString is `"C:\…\Uninstall App.exe" /currentuser`.
+    const exe = (value?: string) => value && /^"?([^"]+?\.exe)/i.exec(value)?.[1];
+    const location = values.get("installlocation")?.replace(/^"|"$/g, "");
+    const file = exe(values.get("displayicon")) || exe(values.get("uninstallstring"));
+    const dir = location ? w.normalize(location).replace(/\\+$/, "") : file ? w.dirname(file) : undefined;
+    if (dir && !dirs.some((d) => d.toLowerCase() === dir.toLowerCase())) dirs.push(dir);
+  }
+  return dirs;
 }
 
 /**
@@ -175,6 +201,9 @@ export interface BundledCli {
   runtime: string;
 }
 
+/** Where a desktop app may keep its copy of the CLI — every place looked, installed there or not. */
+export type BundledApps = (host: CliHost) => BundledCli[] | Promise<BundledCli[]>;
+
 /** How to start a bundled CLI: the app's binary with `ELECTRON_RUN_AS_NODE`, so the machine needs no Node of its own. */
 export function bundledLaunch(cli: BundledCli, host: Pick<CliHost, "platform" | "env">): CliLaunch {
   const plain = launchFor(cli.file, host);
@@ -232,6 +261,21 @@ function readRegistryPath(env: NodeJS.ProcessEnv): Promise<string[]> {
   );
 }
 
+const UNINSTALL_KEYS = [
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+  "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+  "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+];
+
+function readRegistryInstalls(env: NodeJS.ProcessEnv, displayName: RegExp): Promise<string[]> {
+  // reg.exe writes in the console's code page; UTF-8 keeps a folder like D:\软件 intact.
+  const query = (key: string) =>
+    new Promise<string>((resolve) => {
+      execFile(envValue(env, "ComSpec") ?? "cmd.exe", ["/d", "/s", "/c", `chcp 65001 >nul & reg query ${key} /s`], { windowsHide: true, timeout: 8000, maxBuffer: 16 * 1024 * 1024 }, (_error, stdout) => resolve(String(stdout)));
+    });
+  return Promise.all(UNINSTALL_KEYS.map(query)).then((outputs) => parseRegInstalls(outputs.join("\r\n"), displayName));
+}
+
 export const machineHost = (): CliHost => ({
   platform: process.platform,
   arch: process.arch,
@@ -257,6 +301,7 @@ export const machineHost = (): CliHost => ({
       });
     });
   },
+  installs: (displayName) => (process.platform === "win32" ? readRegistryInstalls(process.env, displayName) : Promise.resolve([])),
   run: runOnce
 });
 
@@ -342,7 +387,7 @@ const shared = new Map<string, CliLocator>();
  * share what was found. `bundled` names copies that ship inside a desktop app,
  * tried after every folder a terminal would search.
  */
-export function localCli(name: string, opts: { bundled?: (host: CliHost) => BundledCli[] } = {}): CliLocator {
+export function localCli(name: string, opts: { bundled?: BundledApps } = {}): CliLocator {
   let locator = shared.get(name);
   if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled)));
   return locator;
@@ -362,13 +407,20 @@ export class CliLocator {
     readonly name: string,
     private host: CliHost = machineHost(),
     private timeoutMs = host.platform === "win32" ? 15_000 : 10_000,
-    private bundled: (host: CliHost) => BundledCli[] = () => []
+    private bundled: BundledApps = () => []
   ) {}
 
+  // Looking for app installs may read the registry, so a turn reuses what the last search saw.
+  private apps?: Promise<BundledCli[]>;
+  private bundledApps(fresh = false): Promise<BundledCli[]> {
+    if (fresh || !this.apps) this.apps = Promise.resolve().then(() => this.bundled(this.host)).catch(() => []);
+    return this.apps;
+  }
+
   /** How to start `file`: through its app's runtime when it is a bundled copy, the way a terminal would otherwise. */
-  private launchOf(file: string, dirs: string[] = []): CliLaunch {
+  private async launchOf(file: string, dirs: string[] = []): Promise<CliLaunch> {
     const same = (a: string, b: string) => (this.host.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
-    const copy = this.bundled(this.host).find((cli) => same(cli.file, file));
+    const copy = (await this.bundledApps()).find((cli) => same(cli.file, file));
     return copy ? bundledLaunch(copy, this.host) : launchFor(file, this.host, dirs);
   }
 
@@ -400,7 +452,7 @@ export class CliLocator {
     const candidates = this.manualCandidates(file.trim());
     const candidate = candidates.find((c) => isFile(c.file, this.host.platform));
     if (!candidate) return { ok: false, path: file, error: (candidates.length && whyNot(candidates.at(-1)!.file, this.host.platform)) || "file not found" };
-    const result = describeRun(await this.host.run(this.launchOf(candidate.file), ["--version"], this.timeoutMs), this.timeoutMs);
+    const result = describeRun(await this.host.run(await this.launchOf(candidate.file), ["--version"], this.timeoutMs), this.timeoutMs);
     return result.ok ? { ok: true, path: candidate.file, version: result.detail } : { ok: false, path: candidate.file, error: result.detail };
   }
 
@@ -469,7 +521,7 @@ export class CliLocator {
       for (const c of candidates) {
         if (tried.has(norm(c.file)) || !isFile(c.file, platform)) continue;
         tried.add(norm(c.file));
-        const result = describeRun(await this.host.run(this.launchOf(c.file, extra), ["--version"], this.timeoutMs), this.timeoutMs);
+        const result = describeRun(await this.host.run(await this.launchOf(c.file, extra), ["--version"], this.timeoutMs), this.timeoutMs);
         const attempt = { path: c.file, source: c.source, ok: result.ok, detail: result.detail };
         attempts.push(attempt);
         if (result.ok) return attempt;
@@ -504,9 +556,10 @@ export class CliLocator {
     if (hit) return ready(hit);
 
     const p = pathFor(platform);
-    const apps = this.bundled(this.host).filter((cli) => isFile(cli.runtime, platform));
-    searched.push(...apps.map((cli) => p.dirname(cli.file)));
-    hit = await tryAll(apps.map((cli) => ({ file: cli.file, source: "known" as const })));
+    // Every app folder looked in goes on the list, so a person can see where their install was not.
+    const bundled = await this.bundledApps(true);
+    searched.push(...bundled.map((cli) => p.dirname(cli.file)).filter((dir, i, all) => all.findIndex((d) => norm(d) === norm(dir)) === i));
+    hit = await tryAll(bundled.filter((cli) => isFile(cli.runtime, platform)).map((cli) => ({ file: cli.file, source: "known" as const })));
     if (hit) return ready(hit);
 
     const broken = attempts.find((a) => a.source !== "manual") ?? attempts[0];

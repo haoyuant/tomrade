@@ -1,4 +1,5 @@
-import { expect, it } from "vitest";
+import fs from "node:fs";
+import { afterEach, expect, it, vi } from "vitest";
 import { Context } from "cordis";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
@@ -20,13 +21,44 @@ it("lists the models `codebuddy --help` names", () => {
   expect(helpModels("Usage: codebuddy")).toEqual([]);
 });
 
-it("knows where the WorkBuddy app keeps its CLI and the binary that runs it", () => {
-  const mac = workbuddyApps({ platform: "darwin", env: {}, home: "/Users/a" });
+afterEach(() => { vi.restoreAllMocks(); });
+
+const noInstalls = async () => [];
+
+it("knows where the WorkBuddy app keeps its CLI and the binary that runs it", async () => {
+  const mac = await workbuddyApps({ platform: "darwin", env: {}, home: "/Users/a", installs: noInstalls });
   expect(mac).toContainEqual({ file: "/Applications/WorkBuddy AI.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy", runtime: expect.stringMatching(/^\/Applications\/WorkBuddy AI\.app\/Contents\/MacOS\//) });
   expect(mac.map((app) => app.file)).toContain("/Users/a/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy");
-  const win = workbuddyApps({ platform: "win32", env: { LocalAppData: "C:\\Users\\a\\AppData\\Local" }, home: "C:\\Users\\a" });
+  const win = await workbuddyApps({ platform: "win32", env: { LocalAppData: "C:\\Users\\a\\AppData\\Local" }, home: "C:\\Users\\a", installs: noInstalls });
   expect(win).toContainEqual({ file: "C:\\Users\\a\\AppData\\Local\\Programs\\WorkBuddy AI\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy", runtime: "C:\\Users\\a\\AppData\\Local\\Programs\\WorkBuddy AI\\WorkBuddyAI.exe" });
-  expect(workbuddyApps({ platform: "linux", env: {}, home: "/home/a" })).toEqual([]);
+  expect(await workbuddyApps({ platform: "linux", env: {}, home: "/home/a", installs: noInstalls })).toEqual([]);
+});
+
+it("finds the WorkBuddy app on Windows wherever it was installed, whatever its exe is called", async () => {
+  // The install folders below hold these files; nothing else exists.
+  const folders: Record<string, string[]> = {
+    "D:\\Apps\\WB": ["WorkBuddy Desktop.exe", "Uninstall WorkBuddy Desktop.exe", "resources"],
+    "C:\\Program Files (x86)\\WorkBuddy": ["Uninstall WorkBuddy.exe", "wb.exe"]
+  };
+  vi.spyOn(fs, "readdirSync").mockImplementation(((dir: string) => {
+    if (folders[dir]) return folders[dir];
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  }) as typeof fs.readdirSync);
+  const asked: RegExp[] = [];
+  const apps = await workbuddyApps({
+    platform: "win32",
+    env: { LOCALAPPDATA: "C:\\Users\\a\\AppData\\Local", ProgramFiles: "C:\\Program Files", "ProgramFiles(x86)": "C:\\Program Files (x86)" },
+    home: "C:\\Users\\a",
+    installs: async (name) => { asked.push(name); return ["D:\\Apps\\WB"]; }
+  });
+  expect(asked[0]!.test("WorkBuddy AI 1.4.0")).toBe(true);
+  // Where the installer registered it comes first, with the exe this version ships.
+  expect(apps[0]).toEqual({ file: "D:\\Apps\\WB\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy", runtime: "D:\\Apps\\WB\\WorkBuddy Desktop.exe" });
+  expect(apps).toContainEqual({ file: "C:\\Program Files (x86)\\WorkBuddy\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy", runtime: "C:\\Program Files (x86)\\WorkBuddy\\wb.exe" });
+  expect(apps.map((app) => app.file)).toContain("C:\\Users\\a\\AppData\\Local\\WorkBuddy AI\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy");
+  // A failed registry read still leaves the usual folders.
+  const unread = await workbuddyApps({ platform: "win32", env: {}, home: "C:\\Users\\a", installs: async () => { throw new Error("reg.exe"); } });
+  expect(unread.length).toBeGreaterThan(0);
 });
 
 it("runs `codebuddy --acp`, bypassing its prompts only for a full-access turn, and seeds the models from its help", async () => {
