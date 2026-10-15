@@ -297,7 +297,7 @@ export class Starter {
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
     const basePrompt = continued
-      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en")
+      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en", state?.agentMerge ?? false)
       : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en" });
     const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
     const prompt = opts.message?.trim() && opts.mode === "run" ? `${briefed}\n\n${opts.message.trim()}` : briefed;

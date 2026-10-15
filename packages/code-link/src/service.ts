@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { ThreadSummary } from "@tomradex/agent";
+import type { CommandCheck, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -81,7 +81,17 @@ export interface OpenPrResult {
   message: string;
 }
 
-export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "readiness">;
+export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness">;
+
+/** The command an agent merges with when the repository lets it. */
+export const MERGE_COMMAND = "gh pr merge";
+
+/** Whether one local coding agent's own settings let it merge; `check` is null when Tomrade cannot read them. */
+export interface MergeCheckView {
+  engine: string;
+  title: string;
+  check: CommandCheck | null;
+}
 
 export interface ConnectResult {
   branch: string;
@@ -109,6 +119,10 @@ declare module "@tomradex/ipc" {
     "codeLink.githubCredentialAccount": (projectId: string, repoId: string) => string | null;
     "codeLink.useGithubCredential": (projectId: string, repoId: string) => RepoStateView;
     "codeLink.setRepoPolicy": (projectId: string, repoId: string, patch: RepoPolicyPatch) => RepoStateView;
+    /** Whether each installed coding agent's own settings let it run gh pr merge here. */
+    "codeLink.mergeChecks": (projectId: string, repoId: string) => MergeCheckView[];
+    /** Write the one rule an agent's settings need to merge, then check again. */
+    "codeLink.allowMerge": (projectId: string, repoId: string, engineId: string) => MergeCheckView;
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
     "codeLink.start": (projectId: string, itemId: string, opts: StartOptions) => StartResult;
     "codeLink.sessions": (projectId: string, itemId?: string) => SessionView[];
@@ -323,6 +337,7 @@ export class CodeLink extends Service {
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
         handOver: (projectId, itemId, repoId) => this.handOver(projectId, itemId, repoId),
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
+        blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery) => this.attach(projectId, sessionId, itemId, branch, delivery),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
         notify: (projectId) => this.notify(projectId)
@@ -437,6 +452,8 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.githubCredentialAccount", (projectId, repoId) => ctx.codeLink.githubCredentialAccount(projectId, repoId));
       ctx.ipc.handle("codeLink.useGithubCredential", (projectId, repoId) => ctx.codeLink.useGithubCredential(projectId, repoId));
       ctx.ipc.handle("codeLink.setRepoPolicy", (projectId, repoId, patch) => ctx.codeLink.setRepoPolicy(projectId, repoId, patch));
+      ctx.ipc.handle("codeLink.mergeChecks", (projectId, repoId) => ctx.codeLink.mergeChecks(projectId, repoId));
+      ctx.ipc.handle("codeLink.allowMerge", (projectId, repoId, engineId) => ctx.codeLink.allowMerge(projectId, repoId, engineId));
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
@@ -535,7 +552,7 @@ export class CodeLink extends Service {
     });
     if (reachable) {
       for (const session of this.store.sessions(projectId, { live: true })) {
-        if (session.repoId === repoId && session.blocked) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+        if (session.repoId === repoId && session.blocked === "credentials") this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
       }
     }
     this.notify(projectId);
@@ -630,6 +647,40 @@ export class CodeLink extends Service {
     const state = this.store.upsertRepoState(projectId, repoId, patch);
     this.notify(projectId);
     return state;
+  }
+
+  /**
+   * Read, not run: each installed coding agent's own permission settings for
+   * gh pr merge, under the mode a headless run here would use.
+   */
+  async mergeChecks(projectId: string, repoId: string): Promise<MergeCheckView[]> {
+    const agent = this.ctx.get("agent");
+    if (!agent) return [];
+    const views: MergeCheckView[] = [];
+    for (const engine of agent.codeEngines()) {
+      if (!(await engine.available().catch(() => ({ ok: false }))).ok) continue;
+      views.push({ engine: engine.id, title: engine.title, check: await this.mergeCheck(projectId, repoId, engine.id, false) });
+    }
+    return views;
+  }
+
+  async allowMerge(projectId: string, repoId: string, engineId: string): Promise<MergeCheckView> {
+    const engine = this.ctx.get("agent")?.codeEngines().find((e) => e.id === engineId);
+    if (!engine) throw new Error(`unknown engine ${engineId}`);
+    if (!engine.commands?.allow) throw new Error(`${engine.title}'s settings cannot be changed from Tomrade — allow gh pr merge there yourself`);
+    return { engine: engine.id, title: engine.title, check: await this.mergeCheck(projectId, repoId, engineId, true) };
+  }
+
+  private async mergeCheck(projectId: string, repoId: string, engineId: string, allow: boolean): Promise<CommandCheck | null> {
+    const repo = this.ctx.repos.get(projectId, repoId);
+    if (!repo) throw new Error(`unknown repository ${repoId}`);
+    const engine = this.ctx.get("agent")?.codeEngines().find((e) => e.id === engineId);
+    if (!engine?.commands) return null;
+    const placement = this.ctx.repos.checkout(repo.remote);
+    const remembered = this.defaults.read();
+    const permissionMode = remembered?.engine === engineId && remembered.permissionMode ? remembered.permissionMode : engine.permissionModes?.default;
+    const opts = { cwd: placement.checkout ?? null, worktree: !placement.runInCheckout, ...(permissionMode ? { permissionMode } : {}) };
+    return allow && engine.commands.allow ? engine.commands.allow(MERGE_COMMAND, opts) : engine.commands.check(MERGE_COMMAND, opts);
   }
 
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
@@ -906,10 +957,16 @@ export class CodeLink extends Service {
       });
       if (result.remote === "ok") {
         for (const session of this.store.sessions(projectId, { live: true })) {
-          if (session.repoId === repo.id && session.blocked) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+          if (session.repoId === repo.id && session.blocked === "credentials") this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
         }
       }
       const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
+      // A merge the agent was refused is over once someone merged it.
+      for (const session of this.store.sessions(projectId, { live: true })) {
+        if (session.repoId !== repo.id || session.blocked !== "merge") continue;
+        const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repo.id);
+        if (links.length && links.every((l) => !!l.mergedSha || l.prState === "merged")) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+      }
       summary.links += outcome.links;
       summary.changed += outcome.changed;
       summary.proposals += outcome.proposals;
@@ -1183,6 +1240,9 @@ export class CodeLink extends Service {
             rows.push({ label: w.pullRequest, icon: "i-merge", value: w.noRemote(repo?.defaultBranch ?? "main") });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
             rows.push({ label: w.pullRequest, icon: "i-merge", value: w.openPr, command: "code-link.open-pr" });
+          }
+          if (l.prState === "open" && l.prUrl && sessions.some((s) => s.blocked === "merge" && s.state !== "ended")) {
+            rows.push({ label: w.mergeByHand, icon: "i-warn", state: "warn", value: w.mergeBlocked, href: l.prUrl });
           }
           if (l.mergedSha) rows.push({ label: w.merged, icon: "i-check", state: "ok", mono: true, value: w.mergedOn(l.mergedSha.slice(0, 7), repo?.defaultBranch ?? "main") });
           if (l.headAt) rows.push({ label: w.lastCommit, icon: "i-clock", value: since(l.headAt) });

@@ -464,6 +464,8 @@ export interface Engine {
   steers?: boolean;
   /** What the troubleshooter may read about this engine beyond `available()`. */
   diagnostics?: EngineDiagnostics;
+  /** What the engine's own configuration lets its agent run; absent when Tomrade cannot read it. */
+  commands?: EngineCommands;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
 }
 
@@ -476,6 +478,38 @@ export interface EngineDiagnostics {
   logs?(): string[] | Promise<string[]>;
   /** Short facts that tell one setup from another — edition, endpoint, models offered. */
   facts?(): Record<string, string> | Promise<Record<string, string>>;
+}
+
+/**
+ * Whether the engine's own permission settings let one shell command through,
+ * read from its config files — not a promise: a safety check or the remote can
+ * still refuse it at run time.
+ */
+export interface EngineCommands {
+  check(command: string, opts: CommandCheckOptions): Promise<CommandCheck>;
+  /** Adds `check(...).fix.rule` to `fix.file`, then checks again. */
+  allow?(command: string, opts: CommandCheckOptions): Promise<CommandCheck>;
+}
+
+export interface CommandCheckOptions {
+  /** Where the agent will run, for project-level settings; null reads only the user's. */
+  cwd: string | null;
+  /** The run gets a fresh worktree of `cwd`: only checked-in project files reach it, not untracked local ones. */
+  worktree?: boolean;
+  /** The permission mode it will run under; absent, the one its settings default to. */
+  permissionMode?: string;
+}
+
+export interface CommandCheck {
+  /** `asks`: the person approves it when it comes up; `blocked`: refused, or likely to be, without a change. */
+  state: "allowed" | "asks" | "blocked";
+  /** Why, in a word a screen can name in its own language. */
+  why: "bypass" | "allow-rule" | "ask-rule" | "deny-rule" | "prompts" | "auto-mode" | "plan" | "dont-ask";
+  mode: string;
+  /** The rule that decided it, and the file it is in. */
+  rule?: { rule: string; file: string };
+  /** The one rule `allow` writes; absent when no added rule would help (a deny rule wins over it). */
+  fix?: { rule: string; file: string };
 }
 
 /** One quick-pick knob: "model" and "effort" keys get localized group labels; other keys show `title`. */

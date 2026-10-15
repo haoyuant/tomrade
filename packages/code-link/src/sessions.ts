@@ -8,7 +8,7 @@ import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime } from "@tomradex/agent";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
-import type { CodeLinkStore, SessionState, SessionView } from "./store.js";
+import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
 
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
 export const IDLE_AFTER_MS = 10 * 60 * 1000;
@@ -100,6 +100,9 @@ const firstLine = (text: string | undefined, max: number): string => {
 
 const REMOTE_COMMAND = /\bgit\s+(?:push|fetch|pull|ls-remote|clone)\b|^\s*gh\s/;
 const BLOCKED_COMMAND = /\bgit\s+(?:push|fetch|pull)\b|^\s*gh\s/;
+const MERGE_COMMAND = /(?:^|[;&|]\s*)gh\s+pr\s+merge\b/;
+/** A refusal, not a slip the agent can correct (a missing flag, a typo). */
+const MERGE_REFUSED = /not (?:allowed|permitted|mergeable)|protected branch|required status check|review(?:s)? (?:is |are )?required|approving review|denied|permission|blocked|policy|merge conflict|not authorized|forbidden|\b403\b/i;
 /** Backlog planning and status writes do not belong to a ticket's coding session. */
 const OUT_OF_SCOPE_TOOLS = new Set([
   "create_item",
@@ -246,6 +249,15 @@ export class Sessions {
     return { additionalContext: credentialStopText(detail) };
   }
 
+  /** The agent was not let merge its pull request: a stop only the person clears, by merging it. */
+  blockMerge(projectId: string, sessionId: string, reason: string, patch: { externalId?: string; tool?: boolean } = {}): void {
+    const session = this.store.session(projectId, sessionId);
+    if (!session) return;
+    const summary = `merge blocked: ${firstLine(reason, 200) || "refused"}`;
+    this.touch(projectId, sessionId, { ...patch, state: "error", summary, activity: null, blocked: "merge" });
+    this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, { kind: "failed", text: summary });
+  }
+
   /** A hook fired in the agent's process: what it says about the session, and what the thread should hear. */
   event(projectId: string, sessionId: string, payload: unknown): Record<string, unknown> {
     const p = (payload ?? {}) as HookPayload;
@@ -262,6 +274,10 @@ export class Sessions {
     const failedOutput = p.hook_event_name === "PostToolUseFailure" ? p.tool_error ?? "" : p.hook_event_name === "PostToolUse" && showsNonzeroExit(p.tool_output) ? outputText(p.tool_output) : "";
     if (command && REMOTE_COMMAND.test(command) && classifyRemoteFailure(failedOutput) === "credentials") {
       return this.blockCredentials(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true });
+    }
+    if (command && MERGE_COMMAND.test(command) && MERGE_REFUSED.test(failedOutput)) {
+      this.blockMerge(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true });
+      return { additionalContext: "Tomrade: the merge was refused and the person has been handed it. Do not try to merge another way — stop here." };
     }
     let moment: SessionMoment | null = null;
     switch (p.hook_event_name) {
@@ -325,7 +341,7 @@ export class Sessions {
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: "credentials" | null } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: SessionBlock | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();

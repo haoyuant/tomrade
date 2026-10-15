@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { RepoStateView } from "@tomradex/code-link";
+import type { MergeCheckView, RepoStateView } from "@tomradex/code-link";
 import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
-import { useGithubCredential, useGithubCredentialAccount, useRemoteIdentity, useRepoStates } from "~/lib/codeLink";
-import { useI18n } from "~/lib/i18n";
+import { useAllowMerge, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRemoteIdentity, useRepoStates, useSetRepoPolicy } from "~/lib/codeLink";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import {
   useAddRepoFromFolder,
@@ -21,7 +21,7 @@ import {
   useUpdateBoard,
   useUpdateRepo
 } from "~/lib/queries";
-import { pickDirectory } from "~/lib/shell";
+import { pickDirectory, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { message } from "./destination";
 
@@ -363,6 +363,80 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         </div>
       )}
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
+      {remoteState?.remote !== "none" && <AgentMerge projectId={projectId} repoId={repo.id} on={remoteState?.agentMerge ?? false} />}
+    </div>
+  );
+}
+
+/** The repository's merge policy, and what each agent's own settings say about it — with the one rule that would let it. */
+function AgentMerge({ projectId, repoId, on }: { projectId: string; repoId: string; on: boolean }) {
+  const { t } = useI18n();
+  const policy = useSetRepoPolicy(projectId);
+  const checks = useMergeChecks(projectId, repoId, on);
+  const toast = useToast();
+  return (
+    <>
+      <div className="cfg-row" style={{ marginTop: 0 }}>
+        <Icon name="i-merge" size={14} style={{ color: on ? "var(--accent)" : "var(--meta)" }} />
+        <span className="cfg-name">{t("repositories.agentMerge")}</span>
+        <button
+          type="button"
+          className="switch repo-agent-merge"
+          role="switch"
+          aria-checked={on}
+          aria-label={t("repositories.agentMerge")}
+          disabled={policy.isPending}
+          onClick={() => policy.mutate({ repoId, patch: { agentMerge: !on } }, { onError: (error) => toast({ body: message(error) }) })}
+        />
+      </div>
+      <p className="meta-txt dense">{t("repositories.agentMergeNote")}</p>
+      {on && checks.isLoading && <p className="meta-txt dense repo-merge-checking">{t("repositories.mergeChecking")}</p>}
+      {on && checks.data?.length === 0 && <p className="meta-txt dense">{t("repositories.mergeNoEngines")}</p>}
+      {on && checks.data?.map((view) => <MergeCheckRow key={view.engine} projectId={projectId} repoId={repoId} view={view} />)}
+    </>
+  );
+}
+
+function MergeCheckRow({ projectId, repoId, view }: { projectId: string; repoId: string; view: MergeCheckView }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const allow = useAllowMerge(projectId, repoId);
+  const check = view.check;
+  const vars = { engine: view.title, rule: check?.rule?.rule ?? check?.fix?.rule ?? "", file: check?.rule?.file ?? check?.fix?.file ?? "" };
+  const state = check?.state ?? "unknown";
+  return (
+    <div className="cfg-row repo-merge-check" data-engine={view.engine} data-state={state} style={{ marginTop: 0 }}>
+      <Icon
+        name={state === "allowed" ? "i-check" : state === "blocked" ? "i-warn" : "i-clock"}
+        size={14}
+        style={{ color: state === "allowed" ? "var(--accent)" : state === "blocked" ? "var(--danger)" : "var(--meta)" }}
+      />
+      <span className="repo-remote-copy">
+        <span className="cfg-name">{check ? t(`repositories.mergeWhy_${check.why}` as MessageKey, vars) : t("repositories.mergeUnknown", vars)}</span>
+      </span>
+      {check?.rule && (
+        <button type="button" className="btn btn-ghost" onClick={() => reveal(check.rule!.file)}>
+          {t("repositories.mergeShowFile")}
+        </button>
+      )}
+      {check?.fix && (
+        <button
+          type="button"
+          className="btn btn-secondary repo-merge-fix"
+          disabled={allow.isPending}
+          onClick={() =>
+            allow.mutate(view.engine, {
+              onSuccess: (next) => {
+                const fix = { engine: view.title, rule: check.fix!.rule, file: check.fix!.file };
+                toast({ body: t(next.check?.state === "allowed" ? "repositories.mergeFixedToast" : "repositories.mergeStillBlockedToast", fix) });
+              },
+              onError: (error) => toast({ body: message(error) })
+            })
+          }
+        >
+          {allow.isPending ? t("repositories.mergeFixing") : t("repositories.mergeFix", { rule: check.fix.rule, file: check.fix.file })}
+        </button>
+      )}
     </div>
   );
 }
