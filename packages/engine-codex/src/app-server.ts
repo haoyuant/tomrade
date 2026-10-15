@@ -2,10 +2,10 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { codexMediaInput, describeFailure, publishNativeImage } from "@tomradex/agent";
+import { codexMediaInput, describeFailure, publishNativeImage, withRecap } from "@tomradex/agent";
 import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
-import { conversationRecap, lostSession } from "./recap.js";
+import { lostSession } from "./account.js";
 import { codexRetry, codexStep } from "./steps.js";
 
 type Json = Record<string, any>;
@@ -235,12 +235,10 @@ export class CodexRuntime implements Runtime {
         try {
           response = await this.request(io.resume ? "thread/resume" : "thread/start", { ...(io.resume ? { threadId: io.resume } : {}), ...thread });
         } catch (error) {
-          // Its record is gone (CODEX_HOME changed or was cleared): carry the conversation into a new
-          // session rather than failing every message on the same dead id.
-          if (!io.resume || !lostSession(error)) throw error;
-          response = await this.request("thread/start", thread);
-          recap = conversationRecap(input.messages);
+          if (io.resume && lostSession(error)) { this.close(); return { stop: "error", error: String(error), lostSession: true, metrics }; }
+          throw error;
         }
+        if (!io.resume) recap = io.recap?.() ?? "";
         this.session = response.thread.id;
         this.indexDigest = input.filesIndex?.digest ?? null;
         metrics.providerModel = response.model;
@@ -248,7 +246,8 @@ export class CodexRuntime implements Runtime {
       metrics.readyMs = performance.now() - start;
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       const response = await this.request("turn/start", { threadId: this.session, model: codexModel(options.model), effort: options.effort,
-        input: codexMediaInput(input, io, [recap, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest })].filter(Boolean).join("\n\n")) });
+        input: codexMediaInput(input, io, withRecap(recap, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest }))) });
+      recap = "";
       turnId ??= response.turn.id;
       if (cancelled) abort();
       const result = await done;

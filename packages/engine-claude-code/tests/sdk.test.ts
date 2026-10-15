@@ -59,6 +59,34 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 15_000);
 
+it("reports a session Claude Code no longer has, and leads a new session's first message with the conversation so far", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-lost-"));
+  const log = path.join(dir, "requests.jsonl");
+  const bin = path.join(dir, "claude");
+  const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createClaudeCodeEngine(ctx);
+  const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "fix kanban" }, messages: [], cards: [], brief: "", pending: null,
+    options: { command: bin, model: "fixed-model" }, env: { TOMRADE_TEST_LOG: log } };
+  const io: TurnIO = { emit() {}, delta() {}, progress() {}, signal: new AbortController().signal, resume: "gone", recap: () => "RECAP OF EARLIER",
+    tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+    run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
+  const sentTexts = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s)).filter((m) => m.type === "user").map((m) => JSON.stringify(m.message.content));
+  try {
+    expect(await engine.turn(input, io)).toMatchObject({ stop: "error", lostSession: true });
+    io.resume = undefined;
+    const fresh = await engine.turn(input, io);
+    expect(fresh.stop, fresh.error).toBe("end");
+    expect(sentTexts().at(-1)).toContain("RECAP OF EARLIER");
+    io.resume = fresh.resume;
+    input.input = { kind: "text", text: "next" };
+    expect((await engine.turn(input, io)).stop).toBe("end");
+    expect(sentTexts().at(-1)).not.toContain("RECAP OF EARLIER");
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 it("reports the SDK's retries, drops the failed attempt from the live count, and traces its own tools with their results", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-retry-"));
   const bin = path.join(dir, "claude");

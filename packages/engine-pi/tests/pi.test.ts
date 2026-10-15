@@ -137,6 +137,35 @@ it("keeps one process across turns, resumes its session id, and answers permissi
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+it("reports a session pi has no file for, and leads a new session's first prompt with the conversation so far", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-lost-"));
+  const log = path.join(dir, "requests.jsonl");
+  const bin = path.join(dir, "pi");
+  const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createPiEngine(ctx);
+  const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "hello" }, messages: [], cards: [], brief: null, pending: null,
+    options: { command: bin, model: "fake/fixed-model" }, env: { TOMRADE_TEST_LOG: log } };
+  const io: TurnIO = { emit() {}, delta() {}, progress() {}, signal: new AbortController().signal, resume: "gone", recap: () => "RECAP OF EARLIER",
+    tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+    run: { id: "run", threadId: "thread", projectId: "project", author: "ai:pi", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
+  const prompts = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s)).filter((r) => r.type === "prompt").map((r) => r.message as string);
+  try {
+    expect(await engine.turn(input, io)).toMatchObject({ stop: "error", lostSession: true });
+    expect(fs.existsSync(log) ? prompts() : []).toEqual([]);
+    io.resume = undefined;
+    const fresh = await engine.turn(input, io);
+    expect(fresh.stop, fresh.error).toBe("end");
+    expect(prompts().at(-1)).toContain("RECAP OF EARLIER");
+    io.resume = fresh.resume;
+    input.input = { kind: "text", text: "next" };
+    expect((await engine.turn(input, io)).stop).toBe("end");
+    expect(prompts().at(-1)).not.toContain("RECAP OF EARLIER");
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 it("hands a message sent mid-turn to pi's own queue, records it where pi reads it, and clears what is left before a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-steer-"));
   const log = path.join(dir, "requests.jsonl");

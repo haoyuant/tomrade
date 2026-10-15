@@ -367,9 +367,11 @@ export class AgentStore {
     return row ? (JSON.parse(row.external_json) as Record<string, string>) : {};
   }
 
-  setExternal(projectId: string, threadId: string, engine: string, sessionId: string): void {
+  /** Null forgets the engine's session. */
+  setExternal(projectId: string, threadId: string, engine: string, sessionId: string | null): void {
     const map = this.external(projectId, threadId);
-    map[engine] = sessionId;
+    if (sessionId === null) delete map[engine];
+    else map[engine] = sessionId;
     this.db(projectId).prepare("UPDATE plugin_agent_threads SET external_json = ? WHERE id = ?").run(JSON.stringify(map), threadId);
   }
 

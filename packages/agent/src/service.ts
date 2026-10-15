@@ -28,6 +28,7 @@ import {
   type CardView,
   type Engine,
   type CliCheck,
+  type EngineTry,
   type EngineView,
   type FocusRef,
   type GeneralExecution,
@@ -54,6 +55,7 @@ import {
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, redactSecrets } from "./failure.js";
+import { conversationRecap } from "./recap.js";
 import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
@@ -206,6 +208,8 @@ declare module "@tomradex/ipc" {
     "agent.engines": (opts?: { fresh?: boolean }) => EngineView[];
     /** Runs a file the person picked as an engine's CLI, before it is saved. */
     "agent.checkCli": (engineId: string, file: string) => CliCheck;
+    /** One real turn on the engine in a hidden thread of this project: does it answer? */
+    "agent.tryEngine": (projectId: string | null, engineId: string) => EngineTry;
     "agent.setPermissionMode": (projectId: string, threadId: string, mode: string) => ThreadSummary;
     "agent.setEngine": (projectId: string, threadId: string, engineId: string) => ThreadSummary;
     /** Engine option overrides for one thread; null clears them so the engine's settings apply again. */
@@ -285,6 +289,8 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
 const LIMIT_TRIES = 3;
+/** How long a try waits for an answer. */
+const TRY_MS = 90_000;
 /** Limits lift on the provider's clock, not this one. */
 const LIMIT_SLACK_MS = 30_000;
 
@@ -325,6 +331,8 @@ export class Agent extends Service {
   store!: AgentStore;
 
   private engines = new Map<string, Engine>();
+  private trying = new Map<string, Promise<EngineTry>>();
+  private tries = new Map<string, { settings: string; tried: EngineTry }>();
   private workflows = new Map<string, WorkflowSpec>();
   private followUps = new Map<string, TurnFollowUp>();
   private playbooks = new Map<string, PlaybookVariants>();
@@ -445,6 +453,12 @@ export class Agent extends Service {
         const engine = ctx.agent.engines.get(engineId);
         if (!engine?.checkCli) throw new Error(`${engineId} does not run a local CLI`);
         return engine.checkCli(file);
+      });
+      ctx.ipc.handle("agent.tryEngine", (projectId, engineId) => {
+        // Settings opened outside a project: any open project holds the hidden thread as well.
+        const where = projectId ?? ctx.db.openIds()[0];
+        if (!where) throw new Error("Open a project first — a try runs in one");
+        return ctx.agent.tryEngine(where, engineId);
       });
       ctx.ipc.handle("agent.setEngine", (projectId, threadId, engineId) => ctx.agent.setEngine(projectId, threadId, engineId));
       ctx.ipc.handle("agent.setOptions", (projectId, threadId, options) => ctx.agent.setOptions(projectId, threadId, options));
@@ -624,7 +638,7 @@ export class Agent extends Service {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
@@ -957,6 +971,62 @@ export class Agent extends Service {
     if (!this.store.thread(projectId, threadId)) return false;
     this.store.setArchived(projectId, threadId, false, opts);
     return true;
+  }
+
+  /**
+   * One real turn on the engine, in a thread nobody sees, deleted after: does it answer now? Never part
+   * of readiness — it costs the person's quota and a flaky network would lock out an engine that works.
+   */
+  tryEngine(projectId: string, engineId: string, signal?: AbortSignal): Promise<EngineTry> {
+    const running = this.trying.get(engineId);
+    if (running) return running;
+    const settings = JSON.stringify(this.settingsOf().engines[engineId] ?? null);
+    const attempt = this.runTry(projectId, engineId, signal).then((tried) => {
+      this.tries.set(engineId, { settings, tried });
+      return tried;
+    }).finally(() => this.trying.delete(engineId));
+    this.trying.set(engineId, attempt);
+    return attempt;
+  }
+
+  /** The last try, while the engine's settings are the ones it ran with. */
+  private triedWith(engineId: string): EngineTry | undefined {
+    const last = this.tries.get(engineId);
+    return last && last.settings === JSON.stringify(this.settingsOf().engines[engineId] ?? null) ? last.tried : undefined;
+  }
+
+  private async runTry(projectId: string, engineId: string, signal?: AbortSignal): Promise<EngineTry> {
+    const started = Date.now();
+    const out = (rest: Omit<EngineTry, "ms" | "at">): EngineTry => ({ ...rest, ms: Date.now() - started, at: Date.now() });
+    const thread = this.newThread(projectId, engineId, null, { surface: "probe", title: "probe" });
+    try {
+      const { runId } = this.send(projectId, thread.id, { kind: "text", text: this.words().tryAsk });
+      const ended = await new Promise<boolean>((resolve) => {
+        const done = (value: boolean) => { clearTimeout(timer); signal?.removeEventListener("abort", abort); off(); resolve(value); };
+        const off = this.ctx.on("agent/run-ended", (run) => { if (run.id === runId) done(true); });
+        const timer = setTimeout(() => done(false), TRY_MS);
+        const abort = () => done(false);
+        signal?.addEventListener("abort", abort);
+        if (this.store.run(projectId, runId)?.status !== "running") done(true);
+      });
+      if (!ended) {
+        this.cancel(runId);
+        // let the cancelled run settle before its thread is deleted
+        for (let n = 0; n < 50 && this.activeByThread.has(thread.id); n++) await new Promise((resolve) => setTimeout(resolve, 100));
+        return out({ ok: false, error: signal?.aborted ? "cancelled" : this.words().tryTimeout(TRY_MS / 1000) });
+      }
+      const run = this.store.run(projectId, runId);
+      const messages = this.store.messages(projectId, thread.id);
+      const failure = messages.find((m) => m.block.type === "error")?.block;
+      const said = messages.filter((m) => m.role === "agent" && m.block.type === "text").map((m) => (m.block as { text: string }).text).join("\n").trim();
+      const reply = said ? { reply: said.length > 200 ? `${said.slice(0, 200)}…` : said } : {};
+      if (run?.status === "done" && !failure) return out({ ok: true, ...reply });
+      return out({ ok: false, ...reply, error: failure?.type === "error" ? failure.text : (run?.error ?? run?.stop ?? "failed"), ...(failure?.type === "error" && failure.details ? { details: failure.details } : {}) });
+    } catch (error) {
+      return out({ ok: false, error: message(error) });
+    } finally {
+      if (!this.activeByThread.has(thread.id)) this.deleteThread(projectId, thread.id);
+    }
   }
 
   deleteThread(projectId: string, threadId: string): boolean {
@@ -1395,6 +1465,7 @@ export class Agent extends Service {
       run: handle,
       signal: abort.signal,
       resume: this.resumeOf(thread, engine),
+      recap: () => conversationRecap(this.store.messages(thread.projectId, thread.id)),
       takeSteers: () => {
         if (abort.signal.aborted) return [];
         const taken = steers.splice(0);
@@ -1489,6 +1560,14 @@ export class Agent extends Service {
       rc.handle.env = turnInput.env;
       if (turnInput.cwd && turnInput.purpose !== "backlog") rc.io.run.scratch.set("mediaWorkdir", turnInput.cwd);
       result = await rc.engine.turn(turnInput, rc.io);
+      if (result.lostSession && rc.io.resume && !rc.abort.signal.aborted) {
+        // Its session is gone (another config folder, cleared history): rather than failing every
+        // message on the same dead id, run the turn again in a new session with the conversation carried in.
+        this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, null);
+        this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().sessionLost(rc.engine.title) }, rc.run.id);
+        rc.io.resume = undefined;
+        result = await rc.engine.turn(turnInput, rc.io);
+      }
       if (result.resume) this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, result.resume);
       // Engines may return normally while handling an interrupt. Cancellation
       // remains authoritative even when the adapter reports a successful end.

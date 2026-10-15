@@ -8,6 +8,7 @@ export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, type PlaybookVariants } from "./playbooks.js";
 export { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 export { describeFailure, redactSecrets, DETAILS_MAX_CHARS } from "./failure.js";
+export { conversationRecap, withRecap } from "./recap.js";
 export { resultLine, stepHint, stepSummary } from "./steps.js";
 export { HOUSE_RULES, RULES_INSTRUCTIONS_MAX, RULES_MAX_CHARS, rulesInstructions, rulesSection, attachmentsLine, focusSuffix, generalBrief, generalOpener, generalPrompt, playbookSection, promptSections, waitsOnLine } from "./prompt.js";
 export { evaluateTurn, summarizeEvaluation, type TurnMetrics, type EvaluationObservation } from "./evaluation.js";
@@ -34,6 +35,7 @@ export {
   type EngineNeed,
   type EnginePick,
   type EngineView,
+  type EngineTry,
   type EngineSetup,
   type FindingCard,
   type FocusRef,

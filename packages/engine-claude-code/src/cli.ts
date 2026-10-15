@@ -14,6 +14,9 @@ export async function signedIn(cli: CliLocator, command: string | undefined, arg
   return says(`${stdout}\n${stderr}`) ?? true;
 }
 
+/** Claude Code cannot resume a session that is not under the current CLAUDE_CONFIG_DIR (moved, cleared, another folder). */
+export const lostConversation = (text: string | undefined): boolean => /no conversation found with session id/i.test(text ?? "");
+
 /** `claude auth status` prints JSON with `loggedIn`; a first-party account that is not logged in cannot run. */
 export function claudeSignedIn(output: string): boolean | null {
   const start = output.indexOf("{");

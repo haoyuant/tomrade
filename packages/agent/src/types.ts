@@ -313,6 +313,11 @@ export interface TurnIO {
    */
   steerTo?(forward: (steer: { id: string; text: string }) => Promise<boolean>): void;
   steered?(id: string): void;
+  /**
+   * For an engine that keeps its own session: the conversation so far, to lead the first prompt of a
+   * session it starts without `resume` (empty when there is nothing before this message).
+   */
+  recap?(): string;
 }
 
 export interface TurnResult {
@@ -324,6 +329,8 @@ export interface TurnResult {
   details?: string;
   /** External session id to store on the thread for the next turn. */
   resume?: string;
+  /** The session in `resume` no longer exists and nothing ran: Tomrade forgets it and runs the turn again in a new one. */
+  lostSession?: boolean;
   metrics?: import("./evaluation.js").TurnMetrics;
   /** The engine stopped on a usage or rate limit; `until` is when it lifts, when the engine said. */
   limit?: { until: number | null };
@@ -523,6 +530,17 @@ export interface EnginePick {
   freeText?: boolean;
 }
 
+/** One real turn on an engine, asked for by the person: does it answer? */
+export interface EngineTry {
+  ok: boolean;
+  ms: number;
+  at: number;
+  /** What it said, cut short. */
+  reply?: string;
+  error?: string;
+  details?: string;
+}
+
 export interface EngineView {
   id: string;
   title: string;
@@ -532,6 +550,8 @@ export interface EngineView {
   need?: EngineNeed;
   cli?: LocalCliStatus;
   configDir?: string;
+  /** The last try with the settings it has now; a change to its settings clears it. */
+  tried?: EngineTry;
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;

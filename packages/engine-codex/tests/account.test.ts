@@ -3,14 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Context } from "cordis";
-import { Agent, type Block, type TurnIO, type TurnInput } from "@tomradex/agent";
+import { Agent, conversationRecap, type Block, type TurnIO, type TurnInput } from "@tomradex/agent";
 import type { CliLaunch } from "@tomradex/engine-claude-code";
 import engineCodex, { codexCanRun, createCodexEngine, readCodexAccount } from "@tomradex/engine-codex";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
-import { conversationRecap, lostSession } from "../src/recap.js";
+import { lostSession } from "../src/account.js";
 
 const FAKE = path.resolve("packages/engine-codex/tests/fake-account-server.mjs");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-account-"));
@@ -114,13 +114,13 @@ describe("a Codex session whose record is gone", () => {
       message("user", { type: "text", text: "fix kanban" }, 4)
     ]);
     expect(recap).toContain("User: set up the kanban");
-    expect(recap).toContain("You: Done: three columns.");
+    expect(recap).toContain("Assistant: Done: three columns.");
     expect(recap).not.toContain("fix kanban");
     expect(recap).not.toContain("Error");
     expect(conversationRecap([message("user", { type: "text", text: "first" }, 1)])).toBe("");
   });
 
-  it("starts a new session with the conversation carried in, and hands back its id to store", async () => {
+  it("reports the lost session, then leads a new one with the conversation so far and hands back its id", async () => {
     const log = path.join(dir, "lost.jsonl");
     const ctx = new Context();
     await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
@@ -132,18 +132,20 @@ describe("a Codex session whose record is gone", () => {
     ];
     const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "fix kanban" }, messages: prior, cards: [], brief: null, pending: null,
       options: { command: fakeCodex("custom") }, env: { TOMRADE_TEST_LOG: log, LOST_ROLLOUT: "1" } };
-    const io: TurnIO = { emit() {}, delta() {}, progress() {}, signal: new AbortController().signal, resume: "01a13f89-gone",
+    const io: TurnIO = { emit() {}, delta() {}, progress() {}, signal: new AbortController().signal, resume: "01a13f89-gone", recap: () => conversationRecap(prior),
       tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
       run: { id: "run", threadId: "thread", projectId: "project", author: "ai:codex", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
     try {
+      expect(await engine.turn(input, io)).toMatchObject({ stop: "error", lostSession: true });
+      io.resume = undefined;
       const result = await engine.turn(input, io);
       expect(result).toMatchObject({ stop: "end", resume: "new-session" });
       const requests = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
       expect(requests.filter((r) => r.method?.startsWith("thread/")).map((r) => r.method)).toEqual(["thread/resume", "thread/start"]);
       const text = requests.find((r) => r.method === "turn/start").params.input[0].text as string;
-      expect(text).toContain("could not be reopened");
+      expect(text).toContain("began before your current session");
       expect(text).toContain("User: set up the kanban");
-      expect(text).toContain("You: Kanban is set up.");
+      expect(text).toContain("Assistant: Kanban is set up.");
     } finally { await ctx.fiber.dispose(); }
   });
 });
