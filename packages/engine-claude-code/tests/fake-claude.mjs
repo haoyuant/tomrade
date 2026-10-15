@@ -21,6 +21,12 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
       response: m.request.subtype === 'initialize' ? { commands: [], models: [], agents: [], output_style: 'default', available_output_styles: [], account: {} } : {} } });
     if (m.request.subtype === 'interrupt') result();
   }
+  if (m.type === 'user' && process.argv.includes('--resume=gone')) {
+    // what Claude Code answers for a session not under its CLAUDE_CONFIG_DIR
+    send({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, session_id: 'gone', uuid: 'lost', total_cost_usd: 0, duration_ms: 0, duration_api_ms: 0,
+      usage: { input_tokens: 0, output_tokens: 0 }, modelUsage: {}, permission_denials: [], errors: ['No conversation found with session ID: gone'] });
+    continue;
+  }
   if (m.type === 'user') {
     n++;
     send({ type: 'system', subtype: 'init', session_id: session, model: 'fixed-model', tools: [], mcp_servers: [], uuid: 'init-'+n });

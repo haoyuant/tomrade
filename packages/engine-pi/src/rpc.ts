@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { attachedMedia, describeFailure, stepHint, stepSummary, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, describeFailure, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { bridgeSource } from "./bridge.js";
@@ -44,6 +44,8 @@ export class PiRuntime implements Runtime {
   private dir: string;
   private child?: ChildProcessWithoutNullStreams;
   private seq = 0;
+  /** This session was started without resume and has not had its first prompt yet. */
+  private fresh = false;
   private pending = new Map<string, { resolve(value: Json): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   private onEvent?: (event: Json) => void;
   private onFailure?: (error: Error) => void;
@@ -263,11 +265,21 @@ export class PiRuntime implements Runtime {
     io.signal.addEventListener("abort", abort, { once: true });
     try {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
-      if (!this.child) await this.spawn(input, io);
+      if (!this.child) {
+        await this.spawn(input, io);
+        // pi opens an empty session under an id it has no file for, and only warns on stderr
+        if (io.resume && !((await this.request("get_messages")).messages?.length)) {
+          this.close();
+          return { stop: "error", error: `Pi has no session ${io.resume}`, lostSession: true, metrics };
+        }
+        this.fresh = !io.resume;
+      }
       const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/")).map((media) => ({ type: "image", data: media.base64, mimeType: media.mime }));
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
       prompted = true;
-      const accepted = await this.request("prompt", { message: turnPrompt(input, io, { staleIndex: stale }), ...(images.length ? { images } : {}) });
+      const message = turnPrompt(input, io, { staleIndex: stale });
+      const accepted = await this.request("prompt", { message: this.fresh ? withRecap(io.recap?.(), message) : message, ...(images.length ? { images } : {}) });
+      this.fresh = false;
       metrics.readyMs = performance.now() - start;
       if (accepted.disposition === "handled") finish(result("end"));
       else if (accepted.disposition !== "started") throw new Error(`Pi did not start the turn (${accepted.disposition ?? "no disposition"})`);

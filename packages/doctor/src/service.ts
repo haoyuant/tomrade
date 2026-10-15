@@ -177,7 +177,6 @@ declare module "@tomradex/ipc" {
 }
 
 const ENGINE_ID = "doctor";
-const PROBE_MS = 90_000;
 const RETRY_MS = 10 * 60_000;
 const ASKED_MAX = 4_000;
 
@@ -553,34 +552,10 @@ export class Doctor extends Service {
     return out;
   }
 
-  /** One real turn on the engine, in a thread nobody sees, deleted after: does it answer now? */
+  /** One real turn on the engine: does it answer now? */
   async probe(projectId: string, engineId: string, signal: AbortSignal): Promise<{ ok: boolean; ms: number; error?: string; details?: string }> {
-    const agent = this.ctx.agent;
-    const started = Date.now();
-    const thread = agent.newThread(projectId, engineId, null, { surface: "probe", title: "probe" });
-    try {
-      const { runId } = agent.send(projectId, thread.id, { kind: "text", text: this.words().probeAsk });
-      const ended = await new Promise<boolean>((resolve) => {
-        const done = (value: boolean) => { clearTimeout(timer); signal.removeEventListener("abort", abort); off(); resolve(value); };
-        const off = this.ctx.on("agent/run-ended", (run) => { if (run.id === runId) done(true); });
-        const timer = setTimeout(() => done(false), PROBE_MS);
-        const abort = () => done(false);
-        signal.addEventListener("abort", abort);
-        if (agent.store.run(projectId, runId)?.status !== "running") done(true);
-      });
-      if (!ended) {
-        agent.cancel(runId);
-        return { ok: false, ms: Date.now() - started, error: signal.aborted ? "cancelled" : this.words().probeTimeout };
-      }
-      const run = agent.store.run(projectId, runId);
-      const failure = agent.store.messages(projectId, thread.id).find((m) => m.block.type === "error")?.block;
-      if (run?.status === "done" && !failure) return { ok: true, ms: Date.now() - started };
-      return { ok: false, ms: Date.now() - started, error: failure?.type === "error" ? failure.text : (run?.error ?? run?.stop ?? "failed"), ...(failure?.type === "error" && failure.details ? { details: failure.details } : {}) };
-    } catch (error) {
-      return { ok: false, ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) };
-    } finally {
-      agent.deleteThread(projectId, thread.id);
-    }
+    const { ok, ms, error, details } = await this.ctx.agent.tryEngine(projectId, engineId, signal);
+    return { ok, ms, ...(error ? { error } : {}), ...(details ? { details } : {}) };
   }
 
   private findings(topic: Topic, rows: ChecklistCard["rows"], actions: Map<string, CardAction[]>, issues: KnownIssue[], probe: { ok: boolean } | null, investigators: string[] = []): FindingCard[] {

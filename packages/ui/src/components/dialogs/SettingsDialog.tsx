@@ -13,6 +13,7 @@ import { AboutPane } from "./AboutPane";
 import { KeybindingsPane } from "./KeybindingsPane";
 import { UsagePane } from "./UsagePane";
 import { HubPane } from "./HubPane";
+import { EngineTryRow } from "./EngineTryRow";
 import { LocalCliSection } from "./LocalCliSection";
 import { McpServersPane } from "./McpServersPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
@@ -897,7 +898,9 @@ function EngineRow({
     requestAnimationFrame(() => row.current?.scrollIntoView({ block: "nearest" }));
   }, [focused]);
   const hasPicks = !!engine.picks?.length;
-  const hasBody = hasPicks || !!engine.cli;
+  // a terminal-only CLI conducts no conversation to try
+  const canTry = !engine.terminalOnly;
+  const hasBody = hasPicks || !!engine.cli || canTry;
   const toggle = () => hasBody && setOpen((o) => !o);
   const status = engineStatus(engine);
   return (
@@ -921,6 +924,11 @@ function EngineRow({
       {open && engine.cli && (
         <div className="eng-body">
           <LocalCliSection engine={engine} cli={engine.cli} command={typeof options.command === "string" ? options.command : ""} onSaveCommand={(value) => onCommit("command", value)} />
+        </div>
+      )}
+      {open && canTry && (
+        <div className="eng-body">
+          <EngineTryRow engine={engine} command={typeof options.command === "string" ? options.command : undefined} />
         </div>
       )}
       {open && hasPicks && (

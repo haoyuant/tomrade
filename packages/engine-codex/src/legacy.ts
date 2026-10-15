@@ -4,11 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { isSuspended, withRecap, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { publishNativeImage } from "@tomradex/agent";
 import { buildSystem, chosenCommand, localAvailability, localCli, promptOf, runJsonl } from "@tomradex/engine-claude-code";
-import { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
-import { conversationRecap, lostSession } from "./recap.js";
+import { codexHome, lostSession, readCodexAccount, type CodexAccount } from "./account.js";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 
@@ -182,12 +181,8 @@ export function createCodexCliEngine(ctx: Context): Engine {
       };
 
       try {
-        let { code, stderr } = await once(argsFor(io.resume, prompt));
-        if (io.resume && !io.signal.aborted && lostSession(`${failure ?? ""}\n${stderr}`)) {
-          // The session's record is not under this CODEX_HOME: start over with the conversation carried in.
-          session = undefined;
-          ({ code, stderr } = await once(argsFor(undefined, [conversationRecap(input.messages), prompt].filter(Boolean).join("\n\n"))));
-        }
+        const { code, stderr } = await once(argsFor(io.resume, io.resume ? prompt : withRecap(io.recap?.(), prompt)));
+        if (io.resume && !io.signal.aborted && lostSession(`${failure ?? ""}\n${stderr}`)) return { stop: "error", error: failure ?? stderr.trim(), lostSession: true };
         if (io.signal.aborted) return { stop: "cancelled", usage, resume: session };
         if (failure) return { stop: "error", error: failure, usage, resume: session };
         if (code !== 0) return { stop: "error", error: `codex exited with ${code}: ${stderr.slice(-400)}`, usage, resume: session };

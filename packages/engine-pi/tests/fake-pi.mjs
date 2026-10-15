@@ -39,6 +39,12 @@ function handle(m) {
     settle();
     return;
   }
+  // pi keeps a session file per id; "gone" stands for one whose file is not there
+  if (m.type === 'get_messages') {
+    const id = process.argv[process.argv.indexOf('--session-id') + 1];
+    send({ id: m.id, type: 'response', command: 'get_messages', success: true, data: { messages: id === 'gone' ? [] : [{ role: 'user', content: 'earlier' }] } });
+    return;
+  }
   if (m.type === 'clear_queue') {
     send({ id: m.id, type: 'response', command: 'clear_queue', success: true, data: { steering: queued, followUp: [] } });
     queued = [];

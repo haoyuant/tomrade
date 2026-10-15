@@ -244,11 +244,19 @@ describe("an ACP agent as an engine", () => {
     expect(resumed.blocks.some((b) => b.type === "text" && b.text.includes("OLD HISTORY"))).toBe(false);
     expect(sent("session/set_mode").map((r) => r.params.modeId)).toEqual([]);
 
+    // A session it no longer has is reported, not silently replaced: Tomrade runs the turn again without it, with the conversation carried in.
     const gone = turnIO();
     gone.io.resume = "gone";
-    const fresh = await createAcpEngine(ctx, spec({ httpMcp: "always", reopen: "load", usage: "turn" })).turn({ ...input, input: { kind: "text", text: "anew" } }, gone.io);
+    gone.io.recap = () => "RECAP OF EARLIER";
+    const engineAgain = createAcpEngine(ctx, spec({ httpMcp: "always", reopen: "load", usage: "turn" }));
+    const lost = await engineAgain.turn({ ...input, input: { kind: "text", text: "anew" } }, gone.io);
+    expect(lost).toMatchObject({ stop: "error", lostSession: true });
+    gone.io.resume = undefined;
+    const fresh = await engineAgain.turn({ ...input, input: { kind: "text", text: "anew" } }, gone.io);
     expect(fresh.resume).not.toBe("gone");
-    expect(sent("session/prompt").at(-1).params.prompt[0].text).toContain("You are conducting a thread inside Tomrade");
+    const text = sent("session/prompt").at(-1).params.prompt[0].text as string;
+    expect(text).toContain("You are conducting a thread inside Tomrade");
+    expect(text).toContain("RECAP OF EARLIER");
   });
 
   it("switches an agent with modes to the one a full-access turn wants, and adds up a running session total", async () => {

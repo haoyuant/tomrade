@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { claudeMediaInput, describeFailure, looksRateLimited, resetTime, stepHint, stepSummary } from "@tomradex/agent";
+import { claudeMediaInput, describeFailure, looksRateLimited, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
+import { lostConversation } from "./cli.js";
 import { ClaudeCodeOptions, retryReason } from "./legacy.js";
 import { localCli, spawnCli, type CliLaunch } from "./locate.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
@@ -60,6 +61,8 @@ export class ClaudeRuntime implements Runtime {
   private onMessage?: (message: SDKMessage) => void;
   private onFailure?: (error: unknown) => void;
   private cost = 0;
+  /** This session was started without resume and has not had its first message yet. */
+  private fresh = false;
   /** Cumulative counters from the last result; the SDK reports running totals, so a turn is the difference. */
   private tokens: Tokens | null = null;
   private activeIO?: TurnIO;
@@ -208,6 +211,7 @@ export class ClaudeRuntime implements Runtime {
         const limited = message.is_error && !cancelled ? (limit ?? (looksRateLimited(error) ? { until: null, text: null } : null)) : null;
         finish({ stop: cancelled ? "cancelled" : budget ? "budget" : message.is_error ? "error" : binding.asked() ? "asked" : "end",
           error: limited?.text ?? error, usage, costUsd, resume: this.session, metrics,
+          ...(io.resume && message.is_error && message.num_turns === 0 && lostConversation(error) ? { lostSession: true } : {}),
           ...(message.is_error && !cancelled ? { details: describeFailure({ result: message, stderr: this.stderr }) } : {}),
           ...(limited ? { limit: { until: limited.until ?? resetTime(limited.text ?? error) } } : {}) });
       }
@@ -274,15 +278,19 @@ export class ClaudeRuntime implements Runtime {
           maxBudgetUsd: options.maxBudgetUsd
         };
         this.query = query({ prompt: this.queue, options: sdkOptions });
+        this.fresh = !io.resume;
         this.indexDigest = input.filesIndex?.digest ?? null;
         void this.consume();
       }
       metrics.readyMs ??= warm ? 0 : undefined;
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
       const prompt = turnPrompt(input, io, { staleIndex: stale });
+      // the first message of a session started without resume carries the thread's conversation so far
+      const lead = this.fresh ? withRecap(io.recap?.(), prompt) : prompt;
+      this.fresh = false;
       const content = input.input.kind === "text" && input.input.attachments?.length
-        ? claudeMediaInput(input, io, prompt) as SDKUserMessage["message"]["content"]
-        : prompt;
+        ? claudeMediaInput(input, io, lead) as SDKUserMessage["message"]["content"]
+        : lead;
       // with a uuid of its own, so the CLI says on each result which messages that turn answered
       this.queue.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: this.session ?? "", uuid: randomUUID() });
       prompted = true;

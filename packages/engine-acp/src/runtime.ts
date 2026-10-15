@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
-import { attachedMedia, describeFailure, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, describeFailure, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bindTurn, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
@@ -191,21 +191,23 @@ export class AcpRuntime implements Runtime {
     }
   }
 
-  private async reopen(sessionId: string, mcpServers: Json[]): Promise<Json | null> {
+  /** The reopened session; null when the agent cannot reopen one, "lost" when it tried and no longer has it. */
+  private async reopen(sessionId: string, mcpServers: Json[]): Promise<Json | null | "lost"> {
     const resume = !!this.caps.sessionCapabilities?.resume && this.agent.reopen !== "load";
     const method = resume ? "session/resume" : this.caps.loadSession ? "session/load" : null;
     if (!method) return null;
     try {
       // A loaded session replays its history first; with no turn listening, the replay goes nowhere.
       const result = await this.conn!.request(method, { sessionId, cwd: this.cwd, mcpServers }, 120_000);
-      return result && typeof result === "object" ? result : null;
+      // Hermes answers session/load with null for a session it no longer has
+      return result && typeof result === "object" ? result : "lost";
     } catch {
-      // A session the agent no longer has starts over.
-      return null;
+      return "lost";
     }
   }
 
-  private async open(input: TurnInput, io: TurnIO, options: AcpOptions): Promise<void> {
+  /** False when the session in `io.resume` is gone; Tomrade then runs the turn again without it. */
+  private async open(input: TurnInput, io: TurnIO, options: AcpOptions): Promise<boolean> {
     const launch = await this.agent.cli.launch(options.command);
     const child = spawnCli(launch, this.agent.args(input, options), {
       cwd: this.cwd, env: { ...process.env, ...input.env, ...this.agent.env?.(input, options) }, stdio: ["pipe", "pipe", "pipe"]
@@ -226,6 +228,7 @@ export class AcpRuntime implements Runtime {
     if (this.caps.mcpCapabilities?.http !== true && this.agent.httpMcp !== "always") throw new Error(`${this.agent.title} takes no MCP server over HTTP, so it cannot reach Tomrade's tools`);
     const mcpServers = [{ type: "http", name: "tomrade", url: this.ctx.mcp.url, headers: [{ name: "X-Tomrade-Run", value: this.token }] }];
     const reopened = io.resume ? await this.reopen(io.resume, mcpServers) : null;
+    if (reopened === "lost") return false;
     const session = reopened ?? (await conn.request("session/new", { cwd: this.cwd, mcpServers }, 120_000));
     this.session = reopened ? io.resume : session?.sessionId;
     if (!this.session) throw new Error(`${this.agent.title} did not open a session`);
@@ -239,13 +242,15 @@ export class AcpRuntime implements Runtime {
     if (mode) await this.setMode(mode, io);
     if (options.model) await this.choose("model", options.model, io);
     if (options.effort) await this.choose("effort", options.effort, io);
+    return true;
   }
 
   private prompt(input: TurnInput, io: TurnIO): Json[] {
     const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
     let text = turnPrompt(input, io, { staleIndex: stale });
     // ACP has no system prompt of its own; the session's first message carries it, and the history keeps it.
-    if (this.brief) { text = `${sessionSystem(input, this.agent.title)}\n\n${text}`; this.brief = false; }
+    // A new session on a thread with history (the agent cannot reopen, or the thread came from another engine) gets the conversation too.
+    if (this.brief) { text = `${sessionSystem(input, this.agent.title)}\n\n${withRecap(io.recap?.(), text)}`; this.brief = false; }
     const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/"));
     const seesImages = this.caps.promptCapabilities?.image === true;
     if (images.length && !seesImages) io.emit({ type: "note", text: `${this.agent.title} takes no images in a prompt, so the attached ones were left out` });
@@ -416,7 +421,10 @@ export class AcpRuntime implements Runtime {
     io.signal.addEventListener("abort", abort, { once: true });
     try {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
-      if (!this.conn) await this.open(input, io, options);
+      if (!this.conn && !(await this.open(input, io, options))) {
+        this.close();
+        return { stop: "error", error: `${this.agent.title} no longer has session ${io.resume}`, lostSession: true, metrics };
+      }
       metrics.readyMs = performance.now() - start;
       if (cancelled) return result("cancelled");
       const blocks = this.prompt(input, io);

@@ -137,6 +137,9 @@ const run = async () => {
   check("the row names the chosen file and that it was chosen", rowText.includes(claude) && rowText.includes("chosen by you"), rowText);
   check("and says how to sign in", rowText.includes("Sign in: run claude and follow the prompts"), rowText);
   check("the row's state is short and translated", (await text('[data-engine="claude-code"] .eng-state')) === "Not signed in");
+  const claudeHome = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  check("and names the folder it reads its sign-in from", rowText.includes(`It reads its sign-in and settings from ${claudeHome}`), rowText);
+  check("Try it waits until the agent is ready", (await $(`document.querySelector('[data-testid="engine-try-claude-code"] button')?.disabled`)) === true);
   await shot("local-cli-02-settings-sign-in");
 
   // ── choosing a path: checked before it is saved ───────────────────────
@@ -265,6 +268,22 @@ const run = async () => {
   await shot("local-cli-07-picker-model-ready");
   await press(engineRow("Claude Code"));
   check("picking a greyed agent opens Settings on its row", await wait(() => has('[data-testid="cli-setup-claude-code"]'), "claude row from the picker"));
+
+  // ── Try it: one real turn on request ──────────────────────────────────
+  // signed in, but this stand-in cannot hold a conversation: the try says so in its own words
+  fs.writeFileSync(claude, `#!/bin/sh\ncase "$1" in\n  --version) echo "claude 9.9.9";;\n  *) echo '{"loggedIn": true}';;\nesac\n`, { mode: 0o755 });
+  await click('[data-testid="cli-recheck"]');
+  const tryButton = `document.querySelector('[data-testid="engine-try-claude-code"] button')`;
+  check("Try it opens up once the agent reads ready", await wait(async () => (await $(`${tryButton}?.disabled`)) === false, "try enabled"));
+  check("and says what it costs before anything runs", (await text('[data-testid="engine-try-claude-code"]'))?.includes("Uses a little of its quota"), await text('[data-testid="engine-try-claude-code"]'));
+  const beforeTry = ctx.agent.store.threads(project.id, null).length;
+  await $(`${tryButton}.click();true`);
+  check("a try reports what came back", await wait(() => has('[data-testid="engine-try-claude-code"] [data-testid="engine-try-result"]'), "try result", 900), await text('[data-testid="engine-try-claude-code"]'));
+  check("this stand-in gives no reply, and the row says so", (await text('[data-testid="engine-try-claude-code"] [data-testid="engine-try-result"]'))?.startsWith("No reply:"), await text('[data-testid="engine-try-claude-code"]'));
+  check("and the try leaves no thread behind", ctx.agent.store.threads(project.id, null).length === beforeTry);
+  check("the answer is kept for the row while its settings stay", (await ctx.agent.engineViews()).find((e) => e.id === "claude-code")?.tried?.ok === false);
+  await $(`document.querySelector('[data-testid="engine-try-claude-code"]').scrollIntoView({ block: "center" });true`);
+  await shot("local-cli-08-try-it");
   await escape();
 
   console.log(`screenshots in ${shots}`);

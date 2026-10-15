@@ -81,3 +81,6 @@ export function readCodexAccount(launch: CliLaunch, env: NodeJS.ProcessEnv = pro
     child.once("close", () => clearTimeout(kill));
   });
 }
+
+/** Codex cannot reopen a session whose record is not under the current CODEX_HOME (moved, cleared, or another home). */
+export const lostSession = (error: unknown): boolean => /no rollout found/i.test(error instanceof Error ? error.message : String(error));

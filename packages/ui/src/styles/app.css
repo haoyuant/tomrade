@@ -2176,6 +2176,11 @@ html.overlay-open .titlebar .btn-primary {
 .eng-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
 .eng-body { padding: 2px 0 var(--space-3) 23px; }
 .eng-state.is-warn { color: var(--warn); }
+/* Try it: one real turn on request, and what came back. */
+.eng-try { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: var(--text-sm); }
+.eng-try-ok { color: var(--success); }
+.eng-try-details { flex-basis: 100%; }
+.eng-try-details pre { margin: 4px 0 0; max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2); }
 /* A local agent's CLI: what runs, a path to choose instead, and the steps while it is not ready. */
 .cli-setup { font-size: var(--text-sm); }
 .cli-setup p { margin: 0; }

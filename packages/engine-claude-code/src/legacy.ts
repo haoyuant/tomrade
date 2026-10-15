@@ -7,10 +7,10 @@ import { z } from "zod";
 import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import type {} from "@tomradex/mcp";
 import { localAvailability } from "./availability.js";
-import { claudeSignedIn, runJsonl } from "./cli.js";
+import { claudeSignedIn, lostConversation, runJsonl } from "./cli.js";
 import { localCli } from "./locate.js";
 import { buildSystem, promptOf } from "./system.js";
-import { claudeMediaInput, looksRateLimited, resetTime, stepHint, stepSummary } from "@tomradex/agent";
+import { claudeMediaInput, looksRateLimited, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type ApiUsage, type ResultCounters } from "./usage.js";
 
 export const ClaudeCodeOptions = z.object({
@@ -53,6 +53,7 @@ interface StreamLine extends ResultCounters {
   event?: { type?: string; delta?: { type?: string; text?: string }; message?: { usage?: ApiUsage }; usage?: ApiUsage };
   result?: unknown;
   is_error?: boolean;
+  errors?: string[];
   total_cost_usd?: number;
   rate_limit_info?: { status?: string; resetsAt?: number };
 }
@@ -121,9 +122,11 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       // turns work in their own worktree and accept edits.
       const code = input.purpose !== "backlog";
       const withMedia = input.input.kind === "text" && !!input.input.attachments?.length;
+      // a session started without resume carries the thread's conversation so far
+      const prompt = io.resume ? promptOf(input) : withRecap(io.recap?.(), promptOf(input));
       const args = [
         "-p",
-        ...(withMedia ? ["--input-format", "stream-json"] : [promptOf(input)]),
+        ...(withMedia ? ["--input-format", "stream-json"] : [prompt]),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -157,7 +160,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
 
       try {
         const run = runJsonl(await cli.launch(options.command), args, {
-          stdin: withMedia ? JSON.stringify({ type: "user", message: { role: "user", content: claudeMediaInput(input, io, promptOf(input)) } }) + "\n" : undefined,
+          stdin: withMedia ? JSON.stringify({ type: "user", message: { role: "user", content: claudeMediaInput(input, io, prompt) } }) + "\n" : undefined,
           cwd: input.cwd ?? tmp,
           env: { ...process.env, ...input.env },
           signal: io.signal,
@@ -208,7 +211,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
               }
               usage.inputTokens = promptTokens(turn);
               usage.outputTokens = turn.output;
-              if (line.is_error) failure = typeof line.result === "string" ? line.result : (line.subtype ?? "Claude Code reported an error");
+              if (line.is_error) failure = typeof line.result === "string" ? line.result : line.errors?.length ? line.errors.join("\n") : (line.subtype ?? "Claude Code reported an error");
             } else if (line.type === "rate_limit_event" && line.rate_limit_info?.status === "rejected" && typeof line.rate_limit_info.resetsAt === "number") {
               const at = line.rate_limit_info.resetsAt;
               limitUntil = at < 1e12 ? at * 1000 : at;
@@ -217,6 +220,7 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
         });
         const { code, stderr } = await run.done;
         if (io.signal.aborted) return { stop: "cancelled", usage, costUsd, resume: session };
+        if (io.resume && lostConversation(`${failure ?? ""}\n${stderr}`)) return { stop: "error", error: failure ?? stderr.trim(), lostSession: true };
         if (failure) return { stop: "error", error: failure, usage, costUsd, resume: session, ...(limitUntil !== null || looksRateLimited(failure) ? { limit: { until: limitUntil ?? resetTime(failure) } } : {}) };
         if (code !== 0) return { stop: "error", error: `claude exited with ${code}: ${stderr.slice(-400)}`, usage, costUsd, resume: session };
         return { stop: asked ? "asked" : "end", usage, costUsd, resume: session, metrics };
