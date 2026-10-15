@@ -1,7 +1,7 @@
 # Publishing a release hands it to the website: the Deploy workflow in
-# haoyuant/tomrade-site copies its installers and update manifests to
-# download.tomrade.com, then redeploys tomrade.com so the download buttons name
-# the new version. A pre-release only reaches the beta update channel: its
+# haoyuant/tomrade-site checks its installers are on download.tomrade.com (the
+# builds uploaded them), writes the update manifests that point at them, then
+# redeploys tomrade.com so the download buttons name the new version. A pre-release only reaches the beta update channel: its
 # files are mirrored, the site and latest.json stay on the last release.
 # A release published with GITHUB_TOKEN would not start this; publish by hand.
 name: Website

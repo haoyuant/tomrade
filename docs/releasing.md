@@ -10,11 +10,13 @@ Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-Every installer builds on the self-hosted Mac (below), each in a job of its own and all at once: the Mac ones (arm64 and x64), the Windows one (NSIS, unsigned), and the Linux AppImage. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. A **draft** release with generated notes is made first, and each build uploads its installers and update manifests to it as soon as it's done. Once every build has passed, the release job adds the Mac manifest, merged from the two Mac builds; a draft without `latest-mac.yml` had a build fail. Check the files, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
+Every installer builds on the self-hosted Mac (below), each in a job of its own and all at once: the Mac ones (arm64 and x64), the Windows one (NSIS, unsigned), and the Linux AppImage. The version comes from the tag. The Mac builds are signed, notarized, and checked with `codesign`, `spctl`, and `stapler`; the DMG is notarized and stapled too. A **draft** release with generated notes is made first. Each build uploads its installers, update zips and blockmaps straight to the R2 bucket behind download.tomrade.com, under `<version>/` (`apps/desktop/scripts/upload-r2.mjs`), and puts only its update manifests on the draft. Nothing points at that folder until the release is published. Once every build has passed, the release job adds the Mac manifest, merged from the two Mac builds; a draft without `latest-mac.yml` had a build fail. Check the files at `https://download.tomrade.com/<version>/Tomrade-<version>-…`, then publish the release by hand. A tag with a suffix, like `v0.2.0-beta.1`, makes a prerelease.
 
-A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces its files on the existing draft. The builds don't hand their installers to the release job as artifacts: on self-hosted runners each one would cross the Mac's line three times (up as an artifact, down to the release job, up to the release) instead of once. Only the two Mac manifests, a few KB, still travel as artifacts.
+A Mac build fails rather than ship unsigned when a secret is missing. Re-running a failed job replaces its files in R2 and on the existing draft. The installers cross the Mac's line once, up to R2: they used to go up to the release, back down to the site's mirror on the same Mac, and up again to R2. Only the two Mac manifests, a few KB, travel as artifacts.
 
-The workflow reads five repository secrets (Settings → Secrets and variables → Actions):
+Where the time goes (v0.10.0): a release takes about 15 minutes, nearly all of it in the two Mac builds waiting on Apple. Signing and notarizing the app takes about 9 minutes, the DMG's own notarization about 3, and the rest of the build (tsc, vite, packaging, zip and DMG) about a minute. Windows and Linux finish in 2 minutes.
+
+The workflow reads six repository secrets (Settings → Secrets and variables → Actions):
 
 | Secret | Value |
 | --- | --- |
@@ -23,6 +25,7 @@ The workflow reads five repository secrets (Settings → Secrets and variables �
 | `APPLE_API_KEY_P8` | The contents of `AuthKey_<KEY ID>.p8` |
 | `APPLE_API_KEY_ID` | Its Key ID |
 | `APPLE_API_ISSUER` | The Issuer ID |
+| `CLOUDFLARE_API_TOKEN` | A Cloudflare API token with Workers R2 Storage: Edit on the account that holds the `tomrade-downloads` bucket; haoyuant/tomrade-site's Deploy uses the same kind |
 
 ```sh
 R=haoyuant/tomrade
@@ -31,6 +34,7 @@ gh secret set MAC_CERTS_PASSWORD -R $R          # prompts
 gh secret set APPLE_API_KEY_P8 -R $R < AuthKey_XXXXXXXXXX.p8
 gh secret set APPLE_API_KEY_ID -R $R --body XXXXXXXXXX
 gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+gh secret set CLOUDFLARE_API_TOKEN -R $R        # prompts
 ```
 
 ## Self-hosted runners: the Mac mini
@@ -50,6 +54,8 @@ Windows is cross-built on a Mac runner too. No Wine: electron-builder edits the 
 
 Linux is cross-built on a Mac runner the same way, with `--os=darwin --os=linux`. Nothing is compiled (better-sqlite3 and the AppImage runtime come prebuilt), so the build machine's glibc doesn't matter. `after-pack.cjs` puts the target's esbuild binary over esbuild's CLI, which esbuild's install filled with the build machine's. The Mac-built AppImage matched the one the x64 Ubuntu 22.04 container runner it replaced had built: the same runtime bytes, and the same files except esbuild's CLI and the musl Claude Code builds a Mac's pnpm adds (since dropped with the rest of the agent SDK's binaries); the bundled binaries ran there. That container can't run any AppImage under Rosetta, so the full app was not started.
 
+The Mac's traffic, the runners' included, goes through Clash Verge's TUN (mihomo), so a release is as fast as the node it picks. On v0.10.0 a GitHub download dropped to about 60 KB/s mid-release and the site's mirror ran into its 30-minute timeout; a few minutes later the same file came at 16 MB/s. The builds now send the installers to R2 (`api.cloudflare.com`) and only manifests to GitHub, but if uploads crawl, check the node or give those hosts a rule of their own.
+
 The Mac runners are LaunchAgents, so they run while the user is logged in (codesign needs that session), and jobs run as that user. The release job also needs `yq` (`brew install yq`); `gh` and Xcode come from the machine.
 
 `.github/runners/setup.sh` installs or replaces one:
@@ -67,7 +73,7 @@ The four tomrade runners are interchangeable: each job goes to whichever is free
 
 ## Publishing: the website follows
 
-Publishing the draft runs `.github/workflows/website.yml`. It starts the Deploy workflow in haoyuant/tomrade-site with the tag, which copies the installers and update files to download.tomrade.com and writes the update manifests last. For a release it also points `latest.json` at the installers and redeploys tomrade.com so its download buttons name the new version; a prerelease leaves the site alone. Watch it at haoyuant/tomrade-site → Actions → Deploy; a failure is emailed to whoever owns the token. A re-run there, or Run workflow with the tag, repeats it.
+Publishing the draft runs `.github/workflows/website.yml`. It starts the Deploy workflow in haoyuant/tomrade-site with the tag. Its mirror checks that the installers and update files are in R2 at the right sizes, copies any that aren't from the release (as for releases made before builds uploaded there), and writes the update manifests last; for a new release that takes seconds. For a release it also points `latest.json` at the installers and redeploys tomrade.com so its download buttons name the new version; a prerelease leaves the site alone. Watch it at haoyuant/tomrade-site → Actions → Deploy; a failure is emailed to whoever owns the token. A re-run there, or Run workflow with the tag, repeats it.
 
 Publish by hand: a release published with `GITHUB_TOKEN` doesn't start other workflows. Marking a prerelease as a full release later starts it again, but a `-beta.N` build stays a beta: it wrote no Stable manifests, so the mirror leaves Stable and the site alone.
 
