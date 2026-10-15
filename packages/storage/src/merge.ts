@@ -67,6 +67,16 @@ export interface Renumbered {
   to: number;
 }
 
+/**
+ * A merged state that is valid for the database but disagrees with itself about
+ * a delivery: it commits, and somebody decides what the evidence should say.
+ */
+export interface Attention {
+  kind: "evidence";
+  entityId: string;
+  code: "orphan-artifact" | "orphan-review" | "duplicate-review" | "delivery-state" | "done-unaccepted";
+}
+
 export interface MergeInput {
   base: MergeState | null;
   ours: MergeState;
@@ -79,6 +89,7 @@ export interface MergeResult {
   merged: MergeState;
   conflicts: ConflictNote[];
   renumbered: Renumbered[];
+  attention: Attention[];
 }
 
 const ITEM_FIELDS: Record<string, string> = { board_id: "boardId", parent_id: "parentId", human_locked: "humanLocked", key_num: "keyNum", work_type: "workType", playbook_id: "playbookId", evidence_json: "evidence" };
@@ -295,9 +306,9 @@ export function mergeStates(input: MergeInput): MergeResult {
     tables[table] = mergeTable(table, rule, input, conflicts);
   }
 
-  // A conflict must not silently invent an accepted delivery or commit rows
-  // that cannot satisfy the store's unique indexes. Leave both snapshots intact
-  // and surface a sync error for reconciliation instead.
+  // Rows that cannot satisfy the store's unique indexes are not committed: both
+  // snapshots stay intact and the sync reports an error for reconciliation.
+  // Anything softer (see evidenceAttention) commits and is flagged instead.
   const activeItems = new Set<string>();
   const sequences = new Set<string>();
   const itemIds = new Set((tables.items ?? []).map(item => String(item.id)));
@@ -309,31 +320,7 @@ export function mergeStates(input: MergeInput): MergeResult {
     sequences.add(sequence);
     if (delivery.state === "active") activeItems.add(owner);
   }
-  for (const item of tables.items ?? []) {
-    if (typeof item.evidence_json !== "string") continue;
-    const evidence = JSON.parse(item.evidence_json) as { resources: Row[]; submissions: Row[]; reviews: Row[] };
-    const resources = new Map(evidence.resources.map(r => [r.id, r]));
-    const submissions = new Map(evidence.submissions.map(s => [s.id, s]));
-    const fail = () => { throw new Error(`Delivery evidence sync conflict for ${item.id}: reconcile concurrent review or undo before syncing`); };
-    for (const submission of evidence.submissions) {
-      for (const id of submission.artifactIds as string[]) {
-        const resource = resources.get(id);
-        if (!resource || resource.role !== "output" || resource.deliveryId !== submission.deliveryId) fail();
-      }
-    }
-    const reviewed = new Set<unknown>();
-    for (const review of evidence.reviews) {
-      if (!submissions.has(review.submissionId) || reviewed.has(review.submissionId)) fail();
-      reviewed.add(review.submissionId);
-    }
-    const latestDelivery = (tables.deliveries ?? []).filter(d => d.item_id === item.id).sort((a, b) => Number(a.sequence) - Number(b.sequence)).at(-1);
-    if (item.work_type === "general" && latestDelivery) {
-      const expected = item.status === "done" ? "completed" : item.status === "cancelled" ? "cancelled" : "active";
-      if (latestDelivery.state !== expected) fail();
-    }
-    const submitted = evidence.submissions.filter(s => s.deliveryId === latestDelivery?.id).at(-1);
-    if (item.status === "done" && submitted && !evidence.reviews.some(r => r.submissionId === submitted.id && r.decision === "accepted")) fail();
-  }
+  const attention = evidenceAttention(tables.items ?? [], tables.deliveries ?? []);
 
   const baseItems = new Set((input.base?.tables.items ?? []).map((r) => String(r.id)));
   const oursCreated = new Set((input.ours.tables.items ?? []).map((r) => String(r.id)).filter((id) => !baseItems.has(id)));
@@ -343,5 +330,43 @@ export function mergeStates(input: MergeInput): MergeResult {
   const projectRule: TableRule = { key: ["id"], mode: "rows", derived: ["updated_at"] };
   const project = same(input.ours.project, input.theirs.project) ? input.ours.project : mergeRow("projects", projectRule, input.base?.project, input.ours.project, input.theirs.project, input, conflicts);
 
-  return { merged: { project, tables }, conflicts, renumbered };
+  return { merged: { project, tables }, conflicts, renumbered, attention };
+}
+
+/**
+ * Where an item's delivery evidence disagrees with itself. The merged rows are
+ * still well-formed, so none of this stops a sync: a person settles it in the app.
+ */
+export function evidenceAttention(items: Row[], deliveries: Row[]): Attention[] {
+  const found: Attention[] = [];
+  for (const item of items) {
+    if (typeof item.evidence_json !== "string") continue;
+    const entityId = String(item.id);
+    const flag = (code: Attention["code"]) => {
+      if (!found.some((a) => a.entityId === entityId && a.code === code)) found.push({ kind: "evidence", entityId, code });
+    };
+    const evidence = JSON.parse(item.evidence_json) as { resources: Row[]; submissions: Row[]; reviews: Row[] };
+    const resources = new Map(evidence.resources.map((r) => [r.id, r]));
+    const submissions = new Map(evidence.submissions.map((s) => [s.id, s]));
+    for (const submission of evidence.submissions) {
+      for (const id of submission.artifactIds as string[]) {
+        const resource = resources.get(id);
+        if (!resource || resource.role !== "output" || resource.deliveryId !== submission.deliveryId) flag("orphan-artifact");
+      }
+    }
+    const reviewed = new Set<unknown>();
+    for (const review of evidence.reviews) {
+      if (!submissions.has(review.submissionId)) flag("orphan-review");
+      else if (reviewed.has(review.submissionId)) flag("duplicate-review");
+      reviewed.add(review.submissionId);
+    }
+    const latestDelivery = deliveries.filter((d) => d.item_id === item.id).sort((a, b) => Number(a.sequence) - Number(b.sequence)).at(-1);
+    if (item.work_type === "general" && latestDelivery) {
+      const expected = item.status === "done" ? "completed" : item.status === "cancelled" ? "cancelled" : "active";
+      if (latestDelivery.state !== expected) flag("delivery-state");
+    }
+    const submitted = evidence.submissions.filter((s) => s.deliveryId === latestDelivery?.id).at(-1);
+    if (item.status === "done" && submitted && !evidence.reviews.some((r) => r.submissionId === submitted.id && r.decision === "accepted")) flag("done-unaccepted");
+  }
+  return found;
 }
