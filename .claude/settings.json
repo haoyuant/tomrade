@@ -3,5 +3,117 @@
     "allow": [
       "Bash(gh pr merge *)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
   }
 }

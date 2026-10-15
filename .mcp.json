@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tomrade": {
+      "type": "http",
+      "url": "http://127.0.0.1:19090/mcp/014ce729-9739-41b5-a148-8d73f7825928"
+    }
+  }
+}
