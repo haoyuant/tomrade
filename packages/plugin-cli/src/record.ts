@@ -1,6 +1,7 @@
 import {
   ownsId,
   type AgentApi,
+  type ImApi,
   type BoardsApi,
   type ContributionsApi,
   type DbApi,
@@ -30,13 +31,14 @@ export interface Recording {
   settings: string[];
   surfaces: string[];
   tables: string[];
+  imAdapters: string[];
   /** Ids that do not carry the namespace. */
   violations: { kind: string; id: string }[];
   /** Why the dry run stopped early, if it did. */
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], assistantWidgets: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], assistantWidgets: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -128,6 +130,9 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
     },
     get agent(): AgentApi {
       return need("agent", { playbook: (spec) => note("playbooks", spec.id, "playbook") });
+    },
+    get im(): ImApi {
+      return need("im", { register: (spec) => note("imAdapters", spec.id, "IM adapter") });
     },
     get surfaces(): SurfacesApi {
       return need("surfaces", {

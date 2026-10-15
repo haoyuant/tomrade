@@ -2,19 +2,19 @@ import { z } from "zod";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.1";
+export const SDK_CONTRACT = "0.2.2";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
 
 /** The app's own names, and the official publisher's. */
 export const RESERVED_NAMESPACES = new Set([
-  "agent", "archify", "boards", "code_link", "contributions", "core", "db", "deps", "deps_graph", "fields", "files", "hub", "ipc", "items",
+  "agent", "archify", "boards", "code_link", "contributions", "core", "db", "deps", "deps_graph", "fields", "files", "hub", "im", "ipc", "items",
   "llm", "mcp", "oplog", "pet", "plugin", "plugins", "projects", "repos", "settings", "storage", "surfaces", "system", "tomrade", "tools", "views", "write"
 ]);
 export const OFFICIAL_PUBLISHER = "tomrade";
 
-const SERVICE = z.enum(["items", "fields", "boards", "views", "projects", "db", "settings", "tools", "contributions", "agent", "surfaces", "oplog"]);
+const SERVICE = z.enum(["items", "fields", "boards", "views", "projects", "db", "settings", "tools", "contributions", "agent", "surfaces", "oplog", "im"]);
 
 export const PermissionsSchema = z
   .object({
@@ -40,7 +40,8 @@ export const ContributesSchema = z
     playbooks: z.array(z.string()).default([]),
     settings: z.array(z.string()).default([]),
     surfaces: z.array(z.string()).default([]),
-    tables: z.array(z.string()).default([])
+    tables: z.array(z.string()).default([]),
+    imAdapters: z.array(z.string()).default([])
   })
   .partial();
 

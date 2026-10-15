@@ -135,7 +135,11 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
 )`
   },
   // A person brought the thread back from the archive; automatic archiving leaves it alone.
-  { version: 13, up: "ALTER TABLE plugin_agent_threads ADD COLUMN restored INTEGER NOT NULL DEFAULT 0" }
+  { version: 13, up: "ALTER TABLE plugin_agent_threads ADD COLUMN restored INTEGER NOT NULL DEFAULT 0" },
+  { version: 14, up: `CREATE TABLE plugin_agent_inputs (
+    request_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+    run_id TEXT NOT NULL, source_json TEXT, created_at INTEGER NOT NULL
+  )` }
 ];
 
 interface ThreadRow {
@@ -254,6 +258,7 @@ export const TABLES = {
   plugin_agent_pending: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
   plugin_agent_briefs: { project: "project_id", export: { order: "project_id" } },
   // this machine's clock continues a parked thread; another machine would continue it twice
+  plugin_agent_inputs: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false },
   plugin_agent_parked: { project: { via: "thread_id", table: "plugin_agent_threads" }, export: false }
 } as const;
 
@@ -269,6 +274,19 @@ export class AgentStore {
 
   private db(projectId: string): ProjectDb {
     return this.pool.for(projectId);
+  }
+
+  transaction<T>(projectId: string, work: () => T): T {
+    return this.db(projectId).transaction(work);
+  }
+
+  inputReceipt(projectId: string, requestId: string): { thread_id: string; fingerprint: string; run_id: string } | undefined {
+    return this.db(projectId).prepare("SELECT thread_id, fingerprint, run_id FROM plugin_agent_inputs WHERE request_id = ?").get(requestId) as { thread_id: string; fingerprint: string; run_id: string } | undefined;
+  }
+
+  recordInput(projectId: string, requestId: string, threadId: string, fingerprint: string, runId: string, source?: Record<string, string>): void {
+    this.db(projectId).prepare("INSERT INTO plugin_agent_inputs (request_id, thread_id, fingerprint, run_id, source_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(requestId, threadId, fingerprint, runId, source ? JSON.stringify(source) : null, Date.now());
   }
 
   threads(projectId: string, surface: ThreadSurface | ThreadSurface[] | null = "assistant"): ThreadSummary[] {

@@ -2,7 +2,7 @@
   "name": "@tomradex/plugin-sdk",
   "private": true,
   "license": "Apache-2.0",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "The Tomrade plugin contract: definePlugin, the async PluginContext every extension receives, and the manifest schema",
   "main": "dist/index.js",

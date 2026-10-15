@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
+import type {} from "@tomradex/im";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
@@ -17,6 +18,7 @@ import type { WriteIntent } from "@tomradex/write";
 import {
   assertOwned,
   type AgentApi,
+  type ImApi,
   type BoardsApi,
   type ContributionsApi,
   type DbApi,
@@ -59,6 +61,7 @@ const CORDIS: Record<ServiceName, string> = {
   tools: "tools",
   contributions: "contributions",
   agent: "agent",
+  im: "im",
   surfaces: "desktopSurfaces",
   oplog: "oplog"
 };
@@ -76,6 +79,7 @@ interface Services {
   tools: Context["tools"];
   contributions: Context["contributions"];
   agent: Context["agent"];
+  im: Context["im"];
   surfaces: Context["desktopSurfaces"];
   oplog: Context["oplog"];
 }
@@ -343,6 +347,23 @@ export class Host {
               host.own(spec.id, "playbook");
               return host.disposerOf(agent().playbook({ id: spec.id, title: spec.title, when: spec.when, body: spec.body, tools: spec.tools }));
             })
+        };
+      },
+
+      get im(): ImApi {
+        return {
+          register: (spec) => host.call(() => {
+            host.own(spec.id, "IM adapter");
+            const open = host.back(spec.open, `IM adapter ${spec.id} open`);
+            return host.disposerOf(host.svc("im").register({ ...spec, open: async (id, io) => {
+              const session = await open(id, io);
+              return {
+                deliver: host.back(session.deliver.bind(session), `IM adapter ${spec.id} deliver`),
+                ...(session.download ? { download: host.back(session.download.bind(session), `IM adapter ${spec.id} download`) } : {}),
+                close: host.back(session.close.bind(session), `IM adapter ${spec.id} close`)
+              };
+            } }));
+          })
         };
       },
 

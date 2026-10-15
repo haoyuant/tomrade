@@ -32,7 +32,7 @@ export function stamp(dir: string, inspection: InspectResult): void {
   raw.optional = inspection.optional;
   if (rec) {
     const contributes: Record<string, string[]> = {};
-    for (const key of ["tools", "commands", "badges", "statusItems", "sections", "graphs", "sidebarModules", "assistantWidgets", "playbooks", "settings", "surfaces", "tables"] as const) if (rec[key].length) contributes[key] = [...new Set(rec[key])].sort();
+    for (const key of ["tools", "commands", "badges", "statusItems", "sections", "graphs", "sidebarModules", "assistantWidgets", "playbooks", "settings", "surfaces", "tables", "imAdapters"] as const) if (rec[key].length) contributes[key] = [...new Set(rec[key])].sort();
     raw.contributes = contributes;
   }
   fs.writeFileSync(file, `${JSON.stringify(raw, null, 2)}\n`);

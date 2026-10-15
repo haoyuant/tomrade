@@ -1060,7 +1060,20 @@ export class Agent extends Service {
     return media;
   }
 
-  send(projectId: string, threadId: string, input: UserInput): { runId: string } {
+  /** A transport retries the same request id without starting a second run, even after restart. */
+  send(projectId: string, threadId: string, input: UserInput, delivery?: { requestId: string; source?: Record<string, string> }): { runId: string } {
+    const fingerprint = createHash("sha256").update(JSON.stringify([threadId, input, delivery?.source ?? null])).digest("hex");
+    if (delivery) {
+      if (!delivery.requestId.trim() || delivery.requestId.length > 512) throw new Error("Invalid input request id");
+      const receipt = this.store.inputReceipt(projectId, delivery.requestId);
+      if (receipt) {
+        if (receipt.thread_id !== threadId || receipt.fingerprint !== fingerprint) throw new Error("Input request id already belongs to different input");
+        return { runId: receipt.run_id };
+      }
+    }
+    const record = (runId: string) => {
+      if (delivery) this.store.recordInput(projectId, delivery.requestId, threadId, fingerprint, runId, delivery.source);
+    };
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words().archivedReadOnly);
@@ -1072,8 +1085,14 @@ export class Agent extends Service {
     if (permission && input.kind === "answer") {
       if (input.questionId !== permission.pending.question.id || typeof input.value !== "string" || !permission.pending.question.options?.includes(input.value)) throw new Error("Invalid or expired permission response");
       const active = this.activeByThread.get(threadId)!;
-      this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text: input.value }, active.run.id);
-      permission.answer(input.value);
+      const value = input.value;
+      const msg = this.store.transaction(projectId, () => {
+        const msg = this.store.appendMessage(projectId, threadId, "user", { type: "text", text: value }, active.run.id);
+        record(active.run.id);
+        return msg;
+      });
+      this.broadcast(threadId, { type: "message", message: msg });
+      permission.answer(value);
       return { runId: active.run.id };
     }
     if (this.activeByThread.has(threadId)) throw new Error("a run is already in progress on this thread");
@@ -1089,14 +1108,19 @@ export class Agent extends Service {
     const accepted = engine.media?.(this.optionsOf(thread, engine.id))?.input ?? [];
     for (const attachment of attachments ?? []) if (!accepted.includes(attachment.mime)) throw new Error(`The selected model/agent does not accept ${attachment.mime}`);
     if (input.kind === "text") input = { ...input, attachments };
-    this.appendAndBroadcast(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
-    if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
-    // whoever continues a parked thread, the wait is over; only Tomrade's own retry counts toward giving up
+    const { msg, run } = this.store.transaction(projectId, () => {
+      const msg = this.store.appendMessage(projectId, threadId, "user", { type: "text", text, focus, attachments }, null);
+      if (!thread.title) this.store.touchThread(projectId, threadId, { title: text.slice(0, 60) });
+      const run = this.store.beginRun(projectId, threadId, engine.id);
+      record(run.id);
+      return { msg, run };
+    });
+    // Notify and execute only after the input, run and receipt committed together.
+    this.broadcast(threadId, { type: "message", message: msg });
     const tries = this.resuming.get(threadId);
     this.resuming.delete(threadId);
     this.clearPark(projectId, threadId);
 
-    const run = this.store.beginRun(projectId, threadId, engine.id);
     if (tries !== undefined) this.limitTries.set(run.id, tries);
     const rc = this.makeRunCtx(run, thread, engine);
     this.activeByThread.set(threadId, rc);
@@ -1118,6 +1142,15 @@ export class Agent extends Service {
     const at = rc.steers.indexOf(steer);
     if (!taken && at >= 0) rc.steers.splice(at, 1);
     return taken;
+  }
+
+  /** Stop a suspended question without starting an engine just to clear it. */
+  cancelWaiting(projectId: string, threadId: string): boolean {
+    if (this.activeByThread.has(threadId) || !this.store.pending(projectId, threadId)) return false;
+    this.store.clearPending(projectId, threadId);
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().stopped }, null);
+    this.broadcast(threadId, { type: "pending", pending: null });
+    return true;
   }
 
   cancel(runId: string): boolean {
