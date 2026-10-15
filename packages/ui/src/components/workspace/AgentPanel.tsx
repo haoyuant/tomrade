@@ -3,6 +3,7 @@ import type { AgentSettings, Block, CardAction, CardView, ChecklistCard, EngineP
 import { modelErrorKind, type Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
+import { AssistantWidgets } from "./AssistantWidgets";
 import { PetStage } from "./PetStage";
 import { SetupCard } from "./SetupCard";
 import { AgentMedia } from "./AgentMedia";
@@ -13,11 +14,11 @@ import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { foldSteps, traceState } from "~/lib/steps";
-import { conducts, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
+import { foldSteps, startBriefId, traceState } from "~/lib/steps";
+import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
-import { permissionLabel as permissionName } from "~/lib/codeLink";
+import { offerStart, permissionLabel as permissionName } from "~/lib/codeLink";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useErrorToast, useToast } from "~/lib/toast";
@@ -25,9 +26,9 @@ import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { ChecklistBlock, FindingBlock } from "./DoctorCards";
 
 const MIN_W = 352;
-const MAX_W = 616;
-/** Until someone drags it: room for a conversation without taking the board's second column at 1440px. */
-const DEFAULT_W = 440;
+const MAX_W = 924;
+/** Until someone drags it: the former ceiling; the CSS max-width still yields to the board on narrow windows. */
+const DEFAULT_W = 616;
 const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}` };
 const HISTORY_CAP = 100;
 
@@ -225,6 +226,34 @@ function Trace({ block }: { block: Block & { type: "trace" } }) {
         {result && <pre>{t("agentPanel.commandExitCode", { code: result.exitCode ?? t("agentPanel.commandExitUnknown") })}{"\n"}{result.output.trim() ? result.output : t("agentPanel.commandNoOutput")}</pre>}
       </>}
     </details>
+  );
+}
+
+type StartOfferCard = { itemId: string; key: string; title: string };
+
+// The assistant does not carry tickets out; it hands them to the Start dialog, where the person chooses.
+function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="tool-card" data-testid="start-offer">
+      <div className="tool-head">
+        <Icon name="i-plug" size={12} />
+        {card.key} {card.title}
+      </div>
+      <p className="tool-row">{t("agentPanel.startOfferLead")}</p>
+      <div className="tool-row">
+        <button
+          type="button"
+          className="btn btn-primary btn-xs"
+          onClick={() => {
+            onOpenIssue(card.itemId);
+            offerStart(card.itemId);
+          }}
+        >
+          {t("agentPanel.startOffer", { key: card.key })}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -510,6 +539,22 @@ function Row(props: Parameters<typeof RowBody>[0]) {
   );
 }
 
+/**
+ * The brief that opened a ticket's session, folded: it is the machine's words,
+ * long and fixed, and nobody reads it twice. The person's own messages stay
+ * as they are — this is only the first line they did not write.
+ */
+function StartBrief({ m }: { m: ThreadMessage }) {
+  const { t } = useI18n();
+  const text = m.block.type === "text" ? m.block.text : "";
+  return (
+    <details className="turn turn-user turn-brief">
+      <summary>{t("agentPanel.startBrief")}</summary>
+      <p>{text}</p>
+    </details>
+  );
+}
+
 function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
   const b = m.block;
   if (m.role === "user") {
@@ -528,7 +573,7 @@ function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, by
     );
   }
   if (b.type === "note") return <p className="agent-note">{b.text}</p>;
-  const failedEngine = b.type === "error" && m.runId ? engines?.find((e) => e.id === runs.get(m.runId!)?.engine) : undefined;
+  const failedEngine = b.type === "error" && m.runId ? findEngine(engines, runs.get(m.runId!)?.engine) : undefined;
   const body =
     b.type === "text" ? (
       <>
@@ -546,6 +591,8 @@ function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, by
       <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />
     ) : b.type === "card" && b.schema === "finding" ? (
       <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
+    ) : b.type === "card" && b.schema === "start" ? (
+      <StartOffer card={b.data as StartOfferCard} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (
@@ -716,12 +763,12 @@ export function AgentPanel({
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
   // engine creates the thread right there instead of doing silently nothing.
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
-  const usable = (id: string) => !!engines.data?.some((e) => e.id === id && e.ok);
+  const usable = (id: string) => !!findEngine(engines.data, id)?.ok;
   // The settings' engine may not run here yet — no model, say — while another does: a new thread takes the one that can answer.
-  const configuredEngine = agentSettings?.defaultEngine ?? "loop";
+  const configuredEngine = findEngine(engines.data, agentSettings?.defaultEngine)?.id ?? agentSettings?.defaultEngine ?? "tomrade";
   const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && !e.terminalOnly && e.capabilities.includes("backlog"))?.id ?? configuredEngine);
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
-  const engine = engines.data?.find((e) => e.id === currentEngineId);
+  const engine = findEngine(engines.data, currentEngineId);
   const permissionModes = detail.data?.thread.itemId ? engine?.permissionModes : undefined;
   const selectedPermissionMode = detail.data?.thread.permissionMode ?? permissionModes?.default;
   const activePermissionMode = runningRun ? detail.data?.activePermissionMode : undefined;
@@ -988,6 +1035,8 @@ export function AgentPanel({
   const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
   const newestLast = [...(detail.data?.messages ?? [])].reverse();
   const folded = useMemo(() => foldSteps(detail.data?.messages ?? []), [detail.data?.messages]);
+  // The kickoff brief is machine-written and long: it opens folded, so the person's own exchange stays in view.
+  const briefId = useMemo(() => startBriefId(detail.data?.messages ?? [], !!detail.data?.thread.itemId), [detail.data?.messages, detail.data?.thread.itemId]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
   const lastAskedBlock = newestLast.find((m) => m.role === "user" && m.block.type === "text")?.block;
   const lastAsked = lastAskedBlock?.type === "text" ? lastAskedBlock.text : null;
@@ -1228,6 +1277,8 @@ export function AgentPanel({
             </summary>
             {entry.fold.map((m) => <TranscriptRow key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={answerRow} onRevert={revertRow} onOpenSettings={settingsRow} engines={engines.data} retryEngines={retryEngines} onCardAction={cardActionRow} cards={cards} busy={busy} />)}
           </details>
+        ) : entry.id === briefId ? (
+          <StartBrief key={entry.id} m={entry} />
         ) : (m => (
           <TranscriptRow
             key={m.id}
@@ -1287,6 +1338,7 @@ export function AgentPanel({
         {(accessories.data ?? []).map((accessory) => (
           <PetStage key={accessory.id} accessory={accessory} threadId={threadId} />
         ))}
+        <AssistantWidgets />
         {threadId && queue.map((entry) => (
           <QueuedRow
             key={entry.id}
@@ -1486,7 +1538,7 @@ export function AgentPanel({
             // the troubleshooter conducts its own threads; nothing to switch to here
             <span className="tag" title={t("agentPanel.whoConducts")}>
               {engine?.title ?? currentEngineId}
-              {investigator ? ` · ${engines.data?.find((e) => e.id === investigator)?.title ?? investigator}` : ""}
+              {investigator ? ` · ${findEngine(engines.data, investigator)?.title ?? investigator}` : ""}
             </span>
           ) : (
           <Menu

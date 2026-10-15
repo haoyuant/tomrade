@@ -247,13 +247,13 @@ export const AGENT_SECTION: SettingsSection<AgentSettings> = {
   title: "Assistant",
   description: "Which engine conducts a new thread, and when a plan pauses for confirmation before writing.",
   schema: z.object({
-    defaultEngine: z.string().default("loop"),
+    defaultEngine: z.string().default("tomrade"),
     confirmWritesOver: z.number().int().min(0).default(0),
     resumeAfterLimit: z.boolean().default(true),
     engines: z.record(z.string(), z.unknown()).default({}),
     playbookChoices: z.record(z.string(), z.enum(["plugin", "user", "project"])).default({})
   }),
-  defaults: { defaultEngine: "loop", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} },
+  defaults: { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} },
   order: 11
 };
 
@@ -339,7 +339,7 @@ export class Agent extends Service {
 
   [Service.init]() {
     this.ctx.db.migrate("agent", MIGRATIONS, { tables: TABLES });
-    this.store = new AgentStore(this.ctx.db);
+    this.store = new AgentStore(this.ctx.db, (id) => this.answering(id));
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later.
@@ -408,7 +408,10 @@ export class Agent extends Service {
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
       ctx.ipc.handle("agent.media.upload", (projectId, threadId, upload) => ctx.agent.uploadMedia(projectId, threadId, upload));
       ctx.ipc.handle("agent.media.read", (projectId, threadId, id) => ctx.agent.readMedia(projectId, threadId, id));
-      ctx.ipc.handle("agent.mediaCapabilities", (engineId, options) => ctx.agent.engines.get(engineId)?.media?.(options ?? ctx.agent.settingsOf().engines[engineId]) ?? { input: [], output: [] });
+      ctx.ipc.handle("agent.mediaCapabilities", (asked, options) => {
+        const engineId = ctx.agent.answering(asked);
+        return ctx.agent.engines.get(engineId)?.media?.(options ?? ctx.agent.settingsOf().engines[engineId]) ?? { input: [], output: [] };
+      });
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
@@ -442,8 +445,14 @@ export class Agent extends Service {
     return this.engines.get(id);
   }
 
+  /** The registered engine that answers for an id: the id itself, or the engine that includes it. */
+  answering(id: string): string {
+    return [...this.engines.values()].find((e) => e.includes?.includes(id))?.id ?? id;
+  }
+
+  /** The engines a person chooses between: none that another engine took in. */
   allEngines(): Engine[] {
-    return [...this.engines.values()];
+    return [...this.engines.values()].filter((e) => this.answering(e.id) === e.id);
   }
 
   engine(engine: Engine): () => void {
@@ -590,10 +599,10 @@ export class Agent extends Service {
 
   async engineViews(fresh = false): Promise<EngineView[]> {
     return Promise.all(
-      [...this.engines.values()].map(async (engine) => {
+      [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
@@ -741,7 +750,7 @@ export class Agent extends Service {
   }
 
   newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
-    const chosen = engine ?? this.settingsOf().defaultEngine;
+    const chosen = this.answering(engine ?? this.settingsOf().defaultEngine);
     const known = this.engines.has(chosen);
     const engineId = known ? chosen : ([...this.engines.keys()][0] ?? chosen);
     const thread = this.store.createThread(projectId, engineId, opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
@@ -761,7 +770,7 @@ export class Agent extends Service {
 
   /** The engines that may take a code turn — a local coding agent, never the in-app model. */
   codeEngines(): Engine[] {
-    return [...this.engines.values()].filter((e) => e.capabilities?.includes("code"));
+    return this.allEngines().filter((e) => e.capabilities?.includes("code"));
   }
 
   private generalStarts = new Set<string>();
@@ -840,9 +849,10 @@ export class Agent extends Service {
     let thread = active ? this.store.threadsForItem(projectId, itemId).find(t => !t.archived && t.execution?.deliveryId === active.id) : undefined;
     if (thread && this.activeByThread.has(thread.id)) throw new Error("An agent is already working on this ticket");
     // A CLI the user runs themselves needs no engine plugin here; the thread keeps whatever engine it has.
-    let engineId = opts.engine && this.engines.has(opts.engine) ? opts.engine : thread?.engine ?? this.settingsOf().defaultEngine;
+    const asked = opts.engine && this.answering(opts.engine);
+    let engineId = asked && this.engines.has(asked) ? asked : thread?.engine ?? this.answering(this.settingsOf().defaultEngine);
     if (!opts.external) {
-      const engine = opts.engine ? this.engines.get(opts.engine) : (thread ? this.engines.get(thread.engine) : [...this.engines.values()].find(e => e.capabilities?.includes("general")));
+      const engine = asked ? this.engines.get(asked) : (thread ? this.engines.get(thread.engine) : [...this.engines.values()].find(e => e.capabilities?.includes("general")));
       if (!engine?.capabilities?.includes("general")) throw new Error("No compatible General execution engine is available");
       const available = await engine.available();
       if (!available.ok) throw new Error(available.reason ?? "The selected engine is unavailable");
@@ -970,7 +980,8 @@ export class Agent extends Service {
     return this.store.thread(projectId, threadId)!;
   }
 
-  setEngine(projectId: string, threadId: string, engineId: string): ThreadSummary {
+  setEngine(projectId: string, threadId: string, asked: string): ThreadSummary {
+    const engineId = this.answering(asked);
     if (!this.engines.has(engineId)) throw new Error(`unknown engine ${engineId}`);
     if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
     const pending = this.store.pending(projectId, threadId);
@@ -995,6 +1006,12 @@ export class Agent extends Service {
     if (engine?.options && options) engine.options.parse(this.optionsOf({ ...thread, options }, engine.id));
     this.store.touchThread(projectId, threadId, { options });
     return this.store.thread(projectId, threadId)!;
+  }
+
+  /** The session to resume: the engine's own, else one an engine it took in left on the thread. */
+  private resumeOf(thread: ThreadSummary, engine: Engine): string | undefined {
+    const external = this.store.external(thread.projectId, thread.id);
+    return external[engine.id] ?? engine.includes?.map((id) => external[id]).find(Boolean);
   }
 
   /** The engine's settings with the thread's overrides on top — what a turn runs with. */
@@ -1341,7 +1358,7 @@ export class Agent extends Service {
       llm,
       run: handle,
       signal: abort.signal,
-      resume: this.store.external(thread.projectId, thread.id)[engine.id],
+      resume: this.resumeOf(thread, engine),
       takeSteers: () => {
         if (abort.signal.aborted) return [];
         const taken = steers.splice(0);

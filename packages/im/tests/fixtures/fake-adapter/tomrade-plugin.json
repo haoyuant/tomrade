@@ -5,7 +5,7 @@
   "description": "Test fixture for the IM contract; no external service or model.",
   "license": "BUSL-1.1",
   "engines": {
-    "sdk": "^0.2.1"
+    "sdk": "^0.2.2"
   },
   "permissions": {
     "network": [],

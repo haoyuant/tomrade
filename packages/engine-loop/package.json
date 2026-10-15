@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./tomrade": {
+      "types": "./dist/tomrade.d.ts",
+      "default": "./dist/tomrade.js"
     }
   },
   "scripts": {

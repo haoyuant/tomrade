@@ -33,6 +33,6 @@ export { Starter, type StartGate, type StartMode, type StartOptions, type StartR
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 export { Sessions, HOOK_EVENTS, describeTool, hooksSettings, piExtension, sessionContext, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
 export { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
-export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt } from "./prompts.js";
+export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 export { PLAYBOOKS } from "./playbooks.js";
 export { CodeLink as default } from "./service.js";

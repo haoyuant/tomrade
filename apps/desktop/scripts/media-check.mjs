@@ -61,7 +61,7 @@ async function run() {
   await ctx.storage.ready;
   ctx.settings.set({ ...ctx.settings.get(),
     models: { profiles: [{ id: "media", title: "Multimodal test", provider: "openai-compatible", baseURL: `http://127.0.0.1:${modelServer.address().port}/v1`, model: "media", apiKey: "", inputModalities: ["image"], outputModalities: ["image"] }, { id: "text", title: "Text only", provider: "openai-compatible", baseURL: `http://127.0.0.1:${modelServer.address().port}/v1`, model: "text", apiKey: "", inputModalities: [] }], roles: { worker: "media" } },
-    agent: { defaultEngine: "loop", confirmWritesOver: 0, engines: { loop: { profile: "media" } }, playbookChoices: {} }
+    agent: { defaultEngine: "tomrade", confirmWritesOver: 0, engines: { tomrade: { profile: "media" } }, playbookChoices: {} }
   });
   check("desktop loads Archify tools and playbook", ctx.tools.has("diagram_render") && ctx.agent.playbookIndex(project.id).some(p => p.id === "diagram.archify"));
   win = new BrowserWindow({ width: 1560, height: 1000, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });

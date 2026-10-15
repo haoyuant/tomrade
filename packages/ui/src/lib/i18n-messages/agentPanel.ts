@@ -40,6 +40,7 @@ export const agentPanel = {
     reasonDropped: "connection dropped",
     reasonNoResponse: "no response in {{s}}s",
     earlierSteps: "{{n}} earlier steps",
+    startBrief: "Session brief · what the agent started from",
 
     waitingPickAny: "Waiting on you · pick any",
     waitingPickOne: "Waiting on you · pick one",
@@ -168,6 +169,8 @@ export const agentPanel = {
     steerNowTitle: "Send into the running turn; the agent reads it after its current step",
     steering: "Steering…",
     steered: "Steered mid-turn",
+    startOffer: "Start {{key}}",
+    startOfferLead: "Choose the agent, where it works and what it may do.",
     steerQueued: "{{name}} can't take messages mid-turn — queued for when this turn ends.",
     messageAria: "Message the assistant",
     stop: "Stop",
@@ -222,6 +225,7 @@ export const agentPanel = {
     reasonDropped: "连接断开",
     reasonNoResponse: "{{s}}秒无响应",
     earlierSteps: "前面 {{n}} 步",
+    startBrief: "会话上下文 · Agent 开始时读到的内容",
 
     waitingPickAny: "等待你的选择 · 可多选",
     waitingPickOne: "等待你的选择 · 单选",
@@ -350,6 +354,8 @@ export const agentPanel = {
     steerNowTitle: "送进正在运行的这一轮；agent 做完当前这一步就会读到",
     steering: "插话中…",
     steered: "运行中插话",
+    startOffer: "开始 {{key}}",
+    startOfferLead: "选择由哪个智能体来做、在哪里做、能做什么。",
     steerQueued: "{{name}} 不支持运行中插话，已排到本轮结束后发出。",
     messageAria: "给助手发消息",
     stop: "停止",

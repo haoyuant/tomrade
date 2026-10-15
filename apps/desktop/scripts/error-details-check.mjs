@@ -127,16 +127,16 @@ const run = async () => {
   await sleep(500);
   fs.writeFileSync(shot.replace("loop", "agent"), (await win.webContents.capturePage()).toPNG());
   const offered = await $(`[...document.querySelectorAll('[role="menu"] .m-name')].map((n) => n.textContent)`);
-  check("the ready agents are offered, the failing one left out", offered.includes("Tomrade loop") && !offered.includes("Refusing"), offered);
+  check("the ready agents are offered, the failing one left out", offered.includes("Tomrade") && !offered.includes("Refusing"), offered);
 
   // ── running again stops the crying ───────────────────────────────────
   endpoint.removeAllListeners("request");
   endpoint.on("request", (req, res) => { req.resume(); req.on("end", () => { res.writeHead(200, { "content-type": "text/event-stream" });
     res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'); }); });
-  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.textContent.includes("Tomrade loop"))`);
+  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.querySelector(".m-name")?.textContent === "Tomrade")`);
   await sleep(3000);
   const moved = ctx.agent.store.thread(project.id, thread.id);
-  check("picking one moves the thread to it", moved?.engine === "loop", moved?.engine);
+  check("picking one moves the thread to it", moved?.engine === "tomrade", moved?.engine);
   const after = ctx.agent.store.messages(project.id, thread.id);
   const resent = after.filter((m) => m.role === "user").map((m) => m.block.text);
   check("and sends the failed message again", resent.length === 2 && resent[1] === "hi", resent);

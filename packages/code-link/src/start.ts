@@ -11,7 +11,7 @@ import type { Author, Board, Item, Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/storage";
 import { listDecisions } from "./decisions.js";
 import { branchFor, titleSlug } from "./keys.js";
-import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt } from "./prompts.js";
+import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
@@ -297,8 +297,8 @@ export class Starter {
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
     const basePrompt = continued
-      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local)
-      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local });
+      ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en")
+      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en" });
     const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
     const prompt = opts.message?.trim() && opts.mode === "run" ? `${briefed}\n\n${opts.message.trim()}` : briefed;
     // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
@@ -361,6 +361,7 @@ export class Starter {
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
     const terminalSettings = TerminalSettings.parse(ctx.settings.get().codeLink ?? {});
+    const locale = ctx.settings.locale?.() ?? "en";
     const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const other = opts.mode === "terminal" && opts.engine === "other";
@@ -391,7 +392,7 @@ export class Starter {
     const base = { ok: true as const, continued: prepared.continued, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: prepared.cwd, mode: opts.mode, engine: engineId };
 
     if (opts.mode === "run") {
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prepared.opener }).runId;
+      const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: `${prepared.opener}\n${languageLine(locale)}` }).runId;
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);
       return { ...base, command: null, launched: true, runId };
@@ -400,7 +401,7 @@ export class Starter {
     // The thread may have brought its own engine; one that runs only inside Tomrade has no terminal session.
     const inside = insideOnly(agent, engineId);
     if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
-    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), prepared.prompt);
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), `${prepared.prompt}\n\n${languageLine(locale)}`);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId));
     const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
@@ -410,7 +411,8 @@ export class Starter {
   }
 
   /** A local coding agent that is installed and ready; the in-app model never qualifies. */
-  async pickEngine(agent: Agent, wanted?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
+  async pickEngine(agent: Agent, asked?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
+    const wanted = asked && agent.answering(asked);
     const inside = terminal && wanted ? insideOnly(agent, wanted) : null;
     if (inside) return { ok: false, reason: inside };
     const only = !terminal && wanted ? agent.codeEngines().find((e) => e.id === wanted && e.terminalOnly) : undefined;
@@ -446,6 +448,6 @@ export type { RepoStateView };
 
 /** Why an engine cannot be handed a ticket in a terminal, or null when it can. */
 function insideOnly(agent: Agent, engineId: string): string | null {
-  const engine = agent.codeEngines().find((e) => e.id === engineId);
+  const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
   return engine?.terminal === false ? `${engine.title} runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link` : null;
 }

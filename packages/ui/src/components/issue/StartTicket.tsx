@@ -3,7 +3,7 @@ import type { StartOptions } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
+import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { onStartRequest, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
@@ -125,7 +125,8 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   );
   const otherAllowed = mode === "terminal" && !!otherCommand;
   const [chosenEngine, setChosenEngine] = useState<string | null>(null);
-  const remembered = latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null;
+  const lastAgent = latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null;
+  const remembered = findEngine(candidates, lastAgent)?.id ?? lastAgent;
   const engineId =
     chosenEngine && (candidates.some((engine) => engine.id === chosenEngine) || (chosenEngine === "other" && otherAllowed))
       ? chosenEngine
@@ -142,7 +143,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const threadPicks = useMemo(() => {
     const out: Record<string, string> = {};
     if (thread && thread.engine === engineId) for (const [key, value] of Object.entries(thread.options ?? {})) if (typeof value === "string") out[key] = value;
-    else if (rememberedStart?.engine === engineId) for (const [key, value] of Object.entries(rememberedStart.options ?? {})) if (typeof value === "string") out[key] = value;
+    else if (rememberedStart && findEngine(candidates, rememberedStart.engine)?.id === engineId) for (const [key, value] of Object.entries(rememberedStart.options ?? {})) if (typeof value === "string") out[key] = value;
     return out;
   }, [thread, engineId, rememberedStart]);
   const pickValues = chosenPicks ?? threadPicks;

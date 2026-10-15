@@ -245,7 +245,7 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 
 已实现（`packages/im`、`packages/plugin-sdk/src/im.ts`）：
 
-- 内置 `ctx.im` 服务，SDK 契约 `0.2.1`：`im.register(adapter)`、`ServiceName: im`、manifest `contributes.imAdapters`。扩展 facade 限定命名空间，卸载时关闭连接、拒绝后续入站。
+- 内置 `ctx.im` 服务，SDK 契约 `0.2.2`：`im.register(adapter)`、`ServiceName: im`、manifest `contributes.imAdapters`。扩展 facade 限定命名空间，卸载时关闭连接、拒绝后续入站。
 - 设置 `im`（machine scope，agent 不可读）：connections 与 routes；route 指定项目、可选 board/engine、允许的 actor、是否接受私聊/群聊。未授权、机器人和未开启的激活方式直接忽略，只保留最近 20 条不含正文的诊断记录。
 - 绑定键：连接 + 地址 + route 的目标（项目、board、engine、适配器）。修改允许名单或激活方式不会新开会话；改目标项目/engine 会进入新绑定。
 - 收件去重：`连接 + tenant + eventId` 与 `连接 + 会话 + messageId` 双键；同一 eventId 内容不同则拒绝。Agent `send` 支持持久 `requestId` 回执，与 run 同事务写入，崩溃重放返回原 run。

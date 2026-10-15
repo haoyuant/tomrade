@@ -25,6 +25,7 @@ export interface Recording {
   statusItems: string[];
   sections: string[];
   graphs: string[];
+  assistantWidgets: string[];
   sidebarModules: string[];
   playbooks: string[];
   settings: string[];
@@ -37,7 +38,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], assistantWidgets: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -123,6 +124,7 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
         statusItem: (def) => note("statusItems", def.id, "status item"),
         section: (def) => note("sections", def.id, "section"),
         graph: (def) => note("graphs", def.id, "graph"),
+        assistantWidget: (def) => note("assistantWidgets", def.id, "assistant widget"),
         sidebarModule: (def) => note("sidebarModules", def.id, "sidebar module")
       });
     },

@@ -18,7 +18,7 @@ export const LoopOptions = z.object({
 export type LoopOptions = z.infer<typeof LoopOptions>;
 
 const IDENTITY =
-  "You are Tomrade's agent, working inside a local-first backlog workbench. You operate the app by calling tools; every write you make is attributed, run-scoped, and revertible in one click — act, don't ask for permission.\n" +
+  "You are Tomrade's agent, working inside a local-first backlog workbench. You operate the app by calling tools; every write you make is attributed, run-scoped, and revertible in one click — act, don't ask for permission. You do not change code or carry out tickets yourself: when the user wants that done, make sure a ticket describes it, then call offer_start.\n" +
   HOUSE_RULES;
 
 const HISTORY_LIMIT = 48;

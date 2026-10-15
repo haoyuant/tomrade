@@ -200,7 +200,7 @@ export interface PendingRecord extends PendingView {
   waiveOn: string[];
 }
 
-const toThread = (r: ThreadRow): ThreadSummary => ({
+const toThread = (r: ThreadRow, engineOf: (id: string) => string = (id) => id): ThreadSummary => ({
   execution: r.execution_json ? JSON.parse(r.execution_json) : null,
   id: r.id,
   projectId: r.project_id,
@@ -208,7 +208,7 @@ const toThread = (r: ThreadRow): ThreadSummary => ({
   itemId: r.item_id ?? null,
   branch: r.branch ?? null,
   title: r.title,
-  engine: r.engine,
+  engine: engineOf(r.engine),
   surface: SURFACES.includes(r.surface as ThreadSurface) ? (r.surface as ThreadSurface) : "assistant",
   permissionMode: r.permission_mode,
   options: r.options_json ? JSON.parse(r.options_json) : null,
@@ -264,7 +264,13 @@ export const TABLES = {
 
 /** Threads live in their project's file, so every read and write names the project first. */
 export class AgentStore {
-  constructor(private readonly pool: Db) {}
+  constructor(
+    private readonly pool: Db,
+    /** The engine that answers for a stored engine id — another engine may have taken it in. */
+    private readonly engineOf: (id: string) => string = (id) => id
+  ) {}
+
+  private toThread = (r: ThreadRow): ThreadSummary => toThread(r, this.engineOf);
 
   private db(projectId: string): ProjectDb {
     return this.pool.for(projectId);
@@ -288,13 +294,13 @@ export class AgentStore {
     const rows = surfaces
       ? (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 0 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[])
       : (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND archived = 0 ORDER BY updated_at DESC").all(projectId) as ThreadRow[]);
-    return rows.map(toThread);
+    return rows.map(this.toThread);
   }
 
   /** Put away, newest first — so a conversation archived by mistake can be found and brought back. */
   archivedThreads(projectId: string, surface: ThreadSurface | ThreadSurface[] = "assistant"): ThreadSummary[] {
     const surfaces = [surface].flat();
-    return (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 1 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[]).map(toThread);
+    return (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 1 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[]).map(this.toThread);
   }
 
   setArchived(projectId: string, id: string, archived: boolean, opts: { restored?: boolean } = {}): void {
@@ -314,7 +320,7 @@ export class AgentStore {
 
   thread(projectId: string, id: string): ThreadSummary | null {
     const row = this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE id = ?").get(id) as ThreadRow | undefined;
-    return row ? toThread(row) : null;
+    return row ? this.toThread(row) : null;
   }
 
   setExecution(projectId: string, threadId: string, execution: GeneralExecution): void {
@@ -353,7 +359,7 @@ export class AgentStore {
 
   /** Threads started from a ticket, newest first. */
   threadsForItem(projectId: string, itemId: string): ThreadSummary[] {
-    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND item_id = ? ORDER BY updated_at DESC").all(projectId, itemId) as ThreadRow[]).map(toThread);
+    return (this.db(projectId).prepare("SELECT * FROM plugin_agent_threads WHERE project_id = ? AND item_id = ? ORDER BY updated_at DESC").all(projectId, itemId) as ThreadRow[]).map(this.toThread);
   }
 
   external(projectId: string, threadId: string): Record<string, string> {

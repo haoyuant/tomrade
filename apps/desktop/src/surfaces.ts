@@ -82,7 +82,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       maximizable: false,
       fullscreenable: false,
       closable: false,
-      focusable: false,
+      focusable: spec.focusable ?? false,
       skipTaskbar: true,
       hasShadow: false,
       acceptFirstMouse: true,
@@ -130,7 +130,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       if (win.isDestroyed()) return;
       record.loaded = true;
       win.webContents.send(STATE_CHANNEL, record.state);
-      win.showInactive();
+      if (spec.focusable) win.show();
+      else win.showInactive();
     });
     win.on("closed", () => this.forget(record));
     void win.loadURL(spec.url);

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { StartResult } from "@tomradex/code-link";
 import { useChooseRepoFolder } from "~/components/projects/RepositoriesBlock";
-import { useEngines } from "~/lib/agent";
+import { findEngine, useEngines } from "~/lib/agent";
 import { useI18n } from "~/lib/i18n";
 import { usePatchItem, useCloneRepoInto, useItems, useRepos, useSelectCheckout, useSetPluginEnabled, useUpdateBoard } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
@@ -24,7 +24,7 @@ export function useGateWords() {
       case "remote":
         return { lead: t("codeLink.gateRemote", { repo }), detail: f.message };
       case "engine": {
-        const title = engines.data?.find((e) => e.id === f.engine)?.title ?? f.engine;
+        const title = findEngine(engines.data, f.engine)?.title ?? f.engine;
         return title ? { lead: t("codeLink.gateEngine", { engine: title }), detail: f.message } : { lead: f.message };
       }
       case "mcp":

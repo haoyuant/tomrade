@@ -180,24 +180,24 @@ const run = async () => {
   await sleep(500);
   const menu = await $(`({ note: document.querySelector('[role="menu"] .menu-note')?.textContent ?? '', names: [...document.querySelectorAll('[role="menu"] .m-name')].map((n) => n.textContent) })`);
   check("before anyone looks, it says what they read and where it goes", /model provider/.test(menu.note), menu.note);
-  check("the agent that failed is not offered to look into itself", menu.names.includes("Tomrade loop") && !menu.names.includes("Refusing") && !menu.names.includes("Troubleshooter"), menu.names);
-  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.textContent.includes("Tomrade loop"))`);
+  check("the agent that failed is not offered to look into itself", menu.names.includes("Tomrade") && !menu.names.includes("Refusing") && !menu.names.includes("Troubleshooter"), menu.names);
+  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.querySelector(".m-name")?.textContent === "Tomrade")`);
   const concluded = await waitFor(`[...document.querySelectorAll('.finding-head span')].some((s) => s.textContent === 'Refusing signs in against the internal endpoint')`, 20_000);
   check("it concludes on a card of its own", concluded);
   check("having been handed the error, the checks and the facts", investigation.brief.includes("status code 401") && investigation.brief.includes("edition: ioa"), investigation.brief.slice(0, 300));
   const allowed = ["doctor_read_log", "doctor_check_again", "doctor_conclude", "ask_user", "web_search", "web_fetch"];
   check("and only the troubleshooting tools", Array.isArray(investigation.tools) && investigation.tools.length > 0 && investigation.tools.every((n) => allowed.includes(n)), investigation.tools);
-  check("the thread says who is looking into it", (await $(`[...document.querySelectorAll('.tag')].some((t) => t.textContent.trim() === 'Troubleshooter · Tomrade loop')`)));
+  check("the thread says who is looking into it", (await $(`[...document.querySelectorAll('.tag')].some((t) => t.textContent.trim() === 'Troubleshooter · Tomrade')`)));
   await shot("investigated");
 
   // ── carry on with another agent ──────────────────────────────────────
   await press(button("Continue with another agent"));
   await sleep(500);
-  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.textContent.includes("Tomrade loop"))`);
+  await press(`[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((n) => n.querySelector(".m-name")?.textContent === "Tomrade")`);
   await sleep(3500);
   const moved = ctx.agent.store.thread(project.id, failing.id);
   const after = ctx.agent.store.messages(project.id, failing.id);
-  check("the failed conversation moves to that agent", moved?.engine === "loop", moved?.engine);
+  check("the failed conversation moves to that agent", moved?.engine === "tomrade", moved?.engine);
   check("which answers the same message", after.filter((m) => m.role === "user").at(-1)?.block.text === "my secret plan" && after.at(-1)?.block.type === "text" && after.at(-1).block.text === "pong", after.at(-1)?.block);
 
   // ── the bottom bar starts one with nothing failed, on its right, with a bug ─

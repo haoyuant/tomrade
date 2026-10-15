@@ -22,6 +22,8 @@ export interface DesktopSurfaceSpec {
   height: number;
   transparent?: boolean;
   alwaysOnTop?: boolean;
+  /** Allow keyboard input; defaults to false for passive widgets. */
+  focusable?: boolean;
   visibleOnAllWorkspaces?: boolean;
   /** The surface document may mark opaque pixels interactive through the generic preload bridge. */
   clickThrough?: boolean;

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { ThreadMessage } from "@tomradex/agent";
-import { foldSteps, traceState } from "../src/lib/steps";
+import { foldSteps, startBriefId, traceState } from "../src/lib/steps";
 
 it("maps command outcomes to distinct labels and reserves red warnings for failures", () => {
   const cases = [
@@ -32,4 +32,19 @@ it("folds the earlier steps of a long run and keeps the last three open", () => 
 
 it("never folds a failed step", () => {
   expect(shape(foldSteps([trace(), trace(), trace(false), trace(), trace(), trace(), trace(), trace()]))).toEqual(["fold2", "fail", "fold2", "ok", "ok", "ok"]);
+});
+
+const user = (text: string): ThreadMessage => ({ id: `m${++seq}`, threadId: "t", seq, role: "user", runId: "r", at: 0, block: { type: "text", text } });
+const brief = "Implement TOM-1 — \"Cart badge\".\nFollow the playbook first: open_playbook(\"code.implement\").\n\nTicket:\nAdd a badge to the cart.\n\nConventions:\n- this run owns exactly TOM-1; implement only its stated outcome and acceptance criteria";
+
+it("folds the machine-written brief that opened a ticket's session, and only that", () => {
+  const messages = [user(brief), user("make it blue")];
+  expect(startBriefId(messages, true)).toBe(messages[0].id);
+  // a free-form conversation keeps every message as it is
+  expect(startBriefId(messages, false)).toBeNull();
+  // the person's own words are never folded, however long
+  expect(startBriefId([user("x".repeat(400))], true)).toBeNull();
+  expect(startBriefId([user("Work on TOM-1: Cart badge. Follow the selected delivery playbook")], true)).toBeNull();
+  // a continued session's brief is folded the same way
+  expect(startBriefId([user("Continue TOM-1 — \"Cart badge\" on branch tom-1/cart-badge.")], true)).toBeTruthy();
 });
