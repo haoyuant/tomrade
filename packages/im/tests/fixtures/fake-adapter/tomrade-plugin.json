@@ -1,0 +1,29 @@
+{
+  "id": "test/fake-im",
+  "version": "0.1.0",
+  "title": "Fake IM adapter",
+  "description": "Test fixture for the IM contract; no external service or model.",
+  "license": "BUSL-1.1",
+  "engines": {
+    "sdk": "^0.2.1"
+  },
+  "permissions": {
+    "network": [],
+    "fs": "none",
+    "exec": false
+  },
+  "inject": [
+    "im",
+    "tools"
+  ],
+  "optional": [],
+  "contributes": {
+    "tools": [
+      "fake_im_receive",
+      "fake_im_replies"
+    ],
+    "imAdapters": [
+      "fake_im"
+    ]
+  }
+}

@@ -25,6 +25,22 @@ CREATE TABLE plugin_im_actions (
 );
 CREATE INDEX idx_plugin_im_inbox_binding ON plugin_im_inbox(binding_id, state, seq);
 CREATE INDEX idx_plugin_im_outbox_binding ON plugin_im_outbox(binding_id, state, seq);
+` }, { version: 2, up: `
+ALTER TABLE plugin_im_outbox ADD COLUMN thread_id TEXT;
+UPDATE plugin_im_outbox SET thread_id = (SELECT thread_id FROM plugin_im_bindings WHERE id = binding_id);
+ALTER TABLE plugin_im_outbox ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE plugin_im_outbox ADD COLUMN prepared_revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plugin_im_outbox ADD COLUMN parts_json TEXT;
+ALTER TABLE plugin_im_outbox ADD COLUMN part INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plugin_im_outbox ADD COLUMN message_ids_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE plugin_im_outbox ADD COLUMN sending_json TEXT;
+ALTER TABLE plugin_im_inbox ADD COLUMN input_json TEXT;
+ALTER TABLE plugin_im_actions ADD COLUMN run_id TEXT;
+UPDATE plugin_im_outbox SET message_ids_json = json_array(message_id) WHERE message_id IS NOT NULL;
+` }, { version: 3, up: `
+ALTER TABLE plugin_im_actions ADD COLUMN retired INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plugin_im_actions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_plugin_im_actions_binding ON plugin_im_actions(binding_id, retired);
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
@@ -38,16 +54,19 @@ export interface Binding {
 }
 export interface Inbox {
   seq: number; id: string; message_key: string | null; binding_id: string;
-  event_json: string; fingerprint: string; state: string; run_id: string | null;
+  event_json: string; input_json: string | null; fingerprint: string; state: string; run_id: string | null;
   error: string | null; created_at: number;
 }
 export interface Outbox {
   seq: number; id: string; binding_id: string; content_json: string; state: string;
+  thread_id: string; revision: number; prepared_revision: number; parts_json: string | null; part: number; message_ids_json: string; sending_json: string | null;
   message_id: string | null; attempts: number; retry_at: number; error: string | null;
 }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
-  actor_id: string; value_json: string | null; expires_at: number; consumed: number;
+  actor_id: string; run_id: string | null; value_json: string | null; expires_at: number; consumed: number;
+  /** Its card was updated after the question ended; `consumed` alone only stops reuse. */
+  retired: number; created_at: number;
 }
 
 /** Only local delivery metadata. Project history and execution stay with Agent. */
@@ -58,4 +77,13 @@ export class ImStore {
   run(sql: string, ...args: unknown[]): { changes: number; lastInsertRowid: number | bigint } { return this.db.prepare(sql).run(...args); }
   bindings(): Binding[] { return this.all("SELECT * FROM plugin_im_bindings"); }
   binding(id: string): Binding | undefined { return this.get("SELECT * FROM plugin_im_bindings WHERE id = ?", id); }
+
+  /** Bounded history; dedup of older events relies on Agent input receipts instead. */
+  prune(before: number) {
+    this.db.transaction(() => {
+      this.run("DELETE FROM plugin_im_inbox WHERE state NOT IN ('queued') AND created_at < ?", before);
+      this.run("DELETE FROM plugin_im_outbox WHERE state IN ('delivered', 'cancelled') AND created_at < ?", before);
+      this.run("DELETE FROM plugin_im_actions WHERE retired = 1 AND created_at < ?", before);
+    });
+  }
 }

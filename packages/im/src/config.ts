@@ -31,8 +31,12 @@ export const ImConfig = z.object({
   progressMs: z.number().int().min(100).default(2000),
   retryMs: z.number().int().min(10).default(1000),
   actionTtlMs: z.number().int().min(100).default(24 * 60 * 60 * 1000),
-  operationTimeoutMs: z.number().int().min(10).default(30_000)
-});
+  operationTimeoutMs: z.number().int().min(10).default(30_000),
+  /** Thread projection runs on Agent events; this sweep catches anything missed. */
+  sweepMs: z.number().int().min(10).default(5_000),
+  /** Finished inbox/outbox records are kept this long; older replays fall back to Agent input receipts. */
+  retentionMs: z.number().int().min(1_000).default(30 * 24 * 60 * 60 * 1000)
+}).prefault({});
 export type ImConfig = z.infer<typeof ImConfig>;
 
 const address = z.object({ tenantId: id, conversationId: id, topicId: id.optional() });

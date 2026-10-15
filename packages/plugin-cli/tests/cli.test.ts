@@ -31,6 +31,18 @@ describe("tomrade-plugin", () => {
     expect(fs.existsSync(path.join(unpacked.dir, "dist/index.js"))).toBe(true);
   }, 60_000);
 
+  it("checks and runs an IM adapter against the real IM layer and Agent", async () => {
+    const dir = path.join(tmp, "fake-im");
+    fs.cpSync(path.join(import.meta.dirname, "../../im/tests/fixtures/fake-adapter"), dir, { recursive: true });
+    const report = await check(dir);
+    expect(report.problems).toEqual([]);
+    expect(report.verdict).toBe("ok");
+    expect(report.manifest?.contributes?.imAdapters).toEqual(["fake_im"]);
+    const result = await test(dir, { build: false });
+    expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["outside allowlist creates no conversation", "one execution despite duplicate"]));
+  }, 60_000);
+
   it("blocks a plugin whose ids leave its namespace", async () => {
     const dir = path.join(tmp, "stray");
     scaffold(dir, { id: "someone/stray" });

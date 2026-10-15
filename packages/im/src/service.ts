@@ -37,6 +37,7 @@ declare module "@tomradex/ipc" {
     "im.connections": () => ImConnectionView[];
     /** A person explicitly retries an uncertain operation; it may have reached IM already. */
     "im.retry": (operationId: string) => boolean;
+    "im.discard": (operationId: string) => boolean;
   }
 }
 
@@ -51,6 +52,9 @@ export class Im extends Service {
   private readonly connections = new Map<string, Connection>();
   private readonly processing = new Set<string>();
   private readonly progressAt = new Map<string, number>();
+  /** Threads whose history changed since they were last projected. */
+  private readonly dirty = new Set<string>();
+  private sweptAt = 0;
   private stopped = false;
   private settings: ImSettings = { connections: [], routes: [] };
   private ignored: { at: number; connectionId: string; actorId: string; conversationId: string; reason: string }[] = [];
@@ -74,12 +78,13 @@ export class Im extends Service {
     this.home.inject(["ipc"], ctx => {
       ctx.ipc.handle("im.connections", () => this.views());
       ctx.ipc.handle("im.retry", id => this.retry(id));
+      ctx.ipc.handle("im.discard", id => this.discard(id));
     });
     this.home.inject(["contributions"], ctx => ctx.contributions.statusItem({ id: "im", icon: "message-circle",
-      title: "IM connections",
+      title: () => this.say("IM connections", "IM 连接"),
       text: () => {
         const views = this.views();
-        return views.length ? views.map(v => `${v.id}: ${v.state}${v.uncertain ? ` (${v.uncertain} 待确认)` : ""}`).join(" · ") : null;
+        return views.length ? views.map(v => `${v.id}: ${this.stateWord(v.state)}${v.uncertain ? this.say(` (${v.uncertain} uncertain)`, ` (${v.uncertain} 待确认)`) : ""}`).join(" · ") : null;
       } }));
     this.reload();
     const timer = setInterval(() => this.tick(), this.config.pollMs);
@@ -129,6 +134,25 @@ export class Im extends Service {
     return this.store.run("UPDATE plugin_im_outbox SET state = 'queued', retry_at = 0, error = NULL WHERE id = ? AND state IN ('uncertain', 'failed')", operationId).changes > 0;
   }
 
+  discard(operationId: string): boolean {
+    return this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ? AND state IN ('uncertain', 'failed')", operationId).changes > 0;
+  }
+
+  private say(en: string, zh: string): string { return this.home.settings.locale() === "zh" ? zh : en; }
+
+  private stateWord(state: ImConnectionView["state"]): string {
+    switch (state) {
+      case "connecting": return this.say("connecting", "连接中");
+      case "connected": return this.say("connected", "已连接");
+      case "offline": return this.say("disconnected", "已断开");
+      case "error": return this.say("connection failed", "连接失败");
+      case "unconfigured": return this.say("not configured", "未配置");
+    }
+  }
+
+  /** A refusal shown to the IM user, in the desktop's language. */
+  private refuse(en: string, zh: string): never { throw new Error(this.say(en, zh)); }
+
   private reload() {
     if (this.stopped) return;
     this.settings = ImSettings.parse(this.home.settings.get().im);
@@ -161,10 +185,19 @@ export class Im extends Service {
       if (!c.session && !c.opening && c.retryAt <= Date.now()) void this.open(c);
       if (c.session && c.state === "connected" && !c.flushing) void this.flush(c);
     }
+    const sweep = Date.now() - this.sweptAt >= this.config.sweepMs;
+    if (sweep) {
+      this.sweptAt = Date.now();
+      this.store.prune(Date.now() - this.config.retentionMs);
+    }
+    const dirty = new Set(this.dirty);
+    this.dirty.clear();
     for (const b of this.store.bindings()) {
       if (!this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
-      try { this.project(b); } catch { continue; }
-      if (!this.processing.has(b.thread_id)) void this.process(b);
+      if (sweep || dirty.has(b.thread_id)) {
+        try { this.project(b); } catch { continue; }
+      }
+      if (!this.processing.has(b.thread_id) && this.store.get("SELECT 1 FROM plugin_im_inbox WHERE binding_id = ? AND state = 'queued'", b.id)) void this.process(b);
     }
   }
 
@@ -176,13 +209,13 @@ export class Im extends Service {
     const active = () => this.current(c) && c.controller === controller;
     c.state = "connecting";
     try {
-      const session = await adapter.open(c.id, {
+      const opening = adapter.open(c.id, {
         signal: c.controller.signal,
         receive: event => active() ? this.receive(c, event) : Promise.reject(new Error("IM connection is no longer active")),
         status: (state) => {
           if (!active()) return;
           c.state = state;
-          c.detail = state === "error" ? "Connection failed; check adapter configuration" : undefined;
+          c.detail = state === "error" ? this.say("Connection failed; check adapter configuration", "连接失败，请检查适配器配置") : undefined;
           if (c.session && (state === "offline" || state === "error")) {
             c.retryAt = Date.now() + Math.min(60_000, this.config.retryMs * 2 ** Math.min(c.attempts++, 6));
             void this.close(c);
@@ -190,7 +223,9 @@ export class Im extends Service {
         },
         readOutboundFile: id => active() ? this.readFile(c, id) : Promise.reject(new Error("Connection closed"))
       });
-      if (!active()) { await session.close(); return; }
+      void opening.then(session => { if (!active()) return session.close(); }).catch(() => {});
+      const session = await deadline(opening, this.config.operationTimeoutMs);
+      if (!active()) return;
       c.session = session;
       c.state = "connected";
       c.detail = undefined;
@@ -198,13 +233,16 @@ export class Im extends Service {
     } catch {
       if (!active()) return;
       c.state = "error";
-      c.detail = "Connection failed; check adapter configuration";
+      c.detail = this.say("Connection failed; check adapter configuration", "连接失败，请检查适配器配置");
       c.retryAt = Date.now() + Math.min(60_000, this.config.retryMs * 2 ** Math.min(c.attempts++, 6));
+      controller.abort();
     } finally { c.opening = false; }
   }
 
+  /** What the conversation is bound to. Who may use it and where it activates are checked live, so editing them keeps the thread. */
   private routeHash(route: ImRoute) {
-    return hash([route, this.settings.connections.find(c => c.id === route.connectionId)]);
+    return hash([route.id, route.connectionId, route.tenantId, route.conversationId, route.projectId, route.boardId, route.engine ?? null,
+      this.settings.connections.find(c => c.id === route.connectionId)?.adapterId]);
   }
 
   private authorizedBinding(b: Binding): boolean {
@@ -275,50 +313,56 @@ export class Im extends Service {
       } else {
         const text = event.text.trim();
         if (text === "/status") {
-          this.enqueue(b, `status:${row.id}`, { text: detail.pending ? `等待回答：${detail.pending.question.text}` : busy ? "正在执行" : "当前没有执行中的任务" });
+          this.enqueue(b, `status:${row.id}`, { text: detail.pending ? this.say(`Waiting for answer: ${detail.pending.question.text}`, `等待回答：${detail.pending.question.text}`) : busy ? this.say("Working", "正在执行") : this.say("No task is running", "当前没有执行中的任务") });
           this.accept(row); return;
         }
         if (text === "/stop") {
           const run = this.home.agent.activeRuns().find(r => r.thread.id === b.thread_id);
-          if (run && b.actor_id !== event.actor.id) throw new Error("Only the initiating user can stop this run");
-          if (run) this.home.agent.cancel(run.run.id);
+          if ((run || detail.pending) && b.actor_id !== event.actor.id) this.refuse("Only the initiating user can stop this run", "只有发起人可以停止当前执行");
+          const stopped = run ? this.home.agent.cancel(run.run.id) : this.home.agent.cancelWaiting(b.project_id, b.thread_id);
           this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE binding_id = ? AND state = 'queued' AND id != ?", b.id, row.id);
-          this.enqueue(b, `stop:${row.id}`, { text: run ? "已请求停止执行" : "当前没有执行中的任务；已清空等待消息" });
+          this.enqueue(b, `stop:${row.id}`, { text: stopped ? this.say("Stop requested", "已请求停止执行") : this.say("No task is running; queued messages cleared", "当前没有执行中的任务；已清空等待消息") });
           this.accept(row); return;
         }
         if (text === "/new") {
-          if (detail.pending) throw new Error("Answer or stop the current question before opening a new conversation");
+          if (detail.pending) this.refuse("Answer or stop the current question before opening a new conversation", "请先回答或停止当前问题，再开始新会话");
           const route = this.settings.routes.find(r => r.id === b.route_id)!;
           const th = this.home.agent.newThread(b.project_id, route.engine, route.boardId);
           this.store.db.transaction(() => {
-            this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state = 'queued'", b.id);
+            this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
             this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ?", b.id);
             this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = 0, actor_id = ? WHERE id = ?", th.id, event.actor.id, b.id);
             this.accept(row);
-            this.enqueue(b, `new:${row.id}`, { text: "已开始新会话" });
+            this.enqueue(b, `new:${row.id}`, { text: this.say("New conversation started", "已开始新会话") });
           });
           return;
         }
         const match = /^\/answer\s+(\S+)(?:\s+([\s\S]+))?$/.exec(text);
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
         else {
-          if (!text && !event.attachments?.length) throw new Error("Empty message");
+          if (!text && !event.attachments?.length) this.refuse("Empty message", "消息为空");
+          if (row.input_json) input = JSON.parse(row.input_json) as UserInput;
+          else {
           const attachments = [];
           for (const ref of event.attachments ?? []) {
             const c = this.connections.get(b.connection_id);
             const adapter = c && this.adapters.get(c.adapterId);
-            if (!adapter?.capabilities.inboundFiles || !c?.session?.download) throw new Error("This adapter does not accept attachments");
-            if (ref.size > Math.min(adapter.capabilities.maxFileBytes, MAX_MEDIA_BYTES)) throw new Error("Attachment exceeds supported size");
+            if (!adapter?.capabilities.inboundFiles || !c?.session?.download) this.refuse("This adapter does not accept attachments", "该渠道不支持附件");
+            if (ref.size > Math.min(adapter.capabilities.maxFileBytes, MAX_MEDIA_BYTES)) this.refuse("Attachment exceeds supported size", "附件超过支持的大小");
             let bytes: Uint8Array;
             try { bytes = await deadline(c.session.download(ref), this.config.operationTimeoutMs); }
-            catch { throw new Error("Attachment download failed; check adapter diagnostics"); }
-            if (!this.current(c) || !this.authorizedBinding(b)) throw new Error("IM authorization changed during download");
-            if (bytes.byteLength !== ref.size) throw new Error("Attachment size does not match its metadata");
+            catch { this.refuse("Attachment download failed; check adapter diagnostics", "附件下载失败，请检查适配器诊断信息"); }
+            if (!this.current(c) || !this.authorizedBinding(b)) this.refuse("IM authorization changed during download", "下载期间 IM 授权已变更");
+            if (bytes.byteLength !== ref.size) this.refuse("Attachment size does not match its metadata", "附件大小与声明不符");
             attachments.push(this.home.agent.uploadMedia(b.project_id, b.thread_id, { name: ref.name, mime: ref.mimeType, base64: Buffer.from(bytes).toString("base64") }));
           }
           input = { kind: "text", text: event.text, ...(attachments.length ? { attachments } : {}) };
+          this.store.run("UPDATE plugin_im_inbox SET input_json = ? WHERE id = ?", JSON.stringify(input), row.id);
+          }
         }
       }
+      // A desktop turn may have started while attachment bytes were being downloaded.
+      if (input.kind === "text" && (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending)) return;
       // Identity is provenance, never a forged human author or a policy bypass.
       const { runId } = this.home.agent.send(b.project_id, b.thread_id, input, { requestId: `im:${row.id}`, source: {
         connection: b.connection_id, tenant: event.address.tenantId, conversation: event.address.conversationId,
@@ -333,7 +377,7 @@ export class Im extends Service {
       const row = handling;
       if (row) {
         this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorText(e), row.id);
-        this.enqueue(b, `input-error:${row.id}`, { text: `无法处理消息：${errorText(e)}` });
+        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.say(`Cannot process message: ${errorText(e)}`, `无法处理消息：${errorText(e)}`) });
       }
     } finally { this.processing.delete(b.thread_id); }
   }
@@ -342,15 +386,16 @@ export class Im extends Service {
 
   private answer(b: Binding, actionToken: string, actorId: string, value?: string | string[]): UserInput {
     const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
-    const pending = this.home.agent.thread(b.project_id, b.thread_id).pending;
-    if (!a || a.binding_id !== b.id || a.thread_id !== b.thread_id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed || pending?.question.id !== a.question_id) throw new Error("Question already handled, expired, or not yours to answer");
+    const current = this.home.agent.thread(b.project_id, b.thread_id);
+    const pending = current.pending;
+    if (!a || a.binding_id !== b.id || a.thread_id !== b.thread_id || a.run_id !== current.runs.at(-1)?.id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed || pending?.question.id !== a.question_id) this.refuse("Question already handled, expired, or not yours to answer", "问题已处理、已失效，或不由你回答");
     let answer = a.value_json === null ? value : JSON.parse(a.value_json) as string;
     if (pending.question.multiple && typeof answer === "string") {
-      try { answer = JSON.parse(answer) as string[]; } catch { throw new Error("Reply with a JSON array of selected values"); }
+      try { answer = JSON.parse(answer) as string[]; } catch { this.refuse("Reply with a JSON array of selected values", "请用 JSON 数组回复所选的值"); }
     }
-    if (typeof answer !== "string" && (!Array.isArray(answer) || answer.some(v => typeof v !== "string"))) throw new Error("Invalid question answer");
+    if (typeof answer !== "string" && (!Array.isArray(answer) || answer.some(v => typeof v !== "string"))) this.refuse("Invalid question answer", "回答无效");
     if (answer === undefined || (Array.isArray(answer) && !pending.question.multiple) ||
-      (pending.accepts === "options" && !pending.question.freeText && [answer].flat().some(v => !pending.question.options?.includes(v)))) throw new Error("Invalid question answer");
+      (pending.accepts === "options" && !pending.question.freeText && [answer].flat().some(v => !pending.question.options?.includes(v)))) this.refuse("Invalid question answer", "回答无效");
     return { kind: "answer", questionId: a.question_id, value: answer };
   }
 
@@ -363,20 +408,22 @@ export class Im extends Service {
         this.store.run("UPDATE plugin_im_bindings SET cursor = ? WHERE id = ?", message.seq, b.id);
       }
       this.pending(b, detail.pending);
+      // Settles a progress message whose `done` event was missed, e.g. across a restart; never posts a new one.
       for (const run of detail.runs.filter(r => r.status !== "running")) {
-        this.replace(b, `progress:${b.id}:${run.id}`, { text: run.status === "error" ? "执行失败" : run.status === "cancelled" ? "执行已停止" : run.status === "asked" ? "等待你的回答" : "本轮执行结束" });
+        if (this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `progress:${b.id}:${run.id}`)) this.replace(b, `progress:${b.id}:${run.id}`, { text: this.finished(run.status) });
       }
     });
   }
 
   private pending(b: Binding, pending: PendingView | null) {
-    const previous = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND consumed = 0", b.id);
-    for (const a of previous) if (a.question_id !== pending?.question.id || a.thread_id !== b.thread_id || a.expires_at < Date.now()) {
-      this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE token = ?", a.token);
+    const runId = this.home.agent.store.runs(b.project_id, b.thread_id).at(-1)?.id ?? null;
+    const previous = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND retired = 0", b.id);
+    for (const a of previous) if (a.question_id !== pending?.question.id || a.thread_id !== b.thread_id || a.run_id !== runId || a.expires_at < Date.now()) {
+      this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", a.token);
       const id = `question:${b.id}:${a.question_id}`;
       const row = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", id);
-      if (row && JSON.parse(row.content_json).actions) {
-        const text = "问题已处理或失效";
+      if (row && (JSON.parse(row.content_json).actions || JSON.parse(row.content_json).text.includes("/answer "))) {
+        const text = this.say("Question handled or expired", "问题已处理或失效");
         const adapterId = this.settings.connections.find(c => c.id === b.connection_id)?.adapterId;
         if (adapterId && this.adapters.get(adapterId)?.capabilities.edit) this.replace(b, id, { text });
         else this.enqueue(b, `resolved:${id}`, { text });
@@ -384,102 +431,139 @@ export class Im extends Service {
     }
     if (!pending) return;
     const id = `question:${b.id}:${pending.question.id}`;
-    if (this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", id)) return;
+    if (this.store.get("SELECT 1 FROM plugin_im_actions WHERE binding_id = ? AND question_id = ? AND run_id = ? AND consumed = 0 AND expires_at > ?", b.id, pending.question.id, runId, Date.now())) return;
     const actions: { label: string; token: string }[] = [];
     for (const value of pending.question.options ?? []) {
       if (pending.question.multiple) break;
       const t = token();
-      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, value_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, JSON.stringify(value), Date.now() + this.config.actionTtlMs);
+      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, value_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, runId, JSON.stringify(value), Date.now() + this.config.actionTtlMs, Date.now());
       actions.push({ label: value, token: t });
     }
     let text = pending.question.text;
     if (pending.accepts === "text" || pending.question.freeText || pending.question.multiple) {
       const t = token();
-      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, Date.now() + this.config.actionTtlMs);
-      text += `\n请回复 /answer ${t} 你的回答`;
+      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, runId, Date.now() + this.config.actionTtlMs, Date.now());
+      text += this.say(`\nReply /answer ${t} your answer`, `\n请回复 /answer ${t} 你的回答`);
     }
-    this.enqueue(b, id, { text, actions });
+    this.replace(b, id, { text, actions });
   }
 
   private render(block: Block): ImContent | null {
     switch (block.type) {
       case "text": return { text: block.text };
-      case "error": return { text: `执行出错：${block.text}` };
+      case "error": return { text: this.say(`Execution error: ${block.text}`, `执行出错：${block.text}`) };
       case "note": return { text: block.text };
-      case "changes": return { text: block.items?.map(i => `${i.key} · ${i.label} (${i.op})`).join("\n") || `已变更 ${block.count} 项` };
+      case "changes": return { text: block.items?.map(i => `${i.key} · ${i.label} (${i.op})`).join("\n") || this.say(`Changed ${block.count} items`, `已变更 ${block.count} 项`) };
       case "media": return { text: block.caption ?? block.media.name, files: [{ id: block.media.id, name: block.media.name, mimeType: block.media.mime, size: block.media.size }] };
       case "card": return { text: block.title };
       default: return null;
     }
   }
 
+  private finished(status: string): string {
+    return status === "error" ? this.say("Execution failed", "执行失败") : status === "cancelled" ? this.say("Execution stopped", "执行已停止")
+      : status === "asked" ? this.say("Waiting for your answer", "等待你的回答") : this.say("Turn finished", "本轮执行结束");
+  }
+
   private onAgentEvent(threadId: string, event: AgentEvent) {
     if (this.stopped) return;
+    if (event.type !== "delta" && event.type !== "progress") this.dirty.add(threadId);
     for (const b of this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b))) {
+      const adapterId = this.settings.connections.find(c => c.id === b.connection_id)?.adapterId;
+      const edit = !!adapterId && !!this.adapters.get(adapterId)?.capabilities.edit;
       if (event.type === "progress" || event.type === "delta") {
         const last = this.progressAt.get(b.id) ?? 0;
-        const adapterId = this.settings.connections.find(c => c.id === b.connection_id)?.adapterId;
         // Non-editing providers only receive stable output, so token streams don't spam chats.
-        if (!adapterId || !this.adapters.get(adapterId)?.capabilities.edit || Date.now() - last < this.config.progressMs) continue;
+        if (!edit || Date.now() - last < this.config.progressMs) continue;
         this.progressAt.set(b.id, Date.now());
-        const text = event.type === "progress" ? event.activity || "正在执行" : "正在生成回复";
+        const text = event.type === "progress" ? event.activity || this.say("Working", "正在执行") : this.say("Writing a reply", "正在生成回复");
         this.replace(b, `progress:${b.id}:${event.runId}`, { text });
       } else if (event.type === "done") {
-        this.replace(b, `progress:${b.id}:${event.run.id}`, { text: event.run.status === "error" ? "执行失败" : event.run.status === "cancelled" ? "执行已停止" : event.run.status === "asked" ? "等待你的回答" : "本轮执行结束" });
+        // Without edits a routine "finished" line would follow every reply; only report what the reply can't show.
+        if (edit || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.finished(event.run.status) });
       }
     }
   }
 
   private enqueue(b: Binding, id: string, content: ImContent) {
-    this.store.run("INSERT OR IGNORE INTO plugin_im_outbox (id, binding_id, content_json, created_at) VALUES (?, ?, ?, ?)", id, b.id, JSON.stringify(content), Date.now());
+    this.store.run("INSERT OR IGNORE INTO plugin_im_outbox (id, binding_id, thread_id, content_json, created_at) VALUES (?, ?, ?, ?, ?)", id, b.id, b.thread_id, JSON.stringify(content), Date.now());
   }
 
   private replace(b: Binding, id: string, content: ImContent) {
     this.enqueue(b, id, content);
-    // Do not overwrite an in-flight update. Its final status will be projected on the next tick.
-    this.store.run("UPDATE plugin_im_outbox SET content_json = ?, state = 'queued', retry_at = 0 WHERE id = ? AND state NOT IN ('sending', 'uncertain', 'failed') AND content_json != ?", JSON.stringify(content), id, JSON.stringify(content));
+    // Preserve an in-flight snapshot. Completion schedules the newer revision.
+    this.store.run(`UPDATE plugin_im_outbox SET content_json = ?, revision = revision + 1,
+      state = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN state ELSE 'queued' END,
+      parts_json = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN parts_json ELSE NULL END,
+      part = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN part ELSE 0 END,
+      retry_at = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN retry_at ELSE 0 END
+      WHERE id = ? AND state != 'cancelled' AND content_json != ?`, JSON.stringify(content), id, JSON.stringify(content));
   }
 
   private async flush(c: Connection) {
     c.flushing = true;
     try {
       const adapter = this.adapters.get(c.adapterId)!;
+      // A delayed operation holds its target's place, but does not block other conversations.
+      // An uncertain or failed one waits for a person and must not silence the conversation meanwhile.
       const row = this.store.get<Outbox>(`SELECT o.* FROM plugin_im_outbox o JOIN plugin_im_bindings b ON b.id = o.binding_id
-        WHERE b.connection_id = ? AND o.state = 'queued' AND o.retry_at <= ? ORDER BY o.seq LIMIT 1`, c.id, Date.now());
+        WHERE b.connection_id = ? AND o.state = 'queued' AND o.retry_at <= ?
+        AND NOT EXISTS (SELECT 1 FROM plugin_im_outbox earlier WHERE earlier.binding_id = o.binding_id
+          AND earlier.seq < o.seq AND earlier.state IN ('queued', 'sending'))
+        ORDER BY o.seq LIMIT 1`, c.id, Date.now());
       if (!row) return;
       const b = this.store.binding(row.binding_id)!;
-      if (!this.authorizedBinding(b)) { this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ?", row.id); return; }
-      const content = JSON.parse(row.content_json) as ImContent;
-      if (!adapter.capabilities.buttons && content.actions?.length) {
-        content.text += "\n" + content.actions.map(a => `${a.label}：/answer ${a.token}`).join("\n");
-        delete content.actions;
+      if (!this.authorizedBinding(b) || row.thread_id !== b.thread_id) {
+        this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ?", row.id); return;
       }
-      if (content.files?.length && (!adapter.capabilities.outboundFiles || content.files.some(f => f.size > adapter.capabilities.maxFileBytes))) {
-        content.text += "\n附件请在 Tomrade 会话中查看";
-        delete content.files;
+      const messageIds = JSON.parse(row.message_ids_json) as string[];
+      let parts: ImContent[];
+      if (row.parts_json) parts = JSON.parse(row.parts_json) as ImContent[];
+      else {
+        const content = JSON.parse(row.content_json) as ImContent;
+        if (!adapter.capabilities.buttons && content.actions?.length) {
+          content.text += "\n" + content.actions.map(a => `${a.label}：/answer ${a.token}`).join("\n");
+          delete content.actions;
+        }
+        if (content.files?.length && (!adapter.capabilities.outboundFiles || content.files.some(f => f.size > adapter.capabilities.maxFileBytes))) {
+          content.text += this.say("\nView attachments in the Tomrade conversation", "\n附件请在 Tomrade 会话中查看");
+          delete content.files;
+        }
+        const chunks = splitText(content.text, adapter.capabilities.maxTextLength);
+        parts = chunks.map((text, i) => i === chunks.length - 1 ? { ...content, text } : { text });
+        // Clear obsolete segments when an edited question or status became shorter.
+        if (adapter.capabilities.edit) while (parts.length < messageIds.length) parts.push({ text: this.say("This message was superseded", "此消息已被更新") });
+        row.prepared_revision = row.revision;
+        row.part = 0;
+        this.store.run("UPDATE plugin_im_outbox SET parts_json = ?, prepared_revision = ?, part = 0 WHERE id = ?", JSON.stringify(parts), row.prepared_revision, row.id);
       }
-      // Chunk once into durable operations so retry does not repeat earlier segments.
-      if (content.text.length > adapter.capabilities.maxTextLength) {
-        this.store.db.transaction(() => {
-          const chunks = splitText(content.text, adapter.capabilities.maxTextLength);
-          chunks.forEach((text, i) => this.enqueue(b, `${row.id}:part:${i}`, i === chunks.length - 1 ? { ...content, text } : { text }));
-          this.store.run("UPDATE plugin_im_outbox SET state = 'split' WHERE id = ?", row.id);
-        });
-        return;
-      }
-      this.store.run("UPDATE plugin_im_outbox SET state = 'sending', attempts = attempts + 1 WHERE id = ?", row.id);
+      const content = parts[row.part];
+      this.store.run("UPDATE plugin_im_outbox SET state = 'sending', sending_json = ?, attempts = attempts + 1 WHERE id = ?", JSON.stringify(content), row.id);
       try {
-        const result = await deadline(c.session!.deliver({ operationId: row.id, address: JSON.parse(b.address_json) as ImAddress,
-          ...(adapter.capabilities.edit && row.message_id ? { replaceMessageId: row.message_id } : {}), content }), this.config.operationTimeoutMs);
+        const result = await deadline(c.session!.deliver({ operationId: `${row.id}:v${row.prepared_revision}:p${row.part}`,
+          address: JSON.parse(b.address_json) as ImAddress,
+          ...(adapter.capabilities.edit && messageIds[row.part] ? { replaceMessageId: messageIds[row.part] } : {}), content }), this.config.operationTimeoutMs);
         if (!result.messageId) throw new Error("Adapter returned no message id");
-        if (!this.stopped) this.store.run("UPDATE plugin_im_outbox SET state = 'delivered', message_id = ?, error = NULL WHERE id = ?", result.messageId, row.id);
+        if (this.stopped) return;
+        messageIds[row.part] = result.messageId;
+        const latest = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", row.id)!;
+        const changed = latest.revision !== row.prepared_revision;
+        const next = row.part + 1;
+        this.store.run(`UPDATE plugin_im_outbox SET state = ?, message_id = ?, message_ids_json = ?,
+          parts_json = ?, part = ?, sending_json = NULL, retry_at = 0, error = NULL WHERE id = ?`,
+          changed || next < parts.length ? "queued" : "delivered", messageIds[0], JSON.stringify(messageIds),
+          changed ? null : JSON.stringify(parts), changed ? 0 : next, row.id);
       } catch (e) {
         if (this.stopped) return;
         const disposition = (e as { disposition?: string } | null)?.disposition;
         const retryAfter = (e as { retryAfterMs?: number } | null)?.retryAfterMs;
-        this.store.run("UPDATE plugin_im_outbox SET state = ?, error = ?, retry_at = ? WHERE id = ?",
+        const latest = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", row.id)!;
+        const superseded = disposition === "retryable" && latest.revision !== row.prepared_revision;
+        this.store.run(`UPDATE plugin_im_outbox SET state = ?, error = ?, retry_at = ?, sending_json = NULL,
+          parts_json = ?, part = ? WHERE id = ?`,
           disposition === "retryable" ? "queued" : disposition === "permanent" ? "failed" : "uncertain",
-          "Delivery failed; check adapter diagnostics", Date.now() + (Number.isFinite(retryAfter) ? Math.max(0, retryAfter!) : Math.min(60_000, this.config.retryMs * 2 ** Math.min(row.attempts, 6))), row.id);
+          "Delivery failed; check adapter diagnostics", superseded ? 0 : Date.now() + (Number.isFinite(retryAfter) ? Math.max(0, retryAfter!) : Math.min(60_000, this.config.retryMs * 2 ** Math.min(row.attempts, 6))),
+          superseded ? null : JSON.stringify(parts), superseded ? 0 : row.part, row.id);
       }
     } finally { c.flushing = false; }
   }
@@ -488,7 +572,7 @@ export class Im extends Service {
     if (!this.current(c)) throw new Error("Connection closed");
     for (const b of this.store.bindings().filter(b => b.connection_id === c.id && this.authorizedBinding(b))) {
       const rows = this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND state = 'sending'", b.id);
-      if (!rows.some(r => (JSON.parse(r.content_json) as ImContent).files?.some(f => f.id === id))) continue;
+      if (!rows.some(r => r.thread_id === b.thread_id && r.sending_json && (JSON.parse(r.sending_json) as ImContent).files?.some(f => f.id === id))) continue;
       return Buffer.from(this.home.agent.readMedia(b.project_id, b.thread_id, id).base64, "base64");
     }
     throw new Error("File is not part of this connection's current delivery");

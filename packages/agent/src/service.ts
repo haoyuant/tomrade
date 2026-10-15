@@ -1127,6 +1127,15 @@ export class Agent extends Service {
     return taken;
   }
 
+  /** Stop a suspended question without starting an engine just to clear it. */
+  cancelWaiting(projectId: string, threadId: string): boolean {
+    if (this.activeByThread.has(threadId) || !this.store.pending(projectId, threadId)) return false;
+    this.store.clearPending(projectId, threadId);
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().stopped }, null);
+    this.broadcast(threadId, { type: "pending", pending: null });
+    return true;
+  }
+
   cancel(runId: string): boolean {
     const rc = this.activeById.get(runId);
     if (rc) {

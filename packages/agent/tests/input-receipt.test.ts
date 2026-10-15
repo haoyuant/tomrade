@@ -9,7 +9,7 @@ import { Settings } from "@tomradex/settings";
 
 it("commits input and run with the receipt, rejects changed requests and replays after reopening Agent", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "tomrade-input-"));
-  const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }]] });
+  const { ctx, project } = await fresh({ cacheDir: path.join(dir, 'cache'), plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }]] });
   let agent = ctx.plugin(Agent);
   await settle();
   try {
@@ -24,6 +24,8 @@ it("commits input and run with the receipt, rejects changed requests and replays
     await expect.poll(() => ctx.agent.store.run(project.id, first.runId)?.status).toBe("done");
     expect(turn).toHaveBeenCalledTimes(1);
     await agent.dispose();
+    ctx.db.close(project.id);
+    ctx.db.open(project.id);
     agent = ctx.plugin(Agent);
     await settle();
     expect(ctx.agent.send(project.id, thread.id, input, delivery)).toEqual(first);

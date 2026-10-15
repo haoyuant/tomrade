@@ -2,8 +2,8 @@ import path from "node:path";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
-import { Agent } from "@tomradex/agent";
-import { Im } from "@tomradex/im";
+import { Agent, type Engine } from "@tomradex/agent";
+import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 
 export interface TestCheck {
@@ -20,7 +20,7 @@ export interface HostTestResult {
 
 export interface HostTestInput {
   /** The plugin's default export, already loaded. */
-  plugin: { config?: { safeParse(v: unknown): { success: boolean; data?: unknown } }; apply(ctx: unknown, config: unknown): unknown };
+  plugin: { inject?: string[]; optional?: string[]; config?: { safeParse(v: unknown): { success: boolean; data?: unknown } }; apply(ctx: unknown, config: unknown): unknown };
   id: string;
   namespace: string;
   dir: string;
@@ -49,7 +49,9 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const check = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, ...(detail ? { detail } : {}) });
 
   const p = input.plugin;
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, Agent, Im] });
+  const im = [...(p.inject ?? []), ...(p.optional ?? [])].includes("im");
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(im ? [Agent, Im] : [])] });
+  try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
     w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "A sample issue", by: "human" }),
@@ -105,6 +107,13 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
         sections: (itemId: string) => w.ctx.contributions.sectionsFor(w.project.id, itemId),
         graph: (id: string) => w.ctx.contributions.graphEdges(id, scope),
         sidebarModules: () => w.ctx.contributions.sidebarModules(w.project.id),
+        ...(im ? { im: {
+          configure: (settings: unknown) => w.ctx.settings.set({ ...w.ctx.settings.get(), im: ImSettings.parse(settings) }),
+          engine: (engine: Engine) => w.ctx.agent.engine(engine),
+          threads: () => w.ctx.agent.store.threads(w.project.id),
+          thread: (id: string) => w.ctx.agent.thread(w.project.id, id),
+          connections: () => w.ctx.im.views()
+        } } : {}),
         check
       };
       try {
@@ -115,4 +124,11 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
     }
   }
   return { ok: checks.every((c) => c.ok), checks, logs };
+  } finally {
+    if (im) {
+      for (const run of w.ctx.agent.activeRuns()) w.ctx.agent.cancel(run.run.id);
+      await settle();
+    }
+    await w.ctx.fiber.dispose();
+  }
 }

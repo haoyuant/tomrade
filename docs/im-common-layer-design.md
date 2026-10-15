@@ -1,6 +1,6 @@
 # IM 公共层插件设计
 
-日期：2026-10-14。关联：TOM-94。状态：设计完成，尚未实现。
+日期：2026-10-14（实现状态更新于 2026-10-15）。关联：TOM-94。状态：公共层与 SDK 契约已实现，见文末“实现状态”；尚无真实平台适配器。
 
 用户已确认新的产品方向：IM 可以驱动完整 Agent 会话，包括闲聊、需求讨论、工单操作、执行和文档生成。TOM-94 已通过 Tomrade MCP 标为 Doing。现有 TOM-92、TOM-94 和 TOM-95～100 的正文仍是“只建 Backlog 工单”的旧范围，本设计不代表这些实现验收已经通过。
 
@@ -240,3 +240,27 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - [Cindy IM 协议](https://github.com/makecindy/cindy-protocol/blob/main/docs/slack-hook-protocol.md)
 
 以上规则依据调研时的公开文档；每个平台适配器实现时再核验对应地区、应用类型和当前能力。
+
+## 实现状态（2026-10-15）
+
+已实现（`packages/im`、`packages/plugin-sdk/src/im.ts`）：
+
+- 内置 `ctx.im` 服务，SDK 契约 `0.2.1`：`im.register(adapter)`、`ServiceName: im`、manifest `contributes.imAdapters`。扩展 facade 限定命名空间，卸载时关闭连接、拒绝后续入站。
+- 设置 `im`（machine scope，agent 不可读）：connections 与 routes；route 指定项目、可选 board/engine、允许的 actor、是否接受私聊/群聊。未授权、机器人和未开启的激活方式直接忽略，只保留最近 20 条不含正文的诊断记录。
+- 绑定键：连接 + 地址 + route 的目标（项目、board、engine、适配器）。修改允许名单或激活方式不会新开会话；改目标项目/engine 会进入新绑定。
+- 收件去重：`连接 + tenant + eventId` 与 `连接 + 会话 + messageId` 双键；同一 eventId 内容不同则拒绝。Agent `send` 支持持久 `requestId` 回执，与 run 同事务写入，崩溃重放返回原 run。
+- 输入按 thread 串行；`/answer`、按钮动作、`/stop`、`/status` 优先；`/new` 新开 assistant thread。问题动作令牌绑定连接、thread、run、questionId、actor 与有效期；桌面答复、过期、重新绑定后旧卡片改为“已处理或失效”。普通文字从不当作审批。
+- 输出：持久消息、错误、变更、媒体、卡片标题、问题；可编辑平台节流更新进度消息，不可编辑平台只收稳定输出（不发“本轮执行结束”）。按 UTF-16 代理对安全分段。outbox 每目标有序，已知未发送可重试（同 operationId），结果未知标为 `uncertain` 不自动重发，也不阻塞该会话后续回复；`im.retry` / `im.discard` IPC 由人处理。
+- 投影由 Agent 事件驱动，另有 `sweepMs`（默认 5 秒）兜底扫描；完成的 inbox/outbox/动作记录保留 `retentionMs`（默认 30 天）后清理，更早事件的重放由 Agent 输入回执阻止再次执行。
+- 状态栏显示每个连接的状态与待确认数，中英文随桌面语言；IM 中的拒绝提示同样本地化。
+
+验证：`pnpm typecheck`、`pnpm test` 全部通过；`packages/im/tests` 覆盖去重、授权、审批、多选/自由文本、`/stop` `/status` `/new`、限流顺序、不确定投递、媒体句柄、下载中撤销授权、保留期清理；`websocket.test.ts` 用本机 WebSocket 服务验证 SDK 扩展的长连接、断线重连与卸载关闭。`packages/im/tests/fixtures/fake-adapter` 通过 `tomrade-plugin check`（ok · risk low）与 `tomrade-plugin test`，并纳入 `packages/plugin-cli` 测试。
+
+**长连接结论**：已安装扩展在主进程内通过 SDK facade 运行，可以保持 WebSocket 等长连接；宿主负责 `signal`、断线退避重连和卸载关闭。网络权限目前是声明 + `plugin check` 静态分析告警，并非运行时拦截；真实适配器需在 manifest 声明平台域名。
+
+尚未实现（需另开工单或后续切片）：
+
+- Slack、飞书真实适配器与真实账号验证；连接设置向导（目前设置用通用 JSON 编辑器）。
+- 在 IM 中完成交付验收（Accept/Request changes）；输出链接、Files 版本导出和任意文档导入。目前只支持 Agent media 支持的附件。
+- uncertain/failed 投递的桌面处理界面（目前仅 IPC）；跨平台不承诺 exactly-once。
+- TOM-92 与平台子工单的范围仍是旧的“只建工单”，需按新目标重新确认。
