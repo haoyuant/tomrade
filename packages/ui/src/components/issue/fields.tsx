@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket, usd } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { useDoneGuard } from "~/lib/doneGuard";
 import { usePatchItem } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
@@ -22,6 +23,7 @@ export type IssueWrite = (item: Item, patch: Patch, said: ReactNode) => Promise<
 
 export function useIssueWriter(projectId: string): { write: IssueWrite; pending: boolean } {
   const patch = usePatchItem(projectId);
+  const guard = useDoneGuard();
   const undoWrite = useToastUndo(projectId);
   const toast = useToast();
   const { tx } = useI18n();
@@ -29,8 +31,12 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
   // mutateAsync, not mutate: per-call callbacks only fire for the latest call,
   // and a caller holding a draft needs to hear how its own write went.
   const write = useCallback<IssueWrite>(
-    (item, next, said) =>
-      patch.mutateAsync({ id: item.id, patch: next, baseVersion: item.version }).then(
+    async (item, next, said) => {
+      const verdict = await guard(item, next);
+      if (verdict === "cancel") return false;
+      // The delivery was accepted instead, which finished the ticket.
+      if (verdict === "accepted") return true;
+      return patch.mutateAsync({ id: item.id, patch: next, baseVersion: item.version }).then(
         (written) => {
           toast({ body: said, onUndo: () => undoWrite({ id: item.id, stamp: written.version }) });
           return true;
@@ -42,8 +48,9 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
           });
           return false;
         }
-      ),
-    [patch, toast, undoWrite, tx]
+      );
+    },
+    [patch, guard, toast, undoWrite, tx]
   );
 
   return { write, pending: patch.isPending };

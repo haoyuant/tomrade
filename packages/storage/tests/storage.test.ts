@@ -271,7 +271,8 @@ describe("ctx.storage", () => {
     state.tables.items.find((r) => r.id === item.id)!.title = "Renamed elsewhere";
     state.manifest.snapshot!.digest = digestState(state);
     writeArtifact(a.dir, state);
-    a.items.update(a.project.id, item.id, { status: "done" }, "human");
+    // What an older build left behind: done over a delivery whose last verdict was "changes requested".
+    a.ctx.db.for(a.project.id).prepare("UPDATE items SET status = 'done', version = version + 1 WHERE id = ?").run(item.id);
     expect((await a.storage.statusFor(a.project.id)).state).toBe("diverged");
     await a.storage.refresh(a.project.id);
     expect(a.items.get(a.project.id, item.id)?.title).toBe("Renamed elsewhere");

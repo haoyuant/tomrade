@@ -434,7 +434,12 @@ export class Items extends Service {
     const submitted = existing.evidence.submissions.some(s => s.deliveryId === active?.id);
     if (next.workType === "general" && next.status === "done" && existing.status !== "done" && by !== "human" && (hasOutputs || submitted)) throw new Error("General deliveries require human acceptance");
     if (next.status === "done" && existing.status !== "done" && hasOutputs && by !== "human") throw new Error("Artifact deliveries require human acceptance");
-    if (next.status === "done" && existing.status !== "done" && by === "human" && !evidence && (next.workType === "general" || hasOutputs)) {
+    // A person finishing a ticket over a delivery nobody accepted records that as their own word, so the
+    // evidence never disagrees with the status (it used to, and a later sync flagged it).
+    const settledOn = active?.id ?? this.deliveries.current(projectId, id)?.id;
+    const lastSubmission = existing.evidence.submissions.filter(s => s.deliveryId === settledOn).at(-1);
+    const unaccepted = !!lastSubmission && !existing.evidence.reviews.some(r => r.submissionId === lastSubmission.id && r.decision === "accepted");
+    if (next.status === "done" && existing.status !== "done" && by === "human" && !evidence && (next.workType === "general" || hasOutputs || unaccepted)) {
       const deliveryId = active?.id ?? `${id}:delivery:${(this.deliveries.current(projectId, id)?.sequence ?? 0) + 1}`;
       const submitted = existing.evidence.submissions.filter(s => s.deliveryId === deliveryId).at(-1);
       const current = existing.status === "verifying" && submitted && !existing.evidence.reviews.some(r => r.submissionId === submitted.id) ? submitted : null;

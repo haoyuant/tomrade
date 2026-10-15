@@ -11,6 +11,7 @@ import { commandPalette } from "./commandPalette";
 import { common } from "./common";
 import { deleteIssueDialog } from "./deleteIssueDialog";
 import { syncIssues } from "./syncIssues";
+import { doneGuard } from "./doneGuard";
 import { doctor } from "./doctor";
 import { destination } from "./destination";
 import { detailPane } from "./detailPane";
@@ -71,6 +72,7 @@ export const en = {
   petProfiles: petProfiles.en,
   deleteIssueDialog: deleteIssueDialog.en,
   syncIssues: syncIssues.en,
+  doneGuard: doneGuard.en,
   doctor: doctor.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
@@ -133,6 +135,7 @@ export const zh: typeof en = {
   petProfiles: petProfiles.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
   syncIssues: syncIssues.zh,
+  doneGuard: doneGuard.zh,
   doctor: doctor.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,

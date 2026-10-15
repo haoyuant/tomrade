@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { fresh } from "@tomradex/testkit";
-import { exportState, importState } from "@tomradex/storage";
+import { evidenceAttention, exportState, importState } from "@tomradex/storage";
 
 it("requires Files versions, distinguishes inputs, pins review outputs and preserves rejected history", async () => {
   const { ctx, items, project, board } = await fresh();
@@ -65,7 +65,9 @@ it("settles evidence a sync left inconsistent: accept the latest submission, or 
   let updated = items.submitDelivery(project.id, item.id, { report: "Collected" }, "human");
   const submission = updated.evidence.submissions[0];
   updated = items.reviewDelivery(project.id, item.id, { submissionId: submission.id, decision: "changes-requested" }, updated.version);
-  updated = items.update(project.id, item.id, { status: "done" }, "human", { baseVersion: updated.version });
+  // What an older build left behind: done over a delivery whose last verdict was "changes requested".
+  ctx.db.for(project.id).prepare("UPDATE items SET status = 'done', version = version + 1 WHERE id = ?").run(item.id);
+  updated = items.get(project.id, item.id)!;
 
   const accepted = items.settleEvidence(project.id, item.id, "accept", updated.version);
   expect(accepted.status).toBe("done");
