@@ -111,7 +111,7 @@ describe("code link", () => {
       expect(items.get(project.id, item.id)?.status).toBe("done");
     } finally { await ctx.fiber.dispose(); }
   });
-  it("requires every code link to merge and a human to accept mixed output", async () => {
+  it("lets a person accept mixed output over unmerged links", async () => {
     const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
     try {
       const item = ticket("Ship code and guide", "todo");
@@ -122,23 +122,47 @@ describe("code link", () => {
       }
       await codeLink.scan(project.id);
       items.files({ async getVersion(_project, ref) { return ref; }, async describe() { return []; } });
-      let updated = await items.addResource(project.id, item.id, { name: "Guide", role: "output", file: { fileId: "guide", versionId: "v1" } }, "human");
-      updated = items.submitDelivery(project.id, item.id, { report: "Code and guide", artifactIds: updated.evidence.resources.map(r => r.id) }, "human");
-      const accept = () => {
-        const current = items.get(project.id, item.id)!;
-        return items.reviewDelivery(project.id, item.id, { submissionId: current.evidence.submissions.at(-1)!.id, decision: "accepted" }, current.version);
-      };
-      expect(() => accept()).toThrow("Merge all code links");
-      for (const [index, branch] of branches.entries()) {
-        git(["checkout", "-q", "main"], checkout);
-        git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
-        git(["push", "-q", "origin", "main"], checkout);
-        await codeLink.scan(project.id);
-        expect(items.get(project.id, item.id)?.status).not.toBe("done");
-        if (!index) expect(() => accept()).toThrow("Merge all code links");
-      }
-      expect(accept().status).toBe("done");
-      expect(items.deliveries.current(project.id, item.id)?.state).toBe("completed");
+      const updated = await items.addResource(project.id, item.id, { name: "Guide", role: "output", file: { fileId: "guide", versionId: "v1" } }, "human");
+      items.submitDelivery(project.id, item.id, { report: "Code and guide", artifactIds: updated.evidence.resources.map(r => r.id) }, "human");
+      const current = items.get(project.id, item.id)!;
+      const accepted = items.reviewDelivery(project.id, item.id, { submissionId: current.evidence.submissions.at(-1)!.id, decision: "accepted" }, current.version);
+      expect(accepted.status).toBe("done");
+      expect(accepted.evidence.reviews.at(-1)?.decision).toBe("accepted");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("keeps a sync from finishing a submitted coding delivery before its links merge", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Ship code", "todo");
+      commitOn(checkout, `tom-${item.keyNum}/first`, "change.ts", `${item.key}: change`);
+      git(["push", "-q", "origin", `tom-${item.keyNum}/first`], checkout);
+      await codeLink.scan(project.id);
+      items.submitDelivery(project.id, item.id, { report: "Code", artifactIds: [] }, "ai:test");
+      expect(() => items.update(project.id, item.id, { status: "done" }, "sync:git")).toThrow("Merge all code links");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("settles mixed-delivery links once the branch is deleted after merge and the other branch's ticket commits landed", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Ship code and guide", "todo");
+      const named = `tom-${item.keyNum}/first`;
+      commitOn(checkout, "side/work", "wip.ts", `${item.key}: wip`);
+      git(["checkout", "-q", "-b", named, "side/work"], checkout);
+      commitOn(checkout, named, "finish.ts", `${item.key}: finish`);
+      commitOn(checkout, "side/work", "other.ts", "TOM-999: unrelated");
+      git(["push", "-q", "origin", named, "side/work"], checkout);
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id).map(l => l.branch).sort()).toEqual([named, "side/work"].sort());
+      items.files({ async getVersion(_project, ref) { return ref; }, async describe() { return []; } });
+      const updated = await items.addResource(project.id, item.id, { name: "Guide", role: "output", file: { fileId: "guide", versionId: "v1" } }, "human");
+      items.submitDelivery(project.id, item.id, { report: "Code and guide", artifactIds: updated.evidence.resources.map(r => r.id) }, "human");
+      expect(codeLink.links(project.id, item.id).some(l => !!l.mergedSha)).toBe(false);
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", `Merge ${named}`, named], checkout);
+      git(["push", "-q", "origin", "main", `:${named}`], checkout);
+      git(["branch", "-q", "-D", named], checkout);
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id).every(l => !!l.mergedSha)).toBe(true);
     } finally { await ctx.fiber.dispose(); }
   });
   it("links a branch named after a ticket and moves the ticket to doing, then done on merge", async () => {
