@@ -53,7 +53,15 @@ export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("items.deliveries", (projectId, id) => ctx.items.deliveries.list(projectId, id));
   ctx.ipc.handle("items.addResource", (projectId, id, input) => ctx.items.addResource(projectId, id, input, "human"));
   ctx.ipc.handle("items.submitDelivery", (projectId, id, input) => ctx.items.submitDelivery(projectId, id, input, "human"));
-  ctx.ipc.handle("items.reviewDelivery", (projectId, id, input, baseVersion) => ctx.items.reviewDelivery(projectId, id, input, baseVersion));
+  ctx.ipc.handle("items.reviewDelivery", (projectId, id, input, baseVersion) => {
+    try {
+      return ctx.items.reviewDelivery(projectId, id, input, baseVersion);
+    } catch (error) {
+      // The panel shows it too; the log is where a "nothing happened" report gets answered.
+      ctx.logger.warn(`items: review of ${id} (${input.decision}) refused — ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  });
   ctx.ipc.handle("items.settleEvidence", (projectId, id, action, baseVersion) => ctx.items.settleEvidence(projectId, id, action, baseVersion));
   ctx.ipc.handle("items.list", (filter = {}) => withDerived(ctx, ctx.items.list(filter)));
   ctx.ipc.handle("items.query", (query) => withDerived(ctx, ctx.items.query(query)));

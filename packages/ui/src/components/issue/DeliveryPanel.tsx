@@ -7,7 +7,7 @@ import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useAttachFiles, useImportForTicket, useTicketFolder } from "~/lib/files";
 import { invalidateWorkspace } from "~/lib/queries";
-import { errorSpec, useToast } from "~/lib/toast";
+import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
 
 /** A resource opens the version it pinned, never the file's current head. */
@@ -88,6 +88,18 @@ export function DeliveryPanel({ item }: { item: Item }) {
         <button className="btn btn-primary" data-testid="delivery-accept" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate("accepted")}>{t("fields.acceptDelivery")}</button>
         <button className="btn btn-secondary" data-testid="delivery-changes" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate("changes-requested")}>{t("fields.requestChanges")}</button>
       </div>
+    </div>}
+    {submission && review && item.status !== "cancelled" && <div className="stack-2" data-testid="delivery-verdict">
+      <p className="meta-txt">{t(review.decision === "accepted" ? "fields.accepted" : "fields.changesRequested")}</p>
+      <textarea className="input" aria-label={t("fields.reviewComment")} placeholder={t("fields.reviewComment")} value={comment} onChange={e => setComment(e.target.value)} />
+      <div className="row">
+        {review.decision !== "accepted" && <button className="btn btn-primary" data-testid="delivery-reaccept" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate("accepted")}>{t("fields.acceptAfterAll")}</button>}
+        {review.decision !== "changes-requested" && <button className="btn btn-secondary" data-testid="delivery-rechanges" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate("changes-requested")}>{t("fields.requestChangesInstead")}</button>}
+      </div>
+    </div>}
+    {mutate.isError && <div className="stack-2" role="alert" data-testid="delivery-error">
+      <p className="meta-txt">{t(String(mutate.error).includes("version conflict") ? "fields.reviewStale" : "fields.reviewFailed", { reason: readableError(mutate.error) })}</p>
+      <button className="btn btn-ghost" type="button" disabled={mutate.isPending} onClick={() => mutate.mutate(mutate.variables!)}>{t("fields.retry")}</button>
     </div>}
     {evidence.submissions.length > 0 && <details><summary>{t("fields.deliveryHistory")}</summary>
       {evidence.submissions.map(s => {

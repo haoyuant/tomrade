@@ -214,15 +214,25 @@ export class Items extends Service {
     return this.updateInternal(projectId, id, {}, "human", { baseVersion }, { ...evidence, submissions, reviews });
   }
 
+  /**
+   * The verdict on the latest submission. A first verdict needs the ticket in review; a later one
+   * replaces it, so "changes requested" is not final and a done ticket can still be taken back.
+   */
   reviewDelivery(projectId: string, id: string, input: z.input<typeof reviewDeliverySchema>, baseVersion: number): Item {
     const args = reviewDeliverySchema.parse(input);
-    const item = this.openTicket(projectId, id);
-    const delivery = this.deliveries.active(projectId, id);
+    const item = this.get(projectId, id);
+    if (!item || item.kind !== "ticket") throw new Error("Choose a ticket");
+    if (item.status === "cancelled") throw new Error("Reopen the ticket before changing its delivery");
+    const delivery = this.deliveries.active(projectId, id) ?? this.deliveries.current(projectId, id);
     const submission = item.evidence.submissions.filter(s => s.deliveryId === delivery?.id).at(-1);
-    if (!submission || submission.id !== args.submissionId || item.status !== "verifying") throw new Error("This submission is no longer awaiting review; refresh the ticket");
-    if (item.evidence.reviews.some(r => r.submissionId === submission.id)) throw new Error("This submission has already been reviewed");
+    const earlier = submission && item.evidence.reviews.find(r => r.submissionId === submission.id);
+    const awaiting = item.status === "verifying";
+    if (!submission || submission.id !== args.submissionId || (!earlier && !awaiting)) throw new Error("This submission is no longer awaiting review; refresh the ticket");
+    const status = args.decision === "accepted" ? "done" : "doing";
+    if (earlier?.decision === args.decision && item.status === status) throw new Error("This submission already has that verdict");
     const review = { id: randomUUID(), submissionId: submission.id, decision: args.decision, comment: args.comment, reviewedBy: "human" as const, reviewedAt: Date.now() };
-    return this.updateInternal(projectId, id, { status: args.decision === "accepted" ? "done" : "doing" }, "human", { baseVersion }, { ...item.evidence, reviews: [...item.evidence.reviews, review] });
+    const reviews = [...item.evidence.reviews.filter(r => r.submissionId !== submission.id), review];
+    return this.updateInternal(projectId, id, { status }, "human", { baseVersion }, { ...item.evidence, reviews });
   }
   static provide = "items";
   static inject = ["db", "oplog", "fields"];
