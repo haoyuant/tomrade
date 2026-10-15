@@ -234,11 +234,14 @@ describe("the MCP surface", () => {
       const scoped = await open(ctx.mcp.urlFor(project.id)!);
       expect((await scoped.listPrompts()).prompts.map((p) => p.name)).toEqual(["sync"]);
       expect(text(await scoped.getPrompt({ name: "sync" }))).toBe(`sync ${project.id}`);
-      expect(scoped.getInstructions()).toBe(`first\n\ntickets of ${project.id}\n\nalways`);
+      // which Tomrade this is comes right after the paragraphs that must lead (the project's rules)
+      const intro = /This is Tomrade \(development build\) dev, pid \d+\.[^\n]*\n\n/;
+      expect(scoped.getInstructions()).toMatch(/^first\n\nThis is Tomrade/);
+      expect(scoped.getInstructions()?.replace(intro, "")).toBe(`first\n\ntickets of ${project.id}\n\nalways`);
 
       const plain = await open(ctx.mcp.url!);
       expect(text(await plain.getPrompt({ name: "sync" }))).toBe("sync any project");
-      expect(plain.getInstructions()).toBe("first\n\nalways");
+      expect(plain.getInstructions()?.replace(intro, "")).toBe("first\n\nalways");
 
       const run = await open(ctx.mcp.url!, { "X-Tomrade-Run": "run-tok" });
       expect((await run.listPrompts()).prompts.map((p) => p.name)).toEqual(["sync"]);

@@ -52,7 +52,8 @@ export {
   type StorageProvider,
   type StorageProviderView,
   type StorageStatus,
-  type SyncState
+  type SyncState,
+  type SyncSummary
 } from "./types.js";
 export type {} from "./channels.js";
 export { Storage as default } from "./service.js";

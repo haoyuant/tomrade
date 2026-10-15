@@ -1309,6 +1309,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain

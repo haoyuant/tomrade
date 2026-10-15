@@ -6,7 +6,7 @@ import { AccountFolders, machineRoots } from "./accounts.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
-import { leaving, prepareToQuit, quitApproved } from "./quit.js";
+import { leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { followSystemProxy } from "./system-proxy.js";
 import { trustedKeys } from "./trust.js";
@@ -66,7 +66,12 @@ app.whenReady().then(async () => {
     configFile: path.join(here, "../tomrade.yml"),
     patchFiles: [path.join(machine.userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
     // What a first run is written in, before the person has picked a language.
-    vars: { userData, hubDir, pluginsRoot, pluginsDevRoot, logDir: path.join(machine.userData, "logs"), appVersion: app.getVersion(), locale: app.getLocale() },
+    vars: {
+      userData, hubDir, pluginsRoot, pluginsDevRoot, logDir: path.join(machine.userData, "logs"), appVersion: app.getVersion(), locale: app.getLocale(),
+      instanceKind: app.isPackaged ? "packaged" : "dev",
+      // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
+      mcpPort: process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091")
+    },
     extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
   });
 
@@ -81,6 +86,7 @@ app.whenReady().then(async () => {
     event.preventDefault();
     void prepareToQuit(ctx).then((ok) => ok && app.quit());
   });
+  for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
 
   const open = () =>
     createWindow(ctx, {

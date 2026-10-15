@@ -310,7 +310,11 @@ plugins:
   - id: mcp
     name: "@tomradex/mcp"
     config:
-      port: 19090
+      port: ${mcpPort}
+      instance:
+        kind: ${instanceKind}
+        version: ${appVersion}
+        dataDir: ${userData}
   # The other direction: MCP servers the person connects in Settings, their
   # tools registered beside the built-in ones. Optional — nothing depends on it.
   - id: mcp-client

@@ -8,12 +8,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import type { Author } from "@tomradex/domain";
+import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/tools";
-import { LONG_RESULT, compactList, strictInput, type Tools } from "@tomradex/tools";
+import { LONG_RESULT, compactList, defineTool, strictInput, type Tools } from "@tomradex/tools";
 
 export const MCP_SERVER_NAME = "tomrade";
-export const MCP_SERVER_VERSION = "0.0.1";
 
 declare module "cordis" {
   interface Context {
@@ -30,12 +30,78 @@ declare module "@tomradex/ipc" {
 
 export const McpConfig = z.object({
   host: z.string().default("127.0.0.1"),
-  /** 0 picks a free port — what the UI harness uses. */
-  port: z.number().int().min(0).max(65535).default(19090),
+  /** 0 picks a free port — what the UI harness uses. Taken by another program, a free one is used and the clash shown. */
+  port: z.coerce.number().int().min(0).max(65535).default(19090),
   /** A tool call this slow is logged, so a hang an agent reports can be found afterwards. */
-  slowCallMs: z.number().int().nonnegative().default(10_000)
+  slowCallMs: z.number().int().nonnegative().default(10_000),
+  /** Which Tomrade this is: two can run on one machine (the installed app and a checkout), each with its own data. */
+  instance: z
+    .object({
+      kind: z.enum(["packaged", "dev"]).default("dev"),
+      version: z.string().default("dev"),
+      /** The data directory this instance reads and writes. */
+      dataDir: z.string().nullable().default(null)
+    })
+    .prefault({})
 });
 export type McpConfig = z.infer<typeof McpConfig>;
+
+/** What `GET /instance` answers: enough for another Tomrade to say who holds the port, nothing about its data. */
+export interface InstanceBadge {
+  app: "tomrade";
+  kind: "packaged" | "dev";
+  version: string;
+  pid: number;
+}
+
+/** The port this instance was configured for, when another program held it. */
+export interface PortClash {
+  port: number;
+  /** The Tomrade holding it, when it answered; null for anything else. */
+  heldBy: InstanceBadge | null;
+}
+
+interface SyncSummaryLike {
+  state: string;
+  location: string | null;
+  detail?: string;
+  lastSyncAt: number | null;
+  pending: { count: number; since: number | null } | null;
+}
+interface StorageLike {
+  syncSummary(projectId: string): SyncSummaryLike;
+  writeMark(projectId: string): number;
+}
+
+/** Who holds `port`: a Tomrade that says so, or null. Never waits long — this runs at startup. */
+async function askHolder(host: string, port: number): Promise<InstanceBadge | null> {
+  try {
+    const res = await fetch(`http://${host}:${port}/instance`, { signal: AbortSignal.timeout(1_000) });
+    const body = (await res.json()) as Partial<InstanceBadge>;
+    return body.app === "tomrade" && (body.kind === "packaged" || body.kind === "dev") ? { app: "tomrade", kind: body.kind, version: String(body.version), pid: Number(body.pid) } : null;
+  } catch {
+    return null;
+  }
+}
+
+const listen = (app: express.Express, port: number, host: string) =>
+  new Promise<HttpServer>((resolve, reject) => {
+    const srv = app.listen(port, host, () => resolve(srv));
+    srv.on("error", reject);
+  });
+
+/** One line an agent reads after a write: is it still only here, and if so why and for how long. */
+export function syncNote(summary: SyncSummaryLike, instance: McpConfig["instance"]): string {
+  const here = `this Tomrade (${instance.kind} ${instance.version})`;
+  if (summary.state === "local") return `Sync: this project is kept on ${here} only; it does not sync anywhere.`;
+  const where = summary.location ?? "its shared folder";
+  const count = summary.pending?.count;
+  if (count === 0) return `Sync: published to ${where}.`;
+  const waiting = count === undefined ? "Changes are" : `${count} change${count === 1 ? " is" : "s are"}`;
+  if (summary.state === "offline" || summary.state === "error" || summary.state === "unavailable")
+    return `Sync: ${waiting} on ${here} only — it cannot publish now${summary.detail ? ` (${summary.detail})` : ""}. Other instances and machines will not see ${count === 1 ? "it" : "them"} until it does.`;
+  return `Sync: ${waiting} on ${here} only until it publishes to ${where}, within about 30 seconds while it keeps running.`;
+}
 
 const block = (text: string) => ({ type: "text" as const, text });
 
@@ -117,6 +183,8 @@ export class Mcp extends Service {
   static Config = McpConfig;
 
   url: string | null = null;
+  /** Set when the configured port was taken and this instance listens elsewhere. */
+  clash: PortClash | null = null;
 
   /** Captured from the injected context: HTTP callbacks run after Cordis's injection frame has closed. */
   private tools: Tools | null = null;
@@ -204,24 +272,112 @@ export class Mcp extends Service {
       }
     });
 
-    const server = await new Promise<HttpServer>((resolve, reject) => {
-      const srv = app.listen(this.config.port, this.config.host, () => resolve(srv));
-      srv.on("error", reject);
+    app.get("/instance", (_req, res) => {
+      res.json(this.badge());
     });
-    const address = server.address();
-    // A race with a dying predecessor can yield a bound-then-dropped socket; name the problem instead of a null deref.
-    if (!address || typeof address === "string") throw new Error(`MCP could not bind ${this.config.host}:${this.config.port} — is another Tomrade still running?`);
-    this.url = `http://${this.config.host}:${(address as AddressInfo).port}/mcp`;
-    this.ctx.logger.info(`MCP server ready: ${this.url}`);
+
+    // A port another process holds shows as EADDRINUSE, or as a server that "listens" with no address.
+    const bind = async (port: number): Promise<{ server: HttpServer; port: number } | null> => {
+      try {
+        const server = await listen(app, port, this.config.host);
+        const address = server.address();
+        if (address && typeof address !== "string") return { server, port: (address as AddressInfo).port };
+        server.close();
+        return null;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") return null;
+        throw error;
+      }
+    };
+    let bound = await bind(this.config.port);
+    if (!bound && this.config.port !== 0) {
+      // Another Tomrade (the installed app beside a checkout) holds it. Failing here would take every
+      // engine that waits on MCP down with it; a free port keeps this instance whole, and the clash is shown.
+      this.clash = { port: this.config.port, heldBy: await askHolder(this.config.host, this.config.port) };
+      bound = await bind(0);
+    }
+    if (!bound) throw new Error(`MCP could not bind ${this.config.host}:${this.config.port}`);
+    const { server } = bound;
+    this.url = `http://${this.config.host}:${bound.port}/mcp`;
+    if (this.clash) this.ctx.logger.warn(`MCP port ${this.clash.port} is held by ${this.holderText(false)}; this instance listens on ${this.url}`);
+    else this.ctx.logger.info(`MCP server ready: ${this.url}`);
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("mcp.url", (projectId) => (projectId ? ctx.mcp.urlFor(projectId) : ctx.mcp.url));
     });
+    this.ctx.inject(["contributions"], (ctx) => {
+      ctx.contributions.statusItem({
+        id: "mcp-port",
+        icon: "i-warn",
+        text: () => {
+          if (!this.clash || !this.url) return null;
+          const zh = this.zh();
+          const port = new URL(this.url).port;
+          return zh ? `MCP 在 ${port} 端口 · ${this.clash.port} 被${this.holderText(true)}占用` : `MCP on ${port} · ${this.clash.port} held by ${this.holderText(false)}`;
+        },
+        title: () =>
+          this.zh()
+            ? "按默认端口配置的智能体连到的是另一个 Tomrade 和它的数据，不是这个。退出另一个，或用 TOMRADE_MCP_PORT 给这个实例指定端口。"
+            : "Agents configured for the usual port reach the other Tomrade and its data, not this one. Quit the other, or give this instance its own port with TOMRADE_MCP_PORT."
+      });
+    });
+    // After the project's rules, which must lead (a client may keep only the start), before everything else.
+    this.instruct(() => this.introduction(), { order: -0.5 });
+    this.registerWhoami();
 
     return () => {
       this.url = null;
       for (const t of transports.values()) void t.close();
       return new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     };
+  }
+
+  /** This instance, as `GET /instance` tells another one. */
+  badge(): InstanceBadge {
+    return { app: "tomrade", kind: this.config.instance.kind, version: this.config.instance.version, pid: process.pid };
+  }
+
+  private zh(): boolean {
+    return (this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
+  }
+
+  private holderText(zh: boolean): string {
+    const held = this.clash?.heldBy;
+    if (!held) return zh ? "其他程序" : "another program";
+    const kind = zh ? (held.kind === "packaged" ? "正式版" : "开发版") : held.kind === "packaged" ? "the installed Tomrade" : "a development Tomrade";
+    return zh ? `${kind} ${held.version}（进程 ${held.pid}）` : `${kind} ${held.version} (pid ${held.pid})`;
+  }
+
+  /** The first thing a client reads: which Tomrade, and which data, it is talking to. */
+  private introduction(): string {
+    const { kind, version, dataDir } = this.config.instance;
+    const clash = this.clash ? ` Port ${this.clash.port} is held by ${this.holderText(false)}, which has its own data.` : "";
+    return `This is Tomrade ${kind === "packaged" ? "(installed app)" : "(development build)"} ${version}, pid ${process.pid}${dataDir ? `, data in ${dataDir}` : ""}.${clash} Another Tomrade on this machine keeps separate data; call whoami when unsure which one you reach or whether your writes have synced.`;
+  }
+
+  private registerWhoami(): void {
+    this.ctx.tools.register(defineTool({
+      name: "whoami",
+      title: "Which Tomrade is this",
+      description:
+        "Which Tomrade instance answers this connection (installed app or development build, version, process, data directory, port), the signed-in account, and a project's sync: how many writes made here have not yet reached where the project is shared. Two Tomrades on one machine keep separate data — call this when an item you created seems missing, or before relying on another instance or machine seeing your writes.",
+      input: z.object({ projectId: z.string().optional().describe("The project to report sync for; omit for the current one, or for every project when there is none") }),
+      readOnly: true,
+      execute: ({ projectId }, inv) => {
+        const storage = this.ctx.get("storage") as StorageLike | undefined;
+        const hub = this.ctx.get("hub") as { catalog: { projects(): { id: string; name: string }[] } } | undefined;
+        const cloud = (this.ctx.get("cloudHub") as { info(): { user: { email: string } | null; hubId: string | null } } | undefined)?.info();
+        const sync = (id: string) => storage?.syncSummary(id) ?? null;
+        const scope = projectId ?? inv.projectId;
+        const projects = hub?.catalog.projects() ?? [];
+        return {
+          instance: { ...this.badge(), dataDir: this.config.instance.dataDir, mcpUrl: this.url, ...(this.clash ? { portClash: this.clash } : {}) },
+          account: cloud ? { email: cloud.user?.email ?? null, hubId: cloud.hubId } : null,
+          ...(scope
+            ? { project: { id: scope, name: projects.find((p) => p.id === scope)?.name ?? null, sync: sync(scope) } }
+            : { projects: projects.map((p) => ({ id: p.id, name: p.name, sync: sync(p.id) })) })
+        };
+      }
+    }));
   }
 
   /** The endpoint whose sessions are scoped to one project. The same on every machine, because the id lives in the project's own folder. */
@@ -284,7 +440,7 @@ export class Mcp extends Service {
     const scope: McpScope = projectId ? { projectId } : {};
     const ordered = [...this.instructions].sort((a, b) => a[1] - b[1]).map(([render]) => render);
     const instructions = token ? "" : ordered.map((render) => paragraph(render, scope)).filter(Boolean).join("\n\n");
-    const server = new McpServer({ name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION }, instructions ? { instructions } : undefined);
+    const server = new McpServer({ name: MCP_SERVER_NAME, version: this.config.instance.version }, instructions ? { instructions } : undefined);
     const tools = this.tools;
     if (!tools) throw new Error("the MCP server needs the tools plugin");
     for (const tool of tools.served()) {
@@ -298,7 +454,14 @@ export class Mcp extends Service {
             if (!binding) throw new Error("No active run for this runtime");
             return textResult(await binding.execute(tool.name, args, extra.signal), tool.whole);
           }
-          return textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }), tool.whole);
+          const storage = tool.readOnly ? undefined : (this.ctx.get("storage") as StorageLike | undefined);
+          const target = (args as { projectId?: unknown }).projectId;
+          const pid = typeof target === "string" ? target : projectId;
+          const mark = storage && pid ? storage.writeMark(pid) : null;
+          const result = textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }), tool.whole);
+          // Only after a call that wrote: the agent learns whether the write is still on this instance alone.
+          if (storage && pid && mark !== null && storage.writeMark(pid) > mark) result.content.push(block(syncNote(storage.syncSummary(pid), this.config.instance)));
+          return result;
         } catch (e) {
           return errorResult(e);
         } finally {

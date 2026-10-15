@@ -13,7 +13,7 @@ const fakeWindow = (visible = true) => {
 };
 let windows: ReturnType<typeof fakeWindow>[] = [];
 vi.mock("electron", () => ({
-  app: { hide: () => {}, show: () => {} },
+  app: { hide: () => {}, show: () => {}, exit: () => {} },
   BrowserWindow: { getAllWindows: () => windows, getFocusedWindow: () => windows[0] ?? null },
   dialog: { showMessageBoxSync: (...args: unknown[]) => showMessageBoxSync(...(args as [])) }
 }));
@@ -23,16 +23,21 @@ async function load() {
   return import("../src/quit.js");
 }
 
-const context = (opts: { runs?: number; flush?: () => Promise<void>; throws?: boolean } = {}) => {
+type Unsynced = { projectId: string; name: string; count: number }[];
+const context = (opts: { runs?: number; flush?: () => Promise<void>; throws?: boolean; unsynced?: Unsynced[] } = {}) => {
   const flushAll = vi.fn(opts.flush ?? (async () => {}));
+  // Each reading takes the next list; the last one stands.
+  const readings = [...(opts.unsynced ?? [])];
+  const pendingAll = vi.fn(() => (readings.length > 1 ? readings.shift()! : readings[0] ?? []));
+  const publish = vi.fn(async () => ({ state: "synced" }));
   const agent = {
     activeRuns: () => {
       if (opts.throws) throw new Error("agent store closed");
       return Array.from({ length: opts.runs ?? 0 }, () => ({ thread: { itemId: null } }));
     }
   };
-  const ctx = { get: (name: string) => (name === "agent" ? agent : name === "storage" ? { flushAll } : undefined) };
-  return { ctx: ctx as never, flushAll };
+  const ctx = { get: (name: string) => (name === "agent" ? agent : name === "storage" ? { flushAll, pendingAll, publish } : undefined) };
+  return { ctx: ctx as never, flushAll, pendingAll, publish };
 };
 
 describe("preparing to quit", () => {
@@ -105,5 +110,59 @@ describe("preparing to quit", () => {
     expect(quit.quitApproved()).toBe(false);
     await quit.prepareToQuit(ctx);
     expect(flushAll).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("quitting over writes that have not synced", () => {
+  afterEach(() => {
+    showMessageBoxSync.mockReset().mockReturnValue(0);
+    windows = [];
+  });
+  const left: Unsynced = [{ projectId: "p1", name: "Tomrade", count: 3 }];
+
+  it("says how many are still only here, and quits on the person's word", async () => {
+    const quit = await load();
+    showMessageBoxSync.mockReturnValue(1);
+    const { ctx, publish } = context({ unsynced: [left] });
+    expect(await quit.prepareToQuit(ctx)).toBe(true);
+    expect(showMessageBoxSync).toHaveBeenCalledOnce();
+    const box = (showMessageBoxSync.mock.calls[0] as unknown as [{ message: string; detail: string; buttons: string[] }])[0];
+    expect(box.message).toBe("3 changes have not synced yet");
+    expect(box.detail).toContain("Tomrade: 3");
+    expect(box.buttons).toEqual(["Wait for sync", "Quit anyway", "Cancel"]);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("waits with a full publish, then goes once nothing is left", async () => {
+    const quit = await load();
+    showMessageBoxSync.mockReturnValue(0);
+    const { ctx, publish } = context({ unsynced: [left, []] });
+    expect(await quit.prepareToQuit(ctx)).toBe(true);
+    expect(publish).toHaveBeenCalledWith("p1", "quit");
+    expect(showMessageBoxSync).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the app, windows back, when the person cancels", async () => {
+    const quit = await load();
+    const [main] = (windows = [fakeWindow()]);
+    showMessageBoxSync.mockReturnValue(2);
+    const { ctx } = context({ unsynced: [left] });
+    expect(await quit.prepareToQuit(ctx)).toBe(false);
+    expect(main.visible).toBe(true);
+    expect(quit.quitApproved()).toBe(false);
+  });
+
+  it("asks nothing when everything synced", async () => {
+    const quit = await load();
+    expect(await quit.prepareToQuit(context({ unsynced: [[]] }).ctx)).toBe(true);
+    expect(showMessageBoxSync).not.toHaveBeenCalled();
+  });
+
+  it("flushes once on a signal, asking nothing", async () => {
+    const quit = await load();
+    const { ctx, flushAll } = context({ unsynced: [left] });
+    await quit.leaveOnSignal(ctx);
+    expect(flushAll).toHaveBeenCalledWith("signal");
+    expect(showMessageBoxSync).not.toHaveBeenCalled();
   });
 });

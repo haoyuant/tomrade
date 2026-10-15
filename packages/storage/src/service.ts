@@ -48,7 +48,8 @@ import {
   type StorageProvider,
   type StorageProviderView,
   type StorageStatus,
-  type SyncState
+  type SyncState,
+  type SyncSummary
 } from "./types.js";
 
 declare module "cordis" {
@@ -126,6 +127,7 @@ export class Storage extends Service {
   private quietUntil = new Map<string, number>();
   private publishing = new Set<string>();
   private lastState = new Map<string, SyncState>();
+  private lastStatus = new Map<string, StorageStatus>();
   /** Base snapshots for projects whose cache is in memory (tests). */
   private publishedMem = new Map<string, ProjectState>();
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -233,10 +235,12 @@ export class Storage extends Service {
           if (!entry?.dir) return null;
           const state = ctx.storage.cachedState(projectId);
           const where = entry.git === "dedicated" && entry.remote ? entry.remote.provider : path.basename(entry.dir);
-          if (state === "synced") return where;
+          const waiting = ctx.storage.pending(projectId)?.count ?? 0;
+          if (state === "synced" && !waiting) return where;
           const zh = (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
-          const word = zh ? ({ ahead: "待发布", behind: "待读取", diverged: "两边都改了", offline: "离线", unavailable: "不可用", error: "出错", syncing: "同步中", local: "仅本机" } as Record<string, string>)[state] ?? state : state;
-          return `${where} · ${word}`;
+          const word = state === "synced" ? (zh ? "待发布" : "ahead") : zh ? ({ ahead: "待发布", behind: "待读取", diverged: "两边都改了", offline: "离线", unavailable: "不可用", error: "出错", syncing: "同步中", local: "仅本机" } as Record<string, string>)[state] ?? state : state;
+          // How many of this machine's writes have not left it yet: the number to worry about before quitting.
+          return waiting ? `${where} · ${word} · ${zh ? `${waiting} 条未同步` : `${waiting} unsynced`}` : `${where} · ${word}`;
         }
       });
     });
@@ -318,7 +322,53 @@ export class Storage extends Service {
 
   private remember(projectId: string, status: StorageStatus): StorageStatus {
     this.lastState.set(projectId, status.state);
+    this.lastStatus.set(projectId, status);
     return status;
+  }
+
+  /** Moves whenever this device writes to the project: compare two readings to tell whether a call wrote. */
+  writeMark(projectId: string): number {
+    return (this.ctx.db as Db).has(projectId) ? this.ownTop(projectId) : 0;
+  }
+
+  /** This device's newest own oplog row, by its device sequence: what a publish now would carry. */
+  private ownTop(projectId: string): number {
+    const row = this.db(projectId).prepare("SELECT MAX(device_seq) AS m FROM oplog WHERE device = ?").get(this.hub.deviceId) as { m: number | null };
+    return row.m ?? 0;
+  }
+
+  private markSynced(projectId: string, upTo: number): void {
+    const entry = this.entry(projectId);
+    if (entry && (entry.syncedDeviceSeq ?? -1) < upTo) this.hub.catalog.patchProject(projectId, { syncedDeviceSeq: upTo });
+  }
+
+  /**
+   * Writes made here that have not reached where the project is shared — the remote, or the
+   * folder when there is none. Null when this machine cannot tell yet (never published since
+   * the count began) or the project does not sync at all.
+   */
+  pending(projectId: string): { count: number; since: number | null } | null {
+    const entry = this.entry(projectId);
+    if (!entry?.dir || entry.syncedDeviceSeq === null || !(this.ctx.db as Db).has(projectId)) return null;
+    const row = this.db(projectId).prepare("SELECT COUNT(*) AS n, MIN(at) AS first FROM oplog WHERE device = ? AND device_seq > ?").get(this.hub.deviceId, entry.syncedDeviceSeq) as { n: number; first: number | null };
+    return { count: row.n, since: row.first };
+  }
+
+  /** What an agent or the quit dialog is told about a project's sync, without touching the network. */
+  syncSummary(projectId: string): SyncSummary {
+    const entry = this.entry(projectId);
+    if (!entry?.dir) return { state: "local", location: null, detail: undefined, lastSyncAt: null, pending: null };
+    const status = this.lastStatus.get(projectId);
+    return { state: this.cachedState(projectId), location: status?.location ?? entry.dir, detail: status?.detail, lastSyncAt: entry.lastSyncAt, pending: this.pending(projectId) };
+  }
+
+  /** Every project's unsynced writes on this device, for the quit dialog. */
+  pendingAll(): { projectId: string; name: string; count: number }[] {
+    return this.hub.catalog
+      .projects()
+      .filter((entry) => entry.dir && (this.ctx.db as Db).has(entry.id))
+      .map((entry) => ({ projectId: entry.id, name: entry.name, count: this.pending(entry.id)?.count ?? 0 }))
+      .filter((p) => p.count > 0);
   }
 
   /** The last computed state, for surfaces that must answer synchronously. */
@@ -709,6 +759,7 @@ export class Storage extends Service {
     if (!opts.leaving) await this.checkVisibility(projectId);
     const entry = this.mustEntry(projectId);
     const now = Date.now();
+    const upTo = this.ownTop(projectId);
     const state = this.exportFor(projectId, entry, now);
     const digest = state.manifest.snapshot!.digest;
     this.publishing.add(projectId);
@@ -724,8 +775,11 @@ export class Storage extends Service {
       }
       const counts = Object.entries(state.tables).filter(([, rows]) => rows.length);
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
-      if (entry.git === "dedicated") await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
+      // The folder is where the project is shared unless a remote is; then only a push counts.
+      let delivered = true;
+      if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
       else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
+      if (delivered) this.markSynced(projectId, upTo);
     } finally {
       this.publishing.delete(projectId);
       this.quiet(projectId);
@@ -745,13 +799,13 @@ export class Storage extends Service {
   }
 
   /** Commit the folder, then bring the remote's news in before pushing ours out. */
-  private async pushDedicated(projectId: string, entry: CatalogProject, summary: string): Promise<void> {
+  private async pushDedicated(projectId: string, entry: CatalogProject, summary: string): Promise<boolean> {
     const g = this.git(entry.dir!);
     await g.commit(summary);
     const remote = await this.remoteOf(entry);
-    if (!remote) return;
+    if (!remote) return true;
     const probe = await g.probe(remote.branch);
-    if (probe === "offline") return; // the commit waits
+    if (probe === "offline") return false; // the commit waits
     if (probe === "exists") await g.fetch(remote.branch);
     const counts = probe === "exists" ? await g.aheadBehind(remote.branch) : null;
     if (counts && counts.behind > 0) {
@@ -763,6 +817,7 @@ export class Storage extends Service {
       }
     }
     await g.push(remote.branch);
+    return true;
   }
 
   /**
@@ -770,13 +825,14 @@ export class Storage extends Service {
    * there are any: the remote's news waits for the next launch, which merges
    * it, so a quit never waits on a fetch or a merge.
    */
-  private async pushOnLeaving(entry: CatalogProject, summary: string): Promise<void> {
+  private async pushOnLeaving(entry: CatalogProject, summary: string): Promise<boolean> {
     const g = this.git(entry.dir!);
     const committed = await g.commit(summary);
     const remote = await this.remoteOf(entry);
-    if (!remote) return;
+    if (!remote) return true;
     // Against the last-known remote tip; without one, assume there is something to push.
     if (committed || ((await g.aheadBehind(remote.branch))?.ahead ?? 1) > 0) await g.push(remote.branch);
+    return true;
   }
 
   private async remoteOf(entry: CatalogProject): Promise<{ url: string; branch: string } | null> {
@@ -1534,6 +1590,8 @@ export class Storage extends Service {
       await this.refresh(projectId);
       const status = await this.statusFor(projectId);
       if (status.state === "ahead") await this.publish(projectId, "catch-up");
+      // A machine that never counted starts from a moment nothing is waiting.
+      else if (status.state === "synced" && this.entry(projectId)?.syncedDeviceSeq === null) this.markSynced(projectId, this.ownTop(projectId));
     }
     this.watch(projectId);
   }
