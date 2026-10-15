@@ -4,7 +4,7 @@
   "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
-  "description": "OpenAI Codex app-server conductor with one reusable local runtime per hot thread, resumable sessions, and explicit CLI fallback",
+  "description": "OpenAI Codex app-server conductor with one reusable local runtime per hot thread, and resumable sessions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

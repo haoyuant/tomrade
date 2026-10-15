@@ -5,7 +5,7 @@ import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { claudeMediaInput, describeFailure, looksRateLimited, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
 import { lostConversation } from "./cli.js";
-import { ClaudeCodeOptions, retryReason } from "./legacy.js";
+import { ClaudeCodeOptions, retryReason } from "./engine.js";
 import { localCli, spawnCli, type CliLaunch } from "./locate.js";
 import { bindTurn, MessageQueue, runtimeDirectory, type Runtime } from "./runtime.js";
 import { sessionSystem, turnPrompt } from "./system.js";

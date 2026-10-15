@@ -3,7 +3,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import { transcriptOf, type ChatModel, type LentModel } from "@tomradex/llm";
 import { chosenCommand } from "./availability.js";
-import { ClaudeCodeOptions } from "./legacy.js";
+import { ClaudeCodeOptions } from "./engine.js";
 import { localCli } from "./locate.js";
 import { sdkLaunch } from "./sdk.js";
 

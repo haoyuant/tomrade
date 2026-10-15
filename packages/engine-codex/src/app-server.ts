@@ -4,7 +4,7 @@ import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { codexMediaInput, describeFailure, publishNativeImage, withRecap } from "@tomradex/agent";
 import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
-import { CodexOptions, codexModel } from "./legacy.js";
+import { CodexOptions, codexModel } from "./engine.js";
 import { lostSession } from "./account.js";
 import { codexRetry, codexStep } from "./steps.js";
 

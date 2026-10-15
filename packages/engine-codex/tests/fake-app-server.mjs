@@ -2,7 +2,7 @@ import readline from 'node:readline';
 import fs from 'node:fs';
 const log = process.env.TOMRADE_TEST_LOG;
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
-if (log) fs.appendFileSync(log, JSON.stringify({ spawn: process.pid }) + '\n');
+if (log) fs.appendFileSync(log, JSON.stringify({ spawn: process.pid, args: process.argv.slice(2) }) + '\n');
 let n = 0;
 let active;
 let permissionTurn;

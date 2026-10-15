@@ -4,7 +4,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { chosenCommand, localCli, runJsonl } from "@tomradex/engine-claude-code";
 import { transcriptOf, type ChatEvent, type ChatModel, type LentModel } from "@tomradex/llm";
-import { CodexOptions, codexModel } from "./legacy.js";
+import { CodexOptions, codexModel } from "./engine.js";
 
 interface ExecLine {
   type?: string;

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 const log = process.env.TOMRADE_TEST_LOG;
 const session = 'fake-claude-session';
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
-if (log) fs.appendFileSync(log, JSON.stringify({ spawn: process.pid, args: process.argv.slice(2) }) + '\n');
+if (log) fs.appendFileSync(log, JSON.stringify({ spawn: process.pid, args: process.argv.slice(2), envTest: process.env.TOMRADE_ENV_TEST }) + '\n');
 let n = 0;
 function result() {
   send({ type: 'result', subtype: 'success', is_error: false, result: 'hello', session_id: session,

@@ -116,14 +116,6 @@ it("steers a running turn with turn/steer and records the message where Codex ad
     expect(order).toEqual(["steered:s1", "agent:took: make it blue"]);
     expect(requests().find((r) => r.method === "turn/steer").params).toMatchObject({ threadId: "fake-session", expectedTurnId: "1", clientUserMessageId: "s1", input: [{ type: "text", text: "make it blue" }] });
     expect(await forward!({ id: "late", text: "too late" })).toBe(false);
-
-    // the older `codex exec` transport cannot take one
-    input.options = { command: bin, transport: "cli" };
-    input.input = { kind: "text", text: "hi" };
-    forward = undefined;
-    void engine.turn(input, io).catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(await forward!({ id: "s2", text: "anything" })).toBe(false);
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 }, 30_000);
 

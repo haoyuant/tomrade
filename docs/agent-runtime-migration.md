@@ -1,8 +1,9 @@
 # Agent runtime migration and A/B evaluation
 
-The default transports are now Claude Agent SDK and Codex app-server. The
-legacy headless CLIs remain available with `transport: "cli"` as an explicit
-rollback and comparison arm.
+Every Claude Code turn runs through the Claude Agent SDK and every Codex turn
+through Codex app-server. The per-turn headless CLIs (`claude -p`,
+`codex exec`) are gone; a `transport` left in saved settings or a thread's
+options is ignored.
 
 ## Runtime behavior
 
@@ -21,16 +22,18 @@ the previous run's write permissions.
 ## Paired evaluation
 
 The paid-provider test is opt-in. Fix one model, effort, command, and tool
-allow-list, then run (the example uses one repetition; three or more is better):
+allow-list, name the engine options the baseline arm differs by, then run:
 
 ```sh
 TOMRADE_EVAL_ENGINE=codex \
 TOMRADE_EVAL_MODEL=<fixed-codex-model> \
+TOMRADE_EVAL_BASELINE='{"effort":"high"}' \
 TOMRADE_EVAL_REPETITIONS=3 \
 pnpm eval:agents
 
 TOMRADE_EVAL_ENGINE=claude-code \
 TOMRADE_EVAL_MODEL=<fixed-claude-model> \
+TOMRADE_EVAL_BASELINE='{"model":"<other-claude-model>"}' \
 TOMRADE_EVAL_REPETITIONS=3 \
 pnpm eval:agents
 ```
@@ -55,8 +58,8 @@ A `code` turn (Run here) uses the installed local coding agent with its native
 coding tools. Tomrade adds ticket context and its run-bound MCP server; the
 backlog tool allowlist must not restrict coding tools, subagents, skills, or
 other locally configured MCP servers. Claude loads user, project, and local
-settings and the Claude Code tool preset. Both Claude transports, and the
-terminal launch template, merge Tomrade's MCP configuration with local MCP
+settings and the Claude Code tool preset. The SDK runtime and the terminal
+launch template merge Tomrade's MCP configuration with local MCP
 configuration instead of using strict MCP isolation for coding.
 
 Coding turns have no default Tomrade turn-count ceiling. An explicit
@@ -87,7 +90,5 @@ allow-rule is written. Concurrent requests are queued, cancellation resolves as
 denial, and old responses cannot approve a later request. Pending approvals are
 in-memory and disappear after restart; the conversation retains their text.
 
-Legacy `transport: "cli"` is a headless rollback path and has no interactive
-permission bridge. Use the default transport or an external terminal when human
-approval is required. MCP elicitation and provider-specific non-permission
-interaction are not yet bridged by the app-server adapter.
+MCP elicitation and provider-specific non-permission interaction are not yet
+bridged by the app-server adapter.

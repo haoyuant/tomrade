@@ -10,14 +10,6 @@ import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 
-const FAKE = `#!/bin/bash
-dir="$(dirname "$0")"
-printf '%s\\n' "$@" > "$dir/args.txt"
-echo '{"type":"thread.started","thread_id":"codex-session-1"}'
-echo '{"type":"item.completed","item":{"type":"agent_message","text":"hello from codex"}}'
-echo '{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":4}}'
-`;
-
 async function settled(ctx: Context, projectId: string, runId: string): Promise<RunView> {
   for (let n = 0; n < 800; n += 1) {
     const run = ctx.agent.store.run(projectId, runId);
@@ -28,10 +20,12 @@ async function settled(ctx: Context, projectId: string, runId: string): Promise<
 }
 
 describe("the Codex engine", () => {
-  it("migrates Tomrade's rejected legacy preset and lets the authenticated CLI choose its default", async () => {
+  it("migrates Tomrade's rejected legacy preset, ignores a saved cli transport, and runs through app-server", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-codex-"));
-    const bin = path.join(dir, "codex.sh");
-    fs.writeFileSync(bin, FAKE, { mode: 0o755 });
+    const log = path.join(dir, "requests.jsonl");
+    const bin = path.join(dir, "codex");
+    const fake = path.resolve("packages/engine-codex/tests/fake-app-server.mjs");
+    fs.writeFileSync(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
     const settingsPath = path.join(dir, "settings.json");
     fs.writeFileSync(
       settingsPath,
@@ -40,28 +34,30 @@ describe("the Codex engine", () => {
 
     const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineCodex] });
     await settle();
+    try {
+      const options = ((ctx.settings.get().agent as { engines: { codex: Record<string, unknown> } }).engines.codex);
+      expect(options.model).toBeUndefined();
+      const thread = ctx.agent.newThread(project.id, "codex");
+      const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "hello" });
+      const run = await settled(ctx, project.id, runId);
+      expect(run.status, run.error ?? undefined).toBe("done");
+      expect(run.usage).toEqual({ inputTokens: 10, outputTokens: 3 });
+      expect(ctx.agent.store.messages(project.id, thread.id).some((entry) => entry.block.type === "text" && entry.block.text === "hello")).toBe(true);
 
-    const options = ((ctx.settings.get().agent as { engines: { codex: Record<string, unknown> } }).engines.codex);
-    expect(options.model).toBeUndefined();
-    const thread = ctx.agent.newThread(project.id, "codex");
-    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "hello" });
-    const run = await settled(ctx, project.id, runId);
-    expect(run.status).toBe("done");
-    expect(run.usage).toEqual({ inputTokens: 7, outputTokens: 4 });
-    expect(ctx.agent.store.messages(project.id, thread.id).some((entry) => entry.block.type === "text" && entry.block.text === "hello from codex")).toBe(true);
+      const next = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
+      expect((await settled(ctx, project.id, next.runId)).status).toBe("done");
 
-    const args = fs.readFileSync(path.join(dir, "args.txt"), "utf8").split("\n");
-    expect(args).not.toContain("-m");
-    expect(args).toContain('mcp_servers.tomrade.default_tools_approval_mode="approve"');
-
-    const next = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
-    expect((await settled(ctx, project.id, next.runId)).status).toBe("done");
-    const resumed = fs.readFileSync(path.join(dir, "args.txt"), "utf8").split("\n");
-    expect(resumed.slice(0, 2)).toEqual(["exec", "resume"]);
-    expect(resumed).not.toContain("-s");
-    expect(resumed).not.toContain("-C");
-    expect(resumed).toContain('mcp_servers.tomrade.default_tools_approval_mode="approve"');
-    expect(resumed.indexOf("--json")).toBeLessThan(resumed.indexOf("codex-session-1"));
+      const requests = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      const spawns = requests.filter((r) => r.spawn);
+      expect(spawns).toHaveLength(1);
+      expect(spawns[0].args[0]).toBe("app-server");
+      expect(spawns[0].args).toContain('mcp_servers.tomrade.default_tools_approval_mode="approve"');
+      expect(requests.find((r) => r.method === "thread/start").params.model).toBeUndefined();
+      expect(requests.filter((r) => r.method === "turn/start")).toHaveLength(2);
+    } finally {
+      await ctx.fiber.dispose();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -10,15 +10,6 @@ import { Agent, type RunView } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import engineClaudeCode, { claudeSignedIn, lineSplitter } from "@tomradex/engine-claude-code";
 
-const FAKE = `#!/bin/bash
-dir="$(dirname "$0")"
-printf '%s\\n' "$@" > "$dir/args.txt"
-echo '{"type":"system","subtype":"init","session_id":"sess-1"}'
-echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hello "}}}'
-echo '{"type":"assistant","message":{"content":[{"type":"text","text":"hello from claude code"}]}}'
-echo '{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"sess-1","total_cost_usd":0.0123,"usage":{"input_tokens":10,"output_tokens":5}}'
-`;
-
 async function settled(ctx: Context, projectId: string, runId: string, timeout = 8000): Promise<RunView> {
   const t0 = Date.now();
   for (;;) {
@@ -30,10 +21,12 @@ async function settled(ctx: Context, projectId: string, runId: string, timeout =
 }
 
 describe("the Claude Code engine", () => {
-  it("maps stream-json to blocks, passes the picked model and effort, and resumes with the session id", async () => {
+  it("ignores a saved cli transport, runs through the SDK with the picked model and effort, and opens coding threads unrestricted", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-"));
-    const bin = path.join(dir, "claude.sh");
-    fs.writeFileSync(bin, FAKE, { mode: 0o755 });
+    const log = path.join(dir, "requests.jsonl");
+    const bin = path.join(dir, "claude");
+    const fake = path.resolve("packages/engine-claude-code/tests/fake-claude.mjs");
+    fs.writeFileSync(bin, `#!/bin/sh\nTOMRADE_TEST_LOG='${log}' exec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
     const settingsPath = path.join(dir, "settings.json");
     fs.writeFileSync(
       settingsPath,
@@ -42,44 +35,48 @@ describe("the Claude Code engine", () => {
 
     const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
     await settle();
+    const spawns = () => fs.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((r) => r.spawn);
+    try {
+      const thread = ctx.agent.newThread(project.id, "claude-code");
+      const first = ctx.agent.send(project.id, thread.id, { kind: "text", text: "hello" });
+      const run1 = await settled(ctx, project.id, first.runId);
+      expect(run1.status, run1.error ?? undefined).toBe("done");
+      expect(run1.costUsd).toBeCloseTo(0.02);
+      expect(run1.usage).toEqual({ inputTokens: 34, outputTokens: 3 });
+      const blocks = ctx.agent.store.messages(project.id, thread.id).map((m) => m.block);
+      expect(blocks.some((b) => b.type === "text" && b.text === "hello")).toBe(true);
 
-    const thread = ctx.agent.newThread(project.id, "claude-code");
-    const first = ctx.agent.send(project.id, thread.id, { kind: "text", text: "hello" });
-    const run1 = await settled(ctx, project.id, first.runId);
-    expect(run1.status).toBe("done");
-    expect(run1.costUsd).toBeCloseTo(0.0123);
-    expect(run1.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
-    const blocks = ctx.agent.store.messages(project.id, thread.id).map((m) => m.block);
-    expect(blocks.some((b) => b.type === "text" && b.text === "hello from claude code")).toBe(true);
+      const args1 = spawns()[0].args.join("\n");
+      expect(args1).toContain("--input-format\nstream-json");
+      expect(args1).toContain("mcp__tomrade__*");
+      expect(args1).toContain("--strict-mcp-config");
+      expect(args1).toContain("--model\nopus");
+      expect(args1).toContain("--effort\nhigh");
+      expect(args1).not.toContain("--resume");
 
-    const args1 = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
-    expect(args1).toContain("--output-format");
-    expect(args1).toContain("mcp__tomrade__*");
-    expect(args1).not.toContain("dontAsk");
-    expect(args1).toContain("--model\nopus");
-    expect(args1).toContain("--effort\nhigh");
-    expect(args1).not.toContain("--resume");
+      const second = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
+      expect((await settled(ctx, project.id, second.runId)).status).toBe("done");
+      expect(spawns()).toHaveLength(1);
 
-    const second = ctx.agent.send(project.id, thread.id, { kind: "text", text: "again" });
-    await settled(ctx, project.id, second.runId);
-    const args2 = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
-    expect(args2).toContain("--resume");
-    expect(args2).toContain("sess-1");
-
-    const codeThread = ctx.agent.newThread(project.id, "claude-code", null, {
-      itemId: "ticket-1",
-      branch: "tom-1/code-task"
-    });
-    ctx.on("agent/prepare-turn", (input) => {
-      input.env = { TOMRADE_ENV_TEST: "passed" };
-    });
-    fs.writeFileSync(bin, FAKE.replace('dir="$(dirname "$0")"', 'dir="$(dirname "$0")"\ntest "$TOMRADE_ENV_TEST" = "passed" || exit 1'), { mode: 0o755 });
-    const codeRun = ctx.agent.send(project.id, codeThread.id, { kind: "text", text: "implement it" });
-    expect((await settled(ctx, project.id, codeRun.runId)).status).toBe("done");
-    const codeArgs = fs.readFileSync(path.join(dir, "args.txt"), "utf8");
-    expect(codeArgs).not.toContain("--strict-mcp-config");
-    expect(codeArgs).toContain("--permission-mode\nauto");
-    expect(codeArgs).not.toContain("--max-turns");
+      const codeThread = ctx.agent.newThread(project.id, "claude-code", null, {
+        itemId: "ticket-1",
+        branch: "tom-1/code-task"
+      });
+      ctx.on("agent/prepare-turn", (input) => {
+        input.env = { TOMRADE_ENV_TEST: "passed" };
+      });
+      const codeRun = ctx.agent.send(project.id, codeThread.id, { kind: "text", text: "implement it" });
+      expect((await settled(ctx, project.id, codeRun.runId)).status).toBe("done");
+      const code = spawns().at(-1);
+      expect(code.envTest).toBe("passed");
+      const codeArgs = code.args.join("\n");
+      expect(codeArgs).not.toContain("--strict-mcp-config");
+      expect(codeArgs).toContain("--permission-mode\nauto");
+      expect(codeArgs).not.toContain("--max-turns");
+    } finally {
+      await ctx.fiber.dispose();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

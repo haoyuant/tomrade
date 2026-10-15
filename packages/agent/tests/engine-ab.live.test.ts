@@ -19,6 +19,9 @@ it.skipIf(!process.env.TOMRADE_EVAL_ENGINE)("paired production-adapter A/B", asy
   const model = process.env.TOMRADE_EVAL_MODEL;
   if (!model) throw new Error("Set TOMRADE_EVAL_MODEL to a fixed provider model ID");
   const effort = process.env.TOMRADE_EVAL_EFFORT ?? "low";
+  // The arms differ only by these engine options, applied to the baseline.
+  if (!process.env.TOMRADE_EVAL_BASELINE) throw new Error('Set TOMRADE_EVAL_BASELINE to the baseline\'s differing engine options as JSON, e.g. {"model":"…"}');
+  const baselineOptions = z.record(z.string(), z.unknown()).parse(JSON.parse(process.env.TOMRADE_EVAL_BASELINE));
   const command = process.env.TOMRADE_EVAL_COMMAND ?? (provider === "codex" ? "codex" : "claude");
   const repetitions = Number(process.env.TOMRADE_EVAL_REPETITIONS ?? "3");
   if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 20) throw new Error("Repetitions must be 1–20");
@@ -32,7 +35,7 @@ it.skipIf(!process.env.TOMRADE_EVAL_ENGINE)("paired production-adapter A/B", asy
     { id: "write", prompts: ["Use save_note to save the exact note alpha. Then say SAVED.", "Use save_note to replace the note with the exact text beta. Then say SAVED."], expected: ["alpha", "beta"] },
     { id: "code", prompts: ["Fix add in math.mjs so it returns the numeric sum. Run node check.mjs to verify. Do not modify check.mjs. Do not commit.", "Add an exported subtract(a,b) function to math.mjs. Keep add working. Run node check.mjs. Do not modify check.mjs or commit."], expected: ["add", "subtract"] }
   ];
-  const manifest = { schemaVersion: 1, provider, model, effort, version, repetitions,
+  const manifest = { schemaVersion: 1, provider, model, effort, baselineOptions, version, repetitions,
     fixtureHash: createHash("sha256").update(JSON.stringify(fixtures)).digest("hex"),
     tools: ["count_items", "save_note"], allowTools: ["Read", "Edit", "Write", "Bash"],
     notes: ["Alternating AB/BA order; independent history and fixture state per arm.",
@@ -67,8 +70,7 @@ it.skipIf(!process.env.TOMRADE_EVAL_ENGINE)("paired production-adapter A/B", asy
           let resume: string | undefined;
           const input: TurnInput = { threadId, projectId: "eval", purpose: fixture.id === "code" ? "code" : "backlog",
             cwd, input: { kind: "text", text: "" }, messages: [], cards: [], brief: "Isolated evaluation fixture.", pending: null,
-            options: { command, model, effort, allowTools: manifest.allowTools,
-              transport: variant === "baseline" ? "cli" : provider === "codex" ? "app-server" : "sdk" } };
+            options: { command, model, effort, allowTools: manifest.allowTools, ...(variant === "baseline" ? baselineOptions : {}) } };
           try {
             for (let turn = 0; turn < fixture.prompts.length; turn++) {
               count = turn ? 11 : 7;
