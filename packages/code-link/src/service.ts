@@ -20,6 +20,7 @@ import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
+import { keysInText, parseBranch } from "./keys.js";
 import { writeConnectFiles } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -302,7 +303,8 @@ export class CodeLink extends Service {
         const after = intent.after as Item | null;
         const active = this.store.activeDelivery(intent.projectId, intent.id);
         const mixed = after?.evidence.resources.some(r => r.role === "output" && r.deliveryId === active?.id) || after?.evidence.submissions.some(s => s.deliveryId === active?.id);
-        if (before?.status !== "done" && after?.status === "done" && after.workType === "coding" && mixed) {
+        // A person's acceptance always lands (TOM-129); only an agent or a sync waits for every link to merge.
+        if (intent.by !== "human" && before?.status !== "done" && after?.status === "done" && after.workType === "coding" && mixed) {
           const links = this.currentLinks(intent.projectId, intent.id);
           if (!links.length || links.some(link => !link.mergedSha && link.prState !== "merged")) throw new Error("Merge all code links before accepting this mixed delivery");
         }
@@ -1048,6 +1050,27 @@ export class CodeLink extends Service {
       const merged = landed(b, l);
       this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: merged ? result.defaultSha : undefined, ...(merged && l.prState === "open" ? { prState: "merged" } : {}), lastSeenAt: now });
       seen.add(l.id);
+    }
+
+    // A branch deleted after its merge, or one whose ticket commits landed through
+    // another branch, never reads as merged above: settle it from the commits it
+    // last pointed at, which stay in the clone after a prune.
+    if (result.defaultSha) {
+      const prefix = this.prefixOf(projectId);
+      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
+      for (const l of previous.values()) {
+        if (seen.has(l.id) || l.mergedSha || !l.branch || !l.headSha || l.ahead === 0) continue;
+        const item = this.ctx.items.get(projectId, l.itemId);
+        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
+        const sha = result.branches.find((b) => b.name === l.branch)?.sha ?? l.headSha;
+        const log = await this.git(["log", "--format=%s%x1f%b%x1e", `${result.defaultSha}..${sha}`], { cwd, ok: true });
+        if (log.code !== 0) continue;
+        // A branch named for the ticket is all its work; one found by commit keys owes only the commits naming it.
+        const pending = parseBranch(l.branch, prefix) === item.keyNum ? !!log.stdout.trim() : keysInText(log.stdout, prefix).includes(item.keyNum);
+        if (pending) continue;
+        this.store.patchLink(projectId, l.id, { mergedSha: result.defaultSha, ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
+        touched.add(item.id);
+      }
     }
 
     for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
