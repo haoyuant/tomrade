@@ -60,7 +60,7 @@ export interface ScannedBranch {
   sha: string;
   committedAt: number;
   keyNum: number | null;
-  /** Every ticket named by the branch or by commits unique to it. */
+  /** The ticket its name names, or else every ticket its own commits name. */
   keyNums: number[];
   ahead: number;
   behind: number;
@@ -175,8 +175,9 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
       }
       // Work started outside Tomrade does not necessarily follow the branch
       // template. Commit keys are the cheap, local fallback: no model call and
-      // no forge API are needed to discover it.
-      if (b.ahead > 0) {
+      // no forge API are needed to discover it. A branch whose name already
+      // says its ticket keeps that one; another ticket a commit mentions is a reference.
+      if (b.ahead > 0 && b.keyNum === null) {
         const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), `${defaultRef}..${b.sha}`]);
         for (const keyNum of keysInText(log.stdout, opts.prefix)) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
       }
@@ -185,6 +186,7 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     // In a repository without a default branch, every commit on a branch is
     // unique work and can still identify a ticket started from another tool.
     for (const b of branches) {
+      if (b.keyNum !== null) continue;
       const log = await run(["log", "--format=%s%x1f%b%x1e", "-n", String(opts.logCap ?? 500), b.sha]);
       for (const keyNum of keysInText(log.stdout, opts.prefix)) if (!b.keyNums.includes(keyNum)) b.keyNums.push(keyNum);
     }

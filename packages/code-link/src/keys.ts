@@ -117,3 +117,9 @@ export function keysInText(text: string, prefix: string): number[] {
   }
   return out;
 }
+
+/** The pull request a squash or merge commit's subject names: `… (#243)` or `Merge pull request #243 from …`. */
+export function subjectPr(subject: string): number | null {
+  const m = /\(#(\d+)\)\s*$/.exec(subject) ?? /^Merge pull request #(\d+)\b/.exec(subject);
+  return m ? Number(m[1]) : null;
+}

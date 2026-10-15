@@ -20,7 +20,7 @@ import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
-import { keysInText, parseBranch } from "./keys.js";
+import { keysInText, parseBranch, subjectPr } from "./keys.js";
 import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
 import { writeConnectFiles } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
@@ -1101,6 +1101,19 @@ export class CodeLink extends Service {
       }
     }
 
+    // A branch the scan once linked for a mention (another ticket's branch, a commit naming this one in passing)
+    // is not this ticket's work; left in, its unmerged commits hold "every link merged" open for good.
+    for (const l of previous.values()) {
+      if (seen.has(l.id) || l.source !== "scan" || !l.branch || l.mergedSha || l.prNumber !== null || l.prUrl || l.prState || l.threadId) continue;
+      const b = result.branches.find((x) => x.name === l.branch);
+      const item = this.ctx.items.get(projectId, l.itemId);
+      if (!b || b.ahead === 0 || !item || b.keyNums.includes(item.keyNum)) continue;
+      if (l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
+      if (this.store.sessions(projectId, { itemId: item.id, delivery: l.delivery }).some((session) => session.branch === l.branch)) continue;
+      this.store.removeLink(projectId, l.id);
+      touched.add(item.id);
+    }
+
     // A branch linked by hand under a name the template does not know is still one of ours.
     for (const l of previous.values()) {
       if (l.source !== "manual" || seen.has(l.id) || !l.branch) continue;
@@ -1171,7 +1184,7 @@ export class CodeLink extends Service {
           // A ticket mention in a squash commit cannot identify which of
           // several branches was merged. Multi-link deliveries require
           // branch ancestry or explicit PR evidence for each link.
-          if (own.length > 1) continue;
+          if (own.length > 1 && (l.prNumber === null || l.prNumber !== subjectPr(commit.subject))) continue;
           if (!l.mergedSha || l.prState === "open") {
             this.store.patchLink(projectId, l.id, { ...(!l.mergedSha ? { mergedSha: commit.sha } : {}), ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
           }
@@ -1180,6 +1193,24 @@ export class CodeLink extends Service {
         this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "", delivery: active.sequence }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
       }
       touched.add(item.id);
+    }
+
+    // A squash merge never makes the branch an ancestor of the default branch, and a scan
+    // that read its commit before the links settled will not read it again: look for the
+    // pull request's own commit, `… (#N)`, wherever it is.
+    if (result.defaultRef) {
+      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
+      for (const l of this.store.linksForRepo(projectId, repo.id)) {
+        if (l.prNumber === null || l.mergedSha || l.prState === "closed") continue;
+        const item = this.ctx.items.get(projectId, l.itemId);
+        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
+        const log = await this.git(["log", "--format=%H%x1f%s", "-n", "20", "--fixed-strings", `--grep=#${l.prNumber}`, result.defaultRef], { cwd, ok: true });
+        if (log.code !== 0) continue;
+        const sha = log.stdout.split("\n").map((line) => line.split("\x1f")).find(([, subject]) => subjectPr(subject ?? "") === l.prNumber)?.[0];
+        if (!sha) continue;
+        this.store.patchLink(projectId, l.id, { mergedSha: sha, prState: "merged" });
+        touched.add(item.id);
+      }
     }
 
     let changed = 0;
