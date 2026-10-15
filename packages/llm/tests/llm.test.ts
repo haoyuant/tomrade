@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { FakeChatModel, collect, completeJson, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
+import { COMPLETION_IDLE_MS, FakeChatModel, collect, completeJson, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
 
 describe("collect", () => {
   it("gathers text, tool calls and the stop reason", async () => {
@@ -56,6 +56,40 @@ describe("completeJson", () => {
     const model = new FakeChatModel([{ text: '{"priority": "high"}' }, { text: "```json\n{\"priority\": \"high\"}\n```" }]);
     await expect(completeJson(model, schema, { system: "s", user: "u" }, "DeepSeek (deepseek-chat)")).rejects.toThrow(/DeepSeek \(deepseek-chat\).*priority/);
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("skips the repair round when the caller has its own fallback", async () => {
+    const model = new FakeChatModel([{ text: '{"priority": "high"}' }, { text: '{"priority": 3}' }]);
+    await expect(completeJson(model, schema, { system: "s", user: "u", repair: false })).rejects.toThrow(/priority/);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  // Never answers and ignores its signal: the worst a provider can do.
+  const hung: ChatModel = { capabilities: { tools: false, streaming: true, json: true }, chat: async function* () { await new Promise(() => {}); } };
+
+  it("gives up at the deadline even when the model ignores its signal", async () => {
+    const started = Date.now();
+    await expect(completeJson(hung, schema, { system: "s", user: "u", timeoutMs: 50 }, "DeepSeek (deepseek-chat)")).rejects.toThrow(/DeepSeek \(deepseek-chat\) did not answer within 0.05s/);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("ends when the caller withdraws", async () => {
+    const controller = new AbortController();
+    const pending = completeJson(hung, schema, { system: "s", user: "u", signal: controller.signal });
+    controller.abort(new Error("client went away"));
+    await expect(pending).rejects.toThrow("client went away");
+  });
+
+  it("ends a model that goes silent, without a deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const pending = completeJson(hung, schema, { system: "s", user: "u" }, "Kimi");
+      const settled = expect(pending).rejects.toThrow(`Kimi sent nothing for ${COMPLETION_IDLE_MS / 1000}s`);
+      await vi.advanceTimersByTimeAsync(COMPLETION_IDLE_MS);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

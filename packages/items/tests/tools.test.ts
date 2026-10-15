@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { NotFoundError } from "@tomradex/domain";
 import { ToolInputError, Tools } from "@tomradex/tools";
 import { fresh } from "@tomradex/testkit";
+import { RECOMMEND_WITHIN_MS } from "@tomradex/items";
 
 async function withTools() {
   const f = await fresh();
@@ -70,7 +71,9 @@ describe("list_items tool", () => {
     expect(await titles({ search: "dark", sort: [{ field: "title", dir: "asc" }], limit: 1 })).toEqual(["Dark mode toggle"]);
     // A scalar filter forces the cut after the JS filter, so it still yields a full page.
     expect(await titles({ status: "todo", sort: [{ field: "title", dir: "asc" }], limit: 2 })).toEqual(["Dark mode toggle", "Dark theme"]);
-    expect(await run("count_items", { search: "dark", limit: 1 })).toMatchObject({ count: 2 });
+    expect(await run("count_items", { search: "dark" })).toMatchObject({ count: 2 });
+    // A count is over every match, so it takes no limit — and says so rather than dropping it.
+    await expect(run("count_items", { search: "dark", limit: 1 })).rejects.toThrow(/unknown parameter "limit"/);
   });
 
   it("a projectId naming no open project is refused rather than silently matching nothing", async () => {
@@ -122,5 +125,95 @@ describe("list_items tool", () => {
       byWorkstream: { Main: 1, Cloud: 1 }
     });
     expect(await run("count_items", {})).toMatchObject({ count: 3, byKind: { ticket: 2, epic: 1 } });
+  });
+});
+
+describe("tool arguments", () => {
+  it("refuses a parameter the tool does not take, naming the one it most likely meant", async () => {
+    const { run, items, board, project } = await withTools();
+    const item = items.create({ projectId: project.id, title: "A", boardId: board.id, by: "human" });
+    await expect(run("list_items", { query: "dark" })).rejects.toThrow(/unknown parameter "query" \(did you mean "search"\?\) — accepted: .*search/);
+    await expect(run("get_item", { itemId: item.id })).rejects.toThrow(/did you mean "id"/);
+    // nested objects too: a patch key that does not exist used to vanish and the write "succeeded"
+    await expect(run("update_item", { id: item.id, patch: { blockedBy: [] } })).rejects.toThrow(/patch: unknown parameter "blockedBy" \(did you mean "blocks"\?\)/);
+    expect(items.get(project.id, item.id)?.version).toBe(1);
+  });
+
+  it("takes a key wherever it takes an id, and names a key that matches nothing", async () => {
+    const { run, items, board, project } = await withTools();
+    const ticket = items.create({ projectId: project.id, title: "Ship it", boardId: board.id, by: "human" });
+    expect(await run("change_status", { id: ticket.key, status: "doing" })).toMatchObject({ id: ticket.id, status: "doing" });
+    expect(await run("submit_delivery", { id: ticket.key.toLowerCase(), submission: { report: "Done" } })).toMatchObject({ id: ticket.id, status: "verifying" });
+    await expect(run("submit_delivery", { id: "TOM-999", submission: { report: "Done" } })).rejects.toThrow("Item TOM-999 not found");
+    // another project's prefix is not this item
+    await expect(run("get_item", { id: `XYZ-${ticket.keyNum}` })).resolves.toBeNull();
+  });
+});
+
+describe("review_delivery tool", () => {
+  async function submitted() {
+    const f = await withTools();
+    const ticket = f.items.create({ projectId: f.project.id, title: "Ship it", boardId: f.board.id, status: "doing", workType: "coding", by: "human" });
+    f.items.submitDelivery(f.project.id, ticket.id, { report: "Merged in #12" }, "ai:test");
+    return { ...f, ticket };
+  }
+  const runHandle = (projectId: string, ledger: { tool: string; ok: boolean }[]) => ({
+    id: "run-1", threadId: "thread-1", projectId, author: "ai:test" as const,
+    ledger: { all: () => ledger as never[], find: (pred: (e: never) => boolean) => (ledger as never[]).find(pred) },
+    waivers: new Set<string>(), scratch: new Map<string, unknown>()
+  });
+
+  it("an agent cannot finish a ticket over a delivery nobody accepted; a person still can", async () => {
+    const { run, items, project, ticket } = await submitted();
+    await expect(run("change_status", { id: ticket.key, status: "done" })).rejects.toThrow(/has not been accepted.*review_delivery/);
+    expect(items.update(project.id, ticket.id, { status: "done" }, "human").status).toBe("done");
+  });
+
+  it("records the user's verdict as theirs, quoting their words and who relayed them", async () => {
+    const { run, items, project, ticket } = await submitted();
+    await expect(run("review_delivery", { id: ticket.key, decision: "accepted" })).rejects.toBeInstanceOf(ToolInputError);
+    const reviewed = (await run("review_delivery", { id: ticket.key, decision: "accepted", userSaid: "可以直接验收" })) as { status: string };
+    expect(reviewed.status).toBe("done");
+    const review = items.get(project.id, ticket.id)!.evidence.reviews.at(-1)!;
+    expect(review).toMatchObject({ decision: "accepted", reviewedBy: "human" });
+    expect(review.comment).toBe("Relayed by ai:test; the user said: “可以直接验收”");
+  });
+
+  it("asks the person to confirm where it can, and records nothing when they decline", async () => {
+    const { ctx, items, project, ticket } = await submitted();
+    const asked: string[] = [];
+    const call = (answer: (options: string[]) => string | null) =>
+      ctx.tools.execute("review_delivery", { id: ticket.id, decision: "accepted", userSaid: "ship it" }, { by: "ai:test", projectId: project.id, ask: async (text, options) => (asked.push(text), answer(options)) });
+    expect(await call((options) => options[1])).toMatchObject({ recorded: false });
+    expect(items.get(project.id, ticket.id)).toMatchObject({ status: "verifying" });
+    expect(asked[0]).toContain(ticket.key);
+    expect(await call((options) => options[0])).toMatchObject({ status: "done" });
+  });
+
+  it("refuses a run that delivered work itself", async () => {
+    const { ctx, project, ticket } = await submitted();
+    const run = runHandle(project.id, [{ tool: "submit_delivery", ok: true }]);
+    await expect(ctx.tools.execute("review_delivery", { id: ticket.id, decision: "accepted", userSaid: "ok" }, { by: "ai:test", projectId: project.id, run })).rejects.toThrow(/this run delivered work/);
+  });
+});
+
+describe("create_item tool", () => {
+  it("returns the first item for a repeated requestId instead of creating another", async () => {
+    const { run, items, project } = await withTools();
+    const [a, b] = (await Promise.all([run("create_item", { title: "Once", requestId: "r-1" }), run("create_item", { title: "Once", requestId: "r-1" })])) as { id: string }[];
+    expect(b.id).toBe(a.id);
+    expect(((await run("create_item", { title: "Once", requestId: "r-1" })) as { id: string }).id).toBe(a.id);
+    await expect(run("create_item", { title: "Something else", requestId: "r-1" })).rejects.toThrow(/already used for another item/);
+    expect(((await run("create_item", { title: "Once", requestId: "r-2" })) as { id: string }).id).not.toBe(a.id);
+    expect(items.list({ projectId: project.id }).filter((i) => i.title === "Once")).toHaveLength(2);
+  });
+
+  it("gives the playbook recommendation a time budget and the caller's signal", async () => {
+    const f = await withTools();
+    const seen: unknown[] = [];
+    await f.ctx.plugin({ name: "fake-agent", apply: (ctx: typeof f.ctx) => ctx.provide("agent", { recommendPlaybook: async (_p: string, _i: unknown, opts: unknown) => (seen.push(opts), { playbookId: null, workType: "general" }) }) });
+    const signal = new AbortController().signal;
+    await f.ctx.tools.execute("create_item", { title: "Recommend me" }, { by: "ai:test", projectId: f.project.id, signal });
+    expect(seen).toEqual([{ withinMs: RECOMMEND_WITHIN_MS, signal }]);
   });
 });

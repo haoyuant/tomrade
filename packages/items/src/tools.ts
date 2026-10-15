@@ -1,11 +1,12 @@
 import type { Context } from "cordis";
 import { z } from "zod";
 import { ITEM_STATUSES, createItemSchema, filterClauseSchema, itemStatusSchema, listItemsFilterSchema, patchSchema, sortKeySchema, NotFoundError, type Item, type Patch } from "@tomradex/domain";
-import { ToolInputError, defineTool, requireProjectId } from "@tomradex/tools";
+import { ToolInputError, defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
 import type {} from "@tomradex/boards";
-import { addResourceSchema, submitDeliverySchema } from "@tomradex/domain";
+import { addResourceSchema, reviewDeliverySchema, submitDeliverySchema } from "@tomradex/domain";
 
-const withVersion = z.object({ projectId: z.string().optional(), id: z.string(), baseVersion: z.number().optional() });
+const itemId = z.string().describe("The item's id, or its key such as TOM-12");
+const withVersion = z.object({ projectId: z.string().optional(), id: itemId, baseVersion: z.number().optional() });
 
 type Simple = z.output<typeof listItemsFilterSchema>;
 const readInput = listItemsFilterSchema.extend({ filter: z.array(filterClauseSchema).optional(), sort: z.array(sortKeySchema).optional() });
@@ -14,6 +15,11 @@ type ReadInput = z.output<typeof readInput>;
 const listInput = readInput.extend({ limit: z.number().int().positive().optional() });
 /** A page an agent can read; anything larger is asked for. count_items answers the quantity questions. */
 const DEFAULT_LIST_LIMIT = 50;
+
+/** How long an agent creating a ticket waits for the worker model's playbook pick before the keyword fallback answers. */
+export const RECOMMEND_WITHIN_MS = 4_000;
+/** How long create_item remembers a requestId, so a client retrying a call that seemed to hang gets the first item back. */
+const REQUEST_ID_TTL_MS = 10 * 60_000;
 
 /** An item as a listing shows it: less the project the caller named, the number its key repeats, and a lock that is not set. */
 const listed = ({ projectId: _project, keyNum: _keyNum, humanLocked, ...row }: Item) => (humanLocked ? { ...row, humanLocked } : row);
@@ -36,17 +42,66 @@ function matchesSimple(item: Item, f: Simple): boolean {
  * unconditional even when the caller could not read first.
  */
 export function registerTools(ctx: Context): void {
+  // Briefs and people name items by key, so every tool that takes an id takes a key too.
+  const lookup = (projectId: string, id: string): Item | null => {
+    const byId = ctx.items.get(projectId, id);
+    if (byId) return byId;
+    const byKey = /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(id.trim()) ? ctx.items.getByKey(projectId, id.trim()) : null;
+    return byKey && byKey.key.toUpperCase() === id.trim().toUpperCase() ? byKey : null;
+  };
+  const resolve = (projectId: string, id: string): string => {
+    const item = lookup(projectId, id);
+    if (!item) throw new NotFoundError(id);
+    return item.id;
+  };
+
   ctx.tools.register(defineTool({
     name: "add_delivery_resource", title: "Link a file version",
     description: "Link an existing immutable Files plugin version as input material or an output artifact. Does not store file bytes or accept local paths. Fails when the Files plugin or version is unavailable.",
-    input: z.object({ projectId: z.string().optional(), id: z.string(), resource: addResourceSchema }),
-    execute: ({ projectId, id, resource }, inv) => ctx.items.addResource(requireProjectId("add_delivery_resource", projectId, inv), id, resource, inv.by)
+    input: z.object({ projectId: z.string().optional(), id: itemId, resource: addResourceSchema }),
+    execute: ({ projectId, id, resource }, inv) => {
+      const scope = requireProjectId("add_delivery_resource", projectId, inv);
+      return ctx.items.addResource(scope, resolve(scope, id), resource, inv.by);
+    }
   }));
   ctx.tools.register(defineTool({
     name: "submit_delivery", title: "Submit results for review",
     description: "Submit a completion report and selected output artifact IDs for human review. A successful run does not complete the ticket. Human activities can submit a report without files.",
-    input: z.object({ projectId: z.string().optional(), id: z.string(), submission: submitDeliverySchema }),
-    execute: ({ projectId, id, submission }, inv) => ctx.items.submitDelivery(requireProjectId("submit_delivery", projectId, inv), id, submission, inv.by)
+    input: z.object({ projectId: z.string().optional(), id: itemId, submission: submitDeliverySchema }),
+    execute: ({ projectId, id, submission }, inv) => {
+      const scope = requireProjectId("submit_delivery", projectId, inv);
+      return ctx.items.submitDelivery(scope, resolve(scope, id), submission, inv.by);
+    }
+  }));
+  ctx.tools.register(defineTool({
+    name: "review_delivery", title: "Record the user's verdict on a delivery",
+    description:
+      "Record the verdict the USER gave on a ticket's latest submitted delivery: accepted finishes the ticket, changes-requested sends it back to Doing. Only on the user's explicit word in this conversation — never your own judgement, and never on a delivery you submitted or worked on yourself. Pass their words in userSaid; where Tomrade can ask them, it asks to confirm first. The verdict is recorded as theirs, noting that you relayed it.",
+    input: z.object({
+      projectId: z.string().optional(),
+      id: itemId,
+      decision: reviewDeliverySchema.shape.decision,
+      comment: z.string().optional().describe("What the user said should change (changes-requested) or any note to keep with the verdict"),
+      userSaid: z.string().trim().min(1).describe("The user's own words giving this verdict, quoted")
+    }),
+    async execute({ projectId, id, decision, comment, userSaid }, inv) {
+      const scope = requireProjectId("review_delivery", projectId, inv);
+      const item = lookup(scope, id);
+      if (!item) throw new NotFoundError(id);
+      const submission = item.evidence.submissions.at(-1);
+      if (!submission) throw new Error(`${item.key} has no submitted delivery to review — submit_delivery comes first`);
+      if (inv.run?.ledger.find((e) => e.ok && (e.tool === "submit_delivery" || e.tool === "link_code"))) throw new Error(`review_delivery: this run delivered work, so it cannot review a delivery — the user accepts ${item.key} in its delivery panel`);
+      if (inv.ask) {
+        const zh = (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
+        const yes = zh ? (decision === "accepted" ? "验收通过" : "退回修改") : decision === "accepted" ? "Accept" : "Send back";
+        const question = zh
+          ? `智能体要替你记下对 ${item.key} 交付的结论：${yes}。依据你说的：“${userSaid}”`
+          : `The agent will record your verdict on ${item.key}'s delivery: ${yes}. On your words: “${userSaid}”`;
+        if ((await inv.ask(question, [yes, zh ? "取消" : "Cancel"])) !== yes) return { recorded: false, note: "The user did not confirm; nothing was recorded." };
+      }
+      const relayed = `Relayed by ${inv.by}; the user said: “${userSaid}”`;
+      return ctx.items.reviewDelivery(scope, item.id, { submissionId: submission.id, decision, comment: comment?.trim() ? `${comment.trim()}\n\n${relayed}` : relayed }, item.version);
+    }
   }));
   const versionOf = (projectId: string, id: string, asserted?: number) => {
     if (asserted !== undefined) return asserted;
@@ -70,6 +125,30 @@ export function registerTools(ctx: Context): void {
     const scalar = Object.values(scalars).some((v) => v !== undefined);
     const items = ctx.items.query({ projectId, filter: clauses, sortBy: sort, search, widen, limit: scalar ? undefined : limit }).filter((i) => matchesSimple(i, filter));
     return { projectId, items: limit !== undefined ? items.slice(0, limit) : items };
+  };
+
+  const requests = new Map<string, { title: string; item: Promise<Item>; at: number }>();
+  const create = async (projectId: string, args: z.output<typeof createItemSchema>, inv: ToolInvocation): Promise<Item> => {
+    // Agent-created tickets should receive the same recommendation as tickets
+    // created through the UI. Keep this optional and duck-typed here so the
+    // items package does not depend on the agent package (MCP/tool-only hosts
+    // simply retain the explicit/default values).
+    let playbookId = args.playbookId;
+    let workType = args.workType;
+    if (playbookId === undefined && inv.by.startsWith("ai:")) {
+      const agent = ctx.get("agent") as { recommendPlaybook?: (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts?: { withinMs?: number; signal?: AbortSignal }) => Promise<{ playbookId: string | null; workType: "coding" | "general" }> } | undefined;
+      if (agent?.recommendPlaybook) {
+        try {
+          // The agent is waiting on this call; past the budget the recommendation falls back to keywords.
+          const recommendation = await agent.recommendPlaybook(projectId, { title: args.title, body: args.body ?? null, workType }, { withinMs: RECOMMEND_WITHIN_MS, signal: inv.signal });
+          playbookId = recommendation.playbookId;
+          if (workType === undefined) workType = recommendation.workType;
+        } catch {
+          // Recommendation is advisory; ticket creation must still succeed.
+        }
+      }
+    }
+    return ctx.items.create({ ...args, playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
   };
 
   ctx.tools.register(
@@ -114,12 +193,11 @@ export function registerTools(ctx: Context): void {
       name: "get_item",
       title: "Get one item",
       description: "Fetch a single backlog item by id or key (TOM-12). The body is Markdown; files it links (tomrade-file://<fileId>) come back under attachments with their Files path.",
-      input: z.object({ projectId: z.string().optional(), id: z.string().describe("The item's id, or its key such as TOM-12") }),
+      input: z.object({ projectId: z.string().optional(), id: itemId }),
       readOnly: true,
       async execute({ projectId, id }, inv) {
         const scope = requireProjectId("get_item", projectId, inv);
-        // briefs name tickets by key, so an agent reaches for that first
-        const item = ctx.items.get(scope, id) ?? ctx.items.getByKey(scope, id);
+        const item = lookup(scope, id);
         const attachments = item ? await ctx.items.linkedFiles(scope, item.body) : null;
         return item && attachments ? { ...item, attachments } : item;
       }
@@ -130,29 +208,27 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "create_item",
       title: "Create item",
-      description: "Create a ticket or epic. Recorded in the oplog with the caller as author; lands on the project's first board unless boardId is given.",
-      input: createItemSchema,
-      async execute(args, inv) {
+      description:
+        "Create a ticket or epic. Recorded in the oplog with the caller as author; lands on the project's first board unless boardId is given. playbookId: omit it and Tomrade picks one (the worker model gets a few seconds, then a keyword match decides); pass null for none, or a playbook id to set it. Pass a requestId when you may retry: a repeat with the same requestId returns the item the first call created instead of a second one.",
+      input: createItemSchema.extend({
+        requestId: z.string().trim().min(1).max(200).optional().describe("Any unique string for this creation; reuse it when retrying the same call")
+      }),
+      async execute({ requestId, ...args }, inv) {
         const projectId = requireProjectId("create_item", args.projectId, inv);
-        // Agent-created tickets should receive the same recommendation as tickets
-        // created through the UI. Keep this optional and duck-typed here so the
-        // items package does not depend on the agent package (MCP/tool-only hosts
-        // simply retain the explicit/default values).
-        let playbookId = args.playbookId;
-        let workType = args.workType;
-        if (playbookId === undefined && inv.by.startsWith("ai:")) {
-          const agent = ctx.get("agent") as { recommendPlaybook?: (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }) => Promise<{ playbookId: string | null; workType: "coding" | "general" }> } | undefined;
-          if (agent?.recommendPlaybook) {
-            try {
-              const recommendation = await agent.recommendPlaybook(projectId, { title: args.title, body: args.body ?? null, workType });
-              playbookId = recommendation.playbookId;
-              if (workType === undefined) workType = recommendation.workType;
-            } catch {
-              // Recommendation is advisory; ticket creation must still succeed.
-            }
-          }
+        if (!requestId) return create(projectId, args, inv);
+        const key = `${projectId}\u0000${requestId}`;
+        const now = Date.now();
+        for (const [k, entry] of requests) if (now - entry.at > REQUEST_ID_TTL_MS) requests.delete(k);
+        const earlier = requests.get(key);
+        if (earlier) {
+          if (earlier.title !== args.title) throw new ToolInputError("create_item", [{ code: "custom", path: ["requestId"], message: `already used for another item ("${earlier.title}") — use a new requestId for a new item`, input: requestId } as unknown as z.core.$ZodIssue]);
+          const first = await earlier.item;
+          return ctx.items.get(projectId, first.id) ?? first;
         }
-        return ctx.items.create({ ...args, playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
+        const item = create(projectId, args, inv);
+        requests.set(key, { title: args.title, item, at: now });
+        item.catch(() => requests.delete(key));
+        return item;
       }
     })
   );
@@ -165,7 +241,8 @@ export function registerTools(ctx: Context): void {
       input: withVersion.extend({ patch: patchSchema }),
       execute({ projectId, id, patch, baseVersion }, inv) {
         const scope = requireProjectId("update_item", projectId, inv);
-        return ctx.items.update(scope, id, patch as Patch, inv.by, { baseVersion: versionOf(scope, id, baseVersion) });
+        const target = resolve(scope, id);
+        return ctx.items.update(scope, target, patch as Patch, inv.by, { baseVersion: versionOf(scope, target, baseVersion) });
       }
     })
   );
@@ -178,7 +255,8 @@ export function registerTools(ctx: Context): void {
       input: withVersion.extend({ status: itemStatusSchema }),
       execute({ projectId, id, status, baseVersion }, inv) {
         const scope = requireProjectId("change_status", projectId, inv);
-        return ctx.items.update(scope, id, { status }, inv.by, { baseVersion: versionOf(scope, id, baseVersion) });
+        const target = resolve(scope, id);
+        return ctx.items.update(scope, target, { status }, inv.by, { baseVersion: versionOf(scope, target, baseVersion) });
       }
     })
   );
@@ -188,10 +266,12 @@ export function registerTools(ctx: Context): void {
       name: "delete_item",
       title: "Delete item",
       description: "Delete an item. Recorded in the oplog and reversible with undo.",
-      input: z.object({ projectId: z.string().optional(), id: z.string() }),
+      input: z.object({ projectId: z.string().optional(), id: itemId }),
       execute({ projectId, id }, inv) {
-        ctx.items.delete(requireProjectId("delete_item", projectId, inv), id, inv.by);
-        return { deleted: id };
+        const scope = requireProjectId("delete_item", projectId, inv);
+        const target = resolve(scope, id);
+        ctx.items.delete(scope, target, inv.by);
+        return { deleted: target };
       }
     })
   );

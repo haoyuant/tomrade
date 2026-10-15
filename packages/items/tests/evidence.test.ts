@@ -20,7 +20,7 @@ it("requires Files versions, distinguishes inputs, pins review outputs and prese
   updated = items.submitDelivery(project.id, item.id, { report: "First draft", artifactIds: [firstArtifact.id] }, "ai:test");
   const firstSubmission = updated.evidence.submissions.at(-1)!;
   expect(updated.status).toBe("verifying");
-  expect(() => items.update(project.id, item.id, { status: "done" }, "ai:test")).toThrow("human acceptance");
+  expect(() => items.update(project.id, item.id, { status: "done" }, "ai:test")).toThrow("has not been accepted");
   expect(() => items.reviewDelivery(project.id, item.id, { submissionId: firstSubmission.id, decision: "accepted" }, updated.version - 1)).toThrow();
   updated = items.reviewDelivery(project.id, item.id, { submissionId: firstSubmission.id, decision: "changes-requested", comment: "Add an example" }, updated.version);
   expect(updated.status).toBe("doing");

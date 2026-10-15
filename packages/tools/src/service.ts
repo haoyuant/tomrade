@@ -113,6 +113,88 @@ export class ToolInputError extends Error {
   }
 }
 
+/** Names agents reach for that a tool spells differently. */
+const ALIASES: Record<string, string[]> = { query: ["search"], q: ["search"], text: ["search", "body"], itemId: ["id"], key: ["id"], ticket: ["id"], ticketId: ["id"], description: ["body"], content: ["body"], blockedBy: ["blocks"], parent: ["parentId"] };
+
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const next = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = row[j];
+      row[j] = next;
+    }
+  }
+  return row[b.length];
+}
+
+/** The accepted name a mistyped one most likely meant, if any is close. */
+export function nearestParam(given: string, accepted: string[]): string | undefined {
+  const alias = ALIASES[given]?.find((name) => accepted.includes(name));
+  if (alias) return alias;
+  const lower = given.toLowerCase();
+  const scored = accepted.map((name) => ({ name, d: distance(lower, name.toLowerCase()) })).sort((x, y) => x.d - y.d);
+  return scored[0] && scored[0].d <= Math.max(1, Math.floor(given.length / 3)) ? scored[0].name : undefined;
+}
+
+const strictCache = new WeakMap<z.ZodType, z.ZodType>();
+
+/**
+ * The schema refusing keys it does not declare, at every depth. Zod strips them by default, so a
+ * misspelt parameter (query for search) used to vanish and the call answered something else.
+ */
+export function strictInput<S extends z.ZodType>(schema: S): S {
+  const cached = strictCache.get(schema);
+  if (cached) return cached as S;
+  const out = tighten(schema);
+  strictCache.set(schema, out);
+  return out as S;
+}
+
+function tighten(schema: z.ZodType): z.ZodType {
+  // An extension's schema may come from another zod; it is left as it is.
+  if (!schema?._zod?.def) return schema;
+  const def = schema._zod.def as { type: string; innerType?: z.ZodType; element?: z.ZodType; catchall?: z.ZodType; error?: (issue: unknown) => unknown };
+  const withDef = (next: object) => (schema as unknown as { clone(def: object, params: { parent: true }): z.ZodType }).clone({ ...def, ...next }, { parent: true });
+  switch (def.type) {
+    case "object": {
+      // A schema that already says what to do with other keys (loose, catchall) keeps saying it.
+      if (def.catchall) return schema;
+      const shape = Object.fromEntries(Object.entries((schema as z.ZodObject).shape).map(([key, value]) => [key, tighten(value as z.ZodType)]));
+      const accepted = Object.keys(shape);
+      return withDef({
+        shape,
+        catchall: z.never(),
+        error: (issue: { code: string; keys?: string[] }) => {
+          if (issue.code !== "unrecognized_keys" || !issue.keys) return def.error?.(issue);
+          const hints = issue.keys.map((key) => {
+            const near = nearestParam(key, accepted);
+            return near ? `"${key}" (did you mean "${near}"?)` : `"${key}"`;
+          });
+          return `unknown parameter${issue.keys.length > 1 ? "s" : ""} ${hints.join(", ")} — accepted: ${accepted.join(", ")}`;
+        }
+      });
+    }
+    case "optional":
+    case "nullable":
+    case "default":
+    case "prefault":
+    case "nonoptional":
+    case "readonly": {
+      const inner = tighten(def.innerType!);
+      return inner === def.innerType ? schema : withDef({ innerType: inner });
+    }
+    case "array": {
+      const element = tighten(def.element!);
+      return element === def.element ? schema : withDef({ element });
+    }
+    default:
+      return schema;
+  }
+}
+
 /**
  * Tools scope to the caller's project. Without one there is nothing to default
  * to — guessing would write into the wrong project the moment a second exists —
@@ -184,7 +266,7 @@ export class Tools extends Service {
   async execute(name: string, rawArgs: unknown, invocation: ToolInvocation): Promise<unknown> {
     const tool = this.registry.get(name);
     if (!tool) throw new UnknownToolError(name);
-    const parsed = tool.input.safeParse(rawArgs ?? {});
+    const parsed = strictInput(tool.input).safeParse(rawArgs ?? {});
     if (!parsed.success) throw new ToolInputError(name, parsed.error.issues);
     const call: ToolCall = { name, args: parsed.data, by: invocation.by, projectId: invocation.projectId, run: invocation.run };
     try {

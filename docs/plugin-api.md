@@ -573,6 +573,12 @@ to Verifying, and pins those file versions. Report-only human work is supported.
 Human-only `items.reviewDelivery` IPC takes submission ID, decision, comment and
 the observed item version. Stale review is refused. Acceptance completes;
 changes requested return to Doing without losing earlier submissions.
+An agent cannot finish a ticket whose latest submission nobody accepted; it
+relays the person's own verdict with the `review_delivery` tool instead, quoting
+their words (`userSaid`). Where Tomrade can ask the person, it confirms first; the
+verdict is recorded as theirs with the relay noted in its comment, and a run or
+conversation that worked on the ticket is refused. Every item tool takes a key
+(`TOM-12`) wherever it takes an id.
 
 The Files screen owns selection, preview and file permissions. Its picker returns
 one or more versioned references, never machine-local paths or mutable “latest”

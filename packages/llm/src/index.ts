@@ -7,7 +7,7 @@ import { AnthropicModel } from "./anthropic.js";
 import { ImagesModel } from "./images.js";
 export { ImagesModel } from "./images.js";
 import { LlmError } from "./errors.js";
-import { assistantMessage, collect, userMessage, type ChatModel, type ChatRequest, type LlmRole, type Message } from "./model.js";
+import { assistantMessage, collect, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
 import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
 import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, type QuickSetupResult } from "./providers.js";
@@ -27,7 +27,14 @@ export interface CompletionRequest {
   maxTokens?: number;
   /** Ends the request; a caller that cannot wait long passes AbortSignal.timeout(…). */
   signal?: AbortSignal;
+  /** The whole call, repair round included, ends after this long. Absent, only silence ends it (COMPLETION_IDLE_MS). */
+  timeoutMs?: number;
+  /** False skips the repair round: a caller with a fallback takes it rather than a second request. */
+  repair?: boolean;
 }
+
+/** A model that sends nothing for this long has stopped answering; a long document still streaming is never cut. */
+export const COMPLETION_IDLE_MS = 90_000;
 
 /** The structured seam: one JSON document matching a schema. Kept from v1; compound tools live on it. */
 export interface LLMProvider {
@@ -191,9 +198,13 @@ function fit<T>(schema: z.ZodType<T>, content: string): { ok: true; value: T } |
  */
 export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, request: CompletionRequest, label = "The worker model"): Promise<T> {
   const messages: Message[] = [userMessage(request.user)];
+  const deadline = request.timeoutMs !== undefined ? AbortSignal.timeout(request.timeoutMs) : undefined;
   let problem = "";
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const out = await collect(model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens: request.maxTokens ?? 8000 }, request.signal));
+  for (let attempt = 0; attempt < (request.repair === false ? 1 : 2); attempt += 1) {
+    const out = await collectWithin(
+      (signal) => model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens: request.maxTokens ?? 8000 }, signal),
+      { label, signal: request.signal, deadline, timeoutMs: request.timeoutMs }
+    );
     if (!out.text) throw new LlmError(`${label} returned no content`);
     const result = fit(schema, out.text.trim());
     if (result.ok) return result.value;
@@ -201,6 +212,49 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
     messages.push(assistantMessage({ text: out.text, toolCalls: [] }), userMessage(`That reply does not fit the required JSON shape (${problem}). Reply with the corrected JSON document only.`));
   }
   throw new LlmError(`${label} returned output that failed schema validation — ${problem}`);
+}
+
+/**
+ * Collect one reply, ending it when the caller withdraws, the deadline passes, or the model goes
+ * silent. Settles on abort even when the model ignores its signal, so no caller waits on a hang.
+ */
+async function collectWithin(
+  open: (signal: AbortSignal) => AsyncIterable<ChatEvent>,
+  opts: { label: string; signal?: AbortSignal; deadline?: AbortSignal; timeoutMs?: number }
+): Promise<Collected> {
+  const idle = new AbortController();
+  const signal = AbortSignal.any([idle.signal, ...(opts.signal ? [opts.signal] : []), ...(opts.deadline ? [opts.deadline] : [])]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const touch = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => idle.abort(), COMPLETION_IDLE_MS);
+  };
+  const why = (): unknown =>
+    idle.signal.aborted ? new LlmError(`${opts.label} sent nothing for ${COMPLETION_IDLE_MS / 1000}s`)
+    : opts.deadline?.aborted ? new LlmError(`${opts.label} did not answer within ${(opts.timeoutMs ?? 0) / 1000}s`)
+    : opts.signal?.reason ?? new LlmError(`${opts.label} request was cancelled`);
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(why());
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+  aborted.catch(() => {});
+  async function* touching(events: AsyncIterable<ChatEvent>): AsyncIterable<ChatEvent> {
+    for await (const event of events) {
+      touch();
+      yield event;
+    }
+  }
+  touch();
+  try {
+    return await Promise.race([collect(touching(open(signal))), aborted]);
+  } catch (error) {
+    throw signal.aborted ? why() : error;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /** ctx.llm: profiles + roles from settings, adapters cached until settings change. */

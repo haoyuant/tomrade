@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Context } from "cordis";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
-import { FakeChatModel, fakeChat } from "@tomradex/llm";
+import { FakeChatModel, fakeChat, type CompletionRequest, type LlmService } from "@tomradex/llm";
 import { Agent, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities } from "@tomradex/agent";
 import engineLoop from "@tomradex/engine-loop";
 
@@ -74,6 +74,36 @@ describe("playbook sources", () => {
     await settle();
     const created = await base.ctx.tools.execute("create_item", { title: "Write the project guide" }, { by: "ai:loop", projectId: base.project.id });
     expect(created).toMatchObject({ workType: "general", playbookId: "document.write" });
+    await base.ctx.fiber.dispose();
+  });
+
+  it("a budgeted recommendation answers from keywords when the worker model hangs, and says so in the log", async () => {
+    const requests: CompletionRequest[] = [];
+    // Never answers and ignores its signal.
+    const hung = { name: "hung-llm", apply(ctx: Context) { ctx.provide("llm", { worker: async () => ({ ok: true, via: "profile", title: "hung" }), completeJson: (_schema: unknown, request: CompletionRequest) => (requests.push(request), new Promise(() => {})) } as unknown as LlmService); } };
+    const base = await fresh({ plugins: [Tools, [...tmpSettings()], hung, [Agent, {}], engineLoop] });
+    await settle();
+    const warnings: string[] = [];
+    const spy = vi.spyOn(base.ctx.logger, "warn").mockImplementation((...args: unknown[]) => void warnings.push(args.map(String).join(" ")));
+    const started = Date.now();
+    const recommendation = await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Write the project guide" }, { withinMs: 50 });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(recommendation).toMatchObject({ source: "fallback", playbookId: "document.write" });
+    expect(requests[0]).toMatchObject({ maxTokens: 400, repair: false });
+    expect(requests[0].signal).toBeInstanceOf(AbortSignal);
+    expect(warnings.join("\n")).toMatch(/fell back to keywords after \d+ms: no answer within 50ms/);
+    spy.mockRestore();
+    await base.ctx.fiber.dispose();
+  });
+
+  it("a budgeted recommendation does not wait on a playbook refresh that hangs", async () => {
+    const base = await fresh({
+      plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([]), () => ({ workType: "general", playbookId: "design.create", confidence: 0.9, reason: "design" })), [Agent, {}], engineLoop]
+    });
+    await settle();
+    vi.spyOn(base.ctx.agent, "refreshProjectPlaybooks").mockReturnValue(new Promise(() => {}));
+    const recommendation = await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Write the project guide", workType: "general" }, { withinMs: 50 });
+    expect(recommendation).toMatchObject({ source: "fallback", playbookId: "document.write" });
     await base.ctx.fiber.dispose();
   });
 

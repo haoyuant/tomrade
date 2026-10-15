@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -25,6 +25,38 @@ describe("the MCP surface", () => {
       expect((await call()).isError).toBe(true);
       expect(unscoped).toBe(0);
     } finally { await client.close(); await ctx.fiber.dispose(); }
+  });
+  it("refuses a misspelt parameter with the name it meant, instead of dropping it, and lists the schema as closed", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const seen: unknown[] = [];
+    ctx.tools.register(defineTool({ name: "find", title: "Find", description: "test", input: z.object({ search: z.string().optional(), patch: z.object({ blocks: z.array(z.string()) }).optional() }), execute: (args) => (seen.push(args), "ok") }));
+    const client = new Client({ name: "plain", version: "0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      const listed = (await client.listTools()).tools.find((t) => t.name === "find")!;
+      expect(listed.inputSchema).toMatchObject({ additionalProperties: false, properties: { patch: { additionalProperties: false } } });
+      const wrong = await client.callTool({ name: "find", arguments: { query: "dark" } });
+      expect(wrong.isError).toBe(true);
+      expect(JSON.stringify(wrong.content)).toMatch(/unknown parameter \\"query\\" \(did you mean \\"search\\"\?\)/);
+      expect((await client.callTool({ name: "find", arguments: { patch: { blockedBy: [] } } })).isError).toBe(true);
+      expect(JSON.stringify(await client.callTool({ name: "find", arguments: { search: "dark" } }))).toContain("ok");
+      expect(seen).toEqual([{ search: "dark" }]);
+    } finally { await client.close(); await ctx.fiber.dispose(); }
+  });
+  it("logs a slow tool call by name and time, never its arguments", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0, slowCallMs: 0 }]] });
+    await settle();
+    ctx.tools.register(defineTool({ name: "slowish", title: "Slow", description: "test", input: z.object({ secret: z.string() }), execute: () => "ok" }));
+    const warnings: string[] = [];
+    const spy = vi.spyOn(ctx.mcp.ctx.logger, "warn").mockImplementation((...args: unknown[]) => void warnings.push(args.map(String).join(" ")));
+    const client = new Client({ name: "plain", version: "0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      await client.callTool({ name: "slowish", arguments: { secret: "do-not-log" } });
+      expect(warnings.some((w) => /^MCP tool slowish took \d+ms$/.test(w))).toBe(true);
+      expect(warnings.join("\n")).not.toContain("do-not-log");
+    } finally { spy.mockRestore(); await client.close(); await ctx.fiber.dispose(); }
   });
   it("never offers a tool kept in this process, with or without a run token", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
