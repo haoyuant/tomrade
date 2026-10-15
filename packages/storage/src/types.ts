@@ -179,3 +179,11 @@ export class HubUnconfiguredError extends Error {
     this.name = "HubUnconfiguredError";
   }
 }
+
+/** A ticket whose delivery evidence a merge left disagreeing with itself, as the dialog and status bar draw it. */
+export interface AttentionView {
+  itemId: string;
+  key: string;
+  title: string;
+  code: "orphan-artifact" | "orphan-review" | "duplicate-review" | "delivery-state" | "done-unaccepted";
+}

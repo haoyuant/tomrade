@@ -49,6 +49,7 @@ export const keys = {
   restores: ["storage", "restores"] as const,
   storageStatus: (projectId: string) => ["storage", "status", projectId] as const,
   storageInfo: (projectId: string) => ["storage", "info", projectId] as const,
+  syncAttention: (projectId: string) => ["storage", "attention", projectId] as const,
   storageConnection: (providerId: string) => ["storage", "connection", providerId] as const,
   contributions: ["contributions"] as const,
   commands: ["contributions", "commands"] as const,
@@ -66,6 +67,7 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
   void qc.invalidateQueries({ queryKey: keys.labels(projectId) });
   void qc.invalidateQueries({ queryKey: keys.oplog(projectId) });
   void qc.invalidateQueries({ queryKey: keys.timeline(projectId) });
+  void qc.invalidateQueries({ queryKey: keys.syncAttention(projectId) });
   void qc.invalidateQueries({ queryKey: ["history", projectId] });
   void qc.invalidateQueries({ queryKey: keys.contributions });
 }
@@ -419,6 +421,10 @@ export const useStorageInfo = (projectId: string) =>
 /** Contacts the remote, so it is asked for on open and after an action — never polled. */
 export const useStorageStatus = (projectId: string) =>
   useQuery({ queryKey: keys.storageStatus(projectId), queryFn: (): Promise<StorageStatus> => invoke("storage.status", projectId), retry: false, staleTime: 10_000 });
+
+/** Tickets a sync left with delivery records that disagree; settled ones drop out. */
+export const useSyncAttention = (projectId: string) =>
+  useQuery({ queryKey: keys.syncAttention(projectId), queryFn: () => invoke("storage.attention", projectId), retry: false });
 
 /** Re-point the project at a folder. Empty: written; holding this project: adopted; another's: refused. */
 export function useSetFolder(projectId: string) {

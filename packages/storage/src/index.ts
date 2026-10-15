@@ -42,6 +42,7 @@ export {
   NewerSchemaError,
   SharedCheckoutError,
   UnknownProviderError,
+  type AttentionView,
   type ConnectionState,
   type GitOrigin,
   type ProviderConnection,

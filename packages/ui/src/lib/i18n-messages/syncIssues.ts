@@ -1,0 +1,42 @@
+export const syncIssues = {
+  en: {
+    chip: "{{n}} to settle after sync",
+    chipTitle: "A sync brought in delivery records that disagree. Nothing is blocked — settle them when you can.",
+    title: "Settle after sync",
+    lede: "The last sync merged cleanly, but these tickets now disagree with themselves about their delivery. Syncing carries on either way; pick what each one should say.",
+    "code_done-unaccepted": "Marked done, but the latest delivery was never accepted.",
+    "code_orphan-review": "A review points at a delivery that is gone.",
+    "code_duplicate-review": "The same delivery has more than one review.",
+    "code_orphan-artifact": "A delivery lists a file that is no longer attached.",
+    "code_delivery-state": "The delivery's state does not match the ticket's status.",
+    accept: "Accept the delivery",
+    reopen: "Back to Doing",
+    tidy: "Tidy the records",
+    open: "Open ticket",
+    allSettled: "Everything is settled.",
+    syncStatus: "Sync: {{detail}}",
+    syncNow: "Sync now",
+    syncing: "Syncing…",
+    close: "Close"
+  },
+  zh: {
+    chip: "同步后有 {{n}} 项待处理",
+    chipTitle: "一次同步带进了前后不一致的交付记录。不会阻塞任何事，有空时处理即可。",
+    title: "同步后待处理",
+    lede: "上一次同步已经合并成功，但下面这些工单的交付记录前后不一致。无论是否处理，同步都会继续；请为每一项选择它该有的样子。",
+    "code_done-unaccepted": "已标为完成，但最新一次交付从未被验收。",
+    "code_orphan-review": "有一条评审指向了已不存在的交付。",
+    "code_duplicate-review": "同一次交付有多条评审。",
+    "code_orphan-artifact": "交付里列出的某个文件已不在附件中。",
+    "code_delivery-state": "交付状态与工单状态不一致。",
+    accept: "验收这次交付",
+    reopen: "改回进行中",
+    tidy: "整理记录",
+    open: "打开工单",
+    allSettled: "都处理好了。",
+    syncStatus: "同步：{{detail}}",
+    syncNow: "立即同步",
+    syncing: "同步中…",
+    close: "关闭"
+  }
+};

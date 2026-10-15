@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
+import { SyncIssuesDialog } from "~/components/dialogs/SyncIssuesDialog";
+import { SyncIssuesChip } from "~/components/chrome/SyncIssuesChip";
 import { FieldsDialog } from "~/components/dialogs/FieldsDialog";
 import { HistoryDialog } from "~/components/dialogs/HistoryDialog";
 import { NewIssueDialog } from "~/components/dialogs/NewIssueDialog";
@@ -93,6 +95,7 @@ export function Workspace() {
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [codeInbox, setCodeInbox] = useState(false);
+  const [syncIssues, setSyncIssues] = useState(false);
   const [history, setHistory] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** Which field the Fields sheet lands on; null for the list. */
@@ -191,7 +194,7 @@ export function Workspace() {
     if (selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -343,7 +346,10 @@ export function Workspace() {
         )}
       </div>
 
-      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)} />
+      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)}>
+        <SyncIssuesChip projectId={ws.project.id} onOpen={() => setSyncIssues(true)} />
+      </StatusBar>
+      <SyncIssuesDialog projectId={ws.project.id} open={syncIssues} onOpenChange={setSyncIssues} onOpenIssue={ws.select} />
 
       <ShortcutsDialog
         open={shortcutsOpen}

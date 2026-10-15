@@ -6,13 +6,15 @@ import type {} from "@tomradex/ipc";
 import type { RemoteRef } from "@tomradex/hub";
 import type { HubManifest } from "./hub.js";
 import type { RestoreSummary } from "./restore.js";
-import type { ConnectionState, StorageInfo, StorageProviderView, StorageStatus } from "./types.js";
+import type { AttentionView, ConnectionState, StorageInfo, StorageProviderView, StorageStatus } from "./types.js";
 
 declare module "@tomradex/ipc" {
   interface Channels {
     "storage.providers": () => StorageProviderView[];
     "storage.info": (projectId: string) => StorageInfo;
     "storage.status": (projectId: string) => StorageStatus;
+    /** Tickets the last merge committed with delivery evidence that still needs a person; entries drop out once settled. */
+    "storage.attention": (projectId: string) => AttentionView[];
     /** Re-point the project at a folder: empty → written; holding this project → adopted; holding another → refused. */
     "storage.setFolder": (projectId: string, dir: string) => StorageInfo;
     "storage.setAutoCommit": (projectId: string, on: boolean) => StorageInfo;
@@ -54,5 +56,7 @@ declare module "@tomradex/ipc" {
     "storage.changed": (projectId: string) => void;
     /** A restore started, moved a step, finished or stopped to wait. */
     "storage.restoresChanged": () => void;
+    /** A merge left delivery evidence to settle, or the list changed. */
+    "storage.attentionChanged": (projectId: string) => void;
   }
 }
