@@ -119,6 +119,12 @@ importers:
       '@tomradex/im':
         specifier: workspace:*
         version: link:../../packages/im
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../../packages/inbox
+      '@tomradex/inbox-tomrade':
+        specifier: workspace:*
+        version: link:../../packages/inbox-tomrade
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -1232,6 +1238,71 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/inbox:
+    dependencies:
+      '@tomradex/boards':
+        specifier: workspace:*
+        version: link:../boards
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/fields':
+        specifier: workspace:*
+        version: link:../fields
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/inbox-tomrade:
+    dependencies:
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/doctor':
+        specifier: workspace:*
+        version: link:../doctor
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/ipc:
     dependencies:
       cordis:
@@ -2183,6 +2254,12 @@ importers:
       '@tomradex/files':
         specifier: workspace:*
         version: link:../files
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@tomradex/inbox-tomrade':
+        specifier: workspace:*
+        version: link:../inbox-tomrade
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc

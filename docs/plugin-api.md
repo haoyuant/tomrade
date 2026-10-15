@@ -284,6 +284,7 @@ consumer follows.
 | `ctx.agent` | spine registry | `@tomradex/agent` | The agent platform: threads, runs, the ledger, run-scoped undo; registries for engines, workflows, playbooks and policies |
 | `ctx.schedules` | optional feature | `@tomradex/schedules` | Templates and their schedules: a template is one or more tickets (`{date}`, `{weekday}`, `{week}`, `{month}`, `{year}` filled in; General and To Do by default; optionally started) or a prompt to the assistant, run by hand or on any number of schedules (daily, weekdays, days of the week, every N days, a day of the month, every N hours). Templates travel with the project; schedules and runs stay on this machine, a missed time caught up once or skipped. A bilingual gallery of suggestions (daily to-do, chores, bills, weekly review, weekly report…). Tools `list_templates`, `create_template` / `schedule_template` (both ask the person), `run_template`, `delete_template` |
 | `ctx.pet` | optional feature | `@tomradex/pet` | Pet task-state reduction, settings, renderer state and its embedded/desktop lifecycle |
+| `ctx.inbox` | optional feature | `@tomradex/inbox` | A project's inbox: feedback and bug reports from the sources the project switched on wait there until a person triages them — accepts one as a ticket, merges it into one, replies, or closes it. See [The inbox](#the-inbox) |
 | `ctx.mcp` | — | `@tomradex/mcp` | Projects `ctx.tools` onto MCP; plugins add prompts (`prompt`, a client's slash command) and connect-time instructions (`instruct`, for sessions without a run token) |
 | `ctx.plugins` | — | `@tomradex/plugins` | The composition itself: what is loaded, what it provides, and which modules may not be emptied |
 
@@ -396,6 +397,7 @@ contracts:
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 | `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
+| `inboxSource` | `ctx.inbox.source` | `inbox-tomrade` |
 
 Unlike a module's, membership **is** declared, on the row: `implements:
 [engine]`. A row switched off registers nothing, and a disabled engine is
@@ -786,6 +788,12 @@ The maintainer works through the reports with `tomrade-store diag`:
 - `diag reply` and `diag status` answer one report, or every report on a
   ticket (`--ticket TOM-N`), with `--in 0.7.0` saying which release fixes it.
 
+Feedback, ideas and bugs nobody troubleshot go the same way:
+`ctx.doctor.sendFeedback(kind, text)` (`kind` is `bug`, `feedback` or `idea`)
+sends what the person wrote and the app's version and system, nothing else, and
+the report carries its `kind`. The in-app **Feedback** entry (the bottom bar and
+the palette) belongs to `@tomradex/inbox-tomrade`.
+
 The sender sees the status, the reply and the fix in **Settings → About → My
 reports**. Meanwhile the bottom bar says a reply came, until it has been read.
 
@@ -958,6 +966,50 @@ and either stops with the caller's `signal`. `ctx.webSearch.search()` and
 section holds the API key (a password field, so machine-scoped and out of every
 agent's reach; empty falls back to `TAVILY_API_KEY`) and the search depth
 (`basic`, or `advanced` at twice the credits).
+
+### The inbox
+
+`@tomradex/inbox` (`ctx.inbox`) is a project's inbox. A **source** is where
+feedback comes from — Tomrade's own reports, GitHub issues, later mail — and a
+plugin registers one with `ctx.inbox.source({ id, title, keyPattern?,
+available?, pull, reply?, setStatus? })`. Each project switches its sources on
+by itself (the inbox's Sources pane); nothing is pulled from a source a project
+did not choose.
+
+- `pull({ projectId, since })` returns what arrived since an epoch-ms cursor:
+  `{ externalId, url?, kind?, reporter?, title, body?, attachments?, receivedAt }`.
+  One entry is kept per `(source, externalId)`, under an id both machines
+  derive alike, so pulling twice — here or on another machine — changes
+  nothing. A source that leaves some of what it read out returns
+  `{ entries, cursor }` to say where the next pull starts.
+- `available(projectId)` is null when the source can pull here, or why not,
+  in the person's words ("sign in first").
+- `setStatus(entry, change)` hears each triage — accepted or merged with the
+  ticket's key, closed as `wontfix` or `duplicate`, reopened — so whoever
+  wrote sees it where they wrote. A change it could not take waits in a
+  machine-local outbox and is tried again before every pull.
+- `reply(entry, text)` carries an answer, when the source can.
+
+Pull only: the backlog is never mirrored back to a source. Triage is a
+person's: accepting makes a ticket through the ordinary write path, with the
+entry quoted and linked in its body, and two select fields the inbox makes the
+first time — **Source** and **Kind** (`bug`, `feedback`, `idea`) — beside a
+saved table view of such tickets, made once. Merging counts the entry on the
+ticket it names. The derived field `feedback` is how many entries a ticket
+holds, and the ticket's **Feedback** section lists them. Entries and their
+triage travel with the project; where each source was read up to stays on the
+machine that read it.
+
+The renderer reaches it over `inbox.list`, `inbox.sources`, `inbox.setSource`,
+`inbox.refresh`, `inbox.accept`, `inbox.merge`, `inbox.close`, `inbox.reopen`
+and `inbox.reply`, and hears `inbox.changed`. Its sidebar module opens the
+inbox and counts what waits.
+
+`@tomradex/inbox-tomrade` is the source for Tomrade's own reports. It pulls
+for an account named in `tomrade_maintainers` (`tomrade-store maintainer add
+<email>`), through `tomrade_feedback_pull` and `tomrade_feedback_answer`,
+which see a report's code and never its sender; a triage here becomes the
+status, ticket and reply the sender reads under My reports.
 
 ## Views
 
@@ -1522,7 +1574,7 @@ ctx.contributions.badge({ id: "hello", compute: (items) => ({ [items[0]?.id]: [{
 ctx.contributions.statusItem({ id: "hello", text: ({ projectId }) => "hello" });
 ctx.contributions.section({ id: "hello", title: "Hello", render: (item) => ({ rows: [{ label: "Key", value: item.key }] }) });
 ctx.contributions.graph({ id: "hello", title: "Hello", icon: "i-graph", compute: (items) => items.flatMap((i) => (i.parentId ? [{ from: i.parentId, to: i.id }] : [])) });
-ctx.contributions.sidebarModule({ id: "hello", title: "Hello", icon: "i-link", rows: ({ projectId }) => [{ id: "docs", label: "Docs", detail: "docs.example.com", count: 3, command: "hello.say" }] });
+ctx.contributions.sidebarModule({ id: "hello", title: "Hello", icon: "i-link", count: ({ projectId }) => 2, rows: ({ projectId }) => [{ id: "docs", label: "Docs", detail: "docs.example.com", count: 3, command: "hello.say" }] });
 ctx.contributions.assistantAccessory({ id: "hello.pet", kind: "animated-pet", title: "Helper", stateChannel: "hello.pet.state", changedChannel: "hello.pet.changed", width: 96, height: 72, animations: { idle: { source: "data:image/gif;base64,…", type: "image/gif", box: { x: 12, y: 30, width: 280, height: 200 } } } });
 ```
 
@@ -1571,7 +1623,11 @@ when clicked) and, when it has `rows`, a fold button on the left and the rows
 under it — each a label with an optional `icon`, a quieter `detail` line, a
 `count`, and a `command` to run or an `href` to open. `rows` is computed per
 project; returning null hides the module there, and a module without `rows` is
-a single door. Where it sits and whether it is folded is the person's choice,
+a single door. `count`, also per project, puts a number at the head's end —
+what waits there — and shows nothing for null or 0. A first-party module may
+name a renderer surface in `opens` ("inbox") for its head to bring up instead
+of a command, as a status item's `opens` does; a command's result may name one
+the same way. Where it sits and whether it is folded is the person's choice,
 kept on their machine: they drag modules by the head or move them from its
 right-click menu, and a module the saved order has not met yet lands at the end.
 

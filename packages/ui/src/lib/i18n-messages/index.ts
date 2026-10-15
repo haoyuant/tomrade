@@ -55,6 +55,7 @@ import { hubPane } from "./hubPane";
 import { restore } from "./restore";
 import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
+import { feedback, inbox } from "./inbox";
 
 export const en = {
   common: common.en,
@@ -117,7 +118,9 @@ export const en = {
   localCli: localCli.en,
   files: files.en,
   notes: notes.en,
-  history: history.en
+  history: history.en,
+  inbox: inbox.en,
+  feedback: feedback.en
 };
 
 export const zh: typeof en = {
@@ -181,5 +184,7 @@ export const zh: typeof en = {
   localCli: localCli.zh,
   files: files.zh,
   notes: notes.zh,
-  history: history.zh
+  history: history.zh,
+  inbox: inbox.zh,
+  feedback: feedback.zh
 };

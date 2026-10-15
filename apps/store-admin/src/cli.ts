@@ -40,6 +40,7 @@ const usage = `tomrade-store <command>
   diag reply R-XXXXXX "text" [--status s] [--in 0.7.0]   answer it; the sender sees it in the app (--ticket TOM-N: every report on that ticket)
   diag status R-XXXXXX fixed [--in 0.7.0]                new, triaged, fixed, wontfix or duplicate (--ticket TOM-N too)
   diag import --project <id> [--mcp url]                 new reports become TOM tickets through a running Tomrade, one per fingerprint
+  maintainer [add|remove <email>]  who triages reports from Tomrade's own inbox (the Tomrade feedback source)
   show publisher/name@version     a listed version as the store holds it
   official publisher/name@version sign one of Tomrade's own plugins as official (STORE_SIGNING_KEY)
   revoke publisher/name [--versions range] --reason text   switch it off on every machine
@@ -138,6 +139,37 @@ async function main(): Promise<number> {
       for (const [fingerprint, rows] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
         const latest = rows[0]!;
         console.log(`${rows.length}× ${fingerprint}${latest.ticket ? ` · ${latest.ticket}` : ""} · ${latest.engine ?? "-"} · ${latest.summary}\n   ${rows.map((r) => `${r.code} (${r.app_version}, ${String(r.created_at).slice(0, 10)}${rest.includes("--all") ? `, ${r.status}` : ""})`).join(", ")}`);
+      }
+      return 0;
+    }
+    case "maintainer": {
+      const client = serviceClient();
+      const [sub, email] = positional;
+      // Few accounts: page through them rather than keep an email index of our own.
+      const userByEmail = async (wanted: string) => {
+        for (let page = 1; ; page++) {
+          const { data, error } = await client.auth.admin.listUsers({ page, perPage: 1000 });
+          if (error) throw new Error(error.message);
+          const hit = data.users.find((u) => u.email?.toLowerCase() === wanted.toLowerCase());
+          if (hit || data.users.length < 1000) return hit ?? null;
+        }
+      };
+      if (sub === "add" || sub === "remove") {
+        if (!email) throw new Error(`maintainer ${sub} <email>`);
+        const user = await userByEmail(email);
+        if (!user) throw new Error(`no account ${email}`);
+        const { error } = sub === "add"
+          ? await client.from("tomrade_maintainers").upsert({ user_id: user.id })
+          : await client.from("tomrade_maintainers").delete().eq("user_id", user.id);
+        if (error) throw new Error(error.message);
+        console.log(sub === "add" ? `${email} now receives Tomrade feedback in the app's inbox` : `${email} no longer does`);
+        return 0;
+      }
+      const { data, error } = await client.from("tomrade_maintainers").select("user_id, created_at").order("created_at");
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) {
+        const { data: found } = await client.auth.admin.getUserById(row.user_id as string);
+        console.log(`${found?.user?.email ?? row.user_id} · since ${String(row.created_at).slice(0, 10)}`);
       }
       return 0;
     }

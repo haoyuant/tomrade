@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, PANEL_SURFACES, type CardView, type ChecklistCard, type FindingCard, type RunView } from "@tomradex/agent";
-import { Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, scrub, type RemoteReport } from "@tomradex/doctor";
+import { Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, scrub, type RemoteReport, type Report } from "@tomradex/doctor";
 
 const tmp = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `tomrade-doctor-${name}-`));
 
@@ -309,5 +309,26 @@ describe("my reports", () => {
     await ctx.doctor.deleteReport(waiting.code);
     expect((await ctx.doctor.reports()).reports.some((r) => r.code === waiting.code)).toBe(false);
     expect(ctx.doctor.pending()).toBe(0);
+  });
+
+  it("takes feedback and ideas the way it takes reports: only what was written, kept until sent, listed by kind", async () => {
+    const { ctx } = await boot();
+    const preview = ctx.doctor.feedbackReport("idea", "  Group the board by assignee.\nMy key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz  ");
+    expect(preview).toMatchObject({ kind: "idea", engine: null, summary: "Group the board by assignee." });
+    expect(preview.fingerprint).toMatch(/^idea:[0-9a-f]{12}$/);
+    expect(preview.sections).toHaveLength(1);
+    expect(preview.sections[0]!.text).not.toContain("abcdefghijklmnop");
+    expect(() => ctx.doctor.feedbackReport("idea", "  ")).toThrow();
+    expect(() => ctx.doctor.feedbackReport("rant" as never, "x")).toThrow();
+
+    const delivered: Report[] = [];
+    ctx.doctor.transport = async () => { throw new Error("offline"); };
+    const waiting = await ctx.doctor.sendFeedback("feedback", "The board is too bright.");
+    expect(waiting.state).toBe("queued");
+    ctx.doctor.transport = async (report) => void delivered.push(report);
+    expect(await ctx.doctor.flush()).toBe(1);
+    expect(delivered.map((r) => r.kind)).toEqual(["feedback"]);
+    ctx.doctor.fetchReports = async () => [];
+    expect((await ctx.doctor.reports()).reports.find((r) => r.code === waiting.code)).toMatchObject({ kind: "feedback", status: "sent" });
   });
 });

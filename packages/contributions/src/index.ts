@@ -18,6 +18,8 @@ export interface CommandResult {
   projectId?: string;
   /** A settings pane the renderer should show ("about"). */
   settingsPane?: string;
+  /** A renderer surface to bring up by name ("feedback"), as a status item's `opens` does. */
+  opens?: string;
   /** Starting the scoped ticket stopped on something the Start dialog can fix: open it there, in this mode. */
   startDialog?: "run" | "terminal";
 }
@@ -190,6 +192,10 @@ export interface SidebarModule {
   icon?: string;
   /** Clicking the head runs this command with the project in scope. */
   command?: string;
+  /** Clicking the head opens this renderer surface by name ("inbox") instead; first-party plugins only. */
+  opens?: string;
+  /** A number at the head's end — what waits there — computed per project; null or 0 shows none. */
+  count?(scope: { projectId: string }): number | null | Promise<number | null>;
   /** The rows under the head, computed per project. Without it the module is a single door; null hides it in that project. */
   rows?(scope: { projectId: string }): SidebarRow[] | null | Promise<SidebarRow[] | null>;
 }
@@ -199,6 +205,8 @@ export interface SidebarModuleView {
   title: string;
   icon?: string;
   command?: string;
+  opens?: string;
+  count?: number;
   /** Absent: a door with nothing to fold. */
   rows?: SidebarRow[];
 }
@@ -363,11 +371,15 @@ export class Contributions extends Service {
 
   async sidebarModules(projectId: string): Promise<SidebarModuleView[]> {
     const modules = [...this.sidebarModuleMap.values()];
-    const rows = await Promise.all(modules.map((m) => (m.rows ? this.isolated(`sidebar module ${m.id}`, () => m.rows!({ projectId }), null) : undefined)));
+    const [rows, counts] = await Promise.all([
+      Promise.all(modules.map((m) => (m.rows ? this.isolated(`sidebar module ${m.id}`, () => m.rows!({ projectId }), null) : undefined))),
+      Promise.all(modules.map((m) => (m.count ? this.isolated(`sidebar module ${m.id} count`, () => m.count!({ projectId }), null) : null)))
+    ]);
     return modules.flatMap((m, i) => {
       // a module whose rows failed or said null is not shown in this project
       if (m.rows && !rows[i]) return [];
-      return [{ id: m.id, title: said(m.title)!, ...(m.icon ? { icon: m.icon } : {}), ...(m.command ? { command: m.command } : {}), ...(m.rows ? { rows: rows[i]! } : {}) }];
+      const count = counts[i];
+      return [{ id: m.id, title: said(m.title)!, ...(m.icon ? { icon: m.icon } : {}), ...(m.command ? { command: m.command } : {}), ...(m.opens ? { opens: m.opens } : {}), ...(count ? { count } : {}), ...(m.rows ? { rows: rows[i]! } : {}) }];
     });
   }
 

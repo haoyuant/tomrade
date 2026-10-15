@@ -64,6 +64,7 @@ export const ICON_IDS = [
   "i-link",
   "i-calendar",
   "i-split",
+  "i-inbox",
   "s-backlog",
   "s-todo",
   "s-doing",
@@ -130,6 +131,7 @@ export function IconSprite() {
         <symbol id="i-graph" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="3.2" cy="3.4" r="1.7"/><circle cx="10.8" cy="5.4" r="1.7"/><circle cx="5.6" cy="10.6" r="1.7"/><path d="M4.8 4 9.2 4.9M4.4 9.2 3.5 5.1M7.2 9.9 9.7 6.8" strokeLinecap="round"/></g></symbol>
         {/* code: a branch leaving the line, a pull request coming back, a prompt, a folder */}
         <symbol id="i-branch" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="4.6" r="1.5"/><path d="M3.6 4.7v4.6M10.4 6.1c0 2.4-2.4 3-4.6 3.2"/></g></symbol>
+        <symbol id="i-inbox" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M1.8 7.6 3.4 2.9a.8.8 0 0 1 .8-.5h5.6a.8.8 0 0 1 .8.5l1.6 4.7v3a.8.8 0 0 1-.8.8H2.6a.8.8 0 0 1-.8-.8z"/><path d="M1.8 7.6h3l.8 1.6h2.8l.8-1.6h3"/></g></symbol>
         <symbol id="i-merge" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><circle cx="3.6" cy="3.2" r="1.5"/><circle cx="3.6" cy="10.8" r="1.5"/><circle cx="10.4" cy="10.8" r="1.5"/><path d="M3.6 4.7v4.6M10.4 9.3V7.2a2.4 2.4 0 0 0-2.4-2.4H6.2M7.6 3.2 6 4.8l1.6 1.6"/></g></symbol>
         <symbol id="i-terminal" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="1.6" y="2.4" width="10.8" height="9.2" rx="1.2"/><path d="M4 5.4 6 7.2 4 9M7.6 9h2.6"/></g></symbol>
         <symbol id="i-file" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><path d="M3.4 1.8h4.9l3.3 3.3v7.1a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1Z"/><path d="M8.3 1.8v3.3h3.3"/></g></symbol>

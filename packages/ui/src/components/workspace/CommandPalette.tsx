@@ -37,6 +37,8 @@ export interface PaletteActions {
   openProjectSettings: () => void;
   openProjectMenu: () => void;
   openCodeInbox: () => void;
+  /** A renderer surface a plugin command's result names ("feedback"). */
+  openSurface: (surface: string) => void;
   openShortcuts: () => void;
   searchTickets: () => void;
 }
@@ -88,6 +90,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
         if (r.settingsPane) openSettingsPane(r.settingsPane);
+        if (r.opens) actions.openSurface(r.opens);
       }, onError: (e) => toast(errorSpec(e)) }
     );
 

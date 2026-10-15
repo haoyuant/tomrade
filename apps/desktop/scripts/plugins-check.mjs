@@ -115,7 +115,7 @@ const run = async () => {
 
   // Contracts: declared on the row so a switched-off one still groups, and
   // held to what the running rows actually register.
-  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,webSearch");
+  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,im,inboxSource,webSearch");
   check("a switched-off engine still counts as an engine", view("engine-scripted")?.state === "disabled" && view("engine-scripted")?.implements.join() === "engine");
   await ctx.plugins.setEnabled("engine-scripted", true);
   const declared = new Map(ctx.plugins.rows().map((r) => [r.id, r.implements ?? []]));

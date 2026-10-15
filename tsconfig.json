@@ -189,6 +189,12 @@
     },
     {
       "path": "./packages/im"
+    },
+    {
+      "path": "./packages/inbox-tomrade"
+    },
+    {
+      "path": "./packages/inbox"
     }
   ]
 }

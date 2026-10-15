@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
+import { FeedbackDialog } from "~/components/dialogs/FeedbackDialog";
+import { InboxDialog } from "~/components/dialogs/InboxDialog";
 import { SyncIssuesDialog } from "~/components/dialogs/SyncIssuesDialog";
 import { SyncIssuesChip } from "~/components/chrome/SyncIssuesChip";
 import { RepoIssuesChip } from "~/components/chrome/RepoIssuesChip";
@@ -18,7 +20,7 @@ import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useSettingsHost } from "~/lib/settingsHost";
-import { useCreateView, useRedo, useUndo } from "~/lib/queries";
+import { useCreateView, useRedo, useRunCommand, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast } from "~/lib/onboarding";
 import { FilesRegion } from "~/components/files/FilesRegion";
@@ -96,6 +98,15 @@ export function Workspace() {
   const [viewSettings, setViewSettings] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [codeInbox, setCodeInbox] = useState(false);
+  const [inbox, setInbox] = useState(false);
+  const [feedback, setFeedback] = useState(false);
+  /** A renderer surface a plugin names: a status item's, a sidebar module's, a command's result. */
+  const openSurface = useCallback((surface: string) => {
+    if (surface === "code-inbox") setCodeInbox(true);
+    else if (surface === "inbox") setInbox(true);
+    else if (surface === "feedback") setFeedback(true);
+  }, []);
+  const runCommand = useRunCommand(ws.project.id);
   const [syncIssues, setSyncIssues] = useState(false);
   const [history, setHistory] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -195,7 +206,7 @@ export function Workspace() {
     if (selectedId && !expanded && window.innerWidth < THREE_PANE_FLOOR) setAiOpen(false);
   }, [selectedId, expanded, setAiOpen]);
 
-  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
+  const anyOverlay = palette || newIssue || settings !== null || viewSettings || fieldsOpen || codeInbox || inbox || feedback || syncIssues || history || shortcutsOpen || !!projectSettings || !!deleteTarget;
 
   // Both entry points are inside a closing overlay — the switcher menu or the
   // palette — and Radix hands focus back to the trigger as that one goes. Open
@@ -301,7 +312,7 @@ export function Workspace() {
       />
 
       <div className={sideOpen ? "workspace" : "workspace side-railed"}>
-        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={ws.openRoutines} onOpenProjectSettings={openProjectSettings} />
+        <SidebarRegion open={sideOpen} onToggle={setSideOpen} onOpenFields={openFields} onOpenTemplates={ws.openRoutines} onOpenProjectSettings={openProjectSettings} onOpenSurface={openSurface} />
         <div className="main-col">
           <TabStrip />
           {ws.filePath !== null ? (
@@ -347,7 +358,7 @@ export function Workspace() {
         )}
       </div>
 
-      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={(surface) => surface === "code-inbox" && setCodeInbox(true)}>
+      <StatusBar projectId={ws.project.id} onUndo={runUndo} onRedo={runRedo} onHistory={() => setHistory(true)} busy={busy} onOpen={openSurface}>
         <SyncIssuesChip projectId={ws.project.id} onOpen={() => setSyncIssues(true)} />
         <RepoIssuesChip projectId={ws.project.id} onOpen={() => setProjectSettings("repositories")} />
       </StatusBar>
@@ -382,6 +393,7 @@ export function Workspace() {
           openProjectSettings,
           openProjectMenu: () => setProjectMenu(true),
           openCodeInbox: () => setCodeInbox(true),
+          openSurface,
           // the closing palette hands focus back to its trigger; take it after that
           searchTickets: () => requestAnimationFrame(() => focusTicketSearch())
         }}
@@ -394,6 +406,23 @@ export function Workspace() {
         onOpenIssue={(id) => {
           setCodeInbox(false);
           ws.select(id);
+        }}
+      />
+      <InboxDialog
+        projectId={ws.project.id}
+        open={inbox}
+        onOpenChange={setInbox}
+        onOpenIssue={(id) => {
+          setInbox(false);
+          ws.select(id);
+        }}
+      />
+      <FeedbackDialog
+        open={feedback}
+        onOpenChange={setFeedback}
+        onTroubleshoot={() => {
+          setFeedback(false);
+          runCommand.mutate({ id: "doctor.troubleshoot", scope: { projectId: ws.project.id } }, { onSuccess: (r) => r.showThread && showThread(r.showThread), onError: (e) => toast(errorSpec(e)) });
         }}
       />
       <HistoryDialog projectId={ws.project.id} open={history} onOpenChange={setHistory} />

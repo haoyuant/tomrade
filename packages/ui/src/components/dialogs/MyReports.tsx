@@ -54,6 +54,7 @@ export function MyReports() {
               <div className="row" style={{ gap: 6 }}>
                 <span className="num">{r.code}</span>
                 <Tag tone={r.status === "fixed" ? "strong" : r.status === "queued" ? "faint" : "neutral"}>{t(`about.reportStatus_${r.status}` as MessageKey)}</Tag>
+                {r.kind && r.kind !== "bug" && <Tag tone="faint">{t(`feedback.kind_${r.kind}` as MessageKey)}</Tag>}
                 {r.unread && <Tag tone="strong">{t("about.reportNew")}</Tag>}
                 <span className="meta-txt">{date(r.createdAt)}</span>
                 <Spacer />

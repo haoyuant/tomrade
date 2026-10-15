@@ -80,6 +80,8 @@ modules:
     title: Alerts
   - id: im
     title: IM connections
+  - id: inbox
+    title: Inbox
   - id: webSearch
     title: Web search
 
@@ -102,6 +104,9 @@ contracts:
   - id: im
     title: IM adapters
     registry: im.register
+  - id: inboxSource
+    title: Inbox sources
+    registry: inbox.source
   - id: webSearch
     title: Web search
     registry: webSearch.register
@@ -273,6 +278,16 @@ plugins:
       dataDir: "${userData}/doctor"
       logDir: "${logDir}"
       version: "${appVersion}"
+  # The project's inbox: feedback and bug reports from the sources a project
+  # switches on wait there until someone triages them into tickets. Optional —
+  # tickets it made are ordinary tickets with Source and Kind fields.
+  - id: inbox
+    name: "@tomradex/inbox"
+  # Tomrade's own feedback as one of those sources, for its maintainers; and the
+  # in-app Feedback entry, sent through the troubleshooter's outbox.
+  - id: inbox-tomrade
+    name: "@tomradex/inbox-tomrade"
+    implements: [inboxSource]
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"

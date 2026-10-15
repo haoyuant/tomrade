@@ -330,7 +330,7 @@ function BacklogBody({ onOpenFields }: { onOpenFields: (fieldId?: string, boardI
  * The modules in this machine's order. Each is drawn by the shared shell, so a
  * contributed module folds, drags and spaces exactly like a built-in one.
  */
-function ModuleList({ onOpenFields, onOpenTemplates }: { onOpenFields: (fieldId?: string, boardId?: string) => void; onOpenTemplates: () => void }) {
+function ModuleList({ onOpenFields, onOpenTemplates, onOpenSurface }: { onOpenFields: (fieldId?: string, boardId?: string) => void; onOpenTemplates: () => void; onOpenSurface: (surface: string) => void }) {
   const { t } = useI18n();
   const { project, routines } = useWorkspace();
   const layout = useSidebarLayout();
@@ -388,7 +388,7 @@ function ModuleList({ onOpenFields, onOpenTemplates }: { onOpenFields: (fieldId?
     if (id === "backlog") return shell(id, index, t("sidebar.backlogEyebrow"), <BacklogHead />, <BacklogBody onOpenFields={onOpenFields} />, "side-backlog");
     const module = contributed.find((m) => `plugin:${m.id}` === id);
     if (!module) return null;
-    return shell(id, index, module.title, <PluginModuleHead module={module} projectId={project.id} />, module.rows ? <PluginModuleBody module={module} projectId={project.id} /> : undefined, "side-plugin");
+    return shell(id, index, module.title, <PluginModuleHead module={module} projectId={project.id} onOpen={onOpenSurface} />, module.rows ? <PluginModuleBody module={module} projectId={project.id} /> : undefined, "side-plugin");
   };
 
   return (
@@ -422,13 +422,16 @@ export function Sidebar({
   onToggle,
   onOpenFields,
   onOpenTemplates,
-  onOpenProjectSettings
+  onOpenProjectSettings,
+  onOpenSurface
 }: {
   open: boolean;
   onToggle: (open: boolean) => void;
   onOpenFields: (fieldId?: string, boardId?: string) => void;
   onOpenTemplates: () => void;
   onOpenProjectSettings: () => void;
+  /** A renderer surface a contributed module opens ("inbox"). */
+  onOpenSurface: (surface: string) => void;
 }) {
   const { t } = useI18n();
   const sidebar = useRef<HTMLElement>(null);
@@ -491,7 +494,7 @@ export function Sidebar({
             <Icon name="i-panel" size={15} style={{ transform: "scaleX(-1)" }} />
           </button>
         </div>
-        <ModuleList onOpenFields={onOpenFields} onOpenTemplates={onOpenTemplates} />
+        <ModuleList onOpenFields={onOpenFields} onOpenTemplates={onOpenTemplates} onOpenSurface={onOpenSurface} />
       </div>
       {/* pinned below the scrolling body so it is always where people look for it */}
       <div className="side-settings" data-surface-anchor="sidebar-foot">

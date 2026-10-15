@@ -164,8 +164,8 @@ function useRunContributed(projectId: string) {
     );
 }
 
-/** A contributed module's head: its icon and title, a door when it names a command. */
-export function PluginModuleHead({ module, projectId }: { module: SidebarModuleView; projectId: string }) {
+/** A contributed module's head: its icon and title, a door when it names a command or a surface, and what waits there. */
+export function PluginModuleHead({ module, projectId, onOpen }: { module: SidebarModuleView; projectId: string; onOpen?: (surface: string) => void }) {
   const run = useRunContributed(projectId);
   const icon = iconOf(module.icon) ?? "i-plug";
   const title = (
@@ -174,16 +174,18 @@ export function PluginModuleHead({ module, projectId }: { module: SidebarModuleV
       <Eyebrow className="side-label side-module-title">{module.title}</Eyebrow>
     </>
   );
+  const open = module.opens && onOpen ? () => onOpen(module.opens!) : module.command ? () => run(module.command!) : null;
   return (
     <>
-      {module.command ? (
-        <button type="button" className="side-label-btn side-module-btn" onClick={() => run(module.command!)}>
+      {open ? (
+        <button type="button" className="side-label-btn side-module-btn" data-module-door={module.id} onClick={open}>
           {title}
         </button>
       ) : (
         <span className="side-label-btn side-module-btn is-static">{title}</span>
       )}
       <Spacer />
+      {!!module.count && <span className="side-count num">{module.count}</span>}
     </>
   );
 }

@@ -78,9 +78,15 @@ export interface ReportInclude {
 
 export const DEFAULT_INCLUDE: ReportInclude = { environment: true, checks: true, error: true, logs: true, conversation: false };
 
+/** A troubleshooting report is a bug; the person may also write in with feedback or an idea. */
+export const REPORT_KINDS = ["bug", "feedback", "idea"] as const;
+export type ReportKind = (typeof REPORT_KINDS)[number];
+
 /** What reaches Tomrade's developer: the person saw this text, section by section, before it went. */
 export interface Report {
   code: string;
+  /** Absent: a troubleshooting report, which is a bug. */
+  kind?: ReportKind;
   createdAt: string;
   fingerprint: string;
   summary: string;
@@ -113,6 +119,7 @@ export interface RemoteReport {
 
 export interface ReportView {
   code: string;
+  kind?: ReportKind;
   createdAt: string;
   summary: string;
   engine: string | null;
@@ -164,6 +171,8 @@ declare module "@tomradex/ipc" {
     "doctor.markRead": () => void;
     "doctor.deleteReport": (code: string) => void;
     "doctor.flush": () => number;
+    "doctor.feedbackPreview": (kind: ReportKind, text: string) => Report;
+    "doctor.sendFeedback": (kind: ReportKind, text: string) => SendResult;
   }
 }
 
@@ -224,6 +233,8 @@ export class Doctor extends Service {
       ctx.ipc.handle("doctor.markRead", () => this.markRead());
       ctx.ipc.handle("doctor.deleteReport", (code) => this.deleteReport(code));
       ctx.ipc.handle("doctor.flush", () => this.flush());
+      ctx.ipc.handle("doctor.feedbackPreview", (kind, text) => this.feedbackReport(kind, text));
+      ctx.ipc.handle("doctor.sendFeedback", (kind, text) => this.sendFeedback(kind, text));
     });
     ctx.inject(["tools"], (ctx) => {
       const host = { ctx: this.ctx, sources: (engineId?: string) => this.sources(engineId), latest: (threadId: string) => this.latest(threadId), recheck: (projectId: string, threadId: string, runId: string) => this.recheck(projectId, threadId, runId) };
@@ -763,9 +774,36 @@ export class Doctor extends Service {
     });
   }
 
+  /** What the person wrote in, with nothing else read from this machine but the app's version and system. */
+  feedbackReport(kind: ReportKind, text: string): Report {
+    if (!(REPORT_KINDS as readonly string[]).includes(kind)) throw new Error(`Not a kind of report: ${String(kind)}`);
+    const body = scrub(text.trim());
+    if (!body) throw new Error(this.locale() === "zh" ? "先写点什么" : "Write something first");
+    const zh = this.locale() === "zh";
+    return {
+      code: newCode(),
+      kind,
+      createdAt: new Date().toISOString(),
+      // each one is its own: two people's ideas are not one failure
+      fingerprint: `${kind}:${createHash("sha1").update(body).digest("hex").slice(0, 12)}`,
+      summary: body.split("\n")[0]!.slice(0, 200),
+      engine: null,
+      app: { version: this.config.version, os: osLine(), arch: process.arch, locale: this.locale() },
+      sections: [{ id: "note", title: zh ? "用户说明" : "Note", text: body }]
+    };
+  }
+
+  /** Feedback goes the way reports go: kept in the outbox until the backend has it, then answered under My reports. */
+  sendFeedback(kind: ReportKind, text: string): Promise<SendResult> {
+    return this.dispatch(this.feedbackReport(kind, text));
+  }
+
   /** Saved first, then sent: a report the backend can't take yet waits in the outbox and goes later. */
   async send(projectId: string, threadId: string, include: Partial<ReportInclude> = {}, note = ""): Promise<SendResult> {
-    const report = this.report(projectId, threadId, include, note);
+    return this.dispatch(this.report(projectId, threadId, include, note));
+  }
+
+  private async dispatch(report: Report): Promise<SendResult> {
     const file = path.join(this.config.dataDir, "outbox", `${report.code}.json`);
     fs.writeFileSync(file, JSON.stringify(report));
     const result = await this.deliver(report, file);
@@ -836,19 +874,20 @@ export class Doctor extends Service {
     const queued: ReportView[] = (fs.existsSync(outbox) ? fs.readdirSync(outbox) : []).flatMap((name) => {
       try {
         const r = JSON.parse(fs.readFileSync(path.join(outbox, name), "utf8")) as Report;
-        return [{ code: r.code, createdAt: r.createdAt, summary: r.summary, engine: r.engine, status: "queued" as const, unread: false }];
+        return [{ code: r.code, ...(r.kind ? { kind: r.kind } : {}), createdAt: r.createdAt, summary: r.summary, engine: r.engine, status: "queued" as const, unread: false }];
       } catch { return []; }
     });
-    const sent = this.readJson<{ code: string; at: string; summary: string; engine: string | null }[]>("sent.json", []);
+    const sent = this.readJson<{ code: string; kind?: ReportKind; at: string; summary: string; engine: string | null }[]>("sent.json", []);
+    const kindOf = new Map(sent.flatMap((s) => (s.kind ? [[s.code, s.kind] as const] : [])));
     let remote: RemoteReport[] | null = null;
     try { remote = await this.remoteReports(); } catch {}
     const seen = this.readJson<Record<string, string>>("seen.json", {});
     const byCode = new Map<string, ReportView>();
-    for (const s of sent) byCode.set(s.code, { code: s.code, createdAt: s.at, summary: s.summary, engine: s.engine, status: "sent", unread: false });
+    for (const s of sent) byCode.set(s.code, { code: s.code, ...(s.kind ? { kind: s.kind } : {}), createdAt: s.at, summary: s.summary, engine: s.engine, status: "sent", unread: false });
     for (const r of remote ?? []) {
       const stamp = this.stamp(r);
       byCode.set(r.code, {
-        code: r.code, createdAt: r.created_at, summary: r.summary, engine: r.engine,
+        code: r.code, ...(kindOf.has(r.code) ? { kind: kindOf.get(r.code)! } : {}), createdAt: r.created_at, summary: r.summary, engine: r.engine,
         status: (["new", "triaged", "fixed", "wontfix", "duplicate"].includes(r.status) ? r.status : "new") as ReportView["status"],
         ...(r.reply ? { reply: r.reply } : {}), ...(r.replied_at ? { repliedAt: r.replied_at } : {}),
         ...(r.fixed_in ? { fixedIn: r.fixed_in, fixedHere: !before(this.config.version, r.fixed_in) } : {}),
@@ -898,9 +937,9 @@ export class Doctor extends Service {
 
   private remember(report: Report): void {
     const file = path.join(this.config.dataDir, "sent.json");
-    let sent: { code: string; at: string; summary: string; engine: string | null }[] = [];
+    let sent: { code: string; kind?: ReportKind; at: string; summary: string; engine: string | null }[] = [];
     try { sent = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-    sent.unshift({ code: report.code, at: report.createdAt, summary: report.summary, engine: report.engine });
+    sent.unshift({ code: report.code, ...(report.kind ? { kind: report.kind } : {}), at: report.createdAt, summary: report.summary, engine: report.engine });
     fs.writeFileSync(file, JSON.stringify(sent.slice(0, 200)));
   }
 
@@ -916,7 +955,9 @@ export class Doctor extends Service {
         p_engine: report.engine,
         p_app_version: report.app.version,
         p_platform: `${report.app.os}`,
-        p_report: report
+        p_report: report,
+        // only feedback names a kind, so troubleshooting reports still reach a backend from before kinds
+        ...(report.kind ? { p_kind: report.kind } : {})
       });
       if (error) throw new Error(error.message);
     };
