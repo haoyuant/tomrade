@@ -23,6 +23,10 @@ export interface CompletionRequest {
   system: string;
   user: string;
   temperature?: number;
+  /** Absent, 8000: room for a long document. */
+  maxTokens?: number;
+  /** Ends the request; a caller that cannot wait long passes AbortSignal.timeout(…). */
+  signal?: AbortSignal;
 }
 
 /** The structured seam: one JSON document matching a schema. Kept from v1; compound tools live on it. */
@@ -189,7 +193,7 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
   const messages: Message[] = [userMessage(request.user)];
   let problem = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const out = await collect(model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens: 8000 }));
+    const out = await collect(model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens: request.maxTokens ?? 8000 }, request.signal));
     if (!out.text) throw new LlmError(`${label} returned no content`);
     const result = fit(schema, out.text.trim());
     if (result.ok) return result.value;

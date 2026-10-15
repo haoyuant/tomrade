@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LlmService } from "@tomradex/llm";
 import { SLUG_MAX, branchFor, keysInText, parseBranch, slugify, titleSlug, usableSlug } from "@tomradex/code-link";
 
@@ -66,6 +66,24 @@ describe("keys", () => {
     expect(await titleSlug(broken, "代码守卫")).toBe("work");
     expect(await titleSlug(llmAnswering({ slug: "!!!" }), "统一 ticket 用量")).toBe("ticket");
     expect(await titleSlug(llmAnswering({ notASlug: 1 }), "修复 bug")).toBe("bug");
+  });
+
+  it("does not let a model that streams on hold Start: a short cap and a deadline, then the local rule", async () => {
+    vi.useFakeTimers();
+    try {
+      let asked: { maxTokens?: number; signal?: AbortSignal } = {};
+      const endless = { completeJson: (_schema: unknown, request: { maxTokens?: number; signal?: AbortSignal }) => {
+        asked = request;
+        return new Promise((_resolve, reject) => request.signal?.addEventListener("abort", () => reject(request.signal!.reason)));
+      } } as unknown as LlmService;
+      const slug = titleSlug(endless, "修复 bug");
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(await slug).toBe("bug");
+      expect(asked.maxTokens).toBe(100);
+      expect(asked.signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reads the key back wherever the template put it", () => {
