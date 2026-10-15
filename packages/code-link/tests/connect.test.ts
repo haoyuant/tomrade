@@ -129,6 +129,26 @@ describe("connecting a repository", () => {
   });
 });
 
+describe("untracked terminal sessions", () => {
+  it.each(["en", "zh"] as const)("explains missing tracking and recovery in %s", async (language) => {
+    const { ctx, items, project, board, codeLink } = await machine();
+    ctx.settings.set({ ...ctx.settings.get(), language });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Untracked work", by: "human" });
+    const inv = { by: "ai:mcp", projectId: project.id };
+    const claimed = await ctx.tools.execute("claim_ticket", { key: item.key }, inv) as { tracking: { tracked: boolean; message: string }; conventions: string[] };
+    expect(claimed.tracking).toMatchObject({ tracked: false });
+    expect(claimed.tracking.message).toContain(".mcp.json");
+    expect(claimed.tracking.message).toContain(".claude/settings.json");
+    expect(claimed.tracking.message).toContain(language === "zh" ? "未被 Tomrade 跟踪" : "not tracked by Tomrade");
+    expect(claimed.conventions).not.toContain("call note_progress with one line at milestones");
+    expect(items.get(project.id, item.id)?.status).toBe("doing");
+    expect(codeLink.sessionsOf(project.id, item.id)).toEqual([]);
+    for (const [tool, args] of [["note_progress", { text: "working" }], ["report_merge_blocked", { reason: "checks failed" }]] as const) {
+      await expect(ctx.tools.execute(tool, { key: item.key, ...args }, inv)).rejects.toThrow(claimed.tracking.message);
+    }
+  });
+});
+
 describe("a developer's own Claude Code session", () => {
   it("is followed through tokenless hooks, claims a ticket, and hands it the branch to use", async () => {
     const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
@@ -141,6 +161,7 @@ describe("a developer's own Claude Code session", () => {
 
     const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:claude-code", projectId: project.id })) as { branch: string; status: string; repository: { name: string } };
     expect(claimed.status).toBe("doing");
+    expect(claimed).toMatchObject({ tracking: { tracked: true } });
     expect(claimed.branch).toBe(`tom-${item.keyNum}/offline-work`);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: session.id, itemIds: [item.id], branch: claimed.branch });
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: claimed.branch, source: "mcp" });

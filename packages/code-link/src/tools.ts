@@ -9,6 +9,8 @@ import type { Item } from "@tomradex/domain";
 import { defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
 import { covered, listDecisions, recordDecision } from "./decisions.js";
 import { DEFAULT_BRANCH_TEMPLATE, branchFor, titleSlug } from "./keys.js";
+import { CODE_WORDS } from "./words.js";
+import type {} from "@tomradex/settings";
 import { mergeLine } from "./prompts.js";
 import { sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
@@ -42,6 +44,7 @@ interface Subject {
 const PR_NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/;
 
 export function registerTools(ctx: Context, host: ToolHost): void {
+  const untracked = () => CODE_WORDS[ctx.get("settings")?.locale?.() ?? "en"].untrackedSession;
   const subject = (tool: string, projectId: string, key: string | undefined, inv: ToolInvocation): Subject => {
     const bound = sessionContext.getStore();
     const session = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
@@ -152,7 +155,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const { item, session: bound } = subject("note_progress", projectId, args.key, inv);
         // A terminal session with hooks but no token is found by the ticket it claimed.
         const session = bound ?? host.store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.threadId === null) ?? null;
-        if (!session) throw new Error(`note_progress: Tomrade is not tracking a session on ${item.key} — skip the note`);
+        if (!session) throw new Error(`note_progress: Tomrade is not tracking a session on ${item.key} — ${untracked()}`);
         host.noteProgress(projectId, session.id, args.text.trim());
         return { ok: true, key: item.key };
       }
@@ -170,7 +173,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const projectId = requireProjectId("report_merge_blocked", args.projectId, inv);
         const { item, session: bound } = subject("report_merge_blocked", projectId, args.key, inv);
         const session = bound ?? host.store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.threadId === null) ?? null;
-        if (!session) throw new Error(`report_merge_blocked: Tomrade is not tracking a session on ${item.key} — tell the person instead`);
+        if (!session) throw new Error(`report_merge_blocked: Tomrade is not tracking a session on ${item.key} — ${untracked()}`);
         host.blockMerge(projectId, session.id, args.reason.trim());
         return { ok: true, key: item.key, next: "stop here — the person merges the pull request" };
       }
@@ -225,6 +228,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           status: ctx.items.get(projectId, item.id)!.status,
           branch,
           repository: repo ? { name: repo.name, remote: repo.remote, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false } : null,
+          tracking: session ? { tracked: true, sessionId: session.id } : { tracked: false, message: untracked() },
           blockedBy: blockers.map((b) => ({ key: b.key, title: b.title, status: b.status })),
           conventions: [
             `this session owns only ${item.key}; implement only its stated outcome and acceptance criteria`,
@@ -234,7 +238,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             `every commit message names ${item.key}`,
             "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",
             mergeLine(!!state?.agentMerge).replace(/^- /, ""),
-            "call note_progress with one line at milestones"
+            ...(session ? ["call note_progress with one line at milestones"] : [untracked()])
           ]
         };
       }

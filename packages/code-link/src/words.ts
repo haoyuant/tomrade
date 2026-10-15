@@ -11,6 +11,7 @@ const STATUS = {
 } as const;
 
 const en = {
+  untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json and .claude/settings.json, then start a new session.",
   section: "Code",
   origin: "Code Link",
   group: "Code",
@@ -100,6 +101,7 @@ const en = {
 export type CodeWords = typeof en;
 
 const zh: CodeWords = {
+  untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json 和 .claude/settings.json，再新开会话。",
   section: "代码",
   origin: "Code Link",
   group: "代码",
