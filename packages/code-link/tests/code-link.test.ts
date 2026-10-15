@@ -165,6 +165,52 @@ describe("code link", () => {
       expect(codeLink.links(project.id, item.id).every(l => !!l.mergedSha)).toBe(true);
     } finally { await ctx.fiber.dispose(); }
   });
+  it("finishes on merge when a branch renamed away with nothing on it was linked beside the real one", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Ship it", "todo");
+      // first named wrongly, seen by a scan before a single commit, then renamed
+      const stray = `someone/tom-${item.keyNum}`;
+      git(["branch", stray, "main"], checkout);
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ branch: stray, ahead: 0, source: "scan" })]);
+      git(["branch", "-q", "-D", stray], checkout);
+
+      const real = `tom-${item.keyNum}/ship`;
+      commitOn(checkout, real, "ship.ts", `${item.key}: ship`);
+      git(["push", "-q", "origin", real], checkout);
+      await codeLink.scan(project.id);
+      expect(items.get(project.id, item.id)?.status).toBe("doing");
+
+      // merged, and the branch deleted with it, as GitHub does
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", `Merge ${real}`, real], checkout);
+      git(["push", "-q", "origin", "main", `:${real}`], checkout);
+      git(["branch", "-q", "-D", real], checkout);
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ branch: real, mergedSha: expect.any(String) })]);
+      expect(items.get(project.id, item.id)?.status).toBe("done");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("still waits on a branch that had work of its own and never merged, even once it is gone", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Ship it", "todo");
+      const real = `tom-${item.keyNum}/ship`;
+      const other = `tom-${item.keyNum}/extra`;
+      commitOn(checkout, real, "ship.ts", `${item.key}: ship`);
+      commitOn(checkout, other, "extra.ts", `${item.key}: extra`);
+      git(["push", "-q", "origin", real, other], checkout);
+      await codeLink.scan(project.id);
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", `Merge ${real}`, real], checkout);
+      git(["push", "-q", "origin", "main", `:${real}`, `:${other}`], checkout);
+      git(["branch", "-q", "-D", real, other], checkout);
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id).map((l) => l.branch).sort()).toEqual([other, real].sort());
+      expect(items.get(project.id, item.id)?.status).not.toBe("done");
+    } finally { await ctx.fiber.dispose(); }
+  });
   it("links a branch named after a ticket and moves the ticket to doing, then done on merge", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Push notifications", "todo");
