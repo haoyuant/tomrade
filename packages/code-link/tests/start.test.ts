@@ -365,9 +365,43 @@ describe("starting a ticket", () => {
     expect(git(["ls-remote", "--heads", remote, "main"], checkout)).toMatch(/refs\/heads\/main/);
     await codeLink.scan(project.id);
     expect(ctx.items.get(project.id, bootstrap.id)!.status).toBe("done");
-    expect(codeLink.repoState(project.id, repo!.id)!.readiness).toBe("empty"); // no manifest yet — the fake agent wrote no package.json
-    expect(ctx.items.get(project.id, feature.id)!.blockedBy).toEqual([bootstrap.id]);
+    // No manifest, but the fake agent's code is on main now: the project exists and the feature may start.
+    expect(codeLink.repoState(project.id, repo!.id)!.readiness).toBe("scaffolded");
+    expect(await codeLink.start(project.id, feature.id, { mode: "run" })).toMatchObject({ ok: true });
+    expect(ctx.items.list({ projectId: project.id }).filter((i) => i.labels.includes(BOOTSTRAP_LABEL))).toHaveLength(1);
+    await untilRunsSettle(agent);
+  });
+
+  it("bootstraps a workstream once, even when a scan still reads it empty afterwards", async () => {
+    const world = await machine(codeRepo({ manifest: false }));
+    const { codeLink, ctx, project, repo, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, world.checkout!);
+    const feature = ticket("First feature");
     expect(await codeLink.start(project.id, feature.id, { mode: "run" })).toMatchObject({ ok: false, gate: "readiness" });
+    const bootstrap = ctx.items.list({ projectId: project.id }).find((i) => i.labels.includes(BOOTSTRAP_LABEL))!;
+    // Its work never reached main — merged nowhere, or a stack with nothing a scan recognises.
+    ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+
+    const started = await codeLink.start(project.id, feature.id, { mode: "run" });
+    expect(started).toMatchObject({ ok: true, warnings: [expect.stringContaining(`${bootstrap.key} (bootstrap) is done`)] });
+    expect(ctx.items.list({ projectId: project.id }).filter((i) => i.labels.includes(BOOTSTRAP_LABEL))).toHaveLength(1);
+    await untilRunsSettle(world.agent);
+  });
+
+  it("reads readiness fresh before gating on empty", async () => {
+    const world = await machine(codeRepo({ manifest: false }));
+    const { codeLink, ctx, project, repo, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, world.checkout!);
+    await codeLink.scan(project.id);
+    expect(codeLink.repoState(project.id, repo!.id)!.readiness).toBe("empty");
+    // Filled after the last scan; the start must not act on the stale reading.
+    fs.writeFileSync(path.join(world.checkout!, "package.json"), "{}\n");
+    git(["add", "-A"], world.checkout!);
+    git(["commit", "-q", "-m", "scaffold"], world.checkout!);
+    git(["push", "-q", "origin", "main"], world.checkout!);
+    expect(await codeLink.start(project.id, ticket("Feature").id, { mode: "run" })).toMatchObject({ ok: true });
+    expect(ctx.items.list({ projectId: project.id }).filter((i) => i.labels.includes(BOOTSTRAP_LABEL))).toHaveLength(0);
+    await untilRunsSettle(world.agent);
   });
 
   it("runs the ticket in a worktree on its own branch, follows the session, and takes the agent's report", async () => {

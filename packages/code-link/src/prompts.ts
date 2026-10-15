@@ -82,7 +82,7 @@ export function firstPrompt(input: FirstPromptInput): string {
     state?.hasBrief
       ? "Read CLAUDE.md or AGENTS.md before writing anything."
       : state?.readiness === "scaffolded"
-        ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the manifests"}, and add a short CLAUDE.md as part of this work.`
+        ? `There is no CLAUDE.md yet: learn the stack from ${state.manifests.join(", ") || "the code"}, and add a short CLAUDE.md as part of this work.`
         : "The repository has no project in it yet.",
     waitsOnLine(blockers.map((b) => ({ key: b.key, title: b.title, status: b.status }))),
     accepted.length

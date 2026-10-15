@@ -648,6 +648,35 @@ describe("code link", () => {
     expect(bare.codeLink.repoState(bare.project.id, bare.repo.id)).toMatchObject({ readiness: "empty", hasBrief: false });
   });
 
+  it("calls a repository with code in it scaffolded, recognised build file or not", async () => {
+    const commit = (checkout: string, files: Record<string, string>) => {
+      for (const [file, body] of Object.entries(files)) {
+        fs.mkdirSync(path.dirname(path.join(checkout, file)), { recursive: true });
+        fs.writeFileSync(path.join(checkout, file), body);
+      }
+      git(["add", "-A"], checkout);
+      git(["commit", "-q", "-m", "more"], checkout);
+      git(["push", "-q", "origin", "HEAD:refs/heads/main"], checkout);
+    };
+    const notes = codeRepo({ manifest: false });
+    commit(notes.checkout, { "docs/plan.md": "# plan\n", LICENSE: "MIT\n", ".github/workflows/ci.yml": "on: push\n" });
+    const onlyNotes = await machine(notes);
+    await onlyNotes.codeLink.scan(onlyNotes.project.id);
+    expect(onlyNotes.codeLink.repoState(onlyNotes.project.id, onlyNotes.repo.id)).toMatchObject({ readiness: "empty" });
+
+    const script = codeRepo({ manifest: false });
+    commit(script.checkout, { "main.py": "print('hi')\n", "goods.db": "" });
+    const loose = await machine(script);
+    await loose.codeLink.scan(loose.project.id);
+    expect(loose.codeLink.repoState(loose.project.id, loose.repo.id)).toMatchObject({ readiness: "scaffolded", manifests: [], summary: "2 files, no manifest · no CLAUDE.md" });
+
+    const dotnet = codeRepo({ manifest: false });
+    commit(dotnet.checkout, { "src/Goods/Goods.csproj": "<Project />\n" });
+    const solution = await machine(dotnet);
+    await solution.codeLink.scan(solution.project.id);
+    expect(solution.codeLink.repoState(solution.project.id, solution.repo.id)).toMatchObject({ readiness: "scaffolded", manifests: ["src/Goods/Goods.csproj"] });
+  });
+
   it("skips a repository this machine has no checkout of, and says so", async () => {
     const { codeLink, ctx, project } = await machine(codeRepo());
     const other = ctx.repos.create({ projectId: project.id, remote: "git@github.com:acme/elsewhere.git" });

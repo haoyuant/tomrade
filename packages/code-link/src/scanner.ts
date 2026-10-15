@@ -21,6 +21,26 @@ export const MANIFESTS = [
   "Makefile"
 ];
 
+/** Manifests named after the project, matched by extension: .NET projects and solutions. */
+const MANIFEST_EXTENSIONS = [".csproj", ".fsproj", ".vbproj", ".sln", ".slnx"];
+
+const isManifest = (file: string): boolean => {
+  const name = file.split("/").pop() ?? "";
+  return MANIFESTS.includes(name) || MANIFEST_EXTENSIONS.some((ext) => name.endsWith(ext));
+};
+
+/**
+ * Files any repository may carry before it holds a project: notes, licences,
+ * editor and tool settings. Anything else is code someone wrote, and a
+ * repository with code in it is not empty, manifest or not.
+ */
+const isIncidental = (file: string): boolean => {
+  const parts = file.split("/");
+  const name = parts[parts.length - 1] ?? "";
+  if (parts[0] === "docs" || parts.some((part) => part.startsWith("."))) return true;
+  return /\.(md|markdown|txt|rst)$/i.test(name) || /^(license|licence|copying|notice|authors)(\.|$)/i.test(name);
+};
+
 /** What a coding agent reads first; its presence is what makes a repository "documented". */
 export const BRIEF_FILES = ["CLAUDE.md", "AGENTS.md"];
 
@@ -75,6 +95,8 @@ export interface ScanResult {
   readiness: "empty" | "scaffolded" | "unknown";
   hasBrief: boolean;
   manifests: string[];
+  /** Files that are neither a manifest nor incidental — code without a recognised build file still counts as a project. */
+  sources: number;
   summary: string | null;
 }
 
@@ -185,19 +207,22 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
   }
 
   let manifests: string[] = [];
+  let sources = 0;
   let hasBrief = false;
   if (defaultRef) {
     const tree = await run(["ls-tree", "-r", "--name-only", defaultRef]);
     const names = tree.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
-    manifests = names.filter((name) => MANIFESTS.includes(name.split("/").pop() ?? ""));
+    manifests = names.filter(isManifest);
+    sources = names.filter((name) => !isIncidental(name)).length;
     // A repository-level brief governs every workstream beneath it. Nested
     // briefs may describe only that subtree and are not equivalent here.
     hasBrief = BRIEF_FILES.some((file) => names.includes(file));
   }
   // No default branch anywhere and the fetch failed: that is not an empty
   // repository, it is a repository this machine cannot see — credentials, most often.
-  const readiness = manifests.length ? "scaffolded" : offline && !defaultRef ? "unknown" : "empty";
-  const summary = manifests.length ? `${manifests.join(", ")}${hasBrief ? " · documented" : " · no CLAUDE.md"}` : readiness === "unknown" ? remoteFailureMessage(remoteDetail ?? "") : null;
+  const readiness = manifests.length || sources ? "scaffolded" : offline && !defaultRef ? "unknown" : "empty";
+  const found = manifests.length ? manifests.join(", ") : `${sources} file${sources === 1 ? "" : "s"}, no manifest`;
+  const summary = readiness === "scaffolded" ? `${found}${hasBrief ? " · documented" : " · no CLAUDE.md"}` : readiness === "unknown" ? remoteFailureMessage(remoteDetail ?? "") : null;
 
-  return { offline, remote, remoteDetail, defaultRef, defaultSha, branches, mergedKeys, readiness, hasBrief, manifests, summary };
+  return { offline, remote, remoteDetail, defaultRef, defaultSha, branches, mergedKeys, readiness, hasBrief, manifests, sources, summary };
 }

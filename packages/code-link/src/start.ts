@@ -134,7 +134,8 @@ export class Starter {
     }
 
     let state = store.repoState(projectId, repo.id);
-    if (!state?.scannedAt) {
+    // "Empty" opens a bootstrap, so it is read fresh: the last scan may predate the merge that filled it.
+    if (!state?.scannedAt || state.readiness === "empty") {
       await this.host.scan(projectId);
       state = store.repoState(projectId, repo.id);
     }
@@ -175,8 +176,14 @@ export class Starter {
     }
     const bootstrapping = item.labels.includes(BOOTSTRAP_LABEL);
     if (state?.readiness === "empty" && !bootstrapping) {
-      const bootstrap = this.ensureBootstrap(projectId, item, board, repo);
-      return { ok: false, gate: "readiness", message: `${repo.name} has no project in it yet — ${bootstrap.key} bootstraps it first and blocks ${item.key} until it lands`, bootstrapKey: bootstrap.key, ...onRepo };
+      // A workstream is bootstrapped once. After that ticket closes, a scan that still reads empty
+      // is a doubt to mention, never a reason to open the same ticket again.
+      const settled = ctx.items.list({ projectId }).find((i) => i.boardId === board.id && i.labels.includes(BOOTSTRAP_LABEL) && !OPEN.has(i.status));
+      if (settled) warnings.push(`${repo.defaultBranch} still shows no project although ${settled.key} (bootstrap) is ${settled.status} — check that its work reached ${repo.defaultBranch} before building on it`);
+      else {
+        const bootstrap = this.ensureBootstrap(projectId, item, board, repo);
+        return { ok: false, gate: "readiness", message: `${repo.name} has no project in it yet — ${bootstrap.key} bootstraps it first and blocks ${item.key} until it lands`, bootstrapKey: bootstrap.key, ...onRepo };
+      }
     }
 
     // The readiness gate creates this dependency, so it also owns removing it
