@@ -76,6 +76,8 @@ modules:
     title: Routines
   - id: pet
     title: Pet
+  - id: alerts
+    title: Alerts
   - id: im
     title: IM connections
   - id: webSearch
@@ -335,6 +337,9 @@ plugins:
   # Electron mechanics; a feature plugin owns whether its surface exists.
   - id: desktop-surfaces
     name: ./dist/surfaces.js
+  # System notifications and sounds a feature asks for; the feature decides when.
+  - id: alerts
+    name: ./dist/alerts.js
   - id: contributions
     name: "@tomradex/contributions"
   # Optional task-state companion: its row switch unloads the contribution,
@@ -344,6 +349,10 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
+  # Focus and break timer in the status bar, with a desktop widget. Ships on;
+  # its row switch takes the timer, widget and alerts away together.
+  - id: pomodoro
+    name: "@tomradex/pomodoro"
   # Which keys run which command. The defaults live with the renderer's
   # commands; this row holds only what the person rebound, in their settings.
   - id: keybindings

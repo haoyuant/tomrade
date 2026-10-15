@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
+import type {} from "@tomradex/alerts";
 import type {} from "@tomradex/im";
 import type {} from "@tomradex/boards";
 import type { Words } from "@tomradex/contributions";
@@ -18,6 +19,7 @@ import type { WriteIntent } from "@tomradex/write";
 import {
   assertOwned,
   type AgentApi,
+  type AlertsApi,
   type ImApi,
   type BoardsApi,
   type ContributionsApi,
@@ -65,6 +67,7 @@ const CORDIS: Record<ServiceName, string> = {
   agent: "agent",
   im: "im",
   surfaces: "desktopSurfaces",
+  alerts: "alerts",
   oplog: "oplog"
 };
 
@@ -83,6 +86,7 @@ interface Services {
   agent: Context["agent"];
   im: Context["im"];
   surfaces: Context["desktopSurfaces"];
+  alerts: Context["alerts"];
   oplog: Context["oplog"];
 }
 
@@ -422,6 +426,15 @@ export class Host {
                 close: () => host.call(() => surface.close())
               };
             })
+        };
+      },
+
+      get alerts(): AlertsApi {
+        const alerts = () => host.svc("alerts");
+        return {
+          sounds: () => host.call(() => alerts().sounds()),
+          play: (sound, opts) => host.call(() => alerts().play(sound, opts)),
+          notify: (notice) => host.call(() => alerts().notify({ title: String(notice.title), body: notice.body === undefined ? undefined : String(notice.body) }))
         };
       },
 

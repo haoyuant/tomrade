@@ -42,6 +42,9 @@
       "path": "../../packages/desktop-surface"
     },
     {
+      "path": "../../packages/alerts"
+    },
+    {
       "path": "../../packages/engine-claude-code"
     },
     {
@@ -94,6 +97,9 @@
     },
     {
       "path": "../../packages/pet"
+    },
+    {
+      "path": "../../packages/pomodoro"
     },
     {
       "path": "../../packages/plugins"

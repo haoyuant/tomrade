@@ -97,6 +97,7 @@ returns is disposed when the service goes.
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
 | `agent` | `playbook({ id, title, when, body, tools })` |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page |
+| `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
@@ -1464,7 +1465,8 @@ const { greeting } = ctx.settings.get().hello as { greeting: string };
 validates each registered section against its schema and persists the file.
 The settings dialog draws a card for every section it does not lay out by hand,
 from the schema's JSON Schema: strings, numbers, booleans and enums; a string
-with `format: "password"` is masked. `show(id)` opens Settings on a section
+with `format: "password"` is masked, `format: "directory"` gets a folder picker
+and `format: "audio"` a picker for one sound file. `show(id)` opens Settings on a section
 from outside the window — a click in a desktop surface: it broadcasts
 `settings.show`, the renderer turns Settings to that pane, and the desktop shell
 brings the main window forward. Extensions call `ctx.settings.show()` for their
@@ -1632,6 +1634,21 @@ top-level positioning is also unavailable on native Wayland, exposed as
 stay stationary there. Surface documents can report preferences such as
 `prefers-reduced-motion` through `onMessage` so feature-owned movement stops as
 well as CSS animation.
+
+## Alerts
+
+`@tomradex/alerts` is the contract for telling the person something happened
+when they may not be looking: `ctx.alerts.notify({ title, body })` shows a
+system notification (silent; clicking it brings the main window forward) and
+`ctx.alerts.play(sound, { volume })` plays a sound once. `sounds()` lists the
+system's own — `/System/Library/Sounds` on macOS, `%SystemRoot%\Media` on
+Windows, the freedesktop theme on Linux — as `system:<name>`, the one the
+system alerts with first. A sound the person chose themselves is passed by its
+absolute path, typically from a settings field with `format: "audio"`; the
+host refuses anything that is not an existing audio file, so the plugin never
+reads it and needs no file permission. The desktop shell plays through the
+platform's player (`afplay`, PowerShell's MediaPlayer, `paplay`). Extensions
+reach it as `alerts` in `inject` or `optional`.
 
 ## What is deliberately not here
 

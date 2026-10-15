@@ -109,7 +109,9 @@
     "electron-updater": "6.8.10",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
-    "@tomradex/im": "workspace:*"
+    "@tomradex/im": "workspace:*",
+    "@tomradex/alerts": "workspace:*",
+    "@tomradex/pomodoro": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

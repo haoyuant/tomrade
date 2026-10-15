@@ -5,6 +5,9 @@ export class Timer {
   completed = 0;
   remaining: number;
   deadline: number | null = null;
+  /** Phases that ran out on their own, and the last of them: what an alert announces. */
+  ended = 0;
+  lastEnded: Phase | null = null;
   constructor(public rules: Rules) { this.remaining = this.duration(); }
   duration() { return this.rules[this.phase === 'focus' ? 'focusMinutes' : this.phase === 'shortBreak' ? 'shortBreakMinutes' : 'longBreakMinutes'] * 60_000; }
   start(now = Date.now()) { if (this.deadline === null) this.deadline = now + this.remaining; }
@@ -19,7 +22,7 @@ export class Timer {
   tick(now = Date.now()) {
     if (this.deadline === null) return;
     // After sleep, complete one real session; do not count unattended cycles.
-    if (now >= this.deadline) { this.next(); this.deadline = this.rules.autoStart ? now + this.remaining : null; }
+    if (now >= this.deadline) { this.ended++; this.lastEnded = this.phase; this.next(); this.deadline = this.rules.autoStart ? now + this.remaining : null; }
     else this.remaining = this.deadline - now;
   }
   configure(rules: Rules) { const previous = this.duration(); this.rules = rules; if (this.deadline === null && previous !== this.duration()) this.remaining = this.duration(); }
