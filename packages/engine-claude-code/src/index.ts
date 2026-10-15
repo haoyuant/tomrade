@@ -3,6 +3,7 @@ import type { Engine } from "@tomradex/agent";
 import type {} from "@tomradex/llm";
 import { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
 import { claudeLentModel } from "./lend.js";
+import { claudeCommands } from "./permissions.js";
 import { ClaudeRuntime } from "./sdk.js";
 import { RuntimePool, runtimeFingerprint } from "./runtime.js";
 
@@ -14,6 +15,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     ...baseline,
     // the SDK session takes messages mid-turn through its input queue
     steers: true,
+    commands: claudeCommands,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "auto", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },
@@ -48,6 +50,7 @@ export { ClaudeCodeOptions, createClaudeCodeCliEngine } from "./legacy.js";
 export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
 export { localAvailability, chosenCommand } from "./availability.js";
 export { claudeLentModel } from "./lend.js";
+export { bashRuleMatches, claudeCommands, userSettingsFile } from "./permissions.js";
 export {
   CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
   type BundledCli, type CliHost, type CliLaunch, type CliRunResult

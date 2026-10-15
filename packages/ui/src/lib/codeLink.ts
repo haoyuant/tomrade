@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { StartOptions } from "@tomradex/code-link";
+import type { RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 
@@ -9,6 +9,7 @@ export const codeLinkKeys = {
   links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
   sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
   repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,
+  mergeChecks: (projectId: string, repoId: string) => ["codeLink", projectId, "mergeChecks", repoId] as const,
   remoteIdentity: (remote: string) => ["codeLink", "remoteIdentity", remote] as const,
   proposals: (projectId: string, itemId?: string) => ["codeLink", projectId, "proposals", itemId ?? ""] as const,
   unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
@@ -57,6 +58,26 @@ export const useProposals = (projectId: string, itemId?: string) =>
 export const useUnlinkedBranches = (projectId: string) => useQuery({ queryKey: codeLinkKeys.unlinked(projectId), queryFn: () => invoke("codeLink.unlinked", projectId) });
 
 /** Start or continue a ticket with a local agent, coding or General. The result carries either a gate to clear or the thread to show. */
+export function useSetRepoPolicy(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ repoId, patch }: { repoId: string; patch: RepoPolicyPatch }) => invoke("codeLink.setRepoPolicy", projectId, repoId, patch),
+    onSettled: () => void qc.invalidateQueries({ queryKey: codeLinkKeys.repos(projectId) })
+  });
+}
+
+/** Whether each installed coding agent's own settings let it run gh pr merge in this repository. */
+export const useMergeChecks = (projectId: string, repoId: string, enabled: boolean) =>
+  useQuery({ queryKey: codeLinkKeys.mergeChecks(projectId, repoId), queryFn: () => invoke("codeLink.mergeChecks", projectId, repoId), enabled });
+
+export function useAllowMerge(projectId: string, repoId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (engineId: string) => invoke("codeLink.allowMerge", projectId, repoId, engineId),
+    onSettled: () => void qc.invalidateQueries({ queryKey: codeLinkKeys.mergeChecks(projectId, repoId) })
+  });
+}
+
 export function useStartTicket(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

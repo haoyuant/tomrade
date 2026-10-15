@@ -142,7 +142,8 @@ CREATE UNIQUE INDEX idx_plugin_code_link_links_key ON plugin_code_link_links(pro
 `);
     }
   },
-  { version: 6, up: "ALTER TABLE plugin_code_link_deliveries ADD COLUMN bases_json TEXT NOT NULL DEFAULT '{}'" }
+  { version: 6, up: "ALTER TABLE plugin_code_link_deliveries ADD COLUMN bases_json TEXT NOT NULL DEFAULT '{}'" },
+  { version: 7, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN agent_merge INTEGER NOT NULL DEFAULT 0" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -184,6 +185,9 @@ export interface CodeLinkView {
 export type { DeliveryState, DeliveryView } from "@tomradex/db";
 import type { DeliveryState, DeliveryView } from "@tomradex/db";
 
+/** A stop only the person can clear: origin's credentials, or a pull request the agent was not let merge. */
+export type SessionBlock = "credentials" | "merge";
+
 export type Readiness = "unknown" | "empty" | "scaffolded";
 /** `none`: the checkout has no origin, so nothing is fetched or pushed. */
 export type RemoteState = "ok" | "unreachable" | "unknown" | "none";
@@ -204,6 +208,8 @@ export interface RepoStateView {
   branchTemplate: string;
   autoDone: boolean;
   agentPush: boolean;
+  /** Agents merge their own pull requests once checks pass; off, the person merges. */
+  agentMerge: boolean;
   scannedAt: number | null;
   updatedAt: number;
 }
@@ -250,7 +256,7 @@ export interface SessionView {
   summary: string | null;
   /** What it is doing this moment, from its last hook; null between tools. */
   activity: string | null;
-  blocked: "credentials" | null;
+  blocked: SessionBlock | null;
   device: string;
   startedAt: number;
   endedAt: number | null;
@@ -293,6 +299,7 @@ interface RepoRow {
   branch_template: string;
   auto_done: number;
   agent_push: number;
+  agent_merge: number;
   scanned_at: number | null;
   updated_at: number;
 }
@@ -373,6 +380,7 @@ const toRepo = (r: RepoRow): RepoStateView => ({
   branchTemplate: r.branch_template,
   autoDone: r.auto_done === 1,
   agentPush: r.agent_push === 1,
+  agentMerge: r.agent_merge === 1,
   scannedAt: r.scanned_at,
   updatedAt: r.updated_at
 });
@@ -410,7 +418,7 @@ const toSession = (r: SessionRow): SessionView => ({
   lastCommitAt: r.last_commit_at,
   summary: r.summary,
   activity: r.activity ?? null,
-  blocked: (r.blocked as "credentials" | null) ?? null,
+  blocked: (r.blocked as SessionBlock | null) ?? null,
   device: r.device,
   startedAt: r.started_at,
   endedAt: r.ended_at
@@ -443,6 +451,7 @@ export interface RepoStatePatch {
   branchTemplate?: string;
   autoDone?: boolean;
   agentPush?: boolean;
+  agentMerge?: boolean;
   scannedAt?: number | null;
 }
 
@@ -458,7 +467,7 @@ export interface SessionPatch {
   lastCommitAt?: number | null;
   summary?: string | null;
   activity?: string | null;
-  blocked?: "credentials" | null;
+  blocked?: SessionBlock | null;
   endedAt?: number | null;
 }
 
@@ -654,18 +663,19 @@ export class CodeLinkStore {
       branchTemplate: patch.branchTemplate ?? existing?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE,
       autoDone: patch.autoDone ?? existing?.autoDone ?? true,
       agentPush: patch.agentPush ?? existing?.agentPush ?? true,
+      agentMerge: patch.agentMerge ?? existing?.agentMerge ?? false,
       scannedAt: patch.scannedAt === undefined ? (existing?.scannedAt ?? null) : patch.scannedAt,
       updatedAt: now
     };
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, scanned_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, scanned_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_id) DO UPDATE SET
            readiness = excluded.readiness, remote = excluded.remote, remote_detail = excluded.remote_detail, remote_at = excluded.remote_at,
            has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
            scanned_sha = excluded.scanned_sha, default_sha = excluded.default_sha, branch_template = excluded.branch_template,
-           auto_done = excluded.auto_done, agent_push = excluded.agent_push, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
+           auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
       )
       .run(
         repoId,
@@ -682,6 +692,7 @@ export class CodeLinkStore {
         next.branchTemplate,
         next.autoDone ? 1 : 0,
         next.agentPush ? 1 : 0,
+        next.agentMerge ? 1 : 0,
         next.scannedAt,
         now
       );

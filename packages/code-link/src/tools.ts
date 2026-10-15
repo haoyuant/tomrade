@@ -9,6 +9,7 @@ import type { Item } from "@tomradex/domain";
 import { defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
 import { covered, listDecisions, recordDecision } from "./decisions.js";
 import { DEFAULT_BRANCH_TEMPLATE, branchFor, titleSlug } from "./keys.js";
+import { mergeLine } from "./prompts.js";
 import { sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
@@ -21,6 +22,8 @@ export interface ToolHost {
   /** A repository with no remote has no pull request: the session's scoped link moves the ticket to Verifying. */
   handOver(projectId: string, itemId: string, repoId: string): void;
   noteProgress(projectId: string, sessionId: string, text: string): void;
+  /** The agent was not let merge its pull request: the session stops and the person is handed the merge. */
+  blockMerge(projectId: string, sessionId: string, reason: string): void;
   /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void;
   /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet. */
@@ -158,6 +161,24 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
   ctx.tools.register(
     defineTool({
+      name: "report_merge_blocked",
+      title: "Report that the pull request could not be merged",
+      description:
+        "Only where the brief says merging is yours: the pull request's checks could not be read (e.g. 'Resource not accessible by integration') or failed, or gh pr merge was refused (a permission denied, a safety check, branch protection, a review still required). Say why in one line; Tomrade stops the session and hands the merge to the person. Do not try to merge another way.",
+      input: z.object({ reason: z.string().min(1).max(280), key: z.string().optional(), projectId: z.string().optional() }),
+      execute: (args, inv) => {
+        const projectId = requireProjectId("report_merge_blocked", args.projectId, inv);
+        const { item, session: bound } = subject("report_merge_blocked", projectId, args.key, inv);
+        const session = bound ?? host.store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.threadId === null) ?? null;
+        if (!session) throw new Error(`report_merge_blocked: Tomrade is not tracking a session on ${item.key} — tell the person instead`);
+        host.blockMerge(projectId, session.id, args.reason.trim());
+        return { ok: true, key: item.key, next: "stop here — the person merges the pull request" };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
       name: "claim_ticket",
       title: "Claim a ticket to work on",
       description:
@@ -212,6 +233,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
             `every commit message names ${item.key}`,
             "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",
+            mergeLine(!!state?.agentMerge).replace(/^- /, ""),
             "call note_progress with one line at milestones"
           ]
         };

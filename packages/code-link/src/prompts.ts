@@ -20,6 +20,8 @@ export interface FirstPromptInput {
   completionPolicy?: "merge" | "human";
   /** The checkout has no origin: nothing is pushed and there is no pull request. */
   local?: boolean;
+  /** The repository lets agents merge their own pull requests. */
+  merge?: boolean;
   /** Tomrade's own language, so the agent's output matches what the person reads in the app. */
   locale?: "en" | "zh";
 }
@@ -34,7 +36,15 @@ export const languageLine = (locale: "en" | "zh" = "en") =>
     ? "Language: the person reads Tomrade in Simplified Chinese — write everything the person will read (your replies, note_progress, questions, reports) in Simplified Chinese; keep code, identifiers, commands, file paths and commit messages as they are."
     : "Language: the person reads Tomrade in English — write everything the person will read (your replies, note_progress, questions, reports) in English; keep code, identifiers, commands, file paths and commit messages as they are.";
 
-const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human", local = false) =>
+/** Who merges the pull request; nothing to say for a repository with no remote. */
+export const mergeLine = (merge: boolean, local = false): string =>
+  local
+    ? ""
+    : merge
+      ? "- merging is yours: after link_code, wait for the pull request's checks with gh pr checks <url> --watch and merge only once they pass, with gh pr merge <url> --squash or the method CLAUDE.md names; never pass --admin or work around branch protection. 'no checks reported' means there is nothing to wait for. If the checks cannot be read at all (an error such as 'Resource not accessible by integration'), do not merge without them: call report_merge_blocked saying the check status could not be read, and stop. If the checks fail or the merge is refused — a permission denied, a safety check, branch protection, a review still required — do not try another way: call report_merge_blocked with the reason and stop; the human merges it"
+      : "- do not merge the pull request; the human merges it";
+
+const conventions = (key: string, defaultBranch: string, completionPolicy: "merge" | "human" = "human", local = false, merge = false) =>
   [
     "Conventions:",
     `- this run owns exactly ${key}; implement only its stated outcome and acceptance criteria`,
@@ -45,6 +55,7 @@ const conventions = (key: string, defaultBranch: string, completionPolicy: "merg
     local
       ? `- this repository has no remote: commit on your branch, do not push, do not add a remote, and open no pull request; after the full-diff scope review, call link_code with scopeChecked: true and no prUrl — that moves the ticket to Verifying, and the human merges your branch into ${defaultBranch} here`
       : "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
+    mergeLine(merge, local),
     "- call note_progress with one line at each milestone; it is what the ticket shows while you work",
     local ? "" : "- if git push, fetch, pull or gh fails with an authentication or repository-not-found error, do not switch accounts, edit credential helpers or change the remote; commit locally, call note_progress with 'blocked: push …', and stop — the human owns credentials",
     `- do not mark the ticket done; ${completionPolicy === "merge" ? "the platform completes delivery after all code links merge" : "human acceptance is required, even after code merges; submit required artifacts for review"}`
@@ -79,13 +90,13 @@ export function firstPrompt(input: FirstPromptInput): string {
       : "No decisions are on record yet: a cross-cutting choice (state management, routing, persistence, deployment shape) is asked about, then recorded with record_decision, never made silently.",
     mcpUrl && bootstrap ? `Tomrade's MCP endpoint for this project, for the repository's .mcp.json and .codex/config.toml: ${mcpUrl}` : "",
     "",
-    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"), input.local)
+    conventions(item.key, repo.defaultBranch, input.completionPolicy ?? (state?.autoDone ? "merge" : "human"), input.local, input.merge ?? state?.agentMerge ?? false)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }
 
 /** Picking a thread back up: where it stopped, what the branch looks like now. */
-export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false, locale: "en" | "zh" = "en"): string {
+export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false, locale: "en" | "zh" = "en", merge = false): string {
   const parts = [
     `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
     languageLine(locale),
@@ -98,7 +109,7 @@ export function continuePrompt(item: Item, repo: Repo, session: SessionView | nu
     link ? `Branch: +${link.ahead} −${link.behind} against ${repo.defaultBranch}${link.prUrl ? ` · pull request ${link.prUrl} (${link.prState ?? "open"})` : local ? "" : " · no pull request yet"}.` : "",
     "Check the working tree and the tests, then carry on where you stopped. get_item has the ticket's latest state if you need it.",
     "",
-    conventions(item.key, repo.defaultBranch, completionPolicy, local)
+    conventions(item.key, repo.defaultBranch, completionPolicy, local, merge)
   ];
   return parts.filter((p) => p !== "").join("\n");
 }

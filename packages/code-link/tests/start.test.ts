@@ -850,6 +850,53 @@ describe("starting a ticket", () => {
     expect(codeLink.sessionsOf(project.id, item.id).map((session) => session.delivery).sort()).toEqual([1, 2]);
   });
 
+  it("tells the agent who merges, and hands a refused merge to the person with a link", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const brief = (threadId: string) => JSON.stringify(agent.store.messages(project.id, threadId)[0].block);
+
+    const off = ticket("Merge by hand");
+    const manual = await codeLink.start(project.id, off.id, { mode: "run" });
+    if (!manual.ok) throw new Error(manual.message);
+    await untilRunsSettle(agent);
+    expect(brief(manual.threadId)).toContain("do not merge the pull request; the human merges it");
+
+    expect(codeLink.setRepoPolicy(project.id, repo!.id, { agentMerge: true }).agentMerge).toBe(true);
+    expect(await codeLink.mergeChecks(project.id, repo!.id)).toEqual([{ engine: "fake-code", title: "Fake coding agent", check: null }]);
+    const item = ticket("Merge it yourself");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    if (!started.ok) throw new Error(started.message);
+    await untilRunsSettle(agent);
+    expect(brief(started.threadId)).toContain("merging is yours");
+    expect(brief(started.threadId)).toContain("report_merge_blocked");
+    expect(brief(started.threadId)).toContain("If the checks cannot be read at all");
+    expect(brief(started.threadId)).toContain("'no checks reported' means there is nothing to wait for");
+
+    const prUrl = "https://github.com/acme/app/pull/7";
+    const link = codeLink.links(project.id, item.id)[0]!;
+    codeLink.store.patchLink(project.id, link.id, { prUrl, prNumber: 7, prState: "open" });
+    const response = codeLink.sessions.event(project.id, started.sessionId, {
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: `gh pr merge ${prUrl} --squash` },
+      tool_error: "GraphQL: Base branch policy prohibits the merge. Required status check \"ci\" is expected."
+    });
+    expect(response).toMatchObject({ additionalContext: expect.stringContaining("Do not try to merge another way") });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "error", blocked: "merge", summary: expect.stringContaining("merge blocked:") });
+    const notes = agent.store.messages(project.id, started.threadId).filter((message) => message.block.type === "note").map((message) => (message.block as { text: string }).text);
+    expect(notes.at(-1)).toContain("merge blocked:");
+    // a merge refusal is not a credential stop: other gh commands still run
+    expect(codeLink.sessions.event(project.id, started.sessionId, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "gh pr view 7" } })).toEqual({});
+
+    const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((entry) => entry.id === "code")!;
+    expect(section.rows).toContainEqual(expect.objectContaining({ label: "Merge", state: "warn", href: prUrl }));
+
+    // origin being reachable clears credential stops, not a merge the person still owes
+    await codeLink.scan(project.id);
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ blocked: "merge" });
+  });
+
   it("stops a session retry loop after git reports that its credentials cannot see origin", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
