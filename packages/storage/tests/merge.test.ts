@@ -48,15 +48,37 @@ describe("three-way merge", () => {
     expect(merge(base, both, both).merged.tables.deliveries).toHaveLength(1);
   });
 
-  it("refuses an undo that would orphan a concurrently submitted file reference", () => {
+  it("commits an undo that orphans a concurrently submitted file reference and flags it", () => {
     const resource = { id: "r", role: "output", deliveryId: "d", createdAt: 1 };
     const evidence = (resources: unknown[], submissions: unknown[]) => JSON.stringify({ resources, submissions, reviews: [] });
     const base = state([item("a", 1, { evidence_json: evidence([resource], []) })]);
     const undo = state([item("a", 1, { evidence_json: evidence([], []) })]);
     const submitted = state([item("a", 1, { evidence_json: evidence([resource], [{ id: "s", deliveryId: "d", artifactIds: ["r"], submittedAt: 2 }]) })]);
-    expect(() => merge(base, undo, submitted)).toThrow("evidence sync conflict");
-    expect(() => merge(base, submitted, undo)).toThrow("evidence sync conflict");
+    expect(merge(base, undo, submitted).attention).toEqual([{ kind: "evidence", entityId: "a", code: "orphan-artifact" }]);
+    expect(merge(base, submitted, undo).attention).toEqual([{ kind: "evidence", entityId: "a", code: "orphan-artifact" }]);
   });
+
+  it("commits a done ticket whose latest submission was not accepted and flags it", () => {
+    const evidence = (decision: string) => JSON.stringify({ resources: [], submissions: [{ id: "s", deliveryId: "a:delivery:1", artifactIds: [] }], reviews: [{ id: "v", submissionId: "s", decision }] });
+    const delivery = { id: "a:delivery:1", item_id: "a", sequence: 1, state: "completed" };
+    const base = state([item("a", 1, { status: "doing", evidence_json: evidence("changes-requested") })], { deliveries: [{ ...delivery, state: "active" }] });
+    const ours = state([item("a", 1, { status: "done", version: 2, updated_at: 200, evidence_json: evidence("changes-requested") })], { deliveries: [delivery] });
+    const result = merge(base, ours, base);
+    expect(result.merged.tables.items[0].status).toBe("done");
+    expect(result.attention).toEqual([{ kind: "evidence", entityId: "a", code: "done-unaccepted" }]);
+    const accepted = state([item("a", 1, { status: "done", version: 2, updated_at: 200, evidence_json: evidence("accepted") })], { deliveries: [delivery] });
+    expect(merge(base, accepted, base).attention).toEqual([]);
+  });
+
+  it("flags a review of a submission that is gone and two reviews of one submission", () => {
+    const evidence = (reviews: unknown[]) => JSON.stringify({ resources: [], submissions: [{ id: "s", deliveryId: "d", artifactIds: [] }], reviews });
+    const base = state([item("a", 1, { evidence_json: evidence([]) })]);
+    const orphan = state([item("a", 1, { version: 2, evidence_json: evidence([{ id: "v", submissionId: "gone", decision: "accepted" }]) })]);
+    expect(merge(base, orphan, base).attention.map((n) => n.code)).toEqual(["orphan-review"]);
+    const twice = state([item("a", 1, { version: 2, evidence_json: evidence([{ id: "v1", submissionId: "s", decision: "accepted" }, { id: "v2", submissionId: "s", decision: "changes-requested" }]) })]);
+    expect(merge(base, twice, base).attention.map((n) => n.code)).toEqual(["duplicate-review"]);
+  });
+
   it("keeps independent delivery artifacts from both machines and honors undo removals", () => {
     const evidence = (resources: { id: string; createdAt: number }[]) => JSON.stringify({ resources, submissions: [], reviews: [] });
     const original = { id: "reference", createdAt: 1 };

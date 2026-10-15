@@ -14,7 +14,7 @@ import type {} from "./channels.js";
 import { GitFolder, GitMissingError, cleanRemote, gitRunner, type Git, type GitCredential } from "./git.js";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
-import { CORE_RULES, mergeStates, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
+import { CORE_RULES, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
 import { Restorer, fetchProject, type Adoption, type RestoreEntry, type RestoreSummary } from "./restore.js";
 import {
   ARTIFACT_DIR,
@@ -58,6 +58,8 @@ declare module "cordis" {
     "storage/registered"(providerId: string): void;
     "storage/unregistered"(providerId: string): void;
     "storage/synced"(projectId: string, status: StorageStatus): void;
+    /** A merge committed with delivery evidence that disagrees with itself; the list is what still needs a person. */
+    "storage/attention"(projectId: string, notes: Attention[]): void;
     /** The folder's copy replaced the local rows; caches for this project are stale. */
     "storage/imported"(projectId: string): void;
     /** A project the Hub named came back to this machine. */
@@ -129,6 +131,7 @@ export class Storage extends Service {
   private hubWriteTimer: ReturnType<typeof setTimeout> | null = null;
   /** Projects removed on purpose on this machine; the Hub's catalog must not bring them back. */
   private tombstones = new Map<string, number>();
+  private attentionByProject = new Map<string, Attention[]>();
   private closing = false;
   private hubBackend: HubBackend | null = null;
   private restorer!: Restorer;
@@ -1032,6 +1035,21 @@ export class Storage extends Service {
     // read, on the next refresh, as theirs having deleted every row we added.
     this.importInto(projectId, entry, merged, theirs);
     this.noteConflicts(projectId, result.conflicts, result.renumbered);
+    this.noteAttention(projectId, result.attention);
+  }
+
+  /** What the last merge left for a person to settle; empty once a later merge finds none. */
+  attention(projectId: string): Attention[] {
+    return this.attentionByProject.get(projectId) ?? [];
+  }
+
+  private noteAttention(projectId: string, notes: Attention[]): void {
+    const before = JSON.stringify(this.attention(projectId));
+    if (before === JSON.stringify(notes)) return;
+    if (notes.length) this.attentionByProject.set(projectId, notes);
+    else this.attentionByProject.delete(projectId);
+    for (const n of notes) this.home.logger.warn(`storage: ${projectId}: merged with delivery evidence to settle for ${n.entityId} (${n.code})`);
+    this.home.emit("storage/attention", projectId, notes);
   }
 
   private toMergeState(state: ProjectState): MergeState {
