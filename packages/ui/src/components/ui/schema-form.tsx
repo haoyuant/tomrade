@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { Icon } from "~/components/icons";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { PlainSecretNote } from "./PlainSecretNote";
-import { pickDirectory } from "~/lib/shell";
+import { pickAudio, pickDirectory } from "~/lib/shell";
 
 /** The slice of JSON Schema the renderer draws. Anything else falls back to text. */
 export interface JsonSchema {
@@ -124,7 +124,7 @@ export function SchemaField({
 
   const choose = async () => {
     setPicking(true);
-    const chosen = await pickDirectory(t("common.chooseFolderFor", { label }), t("common.chooseButton"));
+    const chosen = schema.format === "audio" ? await pickAudio(t("common.chooseSoundFor", { label }), t("common.chooseButton")) : await pickDirectory(t("common.chooseFolderFor", { label }), t("common.chooseButton"));
     setPicking(false);
     if (chosen) pick(chosen);
   };
@@ -144,14 +144,14 @@ export function SchemaField({
         <input id={inputId} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => pick(e.target.checked)} />
       ) : type === "array" || type === "object" ? (
         <JsonInput id={inputId} value={value} disabled={disabled} onCommit={pick} />
-      ) : schema.format === "directory" ? (
+      ) : schema.format === "directory" || schema.format === "audio" ? (
         <div className="row" style={{ gap: "var(--space-2)" }}>
           <input
             id={inputId}
             className="input num"
             style={{ flex: 1 }}
             disabled={disabled}
-            placeholder="/path/to/folder"
+            placeholder={schema.format === "audio" ? "/path/to/sound.mp3" : "/path/to/folder"}
             value={value == null ? "" : String(value)}
             onChange={(e) => onChange(e.target.value)}
             {...typed}

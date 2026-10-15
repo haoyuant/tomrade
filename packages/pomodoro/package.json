@@ -1,0 +1,35 @@
+{
+  "name": "@tomradex/pomodoro",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Pomodoro \u2014 a focus and break timer in the status bar, with a desktop widget and alerts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/plugin-sdk": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tomradex/alerts": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "@types/node": "^26.2.0",
+    "cordis": "4.0.0-rc.8",
+    "typescript": "^6.0.0"
+  }
+}

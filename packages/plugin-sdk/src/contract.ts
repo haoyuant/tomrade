@@ -42,7 +42,7 @@ export interface SectionWords {
 }
 
 /** The services a plugin names in `inject` (required) or `optional`. */
-export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "oplog" | "im";
+export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "alerts" | "oplog" | "im";
 
 export interface Logger {
   debug(...args: unknown[]): void;
@@ -289,6 +289,22 @@ export interface SurfacesApi {
   open(spec: SurfaceSpec): Promise<SurfaceHandle>;
 }
 
+/** A sound the machine offers: `system:<name>`. A file the person chose is played by its absolute path. */
+export interface AlertSound {
+  id: string;
+  title: string;
+}
+
+/** Alerts the system raises for the plugin. The plugin chooses when; it never reads the sound file itself. */
+export interface AlertsApi {
+  /** The system sounds on this machine, the system's own alert sound first. */
+  sounds(): Promise<AlertSound[]>;
+  /** Plays a system sound or an audio file once; volume runs 0–1. */
+  play(sound: string, opts?: { volume?: number }): Promise<void>;
+  /** A silent system notification; clicking it brings Tomrade forward. */
+  notify(notice: { title: string; body?: string }): Promise<void>;
+}
+
 export interface OplogApi {
   recent(projectId: string, limit?: number): Promise<OplogEntry[]>;
   history(projectId: string, entity: OplogEntity, id: string, limit?: number): Promise<OplogEntry[]>;
@@ -332,6 +348,7 @@ export interface PluginContext {
   readonly agent: AgentApi;
   readonly im: ImApi;
   readonly surfaces: SurfacesApi;
+  readonly alerts: AlertsApi;
   readonly oplog: OplogApi;
   on<K extends keyof Events>(event: K, listener: Events[K]): Disposer;
   /** Runs `fn` while an optional service is present; what it returns is disposed when the service goes. */

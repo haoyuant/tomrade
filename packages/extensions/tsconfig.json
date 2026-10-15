@@ -27,6 +27,9 @@
       "path": "../desktop-surface"
     },
     {
+      "path": "../alerts"
+    },
+    {
       "path": "../domain"
     },
     {

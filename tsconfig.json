@@ -38,6 +38,9 @@
       "path": "./packages/desktop-surface"
     },
     {
+      "path": "./packages/alerts"
+    },
+    {
       "path": "./packages/deps-graph"
     },
     {
@@ -108,6 +111,9 @@
     },
     {
       "path": "./packages/pet"
+    },
+    {
+      "path": "./packages/pomodoro"
     },
     {
       "path": "./packages/plugin-sdk"

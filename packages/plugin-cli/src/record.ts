@@ -7,6 +7,7 @@ import {
   type DbApi,
   type FieldsApi,
   type ItemsApi,
+  type AlertsApi,
   type OplogApi,
   type PluginContext,
   type ProjectsApi,
@@ -142,6 +143,9 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
           return refuse();
         }
       });
+    },
+    get alerts(): AlertsApi {
+      return need("alerts", { sounds: async () => [], play: async () => {}, notify: async () => {} });
     },
     get oplog(): OplogApi {
       return need("oplog", { recent: async () => [], history: async () => [] });

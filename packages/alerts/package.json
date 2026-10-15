@@ -1,0 +1,26 @@
+{
+  "name": "@tomradex/alerts",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Host contract for alerts a feature raises: system notifications and sounds",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

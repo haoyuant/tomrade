@@ -34,7 +34,8 @@
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3",
-    "@tomradex/im": "workspace:*"
+    "@tomradex/im": "workspace:*",
+    "@tomradex/alerts": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.0",

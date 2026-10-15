@@ -35,6 +35,9 @@ importers:
       '@tomradex/agent-backlog':
         specifier: workspace:*
         version: link:../../packages/agent-backlog
+      '@tomradex/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@tomradex/archify':
         specifier: workspace:*
         version: link:../../packages/archify
@@ -161,6 +164,9 @@ importers:
       '@tomradex/plugins':
         specifier: workspace:*
         version: link:../../packages/plugins
+      '@tomradex/pomodoro':
+        specifier: workspace:*
+        version: link:../../packages/pomodoro
       '@tomradex/projects':
         specifier: workspace:*
         version: link:../../packages/projects
@@ -335,6 +341,16 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/alerts:
+    dependencies:
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
     devDependencies:
       typescript:
         specifier: ^6.0.0
@@ -944,6 +960,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/alerts':
+        specifier: workspace:*
+        version: link:../alerts
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
@@ -1663,6 +1682,43 @@ importers:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/pomodoro:
+    dependencies:
+      '@tomradex/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/alerts':
+        specifier: workspace:*
+        version: link:../alerts
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
       typescript:
         specifier: ^6.0.0
         version: 6.0.3

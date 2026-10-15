@@ -26,6 +26,7 @@ declare module "@tomradex/ipc" {
     "shell.pickDirectory": (title?: string, buttonLabel?: string) => string | null;
     /** Native picker for several files, or for folders. Null when the user cancels. */
     "shell.pickFiles": (title?: string, buttonLabel?: string, kind?: "files" | "folders") => string[] | null;
+    "shell.pickAudio": (title?: string, buttonLabel?: string) => string | null;
     "shell.pickProgram": (title?: string, buttonLabel?: string) => string | null;
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
@@ -47,6 +48,9 @@ export const pickDirectory = (title?: string, buttonLabel?: string): Promise<str
 
 export const pickFiles = (title?: string, buttonLabel?: string, kind: "files" | "folders" = "files"): Promise<string[] | null> =>
   invoke("shell.pickFiles", title, buttonLabel, kind).catch(() => null);
+
+export const pickAudio = (title?: string, buttonLabel?: string): Promise<string | null> =>
+  invoke("shell.pickAudio", title, buttonLabel).catch(() => null);
 
 export const pickProgram = (title?: string, buttonLabel?: string): Promise<string | null> =>
   invoke("shell.pickProgram", title, buttonLabel).catch(() => null);
