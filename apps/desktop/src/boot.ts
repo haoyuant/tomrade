@@ -50,7 +50,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
   // A run that names no Hub or plugin folders keeps them beside its own data,
   // so a check never seeds projects into the person's ~/Tomrade.
   const own = opts.vars.userData ?? baseDir;
-  const vars = { appDir: baseDir, hubDir: path.join(own, "hub"), pluginsRoot: path.join(own, "plugins"), pluginsDevRoot: path.join(own, "plugins-dev"), logDir: path.join(own, "logs"), appVersion: "dev", locale: "en", ...opts.vars };
+  const vars = { appDir: baseDir, hubDir: path.join(own, "hub"), pluginsRoot: path.join(own, "plugins"), pluginsDevRoot: path.join(own, "plugins-dev"), logDir: path.join(own, "logs"), appVersion: "dev", locale: "en", instanceKind: "dev", mcpPort: "19090", userData: own, ...opts.vars };
   ctx.logger.exporter(fileExporter(vars.logDir));
   // A promise nobody waited on would otherwise leave no trace in a packaged build.
   const unhandled = (reason: unknown) => ctx.logger("process").error(reason);

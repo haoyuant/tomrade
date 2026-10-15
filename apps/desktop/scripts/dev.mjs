@@ -58,8 +58,12 @@ const stop = (code = 0) => {
   if (shuttingDown) return;
   shuttingDown = true;
   ui.kill("SIGTERM");
-  electron.kill("SIGTERM");
-  setTimeout(() => process.exit(code), 100);
+  // Electron publishes what it has not synced on SIGTERM; give it the time before this script goes.
+  if (electron.exitCode === null && electron.signalCode === null) {
+    electron.once("exit", () => process.exit(code));
+    electron.kill("SIGTERM");
+    setTimeout(() => process.exit(code), 8_000).unref();
+  } else setTimeout(() => process.exit(code), 100);
 };
 
 process.once("SIGINT", () => stop(0));

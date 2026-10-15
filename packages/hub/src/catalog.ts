@@ -35,6 +35,8 @@ export const CatalogProject = z.object({
   lastSyncAt: z.number().nullable().default(null),
   /** The last oplog seq already appended to the folder's log; the write-through catches up from here. */
   lastLoggedSeq: z.number().int().default(0),
+  /** This device's own oplog rows up to this device_seq have reached where the project is shared; null until first known. */
+  syncedDeviceSeq: z.number().int().nullable().default(null),
   archived: z.boolean().default(false),
   /** Tables (`<namespace>/<table>`) a restore could not read: never exported from here until a snapshot carrying them arrives. */
   withheld: z.array(z.string()).default([]),

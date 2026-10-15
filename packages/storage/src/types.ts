@@ -16,6 +16,12 @@ export interface StorageStatus {
   lastSyncAt: number | null;
 }
 
+/** A project's sync as far as this machine knows without asking the network. */
+export interface SyncSummary extends StorageStatus {
+  /** This device's writes not yet where the project is shared; null when it cannot tell or the project does not sync. */
+  pending: { count: number; since: number | null } | null;
+}
+
 export type GitOrigin = "dedicated" | "shared" | "none";
 
 /** Who can read a remote: anyone, only those given access, or the host can't say. */

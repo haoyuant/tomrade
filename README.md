@@ -103,7 +103,7 @@ Every mutation of an item, board or view goes through `write()` in `@tomradex/wr
 
 ## Connecting VS Code agents (MCP)
 
-Run `pnpm dev`. The MCP server listens on `http://127.0.0.1:19090/mcp` (shown in the UI's status bar and settings).
+The installed app's MCP server listens on `http://127.0.0.1:19090/mcp`; a checkout run with `pnpm dev` listens on `19091`, so both can run side by side with their own data (set `TOMRADE_MCP_PORT` to choose another). The URL is shown in settings, and the `whoami` tool says which instance and which data a client reached. If the port is taken, Tomrade listens on a free one and says so in the status bar.
 
 ```json
 {

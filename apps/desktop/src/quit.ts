@@ -49,8 +49,59 @@ async function ask(ctx: Context): Promise<boolean> {
   // The flush can wait on a remote; the person shouldn't. From here the app looks closed.
   putAway();
   const storage = ctx.get("storage");
-  if (storage) await Promise.race([storage.flushAll("quit").catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 5_000))]);
-  return true;
+  if (!storage) return true;
+  await within(storage.flushAll("quit").catch(() => undefined), FLUSH_MS);
+  return settleUnsynced(ctx);
+}
+
+const FLUSH_MS = 5_000;
+/** How long "Wait" waits before asking again. */
+const WAIT_MS = 60_000;
+const within = (work: Promise<unknown>, ms: number) => Promise.race([work, new Promise((resolve) => setTimeout(resolve, ms))]);
+
+/**
+ * Writes that never left this machine are invisible to every other one — and to
+ * another Tomrade on this one — until the next launch publishes them. The person
+ * hears how many before they go, and can wait for them.
+ */
+async function settleUnsynced(ctx: Context): Promise<boolean> {
+  const storage = ctx.get("storage");
+  for (;;) {
+    const left = storage?.pendingAll() ?? [];
+    const total = left.reduce((sum, p) => sum + p.count, 0);
+    if (!storage || !total) return true;
+    const zh = ctx.get("settings")?.locale?.() === "zh";
+    // The windows are away; the question must not be.
+    if (process.platform === "darwin") app.show();
+    const list = left.map((p) => (zh ? `${p.name}：${p.count} 条` : `${p.name}: ${p.count}`)).join("\n");
+    const choice = dialog.showMessageBoxSync({
+      type: "warning",
+      buttons: zh ? ["等待同步", "直接退出", "取消"] : ["Wait for sync", "Quit anyway", "Cancel"],
+      defaultId: 0,
+      cancelId: 2,
+      message: zh ? `还有 ${total} 条修改没有同步` : `${total} change${total === 1 ? " has" : "s have"} not synced yet`,
+      detail: zh
+        ? `${list}\n\n它们只在这台电脑的这个 Tomrade 里。直接退出的话，下次启动会继续同步；在那之前，其他设备和另一个 Tomrade 都看不到。`
+        : `${list}\n\nThey are only in this Tomrade on this computer. Quit anyway and the next launch syncs them; until then no other device, and no other Tomrade here, sees them.`
+    });
+    if (choice === 1) return true;
+    if (choice === 2) {
+      cancelQuit();
+      return false;
+    }
+    if (process.platform === "darwin") app.hide();
+    // A full publish this time: it may fetch and merge, which a quit's own flush never does.
+    await within(Promise.all(left.map((p) => storage.publish(p.projectId, "quit").catch(() => undefined))), WAIT_MS);
+  }
+}
+
+/**
+ * A signal (a development restart, a logout) ends the process without a quit to
+ * ask through: the writes still get their one chance to leave, then it goes.
+ */
+export async function leaveOnSignal(ctx: Context): Promise<void> {
+  const storage = ctx.get("storage");
+  if (storage) await within(storage.flushAll("signal").catch(() => undefined), FLUSH_MS);
 }
 
 function putAway(): void {
