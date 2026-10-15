@@ -261,6 +261,25 @@ describe("ctx.storage", () => {
     expect(fs.readFileSync(path.join(a.dir, ARTIFACT_DIR, "state", "items.jsonl"), "utf8")).toMatch(/Renamed elsewhere/);
   });
 
+  it("syncs past a done ticket whose delivery was never accepted, and lists it until it is settled", async () => {
+    const a = await machine();
+    const item = a.items.create({ title: "Build it", workType: "coding", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    let updated = a.items.submitDelivery(a.project.id, item.id, { report: "Ready" }, "human");
+    updated = a.items.reviewDelivery(a.project.id, item.id, { submissionId: updated.evidence.submissions[0].id, decision: "changes-requested" }, updated.version);
+    await a.storage.publish(a.project.id);
+    const state = readArtifact(a.dir)!;
+    state.tables.items.find((r) => r.id === item.id)!.title = "Renamed elsewhere";
+    state.manifest.snapshot!.digest = digestState(state);
+    writeArtifact(a.dir, state);
+    a.items.update(a.project.id, item.id, { status: "done" }, "human");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("diverged");
+    await a.storage.refresh(a.project.id);
+    expect(a.items.get(a.project.id, item.id)?.title).toBe("Renamed elsewhere");
+    expect(a.storage.attentionViews(a.project.id)).toEqual([{ itemId: item.id, key: expect.stringMatching(/-\d+$/), title: "Renamed elsewhere", code: "done-unaccepted" }]);
+    a.items.settleEvidence(a.project.id, item.id, "accept", a.items.get(a.project.id, item.id)!.version);
+    expect(a.storage.attentionViews(a.project.id)).toEqual([]);
+  });
+
   it("never loses rows that travel nowhere: an unticked namespace sits out a merge, and one ticked elsewhere joins ours", async () => {
     const a = await machine();
     a.ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {

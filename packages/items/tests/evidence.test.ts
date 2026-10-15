@@ -58,3 +58,24 @@ it("accepts a human report without files, and direct human completion records it
   expect(updated.evidence.submissions[1].deliveryId).not.toBe(updated.evidence.submissions[0].deliveryId);
   await ctx.fiber.dispose();
 });
+
+it("settles evidence a sync left inconsistent: accept the latest submission, or drop dangling references", async () => {
+  const { ctx, items, project, board } = await fresh();
+  const item = items.create({ projectId: project.id, boardId: board.id, title: "Build the thing", workType: "coding", by: "human" });
+  let updated = items.submitDelivery(project.id, item.id, { report: "Collected" }, "human");
+  const submission = updated.evidence.submissions[0];
+  updated = items.reviewDelivery(project.id, item.id, { submissionId: submission.id, decision: "changes-requested" }, updated.version);
+  updated = items.update(project.id, item.id, { status: "done" }, "human", { baseVersion: updated.version });
+
+  const accepted = items.settleEvidence(project.id, item.id, "accept", updated.version);
+  expect(accepted.status).toBe("done");
+  expect(accepted.evidence.reviews.filter(r => r.submissionId === submission.id).map(r => r.decision)).toEqual(["accepted"]);
+
+  const review = (id: string, submissionId: string) => ({ id, submissionId, decision: "accepted" as const, comment: "", reviewedBy: "human" as const, reviewedAt: 1 });
+  const messy = { ...accepted.evidence, reviews: [...accepted.evidence.reviews, review("gone", "no-such-submission"), review("again", submission.id)], submissions: [{ ...submission, artifactIds: ["missing"] }] };
+  ctx.db.for(project.id).prepare("UPDATE items SET evidence_json = ? WHERE id = ?").run(JSON.stringify(messy), item.id);
+  const tidy = items.settleEvidence(project.id, item.id, "tidy", accepted.version);
+  expect(tidy.evidence.reviews.map(r => r.id)).toEqual(["again"]);
+  expect(tidy.evidence.submissions[0].artifactIds).toEqual([]);
+  await ctx.fiber.dispose();
+});

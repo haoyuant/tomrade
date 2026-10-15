@@ -48,6 +48,8 @@ if (window.tomrade) {
   // A destination was published to, or its copy replaced this project's rows.
   // An import spares nothing, so neither does this.
   subscribe("storage.changed", (projectId) => invalidateProject(queryClient, projectId));
+  // A merge left delivery records to settle, or they were settled.
+  subscribe("storage.attentionChanged", (projectId) => void queryClient.invalidateQueries({ queryKey: ["storage", "attention", projectId] }));
   // A project the account names started coming back, moved a step, arrived or stopped to wait.
   subscribe("storage.restoresChanged", () => void queryClient.invalidateQueries({ queryKey: ["storage", "restores"] }));
   // A project was created, renamed, archived or removed — in this window or another.

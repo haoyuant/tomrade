@@ -1,0 +1,72 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
+import { invoke } from "~/lib/api";
+import { useI18n, type MessageKey } from "~/lib/i18n";
+import { invalidateWorkspace, useItems, useStorageStatus, useSyncAttention } from "~/lib/queries";
+import { errorSpec, useToast } from "~/lib/toast";
+
+/**
+ * What a sync merged but left disagreeing with itself, one row per ticket with
+ * the actions that settle it. Syncing never waits on any of this.
+ */
+export function SyncIssuesDialog({ projectId, open, onOpenChange, onOpenIssue }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const attention = useSyncAttention(projectId);
+  const items = useItems(projectId);
+  const status = useStorageStatus(projectId);
+  const byId = new Map((items.data ?? []).map((i) => [i.id, i]));
+  const rows = attention.data ?? [];
+  const settled = () => {
+    invalidateWorkspace(qc, projectId);
+    void qc.invalidateQueries({ queryKey: ["storage", "status", projectId] });
+  };
+  const settle = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "accept" | "tidy" | "reopen" }) => {
+      const item = byId.get(id);
+      if (!item) throw new Error("Ticket not found");
+      return action === "reopen" ? invoke("items.update", projectId, id, { status: "doing" }, item.version) : invoke("items.settleEvidence", projectId, id, action, item.version);
+    },
+    onSuccess: settled,
+    onError: (e) => toast(errorSpec(e))
+  });
+  const sync = useMutation({ mutationFn: () => invoke("storage.sync", projectId), onSettled: settled });
+  const act = (id: string, action: "accept" | "tidy" | "reopen") => settle.mutate({ id, action });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("syncIssues.title")}>
+      <DialogHead title={t("syncIssues.title")} />
+      <DialogBody>
+        <p className="meta-txt">{t("syncIssues.lede")}</p>
+        {rows.length === 0 && <p className="meta-txt">{t("syncIssues.allSettled")}</p>}
+        <div className="inbox-list">
+          {rows.map((r) => (
+            <div className="inbox-row" key={`${r.itemId}:${r.code}`} data-testid="sync-issue">
+              <div className="inbox-main">
+                <button type="button" className="link-btn num" onClick={() => { onOpenIssue(r.itemId); onOpenChange(false); }}>{r.key}</button>
+                <span className="inbox-title">{r.title}</span>
+                <span className="meta-txt">{t(`syncIssues.code_${r.code}` as MessageKey)}</span>
+              </div>
+              <div className="inbox-actions">
+                {r.code === "done-unaccepted" ? (
+                  <>
+                    <button type="button" className="btn btn-primary" disabled={settle.isPending} onClick={() => act(r.itemId, "accept")}>{t("syncIssues.accept")}</button>
+                    <button type="button" className="btn btn-secondary" disabled={settle.isPending} onClick={() => act(r.itemId, "reopen")}>{t("syncIssues.reopen")}</button>
+                  </>
+                ) : r.code === "delivery-state" ? null : (
+                  <button type="button" className="btn btn-primary" disabled={settle.isPending} onClick={() => act(r.itemId, "tidy")}>{t("syncIssues.tidy")}</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {status.data?.detail && <p className="meta-txt" style={{ marginTop: "var(--space-4)" }}>{t("syncIssues.syncStatus", { detail: status.data.detail })}</p>}
+        <div className="row" style={{ marginTop: "var(--space-3)" }}>
+          <button type="button" className="btn btn-ghost" disabled={sync.isPending} onClick={() => sync.mutate()}>{sync.isPending ? t("syncIssues.syncing") : t("syncIssues.syncNow")}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => onOpenChange(false)}>{t("syncIssues.close")}</button>
+        </div>
+      </DialogBody>
+    </Dialog>
+  );
+}

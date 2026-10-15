@@ -188,6 +188,32 @@ export class Items extends Service {
     });
   }
 
+  /**
+   * A person settling evidence a sync left disagreeing with itself. "accept" puts an accepted
+   * review on the latest submission of the latest delivery (replacing a verdict on it, as a done
+   * ticket cannot sit under "changes requested"); "tidy" drops what points at nothing: reviews of
+   * a gone submission, all but the newest review of one, and file references that no longer resolve.
+   */
+  settleEvidence(projectId: string, id: string, action: "accept" | "tidy", baseVersion: number): Item {
+    const item = this.get(projectId, id);
+    if (!item || item.kind !== "ticket") throw new Error("Choose a ticket");
+    const evidence = item.evidence;
+    if (action === "accept") {
+      const delivery = this.deliveries.current(projectId, id);
+      const submission = evidence.submissions.filter(s => s.deliveryId === delivery?.id).at(-1);
+      if (!submission) throw new Error("There is no submission to accept");
+      const review = { id: randomUUID(), submissionId: submission.id, decision: "accepted" as const, comment: "", reviewedBy: "human" as const, reviewedAt: Date.now() };
+      return this.updateInternal(projectId, id, {}, "human", { baseVersion }, { ...evidence, reviews: [...evidence.reviews.filter(r => r.submissionId !== submission.id), review] });
+    }
+    const known = new Set(evidence.submissions.map(s => s.id));
+    const newest = new Map<string, number>();
+    evidence.reviews.forEach((r, index) => { if (known.has(r.submissionId)) newest.set(r.submissionId, index); });
+    const reviews = evidence.reviews.filter((r, index) => newest.get(r.submissionId) === index);
+    const outputs = new Map(evidence.resources.filter(r => r.role === "output").map(r => [r.id, r]));
+    const submissions = evidence.submissions.map(s => ({ ...s, artifactIds: s.artifactIds.filter(artifact => outputs.get(artifact)?.deliveryId === s.deliveryId) }));
+    return this.updateInternal(projectId, id, {}, "human", { baseVersion }, { ...evidence, submissions, reviews });
+  }
+
   reviewDelivery(projectId: string, id: string, input: z.input<typeof reviewDeliverySchema>, baseVersion: number): Item {
     const args = reviewDeliverySchema.parse(input);
     const item = this.openTicket(projectId, id);

@@ -14,7 +14,7 @@ import type {} from "./channels.js";
 import { GitFolder, GitMissingError, cleanRemote, gitRunner, type Git, type GitCredential } from "./git.js";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
-import { CORE_RULES, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
+import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
 import { Restorer, fetchProject, type Adoption, type RestoreEntry, type RestoreSummary } from "./restore.js";
 import {
   ARTIFACT_DIR,
@@ -40,6 +40,7 @@ import {
   HubUnconfiguredError,
   SharedCheckoutError,
   UnknownProviderError,
+  type AttentionView,
   type ConnectionState,
   type GitOrigin,
   type RemoteVisibility,
@@ -196,6 +197,7 @@ export class Storage extends Service {
       ctx.ipc.handle("storage.providers", () => ctx.storage.describe());
       ctx.ipc.handle("storage.info", (projectId) => ctx.storage.info(projectId));
       ctx.ipc.handle("storage.status", (projectId) => ctx.storage.statusFor(projectId));
+      ctx.ipc.handle("storage.attention", (projectId) => ctx.storage.attentionViews(projectId));
       ctx.ipc.handle("storage.setFolder", (projectId, dir) => ctx.storage.setFolder(projectId, dir));
       ctx.ipc.handle("storage.setAutoCommit", (projectId, on) => ctx.storage.setAutoCommit(projectId, on));
       ctx.ipc.handle("storage.setExports", (projectId, namespaces) => ctx.storage.setExports(projectId, namespaces));
@@ -1038,9 +1040,28 @@ export class Storage extends Service {
     this.noteAttention(projectId, result.attention);
   }
 
-  /** What the last merge left for a person to settle; empty once a later merge finds none. */
+  /** What the last merge left for a person to settle, minus what has been settled since. */
   attention(projectId: string): Attention[] {
-    return this.attentionByProject.get(projectId) ?? [];
+    const noted = this.attentionByProject.get(projectId);
+    if (!noted?.length || !this.ctx.db.has(projectId)) return [];
+    const db = this.db(projectId);
+    const ids = [...new Set(noted.map((n) => n.entityId))];
+    const marks = ids.map(() => "?").join(",");
+    const items = db.prepare(`SELECT * FROM items WHERE id IN (${marks})`).all(...ids) as Record<string, unknown>[];
+    const deliveries = db.prepare(`SELECT * FROM deliveries WHERE item_id IN (${marks})`).all(...ids) as Record<string, unknown>[];
+    const now = evidenceAttention(items, deliveries);
+    return noted.filter((n) => now.some((c) => c.entityId === n.entityId && c.code === n.code));
+  }
+
+  attentionViews(projectId: string): AttentionView[] {
+    const list = this.attention(projectId);
+    if (!list.length) return [];
+    const db = this.db(projectId);
+    const prefix = (db.prepare("SELECT key_prefix FROM projects LIMIT 1").get() as { key_prefix: string } | undefined)?.key_prefix ?? "";
+    return list.flatMap((n) => {
+      const row = db.prepare("SELECT key_num, title FROM items WHERE id = ?").get(n.entityId) as { key_num: number; title: string } | undefined;
+      return row ? [{ itemId: n.entityId, key: `${prefix}-${row.key_num}`, title: row.title, code: n.code }] : [];
+    });
   }
 
   private noteAttention(projectId: string, notes: Attention[]): void {
@@ -1050,6 +1071,7 @@ export class Storage extends Service {
     else this.attentionByProject.delete(projectId);
     for (const n of notes) this.home.logger.warn(`storage: ${projectId}: merged with delivery evidence to settle for ${n.entityId} (${n.code})`);
     this.home.emit("storage/attention", projectId, notes);
+    this.home.get("ipc")?.send("storage.attentionChanged", projectId);
   }
 
   private toMergeState(state: ProjectState): MergeState {

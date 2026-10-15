@@ -13,6 +13,8 @@ declare module "@tomradex/ipc" {
     "items.addResource": (projectId: string, id: string, input: z.input<typeof addResourceSchema>) => Item;
     "items.submitDelivery": (projectId: string, id: string, input: z.input<typeof submitDeliverySchema>) => Item;
     "items.reviewDelivery": (projectId: string, id: string, input: z.input<typeof reviewDeliverySchema>, baseVersion: number) => Item;
+    /** Settle delivery evidence a sync left inconsistent: accept the latest submission, or drop dangling references. */
+    "items.settleEvidence": (projectId: string, id: string, action: "accept" | "tidy", baseVersion: number) => Item;
     "items.list": (filter?: ListItemsFilter) => Item[];
     "items.query": (query: ItemQuery) => Item[];
     "items.get": (projectId: string, id: string) => Item | null;
@@ -52,6 +54,7 @@ export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("items.addResource", (projectId, id, input) => ctx.items.addResource(projectId, id, input, "human"));
   ctx.ipc.handle("items.submitDelivery", (projectId, id, input) => ctx.items.submitDelivery(projectId, id, input, "human"));
   ctx.ipc.handle("items.reviewDelivery", (projectId, id, input, baseVersion) => ctx.items.reviewDelivery(projectId, id, input, baseVersion));
+  ctx.ipc.handle("items.settleEvidence", (projectId, id, action, baseVersion) => ctx.items.settleEvidence(projectId, id, action, baseVersion));
   ctx.ipc.handle("items.list", (filter = {}) => withDerived(ctx, ctx.items.list(filter)));
   ctx.ipc.handle("items.query", (query) => withDerived(ctx, ctx.items.query(query)));
   ctx.ipc.handle("items.get", (projectId, id) => one(ctx.items.get(projectId, id)));
