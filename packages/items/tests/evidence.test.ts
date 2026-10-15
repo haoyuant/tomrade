@@ -79,3 +79,22 @@ it("settles evidence a sync left inconsistent: accept the latest submission, or 
   expect(tidy.evidence.submissions[0].artifactIds).toEqual([]);
   await ctx.fiber.dispose();
 });
+
+it("lets a verdict be changed: changes requested can still be accepted, and a done ticket taken back", async () => {
+  const { ctx, items, project, board } = await fresh();
+  const item = items.create({ projectId: project.id, boardId: board.id, title: "Build it", workType: "coding", by: "human" });
+  let updated = items.submitDelivery(project.id, item.id, { report: "Ready" }, "human");
+  const submission = updated.evidence.submissions[0];
+  updated = items.reviewDelivery(project.id, item.id, { submissionId: submission.id, decision: "changes-requested" }, updated.version);
+  expect(updated.status).toBe("doing");
+  expect(() => items.reviewDelivery(project.id, item.id, { submissionId: submission.id, decision: "changes-requested" }, updated.version)).toThrow("already has that verdict");
+
+  updated = items.reviewDelivery(project.id, item.id, { submissionId: submission.id, decision: "accepted", comment: "Fine after all" }, updated.version);
+  expect(updated.status).toBe("done");
+  expect(updated.evidence.reviews.map(r => r.decision)).toEqual(["accepted"]);
+
+  updated = items.reviewDelivery(project.id, item.id, { submissionId: submission.id, decision: "changes-requested" }, updated.version);
+  expect(updated.status).toBe("doing");
+  expect(updated.evidence.reviews.map(r => r.decision)).toEqual(["changes-requested"]);
+  await ctx.fiber.dispose();
+});
