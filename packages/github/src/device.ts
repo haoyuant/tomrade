@@ -55,8 +55,10 @@ export class DeviceFlow {
         body: JSON.stringify({ client_id: this.clientId, ...body }),
         signal: AbortSignal.timeout(20_000)
       });
-    } catch {
-      throw new OAuthError("Could not reach GitHub", "http");
+    } catch (error) {
+      // "Could not reach GitHub" alone cannot be told apart from a blocked proxy, a DNS failure or a slow link.
+      const why = error instanceof Error ? (error.name === "TimeoutError" ? "timed out" : String((error.cause as { code?: string } | undefined)?.code ?? error.message)) : "unknown";
+      throw new OAuthError(`Could not reach GitHub (${why})`, "http");
     }
     if (!res.ok) throw new OAuthError(`GitHub answered ${res.status}`, "http");
     return (await res.json()) as Record<string, unknown>;

@@ -22,6 +22,18 @@ describe("remote reachability", () => {
     }
   );
 
+  it("tells a credential helper that cannot run from a network failure, and keeps its line as the detail", () => {
+    const stderr = [
+      "/Users/me/Library/Application Support/@tomrade/desktop/bin/tomrade-credential: line 2: /gone/Electron: No such file or directory",
+      "/Users/me/Library/Application Support/@tomrade/desktop/bin/tomrade-credential: line 2: exec: /gone/Electron: cannot execute: No such file or directory",
+      "fatal: unable to access 'https://github.com/acme/app.git/': The requested URL returned error: 403"
+    ].join("\n");
+    expect(classifyRemoteFailure(stderr)).toBe("helper");
+    expect(classifyRemoteFailure(remoteFailureDetail(stderr) ?? "")).toBe("helper");
+    expect(remoteFailureMessage(stderr)).toContain("credential helper");
+    expect(classifyRemoteFailure("fatal: unable to access 'https://github.com/acme/app.git/': Failed to connect")).toBe("network");
+  });
+
   it("keeps unknown errors separate and explains private repository visibility", () => {
     expect(classifyRemoteFailure("fatal: the remote end hung up unexpectedly")).toBe("unknown");
     expect(remoteFailureMessage("remote: Repository not found.")).toContain("private repository");

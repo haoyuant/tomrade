@@ -12,6 +12,7 @@ import { common } from "./common";
 import { deleteIssueDialog } from "./deleteIssueDialog";
 import { syncIssues } from "./syncIssues";
 import { doneGuard } from "./doneGuard";
+import { repoIssues } from "./repoIssues";
 import { doctor } from "./doctor";
 import { destination } from "./destination";
 import { detailPane } from "./detailPane";
@@ -73,6 +74,7 @@ export const en = {
   deleteIssueDialog: deleteIssueDialog.en,
   syncIssues: syncIssues.en,
   doneGuard: doneGuard.en,
+  repoIssues: repoIssues.en,
   doctor: doctor.en,
   newIssueDialog: newIssueDialog.en,
   viewSettingsDialog: viewSettingsDialog.en,
@@ -136,6 +138,7 @@ export const zh: typeof en = {
   deleteIssueDialog: deleteIssueDialog.zh,
   syncIssues: syncIssues.zh,
   doneGuard: doneGuard.zh,
+  repoIssues: repoIssues.zh,
   doctor: doctor.zh,
   newIssueDialog: newIssueDialog.zh,
   viewSettingsDialog: viewSettingsDialog.zh,

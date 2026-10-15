@@ -52,6 +52,19 @@ export function useGithubCredential(projectId: string, remote: string) {
   });
 }
 
+/** Check origin again from this checkout; a credential helper that cannot run is repaired first. */
+export function useRecheckRemote(projectId: string, remote: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (repoId: string) => invoke("codeLink.recheckRemote", projectId, repoId),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
+      void qc.invalidateQueries({ queryKey: codeLinkKeys.remoteIdentity(remote) });
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
 export const useProposals = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: codeLinkKeys.proposals(projectId, itemId), queryFn: () => invoke("codeLink.proposals", projectId, itemId) });
 
