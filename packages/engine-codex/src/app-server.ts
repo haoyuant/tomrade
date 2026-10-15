@@ -5,6 +5,7 @@ import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent
 import { codexMediaInput, describeFailure, publishNativeImage } from "@tomradex/agent";
 import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import { CodexOptions, codexModel } from "./legacy.js";
+import { conversationRecap, lostSession } from "./recap.js";
 import { codexRetry, codexStep } from "./steps.js";
 
 type Json = Record<string, any>;
@@ -116,6 +117,7 @@ export class CodexRuntime implements Runtime {
     let finish!: (value: TurnResult) => void;
     const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
     const seen = new Set<string>();
+    let recap = "";
     // Steps Codex is running itself, until they complete.
     const started = new Map<string, Json>();
     // Codex says each failed attempt before it gives up; the last few explain the failure.
@@ -224,12 +226,21 @@ export class CodexRuntime implements Runtime {
           : input.permissionMode === "workspace" ? { approvalPolicy: "on-request", sandbox: "workspace-write" }
           : input.permissionMode === "read-only" ? { approvalPolicy: "on-request", sandbox: "read-only" }
           : { approvalPolicy: local?.approval_policy ?? "on-request", sandbox: local?.sandbox_mode ?? "workspace-write" };
-        const response = await this.request(io.resume ? "thread/resume" : "thread/start", {
-          ...(io.resume ? { threadId: io.resume } : {}),
+        const thread = {
           cwd: this.cwd, model: codexModel(options.model),
           ...(this.code ? { ...policy, approvalsReviewer: "user" } : { approvalPolicy: "never", sandbox: "read-only" }),
           developerInstructions: sessionSystem(input, "Codex")
-        });
+        };
+        let response: Json;
+        try {
+          response = await this.request(io.resume ? "thread/resume" : "thread/start", { ...(io.resume ? { threadId: io.resume } : {}), ...thread });
+        } catch (error) {
+          // Its record is gone (CODEX_HOME changed or was cleared): carry the conversation into a new
+          // session rather than failing every message on the same dead id.
+          if (!io.resume || !lostSession(error)) throw error;
+          response = await this.request("thread/start", thread);
+          recap = conversationRecap(input.messages);
+        }
         this.session = response.thread.id;
         this.indexDigest = input.filesIndex?.digest ?? null;
         metrics.providerModel = response.model;
@@ -237,7 +248,7 @@ export class CodexRuntime implements Runtime {
       metrics.readyMs = performance.now() - start;
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       const response = await this.request("turn/start", { threadId: this.session, model: codexModel(options.model), effort: options.effort,
-        input: codexMediaInput(input, io, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest })) });
+        input: codexMediaInput(input, io, [recap, turnPrompt(input, io, { staleIndex: !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest })].filter(Boolean).join("\n\n")) });
       turnId ??= response.turn.id;
       if (cancelled) abort();
       const result = await done;

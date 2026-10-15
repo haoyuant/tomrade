@@ -77,6 +77,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
           </p>
         )}
         {status === "sign-in" && <p>{t("localCli.signInDetail", { title: engine.title })}</p>}
+        {status === "sign-in" && engine.configDir && <p>{tx("localCli.signInConfigDir", { path: <span className="mono">{engine.configDir}</span> })}</p>}
         {status === "missing" && <p>{t("localCli.missingDetail", { name: cli.name })}</p>}
         {status === "wsl" && <p className="cli-warn">{t("localCli.wslDetail", { name: cli.name, path: cli.wsl ?? "" })}</p>}
         {status === "broken" && (

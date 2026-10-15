@@ -45,6 +45,7 @@ export function cliDiagnostics(engine: EngineView, cli: LocalCliStatus, appVersi
     ...(cli.manual ? [`Chosen path: ${cli.manual.path} — ${cli.manual.error}`] : []),
     ...(cli.wsl ? [`Found in WSL: ${cli.wsl}`] : []),
     ...(!engine.ok && engine.reason ? [`Reason: ${engine.reason}`] : []),
+    ...(engine.configDir ? [`Config folder: ${engine.configDir}`] : []),
     "",
     "Tried:",
     ...(cli.attempts.length ? cli.attempts.map((a) => `  [${a.source}] ${a.path} — ${a.ok ? "ok" : "failed"}: ${a.detail}`) : ["  (no candidate files found)"]),

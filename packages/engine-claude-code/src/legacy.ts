@@ -75,7 +75,8 @@ export function createClaudeCodeCliEngine(ctx: Context): Engine {
       title: "Claude Code",
       cli,
       install: "install Claude Code and sign in",
-      signIn: { args: ["auth", "status"], says: claudeSignedIn, reason: "Claude Code is not signed in — run `claude` in a terminal and log in" }
+      signIn: { args: ["auth", "status"], says: claudeSignedIn, reason: "Claude Code is not signed in — run `claude` in a terminal and log in" },
+      configDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
     }),
     checkCli: (file) => cli.check(file),
     setup: {

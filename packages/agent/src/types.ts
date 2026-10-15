@@ -398,6 +398,8 @@ export interface EngineAvailability {
   cli?: LocalCliStatus;
   /** What it can take on right now, when only part of it is ready; absent means all its capabilities. */
   capabilities?: EngineCapability[];
+  /** The folder a local CLI reads its sign-in from, when it is not signed in (CODEX_HOME, CLAUDE_CONFIG_DIR). */
+  configDir?: string;
 }
 
 /**
@@ -529,6 +531,7 @@ export interface EngineView {
   reason?: string;
   need?: EngineNeed;
   cli?: LocalCliStatus;
+  configDir?: string;
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;

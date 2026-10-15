@@ -6,7 +6,9 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import { isSuspended, type Engine, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { publishNativeImage } from "@tomradex/agent";
-import { buildSystem, localAvailability, localCli, promptOf, runJsonl } from "@tomradex/engine-claude-code";
+import { buildSystem, chosenCommand, localAvailability, localCli, promptOf, runJsonl } from "@tomradex/engine-claude-code";
+import { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
+import { conversationRecap, lostSession } from "./recap.js";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 
@@ -50,8 +52,18 @@ export function codexSignedIn(output: string): boolean | null {
   return /logged in/i.test(output) ? true : null;
 }
 
+/** Codex can run when its provider needs no OpenAI sign-in or it has one; null when it cannot say. */
+export function codexCanRun(account: CodexAccount | null, env: NodeJS.ProcessEnv = process.env): boolean | null {
+  if (!account) return null;
+  // `codex exec` also takes a key from CODEX_API_KEY, which account/read does not count.
+  return !account.requiresOpenaiAuth || account.signedIn || (env.CODEX_API_KEY ? null : false);
+}
+
 export function createCodexCliEngine(ctx: Context): Engine {
   const cli = localCli("codex");
+  // Models Codex listed, per CLI and CODEX_HOME, so switching either never shows the other's.
+  const models = new Map<string, CodexAccount["models"]>();
+  const modelsKey = (manual: string | undefined) => `${manual ?? ""}\0${codexHome()}`;
   return {
     id: "codex",
     title: "Codex",
@@ -62,7 +74,7 @@ export function createCodexCliEngine(ctx: Context): Engine {
       // Codex CLI resolves its authenticated account's current default. Model
       // ids change and differ between ChatGPT and API accounts, so custom ids
       // remain possible without shipping presets that become invalid.
-      { key: "model", title: "Model", choices: [], freeText: true },
+      { key: "model", title: "Model", choices: models.get(modelsKey(cli.manualOf(chosenCommand(ctx, "codex")))) ?? [], freeText: true },
       { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
     ],
     available: localAvailability(ctx, {
@@ -70,7 +82,20 @@ export function createCodexCliEngine(ctx: Context): Engine {
       title: "Codex",
       cli,
       install: "install OpenAI Codex and sign in",
-      signIn: { args: ["login", "status"], says: codexSignedIn, reason: "Codex is not signed in — run `codex login` in a terminal" }
+      signIn: {
+        async ask(manual) {
+          const key = modelsKey(manual);
+          const account = await readCodexAccount(await cli.launch(manual));
+          if (account) models.set(key, account.models);
+          const verdict = codexCanRun(account);
+          if (account) return verdict;
+          // An older Codex without account/read: its login status is all there is to go on.
+          const { stdout, stderr } = await cli.run(manual, ["login", "status"], 8000);
+          return codexSignedIn(`${stdout}\n${stderr}`);
+        },
+        reason: "Codex is not signed in and its model provider needs an OpenAI account — run `codex login` in a terminal"
+      },
+      configDir: () => codexHome()
     }),
     checkCli: (file) => cli.check(file),
     setup: { install: ["npm install -g @openai/codex"], signIn: "codex login", docs: "https://github.com/openai/codex", suggested: true },
@@ -118,20 +143,24 @@ export function createCodexCliEngine(ctx: Context): Engine {
       ];
       // Resume has a smaller option set than the initial exec: its session
       // already remembers the working root and sandbox, and rejects -s/-C.
-      const args = io.resume
-        ? ["exec", "resume", ...shared, io.resume, prompt]
-        : ["exec", ...shared, "-s", input.purpose !== "backlog" ? sandbox : "read-only", "-C", input.cwd ?? tmp, prompt];
-      if (input.input.kind === "text") for (const ref of input.input.attachments ?? []) {
-        if (!io.media) throw new Error("Media input is unavailable");
-        args.splice(args.length - 1, 0, "--image", io.media.path(ref.id));
-      }
+      const argsFor = (resume: string | undefined, text: string) => {
+        const args = resume
+          ? ["exec", "resume", ...shared, resume, text]
+          : ["exec", ...shared, "-s", input.purpose !== "backlog" ? sandbox : "read-only", "-C", input.cwd ?? tmp, text];
+        if (input.input.kind === "text") for (const ref of input.input.attachments ?? []) {
+          if (!io.media) throw new Error("Media input is unavailable");
+          args.splice(args.length - 1, 0, "--image", io.media.path(ref.id));
+        }
+        return args;
+      };
 
       const usage = { inputTokens: 0, outputTokens: 0 };
       const metrics: import("@tomradex/agent").TurnMetrics = { transport: "cli", runtime: "cold" };
       let session: string | undefined;
       let failure: string | null = null;
 
-      try {
+      const once = async (args: string[]) => {
+        failure = null;
         const run = runJsonl(await cli.launch(options.command), args, {
           cwd: input.cwd ?? tmp,
           env: { ...process.env, ...input.env, [TOKEN_ENV]: token },
@@ -149,7 +178,16 @@ export function createCodexCliEngine(ctx: Context): Engine {
             } else if (line.type === "error") failure = line.message ?? "codex reported an error";
           }
         });
-        const { code, stderr } = await run.done;
+        return run.done;
+      };
+
+      try {
+        let { code, stderr } = await once(argsFor(io.resume, prompt));
+        if (io.resume && !io.signal.aborted && lostSession(`${failure ?? ""}\n${stderr}`)) {
+          // The session's record is not under this CODEX_HOME: start over with the conversation carried in.
+          session = undefined;
+          ({ code, stderr } = await once(argsFor(undefined, [conversationRecap(input.messages), prompt].filter(Boolean).join("\n\n"))));
+        }
         if (io.signal.aborted) return { stop: "cancelled", usage, resume: session };
         if (failure) return { stop: "error", error: failure, usage, resume: session };
         if (code !== 0) return { stop: "error", error: `codex exited with ${code}: ${stderr.slice(-400)}`, usage, resume: session };

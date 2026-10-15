@@ -624,7 +624,7 @@ export class Agent extends Service {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(engine.setup ? { setup: engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
         }
