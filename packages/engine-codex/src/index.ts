@@ -1,15 +1,13 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
 import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/llm";
+import { codexHome } from "./account.js";
 import { CodexOptions, createCodexCliEngine, migrateLegacyModel } from "./legacy.js";
 import { CodexRuntime } from "./app-server.js";
 import { codexLentModel } from "./lend.js";
-
-const codexHome = () => process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
 
 export function createCodexEngine(ctx: Context): Engine {
   const baseline = createCodexCliEngine(ctx);
@@ -57,5 +55,6 @@ export default {
     ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(codexLentModel(ctx, async () => (await engine.available()).ok))));
   }
 };
-export { CodexOptions, codexModel, codexSignedIn, createCodexCliEngine } from "./legacy.js";
+export { CodexOptions, codexCanRun, codexModel, codexSignedIn, createCodexCliEngine } from "./legacy.js";
+export { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 export { codexLentModel } from "./lend.js";

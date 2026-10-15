@@ -17,6 +17,7 @@ export const localCli = {
     brokenHint: "Reinstall it, or choose a copy that works under CLI path.",
     wslDetail: "{{name}} is installed only inside WSL ({{path}}). Tomrade on Windows cannot run a CLI from WSL — install it on Windows as well, or choose a Windows copy under CLI path.",
     signInDetail: "{{title}} runs, but is not signed in yet.",
+    signInConfigDir: "It reads its sign-in and settings from {{path}} — sign in there, or point it at the folder your terminal uses.",
     manualFallback: "The path you chose ({{path}}) no longer runs: {{error}}. Using the one found automatically instead.",
     manualFailed: "The path you chose ({{path}}) does not run: {{error}}.",
 
@@ -71,6 +72,7 @@ export const localCli = {
     brokenHint: "可以重新安装，或在“CLI 路径”里指定另一份能运行的 CLI。",
     wslDetail: "{{name}} 只安装在 WSL 中（{{path}}）。Windows 版 Tomrade 无法直接使用 WSL 中的 CLI——请在 Windows 侧也安装一份，或在“CLI 路径”里指定 Windows 侧的路径。",
     signInDetail: "{{title}} 可以运行，但还没有登录。",
+    signInConfigDir: "它从 {{path}} 读取登录信息和设置——在这个目录下登录，或让它改用你终端里用的那个目录。",
     manualFallback: "你指定的路径（{{path}}）已无法运行：{{error}}。已改用自动检测到的 CLI。",
     manualFailed: "你指定的路径（{{path}}）无法运行：{{error}}。",
 
