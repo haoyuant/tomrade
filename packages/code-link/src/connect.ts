@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { HOOK_EVENTS } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
 
@@ -16,6 +17,42 @@ export interface ConnectInput {
 const SECTION_START = "## Tomrade";
 const CODEX_START = "# BEGIN TOMRADE MCP";
 const CODEX_END = "# END TOMRADE MCP";
+export const CODEX_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "SessionEnd"] as const;
+
+export function hookCommand(eventUrl: string, agent?: "codex"): string {
+  const url = eventUrl.replace(/'/g, "'\\''");
+  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${agent ? " -H 'X-Tomrade-Agent: codex'" : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
+}
+
+/** Keep comments and unrelated tables; inline-array hooks need TOML reserialization to append safely. */
+function withCodexHooks(existing: string, eventUrl: string): string {
+  const start = "# BEGIN TOMRADE HOOKS";
+  const end = "# END TOMRADE HOOKS";
+  const command = hookCommand(eventUrl, "codex");
+  const block = [start, ...CODEX_HOOK_EVENTS.flatMap((event) => [
+    `[[hooks.${event}]]`, `[[hooks.${event}.hooks]]`, 'type = "command"', `command = ${JSON.stringify(command)}`, "timeout = 3", ""
+  ]), end].join("\n");
+  const clean = existing.replace(/# BEGIN TOMRADE HOOKS[\s\S]*?# END TOMRADE HOOKS\n?/, "").trimEnd();
+  const candidate = `${clean}\n\n${block}\n`;
+  try {
+    if (clean.includes("X-Tomrade-Agent: codex")) throw new Error("update serialized hooks");
+    parseToml(candidate);
+    return candidate;
+  } catch {
+    // Array literals cannot be extended with array-of-table syntax.
+    const config = parseToml(clean);
+    const hooks = (config.hooks ?? {}) as Record<string, unknown>;
+    for (const event of CODEX_HOOK_EVENTS) {
+      const entries = Array.isArray(hooks[event]) ? hooks[event] as { hooks?: { type?: string; command?: string; timeout?: number }[] }[] : [];
+      hooks[event] = entries.flatMap((entry) => {
+        if (!Array.isArray(entry.hooks)) return [entry];
+        const kept = entry.hooks.filter((hook) => !hook.command?.includes("X-Tomrade-Agent: codex"));
+        return kept.length ? [{ ...entry, hooks: kept }] : [];
+      }).concat([{ hooks: [{ type: "command", command, timeout: 3 }] }]);
+    }
+    return stringifyToml({ ...config, hooks });
+  }
+}
 
 /**
  * The CLAUDE.md section that tells any coding agent how this repository and
@@ -29,6 +66,9 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     SECTION_START,
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code, \`.codex/config.toml\` for Codex).`,
+    "Claude Code and Codex report session lifecycle through repository hooks. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.",
+    "Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Both get Tomrade tools but no automatic session tracking from this setup. Call `claim_ticket` to record ticket work; use `note_progress` only when its result says `tracking.tracked` is true.",
+    `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
     ...(options.fetchRules ? ["Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules` and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
     "",
@@ -38,7 +78,7 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     "- Implement only its stated outcome and acceptance criteria; neighboring tickets are context, not extra work. Work you find for another ticket stays untouched — mention it when you sync.",
     `- Branch names follow \`${input.branchTemplate}\` (for example \`${example.toLowerCase()}/short-slug\`); every commit message names the key (\`${example}: …\`).`,
     "- Before pushing, inspect the complete diff against the default branch and remove models, screens, flows, APIs, refactors, and cleanup that the ticket does not require. Then call `link_code` with the pull request URL and `scopeChecked: true`. Never mark a ticket done yourself — merging does that.",
-    "- Call `note_progress` with one line at milestones; it is what the ticket shows while you work.",
+    "- When `claim_ticket` returns `tracking.tracked: true`, call `note_progress` with one line at milestones; otherwise follow its connection instructions first.",
     "",
     "### Syncing back",
     "",
@@ -112,7 +152,8 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
   const changed: string[] = [];
 
   const mcpFile = path.join(root, ".mcp.json");
-  const mcp = readJson(mcpFile) ?? {};
+  const mcp = readJson(mcpFile);
+  if (!mcp) throw new Error("Cannot update .mcp.json: expected a JSON object");
   const servers = (mcp.mcpServers as Record<string, unknown> | undefined) ?? {};
   const next = { ...mcp, mcpServers: { ...servers, tomrade: { type: "http", url: input.mcpUrl } } };
   const nextText = JSON.stringify(next, null, 2) + "\n";
@@ -123,11 +164,26 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
 
   const codexFile = path.join(root, ".codex", "config.toml");
   const codexExisting = fs.existsSync(codexFile) ? fs.readFileSync(codexFile, "utf8") : "";
-  const codexText = withCodexMcp(codexExisting, input.mcpUrl);
+  const codexText = withCodexHooks(withCodexMcp(codexExisting, input.mcpUrl), input.eventUrl);
   if (codexText !== codexExisting) {
     fs.mkdirSync(path.dirname(codexFile), { recursive: true });
     fs.writeFileSync(codexFile, codexText);
     changed.push(".codex/config.toml");
+  }
+
+  for (const [name, server] of [
+    [".cursor/mcp.json", { url: input.mcpUrl }],
+    [".gemini/settings.json", { httpUrl: input.mcpUrl }]
+  ] as const) {
+    const file = path.join(root, name);
+    const config = readJson(file);
+    if (!config) throw new Error(`Cannot update ${name}: expected a JSON object`);
+    const text = JSON.stringify({ ...config, mcpServers: { ...(config.mcpServers as Record<string, unknown> ?? {}), tomrade: server } }, null, 2) + "\n";
+    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== text) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, text);
+      changed.push(name);
+    }
   }
 
   for (const name of ["CLAUDE.md", "AGENTS.md"]) {
@@ -150,9 +206,10 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
 
   const settingsFile = path.join(root, ".claude", "settings.json");
   const settings = readJson(settingsFile);
-  if (settings) {
+  if (!settings) throw new Error("Cannot update .claude/settings.json: expected a JSON object");
+  {
     const hooks = { ...((settings.hooks as Record<string, unknown[]> | undefined) ?? {}) };
-    const command = `curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- '${input.eventUrl}' >/dev/null 2>&1 || true`;
+    const command = hookCommand(input.eventUrl);
     let touched = false;
     for (const event of HOOK_EVENTS) {
       const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];

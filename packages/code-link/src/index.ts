@@ -38,4 +38,4 @@ export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt, languageLine } from "./pr
 export { PLAYBOOKS } from "./playbooks.js";
 export { CodeLink as default } from "./service.js";
 
-export type { ConnectionView } from "./connection.js";
+export type { ConnectionView, AgentConnectionView } from "./connection.js";

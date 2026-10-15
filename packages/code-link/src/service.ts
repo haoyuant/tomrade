@@ -21,7 +21,7 @@ import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch } from "./keys.js";
-import { inspectConnection, type ConnectionView } from "./connection.js";
+import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
 import { writeConnectFiles } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -96,6 +96,7 @@ export interface MergeCheckView {
 }
 
 export interface ConnectResult {
+  agents: AgentConnectionView[];
   branch: string;
   /** Files written or changed, relative to the repository root. */
   files: string[];
@@ -781,7 +782,7 @@ export class CodeLink extends Service {
     const mcp = this.ctx.get("mcp");
     const mcpUrl = mcp?.urlFor(projectId) ?? null;
     const branch = "tomrade/connect";
-    const base = { mcpUrl, configuredUrl: null, instance: mcp?.badge().kind ?? "dev", branch, url: null } as const;
+    const base = { mcpUrl, configuredUrl: null, instance: mcp?.badge().kind ?? "dev", branch, url: null, agents: [] as AgentConnectionView[] } as const;
     if (!mcpUrl || !mcp?.eventUrl) return { ...base, state: "unavailable" };
     const cwd = this.ctx.repos.checkout(repo.remote).checkout;
     if (!cwd || !fs.existsSync(cwd)) return { ...base, state: "no-checkout" };
@@ -794,14 +795,14 @@ export class CodeLink extends Service {
     const ref = hasLocal && (!hasRemote || (await this.git(["merge-base", "--is-ancestor", remote, local], { cwd, ok: true })).code === 0) ? local : remote;
     const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl);
     const configuredUrl = current.configuredUrl;
-    if (current.connected) return { ...base, configuredUrl, state: "connected" };
+    if (current.connected) return { ...base, agents: current.agents, configuredUrl, state: "connected" };
     for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
       if (!(await exists(pendingRef))) continue;
       if ((await this.git(["merge-base", "--is-ancestor", pendingRef, ref], { cwd, ok: true })).code === 0) continue;
       const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl);
-      if (pending.connected) return { ...base, configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
+      if (pending.connected) return { ...base, agents: pending.agents, configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
     }
-    return { ...base, configuredUrl, state: configuredUrl && configuredUrl !== mcpUrl ? "other-instance" : "unconnected" };
+    return { ...base, agents: current.agents, configuredUrl, state: configuredUrl && configuredUrl !== mcpUrl ? "other-instance" : "unconnected" };
   }
 
   /**
@@ -821,8 +822,9 @@ export class CodeLink extends Service {
     const branch = "tomrade/connect";
     const w = this.words();
     await new GitFolder(this.git, placement.checkout).fetch(repo.defaultBranch);
-    if ((await this.connection(projectId, repoId)).state === "connected") {
-      return { branch, files: [], committed: false, pushed: false, url: null, message: w.connected };
+    const connection = await this.connection(projectId, repoId);
+    if (connection.state === "connected") {
+      return { branch, agents: connection.agents, files: [], committed: false, pushed: false, url: null, message: w.connected };
     }
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-connect-"));
     const worktree = path.join(temporary, "repo");
@@ -848,19 +850,20 @@ export class CodeLink extends Service {
         prefix: this.prefixOf(projectId),
         branchTemplate: state?.branchTemplate ?? "{key}/{slug}"
       });
+      const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!).agents;
       const folder = new GitFolder(this.git, worktree);
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code and Codex discover Tomrade, agent instructions describe the ticket conventions, and Claude hooks report session lifecycle back."));
 
-      if (!(await folder.remoteUrl())) return { branch, files, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
-      if (state && !state.agentPush) return { branch, files, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
+      if (!(await folder.remoteUrl())) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
+      if (state && !state.agentPush) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
       const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
-      if (!pushed) return { branch, files, committed, pushed: false, url: null, message: w.connectPushFailed(branch) };
+      if (!pushed) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectPushFailed(branch) };
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
         const env = await this.ctx.github.environment(this.git, worktree);
         try {
-          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} so every coding agent working here reports to Tomrade.`], worktree, env)).trim().split("\n").pop() ?? null;
+          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} to connect agent tools and Claude/Codex lifecycle hooks. Review Codex hooks with /hooks after merging.`], worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
         } catch {
           try {
@@ -872,7 +875,7 @@ export class CodeLink extends Service {
       }
       url ??= compareUrl(repo.remote, repo.defaultBranch, branch);
       this.notify(projectId);
-      return { branch, files, committed, pushed, url, message: created ? w.connectOpened : w.connectPushed(branch) };
+      return { branch, agents, files, committed, pushed, url, message: created ? w.connectOpened : w.connectPushed(branch) };
     } finally {
       await this.git(["worktree", "remove", "--force", worktree], { cwd: placement.checkout, ok: true });
       fs.rmSync(temporary, { recursive: true, force: true });
@@ -1543,8 +1546,9 @@ export class CodeLink extends Service {
 
   /** A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's checkout. */
   private externalEvent(payload: unknown): void {
-    const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string };
-    if (!p.cwd) return;
+    const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string; tomrade_agent?: string };
+    if (!p.cwd || !p.session_id) return;
+    const agent = p.tomrade_agent === "codex" ? "codex" : "claude-code";
     const cwd = path.resolve(p.cwd);
     const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
     for (const [threadId, dir] of this.worktrees) {
@@ -1562,14 +1566,14 @@ export class CodeLink extends Service {
       for (const repo of this.ctx.repos.list(projectId)) {
         const checkout = this.ctx.repos.checkout(repo.remote).checkout;
         if (!checkout || !within(path.resolve(checkout))) continue;
-        const known = p.session_id ? this.store.sessions(projectId, { live: true }).find((s) => s.threadId === null && s.repoId === repo.id && s.externalId === p.session_id) : undefined;
+        const known = p.session_id ? this.store.sessions(projectId, { live: true }).find((s) => s.threadId === null && s.repoId === repo.id && s.agent === agent && s.externalId === p.session_id) : undefined;
         if (known) {
           this.sessions.event(projectId, known.id, payload);
           return;
         }
         // The end of a session never heard of is nothing to record.
         if (p.hook_event_name === "SessionEnd") return;
-        const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
+        const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent, threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
         this.sessions.event(projectId, created.id, payload);
         return;
       }

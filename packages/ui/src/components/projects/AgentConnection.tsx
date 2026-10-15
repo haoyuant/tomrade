@@ -31,6 +31,10 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
       <button type="button" className="btn btn-ghost" disabled={connection.isFetching} onClick={() => void connection.refetch()}>{t("repositories.connectionRefresh")}</button>
       {connection.error && <p role="alert" className="meta-txt">{connection.error.message}</p>}
       {connect.error && <p role="alert" className="meta-txt">{connect.error.message}</p>}
+      {(connect.data?.agents ?? view?.agents ?? []).map((agent) => <p className="meta-txt dense repo-agent-capability" key={agent.id} data-agent={agent.id}>
+        <strong>{agent.title}</strong> · {t(agent.tools ? "repositories.agentTools" : agent.instructions ? "repositories.agentInstructions" : "repositories.agentNotConfigured")} · {t(agent.tracking === "hooks" ? "repositories.agentHooks" : "repositories.agentNoTracking")}
+        {agent.reviewHooks && agent.tracking === "hooks" && <> · {t("repositories.agentReviewHooks")}</>}
+      </p>)}
       {connect.data && <p role="status" className="meta-txt repo-agent-result">{connect.data.message}</p>}
       {url && <button type="button" className="btn btn-ghost repo-agent-pr" onClick={() => openExternal(url)}>{t("repositories.connectionPr")}</button>}
     </div>

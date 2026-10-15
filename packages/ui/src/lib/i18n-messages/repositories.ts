@@ -1,5 +1,12 @@
 export const repositories = {
   en: {
+    agentTools: "MCP tools configured",
+    agentInstructions: "Instructions only",
+    agentNotConfigured: "Not configured",
+    agentHooks: "Session hooks configured",
+    agentNoTracking: "No automatic session tracking",
+    agentReviewHooks: "Trust the project and review /hooks in Codex; requires a hooks-capable version",
+
     "connection_unconnected": "Coding agents are not connected",
     "connection_connected": "Connected",
     "connection_pending": "Connection branch is waiting to be merged",
@@ -10,7 +17,7 @@ export const repositories = {
     "connectionPackaged": "Connects to the installed app",
     "connectionDevelopment": "Connects to the development build",
     "connectionElsewhere": "Current address: {{url}}",
-    "connectionFiles": "Creates a tomrade/connect branch / pull request with .mcp.json, Claude hooks in .claude/settings.json, a Tomrade section in CLAUDE.md / AGENTS.md and Codex configuration.",
+    "connectionFiles": "Creates a tomrade/connect branch / pull request with .mcp.json, Claude hooks in .claude/settings.json, a Tomrade section in CLAUDE.md / AGENTS.md Codex hooks/configuration, .cursor/mcp.json and .gemini/settings.json.",
     "connectionWorking": "Connecting…",
     "connectionAction": "Connect to coding agents",
     "connectionRetry": "Retry push / open pull request",
@@ -92,6 +99,13 @@ export const repositories = {
     tomradeAccountMissing: "This checkout uses Tomrade's GitHub account, which is not connected. Connect it under Storage."
   },
   zh: {
+    agentTools: "已配置 MCP 工具",
+    agentInstructions: "仅有说明文档",
+    agentNotConfigured: "未配置",
+    agentHooks: "已配置会话 hooks",
+    agentNoTracking: "无自动会话跟踪",
+    agentReviewHooks: "请在支持 hooks 的 Codex 中信任项目并通过 /hooks 审阅",
+
     "connection_unconnected": "尚未连接编码智能体",
     "connection_connected": "已连接",
     "connection_pending": "连接分支待合并",
@@ -102,7 +116,7 @@ export const repositories = {
     "connectionPackaged": "连接到正式版",
     "connectionDevelopment": "连接到开发版",
     "connectionElsewhere": "当前连接地址：{{url}}",
-    "connectionFiles": "通过 tomrade/connect 分支 / PR 写入 .mcp.json、.claude/settings.json 的 hooks、CLAUDE.md / AGENTS.md 的 Tomrade 一节及 Codex 配置。",
+    "connectionFiles": "通过 tomrade/connect 分支 / PR 写入 .mcp.json、.claude/settings.json 的 hooks、CLAUDE.md / AGENTS.md 的 Tomrade 一节及 Codex hooks / 配置、.cursor/mcp.json、.gemini/settings.json。",
     "connectionWorking": "正在连接…",
     "connectionAction": "连接到编码智能体",
     "connectionRetry": "重试推送 / 发起拉取请求",

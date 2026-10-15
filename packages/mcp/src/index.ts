@@ -253,7 +253,7 @@ export class Mcp extends Service {
     app.post("/sessions/event", (req, res) => {
       for (const listener of this.eventListeners) {
         try {
-          listener(req.body);
+          listener(req.get("X-Tomrade-Agent") === "codex" ? { ...req.body, tomrade_agent: "codex" } : req.body);
         } catch {
           // one listener's failure is not another's
         }

@@ -4,6 +4,7 @@
  * still find their session by cwd, claim_ticket from such a session, and a
  * branch nobody's ticket names becoming a ticket.
  */
+import { parse as parseToml } from "smol-toml";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -72,7 +73,7 @@ async function machine() {
 }
 
 describe("connecting a repository", () => {
-  it("writes the three files without disturbing what is there", () => {
+  it("writes agent configuration without disturbing what is there", () => {
     const dir = path.join(root, `files-${n++}`);
     fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { other: { type: "stdio", command: "x" } } }));
@@ -83,7 +84,7 @@ describe("connecting a repository", () => {
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
+    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
     const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
@@ -112,6 +113,40 @@ describe("connecting a repository", () => {
 
     // Idempotent: a second pass changes nothing.
     expect(writeConnectFiles(dir, input)).toEqual([]);
+  });
+
+  it("creates Claude hooks from nothing and merges Cursor/Gemini settings", () => {
+    const dir = path.join(root, `agents-${n++}`);
+    fs.mkdirSync(path.join(dir, ".cursor"), { recursive: true });
+    fs.mkdirSync(path.join(dir, ".gemini"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".cursor/mcp.json"), JSON.stringify({ mcpServers: { existing: { command: "custom" } } }));
+    fs.writeFileSync(path.join(dir, ".gemini/settings.json"), JSON.stringify({ theme: "dark", mcpServers: { existing: { command: "custom" } } }));
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(dir, input);
+    const read = (name: string) => JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+    expect(read(".claude/settings.json").hooks.SessionStart[0].hooks[0].command).toContain(input.eventUrl);
+    expect(read(".cursor/mcp.json")).toMatchObject({ mcpServers: { existing: { command: "custom" }, tomrade: { url: input.mcpUrl } } });
+    expect(read(".gemini/settings.json")).toMatchObject({ theme: "dark", mcpServers: { existing: { command: "custom" }, tomrade: { httpUrl: input.mcpUrl } } });
+    expect(writeConnectFiles(dir, input)).toEqual([]);
+  });
+
+  it.each([false, true])("preserves existing Codex hooks (inline arrays: %s), notify and settings", (inline) => {
+    const dir = path.join(root, `codex-${n++}`);
+    fs.mkdirSync(path.join(dir, ".codex"), { recursive: true });
+    const file = path.join(dir, ".codex/config.toml");
+    fs.writeFileSync(file, 'notify = ["notify-me"]\nmodel = "example"\n' + (inline
+      ? '[hooks]\nSessionStart = [{ hooks = [{ type = "command", command = "echo custom" }] }]\n'
+      : '[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "echo custom"\n'));
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(dir, input);
+    const config = parseToml(fs.readFileSync(file, "utf8"));
+    expect(config).toMatchObject({ notify: ["notify-me"], model: "example", hooks: { SessionStart: [{ hooks: [{ command: "echo custom" }] }, { hooks: [{ command: expect.stringContaining("X-Tomrade-Agent: codex") }] }] } });
+    expect(writeConnectFiles(dir, input)).toEqual([]);
+    writeConnectFiles(dir, { ...input, eventUrl: input.eventUrl.replace("19090", "19091") });
+    const reconnected = fs.readFileSync(file, "utf8");
+    expect(reconnected).toContain("19091/sessions/event");
+    expect(reconnected).not.toContain("19090/sessions/event");
+    expect(parseToml(reconnected).notify).toEqual(["notify-me"]);
   });
 
   it("reports committed default-branch connection, pending work, another instance and retries", async () => {
@@ -169,7 +204,7 @@ describe("connecting a repository", () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
     const result = await codeLink.connect(project.id, repo.id);
     expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
-    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codex/config.toml", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
     git(["fetch", "-q", "origin"], checkout);
@@ -190,6 +225,7 @@ describe("untracked terminal sessions", () => {
     expect(claimed.tracking).toMatchObject({ tracked: false });
     expect(claimed.tracking.message).toContain(".mcp.json");
     expect(claimed.tracking.message).toContain(".claude/settings.json");
+    expect(claimed.tracking.message).toContain(".codex/config.toml");
     expect(claimed.tracking.message).toContain(language === "zh" ? "未被 Tomrade 跟踪" : "not tracked by Tomrade");
     expect(claimed.conventions).not.toContain("call note_progress with one line at milestones");
     expect(items.get(project.id, item.id)?.status).toBe("doing");
@@ -197,6 +233,31 @@ describe("untracked terminal sessions", () => {
     for (const [tool, args] of [["note_progress", { text: "working" }], ["report_merge_blocked", { reason: "checks failed" }]] as const) {
       await expect(ctx.tools.execute(tool, { key: item.key, ...args }, inv)).rejects.toThrow(claimed.tracking.message);
     }
+  });
+});
+
+describe("a developer's own Codex session", () => {
+  it("uses generated hooks to report start, claim, progress and end with its source", async () => {
+    const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
+    writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });
+    const config = parseToml(fs.readFileSync(path.join(checkout, ".codex/config.toml"), "utf8")) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    // Execute the generated shell hook asynchronously so this process can serve HTTP.
+    const { execFile } = await import("node:child_process");
+    const post = (event: string) => new Promise<void>((resolve, reject) => {
+      const child = execFile("sh", ["-c", config.hooks[event][0].hooks[0].command], { cwd: checkout }, (err) => err ? reject(err) : resolve());
+      child.stdin!.end(JSON.stringify({ hook_event_name: event, session_id: "codex-cli-1", cwd: checkout }));
+    });
+    await post("SessionStart");
+    const [session] = codeLink.sessionsOf(project.id);
+    expect(session).toMatchObject({ agent: "codex", repoId: repo.id, externalId: "codex-cli-1", state: "running" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Codex work", by: "human" });
+    const inv = { by: "ai:mcp", projectId: project.id };
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, inv)).toMatchObject({ tracking: { tracked: true, sessionId: session.id } });
+    expect(await ctx.tools.execute("note_progress", { key: item.key, text: "Codex tests green" }, inv)).toMatchObject({ ok: true });
+    await post("Stop");
+    expect(codeLink.sessionsOf(project.id)[0].state).toBe("waiting");
+    await post("SessionEnd");
+    expect(codeLink.sessionsOf(project.id)[0].state).toBe("ended");
   });
 });
 
