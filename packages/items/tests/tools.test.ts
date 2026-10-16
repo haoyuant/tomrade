@@ -164,6 +164,17 @@ describe("tool arguments", () => {
   });
 });
 
+describe("update_item tool", () => {
+  it("moves an item to another workstream, and refuses one that is not in the project", async () => {
+    const { run, items, boards, board, project } = await withTools();
+    const plugins = boards.create({ projectId: project.id, name: "Plugins" });
+    const ticket = items.create({ projectId: project.id, title: "Feishu adapter", boardId: board.id, by: "human" });
+    expect(await run("update_item", { id: ticket.key, patch: { boardId: plugins.id } })).toMatchObject({ boardId: plugins.id });
+    await expect(run("update_item", { id: ticket.key, patch: { boardId: "no-such-board" } })).rejects.toBeInstanceOf(NotFoundError);
+    expect(items.get(project.id, ticket.id)?.boardId).toBe(plugins.id);
+  });
+});
+
 describe("review_delivery tool", () => {
   async function submitted() {
     const f = await withTools();

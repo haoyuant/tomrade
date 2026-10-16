@@ -249,6 +249,7 @@ export function registerTools(ctx: Context): void {
       execute({ projectId, id, patch, baseVersion }, inv) {
         const scope = requireProjectId("update_item", projectId, inv);
         const target = resolve(scope, id);
+        if (patch.boardId !== undefined && !ctx.boards.list(scope).some((b) => b.id === patch.boardId)) throw new NotFoundError(patch.boardId);
         return ctx.items.update(scope, target, resolveRefs(scope, patch) as Patch, inv.by, { baseVersion: versionOf(scope, target, baseVersion) });
       }
     })

@@ -60,5 +60,6 @@ export const patchSchema = z.object({
   blocks: z.array(z.string()).optional().describe("Ids or keys of the items this one blocks"),
   parentId: z.string().nullable().optional().describe("The parent item's id or key, e.g. TOM-12; null for none"),
   rank: z.number().optional(),
+  boardId: z.string().optional().describe("Move the item to this workstream (list_workstreams)"),
   fields: fieldsPatchSchema.optional()
 });
