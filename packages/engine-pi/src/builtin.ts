@@ -89,7 +89,8 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     fs.writeFileSync(path.join(config.home, "models.json"), JSON.stringify(modelsFile(profiles()), null, 2), { mode: 0o600 });
     const target = piTarget(profile, await known());
     const effort = BuiltinPiOptions.parse(input.options ?? {}).effort;
-    return { launch, env: { ...home, ...target.env }, args: ["--model", target.model, ...(effort ? ["--thinking", effort] : [])] };
+    // pi reads the person's ~/.agents/skills whatever its config folder; those are theirs, not Tomrade's agent's.
+    return { launch, env: { ...home, ...target.env }, args: ["--model", target.model, ...(effort ? ["--thinking", effort] : []), "--no-skills"] };
   };
 
   return {

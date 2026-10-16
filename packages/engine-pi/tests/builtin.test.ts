@@ -75,15 +75,15 @@ const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");
 
 /** The real bundled pi against a stand-in chat-completions endpoint: one Tomrade tool call, then an answer. */
 describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
-  it("conducts a turn on a model profile, with the key only in its environment", async () => {
-    const seen: { auth?: string; tools: string[] }[] = [];
+  it("conducts a turn on a model profile, with the key only in its environment and none of the person's skills", async () => {
+    const seen: { auth?: string; tools: string[]; prompt: string }[] = [];
     const server = http.createServer((req, res) => {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
         const request = JSON.parse(body) as { tools?: { function: { name: string } }[]; messages: { role: string }[] };
         const tools = (request.tools ?? []).map((t) => t.function.name);
-        seen.push({ auth: req.headers.authorization, tools });
+        seen.push({ auth: req.headers.authorization, tools, prompt: JSON.stringify(request.messages) });
         const chunk = (delta: unknown, finish: string | null = null) => `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: "fake", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
         res.writeHead(200, { "content-type": "text/event-stream" });
         const listItems = tools.find((name) => name.endsWith("list_items"));
@@ -96,6 +96,12 @@ describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as { port: number }).port;
+    // a skill of the person's own, where pi looks whatever its config folder
+    const person = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-person-"));
+    fs.mkdirSync(path.join(person, ".agents", "skills", "personal-skill"), { recursive: true });
+    fs.writeFileSync(path.join(person, ".agents", "skills", "personal-skill", "SKILL.md"), "---\nname: personal-skill\ndescription: Something only this person uses.\n---\nDo it.\n");
+    const realHome = process.env.HOME;
+    process.env.HOME = person;
     try {
       const { ctx, items, project, board, home, engine, useModel } = await boot(bundled);
       useModel({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "sk-secret", model: "fake-model" });
@@ -116,7 +122,10 @@ describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
       expect(blocks.some((b) => b.type === "text" && b.text.includes("1 item"))).toBe(true);
       expect(seen[0].auth).toBe("Bearer sk-secret");
       expect(fs.readFileSync(path.join(home, "pi", "models.json"), "utf8")).not.toContain("sk-secret");
+      expect(seen[0].prompt).not.toContain("personal-skill");
     } finally {
+      process.env.HOME = realHome;
+      fs.rmSync(person, { recursive: true, force: true });
       server.close();
     }
   }, 90_000);
