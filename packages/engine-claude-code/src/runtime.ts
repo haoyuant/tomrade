@@ -16,7 +16,11 @@ export interface Runtime {
   turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult>;
 }
 
-/** Finite, idle-only eviction. Session history belongs to the provider on disk. */
+/**
+ * Warm runtimes per thread. `limit` bounds the idle ones: a turn is never refused for a slot,
+ * and once turns finish the least recently used idle runtimes past it are closed.
+ * Session history belongs to the provider on disk.
+ */
 export class RuntimePool<T extends Runtime> {
   private entries = new Map<string, { runtime: T; fingerprint: string; timer?: NodeJS.Timeout }>();
   constructor(private readonly limit = 3, private readonly idleMs = 5 * 60_000) {}
@@ -28,14 +32,7 @@ export class RuntimePool<T extends Runtime> {
       this.evict(key); entry = undefined;
     }
     const warm = !!entry;
-    if (!entry) {
-      if (this.entries.size >= this.limit) {
-        const idle = [...this.entries].find(([, e]) => !e.runtime.busy);
-        if (!idle) throw new Error("All agent runtimes are busy; retry after a turn completes");
-        this.evict(idle[0]);
-      }
-      entry = { runtime: create(), fingerprint };
-    }
+    entry ??= { runtime: create(), fingerprint };
     clearTimeout(entry.timer);
     this.entries.delete(key);
     this.entries.set(key, entry);
@@ -45,7 +42,14 @@ export class RuntimePool<T extends Runtime> {
       entry.runtime.busy = false;
       if (!entry.runtime.alive) this.evict(key);
       else entry.timer = setTimeout(() => this.evict(key), this.idleMs).unref();
+      this.trim();
     }
+  }
+
+  /** Close the least recently used idle runtimes past `limit`. */
+  private trim(): void {
+    const idle = [...this.entries].filter(([, e]) => !e.runtime.busy);
+    for (const [key] of idle.slice(0, Math.max(0, idle.length - this.limit))) this.evict(key);
   }
 
   evict(key: string): void {

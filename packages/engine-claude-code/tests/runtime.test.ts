@@ -30,6 +30,32 @@ describe("bounded thread runtimes", () => {
     expect(closed).toEqual([1, 2, 3]);
   });
 
+  it("runs a turn past the cap rather than refusing it, then keeps at most the cap idle, closing the oldest", async () => {
+    const closed: string[] = [];
+    const releases: (() => void)[] = [];
+    const create = (name: string) => (): Runtime => ({ token: name, cwd: "/tmp", alive: true, busy: false,
+      close() { closed.push(name); this.alive = false; },
+      async turn() { await new Promise<void>((resolve) => releases.push(resolve)); return { stop: "end" }; } });
+    const pool = new RuntimePool(2, 60_000);
+    try {
+      const turns = ["a", "b", "c"].map((name) => pool.run(name, "f", create(name), input(name), io()));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(releases).toHaveLength(3); // all three run; none is refused or evicted while busy
+      expect(closed).toEqual([]);
+      releases[1]!(); await turns[1];
+      releases[0]!(); await turns[0];
+      expect(closed).toEqual([]); // two idle, c busy: within a cap of two idle
+      releases[2]!(); await turns[2];
+      expect(closed).toEqual(["a"]); // three idle: the least recently used goes
+      // a new thread runs at once; when it finishes, the oldest idle one makes room
+      const d = pool.run("d", "f", create("d"), input("d"), io());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(closed).toEqual(["a"]);
+      releases[3]!(); await d;
+      expect(closed).toEqual(["a", "b"]);
+    } finally { pool.close(); }
+  });
+
   it("does not evict a busy runtime; TTL closes an idle one", async () => {
     vi.useFakeTimers();
     const close = vi.fn();
@@ -39,7 +65,7 @@ describe("bounded thread runtimes", () => {
     const pool = new RuntimePool(1, 50);
     try {
       const active = pool.run("one", "a", () => runtime, input(), io());
-      await expect(pool.run("two", "a", () => runtime, input(), io())).rejects.toThrow("busy");
+      await expect(pool.run("one", "a", () => runtime, input(), io())).rejects.toThrow("already active");
       expect(close).not.toHaveBeenCalled();
       release(); await active;
       await vi.advanceTimersByTimeAsync(51);
