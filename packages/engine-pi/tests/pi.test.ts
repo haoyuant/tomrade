@@ -169,6 +169,34 @@ it("reports a session pi has no file for, and leads a new session's first prompt
   } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+it("starts a new session carried by the recap when the session holds another model's reasoning, and resumes it otherwise", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-model-"));
+  const log = path.join(dir, "requests.jsonl");
+  const bin = path.join(dir, "pi");
+  const fake = path.resolve("packages/engine-pi/tests/fake-pi.mjs");
+  fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`, { mode: 0o700 });
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  const engine = createPiEngine(ctx);
+  const turn = async (resume: string, threadId: string) => {
+    const input: TurnInput = { threadId, projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "hello" }, messages: [], cards: [], brief: null, pending: null,
+      options: { command: bin, model: "fake/fixed-model" }, env: { TOMRADE_TEST_LOG: log } };
+    const io: TurnIO = { emit() {}, delta() {}, progress() {}, signal: new AbortController().signal, resume, recap: () => "RECAP OF EARLIER",
+      tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
+      run: { id: "run", threadId, projectId: "project", author: "ai:pi", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
+    const result = await engine.turn(input, io);
+    const prompt = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s)).filter((r) => r.type === "prompt").at(-1).message as string;
+    return { result, recapped: prompt.includes("RECAP OF EARLIER") };
+  };
+  try {
+    const switched = await turn("reasoned-other-model", "switched");
+    expect(switched.result).toMatchObject({ stop: "end", resume: "new-session" });
+    expect(switched.recapped).toBe(true);
+    expect(await turn("reasoned-fixed-model", "same")).toMatchObject({ result: { stop: "end", resume: "reasoned-fixed-model" }, recapped: false });
+    expect(await turn("replied-other-model", "plain")).toMatchObject({ result: { stop: "end", resume: "replied-other-model" }, recapped: false });
+  } finally { await ctx.fiber.dispose(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 it("hands a message sent mid-turn to pi's own queue, records it where pi reads it, and clears what is left before a stop", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-steer-"));
   const log = path.join(dir, "requests.jsonl");

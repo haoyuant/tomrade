@@ -6,6 +6,7 @@ record({ spawn: process.pid, argv: process.argv.slice(2), bridge: fs.readFileSyn
 const usage = (input, output) => ({ input, output, cacheRead: 7, cacheWrite: 1, totalTokens: input + output + 8, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 } });
 const assistant = (text, extra = {}) => ({ role: 'assistant', content: [{ type: 'text', text }], provider: 'fake', model: 'fixed-model', usage: usage(10, 3), stopReason: 'stop', ...extra });
 let waiting;
+let session = process.argv[process.argv.indexOf('--session-id') + 1];
 let dialog;
 // STEER_HOLD keeps a steer queued (as pi does mid-tool); STEER_TAKE reads it right away
 let steerMode;
@@ -39,10 +40,21 @@ function handle(m) {
     settle();
     return;
   }
-  // pi keeps a session file per id; "gone" stands for one whose file is not there
+  // pi keeps a session file per id; "gone" stands for one whose file is not there,
+  // "reasoned-<model>" for one whose reply carries that model's reasoning, "replied-<model>" for one without
   if (m.type === 'get_messages') {
-    const id = process.argv[process.argv.indexOf('--session-id') + 1];
-    send({ id: m.id, type: 'response', command: 'get_messages', success: true, data: { messages: id === 'gone' ? [] : [{ role: 'user', content: 'earlier' }] } });
+    const [kind, model] = session.split(/-(.*)/);
+    const reply = (kind === 'reasoned' || kind === 'replied') && { role: 'assistant', provider: 'fake', model, content: [...(kind === 'reasoned' ? [{ type: 'thinking', thinking: 'weighing it' }] : []), { type: 'text', text: 'earlier answer' }] };
+    send({ id: m.id, type: 'response', command: 'get_messages', success: true, data: { messages: session === 'gone' ? [] : [{ role: 'user', content: 'earlier' }, ...(reply ? [reply] : [])] } });
+    return;
+  }
+  if (m.type === 'get_state') {
+    send({ id: m.id, type: 'response', command: 'get_state', success: true, data: { model: { provider: 'fake', id: 'fixed-model' }, sessionId: session } });
+    return;
+  }
+  if (m.type === 'new_session') {
+    session = 'new-session';
+    send({ id: m.id, type: 'response', command: 'new_session', success: true, data: { cancelled: false } });
     return;
   }
   if (m.type === 'clear_queue') {

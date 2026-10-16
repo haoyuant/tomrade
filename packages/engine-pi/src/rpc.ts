@@ -31,6 +31,14 @@ export async function ownPi(input: TurnInput): Promise<PiLaunch> {
   };
 }
 
+/** Whether a session holds reasoning written by another model than the one pi now runs, which pi sends on as plain text. */
+export function reasonedElsewhere(messages: Json[], model: Json | undefined): boolean {
+  if (!model) return false;
+  return messages.some((m) => m.role === "assistant"
+    && (m.provider !== model.provider || m.model !== model.id || (!!m.api && !!model.api && m.api !== model.api))
+    && (m.content ?? []).some((b: Json) => b.type === "thinking" && !b.redacted && String(b.thinking ?? "").trim()));
+}
+
 /** One `pi --mode rpc` process owned by Tomrade for one thread; its session lives in pi's own store. */
 export class PiRuntime implements Runtime {
   token: string;
@@ -267,12 +275,21 @@ export class PiRuntime implements Runtime {
       if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
       if (!this.child) {
         await this.spawn(input, io);
-        // pi opens an empty session under an id it has no file for, and only warns on stderr
-        if (io.resume && !((await this.request("get_messages")).messages?.length)) {
-          this.close();
-          return { stop: "error", error: `Pi has no session ${io.resume}`, lostSession: true, metrics };
-        }
         this.fresh = !io.resume;
+        if (io.resume) {
+          const messages: Json[] = (await this.request("get_messages")).messages ?? [];
+          // pi opens an empty session under an id it has no file for, and only warns on stderr
+          if (!messages.length) {
+            this.close();
+            return { stop: "error", error: `Pi has no session ${io.resume}`, lostSession: true, metrics };
+          }
+          // pi would replay another model's reasoning to this one as its own reply text, and the model copies it
+          if (reasonedElsewhere(messages, (await this.request("get_state")).model)) {
+            await this.request("new_session");
+            this.session = (await this.request("get_state")).sessionId ?? randomUUID();
+            this.fresh = true;
+          }
+        }
       }
       const images = attachedMedia(input, io).filter((media) => media.mime.startsWith("image/")).map((media) => ({ type: "image", data: media.base64, mimeType: media.mime }));
       const stale = !!input.filesIndex && !!this.indexDigest && input.filesIndex.digest !== this.indexDigest;
