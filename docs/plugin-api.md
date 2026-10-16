@@ -322,7 +322,10 @@ While no profile is configured, a plugin can **lend** a model for the worker
 role: `ctx.llm.lend({ id, title, ready, model })` returns its withdrawal (wrap
 it in `ctx.effect`). The Claude Code and Codex engines lend their signed-in CLI
 this way — one prompt, no tools, no session — so planning works with a
-subscription and no API key. `ctx.llm.worker()` says who answers worker calls
+subscription and no API key. The person can also pick a lent model for the
+worker over a profile (`roles.worker: "lent:<id>"`); a picked one that is not
+ready makes the call fail with the reason, never a silent switch. At most
+`LENT_CONCURRENCY` lent calls run at once. `ctx.llm.worker()` says who answers worker calls
 (`via: "profile" | "lent"`); `ready()` still answers for profiles only, because
 a lent model has no tools to run the loop engine with.
 

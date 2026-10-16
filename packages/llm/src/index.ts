@@ -93,6 +93,19 @@ export interface DetectedModel {
   detail: string;
 }
 
+/** `roles.worker` naming a lent model rather than a profile: `lent:<id>`. */
+export const LENT_WORKER = "lent:";
+
+/** A lent model as Settings offers it for the worker role. */
+export interface LenderView {
+  id: string;
+  title: string;
+  ready: boolean;
+}
+
+/** Lent calls start local processes; past this many at once, the rest wait their turn. */
+export const LENT_CONCURRENCY = 2;
+
 /** Who answers worker calls (planning, duplicate checks): a profile, a lent model, or nobody yet. */
 export interface WorkerStatus {
   ok: boolean;
@@ -128,6 +141,7 @@ declare module "@tomradex/ipc" {
     "llm.test": (profile: ModelProfile) => ModelTest;
     "llm.models": (endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) => ModelListing;
     "llm.worker": () => WorkerStatus;
+    "llm.lenders": () => LenderView[];
     "llm.providers": () => ProviderView[];
     "llm.guess": (key: string) => string[];
     "llm.detect": () => DetectedModel[];
@@ -158,6 +172,7 @@ export type ModelProfile = z.infer<typeof modelProfileSchema>;
 
 export interface ModelsSettings {
   profiles: ModelProfile[];
+  /** worker: "" picks for itself (the first profile, else a ready lent model), a profile id, or `lent:<id>`. */
   roles: { worker: string };
 }
 
@@ -270,6 +285,8 @@ export class Llm extends Service implements LlmService {
 
   private cache = new Map<string, ChatModel>();
   private lent: LentModel[] = [];
+  private lentRunning = 0;
+  private lentWaiting: (() => void)[] = [];
 
   constructor(ctx: Context) {
     super(ctx, "llm");
@@ -280,6 +297,7 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.test", (profile) => ctx.llm.test(profile));
       ctx.ipc.handle("llm.models", (endpoint) => ctx.llm.listing(endpoint));
       ctx.ipc.handle("llm.worker", () => ctx.llm.worker());
+      ctx.ipc.handle("llm.lenders", () => this.lenders());
       ctx.ipc.handle("llm.providers", () => this.providers());
       ctx.ipc.handle("llm.guess", (key) => guessProviders(key));
       ctx.ipc.handle("llm.detect", () => this.detect());
@@ -361,13 +379,66 @@ export class Llm extends Service implements LlmService {
   }
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
-    const profile = this.profileFor("worker");
-    if (!profile) {
-      const lent = await this.readyLent();
-      if (lent) return completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`);
+    const source = await this.workerSource();
+    if (source.kind === "lent") {
+      const lent = source.lent;
+      return this.lentSlot(() => completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`), request.signal);
     }
+    if (source.kind === "none" && source.chosen) throw new LlmError(source.reason);
+    const profile = source.kind === "profile" ? source.profile : undefined;
     const label = profile ? `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)` : undefined;
     return completeJson(this.for("worker"), schema, request, label);
+  }
+
+  /**
+   * Who answers worker calls. A lent model the person chose is never swapped for
+   * another source behind their back: when it is not ready, the call says why.
+   */
+  private async workerSource(): Promise<{ kind: "profile"; profile: ModelProfile } | { kind: "lent"; lent: LentModel } | { kind: "none"; reason: string; chosen: boolean }> {
+    const chosen = this.models().roles.worker;
+    if (chosen.startsWith(LENT_WORKER)) {
+      const id = chosen.slice(LENT_WORKER.length);
+      const lent = this.lent.find((m) => m.id === id);
+      if (lent && (await lent.ready().catch(() => false))) return { kind: "lent", lent };
+      const zh = this.zh();
+      const name = lent?.title ?? id;
+      return { kind: "none", chosen: true, reason: zh ? `执行模型选的是 ${name}，但它现在用不了——先登录它，或在 设置 → 助手 里换一个` : `The worker is set to ${name}, which cannot answer right now — sign it in, or pick another in Settings → Assistant` };
+    }
+    const profile = this.profileFor("worker");
+    if (profile) return { kind: "profile", profile };
+    const lent = await this.readyLent();
+    if (lent) return { kind: "lent", lent };
+    return { kind: "none", chosen: false, reason: this.ready().reason ?? "" };
+  }
+
+  /** Runs `call` once fewer than LENT_CONCURRENCY lent calls are running; withdrawing while queued leaves the queue. */
+  private async lentSlot<T>(call: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    while (this.lentRunning >= LENT_CONCURRENCY) {
+      signal?.throwIfAborted();
+      await new Promise<void>((resolve, reject) => {
+        const go = () => {
+          signal?.removeEventListener("abort", stop);
+          resolve();
+        };
+        const stop = () => {
+          this.lentWaiting = this.lentWaiting.filter((w) => w !== go);
+          reject(signal?.reason ?? new LlmError("The worker request was cancelled"));
+        };
+        this.lentWaiting.push(go);
+        signal?.addEventListener("abort", stop, { once: true });
+      });
+    }
+    this.lentRunning += 1;
+    try {
+      return await call();
+    } finally {
+      this.lentRunning -= 1;
+      this.lentWaiting.shift()?.();
+    }
+  }
+
+  async lenders(): Promise<LenderView[]> {
+    return Promise.all(this.lent.map(async (m) => ({ id: m.id, title: m.title, ready: await m.ready().catch(() => false) })));
   }
 
   lend(model: LentModel): () => void {
@@ -378,11 +449,10 @@ export class Llm extends Service implements LlmService {
   }
 
   async worker(): Promise<WorkerStatus> {
-    const profile = this.profileFor("worker");
-    if (profile) return { ok: true, via: "profile", title: profile.title || profile.model };
-    const lent = await this.readyLent();
-    if (lent) return { ok: true, via: "lent", title: lent.title };
-    return { ok: false, reason: this.ready().reason };
+    const source = await this.workerSource();
+    if (source.kind === "profile") return { ok: true, via: "profile", title: source.profile.title || source.profile.model };
+    if (source.kind === "lent") return { ok: true, via: "lent", title: source.lent.title };
+    return { ok: false, reason: source.reason };
   }
 
   private zh(): boolean {

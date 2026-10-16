@@ -14,6 +14,9 @@ interface ExecLine {
   error?: { message?: string };
 }
 
+// Stands in for Codex's coding-agent prompt (about 4k tokens a call); a Codex too old to read it just warns.
+const BASE_INSTRUCTIONS = "You answer one request. Follow the instructions at the top of the message, and reply with the answer only.";
+
 /**
  * The signed-in Codex answering one prompt in a read-only sandbox of an empty
  * folder. Codex has no system-prompt flag, so the instructions lead the prompt.
@@ -24,7 +27,10 @@ export function codexLentModel(ctx: Context, ready: () => Promise<boolean>): Len
     async *chat(request, signal) {
       const options = CodexOptions.parse(ctx.get("agent")?.settingsOf().engines.codex ?? {});
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-codex-lent-"));
+      const instructions = path.join(tmp, "instructions.md");
+      fs.writeFileSync(instructions, BASE_INSTRUCTIONS);
       const args = ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "-C", tmp,
+        "-c", `model_instructions_file=${JSON.stringify(instructions)}`,
         ...(codexModel(options.model) ? ["-m", codexModel(options.model)!] : []),
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])];
       let text = "";

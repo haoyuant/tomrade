@@ -35,14 +35,18 @@ export default {
   apply(ctx: Context) {
     const engine = createClaudeCodeEngine(ctx);
     ctx.agent.engine(engine);
-    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(claudeLentModel(ctx, async () => (await engine.available()).ok))));
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => {
+      const lent = claudeLentModel(ctx, async () => (await engine.available()).ok);
+      const withdraw = ctx.llm.lend(lent);
+      return () => { withdraw(); lent.close(); };
+    }));
   }
 };
 
 export { ClaudeCodeOptions, claudeCodeEngineInfo, retryReason } from "./engine.js";
 export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
 export { localAvailability, chosenCommand } from "./availability.js";
-export { claudeLentModel } from "./lend.js";
+export { claudeLentModel, LENT_IDLE_MS } from "./lend.js";
 export { MCP_NAME, claudeConfigDirOf, claudeConfigDirs, claudeMcpLink, claudeProfileEnv, claudeProjectServerApproval, claudeUserFile, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
 export { bashRuleMatches, claudeCommands, userSettingsFile } from "./permissions.js";
 export {

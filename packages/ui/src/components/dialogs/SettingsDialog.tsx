@@ -643,6 +643,8 @@ const PRESETS = [
 ];
 
 const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
+// LENT_WORKER in @tomradex/llm: roles.worker naming a signed-in local agent
+const LENT_WORKER = "lent:";
 const EMPTY_AGENT: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
@@ -666,6 +668,8 @@ function AssistantPane({
   const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
+  const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000 }).data ?? [];
+  const worker = useQuery({ queryKey: ["llm", "worker", models.roles.worker], queryFn: () => invoke("llm.worker"), staleTime: 15_000 }).data;
   // removing a profile deletes its key too: asked once, in the row
   const [removing, setRemoving] = useState<string | null>(null);
 
@@ -674,14 +678,13 @@ function AssistantPane({
 
   const upsert = (profile: ModelProfile) => {
     const rest = models.profiles.filter((p) => p.id !== profile.id);
-    saveModels({ profiles: [...rest, profile], roles: { worker: models.roles.worker || profile.id } });
+    saveModels({ profiles: [...rest, profile], roles: models.roles });
     setEditing(null);
   };
 
   const remove = (id: string) => {
     const profiles = models.profiles.filter((p) => p.id !== id);
-    const fallback = profiles[0]?.id ?? "";
-    saveModels({ profiles, roles: { worker: models.roles.worker === id ? fallback : models.roles.worker } });
+    saveModels({ profiles, roles: { worker: models.roles.worker === id ? "" : models.roles.worker } });
   };
 
   return (
@@ -754,22 +757,33 @@ function AssistantPane({
             })}
           </div>
         )}
-        {models.profiles.length > 0 && (
+        {(models.profiles.length > 0 || lenders.length > 0) && (
           <div className="field">
             <label htmlFor="role-worker">{t("settingsDialog.workerRoleLabel")}</label>
             <select
               id="role-worker"
               className="input"
-              value={models.roles.worker || models.profiles[0]?.id || ""}
+              value={models.roles.worker}
               onChange={(e) => saveModels({ ...models, roles: { worker: e.target.value } })}
             >
+              <option value="">{t("settingsDialog.workerAuto")}</option>
               {models.profiles.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title || p.model}
                 </option>
               ))}
+              {lenders.map((l) => (
+                <option key={l.id} value={`${LENT_WORKER}${l.id}`}>
+                  {t(l.ready ? "settingsDialog.workerLent" : "settingsDialog.workerLentNotReady", { name: l.title })}
+                </option>
+              ))}
             </select>
             <span className="meta-txt">{t("settingsDialog.workerRoleHelp")}</span>
+            {worker && !worker.ok && worker.reason && (
+              <span className="meta-txt" role="alert" data-testid="worker-problem">
+                {worker.reason}
+              </span>
+            )}
           </div>
         )}
       </div>

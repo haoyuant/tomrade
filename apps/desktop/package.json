@@ -48,6 +48,7 @@
     "test:tabs-keys": "electron scripts/tabs-keys-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
+    "test:worker-source": "electron scripts/worker-source-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "test:im-discord": "electron scripts/im-discord-check.mjs",
     "test:im-audience": "electron scripts/im-audience-check.mjs",

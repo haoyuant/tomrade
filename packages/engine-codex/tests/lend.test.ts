@@ -18,6 +18,8 @@ it("asks Codex in a read-only sandbox with the instructions leading the prompt",
   const echoed = JSON.parse(out.text) as { args: string[]; prompt: string };
   expect(echoed.args.slice(0, 5)).toEqual(["exec", "--json", "--skip-git-repo-check", "-s", "read-only"]);
   expect(echoed.args).toContain('model_reasoning_effort="low"');
+  // Codex's coding-agent prompt is swapped for a short one that lives beside the call
+  expect(echoed.args.find((arg) => arg.startsWith("model_instructions_file="))).toMatch(/tomrade-codex-lent-.*instructions\.md"$/);
   expect(echoed.prompt).toBe("Reply in JSON.\n\n---\n\nplan it");
   expect(out.usage).toEqual({ inputTokens: 12, outputTokens: 3 });
 
