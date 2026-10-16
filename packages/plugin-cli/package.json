@@ -18,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.8",
     "@tomradex/plugin-host": "workspace:*",
     "@tomradex/plugin-kit": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",

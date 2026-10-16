@@ -11,7 +11,7 @@ import { Tools } from "@tomradex/tools";
 import { fresh, settle } from "@tomradex/testkit";
 import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest, unpackPlugin } from "@tomradex/plugin-kit";
 import { ExtensionStore, Plugins } from "@tomradex/plugins";
-import { scaffold } from "@tomradex/plugin-cli";
+import { release, scaffold } from "@tomradex/plugin-cli";
 import { Community, planUpdate, prepareRelease, type GitHubAccess, type VersionRow } from "@tomradex/community";
 import type { Manifest } from "@tomradex/plugin-sdk";
 
@@ -372,6 +372,32 @@ describe("the official catalog", () => {
     expect(communityAlone.listings.map((l) => l.id)).toEqual(["alice/notes"]);
     expect(communityAlone.sources[0]).toMatchObject({ name: "official", available: false, error: expect.stringMatching(/official catalog is unavailable/) });
   }, 60_000);
+
+  it("installs what tomrade-plugin release wrote, served as it is", async () => {
+    const dir = path.join(tmp, "released", "journal");
+    scaffold(dir, { id: "tomrade/journal", title: "Journal", description: "Daily entries." });
+    const file = path.join(dir, "tomrade-plugin.json");
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), icon: "icon.svg", repository: "https://github.com/haoyuant/tomrade-plugins" }));
+    fs.writeFileSync(path.join(dir, "icon.svg"), "<svg/>");
+    fs.writeFileSync(path.join(dir, "CHANGELOG.md"), "## 0.1.0\n");
+    fs.mkdirSync(path.join(dir, "tests"));
+    fs.writeFileSync(path.join(dir, "tests", "journal.test.ts"), "");
+    const out = path.join(tmp, "released", "out");
+    const released = await release(dir, { privateKey: key.privateKey, out, commit: "9".repeat(40) });
+    expect(released.report.official).toEqual([]);
+    const server = http.createServer((req, res) => {
+      const served = path.join(out, decodeURIComponent((req.url ?? "").slice(1)));
+      if (!fs.existsSync(served)) return res.writeHead(404).end();
+      res.writeHead(200).end(fs.readFileSync(served));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/catalog.json`;
+    const { store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url } } });
+    expect((await community.browse({})).listings.map((l) => [l.id, l.latest?.tier])).toEqual([["tomrade/journal", "official"]]);
+    await community.install("tomrade/journal");
+    expect(store.info("tomrade/journal")).toMatchObject({ version: "0.1.0", tier: "official" });
+    server.close();
+  }, 120_000);
 
   it("keeps listing what it fetched last when the catalog cannot be reached, and says so", async () => {
     const { catalog, server, url } = await catalogServer();

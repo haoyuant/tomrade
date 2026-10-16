@@ -223,6 +223,16 @@ a version shows only when its attestation verifies for the exact digest, id and
 version listed — the host serving it is not trusted. The last good catalog is
 kept on disk, so a machine offline still lists what it saw.
 
+An official plugin meets the standard `tomrade-plugin check --official` holds
+it to, written up in tomrade-plugins' `STANDARDS.md`: everything the store asks
+of any plugin, plus the `tomrade/<name>` id in `packages/<name>`, an icon, a
+CHANGELOG entry for the version, unit tests and a passing `src/test.ts`, both
+halves of every `{ en, zh }` text, and `permissions.why` for any host, any
+folder or running programs. `tomrade-plugin release` runs that check, signs
+the exact build (`TOMRADE_SIGNING_KEY`), packs it, and writes `catalog.json`
+with the version added. A version is released once: the same build again
+changes nothing, and another build under that version is refused.
+
 ## Built-in rows
 
 A built-in is a function `(ctx, config)`, a class whose constructor takes

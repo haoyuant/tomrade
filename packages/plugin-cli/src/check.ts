@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { analyzePackage, atLeast, packPlugin, readManifest, type Analysis } from "@tomradex/plugin-kit";
 import { MANIFEST_FILE, isOpenSource, riskOf, satisfies, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import { build, scenarioOf, type BuildResult } from "./build.js";
+import { officialProblems } from "./official.js";
 import { runSandboxed, type InspectResult, type SandboxOptions, type TestResult } from "./sandbox.js";
 import type { Recording } from "./record.js";
 
@@ -14,6 +15,8 @@ export interface CheckReport {
   publishing: string[];
   /** Worth knowing, never blocking. */
   notes: string[];
+  /** With `official`: where the plugin falls short of Tomrade's own standard; any of these blocks. */
+  official: string[];
   /** The IM contract each adapter declares. */
   imAdapters: Recording["imContracts"];
   build: BuildResult | null;
@@ -59,8 +62,8 @@ export function publishingProblems(dir: string, manifest: Manifest): string[] {
  * and what it does matches what it says. The same check runs on the store's
  * side before a plugin is listed.
  */
-export async function check(dir: string, opts: SandboxOptions & { build?: boolean } = {}): Promise<CheckReport> {
-  const report: CheckReport = { manifest: null, problems: [], publishing: [], notes: [], imAdapters: [], build: null, inspection: null, analysis: null, risk: null, verdict: "blocked" };
+export async function check(dir: string, opts: SandboxOptions & { build?: boolean; official?: boolean } = {}): Promise<CheckReport> {
+  const report: CheckReport = { manifest: null, problems: [], publishing: [], notes: [], official: [], imAdapters: [], build: null, inspection: null, analysis: null, risk: null, verdict: "blocked" };
   try {
     report.manifest = readManifest(dir);
   } catch (error) {
@@ -94,8 +97,16 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
   report.analysis = analyzePackage(dir, report.manifest);
   report.risk = riskOf(report.manifest);
   report.publishing = publishingProblems(dir, report.manifest);
+  if (opts.official) {
+    report.official = officialProblems(dir, report.manifest);
+    if (scenarioOf(dir)) {
+      const scenario = await test(dir, { ...opts, build: false });
+      if (scenario.error) report.official.push(`src/test.ts did not run: ${scenario.error}`);
+      for (const c of scenario.checks.filter((c) => !c.ok)) report.official.push(`src/test.ts: "${c.name}" failed${c.detail ? ` — ${c.detail}` : ""}`);
+    }
+  }
   const critical = atLeast(report.analysis.worst, "critical");
-  report.verdict = report.problems.length || critical ? "blocked" : atLeast(report.analysis.worst, "high") || report.risk.level === "high" ? "review" : "ok";
+  report.verdict = report.problems.length || report.official.length || critical ? "blocked" : atLeast(report.analysis.worst, "high") || report.risk.level === "high" ? "review" : "ok";
   return report;
 }
 

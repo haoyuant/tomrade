@@ -23,7 +23,9 @@ export const PermissionsSchema = z
     /** `plugin`: its own data directory. `project`: the project folders. `any`: anywhere on disk. */
     fs: z.enum(["none", "plugin", "project", "any"]).default("none"),
     /** Starts other programs. */
-    exec: z.boolean().default(false)
+    exec: z.boolean().default(false),
+    /** Why the plugin needs a wide permission, in a sentence a person installing it can judge. Official plugins must say. */
+    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1) }).partial().optional()
   })
   .default({ network: [], fs: "none", exec: false });
 

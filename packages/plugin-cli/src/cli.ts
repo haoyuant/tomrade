@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 import path from "node:path";
 import { build, watch } from "./build.js";
 import { check, pack, test, type CheckReport } from "./check.js";
+import { release } from "./release.js";
 import { scaffold } from "./scaffold.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
@@ -28,6 +30,8 @@ function printCheck(report: CheckReport) {
   for (const f of report.analysis?.findings ?? []) console.log(`  ${f.severity === "info" ? "·" : "!"} [${f.severity}] ${f.message} (${f.file}:${f.line})`);
   for (const n of report.notes) console.log(`  · ${n}`);
   for (const im of report.imAdapters) console.log(`  IM adapter ${im.id}: contract ${im.contract}${im.capabilities.length ? ` (${im.capabilities.join(", ")})` : ""}`);
+  if (report.official.length) console.log("  official standard (STANDARDS.md in tomrade-plugins):");
+  for (const p of report.official) console.log(`    ✗ ${p}`);
   if (report.publishing.length) console.log("  before publishing:");
   for (const p of report.publishing) console.log(`    - ${p}`);
   const c = report.manifest?.contributes;
@@ -40,8 +44,12 @@ const usage = `tomrade-plugin <command> [dir]
   build [dir]      bundle src/ into dist/ (one readable file; cordis, the SDK and zod come from Tomrade)
   dev [dir]        rebuild on every change — load the folder in Tomrade and it reloads itself
   check [dir]      build, inspect in a sandbox, and read the code: what someone installing it will see
+                   [--official] also hold it to the standard of Tomrade's own plugins
   test [dir]       run the plugin against a throwaway project in a sandbox (src/test.ts is the scenario)
   pack [dir]       check, then write a .tomrade-plugin file [--out file]
+  release [dir] --out dir --commit sha [--catalog catalog.json] [--revoked revoked.json]
+                   one of Tomrade's own: check --official, sign (TOMRADE_SIGNING_KEY, PKCS#8 PEM), pack,
+                   and write the catalog with this version added
 `;
 
 async function main(): Promise<number> {
@@ -67,7 +75,7 @@ async function main(): Promise<number> {
       return 0;
     }
     case "check": {
-      const report = await check(dir);
+      const report = await check(dir, { official: flags.has("official") });
       printCheck(report);
       return report.verdict === "blocked" ? 1 : 0;
     }
@@ -83,6 +91,19 @@ async function main(): Promise<number> {
       printCheck(report);
       if (file) console.log(`wrote ${file}`);
       return file ? 0 : 1;
+    }
+    case "release": {
+      const privateKey = process.env.TOMRADE_SIGNING_KEY ?? (process.env.TOMRADE_SIGNING_KEY_FILE ? fs.readFileSync(process.env.TOMRADE_SIGNING_KEY_FILE, "utf8") : undefined);
+      if (!privateKey) throw new Error("Set TOMRADE_SIGNING_KEY (PKCS#8 PEM) or TOMRADE_SIGNING_KEY_FILE");
+      const out = flag("out");
+      const commit = flag("commit");
+      if (!out || !commit) throw new Error("release needs --out dir and --commit sha");
+      const result = await release(dir, { privateKey, out: path.resolve(out), commit, catalog: flag("catalog"), revoked: flag("revoked") });
+      printCheck(result.report);
+      if (!result.catalog) return 1;
+      console.log(result.unchanged ? `${result.report.manifest!.id} ${result.report.manifest!.version} was released already; catalog rewritten` : `wrote ${result.file}`);
+      console.log(`wrote ${result.catalog}`);
+      return 0;
     }
     default:
       console.log(usage);
