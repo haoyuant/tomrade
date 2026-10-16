@@ -11,6 +11,26 @@ const SECRETS: [RegExp, string][] = [
 /** Keys and tokens never reach a block the person may paste into a bug report. */
 export const redactSecrets = (text: string): string => SECRETS.reduce((out, [pattern, to]) => out.replace(pattern, to), text);
 
+/**
+ * A provider's error body pasted into the message ("400 {"type":"error","error":{"message":…}}")
+ * read as its own words; anything else comes back unchanged.
+ */
+export function readableError(text: string): string {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end < start) return text;
+  try {
+    const body = JSON.parse(text.slice(start, end + 1)) as { error?: unknown; message?: unknown };
+    const inner = body.error && typeof body.error === "object" ? (body.error as { message?: unknown }).message : body.error;
+    const said = [inner, body.message].find((m): m is string => typeof m === "string" && m.trim() !== "");
+    if (!said) return text;
+    const before = text.slice(0, start).trim();
+    return before ? `${before} ${said.trim()}` : said.trim();
+  } catch {
+    return text;
+  }
+}
+
 const json = (value: unknown): string => {
   try {
     // Headers and Maps would print as {}.

@@ -55,7 +55,7 @@ import {
 } from "./types.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
-import { describeFailure, redactSecrets } from "./failure.js";
+import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap } from "./recap.js";
 import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
 
@@ -1713,7 +1713,11 @@ export class Agent extends Service {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().budget }, rc.run.id);
     }
     if (result.stop === "error") {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: redactSecrets(result.error ?? "The engine stopped without an error message."), ...(result.details ? { details: result.details } : {}) }, rc.run.id);
+      const raw = result.error ?? "The engine stopped without an error message.";
+      const text = readableError(raw);
+      // The provider's full body stays under details when the line keeps only its message.
+      const details = text === raw ? result.details : [describeFailure({ error: raw }), result.details].filter(Boolean).join("\n\n");
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "error", text: redactSecrets(text), ...(details ? { details } : {}) }, rc.run.id);
     }
     // Settings and anything else an undo provider tracks by run count too, and go with the run's Undo.
     const elsewhere = this.ctx.oplog.runChanges(rc.projectId, rc.run.id);

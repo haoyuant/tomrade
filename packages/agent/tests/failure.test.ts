@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DETAILS_MAX_CHARS, describeFailure, redactSecrets } from "@tomradex/agent";
+import { DETAILS_MAX_CHARS, describeFailure, readableError, redactSecrets } from "@tomradex/agent";
 
 describe("describeFailure", () => {
   it("names each section and leaves the empty ones out", () => {
@@ -38,5 +38,20 @@ describe("describeFailure", () => {
     expect(text).toContain("first line");
     expect(text).toContain("last line");
     expect(text).toMatch(/characters left out/);
+  });
+});
+
+describe("readableError", () => {
+  it("reads a provider's error body as its message, keeping the status in front", () => {
+    const raw = '400 {"type":"error","error":{"type":"invalid_request_error","message":"Third-party apps now draw from your extra usage."},"request_id":"req_1"}';
+    expect(readableError(raw)).toBe("400 Third-party apps now draw from your extra usage.");
+    expect(readableError('{"error":"bad gateway"}')).toBe("bad gateway");
+    expect(readableError('{"message":"Rate limit reached"}')).toBe("Rate limit reached");
+  });
+
+  it("leaves anything else as it was", () => {
+    expect(readableError("socket hang up")).toBe("socket hang up");
+    expect(readableError("bad {json")).toBe("bad {json");
+    expect(readableError('500 {"status":"down"}')).toBe('500 {"status":"down"}');
   });
 });
