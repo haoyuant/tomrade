@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
 import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentKeys, conducts, findEngine, useEngines, usePlaybooks } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomradex/settings";
 import { Icon, type IconId } from "~/components/icons";
@@ -713,12 +713,16 @@ function AssistantPane({
             <div className="profile-row" key={p.id}>
               <span className="p-title">{p.title || p.model}</span>
               <span className="p-model num">{p.provider === "anthropic" ? "anthropic" : (p.baseURL ?? "")} · {p.model}</span>
-              <button type="button" className="btn btn-ghost" onClick={() => setEditing(p)}>
-                {t("common.edit")}
-              </button>
-              <button type="button" className="btn btn-ghost" onClick={() => setRemoving(p.id)}>
-                {t("common.remove")}
-              </button>
+              {!editing && (
+                <>
+                  <button type="button" className="btn btn-ghost" onClick={() => setEditing(p)}>
+                    {t("common.edit")}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => setRemoving(p.id)}>
+                    {t("common.remove")}
+                  </button>
+                </>
+              )}
             </div>
           )
         )}
@@ -1035,6 +1039,78 @@ const hostOf = (p: ModelProfile): string => {
   }
 };
 
+/** The endpoint's own listing, refetched once typing settles: a key or address mid-edit asks nothing. */
+function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) {
+  const [settled, setSettled] = useState(endpoint);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(endpoint), 600);
+    return () => clearTimeout(timer);
+  }, [endpoint.provider, endpoint.baseURL, endpoint.apiKey]);
+  const { provider, baseURL, apiKey } = settled;
+  return useQuery({
+    queryKey: ["llm.models", provider, baseURL ?? "", apiKey],
+    queryFn: () => invoke("llm.models", { provider, baseURL, apiKey }),
+    enabled: provider !== "anthropic" || apiKey.trim().length > 0,
+    staleTime: 5 * 60_000,
+    retry: false
+  });
+}
+
+/** The model, picked from what the endpoint lists; typed in when it lists nothing or the model is not listed. */
+function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: string; onChange: (model: string) => void }) {
+  const { t } = useI18n();
+  const listing = useModelListing(draft);
+  const models = listing.data?.ok ? listing.data.models : [];
+  const [custom, setCustom] = useState(false);
+  const typed = custom || models.length === 0 || (draft.model !== "" && !models.includes(draft.model));
+  const status = listing.isFetching
+    ? t("settingsDialog.modelListLoading", { host })
+    : !listing.isEnabled || (listing.data && !listing.data.ok && listing.data.kind === "auth" && !draft.apiKey.trim())
+      ? t("settingsDialog.modelListNeedsKey", { host })
+      : listing.data && !listing.data.ok
+        ? t("settingsDialog.modelListFailed", { host })
+        : listing.data?.ok && models.length === 0
+          ? t("settingsDialog.modelListNone", { host })
+          : null;
+  return (
+    <div className="field">
+      <label htmlFor="pfModel">{t("settingsDialog.modelLabel")}</label>
+      {models.length > 0 && (
+        <select
+          id={typed ? "pfModelPick" : "pfModel"}
+          className="input num"
+          value={typed ? CUSTOM_PICK : draft.model}
+          onChange={(e) => {
+            const other = e.target.value === CUSTOM_PICK;
+            setCustom(other);
+            if (!other) onChange(e.target.value);
+          }}
+        >
+          {draft.model === "" && !custom && <option value="" disabled>{t("settingsDialog.modelPickPlaceholder")}</option>}
+          {models.map((id) => (
+            <option key={id} value={id}>{id}</option>
+          ))}
+          <option value={CUSTOM_PICK}>{t("settingsDialog.modelPickOther")}</option>
+        </select>
+      )}
+      {typed && <input id="pfModel" className="input num" value={draft.model} onChange={(e) => onChange(e.target.value)} />}
+      {status && (
+        <span className="meta-txt">
+          {status}
+          {listing.data && !listing.data.ok && !listing.isFetching && (
+            <>
+              {" "}
+              <button type="button" className="link-inline" onClick={() => void listing.refetch()}>
+                {t("settingsDialog.modelListRefresh")}
+              </button>
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onSave: (p: ModelProfile) => void; onCancel: () => void }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<ModelProfile>(profile);
@@ -1078,18 +1154,12 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           </select>
         </div>
       </div>
-      <div className="grid-2">
-        {draft.provider !== "anthropic" && (
-          <div className="field">
-            <label htmlFor="pfBase">{t("settingsDialog.baseUrlLabel")}</label>
-            <input id="pfBase" className="input num" value={draft.baseURL ?? ""} onChange={(e) => set({ baseURL: e.target.value })} />
-          </div>
-        )}
+      {draft.provider !== "anthropic" && (
         <div className="field">
-          <label htmlFor="pfModel">{t("settingsDialog.modelLabel")}</label>
-          <input id="pfModel" className="input num" value={draft.model} onChange={(e) => set({ model: e.target.value })} />
+          <label htmlFor="pfBase">{t("settingsDialog.baseUrlLabel")}</label>
+          <input id="pfBase" className="input num" value={draft.baseURL ?? ""} onChange={(e) => set({ baseURL: e.target.value })} />
         </div>
-      </div>
+      )}
       <div className="field">
         <label htmlFor="pfKey">{t("settingsDialog.apiKeyLabel")}</label>
         <input id="pfKey" className="input num" type="password" value={draft.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
@@ -1106,28 +1176,7 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           )}
         </span>
       </div>
-      {problem && (
-        <div className="profile-problem" role="alert">
-          <p>{t(`settingsDialog.profileCheck_${problem.kind}` as MessageKey, { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
-          <details className="ai-error-details">
-            <summary>{t("agentPanel.errorDetails")}</summary>
-            <code>{problem.detail}</code>
-          </details>
-        </div>
-      )}
-      <div className="row" style={{ gap: 8 }}>
-        <button type="button" className="btn btn-secondary" disabled={!valid || checking} aria-busy={checking} onClick={() => void checkAndSave()}>
-          {checking ? t("settingsDialog.profileChecking") : t("settingsDialog.saveProfile")}
-        </button>
-        {problem && (
-          <button type="button" className="btn btn-ghost" onClick={() => onSave(candidate())}>
-            {t("settingsDialog.profileSaveAnyway")}
-          </button>
-        )}
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
-          {t("common.cancel")}
-        </button>
-      </div>
+      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} onChange={(model) => set({ model })} />
       {draft.provider !== "openai-images" && <fieldset className="field">
         <legend>{t("agentPanel.modelMediaInput")}</legend>
         <p className="meta-txt">{t("agentPanel.modelMediaHelp")}</p>
@@ -1141,6 +1190,29 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
         <p className="meta-txt">{t("agentPanel.modelMediaOutputHelp")}</p>
         {(["image", "audio"] as const).map(mode => <label key={mode}><input type="checkbox" checked={draft.outputModalities?.includes(mode) ?? false} onChange={event => set({ outputModalities: event.target.checked ? [mode] : [] })} /> {mode}</label>)}
       </fieldset>}
+      {problem && (
+        <div className="profile-problem" role="alert">
+          <p>{t(`settingsDialog.profileCheck_${problem.kind}` as MessageKey, { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
+          <details className="ai-error-details">
+            <summary>{t("agentPanel.errorDetails")}</summary>
+            <code>{problem.detail}</code>
+          </details>
+        </div>
+      )}
+      {/* At the foot, primary: users looked for a way out and hit the row's Remove instead. */}
+      <div className="row" style={{ gap: 8, justifyContent: "flex-end", borderTop: "1px solid var(--border-soft)", paddingTop: "var(--space-3)" }}>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          {t("common.cancel")}
+        </button>
+        {problem && (
+          <button type="button" className="btn btn-ghost" onClick={() => onSave(candidate())}>
+            {t("settingsDialog.profileSaveAnyway")}
+          </button>
+        )}
+        <button type="button" className="btn btn-primary" disabled={!valid || checking} aria-busy={checking} onClick={() => void checkAndSave()}>
+          {checking ? t("settingsDialog.profileChecking") : t("settingsDialog.saveProfile")}
+        </button>
+      </div>
     </div>
   );
 }

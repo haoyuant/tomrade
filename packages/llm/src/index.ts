@@ -10,10 +10,10 @@ import { LlmError } from "./errors.js";
 import { assistantMessage, collect, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
 import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
-import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, type QuickSetupResult } from "./providers.js";
+import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, usableModels, type ModelListing, type QuickSetupResult } from "./providers.js";
 
 export * from "./model.js";
-export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, type ProviderPreset, type QuickSetupResult } from "./providers.js";
+export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 export { LlmError, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
@@ -116,6 +116,8 @@ export interface LlmService extends LLMProvider {
   profiles(): { id: string; title: string }[];
   /** Ask the profile's endpoint for one token — a wrong key or address shows when it is saved, not in the first conversation. */
   test(profile: ModelProfile): Promise<ModelTest>;
+  /** The models an endpoint lists that a profile of its kind can use. */
+  listing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">): Promise<ModelListing>;
   /** Offer a model for worker calls while no profile is configured; returns the withdrawal. */
   lend(model: LentModel): () => void;
   worker(): Promise<WorkerStatus>;
@@ -124,6 +126,7 @@ export interface LlmService extends LLMProvider {
 declare module "@tomradex/ipc" {
   interface Channels {
     "llm.test": (profile: ModelProfile) => ModelTest;
+    "llm.models": (endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) => ModelListing;
     "llm.worker": () => WorkerStatus;
     "llm.providers": () => ProviderView[];
     "llm.guess": (key: string) => string[];
@@ -272,6 +275,7 @@ export class Llm extends Service implements LlmService {
   [Service.init]() {
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("llm.test", (profile) => ctx.llm.test(profile));
+      ctx.ipc.handle("llm.models", (endpoint) => ctx.llm.listing(endpoint));
       ctx.ipc.handle("llm.worker", () => ctx.llm.worker());
       ctx.ipc.handle("llm.providers", () => this.providers());
       ctx.ipc.handle("llm.guess", (key) => guessProviders(key));
@@ -323,6 +327,15 @@ export class Llm extends Service implements LlmService {
     // an image endpoint has no one-token request; it shows its worth on the first picture
     if (profile.provider === "openai-images") return { ok: true };
     return probe(this.build(profile));
+  }
+
+  /** What the endpoint lists, for the profile form's model picker. A listing-less endpoint is an empty list, not an error. */
+  async listing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">): Promise<ModelListing> {
+    // the same defaults build() talks to
+    const baseURL = endpoint.baseURL || { anthropic: "", "openai-images": "https://api.openai.com/v1", "openai-compatible": "https://api.deepseek.com" }[endpoint.provider];
+    const result = await listModels({ provider: endpoint.provider === "anthropic" ? "anthropic" : "openai-compatible", baseURL }, endpoint.apiKey.trim());
+    if (!result.ok) return { ok: false, kind: modelErrorKind(result.detail), detail: result.detail };
+    return { ok: true, models: usableModels(endpoint.provider, result.models ?? []) };
   }
 
   private adapterOf(profile: ModelProfile): ChatModel {
@@ -475,6 +488,10 @@ export class FakeLlm implements LlmService {
     return { ok: true };
   }
 
+  async listing(): Promise<ModelListing> {
+    return { ok: true, models: [] };
+  }
+
   profiles(): { id: string; title: string }[] {
     return [];
   }
@@ -537,6 +554,7 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       profiles: () => [{ id: "fake", title: "fake" }],
       ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
       test: async () => ({ ok: true }),
+      listing: async () => ({ ok: true, models: ["fake"] }),
       lend: () => () => {},
       worker: async () => ({ ok: true, via: "profile", title: "fake" }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
