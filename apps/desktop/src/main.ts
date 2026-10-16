@@ -5,6 +5,7 @@ import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, PREFS_FILE, wentAway } from "./background.js";
 import { boot } from "./boot.js";
+import { deliverDeepLink, registerScheme } from "./deep-link.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
@@ -31,6 +32,15 @@ const primary = app.requestSingleInstanceLock();
 if (!primary) {
   console.error("Tomrade is already running on this data folder; bringing that window forward.");
   app.quit();
+}
+
+// tomrade:// links: macOS hands them over as events, from launch on; elsewhere they arrive as arguments.
+if (primary) {
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    deliverDeepLink(url);
+  });
+  for (const arg of argv) deliverDeepLink(arg);
 }
 
 // Everything under the app's own roots resolves as usual; anything else is an extension.
@@ -135,8 +145,10 @@ app.whenReady().then(async () => {
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
   if (mode === "window") openMain();
-  app.on("second-instance", () => {
+  registerScheme();
+  app.on("second-instance", (_event, args) => {
     if (leaving()) return;
+    for (const arg of args) deliverDeepLink(arg);
     const win = [...mainWindows].find((w) => !w.isDestroyed()) ?? openMain();
     if (win.isMinimized()) win.restore();
     win.show();

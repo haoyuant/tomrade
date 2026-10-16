@@ -303,3 +303,14 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - **/status**：当前这一轮在做什么（engine 上报的 activity）、等待中的消息数和待回答的问题。
 
 `/stop` 仍会清空等待中的消息，与桌面“中止后排队消息保留”不同，未在本工单改动。
+
+## 流式回复与富内容（TOM-120）
+
+- **流式**：沿用契约 v2 的 native / edit / none；节流默认改为 1.5 秒（`progressMs`），终稿与桌面同一条 Agent 文本消息。进度消息被节流时不再丢掉最后状态，间隔到了补发最新的一帧。
+- **工具过程**：默认不单独发消息，只在进度消息里加一行（最近 6 个工具名 + ✓/✗），结束定稿时保留；不发参数、输出或凭据。route 输出新增“详细”（`verbose`），每次工具调用另发一行。模型重试时进度消息显示“重试中（第 N / M 次）”。
+- **卡片**（`packages/im/src/rich.ts`）：`start` 渲染为工单卡；`backlog.proposal` 渲染为计划（史诗与功能列表），确认仍走问题按钮；`checklist` 按行显示状态；未知 schema 给标题和“在 Tomrade 查看”会话链接。
+- **变更**：每个工单一张卡（操作 · key 标题，状态、优先级，“在 Tomrade 打开”），最多 8 张，其余计数；不支持卡片的平台折成文字和链接。
+- **产物**：本轮 `write_file` 保存的文件按工具返回的 fileId + versionId 作为附件发回（句柄 `files:<fileId>:<versionId>`，`readOutboundFile` 读取那一版），正文带文件深链；平台不支持附件、超过大小或 Files 读取被截断时只留链接。`write_file` 结果把 id 放在前面，保证运行摘要截断时 id 还在。
+- **深链**：`tomrade://item/<项目>/<key>`、`thread/<项目>/<会话>`、`file/<项目>/<fileId>`。桌面注册 `tomrade:` 协议（`electron-builder.yml` 的 `protocols`、`src/deep-link.ts`），macOS `open-url`、其他平台第二实例参数都转给 `deep-links` 插件，解析后主窗口前置并广播 `app.open`，界面打开工单、会话或文件；对象不存在时只把窗口带到前面。
+
+未做：入站文档按用户要求存入 Files（需要新的导入入口），目前附件仍按 Agent media 能力处理，不支持的格式明确提示。

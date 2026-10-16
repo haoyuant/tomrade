@@ -181,7 +181,8 @@ export function registerTools(ctx: Context, files: Files): void {
         const projectId = requireProjectId("write_file", args.projectId, inv);
         const path = args.itemId ? files.pathFor(projectId, args.itemId, args.path) : args.path;
         const saved = await files.write(projectId, path, args.content, args.message ? { message: args.message } : {});
-        return { path: saved.path, fileId: saved.fileId, versionId: saved.versionId, size: saved.size };
+        // Ids first: a run's one-line summary of this result keeps them even when a long path is cut.
+        return { fileId: saved.fileId, versionId: saved.versionId, size: saved.size, path: saved.path };
       }
     })
   );

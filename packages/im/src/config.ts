@@ -18,8 +18,8 @@ export const ImSettings = z.object({
     allowGroups: z.boolean().default(false),
     /** In a group: `mention` only @; `reply` @ or a reply to the bot; `all` every message the adapter sees. */
     groupActivation: z.enum(["mention", "reply", "all"]).default("reply"),
-    /** `final` sends answers and questions only; `progress` also shows progress and growing replies. */
-    output: z.enum(["final", "progress"]).default("progress")
+    /** `final` sends answers and questions only; `progress` also shows progress and growing replies; `verbose` adds a line per tool call. */
+    output: z.enum(["final", "progress", "verbose"]).default("progress")
   })).default([])
 }).superRefine((value, ctx) => {
   for (const key of ["connections", "routes"] as const) {
@@ -39,7 +39,7 @@ export type ImIdentity = ImSettings["identities"][number];
 
 export const ImConfig = z.object({
   pollMs: z.number().int().min(10).default(250),
-  progressMs: z.number().int().min(100).default(2000),
+  progressMs: z.number().int().min(100).default(1500),
   retryMs: z.number().int().min(10).default(1000),
   actionTtlMs: z.number().int().min(100).default(24 * 60 * 60 * 1000),
   operationTimeoutMs: z.number().int().min(10).default(30_000),

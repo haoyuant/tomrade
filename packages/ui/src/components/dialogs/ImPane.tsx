@@ -260,6 +260,7 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
           <select id={id("output")} className="input" value={route.output} onChange={(e) => set({ output: e.target.value as ImRoute["output"] })}>
             <option value="progress">{t("imSettings.outputProgress")}</option>
             <option value="final">{t("imSettings.outputFinal")}</option>
+            <option value="verbose">{t("imSettings.outputVerbose")}</option>
           </select>
         </div>
       </div>

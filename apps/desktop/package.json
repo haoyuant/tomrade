@@ -48,6 +48,7 @@
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
+    "test:deep-link": "electron scripts/deep-link-check.mjs",
     "test:im-settings": "electron scripts/im-settings-check.mjs",
     "package": "node scripts/package.mjs"
   },

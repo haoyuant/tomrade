@@ -10,6 +10,7 @@ import type {} from "@tomradex/settings";
 import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
 import { prepare } from "./render.js";
+import { FILE_HANDLE, renderBlock, toolLine, type ItemLookup } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -109,9 +110,12 @@ export class Im extends Service {
   private readonly connections = new Map<string, Connection>();
   private readonly processing = new Set<string>();
   private readonly progressAt = new Map<string, number>();
+  private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly typingAt = new Map<string, number>();
   /** What each running thread last said it was doing, for `/status`. */
   private readonly activity = new Map<string, string>();
+  /** Per running thread: the tools called and the model retry in progress, for its progress message. */
+  private readonly turns = new Map<string, { tools: { tool: string; ok: boolean }[]; retry: { attempt: number; max?: number } | null }>();
   /** The reply being streamed per binding and run; the text is what the Agent has written so far. */
   private readonly streams = new Map<string, { id: string; text: string; at: number }>();
   /** Recent sends per binding, for adapters that declare a rate limit. */
@@ -175,6 +179,7 @@ export class Im extends Service {
     return async () => {
       this.stopped = true;
       clearInterval(timer);
+      for (const pending of this.progressTimers.values()) clearTimeout(pending);
       await Promise.all([...this.connections.values()].map(c => this.close(c)));
       this.connections.clear();
     };
@@ -813,7 +818,7 @@ export class Im extends Service {
     const detail = this.home.agent.thread(b.project_id, b.thread_id);
     this.store.db.transaction(() => {
       for (const message of detail.messages.filter(m => m.seq > b.cursor)) {
-        const content = message.role === "agent" ? this.render(message.block) : null;
+        const content = message.role === "agent" ? this.render(b, message.block) : null;
         const streamed = content && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
         if (streamed) this.replace(b, streamed.id, content, { final: true });
         else if (content) this.enqueue(b, `message:${b.id}:${message.id}`, content);
@@ -822,7 +827,9 @@ export class Im extends Service {
       this.pending(b, detail.pending);
       // Settles a progress message whose `done` event was missed, e.g. across a restart; never posts a new one.
       for (const run of detail.runs.filter(r => r.status !== "running")) {
-        if (this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `progress:${b.id}:${run.id}`)) this.replace(b, `progress:${b.id}:${run.id}`, { text: this.finished(run.status) });
+        const progress = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", `progress:${b.id}:${run.id}`);
+        // One the `done` event settled already keeps its tool line.
+        if (progress && !(JSON.parse(progress.content_json) as ImContent).text.startsWith(this.finished(run.status))) this.replace(b, progress.id, { text: this.finished(run.status) });
         // A stream that never became a message (a crash, an engine that stopped mid-reply) keeps what it showed.
         for (const open of this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND stream = 1 AND id LIKE ?", b.id, `stream:${b.id}:${run.id}:%`)) {
           this.replace(b, open.id, JSON.parse(open.content_json) as ImContent, { final: true });
@@ -862,16 +869,16 @@ export class Im extends Service {
     this.replace(b, id, { text: question.text, actions, ...(elements.length ? { elements } : {}) });
   }
 
-  private render(block: Block): ImContent | null {
-    switch (block.type) {
-      case "text": return { text: block.text };
-      case "error": return { text: this.say(`Execution error: ${block.text}`, `执行出错：${block.text}`) };
-      case "note": return { text: block.text };
-      case "changes": return { text: block.items?.map(i => `${i.key} · ${i.label} (${i.op})`).join("\n") || this.say(`Changed ${block.count} items`, `已变更 ${block.count} 项`) };
-      case "media": return { text: block.caption ?? block.media.name, files: [{ id: block.media.id, name: block.media.name, mimeType: block.media.mime, size: block.media.size }] };
-      case "card": return { text: block.title };
-      default: return null;
-    }
+  private render(b: Binding, block: Block): ImContent | null {
+    const detail = this.settings.routes.find(r => r.id === b.route_id)?.output === "verbose";
+    return renderBlock({ projectId: b.project_id, threadId: b.thread_id, say: (en, zh) => this.say(en, zh), items: this.home.get("items") as ItemLookup | undefined }, block, detail);
+  }
+
+  /** The progress message: what the turn is doing, a model retry, and the tools it has called. */
+  private progressText(threadId: string, head: string): string {
+    const turn = this.turns.get(threadId);
+    const retry = turn?.retry ? this.say(`Retrying (attempt ${turn.retry.attempt}${turn.retry.max ? ` of ${turn.retry.max}` : ""})`, `重试中（第 ${turn.retry.attempt}${turn.retry.max ? ` / ${turn.retry.max}` : ""} 次）`) : "";
+    return [retry || head, toolLine(turn?.tools ?? [])].filter(Boolean).join("\n");
   }
 
   private finished(status: string): string {
@@ -881,6 +888,7 @@ export class Im extends Service {
 
   private onAgentEvent(threadId: string, event: AgentEvent) {
     if (this.stopped) return;
+    if (event.type === "done") queueMicrotask(() => this.turns.delete(threadId));
     if (event.type !== "delta" && event.type !== "progress") this.dirty.add(threadId);
     for (const b of this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b))) {
       const caps = this.capsOf(b);
@@ -888,28 +896,49 @@ export class Im extends Service {
       const quiet = this.settings.routes.find(r => r.id === b.route_id)?.output === "final";
       const streaming = !quiet && this.streamMode(caps, this.connections.get(b.connection_id)?.session) !== "none";
       if (event.type === "progress" && event.activity) this.activity.set(threadId, event.activity);
+      if (event.type === "progress" && event.retry !== undefined) {
+        const turn = this.turns.get(threadId) ?? { tools: [], retry: null };
+        turn.retry = event.retry ? { attempt: event.retry.attempt, ...(event.retry.max ? { max: event.retry.max } : {}) } : null;
+        this.turns.set(threadId, turn);
+      }
+      if (event.type === "message" && event.message.block.type === "trace") {
+        const turn = this.turns.get(threadId) ?? { tools: [], retry: null };
+        turn.tools.push({ tool: event.message.block.tool, ok: event.message.block.ok });
+        this.turns.set(threadId, turn);
+      }
       if (event.type === "progress" || event.type === "delta") {
         if (Date.now() - (this.typingAt.get(b.id) ?? 0) >= TYPING_MS) { this.typingAt.set(b.id, Date.now()); this.indicate(b, "typing"); }
         if (quiet) continue;
         if (event.type === "delta" && streaming) { this.stream(b, event.runId, event.text); continue; }
-        const last = this.progressAt.get(b.id) ?? 0;
         // Non-editing providers only receive stable output, so token streams don't spam chats.
-        if (!caps.edit || Date.now() - last < this.config.progressMs) continue;
-        this.progressAt.set(b.id, Date.now());
-        const text = event.type === "progress" ? event.activity || this.say("Working", "正在执行") : this.say("Writing a reply", "正在生成回复");
-        this.replace(b, `progress:${b.id}:${event.runId}`, { text });
+        if (!caps.edit) continue;
+        const text = this.progressText(threadId, event.type === "progress" ? event.activity || this.say("Working", "正在执行") : this.say("Writing a reply", "正在生成回复"));
+        const runId = event.runId;
+        // Throttled, but the latest state still shows once the interval is up.
+        const show = () => {
+          this.progressTimers.delete(b.id);
+          if (this.stopped || !this.home.agent.activeRuns().some(r => r.run.id === runId)) return;
+          this.progressAt.set(b.id, Date.now());
+          this.replace(b, `progress:${b.id}:${runId}`, { text });
+        };
+        clearTimeout(this.progressTimers.get(b.id));
+        const wait = this.config.progressMs - (Date.now() - (this.progressAt.get(b.id) ?? 0));
+        if (wait > 0) this.progressTimers.set(b.id, setTimeout(show, wait));
+        else show();
       } else if (event.type === "message" && event.message.role === "agent" && event.message.block.type === "text" && event.message.runId) {
         // The text that was streaming is now this message; the next delta starts a new stream.
         const open = this.streams.get(`${b.id}:${event.message.runId}`);
         this.streams.delete(`${b.id}:${event.message.runId}`);
         if (open) this.store.run("UPDATE plugin_im_outbox SET stream_of = ? WHERE id = ? AND stream = 1", event.message.id, open.id);
       } else if (event.type === "done") {
+        clearTimeout(this.progressTimers.get(b.id));
+        this.progressTimers.delete(b.id);
         this.activity.delete(threadId);
         this.streams.delete(`${b.id}:${event.run.id}`);
         this.typingAt.delete(b.id);
         this.indicate(b, "idle");
         // Without edits a routine "finished" line would follow every reply; only report what the reply can't show.
-        if ((caps.edit && !quiet) || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.finished(event.run.status) });
+        if ((caps.edit && !quiet) || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.progressText(threadId, this.finished(event.run.status)) });
         const trigger = this.store.get<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? AND run_id = ? ORDER BY seq LIMIT 1", b.id, event.run.id);
         const e = trigger && JSON.parse(trigger.event_json) as ImInbound;
         if (e?.kind === "message" && (event.run.status === "error" || event.run.status === "done")) this.react(b, e.messageId, event.run.status === "error" ? "failed" : "done");
@@ -1058,7 +1087,13 @@ export class Im extends Service {
     for (const b of this.store.bindings().filter(b => b.connection_id === c.id && this.authorizedBinding(b))) {
       const rows = this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND state = 'sending'", b.id);
       if (!rows.some(r => r.thread_id === b.thread_id && r.sending_json && (JSON.parse(r.sending_json) as ImContent).files?.some(f => f.id === id))) continue;
-      return Buffer.from(this.home.agent.readMedia(b.project_id, b.thread_id, id).base64, "base64");
+      const version = FILE_HANDLE.exec(id);
+      if (!version) return Buffer.from(this.home.agent.readMedia(b.project_id, b.thread_id, id).base64, "base64");
+      const files = this.home.get("files") as { readVersion(projectId: string, ref: { fileId: string; versionId: string }): Promise<{ body: string; encoding: "utf8" | "base64"; truncated: boolean } | null> } | undefined;
+      const content = await files?.readVersion(b.project_id, { fileId: version[1], versionId: version[2] });
+      // A cut-short body would arrive as a broken file; the message's link still reaches it.
+      if (!content || content.truncated) throw new Error("File version is unavailable or too large to send");
+      return Buffer.from(content.body, content.encoding);
     }
     throw new Error("File is not part of this connection's current delivery");
   }

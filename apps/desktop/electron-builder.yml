@@ -10,6 +10,10 @@ productName: Tomrade
 extraMetadata:
   productName: Tomrade
 copyright: Copyright © Tomrade
+# tomrade:// links (an IM reply's "Open in Tomrade") start or bring forward the app: src/deep-link.ts.
+protocols:
+  - name: Tomrade
+    schemes: [tomrade]
 # One pattern for every target, so each platform and arch gets its own name.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 directories:

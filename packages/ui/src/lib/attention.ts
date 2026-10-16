@@ -24,6 +24,8 @@ declare module "@tomradex/ipc" {
   interface Broadcasts {
     "attention.changed": (entries: AttentionEntry[]) => void;
     "attention.open": (entry: AttentionEntry) => void;
+    /** A followed tomrade:// link, e.g. from an IM reply. */
+    "app.open": (target: { projectId: string; itemId?: string; threadId?: string; path?: string }) => void;
   }
 }
 
@@ -66,9 +68,14 @@ export function useOpenAttention(): (entry: Pick<AttentionEntry, "projectId" | "
   );
 }
 
-/** Mounted once at the root: a clicked notification opens what it is about. */
+/** Mounted once at the root: a clicked notification, or a followed tomrade:// link, opens what it is about. */
 export function AttentionOpener() {
   const open = useOpenAttention();
+  const navigate = useNavigate();
   useEffect(() => subscribe("attention.open", open), [open]);
+  useEffect(() => subscribe("app.open", (target) => {
+    if (target.path !== undefined) void navigate({ to: "/p/$projectId/f/$", params: { projectId: target.projectId, _splat: target.path } });
+    else open({ projectId: target.projectId, threadId: target.threadId ?? null, itemId: target.itemId ?? null });
+  }), [open, navigate]);
   return null;
 }
