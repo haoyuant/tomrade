@@ -12,6 +12,8 @@ export const ImSettings = z.object({
     projectId: id, boardId: id.nullable().default(null), engine: id.optional(),
     /** Engine option overrides for threads this route opens (model, effort…). */
     options: z.record(z.string(), z.unknown()).optional(),
+    /** The permission mode threads this route opens start in, when the engine has modes. */
+    permissionMode: id.optional(),
     /** A route explicitly grants these people use of this project's assistant. */
     allowedActors: z.array(id).min(1),
     allowDirectMessages: z.boolean().default(true),

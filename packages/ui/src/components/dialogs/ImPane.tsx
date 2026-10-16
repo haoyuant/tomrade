@@ -229,7 +229,7 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
         </div>
         <div className="field">
           <label htmlFor={id("engine")}>{t("imSettings.engine")}</label>
-          <select id={id("engine")} className="input" value={route.engine ?? ""} onChange={(e) => set({ engine: e.target.value || undefined, options: undefined })}>
+          <select id={id("engine")} className="input" value={route.engine ?? ""} onChange={(e) => set({ engine: e.target.value || undefined, options: undefined, permissionMode: undefined })}>
             <option value="">{t("imSettings.engineDefault")}</option>
             {(engines.data ?? []).filter((e) => e.ok || e.id === route.engine).map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
           </select>
@@ -247,6 +247,15 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
             </select>
           </div>
         ))}
+        {engine?.permissionModes && (
+          <div className="field">
+            <label htmlFor={id("mode")}>{t("imSettings.mode")}</label>
+            <select id={id("mode")} className="input" value={route.permissionMode ?? ""} onChange={(e) => set({ permissionMode: e.target.value || undefined })}>
+              <option value="">{t("imSettings.optionDefault")}</option>
+              {engine.permissionModes.choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+        )}
         <div className="field">
           <label htmlFor={id("activation")}>{t("imSettings.activation")}</label>
           <select id={id("activation")} className="input" value={route.groupActivation} disabled={!route.allowGroups} onChange={(e) => set({ groupActivation: e.target.value as ImRoute["groupActivation"] })}>

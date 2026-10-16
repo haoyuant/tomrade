@@ -101,6 +101,7 @@ export class ImStore {
       this.run("DELETE FROM plugin_im_inbox WHERE state NOT IN ('queued') AND created_at < ?", before);
       this.run("DELETE FROM plugin_im_outbox WHERE state IN ('delivered', 'cancelled') AND created_at < ?", before);
       this.run("DELETE FROM plugin_im_actions WHERE retired = 1 AND created_at < ?", before);
+      this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'cmd:%' AND expires_at < ?", before);
     });
   }
 }

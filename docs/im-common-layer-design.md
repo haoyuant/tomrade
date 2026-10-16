@@ -314,3 +314,15 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - **深链**：`tomrade://item/<项目>/<key>`、`thread/<项目>/<会话>`、`file/<项目>/<fileId>`。桌面注册 `tomrade:` 协议（`electron-builder.yml` 的 `protocols`、`src/deep-link.ts`），macOS `open-url`、其他平台第二实例参数都转给 `deep-links` 插件，解析后主窗口前置并广播 `app.open`，界面打开工单、会话或文件；对象不存在时只把窗口带到前面。
 
 未做：入站文档按用户要求存入 Files（需要新的导入入口），目前附件仍按 Agent media 能力处理，不支持的格式明确提示。
+
+## 会话切换与选项指令（TOM-119）
+
+- **`/sessions`**：本项目最近 20 个助手会话（标题、助手、最后活动），标出当前会话和正在运行的；平台有选择控件时附单选，否则用 `/switch N`。群里的列表只给发起人看（平台支持 ephemeral 时）。只有 route 允许的成员能用。
+- **`/switch N`**：IM 会话改绑到所选会话（序号按发起人最近一次 `/sessions` 的列表）。只发该会话此后的消息，历史留在桌面。正在运行的会话、当前会话还在运行或等待回答时不允许；只列 assistant 会话，code 会话不在其中。群聊里先提示“群里所有人都将能看到该会话的历史”，由发起人按按钮确认（无按钮平台回复 `/switch N confirm`），其他成员点按钮无效。
+- **`/archive`**：归档当前会话，按 route 设置开新会话。
+- **`/engine`、`/model`、`/effort`、`/mode`**：不带参数时列出当前值和可选项（engine 列表、engine 的 picks、permissionModes，与桌面面板同一份数据），带参数时写入 thread（`setEngine` / `setOptions` / `setPermissionMode`），桌面面板显示相同选项。选项和模式运行中修改从下一轮生效；切换助手只能在两轮之间。`/model default` 恢复默认。
+- 选择控件的令牌记在动作表里（`question_id = cmd:<种类>`），只认提供给的那个人，用一次即失效，过期后清理；不参与问题卡片的收口。
+- **route** 增加默认权限模式（`permissionMode`），连同默认助手和选项用于 IM 新开的会话；设置面板里可选。
+- 顺带修复：`/new` 改绑后的“已开始新会话”原先挂在旧会话上，发送时被当作过期丢弃，现在走新会话。
+
+未做：route 绑定多个项目和 `/project` 切换（默认只绑一个项目，工单验收不含）。

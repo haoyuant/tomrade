@@ -112,6 +112,8 @@ export class Im extends Service {
   private readonly progressAt = new Map<string, number>();
   private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly typingAt = new Map<string, number>();
+  /** The conversations `/sessions` last listed per binding, so `/switch N` means what the person saw. */
+  private readonly listed = new Map<string, string[]>();
   /** What each running thread last said it was doing, for `/status`. */
   private readonly activity = new Map<string, string>();
   /** Per running thread: the tools called and the model retry in progress, for its progress message. */
@@ -368,6 +370,13 @@ export class Im extends Service {
       { name: "answer", description: this.say("Answer the open question", "回答当前问题"), args: this.say("token answer", "令牌 回答") },
       { name: "steer", description: this.say("Send into the running turn; the assistant reads it after its current step", "插话：送进正在运行的这一轮，助手做完当前这一步就会读到"), args: this.say("message", "内容") },
       { name: "queue", description: this.say("List messages waiting for the current turn", "列出等待当前这一轮结束的消息") },
+      { name: "sessions", description: this.say("List this project's recent conversations", "列出本项目最近的会话") },
+      { name: "switch", description: this.say("Continue a conversation from /sessions here", "在这里继续 /sessions 中的某个会话"), args: "N" },
+      { name: "archive", description: this.say("Archive this conversation and start a new one", "归档当前会话并开始新会话") },
+      { name: "engine", description: this.say("Show or change the assistant", "查看或切换助手"), args: this.say("[name]", "[名称]") },
+      { name: "model", description: this.say("Show or change the model", "查看或切换模型"), args: this.say("[model]", "[模型]") },
+      { name: "effort", description: this.say("Show or change the reasoning effort", "查看或切换推理强度"), args: this.say("[level]", "[强度]") },
+      { name: "mode", description: this.say("Show or change the permission mode", "查看或切换权限模式"), args: this.say("[mode]", "[模式]") },
       { name: "unqueue", description: this.say("Withdraw a waiting message", "撤回一条等待中的消息"), args: "N" },
       { name: "help", description: this.say("Show these commands", "显示这些指令") }
     ];
@@ -569,7 +578,7 @@ export class Im extends Service {
     if (event.kind === "action" && !b) throw new Error("Invalid or expired IM action");
     if (!b) {
       if (!this.home.projects.get(route!.projectId) || !this.home.db.has(route!.projectId)) throw new Error("IM target project is unavailable");
-      const th = this.home.agent.newThread(route!.projectId, route!.engine, route!.boardId, { surface: "assistant", ...(route!.options ? { options: route!.options } : {}) });
+      const th = this.openThread(route!);
       this.store.run("INSERT INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         bindingId, route!.id, this.routeHash(route!), c.id, JSON.stringify(event.address), route!.projectId, th.id, event.actor.id, Date.now());
       b = this.store.binding(bindingId)!;
@@ -675,6 +684,8 @@ export class Im extends Service {
       const reply = { anchor: anchorOf(event) };
       let input: UserInput;
       if (event.kind === "action") {
+        const cmd = this.commandOf(b, event.token, event.actor.id);
+        if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? String([event.value ?? ""].flat()[0] ?? ""), reply); return; }
         input = this.answer(b, event.token, event.actor.id, event.value);
       } else {
         const text = event.text.trim();
@@ -732,18 +743,17 @@ export class Im extends Service {
         }
         if (text === "/new") {
           if (detail.pending) this.refuse("Answer or stop the current question before opening a new conversation", "请先回答或停止当前问题，再开始新会话");
-          const route = this.settings.routes.find(r => r.id === b.route_id)!;
-          const th = this.home.agent.newThread(b.project_id, route.engine, route.boardId, route.options ? { options: route.options } : {});
-          this.store.db.transaction(() => {
-            this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
-            this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ?", b.id);
-            this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = 0, actor_id = ? WHERE id = ?", th.id, event.actor.id, b.id);
+          const th = this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
+          this.rebind(b, th.id, 0, event.actor.id, rebound => {
             this.accept(row);
-            this.enqueue(b, `new:${row.id}`, { text: this.say("New conversation started", "已开始新会话") }, reply);
+            this.enqueue(rebound, `new:${row.id}`, { text: this.say("New conversation started", "已开始新会话") }, reply);
           });
           return;
         }
+        if (await this.option(b, row, event, text, reply)) return;
         const match = /^\/answer\s+(\S+)(?:\s+([\s\S]+))?$/.exec(text);
+        const cmd = match && this.commandOf(b, match[1], event.actor.id);
+        if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? match![2]?.trim() ?? "", reply); return; }
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
         else {
           if (!text && !event.attachments?.length) this.refuse("Empty message", "消息为空");
@@ -797,6 +807,199 @@ export class Im extends Service {
     } finally { this.processing.delete(b.thread_id); }
   }
 
+  /** A new conversation the way the route opens one: its engine, options and permission mode. */
+  private openThread(route: ImRoute) {
+    const th = this.home.agent.newThread(route.projectId, route.engine, route.boardId, { surface: "assistant", ...(route.options ? { options: route.options } : {}) });
+    if (route.permissionMode) {
+      try { this.home.agent.setPermissionMode(route.projectId, th.id, route.permissionMode); } catch { /* the engine changed since the route was saved; its default applies */ }
+    }
+    return th;
+  }
+
+  /** Points the IM conversation at another thread. Only what that thread says from now on is sent; its history stays on the desktop. */
+  private rebind(b: Binding, threadId: string, cursor: number, actorId: string, also: (rebound: Binding) => void) {
+    this.store.db.transaction(() => {
+      this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
+      this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ?", b.id);
+      this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = ?, actor_id = ?, anchor = NULL WHERE id = ?", threadId, cursor, actorId, b.id);
+      // What says so goes out on the new thread; one queued on the old would be dropped as stale.
+      also(this.store.binding(b.id)!);
+    });
+    this.listed.delete(b.id);
+  }
+
+  /** A button or select a command offered; only the person it was offered to can use it. */
+  private offer(b: Binding, kind: string, actorId: string): string {
+    const t = token();
+    this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, value_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+      t, b.id, b.thread_id, `cmd:${kind}`, actorId, Date.now() + this.config.actionTtlMs, Date.now());
+    return t;
+  }
+
+  /** The command an offered token stands for, and the value it carries, or null when the token is a question's. */
+  private commandOf(b: Binding, actionToken: string, actorId: string): { kind: string; value?: string } | null {
+    const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
+    if (!a?.question_id.startsWith("cmd:")) return null;
+    if (a.binding_id !== b.id || a.thread_id !== b.thread_id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed) {
+      this.refuse("That choice has expired or isn't yours", "该选项已失效，或不由你选择");
+    }
+    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", actionToken);
+    return { kind: a.question_id.slice("cmd:".length), ...(a.value_json ? { value: JSON.parse(a.value_json) as string } : {}) };
+  }
+
+  /** Whether this conversation is a group: its people see whatever the bound thread says. */
+  private isGroup(b: Binding): boolean {
+    const last = this.store.all<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? ORDER BY seq DESC LIMIT 20", b.id)
+      .map(r => JSON.parse(r.event_json) as ImInbound).find(e => e.kind === "message");
+    return last?.kind === "message" && last.activation !== "dm";
+  }
+
+  /** A list to pick from: numbered text everywhere, and a select where the platform has one. */
+  private choices(b: Binding, id: string, actorId: string, kind: string, text: string, options: { label: string; value: string }[], reply: { anchor: string | null }) {
+    const select = this.capsOf(b)?.select && options.length
+      ? [{ type: "select" as const, token: this.offer(b, kind, actorId), options: options.slice(0, 24) }] : [];
+    this.enqueue(b, id, { text, ...(select.length ? { elements: select } : {}) }, { ...reply, visibleTo: reply.anchor ? actorId : null });
+  }
+
+  /** `/sessions`, `/switch`, `/archive`, `/engine`, `/model`, `/effort`, `/mode`. True when the message was one. */
+  private async option(b: Binding, row: Inbox, event: ImInbound & { kind: "message" }, text: string, reply: { anchor: string | null }): Promise<boolean> {
+    const [, name, arg = ""] = /^\/(sessions|switch|archive|engine|model|effort|mode)(?:\s+([\s\S]+))?$/.exec(text) ?? [];
+    if (!name) return false;
+    const actor = event.actor.id;
+    const { thread } = this.home.agent.thread(b.project_id, b.thread_id);
+    if (name === "sessions") {
+      const threads = this.home.agent.store.threads(b.project_id, "assistant").slice(0, 20);
+      this.listed.set(b.id, threads.map(t => t.id));
+      const running = new Set(this.home.agent.activeRuns().map(r => r.thread.id));
+      const lines = threads.map((t, i) => `${i + 1}. ${t.title || this.say("Untitled", "未命名")} · ${this.home.agent.engineOf(t.engine)?.title ?? t.engine} · ${this.ago(t.updatedAt)}`
+        + (t.id === b.thread_id ? this.say(" ← here", " ← 当前") : running.has(t.id) ? this.say(" · running", " · 运行中") : ""));
+      this.choices(b, `sessions:${row.id}`, actor, "switch", lines.length
+        ? [...lines, this.say("Reply /switch N to continue one here.", "回复 /switch N 在这里继续该会话。")].join("\n")
+        : this.say("No conversations yet", "还没有会话"),
+        threads.filter(t => t.id !== b.thread_id).map(t => ({ label: t.title || this.say("Untitled", "未命名"), value: t.id })), reply);
+      this.accept(row); return true;
+    }
+    if (name === "switch") {
+      const [, n, confirm] = /^(\d+)(\s+confirm)?$/i.exec(arg.trim()) ?? [];
+      const ids = this.listed.get(b.id) ?? this.home.agent.store.threads(b.project_id, "assistant").slice(0, 20).map(t => t.id);
+      const target = n ? ids[Number(n) - 1] : undefined;
+      if (!target) this.refuse("Pick a number from /sessions", "请从 /sessions 的列表里选一个序号");
+      await this.choose(b, row, actor, confirm ? "switch!" : "switch", target, reply, n);
+      return true;
+    }
+    if (name === "archive") {
+      if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending) {
+        this.refuse("Stop the current turn or answer its question before archiving", "请先停止当前执行或回答问题，再归档");
+      }
+      this.home.agent.archiveThread(b.project_id, b.thread_id);
+      const th = this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
+      this.rebind(b, th.id, 0, actor, rebound => {
+        this.accept(row);
+        this.enqueue(rebound, `archive:${row.id}`, { text: this.say(`Archived “${thread.title || "Untitled"}”; new conversation started`, `已归档“${thread.title || "未命名"}”，已开始新会话`) }, reply);
+      });
+      return true;
+    }
+    const engine = this.home.agent.engineOf(thread.engine);
+    if (name === "engine") {
+      if (!arg) {
+        const views = (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly);
+        this.choices(b, `engine:${row.id}`, actor, "engine",
+          [this.say(`Assistant: ${engine?.title ?? thread.engine}`, `当前助手：${engine?.title ?? thread.engine}`), ...views.map(v => `- ${v.title} (${v.id})`), this.say("Reply /engine <name> to switch.", "回复 /engine <名称> 切换。")].join("\n"),
+          views.filter(v => v.id !== thread.engine).map(v => ({ label: v.title, value: v.id })), reply);
+        this.accept(row); return true;
+      }
+      await this.choose(b, row, actor, "engine", arg.trim(), reply); return true;
+    }
+    if (name === "mode") {
+      const modes = engine?.permissionModes;
+      if (!modes) this.refuse("This assistant has no permission modes", "当前助手没有权限模式可选");
+      if (!arg) {
+        const current = thread.permissionMode ?? modes.mainDefault ?? modes.default;
+        this.choices(b, `mode:${row.id}`, actor, "mode",
+          [this.say(`Permission mode: ${modes.choices.find(c => c.value === current)?.label ?? current}`, `权限模式：${modes.choices.find(c => c.value === current)?.label ?? current}`),
+            ...modes.choices.map(c => `- ${c.label} (${c.value})`), this.say("Reply /mode <mode> to change it.", "回复 /mode <模式> 切换。")].join("\n"),
+          modes.choices.map(c => ({ label: c.label, value: c.value })), reply);
+        this.accept(row); return true;
+      }
+      await this.choose(b, row, actor, "mode", arg.trim(), reply); return true;
+    }
+    // model, effort: the engine's own picks.
+    const pick = engine?.picks?.().find(p => p.key === name);
+    if (!pick) this.refuse(`This assistant has no ${name} choice`, `当前助手没有可选的${name === "model" ? "模型" : "推理强度"}`);
+    if (!arg) {
+      const current = thread.options?.[name];
+      this.choices(b, `${name}:${row.id}`, actor, name,
+        [`${pick.title}: ${typeof current === "string" ? current : this.say("default", "默认")}`, ...pick.choices.map(c => `- ${c.label ?? c.value}${c.label ? ` (${c.value})` : ""}`),
+          this.say(`Reply /${name} <value> to change it, or /${name} default.`, `回复 /${name} <值> 切换，或 /${name} default 恢复默认。`)].join("\n"),
+        [{ label: this.say("Default", "默认"), value: "default" }, ...pick.choices.map(c => ({ label: c.label ?? c.value, value: c.value }))], reply);
+      this.accept(row); return true;
+    }
+    await this.choose(b, row, actor, name, arg.trim(), reply); return true;
+  }
+
+  /** Applies a choice, from a typed command or from the select or button it offered. */
+  private async choose(b: Binding, row: Inbox, actorId: string, kind: string, value: string, reply: { anchor: string | null }, n?: string) {
+    const { thread } = this.home.agent.thread(b.project_id, b.thread_id);
+    const running = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
+    const when = running ? this.say(" It applies from the next turn.", "从下一轮开始生效。") : "";
+    const done = (text: string, on = b) => { this.enqueue(on, `${kind}:${row.id}`, { text }, reply); this.accept(row); };
+    if (kind === "switch" || kind === "switch!") {
+      const target = this.home.agent.store.thread(b.project_id, value);
+      if (!target || target.archived || target.surface !== "assistant") this.refuse("That conversation can't be continued here", "该会话无法在这里继续");
+      if (target.id === b.thread_id) { done(this.say("Already here", "已经是当前会话")); return; }
+      if (this.home.agent.activeRuns().some(r => r.thread.id === target.id)) this.refuse("That conversation is running; try again when it finishes", "该会话正在运行，结束后再试");
+      if (running || this.home.agent.thread(b.project_id, b.thread_id).pending) this.refuse("Stop the current turn or answer its question first", "请先停止当前执行或回答问题");
+      const title = target.title || this.say("Untitled", "未命名");
+      // In a group, the conversation's history becomes visible to everyone there; the person who asked confirms.
+      if (kind === "switch" && this.isGroup(b)) {
+        const caps = this.capsOf(b);
+        const confirm = caps?.buttons ? [{ label: this.say("Continue it here", "在这里继续"), token: this.offer(b, "switch!", actorId), style: "primary" as const }] : [];
+        // The button carries the conversation in its own row, as a select would.
+        if (confirm.length) this.store.run("UPDATE plugin_im_actions SET value_json = ? WHERE token = ?", JSON.stringify(target.id), confirm[0].token);
+        this.enqueue(b, `switch-confirm:${row.id}`, { text: this.say(`Everyone in this group will be able to read “${title}” and what follows. Continue it here?${confirm.length ? "" : ` Reply /switch ${n ?? ""} confirm.`}`,
+          `群里所有人都将能看到“${title}”的历史和后续内容。要在这里继续吗？${confirm.length ? "" : `回复 /switch ${n ?? ""} confirm 确认。`}`), actions: confirm }, { ...reply, visibleTo: reply.anchor ? actorId : null });
+        this.accept(row); return;
+      }
+      const cursor = this.home.agent.thread(b.project_id, target.id).messages.at(-1)?.seq ?? 0;
+      this.rebind(b, target.id, cursor, actorId, rebound => done(this.say(`Continuing “${title}” here; the desktop shows the same conversation.`, `已切换到“${title}”，在这里继续；桌面上是同一个会话。`), rebound));
+      return;
+    }
+    if (kind === "engine") {
+      const views = (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly);
+      const target = views.find(v => v.id === value || v.title.toLowerCase() === value.toLowerCase());
+      if (!target) this.refuse(`No assistant “${value}”; /engine lists them`, `没有名为“${value}”的助手；/engine 可查看`);
+      if (running) this.refuse("The assistant can't change while a turn runs; try again when it finishes", "运行中不能切换助手，请在本轮结束后再试");
+      this.home.agent.setEngine(b.project_id, b.thread_id, target.id);
+      done(this.say(`Assistant: ${target.title}`, `已切换助手：${target.title}`)); return;
+    }
+    if (kind === "mode") {
+      const choice = this.home.agent.engineOf(thread.engine)?.permissionModes?.choices.find(c => c.value === value || c.label.toLowerCase() === value.toLowerCase());
+      if (!choice) this.refuse(`No permission mode “${value}”; /mode lists them`, `没有“${value}”这个权限模式；/mode 可查看`);
+      this.home.agent.setPermissionMode(b.project_id, b.thread_id, choice.value);
+      done(this.say(`Permission mode: ${choice.label}.${when}`, `权限模式：${choice.label}。${when}`)); return;
+    }
+    const pick = this.home.agent.engineOf(thread.engine)?.picks?.().find(p => p.key === kind);
+    if (!pick) this.refuse("That choice is no longer available", "该选项已不可用");
+    const { [kind]: _old, ...rest } = thread.options ?? {};
+    let options: Record<string, unknown> = rest;
+    if (value.toLowerCase() !== "default") {
+      const chosen = pick.choices.find(c => c.value === value || c.label?.toLowerCase() === value.toLowerCase())?.value ?? (pick.freeText ? value : undefined);
+      if (!chosen) this.refuse(`No ${pick.title} “${value}”; /${kind} lists them`, `没有“${value}”这个${pick.title}；/${kind} 可查看`);
+      options = { ...rest, [kind]: chosen };
+    }
+    try { this.home.agent.setOptions(b.project_id, b.thread_id, Object.keys(options).length ? options : null); }
+    catch { this.refuse(`The assistant refused that ${pick.title}`, `助手不接受该${pick.title}`); }
+    done(this.say(`${pick.title}: ${typeof options[kind] === "string" ? options[kind] : "default"}.${when}`, `${pick.title}：${typeof options[kind] === "string" ? options[kind] : "默认"}。${when}`));
+  }
+
+  private ago(at: number): string {
+    const m = Math.max(0, Math.round((Date.now() - at) / 60_000));
+    if (m < 1) return this.say("just now", "刚刚");
+    if (m < 60) return this.say(`${m} min ago`, `${m} 分钟前`);
+    const h = Math.round(m / 60);
+    return h < 24 ? this.say(`${h} h ago`, `${h} 小时前`) : this.say(`${Math.round(h / 24)} d ago`, `${Math.round(h / 24)} 天前`);
+  }
+
   private accept(row: Inbox) { this.store.run("UPDATE plugin_im_inbox SET state = 'accepted' WHERE id = ?", row.id); }
 
   private answer(b: Binding, actionToken: string, actorId: string, value?: string | string[]): UserInput {
@@ -840,7 +1043,7 @@ export class Im extends Service {
 
   private pending(b: Binding, pending: PendingView | null) {
     const runId = this.home.agent.store.runs(b.project_id, b.thread_id).at(-1)?.id ?? null;
-    const previous = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND retired = 0", b.id);
+    const previous = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND retired = 0 AND question_id NOT LIKE 'cmd:%'", b.id);
     for (const a of previous) if (a.question_id !== pending?.question.id || a.thread_id !== b.thread_id || a.run_id !== runId || a.expires_at < Date.now()) {
       this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", a.token);
       const id = `question:${b.id}:${a.question_id}`;
@@ -1102,7 +1305,7 @@ export class Im extends Service {
 /** Commands that act at once, ahead of ordinary messages waiting for the turn. A demoted /steer carries its text in `input_json`. */
 function isControl(row: Inbox, event: ImInbound & { kind: "message" }): boolean {
   const text = event.text.trim();
-  return !row.input_json && (/^\/(stop|status|queue|help)$/.test(text) || /^\/(answer|steer|unqueue)\s/.test(text));
+  return !row.input_json && (/^\/(stop|status|queue|help|sessions|archive|engine|model|effort|mode)$/.test(text) || /^\/(answer|steer|unqueue|switch|engine|model|effort|mode)\s/.test(text));
 }
 
 const preview = (row: Inbox) => {
