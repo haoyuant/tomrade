@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../domain"
+    },
+    {
+      "path": "../github"
+    },
+    {
+      "path": "../inbox"
+    },
+    {
+      "path": "../items"
+    },
+    {
+      "path": "../repos"
+    },
+    {
+      "path": "../settings"
+    }
+  ]
+}

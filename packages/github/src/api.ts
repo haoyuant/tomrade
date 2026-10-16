@@ -59,6 +59,11 @@ export class GitHub {
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
+  /** Any other REST call, for the plugins that talk to GitHub through this account. */
+  request<T>(method: string, route: string, body?: unknown): Promise<T> {
+    return this.call<T>(method, route, body);
+  }
+
   login(): Promise<{ login: string }> {
     return this.call("GET", "/user");
   }

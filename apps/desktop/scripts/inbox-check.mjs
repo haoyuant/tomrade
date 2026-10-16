@@ -3,7 +3,9 @@
  * on from the inbox's Sources pane; what it pulls waits in the inbox, counted
  * on the sidebar's Inbox module; an entry accepted becomes a ticket with Source
  * and Kind and a "From feedback" view; another merged into it is counted on the
- * ticket; one closed as a duplicate is told to its source. And the bottom bar's
+ * ticket; one closed as a duplicate of another is told to its source; a comment
+ * at the source on a triaged one shows as new activity until it is seen. GitHub
+ * issues are a source with per-project switches. And the bottom bar's
  * Feedback sends an idea through the troubleshooter's outbox, listed by kind
  * under My reports.
  *
@@ -95,6 +97,13 @@ const run = async () => {
   await press(`document.querySelector('.inbox-source[data-source="checks"] .switch')`);
   check("switched on, it pulls at once", await waitFor(`document.querySelector('.inbox-source[data-source="checks"]')?.textContent.includes('Last checked')`));
   await shot("sources");
+  await press(`document.querySelector('.inbox-source[data-source="github"] > .row .switch')`);
+  check("GitHub issues, switched on, say why they can't pull without an account", await waitFor(`document.querySelector('.inbox-source[data-source="github"]')?.textContent.includes('Connect a GitHub account first')`));
+  check("and offer to comment, on, and to close, off", await waitFor(`document.querySelector('[data-source="github"] [data-option="comment"] .switch')?.getAttribute('aria-checked') === 'true' && document.querySelector('[data-source="github"] [data-option="close"] .switch')?.getAttribute('aria-checked') === 'false'`));
+  await press(`document.querySelector('[data-source="github"] [data-option="close"] .switch')`);
+  check("closing is switched per project", await waitFor(`document.querySelector('[data-source="github"] [data-option="close"] .switch')?.getAttribute('aria-checked') === 'true'`) && ctx.inbox.option(project.id, "github", "close") === true);
+  await shot("sources-github");
+  await press(`document.querySelector('.inbox-source[data-source="github"] > .row .switch')`);
   await press(button("Back to the inbox", dialog));
   check("three entries wait", await waitFor(`${dialog}?.querySelectorAll('.inbox-entry').length === 3`));
   check("counted on the To triage tab and the sidebar", await waitFor(`${dialog}?.querySelector('.inbox-tabs .side-count')?.textContent === '3' && document.querySelector('.side-module-head .side-count')?.textContent === '3'`));
@@ -126,13 +135,25 @@ const run = async () => {
 
   await press(`document.querySelector('.inbox-entry[data-entry="F-2"]')`);
   await press(button("Duplicate", dialog));
+  check("a duplicate asks which entry it duplicates", await waitFor(`[...${dialog}.querySelectorAll('.inbox-match')].some((m) => m.textContent.includes('F-1'))`));
+  await press(`[...${dialog}.querySelectorAll('.inbox-match')].find((m) => m.textContent.includes('F-1'))`);
   check("closed as a duplicate, nothing waits", await waitFor(`${dialog}?.textContent.includes('Nothing waits for triage')`));
   check("and the sidebar count goes", await waitFor(`!document.querySelector('.side-module-head .side-count')`));
   await press(button("Closed", `${dialog}.querySelector('.inbox-tabs')`));
-  check("the Closed tab holds it, with a way back", await waitFor(`${dialog}?.textContent.includes('Closed: duplicate') && !!${button("Reopen", dialog)}`));
+  check("the Closed tab holds it, naming the main entry, with a way back", await waitFor(`${dialog}?.textContent.includes('Closed: duplicate of F-1') && !!${button("Reopen", dialog)}`));
   await shot("closed");
   for (let i = 0; i < 50 && told.length < 3; i++) await sleep(100);
   check("the source heard every triage: accepted, merged and closed", JSON.stringify(told.map((t) => t[1]).sort()) === JSON.stringify(["accepted", "closed", "merged"]), told);
+
+  // ── something new at the source ───────────────────────────────────────
+  ctx.inbox.noteActivity(project.id, "checks", [{ externalId: "F-1", at: Date.now() + 1_000 }]);
+  check("a comment on a triaged entry shows as new activity, counted", await waitFor(`${dialog}?.querySelector('.inbox-tabs [data-tab="activity"] .side-count')?.textContent === '1' && document.querySelector('.side-module-head .side-count')?.textContent === '1'`));
+  await press(`${dialog}.querySelector('.inbox-tabs [data-tab="activity"]')`);
+  check("the New activity tab is the one pressed", await waitFor(`[...${dialog}.querySelectorAll('.inbox-tabs button[aria-pressed="true"]')].map((b) => b.dataset.tab).join() === 'activity'`), await $(`[...${dialog}.querySelectorAll('.inbox-tabs button[aria-pressed="true"]')].map((b) => b.dataset.tab)`));
+  check("it stays accepted, and says nothing was changed", await waitFor(`${dialog}?.querySelector('[data-testid="inbox-activity"]')?.textContent.includes('Nothing was changed') && ${dialog}.textContent.includes('Accepted as AL-1')`));
+  await shot("activity");
+  await press(button("Mark as seen", dialog));
+  check("seen, the mark and the count go", await waitFor(`!${dialog}?.querySelector('[data-testid="inbox-activity"]') && !document.querySelector('.side-module-head .side-count')`));
 
   // ── the ticket counts what came in ────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);

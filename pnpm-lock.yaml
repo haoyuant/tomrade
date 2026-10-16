@@ -122,6 +122,9 @@ importers:
       '@tomradex/inbox':
         specifier: workspace:*
         version: link:../../packages/inbox
+      '@tomradex/inbox-github':
+        specifier: workspace:*
+        version: link:../../packages/inbox-github
       '@tomradex/inbox-tomrade':
         specifier: workspace:*
         version: link:../../packages/inbox-tomrade
@@ -1276,6 +1279,37 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/inbox-github:
+    dependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/github':
+        specifier: workspace:*
+        version: link:../github
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

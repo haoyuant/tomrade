@@ -15,6 +15,8 @@ export const INBOX_KINDS = ["bug", "feedback", "idea"] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
 export type InboxStatus = "new" | "accepted" | "merged" | "closed";
 export type CloseReason = "wontfix" | "duplicate";
+/** A status, everything, or the triaged entries with something new at their source. */
+export type InboxListFilter = InboxStatus | "all" | "activity";
 
 export interface InboxAttachment {
   name: string;
@@ -54,13 +56,34 @@ export interface InboxEntry {
   reply: string | null;
   repliedAt: number | null;
   triagedAt: number | null;
+  /** When someone wrote or reopened it at the source after it was triaged, until a person looks again; null when nothing new. */
+  activityAt: number | null;
+  /** The release its ticket shipped in, once the source heard of one. */
+  shippedIn: string | null;
+  /** Closed as a duplicate of this entry. */
+  duplicateOf: string | null;
 }
 
 /** What the inbox tells a source after a triage, so whoever wrote sees it where they wrote. */
 export type TriageChange =
   | { state: "accepted" | "merged"; ticket: { key: string; title: string } }
-  | { state: "closed"; reason: CloseReason }
-  | { state: "reopened" };
+  | { state: "closed"; reason: CloseReason; duplicateOf?: { externalId: string; url: string | null } }
+  | { state: "reopened" }
+  | { state: "shipped"; version: string; ticket: { key: string; title: string } };
+
+/** Something new at the source on an entry already here: a comment, a reopen. */
+export interface InboxActivity {
+  externalId: string;
+  at: number;
+}
+
+/** A per-project switch a source offers, such as whether it may close what it brought in. */
+export interface InboxSourceOption {
+  id: string;
+  title: string | (() => string);
+  description?: string | (() => string);
+  default: boolean;
+}
 
 /**
  * Where feedback comes from: Tomrade's own reports, GitHub issues, later mail.
@@ -78,9 +101,10 @@ export interface InboxSource {
    * What arrived since `since` (epoch ms; null: from the start); entries already here are skipped. With
    * `cursor`, the source says where the next pull starts — needed when it leaves some of what it read out.
    */
-  pull(scope: { projectId: string; since: number | null }): Promise<InboxEntryInput[] | { entries: InboxEntryInput[]; cursor: number | null }>;
+  pull(scope: { projectId: string; since: number | null }): Promise<InboxEntryInput[] | { entries: InboxEntryInput[]; cursor: number | null; activity?: InboxActivity[] }>;
   reply?(entry: InboxEntry, text: string): Promise<void>;
   setStatus?(entry: InboxEntry, change: TriageChange): Promise<void>;
+  options?: InboxSourceOption[];
 }
 
 export interface InboxSourceView {
@@ -95,6 +119,7 @@ export interface InboxSourceView {
   error: string | null;
   /** Triage it has not heard about yet. */
   pending: number;
+  options: { id: string; title: string; description: string | null; value: boolean }[];
 }
 
 export interface AcceptOptions {
@@ -124,13 +149,15 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    "inbox.list": (projectId: string, status?: InboxStatus | "all") => InboxEntry[];
+    "inbox.list": (projectId: string, status?: InboxListFilter) => InboxEntry[];
     "inbox.sources": (projectId: string) => InboxSourceView[];
     "inbox.setSource": (projectId: string, sourceId: string, enabled: boolean) => InboxSourceView[];
+    "inbox.setSourceOption": (projectId: string, sourceId: string, optionId: string, value: boolean) => InboxSourceView[];
     "inbox.refresh": (projectId: string) => number;
     "inbox.accept": (projectId: string, entryId: string, opts?: AcceptOptions) => { entry: InboxEntry; item: Item };
     "inbox.merge": (projectId: string, entryId: string, itemId: string) => InboxEntry;
-    "inbox.close": (projectId: string, entryId: string, reason: CloseReason) => InboxEntry;
+    "inbox.close": (projectId: string, entryId: string, reason: CloseReason, duplicateOf?: string) => InboxEntry;
+    "inbox.seen": (projectId: string, entryId: string) => InboxEntry;
     "inbox.reopen": (projectId: string, entryId: string) => InboxEntry;
     "inbox.reply": (projectId: string, entryId: string, text: string) => InboxEntry;
   }
@@ -189,6 +216,16 @@ CREATE TABLE IF NOT EXISTS plugin_inbox_outbox (
   error       TEXT
 );
 `
+  },
+  {
+    version: 2,
+    up: `
+ALTER TABLE plugin_inbox_entries ADD COLUMN activity_at INTEGER;
+ALTER TABLE plugin_inbox_entries ADD COLUMN activity_seen_at INTEGER;
+ALTER TABLE plugin_inbox_entries ADD COLUMN shipped_in TEXT;
+ALTER TABLE plugin_inbox_entries ADD COLUMN duplicate_of TEXT;
+ALTER TABLE plugin_inbox_projects ADD COLUMN source_options_json TEXT NOT NULL DEFAULT '{}';
+`
   }
 ];
 
@@ -222,6 +259,10 @@ interface EntryRow {
   reply: string | null;
   replied_at: number | null;
   triaged_at: number | null;
+  activity_at: number | null;
+  activity_seen_at: number | null;
+  shipped_in: string | null;
+  duplicate_of: string | null;
   updated_at: number;
 }
 
@@ -232,6 +273,7 @@ interface ProjectRow {
   kind_field: string | null;
   options_json: string;
   view_id: string | null;
+  source_options_json: string;
 }
 
 interface PullRow {
@@ -246,6 +288,7 @@ const FEEDBACK_VALUES_SQL = `SELECT item_id AS item_id, COUNT(*) AS value FROM p
 const FEEDBACK_EXPR_SQL = `SELECT NULLIF(COUNT(*), 0) FROM plugin_inbox_entries e WHERE e.item_id = i.id AND e.status IN ${TRIAGED}`;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const text = (value: string | (() => string)) => (typeof value === "function" ? value() : value);
 const isKind = (k: unknown): k is InboxKind => (INBOX_KINDS as readonly unknown[]).includes(k);
 
 /** Stable across machines: two of them pulling the same report make one entry. */
@@ -273,7 +316,10 @@ function rowToEntry(r: EntryRow): InboxEntry {
     closeReason: r.close_reason === "wontfix" || r.close_reason === "duplicate" ? r.close_reason : null,
     reply: r.reply,
     repliedAt: r.replied_at,
-    triagedAt: r.triaged_at
+    triagedAt: r.triaged_at,
+    activityAt: r.activity_at,
+    shippedIn: r.shipped_in,
+    duplicateOf: r.duplicate_of
   };
 }
 
@@ -317,7 +363,9 @@ export class Inbox extends Service {
       ctx.ipc.handle("inbox.refresh", (projectId) => inbox().refresh(projectId));
       ctx.ipc.handle("inbox.accept", (projectId, entryId, opts) => inbox().accept(projectId, entryId, opts ?? {}, "human"));
       ctx.ipc.handle("inbox.merge", (projectId, entryId, itemId) => inbox().merge(projectId, entryId, itemId, "human"));
-      ctx.ipc.handle("inbox.close", (projectId, entryId, reason) => inbox().close(projectId, entryId, reason));
+      ctx.ipc.handle("inbox.setSourceOption", (projectId, sourceId, optionId, value) => inbox().setSourceOption(projectId, sourceId, optionId, value));
+      ctx.ipc.handle("inbox.close", (projectId, entryId, reason, duplicateOf) => inbox().close(projectId, entryId, reason, duplicateOf));
+      ctx.ipc.handle("inbox.seen", (projectId, entryId) => inbox().seen(projectId, entryId));
       ctx.ipc.handle("inbox.reopen", (projectId, entryId) => inbox().reopen(projectId, entryId));
       ctx.ipc.handle("inbox.reply", (projectId, entryId, text) => inbox().reply(projectId, entryId, text));
       ctx.on("inbox/changed", (projectId) => ctx.ipc.send("inbox.changed", projectId));
@@ -356,7 +404,8 @@ export class Inbox extends Service {
           keyPattern: s.keyPattern ?? null,
           pulledAt: pull?.pulled_at ?? null,
           error: pull?.error ?? null,
-          pending: pending.find((p) => p.source === s.id)?.n ?? 0
+          pending: pending.find((p) => p.source === s.id)?.n ?? 0,
+          options: (s.options ?? []).map((o) => ({ id: o.id, title: text(o.title), description: o.description ? text(o.description) : null, value: this.option(projectId, s.id, o.id) }))
         };
       })
     );
@@ -373,14 +422,33 @@ export class Inbox extends Service {
     return this.sources(projectId);
   }
 
+  /** A source's per-project switch, or its default while nobody has touched it. */
+  option(projectId: string, sourceId: string, optionId: string): boolean {
+    const def = this.sourceMap.get(sourceId)?.options?.find((o) => o.id === optionId);
+    const set = this.sourceOptions(projectId)[sourceId]?.[optionId];
+    return typeof set === "boolean" ? set : (def?.default ?? false);
+  }
+
+  async setSourceOption(projectId: string, sourceId: string, optionId: string, value: boolean): Promise<InboxSourceView[]> {
+    if (!this.sourceMap.get(sourceId)?.options?.some((o) => o.id === optionId)) throw new Error(`No option "${optionId}" on inbox source "${sourceId}"`);
+    const all = this.sourceOptions(projectId);
+    all[sourceId] = { ...all[sourceId], [optionId]: value };
+    this.ensureProject(projectId);
+    this.db(projectId).prepare("UPDATE plugin_inbox_projects SET source_options_json = ?, updated_at = ? WHERE project_id = ?").run(JSON.stringify(all), Date.now(), projectId);
+    this.changed(projectId);
+    return this.sources(projectId);
+  }
+
   // ── entries ────────────────────────────────────────────────────────────────
 
-  list(projectId: string, status: InboxStatus | "all" = "new"): InboxEntry[] {
+  list(projectId: string, status: InboxListFilter = "new"): InboxEntry[] {
     if (!this.has(projectId)) return [];
     const db = this.db(projectId);
     const rows = (status === "all"
       ? db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? ORDER BY received_at DESC").all(projectId)
-      : db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? AND status = ? ORDER BY received_at DESC").all(projectId, status)) as EntryRow[];
+      : status === "activity"
+        ? db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? AND activity_at IS NOT NULL ORDER BY activity_at DESC").all(projectId)
+        : db.prepare("SELECT * FROM plugin_inbox_entries WHERE project_id = ? AND status = ? ORDER BY received_at DESC").all(projectId, status)) as EntryRow[];
     return rows.map(rowToEntry);
   }
 
@@ -390,10 +458,47 @@ export class Inbox extends Service {
     return row ? rowToEntry(row) : null;
   }
 
-  /** What waits for triage. */
+  /** What waits for a person: untriaged entries, and triaged ones with something new at their source. */
   count(projectId: string): number {
     if (!this.has(projectId)) return 0;
-    return (this.db(projectId).prepare("SELECT COUNT(*) AS n FROM plugin_inbox_entries WHERE project_id = ? AND status = 'new'").get(projectId) as { n: number }).n;
+    return (this.db(projectId).prepare("SELECT COUNT(*) AS n FROM plugin_inbox_entries WHERE project_id = ? AND (status = 'new' OR activity_at IS NOT NULL)").get(projectId) as { n: number }).n;
+  }
+
+  /**
+   * Something happened at the source on entries already triaged. Nothing is
+   * done about it on its own: the entry is marked until a person looks.
+   */
+  noteActivity(projectId: string, sourceId: string, activity: InboxActivity[]): number {
+    const db = this.db(projectId);
+    const mark = db.prepare(
+      `UPDATE plugin_inbox_entries SET activity_at = ?, updated_at = ?
+       WHERE id = ? AND status != 'new' AND ? > MAX(COALESCE(triaged_at, 0), COALESCE(activity_seen_at, 0), COALESCE(activity_at, 0))`
+    );
+    const now = Date.now();
+    const marked = db.transaction(() => activity.reduce((n, a) => n + mark.run(a.at, now, entryId(sourceId, a.externalId), a.at).changes, 0));
+    if (marked) this.changed(projectId);
+    return marked;
+  }
+
+  /** The person saw what was new; it stays triaged as it was. */
+  seen(projectId: string, id: string): InboxEntry {
+    const entry = this.get(projectId, id);
+    if (!entry) throw new Error("No such inbox entry");
+    if (entry.activityAt === null) return entry;
+    const now = Date.now();
+    this.db(projectId).prepare("UPDATE plugin_inbox_entries SET activity_seen_at = activity_at, activity_at = NULL, updated_at = ? WHERE id = ?").run(now, id);
+    this.changed(projectId);
+    return this.get(projectId, id)!;
+  }
+
+  /** Its ticket went out in a release: the source hears which, once. */
+  ship(projectId: string, id: string, version: string): InboxEntry {
+    const entry = this.get(projectId, id);
+    if (!entry) throw new Error("No such inbox entry");
+    if ((entry.status !== "accepted" && entry.status !== "merged") || entry.shippedIn) return entry;
+    const item = entry.itemId ? this.home.items.get(projectId, entry.itemId) : null;
+    if (!item) return entry;
+    return this.triage(projectId, entry, { shipped_in: version }, { state: "shipped", version, ticket: { key: item.key, title: item.title } });
   }
 
   /** New entries from one source; one already here — pulled before, or on another machine — is left as it is. */
@@ -447,6 +552,7 @@ export class Inbox extends Service {
         const pulled = await source.pull({ projectId, since });
         const inputs = Array.isArray(pulled) ? pulled : pulled.entries;
         added += this.add(projectId, id, inputs);
+        if (!Array.isArray(pulled) && pulled.activity?.length) this.noteActivity(projectId, id, pulled.activity);
         const cursor = Array.isArray(pulled) ? inputs.reduce<number | null>((max, e) => (max === null || e.receivedAt > max ? e.receivedAt : max), since) : pulled.cursor;
         record(cursor, null);
       } catch (error) {
@@ -495,10 +601,18 @@ export class Inbox extends Service {
     return this.triage(projectId, entry, { status: "merged", item_id: item.id }, { state: "merged", ticket: { key: item.key, title: item.title } });
   }
 
-  async close(projectId: string, id: string, reason: CloseReason): Promise<InboxEntry> {
+  /** Not to be done, or the same as another entry — named by `duplicateOf`, so its source can point there. */
+  async close(projectId: string, id: string, reason: CloseReason, duplicateOf?: string): Promise<InboxEntry> {
     if (reason !== "wontfix" && reason !== "duplicate") throw new Error(`Not a reason to close: ${String(reason)}`);
     const entry = this.open(projectId, id);
-    return this.triage(projectId, entry, { status: "closed", close_reason: reason }, { state: "closed", reason });
+    const main = reason === "duplicate" && duplicateOf ? this.get(projectId, duplicateOf) : null;
+    if (duplicateOf && reason === "duplicate" && (!main || main.id === entry.id)) throw new Error("No such inbox entry to be a duplicate of");
+    return this.triage(
+      projectId,
+      entry,
+      { status: "closed", close_reason: reason, duplicate_of: main?.id ?? null },
+      { state: "closed", reason, ...(main ? { duplicateOf: { externalId: main.externalId, url: main.url } } : {}) }
+    );
   }
 
   /** Back to untriaged. A ticket it became stays: it may hold work by now. */
@@ -506,7 +620,7 @@ export class Inbox extends Service {
     const entry = this.get(projectId, id);
     if (!entry) throw new Error("No such inbox entry");
     if (entry.status === "new") return entry;
-    return this.triage(projectId, entry, { status: "new", item_id: null, close_reason: null, triaged_at: null }, { state: "reopened" });
+    return this.triage(projectId, entry, { status: "new", item_id: null, close_reason: null, duplicate_of: null, shipped_in: null, triaged_at: null, activity_at: null, activity_seen_at: null }, { state: "reopened" });
   }
 
   /** Said through the source, where the person who wrote reads it. */
@@ -532,13 +646,19 @@ export class Inbox extends Service {
   }
 
   /** The entry's new state now; the source hears about it as soon as it can, and again until it has. */
-  private triage(projectId: string, entry: InboxEntry, patch: Partial<Pick<EntryRow, "status" | "item_id" | "close_reason" | "kind" | "triaged_at">>, change: TriageChange): InboxEntry {
+  private triage(
+    projectId: string,
+    entry: InboxEntry,
+    patch: Partial<Pick<EntryRow, "status" | "item_id" | "close_reason" | "kind" | "triaged_at" | "duplicate_of" | "shipped_in" | "activity_at" | "activity_seen_at">>,
+    change: TriageChange
+  ): InboxEntry {
     const db = this.db(projectId);
     const now = Date.now();
-    const next = { triaged_at: now, ...patch };
+    // shipping is news for the source, not a new triage
+    const next = change.state === "shipped" ? { ...patch } : { triaged_at: now, activity_at: null, ...patch };
     const cols = Object.keys(next);
     db.transaction(() => {
-      db.prepare(`UPDATE plugin_inbox_entries SET ${cols.map((c) => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`).run(...cols.map((c) => next[c as keyof typeof next] ?? null), now, entry.id);
+      db.prepare(`UPDATE plugin_inbox_entries SET ${[...cols.map((c) => `${c} = ?`), "updated_at = ?"].join(", ")} WHERE id = ?`).run(...cols.map((c) => next[c as keyof typeof next] ?? null), now, entry.id);
       if (this.sourceMap.get(entry.source)?.setStatus) db.prepare("INSERT INTO plugin_inbox_outbox (entry_id, change_json) VALUES (?, ?) ON CONFLICT(entry_id) DO UPDATE SET change_json = excluded.change_json, attempts = 0, error = NULL").run(entry.id, JSON.stringify(change));
     });
     this.changed(projectId);
@@ -669,6 +789,16 @@ export class Inbox extends Service {
     const db = this.db(projectId);
     db.prepare("INSERT OR IGNORE INTO plugin_inbox_projects (project_id, updated_at) VALUES (?, ?)").run(projectId, Date.now());
     return db.prepare("SELECT * FROM plugin_inbox_projects WHERE project_id = ?").get(projectId) as ProjectRow;
+  }
+
+  private sourceOptions(projectId: string): Record<string, Record<string, boolean>> {
+    if (!this.has(projectId)) return {};
+    const row = this.db(projectId).prepare("SELECT source_options_json FROM plugin_inbox_projects WHERE project_id = ?").get(projectId) as { source_options_json: string } | undefined;
+    try {
+      return row ? (JSON.parse(row.source_options_json) as Record<string, Record<string, boolean>>) : {};
+    } catch {
+      return {};
+    }
   }
 
   private enabledSources(projectId: string): string[] {

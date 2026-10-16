@@ -173,3 +173,79 @@ describe("triage", () => {
     expect((await t.ctx.contributions.sidebarModules(t.p))[0]).toMatchObject({ count: 2 });
   });
 });
+
+describe("after triage", () => {
+  it("marks a triaged entry when something new happens at its source, until a person looks", async () => {
+    let activity: { externalId: string; at: number }[] = [];
+    const t = await boot();
+    t.feed.push(report("R-AAAAAA", 1 * DAY), report("R-BBBBBB", 2 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    t.ctx.inbox.source({ id: "loud", title: "Loud", pull: async () => ({ entries: [report("L-1", 1 * DAY)], cursor: null, activity }) });
+    await t.inbox.setSource(t.p, "loud", true);
+    const id = entryId("loud", "L-1");
+
+    // untriaged: it waits anyway
+    activity = [{ externalId: "L-1", at: Date.now() + 1 }];
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id)!.activityAt).toBeNull();
+
+    await t.inbox.accept(t.p, id);
+    // what happened before the triage is not new
+    activity = [{ externalId: "L-1", at: 1 * DAY }];
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id)!.activityAt).toBeNull();
+    expect(t.inbox.count(t.p)).toBe(2);
+
+    const later = Date.now() + 60_000;
+    activity = [{ externalId: "L-1", at: later }];
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id)).toMatchObject({ status: "accepted", activityAt: later });
+    expect(t.inbox.list(t.p, "activity").map((e) => e.id)).toEqual([id]);
+    expect(t.inbox.count(t.p)).toBe(3);
+
+    // seen, the same activity does not light it again; it stays as triaged
+    expect(t.inbox.seen(t.p, id)).toMatchObject({ status: "accepted", activityAt: null });
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id)!.activityAt).toBeNull();
+    activity = [{ externalId: "L-1", at: later + 1 }];
+    await t.inbox.refresh(t.p);
+    expect(t.inbox.get(t.p, id)!.activityAt).toBe(later + 1);
+
+    // reopened to triage again, it starts clean
+    expect(await t.inbox.reopen(t.p, id)).toMatchObject({ status: "new", activityAt: null });
+  });
+
+  it("tells the source once when a ticket ships, and names the main entry of a duplicate", async () => {
+    const t = await boot();
+    t.feed.push(report("R-AAAAAA", 1 * DAY, { url: "https://example.com/a" }), report("R-BBBBBB", 2 * DAY), report("R-CCCCCC", 3 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    const a = entryId("app", "R-AAAAAA");
+    const { item } = await t.inbox.accept(t.p, a);
+    await t.inbox.close(t.p, entryId("app", "R-BBBBBB"), "duplicate", a);
+    await expect(t.inbox.close(t.p, entryId("app", "R-CCCCCC"), "duplicate", "nope")).rejects.toThrow();
+    await t.inbox.flush(t.p);
+
+    expect(t.inbox.ship(t.p, a, "v1.2.0")).toMatchObject({ shippedIn: "v1.2.0", status: "accepted" });
+    expect(t.inbox.ship(t.p, a, "v1.3.0").shippedIn).toBe("v1.2.0");
+    expect(t.inbox.ship(t.p, entryId("app", "R-BBBBBB"), "v1.2.0").shippedIn).toBeNull();
+    await t.inbox.flush(t.p);
+    expect(t.told.map((x) => x.change)).toEqual([
+      { state: "accepted", ticket: { key: item.key, title: item.title } },
+      { state: "closed", reason: "duplicate", duplicateOf: { externalId: "R-AAAAAA", url: "https://example.com/a" } },
+      { state: "shipped", version: "v1.2.0", ticket: { key: item.key, title: item.title } }
+    ]);
+    expect(t.inbox.get(t.p, entryId("app", "R-BBBBBB"))!.duplicateOf).toBe(a);
+  });
+
+  it("keeps a source's switches per project, at the source's defaults until changed", async () => {
+    const t = await boot({ options: [{ id: "close", title: "Close", default: false }, { id: "comment", title: () => "Comment", default: true }] });
+    expect((await t.inbox.sources(t.p))[0]!.options).toEqual([
+      { id: "close", title: "Close", description: null, value: false },
+      { id: "comment", title: "Comment", description: null, value: true }
+    ]);
+    await t.inbox.setSourceOption(t.p, "app", "close", true);
+    expect(t.inbox.option(t.p, "app", "close")).toBe(true);
+    expect(t.inbox.option(t.p, "app", "comment")).toBe(true);
+    await expect(t.inbox.setSourceOption(t.p, "app", "nope", true)).rejects.toThrow();
+  });
+});

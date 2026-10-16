@@ -15,6 +15,9 @@ export {
   type InboxSource,
   type InboxSourceView,
   type TriageChange,
+  type InboxActivity,
+  type InboxSourceOption,
+  type InboxListFilter,
   type AcceptOptions
 } from "./service.js";
 export { Inbox as default } from "./service.js";

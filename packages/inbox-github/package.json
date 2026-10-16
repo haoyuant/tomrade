@@ -1,0 +1,33 @@
+{
+  "name": "@tomradex/inbox-github",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "GitHub issues as an inbox source: the issues of a project's repositories, answered with comments and closed once their ticket ships",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/github": "workspace:*",
+    "@tomradex/inbox": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/repos": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

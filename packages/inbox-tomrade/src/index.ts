@@ -78,6 +78,7 @@ export function answerFor(change: TriageChange): Record<string, string> {
   switch (change.state) {
     case "accepted":
     case "merged":
+    case "shipped":
       return { p_status: "triaged", p_ticket: change.ticket.key };
     case "closed":
       return { p_status: change.reason };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { InboxEntry, InboxKind, InboxSourceView, InboxStatus } from "@tomradex/inbox";
+import type { InboxEntry, InboxKind, InboxListFilter, InboxSourceView } from "@tomradex/inbox";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { Spacer, Tag } from "~/components/ui/atoms";
@@ -10,7 +10,7 @@ import { useItems } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
 
-const TABS: (InboxStatus | "all")[] = ["new", "accepted", "merged", "closed", "all"];
+const TABS: InboxListFilter[] = ["new", "activity", "accepted", "merged", "closed", "all"];
 const KINDS: InboxKind[] = ["bug", "feedback", "idea"];
 
 /**
@@ -22,12 +22,14 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
   const { t } = useI18n();
   const toast = useToast();
   const reportError = useErrorToast();
-  const [tab, setTab] = useState<InboxStatus | "all">("new");
+  const [tab, setTab] = useState<InboxListFilter>("new");
   const [showSources, setShowSources] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const entries = useInboxEntries(projectId, tab, open);
   const sources = useInboxSources(projectId, open);
   const waiting = useInboxEntries(projectId, "new", open);
+  const stirred = useInboxEntries(projectId, "activity", open);
+  const counts: Partial<Record<InboxListFilter, number>> = { new: waiting.data?.length ?? 0, activity: stirred.data?.length ?? 0 };
   const actions = useInboxActions(projectId);
   const list = entries.data ?? [];
   const entry = list.find((e) => e.id === selected) ?? null;
@@ -65,10 +67,10 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
         ) : (
           <>
             <div className="seg quiet inbox-tabs" role="group" aria-label={t("inbox.tabsAria")}>
-              {TABS.map((s) => (
-                <button key={s} type="button" aria-pressed={tab === s} onClick={() => setTab(s)}>
+              {TABS.filter((s) => s !== "activity" || !!counts.activity || tab === "activity").map((s) => (
+                <button key={s} type="button" aria-pressed={tab === s} data-tab={s} onClick={() => setTab(s)}>
                   {t(`inbox.tab_${s}` as MessageKey)}
-                  {s === "new" && !!waiting.data?.length && <span className="side-count num">{waiting.data.length}</span>}
+                  {!!counts[s] && <span className="side-count num">{counts[s]}</span>}
                 </button>
               ))}
             </div>
@@ -96,6 +98,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
                           <Tag tone={e.kind === "bug" ? "neutral" : "faint"}>{t(`inbox.kind_${e.kind}` as MessageKey)}</Tag>
                           <span className="num">{e.externalId}</span>
                           <span>{agoLabel(e.receivedAt)}</span>
+                          {e.activityAt !== null && <Tag tone="strong">{t("inbox.activity")}</Tag>}
                         </span>
                       </button>
                     </li>
@@ -118,7 +121,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
 function SourcesPane({ projectId, sources, onBack }: { projectId: string; sources: InboxSourceView[]; onBack: () => void }) {
   const { t } = useI18n();
   const reportError = useErrorToast();
-  const { setSource } = useInboxActions(projectId);
+  const { setSource, setOption } = useInboxActions(projectId);
   return (
     <div className="stack-3" data-testid="inbox-sources-pane">
       <div className="row">
@@ -156,6 +159,25 @@ function SourcesPane({ projectId, sources, onBack }: { projectId: string; source
                 {s.pending > 0 && ` · ${t("inbox.sourcePending", { n: s.pending })}`}
               </p>
             )}
+            {s.enabled &&
+              s.options.map((o) => (
+                <div className="row inbox-source-option" key={o.id} data-option={o.id}>
+                  <div className="stack-1">
+                    <span>{o.title}</span>
+                    {o.description && <span className="meta-txt dense">{o.description}</span>}
+                  </div>
+                  <Spacer />
+                  <button
+                    type="button"
+                    className="switch"
+                    role="switch"
+                    aria-checked={o.value}
+                    aria-label={o.title}
+                    disabled={setOption.isPending}
+                    onClick={() => setOption.mutate({ id: s.id, option: o.id, value: !o.value }, { onError: reportError })}
+                  />
+                </div>
+              ))}
           </div>
         ))}
       </div>
@@ -163,7 +185,7 @@ function SourcesPane({ projectId, sources, onBack }: { projectId: string; source
   );
 }
 
-type Mode = null | "accept" | "merge" | "reply";
+type Mode = null | "accept" | "merge" | "reply" | "duplicate";
 
 function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: string; entry: InboxEntry; source?: InboxSourceView; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
@@ -177,14 +199,24 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
   const [search, setSearch] = useState("");
   const [reply, setReply] = useState("");
   const ticket = entry.itemId ? (items.data ?? []).find((i) => i.id === entry.itemId) : undefined;
+  const others = useInboxEntries(projectId, "all", mode === "duplicate" || !!entry.duplicateOf);
+  const main = entry.duplicateOf ? (others.data ?? []).find((e) => e.id === entry.duplicateOf) : undefined;
   const sourceName = source?.title ?? entry.source;
-  const busy = actions.accept.isPending || actions.merge.isPending || actions.close.isPending || actions.reopen.isPending;
+  const busy = actions.accept.isPending || actions.merge.isPending || actions.close.isPending || actions.reopen.isPending || actions.seen.isPending;
 
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return [];
+    if (!q || mode !== "merge") return [];
     return (items.data ?? []).filter((i) => i.kind === "ticket" && (i.key.toLowerCase() === q || i.key.toLowerCase().startsWith(q) || i.title.toLowerCase().includes(q))).slice(0, 6);
-  }, [items.data, search]);
+  }, [items.data, search, mode]);
+
+  const mains = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (mode !== "duplicate") return [];
+    return (others.data ?? []).filter((e) => e.id !== entry.id && e.status !== "closed" && (!q || e.externalId.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))).slice(0, 6);
+  }, [others.data, search, mode, entry.id]);
+
+  const closeAsDuplicate = (duplicateOf?: string) => actions.close.mutate({ id: entry.id, reason: "duplicate", ...(duplicateOf ? { duplicateOf } : {}) }, { onError: reportError });
 
   const accept = () =>
     actions.accept.mutate(
@@ -215,8 +247,11 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
           <Icon name={entry.status === "closed" ? "i-archive" : entry.status === "merged" ? "i-merge" : "i-check"} size={14} />
           <span>
             {entry.status === "closed"
-              ? t(entry.closeReason === "duplicate" ? "inbox.status_closed_duplicate" : "inbox.status_closed_wontfix")
+              ? main
+                ? t("inbox.status_closed_duplicateOf", { ref: main.externalId })
+                : t(entry.closeReason === "duplicate" ? "inbox.status_closed_duplicate" : "inbox.status_closed_wontfix")
               : t(entry.status === "merged" ? "inbox.status_merged" : "inbox.status_accepted", { key: ticket?.key ?? "…" })}
+            {entry.shippedIn && ` · ${t("inbox.shippedIn", { version: entry.shippedIn })}`}
           </span>
           {ticket && (
             <button type="button" className="link-inline" onClick={() => onOpenIssue(ticket.id)}>
@@ -226,6 +261,21 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
           <Spacer />
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => actions.reopen.mutate(entry.id, { onError: reportError })}>
             <Icon name="i-undo" size={13} /> {t("inbox.reopen")}
+          </button>
+        </div>
+      )}
+      {entry.activityAt !== null && (
+        <div className="row inbox-activity" data-testid="inbox-activity">
+          <Icon name="i-info" size={14} />
+          <span>{t("inbox.activityText", { source: sourceName, when: agoLabel(entry.activityAt) })}</span>
+          <Spacer />
+          {entry.url && (
+            <button type="button" className="btn btn-ghost" onClick={() => openExternal(entry.url!)}>
+              {t("inbox.activityOpen")}
+            </button>
+          )}
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => actions.seen.mutate(entry.id, { onError: reportError })}>
+            {t("inbox.activitySeen")}
           </button>
         </div>
       )}
@@ -252,7 +302,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
         {entry.status === "new" && (
           <>
             <Spacer />
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => actions.close.mutate({ id: entry.id, reason: "duplicate" }, { onError: reportError })}>
+            <button type="button" className="btn btn-ghost" aria-pressed={mode === "duplicate"} disabled={busy} onClick={() => setMode(mode === "duplicate" ? null : "duplicate")}>
               {t("inbox.duplicate")}
             </button>
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => actions.close.mutate({ id: entry.id, reason: "wontfix" }, { onError: reportError })}>
@@ -303,6 +353,25 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
               <span className="inbox-entry-title">{i.title}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {mode === "duplicate" && entry.status === "new" && (
+        <div className="panel stack-2 inbox-form">
+          <input className="input" value={search} autoFocus placeholder={t("inbox.duplicateSearch")} aria-label={t("inbox.duplicateSearch")} onChange={(e) => setSearch(e.target.value)} />
+          {!mains.length && <p className="meta-txt">{t("inbox.duplicateNone")}</p>}
+          {mains.map((e) => (
+            <button key={e.id} type="button" className="inbox-match" disabled={busy} onClick={() => closeAsDuplicate(e.id)}>
+              <span className="num">{e.externalId}</span>
+              <span className="inbox-entry-title">{e.title}</span>
+            </button>
+          ))}
+          <div className="row">
+            <Spacer />
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => closeAsDuplicate()}>
+              {t("inbox.duplicateUnnamed")}
+            </button>
+          </div>
         </div>
       )}
 

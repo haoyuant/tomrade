@@ -288,6 +288,11 @@ plugins:
   - id: inbox-tomrade
     name: "@tomradex/inbox-tomrade"
     implements: [inboxSource]
+  # The issues of a project's GitHub repositories, answered on the issue and,
+  # where the project allows it, closed once their ticket ships in a release.
+  - id: inbox-github
+    name: "@tomradex/inbox-github"
+    implements: [inboxSource]
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"

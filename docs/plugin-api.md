@@ -397,7 +397,7 @@ contracts:
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 | `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
-| `inboxSource` | `ctx.inbox.source` | `inbox-tomrade` |
+| `inboxSource` | `ctx.inbox.source` | `inbox-tomrade`, `inbox-github` |
 
 Unlike a module's, membership **is** declared, on the row: `implements:
 [engine]`. A row switched off registers nothing, and a disabled engine is
@@ -972,7 +972,7 @@ agent's reach; empty falls back to `TAVILY_API_KEY`) and the search depth
 `@tomradex/inbox` (`ctx.inbox`) is a project's inbox. A **source** is where
 feedback comes from — Tomrade's own reports, GitHub issues, later mail — and a
 plugin registers one with `ctx.inbox.source({ id, title, keyPattern?,
-available?, pull, reply?, setStatus? })`. Each project switches its sources on
+available?, pull, reply?, setStatus?, options? })`. Each project switches its sources on
 by itself (the inbox's Sources pane); nothing is pulled from a source a project
 did not choose.
 
@@ -981,14 +981,22 @@ did not choose.
   One entry is kept per `(source, externalId)`, under an id both machines
   derive alike, so pulling twice — here or on another machine — changes
   nothing. A source that leaves some of what it read out returns
-  `{ entries, cursor }` to say where the next pull starts.
+  `{ entries, cursor }` to say where the next pull starts, and may add
+  `activity: [{ externalId, at }]` — a comment or reopen at the source on an
+  entry already triaged. Nothing is done about it on its own: the entry shows
+  **New activity** until a person marks it seen (`seen`) or reopens it.
 - `available(projectId)` is null when the source can pull here, or why not,
   in the person's words ("sign in first").
 - `setStatus(entry, change)` hears each triage — accepted or merged with the
-  ticket's key, closed as `wontfix` or `duplicate`, reopened — so whoever
-  wrote sees it where they wrote. A change it could not take waits in a
+  ticket's key, closed as `wontfix` or `duplicate` (with the entry it
+  duplicates, when one was named), reopened — and `shipped` with the release
+  once `ctx.inbox.ship(projectId, entryId, version)` says the ticket went out,
+  so whoever wrote sees it where they wrote. A change it could not take waits in a
   machine-local outbox and is tried again before every pull.
 - `reply(entry, text)` carries an answer, when the source can.
+- `options` are per-project switches the source reads with
+  `ctx.inbox.option(projectId, sourceId, optionId)`; each has a `default`
+  until the project changes it in the Sources pane.
 
 Pull only: the backlog is never mirrored back to a source. Triage is a
 person's: accepting makes a ticket through the ordinary write path, with the
@@ -1000,16 +1008,31 @@ holds, and the ticket's **Feedback** section lists them. Entries and their
 triage travel with the project; where each source was read up to stays on the
 machine that read it.
 
-The renderer reaches it over `inbox.list`, `inbox.sources`, `inbox.setSource`,
-`inbox.refresh`, `inbox.accept`, `inbox.merge`, `inbox.close`, `inbox.reopen`
+The renderer reaches it over `inbox.list` (a status, `all`, or `activity`),
+`inbox.sources`, `inbox.setSource`, `inbox.setSourceOption`, `inbox.refresh`,
+`inbox.accept`, `inbox.merge`, `inbox.close`, `inbox.reopen`, `inbox.seen`
 and `inbox.reply`, and hears `inbox.changed`. Its sidebar module opens the
-inbox and counts what waits.
+inbox and counts what waits: untriaged entries and those with new activity.
 
 `@tomradex/inbox-tomrade` is the source for Tomrade's own reports. It pulls
 for an account named in `tomrade_maintainers` (`tomrade-store maintainer add
 <email>`), through `tomrade_feedback_pull` and `tomrade_feedback_answer`,
 which see a report's code and never its sender; a triage here becomes the
 status, ticket and reply the sender reads under My reports.
+
+`@tomradex/inbox-github` is the source for the issues of a project's GitHub
+repositories, through the machine's GitHub account (`ctx.github`). The first
+pull takes the open issues; later ones take new issues, and comments and
+reopens by anyone but that account as activity. It answers on the issue: a
+comment when an entry is accepted, merged, closed or shipped (`comment`, on
+by default) and, only once a project switches `close` on, closes it —
+`completed` when shipped, `not_planned` when not done or a duplicate, with
+"Duplicate of #N" pointing at the main issue. Shipped means the ticket is
+done and the earliest published, non-prerelease GitHub release of the
+repository it was merged into contains its pull request's merge commit (or
+code-link's merged commit). Writing needs Issues access: a personal access
+token with the `repo` scope, or the Tomrade GitHub App with the Issues
+permission.
 
 ## Views
 
