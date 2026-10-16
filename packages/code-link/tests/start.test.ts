@@ -1362,6 +1362,20 @@ describe("starting a ticket", () => {
     expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "hermes" })).toMatchObject({ ok: false, gate: "engine" });
   });
 
+  it("keeps where a headless start was asked for on its brief", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, project, agent } = world;
+    await world.ctx.repos.setCheckout(world.repo!.remote, world.checkout!);
+    const item = world.ticket("Start it from chat");
+    const source = { connection: "bot", tenant: "team", conversation: "chat", actor: "owner" };
+    const result = await codeLink.start(project.id, item.id, { mode: "run", source });
+    expect(result.ok && result.runId).toBeTruthy();
+    if (!result.ok) return;
+    await untilRunsSettle(agent);
+    const row = world.ctx.db.for(project.id).prepare("SELECT source_json FROM plugin_agent_inputs WHERE run_id = ?").get(result.runId) as { source_json: string } | undefined;
+    expect(JSON.parse(row!.source_json)).toEqual(source);
+  });
+
   it("carries the knobs picked at Start onto the ticket's thread, where the turn and the panel read them", async () => {
     const world = await machine(codeRepo());
     const { codeLink, project, agent } = world;

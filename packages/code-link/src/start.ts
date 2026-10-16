@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import type { Context } from "cordis";
 import type { Agent, Engine } from "@tomradex/agent";
@@ -38,6 +39,8 @@ export interface StartOptions {
   threadId?: string;
   /** Headless runs only: the person's own words, sent after the brief. */
   message?: string;
+  /** Headless runs only: where the person asked for the start (an IM conversation), kept on the brief as its provenance. */
+  source?: Record<string, string>;
 }
 
 export type StartResult =
@@ -95,6 +98,8 @@ export interface StartHost {
 }
 
 const OPEN = new Set(["backlog", "todo", "doing", "verifying"]);
+
+const sourced = (opts: StartOptions) => (opts.source ? { requestId: `start:${randomUUID()}`, source: opts.source } : undefined);
 
 /** Unfinished dependencies are a question for the human, not a wall: Start again with allowBlocked to work ahead of them. */
 const blockedGate = (item: Item, blockers: Item[]): StartResult => ({
@@ -317,7 +322,7 @@ export class Starter {
         this.host.notify(projectId);
         return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, engine: engineId, ...(warnings.length ? { warnings } : {}) };
       }
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prompt }).runId;
+      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId;
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);
       return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, engine: engineId, ...(warnings.length ? { warnings } : {}) };
@@ -399,7 +404,7 @@ export class Starter {
     const base = { ok: true as const, continued: prepared.continued, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: prepared.cwd, mode: opts.mode, engine: engineId };
 
     if (opts.mode === "run") {
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: `${prepared.opener}\n${languageLine(locale)}` }).runId;
+      const runId = agent.activeRuns().find((a) => a.thread.id === thread.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: `${prepared.opener}\n${languageLine(locale)}` }, sourced(opts)).runId;
       store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
       this.host.notify(projectId);
       return { ...base, command: null, launched: true, runId };

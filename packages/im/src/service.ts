@@ -78,8 +78,24 @@ interface Connection {
   /** The credentials it was opened with; a change reopens it. */
   credentials: string;
 }
+/** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
+interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean }
+type StartOutcome =
+  | { ok: false; gate: string; message: string; blockers?: string[] }
+  | { ok: true; continued: boolean; threadId: string; runId?: string; engine: string; waitingOn?: string; warnings?: string[] };
 /** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
-interface CodeHost extends CodeLookup { resolve(projectId: string, proposalId: string, accept: boolean): { state: string } }
+interface CodeHost extends CodeLookup {
+  resolve(projectId: string, proposalId: string, accept: boolean): { state: string };
+  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; source?: Record<string, string> }): Promise<StartOutcome>;
+  startDefaults(): { engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string } | null;
+}
+/** A ticket as a start needs it. */
+interface Startable { id: string; key: string; title: string; status: string; kind: string; workType: string; playbookId: string | null }
+/** What a gate means, in the person's language; the English is the gate's own message. */
+const GATE_ZH: Record<string, string> = {
+  locked: "工单已被人工锁定，请先在桌面解锁", workstream: "工单所在的工作流还没有可用的仓库", checkout: "本机没有该仓库的检出",
+  remote: "无法访问该仓库的远端", readiness: "仓库还没有为 agent 准备好", engine: "所选助手还不能用", mcp: "MCP 服务没有运行", workdir: "工作目录不可用"
+};
 /** The part of `ctx.items` a delivery card reads and settles, the service review_delivery records through. */
 interface ReviewHost {
   get(projectId: string, id: string): (Delivered & { id: string; version: number }) | null;
@@ -415,6 +431,7 @@ export class Im extends Service {
       { name: "model", description: this.say("Show or change the model", "查看或切换模型"), args: this.say("[model]", "[模型]") },
       { name: "effort", description: this.say("Show or change the reasoning effort", "查看或切换推理强度"), args: this.say("[level]", "[强度]") },
       { name: "mode", description: this.say("Show or change the permission mode", "查看或切换权限模式"), args: this.say("[mode]", "[模式]") },
+      { name: "start", description: this.say("Start or continue a ticket's work on this computer", "在本机开工或继续某个工单"), args: this.say("KEY [engine=… model=…]", "工单 [engine=… model=…]") },
       { name: "unqueue", description: this.say("Withdraw a waiting message", "撤回一条等待中的消息"), args: "N" },
       { name: "help", description: this.say("Show these commands", "显示这些指令") }
     ];
@@ -790,7 +807,7 @@ export class Im extends Service {
       if (event.kind === "action") {
         if (this.remoteAnswer(b, row, event.token, event.actor.id, event.value)) return;
         const cmd = this.commandOf(b, event.token, event.actor.id);
-        if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? String([event.value ?? ""].flat()[0] ?? ""), reply); return; }
+        if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? String([event.value ?? ""].flat()[0] ?? ""), reply, undefined, [event.value ?? ""].flat()[0]); return; }
         input = this.answer(b, event.token, event.actor.id, event.value);
       } else {
         const text = event.text.trim();
@@ -859,7 +876,7 @@ export class Im extends Service {
         const match = /^\/answer\s+(\S+)(?:\s+([\s\S]+))?$/.exec(text);
         if (match && this.remoteAnswer(b, row, match[1], event.actor.id, match[2])) return;
         const cmd = match && this.commandOf(b, match[1], event.actor.id);
-        if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? match![2]?.trim() ?? "", reply); return; }
+        if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? match![2]?.trim() ?? "", reply, undefined, match![2]?.trim()); return; }
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
         else {
           if (!text && !event.attachments?.length) this.refuse("Empty message", "消息为空");
@@ -1109,11 +1126,25 @@ export class Im extends Service {
     this.enqueue(b, id, { text, ...(select.length ? { elements: select } : {}) }, { ...reply, visibleTo: reply.anchor ? actorId : null });
   }
 
-  /** `/sessions`, `/switch`, `/archive`, `/engine`, `/model`, `/effort`, `/mode`. True when the message was one. */
+  /** `/sessions`, `/switch`, `/archive`, `/engine`, `/model`, `/effort`, `/mode`, `/start`. True when the message was one. */
   private async option(b: Binding, row: Inbox, event: ImInbound & { kind: "message" }, text: string, reply: { anchor: string | null }): Promise<boolean> {
-    const [, name, arg = ""] = /^\/(sessions|switch|archive|engine|model|effort|mode)(?:\s+([\s\S]+))?$/.exec(text) ?? [];
+    const [, name, arg = ""] = /^\/(sessions|switch|archive|engine|model|effort|mode|start)(?:\s+([\s\S]+))?$/.exec(text) ?? [];
     if (!name) return false;
     const actor = event.actor.id;
+    if (name === "start") {
+      const [key, ...args] = arg.trim().split(/\s+/).filter(Boolean);
+      if (!key) this.refuse("Name the ticket: /start TOM-12", "请写上工单：/start TOM-12");
+      if (!this.code()) this.refuse("Starting work needs the Code link plugin", "开工需要 Code link 插件");
+      if (this.isGroup(b) && actor !== b.actor_id) this.refuse("Only the person this conversation is with can start work here", "只有发起人可以在这里开工");
+      const item = this.startable(b.project_id, key.toUpperCase());
+      if (!item) this.refuse(`No ticket ${key} in this project`, `本项目没有工单 ${key}`);
+      let draft = await this.draftFor(item, `start:${b.id}:${item.id}:${row.id}`);
+      if (args.length) draft = await this.withArgs(b.project_id, item, draft, args);
+      // Named settings in a direct chat are the start itself; a group, or a bare /start, sees what will run first.
+      if (args.length && !this.isGroup(b)) await this.startNow(b, row, actor, draft, reply);
+      else { await this.startCard(b, actor, draft, reply); this.accept(row); }
+      return true;
+    }
     const { thread } = this.home.agent.thread(b.project_id, b.thread_id);
     if (name === "sessions") {
       const threads = this.home.agent.store.threads(b.project_id, "assistant").slice(0, 20);
@@ -1185,8 +1216,8 @@ export class Im extends Service {
     await this.choose(b, row, actor, name, arg.trim(), reply); return true;
   }
 
-  /** Applies a choice, from a typed command or from the select or button it offered. */
-  private async choose(b: Binding, row: Inbox, actorId: string, kind: string, value: string, reply: { anchor: string | null }, n?: string) {
+  /** Applies a choice, from a typed command or from the select or button it offered; `picked` is what a select carrying its own value was set to. */
+  private async choose(b: Binding, row: Inbox, actorId: string, kind: string, value: string, reply: { anchor: string | null }, n?: string, picked?: string) {
     const { thread } = this.home.agent.thread(b.project_id, b.thread_id);
     const running = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
     const when = running ? this.say(" It applies from the next turn.", "从下一轮开始生效。") : "";
@@ -1234,6 +1265,25 @@ export class Im extends Service {
       this.settleDelivery(b, submissionId, verdict === "accept" ? this.say(`Accepted by ${who}`, `${who} 已验收通过`)
         : this.say(`Sent back for changes by ${who}: ${said}`, `${who} 已退回修改：${said}`));
       this.accept(row);
+      return;
+    }
+    if (kind === "start" || kind === "start-adjust" || kind === "start!" || kind.startsWith("start-set:")) {
+      const given = JSON.parse(value) as Partial<StartDraft> & { itemId: string };
+      const item = this.code() ? this.startable(b.project_id, given.itemId) : null;
+      if (!item) this.refuse("That choice is no longer available", "该选项已不可用");
+      if (kind === "start!") { await this.startNow(b, row, actorId, given as StartDraft, reply); return; }
+      if (kind.startsWith("start-set:")) {
+        const knob = kind.slice("start-set:".length);
+        const draft = given as StartDraft;
+        const chosen = picked?.trim() ?? "";
+        if (!chosen) this.refuse("Pick a value", "请选择一个值");
+        await this.startCard(b, actorId, await this.withArgs(b.project_id, item, draft, [`${knob}=${chosen}`]), reply, true);
+        this.accept(row); return;
+      }
+      const draft = await this.draftFor(item, `start:${b.id}:${item.id}:${row.id}`);
+      // A group sees what will run before it runs; so does the person who asked to adjust it.
+      if (kind === "start" && !this.isGroup(b)) await this.startNow(b, row, actorId, draft, reply);
+      else { await this.startCard(b, actorId, draft, reply); this.accept(row); }
       return;
     }
     if (kind === "switch" || kind === "switch!") {
@@ -1285,6 +1335,186 @@ export class Im extends Service {
     done(this.say(`${pick.title}: ${typeof options[kind] === "string" ? options[kind] : "default"}.${when}`, `${pick.title}：${typeof options[kind] === "string" ? options[kind] : "默认"}。${when}`));
   }
 
+  /** A ticket that can be started here, by id or key. */
+  private startable(projectId: string, idOrKey: string): Startable | null {
+    const items = this.home.get("items") as { get(projectId: string, id: string): Startable | null; getByKey(projectId: string, key: string): Startable | null } | undefined;
+    const item = items?.get(projectId, idOrKey) ?? items?.getByKey(projectId, idOrKey) ?? null;
+    return item?.kind === "ticket" ? item : null;
+  }
+
+  /** Engines that can run headless here, as the Start dialog offers them. */
+  private async headless() { return (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly); }
+
+  /** The methods a General ticket can be delivered with, as the Start dialog lists them. */
+  private methods(projectId: string) {
+    return this.home.agent.playbookIndex(projectId)
+      .filter(p => !p.id.startsWith("backlog.") && !p.id.startsWith("code.") && (p.workTypes?.length ? p.workTypes.includes("general") : p.source !== "plugin"));
+  }
+
+  /** A ticket's start by default: what this computer last started with, where it still fits. */
+  private async draftFor(item: Startable, card: string): Promise<StartDraft> {
+    const remembered = this.code()?.startDefaults() ?? null;
+    const engines = await this.headless();
+    const engine = engines.find(e => e.id === remembered?.engine)?.id ?? engines[0]?.id;
+    const same = !!engine && engine === remembered?.engine;
+    const options = Object.fromEntries(Object.entries(same ? remembered?.options ?? {} : {}).filter((e): e is [string, string] => typeof e[1] === "string" && !!e[1]));
+    const playbook = item.workType === "general" ? item.playbookId ?? remembered?.playbook : undefined;
+    return { itemId: item.id, card, ...(engine ? { engine } : {}), ...(Object.keys(options).length ? { options } : {}),
+      ...(same && remembered?.permissionMode && item.workType !== "general" ? { permissionMode: remembered.permissionMode } : {}), ...(playbook ? { playbook } : {}) };
+  }
+
+  /** `engine=… model=… effort=… mode=… playbook=…` over a draft; a new engine starts from its own defaults. */
+  private async withArgs(projectId: string, item: Startable, draft: StartDraft, args: string[]): Promise<StartDraft> {
+    const engines = await this.headless();
+    const pairs = args.map(a => { const [k, ...v] = a.split("="); return [k.toLowerCase(), v.join("=")] as const; });
+    let next: StartDraft = { ...draft, ...(draft.options ? { options: { ...draft.options } } : {}) };
+    for (const [k, v] of [...pairs.filter(p => p[0] === "engine"), ...pairs.filter(p => p[0] !== "engine")]) {
+      if (!v) this.refuse(`Give ${k} a value, as ${k}=…`, `请给 ${k} 一个值，如 ${k}=…`);
+      if (k === "engine") {
+        const target = engines.find(e => e.id === v || e.title.toLowerCase() === v.toLowerCase());
+        if (!target) this.refuse(`No assistant “${v}” can run here; /engine lists them`, `没有能在本机运行的助手“${v}”；/engine 可查看`);
+        if (target.id !== next.engine) next = { itemId: next.itemId, card: next.card, engine: target.id, ...(next.playbook ? { playbook: next.playbook } : {}) };
+        continue;
+      }
+      const engine = engines.find(e => e.id === next.engine);
+      if (k === "mode") {
+        const choice = item.workType === "general" ? undefined : engine?.permissionModes?.choices.find(c => c.value === v || c.label.toLowerCase() === v.toLowerCase());
+        if (!choice) this.refuse(`No permission mode “${v}” for this start`, `这次开工没有“${v}”这个权限模式`);
+        next.permissionMode = choice.value; continue;
+      }
+      if (k === "playbook") {
+        const method = item.workType === "general" ? this.methods(projectId).find(m => m.id === v || m.title.toLowerCase() === v.toLowerCase()) : undefined;
+        if (!method) this.refuse(`No method “${v}” for this ticket`, `该工单没有“${v}”这种交付方式`);
+        next.playbook = method.id; continue;
+      }
+      const pick = engine?.picks?.find(p => p.key === k);
+      if (!pick) this.refuse(`This start has no setting “${k}”`, `这次开工没有“${k}”这一项`);
+      const { [k]: _old, ...rest } = next.options ?? {};
+      if (v.toLowerCase() === "default") { next.options = rest; continue; }
+      const chosen = pick.choices.find(c => c.value === v || c.label?.toLowerCase() === v.toLowerCase())?.value ?? (pick.freeText ? v : undefined);
+      if (!chosen) this.refuse(`No ${pick.title} “${v}”`, `没有“${v}”这个${pick.title}`);
+      next.options = { ...rest, [k]: chosen };
+    }
+    if (next.options && !Object.keys(next.options).length) delete next.options;
+    return next;
+  }
+
+  /**
+   * What a start will run with, and Start. Where the platform has selects,
+   * one per setting changes it in place; elsewhere `/start KEY k=v` does. In a
+   * group this card is also the confirmation that the group will see the work.
+   */
+  private async startCard(b: Binding, actorId: string, draft: StartDraft, reply: { anchor: string | null }, update = false) {
+    const item = this.startable(b.project_id, draft.itemId);
+    if (!item) this.refuse("That ticket can no longer be started", "该工单已无法开工");
+    const engines = await this.headless();
+    const engine = engines.find(e => e.id === draft.engine);
+    const general = item.workType === "general";
+    const picks = engine?.picks ?? [];
+    const modes = general ? undefined : engine?.permissionModes;
+    const methods = general ? this.methods(b.project_id) : [];
+    const continuing = this.continuing(b, item.id);
+    const lines = [continuing ? this.say(`Continue ${item.key} ${item.title}`, `继续 ${item.key} ${item.title}`) : this.say(`Start ${item.key} ${item.title}`, `开工 ${item.key} ${item.title}`),
+      `${this.say("Agent", "助手")}: ${engine?.title ?? this.say("none can run here", "本机没有可用的助手")}`];
+    for (const p of picks) {
+      const v = draft.options?.[p.key];
+      lines.push(`${p.title}: ${v ? p.choices.find(c => c.value === v)?.label ?? v : this.say("default", "默认")}`);
+    }
+    if (modes) {
+      const v = draft.permissionMode ?? modes.default;
+      lines.push(`${this.say("Permission mode", "权限模式")}: ${modes.choices.find(c => c.value === v)?.label ?? v}`);
+    }
+    if (general) lines.push(`${this.say("Method", "交付方式")}: ${methods.find(m => m.id === draft.playbook)?.title ?? draft.playbook ?? this.say("the ticket's", "工单默认")}`);
+    if (this.isGroup(b)) lines.push(this.say("Everyone in this group will see its progress and questions.", "群里所有人都将看到它的进度和问题。"));
+    // A card changed in place keeps one live set of choices.
+    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
+    const value = JSON.stringify(draft);
+    const set = (knob: string) => { const t = this.offer(b, `start-set:${knob}`, actorId); this.store.run("UPDATE plugin_im_actions SET value_json = ? WHERE token = ?", JSON.stringify(value), t); return t; };
+    const selects: ImElement[] = [];
+    if (this.capsOf(b)?.select) {
+      if (engines.length > 1) selects.push({ type: "select", token: set("engine"), placeholder: this.say("Agent", "助手"), options: engines.slice(0, 24).map(e => ({ label: e.title, value: e.id })) });
+      for (const p of picks) selects.push({ type: "select", token: set(p.key), placeholder: p.title,
+        options: [{ label: this.say("Default", "默认"), value: "default" }, ...p.choices.map(c => ({ label: c.label ?? c.value, value: c.value }))].slice(0, 24) });
+      if (modes) selects.push({ type: "select", token: set("mode"), placeholder: this.say("Permission mode", "权限模式"), options: modes.choices.slice(0, 24).map(c => ({ label: c.label, value: c.value })) });
+      if (methods.length > 1) selects.push({ type: "select", token: set("playbook"), placeholder: this.say("Method", "交付方式"), options: methods.slice(0, 24).map(m => ({ label: m.title, value: m.id })) });
+    } else {
+      const knobs = ["engine=…", ...picks.map(p => `${p.key}=…`), ...(modes ? ["mode=…"] : []), ...(general ? ["playbook=…"] : [])].join(" ");
+      lines.push(this.say(`To change it: /start ${item.key} ${knobs}`, `要修改：/start ${item.key} ${knobs}`));
+    }
+    const content: ImContent = { text: lines.join("\n"), ...(selects.length ? { elements: selects } : {}),
+      actions: engine ? [{ label: continuing ? this.say("Continue", "继续") : this.say("Start", "开始"), token: this.offerValue(b, "start!", actorId, value), style: "primary" }] : [] };
+    if (update) this.replace(b, draft.card, content);
+    else this.enqueue(b, draft.card, content, { ...reply, visibleTo: reply.anchor ? actorId : null });
+  }
+
+  /** Whether a ticket already has work to pick up, so Start reads as Continue. */
+  private continuing(b: Binding, itemId: string): boolean {
+    try { const code = this.code()?.summary(b.project_id, itemId); return !!code && (!!code.session || code.links.length > 0); } catch { return false; }
+  }
+
+  /** Start and Adjust settings on a start card, for the person this conversation is with. */
+  private startActions(b: Binding, content: ImContent, block: Block): ImContent {
+    const data = block.type === "card" && block.schema === "start" ? (block.data ?? {}) as Record<string, unknown> : null;
+    if (!data || typeof data.itemId !== "string" || !this.code()) return content;
+    const value = JSON.stringify({ itemId: data.itemId });
+    return { ...content, actions: [
+      { label: this.continuing(b, data.itemId) ? this.say("Continue", "继续") : this.say("Start", "开始"), token: this.offerValue(b, "start", b.actor_id, value), style: "primary" },
+      { label: this.say("Adjust settings", "调整配置"), token: this.offerValue(b, "start-adjust", b.actor_id, value) }
+    ] };
+  }
+
+  /**
+   * Starts the ticket headless on this computer. A gate it stops at is said
+   * here — a ticket waiting on others can be started anyway; the rest are
+   * fixed on the desktop. Once it runs, this conversation follows the
+   * ticket's thread: its progress and questions come here, replies steer it.
+   */
+  private async startNow(b: Binding, row: Inbox, actorId: string, draft: StartDraft, reply: { anchor: string | null }) {
+    const code = this.code();
+    const item = this.startable(b.project_id, draft.itemId);
+    if (!code || !item) this.refuse("That ticket can no longer be started", "该工单已无法开工");
+    if (this.isGroup(b) && actorId !== b.actor_id) this.refuse("Only the person this conversation is with can start work here", "只有发起人可以在这里开工");
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending) {
+      this.refuse("Stop the current turn or answer its question first", "请先停止当前执行或回答问题");
+    }
+    const address = JSON.parse(b.address_json) as ImAddress;
+    const general = item.workType === "general";
+    const result = await code.start(b.project_id, item.id, { mode: "run",
+      ...(draft.engine ? { engine: draft.engine } : {}), ...(draft.options ? { options: draft.options } : {}),
+      ...(draft.permissionMode && !general ? { permissionMode: draft.permissionMode } : {}), ...(draft.playbook && general ? { playbook: draft.playbook } : {}),
+      ...(draft.allowBlocked ? { allowBlocked: true } : {}),
+      source: { connection: b.connection_id, tenant: address.tenantId, conversation: address.conversationId, actor: actorId } });
+    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
+    if (!result.ok) {
+      if (result.gate === "blocked") {
+        const on = (result.blockers ?? []).join(", ");
+        this.enqueue(b, `start-blocked:${row.id}`, { text: this.say(`${item.key} waits on ${on}, still open. Start it anyway? The agent is told what it waits on.`, `${item.key} 依赖的 ${on} 还没完成。仍然开始吗？agent 会知道它在等什么。`),
+          actions: [{ label: this.say("Start anyway", "仍然开始"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, allowBlocked: true })), style: "primary" }] }, reply);
+      } else {
+        this.enqueue(b, `start-gate:${row.id}`, { text: this.say(`Couldn't start ${item.key}: ${result.message}. It's fixed on the desktop.`, `${item.key} 无法开工：${GATE_ZH[result.gate] ?? result.message}。请在桌面处理。`),
+          elements: [{ type: "links", links: [{ label: this.say("Open in Tomrade", "在 Tomrade 打开"), url: links.item(b.project_id, item.key) }] }] }, reply);
+      }
+      this.accept(row); return;
+    }
+    const detail = this.home.agent.thread(b.project_id, result.threadId);
+    // From the start's own turn on; the ticket's earlier history stays on the desktop.
+    const first = result.runId ? detail.messages.find(m => m.runId === result.runId) : undefined;
+    const cursor = first ? first.seq - 1 : detail.messages.at(-1)?.seq ?? 0;
+    const title = (await this.headless()).find(e => e.id === result.engine)?.title ?? result.engine;
+    this.rebind(b, result.threadId, cursor, actorId, rebound => {
+      if (result.runId) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", rebound.id, result.runId);
+      this.watchItem(rebound, item.id);
+      this.accept(row);
+      this.enqueue(rebound, `started:${row.id}`, { text: [
+        result.continued ? this.say(`Continuing ${item.key} with ${title}; its progress and questions come here.`, `已用 ${title} 继续 ${item.key}，进度和问题会发到这里。`)
+          : this.say(`Started ${item.key} with ${title}; its progress and questions come here.`, `已用 ${title} 开工 ${item.key}，进度和问题会发到这里。`),
+        ...(result.waitingOn ? [this.say(`It waits on your answer first: ${result.waitingOn}`, `它先等你回答：${result.waitingOn}`)] : []),
+        ...(result.warnings ?? []).map(w => `⚠ ${w}`),
+        this.say("/sessions takes you back to an earlier conversation.", "/sessions 可回到之前的会话。")
+      ].join("\n") }, reply);
+    });
+  }
+
   private ago(at: number): string {
     const m = Math.max(0, Math.round((Date.now() - at) / 60_000));
     if (m < 1) return this.say("just now", "刚刚");
@@ -1314,7 +1544,8 @@ export class Im extends Service {
     const detail = this.home.agent.thread(b.project_id, b.thread_id);
     this.store.db.transaction(() => {
       for (const message of detail.messages.filter(m => m.seq > b.cursor)) {
-        const content = message.role === "agent" && this.visible(b, message.runId) ? this.render(b, message.block) : null;
+        const rendered = message.role === "agent" && this.visible(b, message.runId) ? this.render(b, message.block) : null;
+        const content = rendered && this.startActions(b, rendered, message.block);
         if (content) this.watch(b, message.block);
         const streamed = content && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
         if (streamed) this.replace(b, streamed.id, content, { final: true });
@@ -1745,7 +1976,7 @@ export class Im extends Service {
 /** Commands that act at once, ahead of ordinary messages waiting for the turn. A demoted /steer carries its text in `input_json`. */
 function isControl(row: Inbox, event: ImInbound & { kind: "message" }): boolean {
   const text = event.text.trim();
-  return !row.input_json && (/^\/(stop|status|queue|help|sessions|archive|engine|model|effort|mode)$/.test(text) || /^\/(answer|steer|unqueue|switch|engine|model|effort|mode)\s/.test(text));
+  return !row.input_json && (/^\/(stop|status|queue|help|sessions|archive|engine|model|effort|mode)$/.test(text) || /^\/(answer|steer|unqueue|switch|engine|model|effort|mode|start)\s/.test(text));
 }
 
 const preview = (row: Inbox) => {
