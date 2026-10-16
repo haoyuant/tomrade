@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
-import { clockLabel, timeAgo, viewIcon } from "~/lib/domain";
+import { clockLabel, PRIORITY_LABEL, timeAgo, viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { foldSteps, startBriefId, traceState } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
@@ -253,6 +253,45 @@ function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: 
           {t("agentPanel.startOffer", { key: card.key })}
         </button>
       </div>
+    </div>
+  );
+}
+
+interface ProposalCard {
+  rootTitle?: string;
+  epics?: { title: string; body?: string; features?: { title: string; body?: string; workType?: "coding" | "general"; priority?: number }[] }[];
+  notes?: string;
+}
+
+/** The tree a plan would write, shown in full so the person can decide on the question below it. */
+function ProposalBlock({ card }: { card: ProposalCard }) {
+  const { t } = useI18n();
+  const epics = card.epics ?? [];
+  const tickets = epics.reduce((n, epic) => n + (epic.features?.length ?? 0), 0);
+  return (
+    <div className="tool-card proposal">
+      <div className="tool-head">
+        <Icon name="i-stack" size={12} />
+        {t("agentPanel.planProposal", { epics: epics.length, tickets })}
+      </div>
+      {card.rootTitle && <p className="proposal-root">{card.rootTitle}</p>}
+      {epics.map((epic, i) => (
+        <div className="proposal-epic" key={i}>
+          <p className="proposal-epic-title">{epic.title}</p>
+          {epic.body && <p className="proposal-body">{epic.body}</p>}
+          <ul className="proposal-tickets">
+            {(epic.features ?? []).map((ticket, j) => (
+              <li key={j}>
+                <span className="proposal-ticket-title">{ticket.title}</span>
+                {ticket.workType && <span className="tag faint">{t(`fields.${ticket.workType}`)}</span>}
+                {!!ticket.priority && <span className="tag faint">{PRIORITY_LABEL[ticket.priority]}</span>}
+                {ticket.body && <p className="proposal-body">{ticket.body}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {card.notes && <p className="proposal-notes">{card.notes}</p>}
     </div>
   );
 }
@@ -593,6 +632,8 @@ function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, by
       <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
     ) : b.type === "card" && b.schema === "start" ? (
       <StartOffer card={b.data as StartOfferCard} onOpenIssue={onOpenIssue} />
+    ) : b.type === "card" && b.schema === "backlog.proposal" ? (
+      <ProposalBlock card={b.data as ProposalCard} />
     ) : b.type === "card" ? (
       <CardBlock block={b} />
     ) : b.type === "changes" ? (

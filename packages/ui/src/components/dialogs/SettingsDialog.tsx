@@ -806,19 +806,6 @@ function AssistantPane({
           </button>
         </p>
         <div className="field">
-          <label htmlFor="stConfirm">{t("settingsDialog.confirmWritesLabel")}</label>
-          <input
-            id="stConfirm"
-            className="input num"
-            type="number"
-            min={0}
-            style={{ maxWidth: 120 }}
-            value={agent.confirmWritesOver}
-            onChange={(e) => saveAgent({ ...agent, confirmWritesOver: Math.max(0, Number(e.target.value) || 0) })}
-          />
-          <span className="meta-txt">{t("settingsDialog.confirmWritesNote")}</span>
-        </div>
-        <div className="field">
           <div className="cfg-row">
             <span className="cfg-name">{t("settingsDialog.resumeAfterLimitLabel")}</span>
             <button

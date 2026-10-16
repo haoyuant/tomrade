@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { AgentSettings, WorkflowIO } from "@tomradex/agent";
+import type { WorkflowIO } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/items";
 import type { Item } from "@tomradex/domain";
@@ -37,6 +37,9 @@ const toList = (raw: string): string[] => {
   return trimmed.split(/[,，、;；\n]/).map((s) => s.trim()).filter(Boolean);
 };
 
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+/** The answers that write a proposed plan, in each language it is asked in. */
+const APPLY = ["Apply", "写入"];
 const answerText = (answer: string | string[] | undefined): string => (Array.isArray(answer) ? answer.join(", ") : (answer ?? ""));
 
 interface WizardState {
@@ -56,7 +59,6 @@ export default {
     };
     const saveDossier = (run: RunHandle, dossier: Dossier) =>
       ctx.agent.setCard(run.id, { id: "dossier", schema: "backlog.dossier", title: "Requirement dossier", data: dossier });
-    const confirmThreshold = () => ((ctx.settings.get().agent as AgentSettings | undefined)?.confirmWritesOver ?? 0);
 
     // ── tools ──────────────────────────────────────────────────────────────
     ctx.tools.register(
@@ -120,7 +122,7 @@ export default {
       id: "plan_and_apply",
       title: "Plan & apply",
       description:
-        "Decompose a requirement into a root epic → epics → independently deliverable coding or general tickets and write the whole tree in ONE transaction (revertible in one click). Pass {requirement} for a written spec, or {} to use this thread's dossier.",
+        "Decompose a requirement into a root epic → epics → independently deliverable coding or general tickets, show the person the proposed tree, and write it in ONE transaction (revertible in one click) only once they agree. Pass {requirement} for a written spec, or {} to use this thread's dossier.",
       input: z.object({ requirement: z.string().optional(), rootTitle: z.string().optional() }),
       state: z.object({ requirement: z.string(), rootTitle: z.string(), plan: planSchema.nullable(), writes: z.number() }),
       entry: "plan",
@@ -136,18 +138,19 @@ export default {
       steps: {
         async plan(state, io, answer) {
           if (answer !== undefined) {
-            return answerText(answer).startsWith("Apply") ? { next: "apply", state } : { done: { cancelled: true, reason: "the user declined the plan" } };
+            return APPLY.some((word) => answerText(answer).startsWith(word)) ? { next: "apply", state } : { done: { cancelled: true, reason: "the user declined the plan" } };
           }
           const existing = existingOf(io.run.projectId);
           const plan = await generatePlan(io.llm, state.requirement, existing);
           const features = plan.epics.reduce((n, e) => n + e.features.length, 0);
           const next: PlanState = { ...state, plan, writes: 1 + plan.epics.length + features };
-          io.emit({ type: "card", id: "proposal", schema: "backlog.proposal", title: "Plan proposal", data: plan });
-          const threshold = confirmThreshold();
-          if (threshold > 0 && next.writes > threshold) {
-            return { ask: { text: `This plan writes ${next.writes} items (1 root epic, ${plan.epics.length} epics, ${features} features). Apply it?`, options: ["Apply", "Cancel"] }, state: next };
-          }
-          return { next: "apply", state: next };
+          io.emit({ type: "card", id: "proposal", schema: "backlog.proposal", title: "Plan proposal", data: { rootTitle: state.rootTitle, ...plan } });
+          // The person reads the tree before any of it is written.
+          const zh = ctx.settings.locale?.() === "zh";
+          const text = zh
+            ? `这份计划会写入 ${next.writes} 项（1 个总 epic、${plan.epics.length} 个 epic、${features} 张票）。写入 backlog 吗？`
+            : `This plan writes ${count(next.writes, "item")} (1 root epic, ${count(plan.epics.length, "epic")}, ${count(features, "ticket")}). Write it to the backlog?`;
+          return { ask: { text, options: zh ? ["写入", "取消"] : ["Apply", "Cancel"] }, state: next };
         },
         apply(state, io) {
           const outcome = applyPlan(ctx, {

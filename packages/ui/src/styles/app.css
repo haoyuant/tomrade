@@ -1558,6 +1558,15 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .report-sections { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 0; padding: 0; margin: 0; font-size: var(--text-sm); }
 .report-note { width: 100%; resize: vertical; }
 .report-preview { max-height: 280px; overflow: auto; margin: 0; padding: var(--space-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xs); white-space: pre-wrap; word-break: break-word; color: var(--fg-2); }
+/* a plan's tree before it is written */
+.proposal-root { margin: 0 0 var(--space-2); font-weight: 500; color: var(--fg); }
+.proposal-epic { padding: var(--space-2) 0; border-top: 1px solid var(--border-soft); }
+.proposal-epic-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--fg); }
+.proposal-tickets { list-style: none; margin: 4px 0 0; padding: 0 0 0 var(--space-3); }
+.proposal-tickets li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 3px 0; font-size: 14px; }
+.proposal-ticket-title { color: var(--fg-2); }
+.proposal-body { flex-basis: 100%; margin: 2px 0 0; font-size: var(--text-sm); color: var(--meta); }
+.proposal-notes { margin: var(--space-2) 0 0; padding-top: var(--space-2); border-top: 1px solid var(--border-soft); font-size: var(--text-sm); color: var(--meta); white-space: pre-wrap; }
 .tool-row .t-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .ai-error { color: var(--danger); font-size: 14px; line-height: var(--leading-dense); }
 .ai-error > p { margin: 0; }

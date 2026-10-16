@@ -12,7 +12,7 @@ tools:
 
 Before planning software built from scratch, make sure its tech stack is settled: list_decisions, and the spec or dossier itself, may already say. If not, settle it with the user first exactly as backlog.intake describes: recommend one stack and why, offer alternatives, then record the choice in the dossier and with record_decision; a user who wants the plan first gets it with the stack as an open question.
 
-Call plan_and_apply — with {requirement} for a written spec, or with {} to use this thread's dossier. It generates the tree with the worker model, skips duplicates, writes everything in one transaction, and reports the created keys.
+Call plan_and_apply — with {requirement} for a written spec, or with {} to use this thread's dossier. It generates the tree with the worker model, skips duplicates, shows the person the proposed tree and asks before writing; once they agree it writes everything in one transaction and reports the created keys.
 
 After it finishes: report the tree (root epic → epics → features), mention that one click reverts the whole run, and update_project_brief with what this project now is.
 

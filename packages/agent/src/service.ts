@@ -242,7 +242,7 @@ export type AgentConfig = z.infer<typeof AgentConfig>;
 
 export interface AgentSettings {
   defaultEngine: string;
-  /** A plan pauses for confirmation when it would write more items than this; 0 = never pause. */
+  /** No longer read: a plan always waits for the person before it is written. */
   confirmWritesOver: number;
   /** A run stopped by a usage limit is continued once the limit lifts. */
   resumeAfterLimit: boolean;

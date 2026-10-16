@@ -263,7 +263,7 @@ describe("the loop engine on the platform", () => {
     expect(agent.thread(project.id, thread.id).pending).toBeNull();
   });
 
-  it("runs plan_and_apply as one transaction and reverts it as one run", async () => {
+  it("shows plan_and_apply's tree and writes it, as one transaction revertible as one run, only once the person agrees", async () => {
     const respond = (system: string) => {
       if (system.includes("decompose a product requirement") || system.includes("You decompose"))
         return {
@@ -278,11 +278,19 @@ describe("the loop engine on the platform", () => {
       step === 0 ? { toolCalls: [{ name: "plan_and_apply", args: { requirement: "A Flutter app that reminds me to drink water", rootTitle: "Water reminder" } }] } : { text: "Planned and applied." };
     const { ctx, agent, items, project } = await boot(script, respond);
     const thread = agent.newThread(project.id);
-    const { runId } = agent.send(project.id, thread.id, { kind: "text", text: "拆一下这个需求" });
-    const run = await settled(ctx, project.id, runId);
-    expect(run.status).toBe("done");
+    const first = agent.send(project.id, thread.id, { kind: "text", text: "拆一下这个需求" });
+    const planned = await settled(ctx, project.id, first.runId);
+    expect(planned).toMatchObject({ status: "asked", changes: 0 });
+    expect(items.list({ projectId: project.id })).toHaveLength(0);
+    const proposal = agent.store.messages(project.id, thread.id).map((m) => m.block).find((b) => b.type === "card" && b.schema === "backlog.proposal");
+    expect(proposal).toMatchObject({ data: { rootTitle: "Water reminder", epics: [{ title: "Tracking" }, { title: "Reminders" }] } });
+    const pending = agent.thread(project.id, thread.id).pending!;
     // 1 root epic + 2 epics + 3 features
-    expect(run.changes).toBe(6);
+    expect(pending.question).toMatchObject({ text: expect.stringContaining("writes 6 items"), options: ["Apply", "Cancel"] });
+
+    const { runId } = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "Apply" });
+    const run = await settled(ctx, project.id, runId);
+    expect(run).toMatchObject({ status: "done", changes: 6 });
     const all = items.list({ projectId: project.id });
     const root = all.find((i) => i.title === "Water reminder");
     expect(root?.kind).toBe("epic");
@@ -291,6 +299,23 @@ describe("the loop engine on the platform", () => {
     const undone = agent.revert(project.id, runId);
     expect(undone.reverted).toBe(6);
     expect(items.list({ projectId: project.id }).find((i) => i.title === "Water reminder")).toBeUndefined();
+  });
+
+  it("writes nothing when the person turns the plan down, asked in their language", async () => {
+    const respond = (system: string) =>
+      system.includes("You decompose") ? { epics: [{ title: "Tracking", body: "", features: [{ title: "Log a glass with one tap", body: "" }] }] } : { duplicates: [], related: [] };
+    const script = (_req: ChatRequest, step: number): FakeTurn =>
+      step === 0 ? { toolCalls: [{ name: "plan_and_apply", args: { requirement: "A water reminder", rootTitle: "Water reminder" } }] } : { text: "好的，不写了。" };
+    const { ctx, agent, items, project } = await boot(script, respond);
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+    const thread = agent.newThread(project.id);
+    const first = agent.send(project.id, thread.id, { kind: "text", text: "拆一下" });
+    expect((await settled(ctx, project.id, first.runId)).status).toBe("asked");
+    const pending = agent.thread(project.id, thread.id).pending!;
+    expect(pending.question).toMatchObject({ text: expect.stringContaining("写入 backlog 吗"), options: ["写入", "取消"] });
+    const second = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "取消" });
+    expect(await settled(ctx, project.id, second.runId)).toMatchObject({ status: "done", changes: 0 });
+    expect(items.list({ projectId: project.id })).toHaveLength(0);
   });
 
   it("changes a setting when asked, lists it under the run, and takes it back with the run", async () => {
@@ -403,6 +428,10 @@ describe("dependencies after ticket changes", () => {
     const thread = agent.newThread(project.id);
     const first = agent.send(project.id, thread.id, { kind: "text", text: "plan it" });
     expect((await settled(ctx, project.id, first.runId)).status).toBe("asked");
+    expect(reviews).toHaveLength(0);
+    const plan = agent.thread(project.id, thread.id).pending!;
+    const written = agent.send(project.id, thread.id, { kind: "answer", questionId: plan.question.id, value: "Apply" });
+    expect((await settled(ctx, project.id, written.runId)).status).toBe("asked");
     expect(reviews).toHaveLength(1);
     const byTitle = (title: string) => items.list({ projectId: project.id }).find((i) => i.title === title)!;
     const model = byTitle("Define the record model");
