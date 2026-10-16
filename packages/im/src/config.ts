@@ -56,6 +56,8 @@ export const InboundSchema = z.discriminatedUnion("kind", [
   z.object({ ...common, kind: z.literal("message"), messageId: id, text: z.string().max(32_000),
     activation: z.enum(["dm", "mention", "reply", "ambient"]),
     attachments: z.array(z.object({ id, name: z.string().min(1).max(255), mimeType: z.string().min(1).max(128), size: z.number().int().min(1).max(32 * 1024 * 1024) })).max(8).optional(),
-    permalink: z.url().max(2048).optional() }),
+    permalink: z.url().max(2048).optional(), replyTo: id.optional() }),
+  z.object({ ...common, kind: z.literal("retract"), messageId: id }),
+  z.object({ ...common, kind: z.literal("edit"), messageId: id }),
   z.object({ ...common, kind: z.literal("action"), token: id, value: z.union([z.string().max(32_000), z.array(z.string().max(512)).max(24)]).optional() })
 ]);
