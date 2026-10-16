@@ -160,6 +160,14 @@ function SourcesPane({ projectId, sources, onBack }: { projectId: string; source
               </p>
             )}
             {s.enabled &&
+              !s.unavailable &&
+              !s.error &&
+              s.warnings.map((w) => (
+                <p className="meta-txt dense" key={w} data-warning>
+                  ⚠ {w}
+                </p>
+              ))}
+            {s.enabled &&
               s.options.map((o) => (
                 <div className="row inbox-source-option" key={o.id} data-option={o.id}>
                   <div className="stack-1">

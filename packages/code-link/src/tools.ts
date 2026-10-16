@@ -26,8 +26,11 @@ export interface ToolHost {
   noteProgress(projectId: string, sessionId: string, text: string): void;
   /** The agent was not let merge its pull request: the session stops and the person is handed the merge. */
   blockMerge(projectId: string, sessionId: string, reason: string): void;
-  /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
-  attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void;
+  /**
+   * A session took (another) ticket on: the session's list grows, its branch is set when it had none.
+   * On a ticket's new delivery the branch is replaced; `replace` swaps the finished tickets out.
+   */
+  attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts?: { replace?: boolean }): void;
   /** The hooks session a tokenless claim most likely comes from: live on that repository, holding no ticket and no client's connection. */
   externalSession(projectId: string, repoId: string): SessionView | null;
   /** The session an outside client's connection claimed for. */
@@ -85,6 +88,50 @@ export function registerTools(ctx: Context, host: ToolHost): void {
     return { item, repoId, branch, session: s };
   };
 
+  /**
+   * Code linked to a finished ticket is history or new work, never a reason to reopen it quietly: a merged
+   * or closed pull request (or a bare branch) is recorded on its last delivery; an open one asks the person.
+   */
+  const linkFinished = (projectId: string, item: Item, repoId: string, named: string | null, pr: { prUrl: string | null; prNumber: number | null; prState: PrState | null }) => {
+    if (pr.prState === "open") {
+      const last = host.store.currentDelivery(projectId, item.id);
+      const reason = `pull request opened after ${item.status}: ${pr.prUrl ?? `#${pr.prNumber}`} — reopen for a new delivery?`;
+      if (last && !host.store.hasRecentProposal(projectId, item.id, last.sequence, "propose", "doing", reason, null)) {
+        host.store.addProposal(projectId, { itemId: item.id, delivery: last.sequence, linkId: null, kind: "propose", fromStatus: item.status, toStatus: "doing", reason, evidenceSha: null });
+        host.notify(projectId);
+      }
+      return {
+        ok: false,
+        key: item.key,
+        status: item.status,
+        warning: `${item.key} is ${item.status}, so the open pull request was not linked. The person is asked in Tomrade whether to reopen it for a new delivery; tell the user, and call link_code again once it is reopened. If this pull request is already merged or closed, pass prState.`
+      };
+    }
+    let delivery = host.store.currentDelivery(projectId, item.id);
+    if (!delivery) {
+      // Code found for a ticket that never had any: its one delivery, already over.
+      host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
+      delivery = host.store.finishActiveDelivery(projectId, item.id, item.status === "done" ? "completed" : "cancelled")!;
+    }
+    const existing = host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch);
+    const branch = named ?? existing?.branch ?? "";
+    if (!branch) throw new Error("link_code: pass branch — this session has none");
+    const link = host.store.upsertLink(
+      projectId,
+      { itemId: item.id, repoId, branch, delivery: delivery.sequence },
+      { ...(pr.prUrl ? { prUrl: pr.prUrl } : {}), ...(pr.prNumber ? { prNumber: pr.prNumber } : {}), ...(pr.prState ? { prState: pr.prState } : {}), source: "mcp", lastSeenAt: Date.now() }
+    );
+    host.notify(projectId);
+    return {
+      key: item.key,
+      status: item.status,
+      branch: link.branch,
+      prUrl: link.prUrl,
+      prState: link.prState,
+      warning: `${item.key} is ${item.status}: recorded on its delivery ${delivery.sequence}; its status was not changed`
+    };
+  };
+
   ctx.tools.register(
     defineTool({
       name: "link_code",
@@ -107,16 +154,19 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           throw new Error("link_code: inspect the complete diff against the default branch, remove work outside this ticket, then pass scopeChecked: true");
         }
         if (!repoId) throw new Error(`link_code: ${item.key}'s workstream has no repository`);
-        if (item.status === "done" || item.status === "cancelled") throw new Error(`link_code: reopen ${item.key} before starting another delivery`);
-        const currentDelivery = host.store.currentDelivery(projectId, item.id);
-        if (session && currentDelivery && session.delivery !== currentDelivery.sequence) throw new Error("link_code: this session belongs to an earlier delivery; start a new session");
-        const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
-        if (session && session.delivery !== delivery.sequence) throw new Error(`link_code: this session belongs to delivery ${session.delivery}; ${item.key} is now on delivery ${delivery.sequence}`);
-        const existing = host.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch);
-        const branch = args.branch?.replace(/^origin\//, "") ?? implied ?? existing[0]?.branch ?? "";
-        if (!branch) throw new Error("link_code: pass branch — this session has none");
         const prNumber = args.prNumber ?? (args.prUrl ? Number(PR_NUMBER.exec(args.prUrl)?.[1]) || null : null);
         const prState: PrState | null = args.prState ?? (args.prUrl ? "open" : null);
+        if (item.status === "done" || item.status === "cancelled") return linkFinished(projectId, item, repoId, args.branch?.replace(/^origin\//, "") ?? implied, { prUrl: args.prUrl ?? null, prNumber, prState });
+        const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
+        // A session left on an earlier delivery moves to this one; the branch it had there stays behind.
+        const moved = !!session && session.delivery !== delivery.sequence;
+        if (session && moved) host.attach(projectId, session.id, item.id, "", delivery.sequence);
+        const existing = host.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch);
+        const branch = args.branch?.replace(/^origin\//, "") ?? (moved ? null : implied) ?? existing[0]?.branch ?? "";
+        if (!branch) throw new Error("link_code: pass branch — this session has none");
+        // An earlier delivery's merged branch would read as this delivery merged, and close the ticket again.
+        const landed = host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.branch === branch && l.delivery !== delivery.sequence && (!!l.mergedSha || l.prState === "merged"));
+        if (landed) throw new Error(`link_code: ${branch} was already merged in ${item.key}'s delivery ${landed.delivery} — put this delivery's work on a new branch and link that`);
         const link: CodeLinkView = host.store.upsertLink(
           projectId,
           { itemId: item.id, repoId, branch, delivery: delivery.sequence },
@@ -172,7 +222,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const { item, session: bound } = subject("note_progress", projectId, args.key, inv);
         // A terminal session with hooks but no token is found by the ticket it claimed.
         const session = bound ?? host.store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.threadId === null) ?? null;
-        if (!session) throw new Error(`note_progress: Tomrade is not tracking a session on ${item.key} — ${untracked()}`);
+        // A lost note is no reason to stop the work; say plainly that it was not kept.
+        if (!session) return { ok: false, key: item.key, warning: `not recorded: Tomrade is not tracking a session on ${item.key} — ${untracked()}` };
         host.noteProgress(projectId, session.id, args.text.trim());
         return { ok: true, key: item.key };
       }
@@ -190,7 +241,15 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const projectId = requireProjectId("report_merge_blocked", args.projectId, inv);
         const { item, session: bound } = subject("report_merge_blocked", projectId, args.key, inv);
         const session = bound ?? host.store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.threadId === null) ?? null;
-        if (!session) throw new Error(`report_merge_blocked: Tomrade is not tracking a session on ${item.key} — ${untracked()}`);
+        // Nothing in Tomrade would carry the hand-off, so the agent carries it: never a quiet success.
+        if (!session) {
+          return {
+            ok: false,
+            key: item.key,
+            next: "stop",
+            warning: `not recorded: Tomrade is not tracking a session on ${item.key}, so it cannot hand the merge over. Tell the user directly that the pull request needs a human to merge it, and why: ${args.reason.trim()}`
+          };
+        }
         host.blockMerge(projectId, session.id, args.reason.trim());
         return { ok: true, key: item.key, next: "stop here — the person merges the pull request" };
       }
@@ -218,7 +277,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       name: "claim_ticket",
       title: "Claim a ticket to work on",
       description:
-        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. One session may own only one ticket; start a separate session for another ticket.",
+        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. A session owns one ticket at a time: another can be claimed only once that one is done (and never in a session Tomrade started).",
       input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
       execute: async (args, inv) => {
         const projectId = requireProjectId("claim_ticket", args.projectId, inv);
@@ -238,13 +297,16 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         // Without a token the claim belongs to the client's connection: the session it claimed before, else a hooks session nobody holds.
         const connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
         let session = tokened ?? connected ?? (repoId ? host.externalSession(projectId, repoId) : null);
-        const other = session?.itemIds.find((id) => id !== item.id);
-        const currentDelivery = host.store.currentDelivery(projectId, item.id);
-        if (session?.itemIds.includes(item.id) && currentDelivery && session.delivery !== currentDelivery.sequence) throw new Error("claim_ticket: this session belongs to an earlier delivery; start a new session");
-        if (other) {
-          const held = ctx.items.get(projectId, other);
-          throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
+        const others = (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
+        // An outside terminal moves on once its ticket is finished; until then its wrap-up (merging, a blocked merge) is still owed.
+        // A session Tomrade started is one ticket's thread and worktree.
+        const owed = others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled"));
+        if (others.length && (tokened || owed)) {
+          const held = owed ?? others[0];
+          if (tokened || !held) throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
+          throw new Error(`claim_ticket: this session still owns ${held.key}, which is ${held.status} — merge it or hand the merge to the person (report_merge_blocked), then claim ${item.key}`);
         }
+        const switched = others.length > 0;
         // A client with no hooks is still followed, through its connection.
         if (!session && inv.connection) session = host.connectionSession(projectId, repoId);
         if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id);
@@ -258,7 +320,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           : branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title, await titleSlug(ctx.get("llm") ?? null, item.title));
         const branch = settled || (delivery.sequence === 1 ? baseBranch : `${baseBranch}-${delivery.sequence}`);
         if (repoId) host.store.upsertLink(projectId, { itemId: item.id, repoId, branch, delivery: delivery.sequence }, { source: "mcp", lastSeenAt: Date.now() });
-        if (session) host.attach(projectId, session.id, item.id, branch, delivery.sequence);
+        if (session) host.attach(projectId, session.id, item.id, branch, delivery.sequence, { replace: switched });
         if (item.status === "backlog" || item.status === "todo") ctx.items.update(projectId, item.id, { status: "doing" }, inv.by);
         host.notify(projectId);
         return {
@@ -275,6 +337,11 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             "neighboring tickets are context, not extra implementation work; leave their code for separate sessions",
             "before pushing, review the full diff and remove anything this ticket does not require",
             `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
+            ...(switched
+              ? [
+                  `this session's previous ticket is finished: create ${branch} from the latest ${repo?.defaultBranch ?? "default branch"} (fetch first), not from the previous ticket's branch, and make sure the full-diff review finds none of its commits`
+                ]
+              : []),
             `every commit message names ${item.key}`,
             local
               ? `this repository has no remote: do not push or open a pull request; after the full-diff review call link_code with scopeChecked: true and no prUrl; do not mark the ticket done — merging does`

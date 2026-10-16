@@ -240,9 +240,12 @@ describe("untracked terminal sessions", () => {
     expect(claimed.conventions).not.toContain("call note_progress with one line at milestones");
     expect(items.get(project.id, item.id)?.status).toBe("doing");
     expect(codeLink.sessionsOf(project.id, item.id)).toEqual([]);
-    for (const [tool, args] of [["note_progress", { text: "working" }], ["report_merge_blocked", { reason: "checks failed" }]] as const) {
-      await expect(ctx.tools.execute(tool, { key: item.key, ...args }, inv)).rejects.toThrow(claimed.tracking.message);
-    }
+    // Nothing recorded, and said so: never a quiet success, never a stop for a lost note.
+    expect(await ctx.tools.execute("note_progress", { key: item.key, text: "working" }, inv)).toMatchObject({ ok: false, warning: expect.stringContaining(claimed.tracking.message) });
+    const blocked = (await ctx.tools.execute("report_merge_blocked", { key: item.key, reason: "checks failed" }, inv)) as { ok: boolean; next: string; warning: string };
+    expect(blocked).toMatchObject({ ok: false, next: "stop" });
+    expect(blocked.warning).toContain("Tell the user directly that the pull request needs a human to merge it");
+    expect(blocked.warning).toContain("checks failed");
   });
 });
 
@@ -268,7 +271,25 @@ describe("outside clients, told apart by their connection", () => {
     expect(await ctx.tools.execute("note_progress", { text: "second going" }, b)).toMatchObject({ key: second.key });
     expect(codeLink.sessionsOf(project.id, first.id).map((s) => [s.id, s.summary])).toEqual([[hooked.id, "first going"]]);
     expect(codeLink.sessionsOf(project.id, second.id).map((s) => s.summary)).toEqual(["second going"]);
-    await expect(ctx.tools.execute("claim_ticket", { key: second.key }, a)).rejects.toThrow(`this session already owns ${first.key}`);
+    await expect(ctx.tools.execute("claim_ticket", { key: second.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is doing`);
+    items.update(project.id, first.id, { status: "verifying" }, "human");
+    await expect(ctx.tools.execute("claim_ticket", { key: second.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
+  });
+
+  it("lets an outside session take the next ticket once its last one is done, from a fresh branch", async () => {
+    const { codeLink, ctx, items, project, board } = await machine();
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });
+    const next = items.create({ projectId: project.id, boardId: board.id, title: "Next", status: "todo", by: "human" });
+    const a = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const { tracking } = (await ctx.tools.execute("claim_ticket", { key: first.key }, a)) as { tracking: { sessionId: string } };
+    items.update(project.id, first.id, { status: "done" }, "human");
+    // Done as far as the ticket goes, while the terminal is still open.
+    codeLink.store.patchSession(project.id, tracking.sessionId, { state: "running", endedAt: null });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: next.key }, a)) as { branch: string; tracking: { sessionId: string }; conventions: string[] };
+    expect(claimed.tracking.sessionId).toBe(tracking.sessionId);
+    expect(claimed.conventions.some((c) => c.includes("from the latest") && c.includes("previous ticket"))).toBe(true);
+    expect(codeLink.store.session(project.id, tracking.sessionId)).toMatchObject({ itemIds: [next.id], branch: claimed.branch });
+    expect(await ctx.tools.execute("note_progress", { text: "on the next one" }, a)).toMatchObject({ ok: true, key: next.key });
   });
 
   it("follows a client with no hooks through its connection until it closes", async () => {
@@ -371,11 +392,12 @@ describe("a developer's own Claude Code session", () => {
     expect(await ctx.tools.execute("note_progress", { key: item.key, text: "lexer done" }, inv)).toMatchObject({ ok: true });
 
     const other = items.create({ projectId: project.id, boardId: board.id, title: "Separate work", status: "todo", by: "human" });
-    await expect(ctx.tools.execute("claim_ticket", { key: other.key }, inv)).rejects.toThrow(`this session already owns ${item.key}`);
+    await expect(ctx.tools.execute("claim_ticket", { key: other.key }, inv)).rejects.toThrow(`this session still owns ${item.key}`);
     expect(items.get(project.id, other.id)!.status).toBe("todo");
-    await expect(ctx.tools.execute("note_progress", { key: other.key, text: "x" }, { by: "ai:claude-code", projectId: project.id })).rejects.toThrow(
-      `Tomrade is not tracking a session on ${other.key}`
-    );
+    expect(await ctx.tools.execute("note_progress", { key: other.key, text: "x" }, { by: "ai:claude-code", projectId: project.id })).toMatchObject({
+      ok: false,
+      warning: expect.stringContaining(`Tomrade is not tracking a session on ${other.key}`)
+    });
 
     await post({ hook_event_name: "Stop", session_id: "cli-9", cwd: checkout });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");

@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Contributions } from "@tomradex/contributions";
 import { Inbox, entryId, type InboxSource } from "@tomradex/inbox";
 import { commentFor, githubRepo, githubSource, kindOf, type Api, type Issue, type LandedLink } from "@tomradex/inbox-github";
 import { fresh, settle } from "@tomradex/testkit";
 
 const REPO = "acme/app";
+const LIB = "acme/lib";
 const T0 = Date.parse("2026-10-01T00:00:00Z");
 
 const issue = (number: number, extra: Partial<Issue> = {}): Issue => ({
@@ -29,24 +30,36 @@ function fakeGitHub() {
     /** tag → the commits it contains */
     tags: new Map<string, string[]>(),
     writes: [] as { method: string; route: string; body: unknown }[],
-    refuse: 0
+    refuse: 0,
+    /** Another repository: only its issues are read. */
+    lib: [] as Issue[],
+    /** One repository that refuses while the others answer. */
+    refuseRepo: null as string | null,
+    releasesDown: false
   };
   const api: Api = {
     whoami: async () => "Maintainer",
     async request<T>(method: string, route: string, body?: unknown): Promise<T> {
       const [path, query = ""] = route.split("?");
       const q = new URLSearchParams(query);
-      if (state.refuse) throw Object.assign(new Error("Resource not accessible by integration"), { status: state.refuse });
+      if (state.refuse || (state.refuseRepo && path!.startsWith(`/repos/${state.refuseRepo}/`))) throw Object.assign(new Error("Resource not accessible by integration"), { status: state.refuse || 403 });
       if (method !== "GET") {
         state.writes.push({ method, route, body });
         return undefined as T;
       }
       const page = Number(q.get("page") ?? 1);
       const paged = <X>(xs: X[]) => (page === 1 ? xs : []) as T;
-      if (path === `/repos/${REPO}/issues`) return paged(state.issues.filter((i) => q.get("state") !== "open" || i.state === "open"));
+      const since = q.get("since");
+      const listed = (xs: Issue[]) => paged(xs.filter((i) => (q.get("state") !== "open" || i.state === "open") && (!since || Date.parse(i.created_at) >= Date.parse(since))));
+      if (path === `/repos/${REPO}/issues`) return listed(state.issues);
+      if (path === `/repos/${LIB}/issues`) return listed(state.lib);
+      if (path === `/repos/${LIB}/issues/comments` || path === `/repos/${LIB}/issues/events`) return paged([]);
       if (path === `/repos/${REPO}/issues/comments`) return paged(state.comments.filter((c) => Date.parse(c.created_at) >= Date.parse(q.get("since")!)));
       if (path === `/repos/${REPO}/issues/events`) return paged([...state.events].reverse());
-      if (path === `/repos/${REPO}/releases`) return paged(state.releases);
+      if (path === `/repos/${REPO}/releases`) {
+        if (state.releasesDown) throw new Error("socket hang up");
+        return paged(state.releases);
+      }
       const compare = /^\/repos\/acme\/app\/compare\/(\w+)\.\.\.(.+)$/.exec(path!);
       if (compare) return { status: state.tags.get(decodeURIComponent(compare[2]!))?.includes(compare[1]!) ? "ahead" : "behind" } as T;
       if (path === `/repos/${REPO}/pulls/7`) return { merge_commit_sha: "abc123" } as T;
@@ -61,10 +74,11 @@ async function boot() {
   const gh = fakeGitHub();
   let connected = true;
   const links: LandedLink[] = [];
+  const repos = new Map([["repo-1", REPO]]);
   const source: InboxSource = githubSource({
     api: gh.api,
     inbox: f.ctx.inbox,
-    repos: async () => new Map([["repo-1", REPO]]),
+    repos: async () => new Map(repos),
     item: (projectId, itemId) => f.items.get(projectId, itemId),
     links: () => links,
     connected: async () => connected,
@@ -73,6 +87,8 @@ async function boot() {
       connect: "Connect GitHub",
       noRepo: "No GitHub repository",
       noAccess: (repo: string) => `No access to ${repo}`,
+      repoFailed: (repo: string, why: string) => `skipped ${repo}: ${why}`,
+      releaseFailed: (why: string) => `releases: ${why}`,
       comment: "Comment",
       commentHelp: "",
       close: "Close",
@@ -81,7 +97,7 @@ async function boot() {
   });
   f.ctx.inbox.source(source);
   await settle();
-  return { ...f, ...gh, inbox: f.ctx.inbox, p: f.project.id, links, disconnect: () => (connected = false) };
+  return { ...f, ...gh, inbox: f.ctx.inbox, p: f.project.id, links, repos, disconnect: () => (connected = false) };
 }
 
 const id = (n: number) => entryId("github", `${REPO}#${n}`);
@@ -214,5 +230,66 @@ describe("the GitHub inbox source", () => {
       [id(2), "closed"]
     ]);
     expect(t.state.writes).toEqual([]);
+  });
+
+  describe("with several repositories", () => {
+    afterEach(() => vi.useRealTimers());
+    const at = (ms: number) => vi.setSystemTime(ms);
+    const T1 = Date.parse("2026-10-10T00:00:00Z");
+    const HOUR = 3_600_000;
+    const lib = (number: number, created: number): Issue => issue(number, { html_url: `https://github.com/${LIB}/issues/${number}`, created_at: new Date(created).toISOString() });
+
+    it("keeps pulling the others when one refuses, and catches the refused one up once it answers", async () => {
+      const t = await boot();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      at(T1);
+      t.state.issues.push(issue(1));
+      await t.inbox.setSource(t.p, "github", true);
+      t.repos.set("repo-2", LIB);
+      t.state.lib.push(lib(5, T1 - 30 * 24 * HOUR));
+      await t.inbox.refresh(t.p);
+      // a repository bound later starts from the beginning: what was already open comes in
+      expect(t.inbox.get(t.p, entryId("github", `${LIB}#5`))).toBeTruthy();
+
+      at(T1 + HOUR);
+      t.state.issues.push(issue(2, { created_at: new Date(T1 + HOUR / 2).toISOString() }));
+      t.state.lib.push(lib(6, T1 + HOUR / 2));
+      t.state.refuseRepo = REPO;
+      await t.inbox.refresh(t.p);
+      expect(t.inbox.get(t.p, entryId("github", `${LIB}#6`))).toBeTruthy();
+      expect(t.inbox.get(t.p, id(2))).toBeNull();
+      const source = (await t.inbox.sources(t.p))[0]!;
+      expect(source.error).toBeNull();
+      expect(source.warnings).toEqual([`skipped ${REPO}: No access to ${REPO}`]);
+
+      at(T1 + 2 * HOUR);
+      t.state.refuseRepo = null;
+      await t.inbox.refresh(t.p);
+      expect(t.inbox.get(t.p, id(2))).toBeTruthy();
+      expect((await t.inbox.sources(t.p))[0]!.warnings).toEqual([]);
+    });
+
+    it("fails the pull only when every repository refuses", async () => {
+      const t = await boot();
+      t.repos.set("repo-2", LIB);
+      t.state.refuse = 403;
+      await t.inbox.setSource(t.p, "github", true);
+      expect((await t.inbox.sources(t.p))[0]!.error).toBe(`No access to ${REPO}`);
+    });
+
+    it("says when the release check failed, and clears it once it works", async () => {
+      const t = await boot();
+      t.state.issues.push(issue(1));
+      await t.inbox.setSource(t.p, "github", true);
+      const { item } = await t.inbox.accept(t.p, id(1));
+      t.items.update(t.p, item.id, { status: "done" }, "human");
+      t.links.push({ repoId: "repo-1", mergedSha: "def456", prNumber: null, prState: null });
+      t.state.releasesDown = true;
+      await t.inbox.refresh(t.p);
+      expect((await t.inbox.sources(t.p))[0]!.warnings).toEqual(["releases: socket hang up"]);
+      t.state.releasesDown = false;
+      await t.inbox.refresh(t.p);
+      expect((await t.inbox.sources(t.p))[0]!.warnings).toEqual([]);
+    });
   });
 });

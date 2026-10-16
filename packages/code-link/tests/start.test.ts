@@ -21,7 +21,8 @@ import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
-import { Tools } from "@tomradex/tools";
+import { Tools, defineTool } from "@tomradex/tools";
+import { z } from "zod";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-start-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -962,11 +963,13 @@ describe("starting a ticket", () => {
     await ctx.tools.execute("link_code", { key: item.key, branch: first.branch, prState: "merged" }, { by: "human", projectId: project.id });
     expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
 
-    await expect(sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute("link_code", { prState: "merged", scopeChecked: true }, { by: "human", projectId: project.id }))).rejects.toThrow("reopen");
+    // Linking a merged pull request afterwards is history: on the finished delivery, nothing reopened.
+    expect(await sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute("link_code", { prState: "merged", scopeChecked: true }, { by: "human", projectId: project.id }))).toMatchObject({
+      status: "done",
+      warning: expect.stringContaining("not changed")
+    });
     expect(codeLink.deliveries(project.id, item.id)).toHaveLength(1);
     ctx.items.update(project.id, item.id, { status: "todo" }, "human");
-    await expect(sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute("claim_ticket", { key: item.key }, { by: "human", projectId: project.id }))).rejects.toThrow("earlier delivery");
-    expect(codeLink.store.session(project.id, first.sessionId)?.delivery).toBe(1);
     const second = await codeLink.start(project.id, item.id, { mode: "run" });
     expect(second.ok).toBe(true);
     if (!second.ok) return;
@@ -977,6 +980,59 @@ describe("starting a ticket", () => {
       [2, second.branch]
     ]);
     expect(codeLink.sessionsOf(project.id, item.id).map((session) => session.delivery).sort()).toEqual([1, 2]);
+  });
+
+  it("asks the person before an open pull request reopens a finished ticket", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Finished already");
+    const first = await codeLink.start(project.id, item.id, { mode: "run" });
+    if (!first.ok) throw new Error(first.message);
+    await untilRunsSettle(agent);
+    await ctx.tools.execute("link_code", { key: item.key, branch: first.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+
+    const inSession = (tool: string, args: unknown) => sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute(tool, args, { by: "human", projectId: project.id }));
+    const prUrl = "https://github.com/acme/app/pull/9";
+    expect(await inSession("link_code", { branch: "tom-x/more", prUrl, scopeChecked: true })).toMatchObject({ ok: false, status: "done" });
+    expect(await inSession("link_code", { branch: "tom-x/more", prUrl, scopeChecked: true })).toMatchObject({ ok: false });
+    expect(codeLink.proposals(project.id, item.id)).toMatchObject([{ fromStatus: "done", toStatus: "doing" }]);
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+    expect(codeLink.deliveries(project.id, item.id)).toHaveLength(1);
+    expect(codeLink.links(project.id, item.id).map((link) => link.branch)).toEqual([first.branch]);
+
+    // A session Tomrade started stays with its one ticket, finished or not.
+    const other = ticket("Something else");
+    await expect(inSession("claim_ticket", { key: other.key })).rejects.toThrow(`this session already owns ${item.key}`);
+    await untilRunsSettle(agent);
+  });
+
+  it("moves a session left on an earlier delivery onto the reopened one, never with the branch already merged", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Revise reminders");
+    const first = await codeLink.start(project.id, item.id, { mode: "run" });
+    if (!first.ok) throw new Error(first.message);
+    await untilRunsSettle(agent);
+    await ctx.tools.execute("link_code", { key: item.key, branch: first.branch, prState: "merged" }, { by: "human", projectId: project.id });
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+    ctx.items.update(project.id, item.id, { status: "todo" }, "human");
+
+    const inSession = (tool: string, args: unknown) => sessionContext.run({ projectId: project.id, sessionId: first.sessionId }, () => ctx.tools.execute(tool, args, { by: "human", projectId: project.id }));
+    const claimed = (await inSession("claim_ticket", { key: item.key })) as { branch: string };
+    expect(claimed.branch).toBe(`tom-${item.keyNum}/revise-reminders-2`);
+    expect(codeLink.store.session(project.id, first.sessionId)).toMatchObject({ delivery: 2, branch: claimed.branch });
+
+    await expect(inSession("link_code", { branch: first.branch, prState: "merged", scopeChecked: true })).rejects.toThrow("already merged in");
+    await inSession("link_code", { scopeChecked: true });
+    expect(ctx.items.get(project.id, item.id)!.status).not.toBe("done");
+    expect(codeLink.links(project.id, item.id).map((link) => [link.delivery, link.branch])).toEqual([
+      [1, first.branch],
+      [2, claimed.branch]
+    ]);
+    await untilRunsSettle(agent);
   });
 
   it("tells the agent who merges, and hands a refused merge to the person with a link", async () => {
@@ -1120,6 +1176,27 @@ describe("starting a ticket", () => {
     expect(crossTicketWrite.isError).toBe(true);
     expect(JSON.stringify(crossTicketWrite.content)).toContain("coding session cannot edit the backlog");
     expect(ctx.items.get(project.id, item.id)!.status).toBe("doing");
+    // A follow-up may be filed: it waits in Backlog, names the session it came from, and stays out of the session.
+    ctx.tools.register(
+      defineTool({
+        name: "find_similar",
+        title: "Find similar",
+        description: "",
+        input: z.object({ title: z.string().optional(), body: z.string().optional() }),
+        readOnly: true,
+        execute: ({ title }) => (title === "Already there" ? { verdict: "duplicate", matches: [{ key: item.key, title: item.title }] } : { verdict: "none", matches: [] })
+      })
+    );
+    const filed = await client.callTool({ name: "create_item", arguments: { title: "Follow-up found on the way", body: "Seen while testing." } });
+    expect(filed.isError).not.toBe(true);
+    const followUp = ctx.items.list({ projectId: project.id }).find((i) => i.title === "Follow-up found on the way")!;
+    expect(followUp).toMatchObject({ status: "backlog", body: `Seen while testing.\n\nFiled from ${item.key}'s coding session.` });
+    expect(codeLink.store.session(project.id, result.sessionId)!.itemIds).toEqual([item.id]);
+    const duplicate = await client.callTool({ name: "create_item", arguments: { title: "Already there" } });
+    expect(duplicate.isError).toBe(true);
+    expect(JSON.stringify(duplicate.content)).toContain(`${item.key} (${item.title}) already describes this`);
+    const sideEdit = await client.callTool({ name: "update_item", arguments: { id: followUp.id, patch: { title: "x" } } });
+    expect(sideEdit.isError).toBe(true);
     const uncheckedLink = await client.callTool({ name: "link_code", arguments: { prUrl: "https://github.com/acme/app/pull/9" } });
     expect(uncheckedLink.isError).toBe(true);
     expect(JSON.stringify(uncheckedLink.content)).toContain("scopeChecked: true");

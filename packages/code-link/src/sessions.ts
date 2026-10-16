@@ -8,6 +8,7 @@ import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime } from "@tomradex/agent";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
+import { CODE_WORDS } from "./words.js";
 import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
 
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
@@ -103,9 +104,23 @@ const BLOCKED_COMMAND = /\bgit\s+(?:push|fetch|pull)\b|^\s*gh\s/;
 const MERGE_COMMAND = /(?:^|[;&|]\s*)gh\s+pr\s+merge\b/;
 /** A refusal, not a slip the agent can correct (a missing flag, a typo). */
 const MERGE_REFUSED = /not (?:allowed|permitted|mergeable)|protected branch|required status check|review(?:s)? (?:is |are )?required|approving review|denied|permission|blocked|policy|merge conflict|not authorized|forbidden|\b403\b/i;
-/** Backlog planning and status writes do not belong to a ticket's coding session. */
+/**
+ * A ticket a coding session files is a follow-up, not more of its own work: it waits in Backlog, says
+ * which session filed it, and is not filed at all when the backlog already holds the same thing.
+ */
+async function followUp(args: unknown, filed: string, call: ((tool: string, input: unknown) => Promise<unknown>) | null): Promise<unknown> {
+  const input = { ...(args as { title?: string; body?: string | null; status?: string }) };
+  const title = input.title?.trim();
+  if (title && call) {
+    const similar = (await call("find_similar", { title, ...(input.body ? { body: input.body } : {}) }).catch(() => null)) as { verdict?: string; matches?: { key: string; title: string }[] } | null;
+    const same = similar?.verdict === "duplicate" ? similar.matches?.[0] : undefined;
+    if (same) throw new Error(`create_item: ${same.key} (${same.title}) already describes this — mention it when you sync instead of filing another ticket`);
+  }
+  return { ...input, status: input.status ?? "backlog", ...(filed ? { body: input.body ? `${input.body}\n\n${filed}` : filed } : {}) };
+}
+
+/** Backlog planning and status writes do not belong to a ticket's coding session; filing a follow-up does. */
 const OUT_OF_SCOPE_TOOLS = new Set([
-  "create_item",
   "update_item",
   "change_status",
   "delete_item",
@@ -163,15 +178,22 @@ export class Sessions {
     // gone, so retain the concrete service while the binding is created.
     const tools = this.ctx.get("tools");
     if (!tools) throw new Error("the tools plugin is not loaded");
+    const items = this.ctx.get("items");
+    const settings = this.ctx.get("settings");
     return {
       author,
       projectId: session.projectId,
-      execute: (name: string, args: unknown, signal?: AbortSignal) => {
+      execute: async (name: string, args: unknown, signal?: AbortSignal) => {
         if (OUT_OF_SCOPE_TOOLS.has(name)) {
           throw new Error(`${name}: a coding session cannot edit the backlog or another ticket — finish the current ticket, then use a separate planning or coding session`);
         }
         this.touch(session.projectId, session.id, { state: "running", tool: true });
-        return sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => tools.execute(name, args, { by: author, projectId: session.projectId, signal }));
+        const call = (tool: string, input: unknown) => sessionContext.run({ projectId: session.projectId, sessionId: session.id }, () => tools.execute(tool, input, { by: author, projectId: session.projectId, signal }));
+        if (name !== "create_item") return call(name, args);
+        const owner = this.store.session(session.projectId, session.id)?.itemIds[0];
+        const key = owner ? items?.get(session.projectId, owner)?.key : undefined;
+        const filed = key ? CODE_WORDS[settings?.locale?.() ?? "en"].filedFrom(key) : "";
+        return call(name, await followUp(args, filed, tools.has("find_similar") ? call : null));
       },
       event: (payload: unknown) => this.event(session.projectId, session.id, payload)
     };

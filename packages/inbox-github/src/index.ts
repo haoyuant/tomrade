@@ -17,6 +17,8 @@ const WORDS = {
     connect: "Connect a GitHub account first — from a project's destination or Files settings",
     noRepo: "None of this project's repositories is on GitHub",
     noAccess: (repo: string, why: string) => `GitHub refused ${repo}'s issues (${why}). The Tomrade GitHub App needs the Issues permission on it; a personal access token with the repo scope works too.`,
+    repoFailed: (repo: string, why: string) => `${repo} was skipped this time: ${why}. Its issues are caught up once it can be read again.`,
+    releaseFailed: (why: string) => `Could not check releases for shipped tickets: ${why}. Tried again next time.`,
     comment: "Comment on the issue",
     commentHelp: "When it is accepted, merged into a ticket, closed, or its ticket ships",
     close: "Close the issue",
@@ -27,6 +29,8 @@ const WORDS = {
     connect: "先连接 GitHub 账号——在项目的存储位置或文件设置里",
     noRepo: "这个项目的仓库都不在 GitHub 上",
     noAccess: (repo: string, why: string) => `GitHub 拒绝访问 ${repo} 的 issues（${why}）。Tomrade GitHub App 需要这个仓库的 Issues 权限；也可以改用带 repo 范围的个人访问令牌。`,
+    repoFailed: (repo: string, why: string) => `这次跳过了 ${repo}：${why}。能读取后会补上这段时间的 issue。`,
+    releaseFailed: (why: string) => `没能检查已完成工单所在的发版：${why}。下次再试。`,
     comment: "在 issue 下评论",
     commentHelp: "接受、并入工单、关闭，或工单发版时",
     close: "关闭 issue",
@@ -84,6 +88,13 @@ interface Release {
 const PAGES = 10;
 /** Pulls overlap by this much, so an issue GitHub stamped a little before our clock's "now" is not missed. */
 const OVERLAP_MS = 2 * 60_000;
+
+/** Where each repository's issues were read up to; a repository missing from it is pulled from the start. */
+export interface PullState {
+  repos: Record<string, number>;
+}
+
+const isPullState = (state: unknown): state is PullState => !!state && typeof state === "object" && typeof (state as PullState).repos === "object" && (state as PullState).repos !== null;
 
 /** "owner/repo" for a GitHub remote, whatever its spelling or SSH alias; null for any other. */
 export async function githubRepo(remote: string, resolveHost: (host: string) => Promise<string> = sshHostName): Promise<string | null> {
@@ -295,20 +306,35 @@ export function githubSource(deps: Deps): InboxSource {
       if (!(await deps.connected())) return deps.words().connect;
       return (await deps.repos(projectId)).size ? null : deps.words().noRepo;
     },
-    async pull({ projectId, since }) {
+    async pull({ projectId, since, state }) {
       const started = Date.now();
       const repos = await deps.repos(projectId);
       const me = await api.whoami();
+      const names = [...new Set(repos.values())];
+      // Before cursors were kept per repository, one cursor stood for every repository bound then.
+      const read: Record<string, number> = isPullState(state) ? { ...state.repos } : since === null ? {} : Object.fromEntries(names.map((repo) => [repo, since]));
       const entries: InboxEntryInput[] = [];
       const activity: InboxActivity[] = [];
-      for (const repo of new Set(repos.values())) {
-        const got = await guard(repo, () => pullRepo(api, repo, since, me));
-        entries.push(...got.entries);
-        activity.push(...got.activity);
+      const warnings: string[] = [];
+      let pulled = 0;
+      let failure: unknown = null;
+      // One repository refusing must not hold the others back; its own cursor stays, so it catches up later.
+      for (const repo of names) {
+        try {
+          const got = await guard(repo, () => pullRepo(api, repo, read[repo] ?? null, me));
+          entries.push(...got.entries);
+          activity.push(...got.activity);
+          read[repo] = started - OVERLAP_MS;
+          pulled += 1;
+        } catch (error) {
+          failure ??= error;
+          warnings.push(deps.words().repoFailed(repo, error instanceof Error ? error.message : String(error)));
+        }
       }
+      if (names.length && !pulled) throw failure;
       // a release check that fails is tried again next pull; it must not lose what was pulled
-      await ship(projectId, repos).catch(() => undefined);
-      return { entries, activity, cursor: started - OVERLAP_MS };
+      await ship(projectId, repos).catch((error: unknown) => warnings.push(deps.words().releaseFailed(error instanceof Error ? error.message : String(error))));
+      return { entries, activity, cursor: started - OVERLAP_MS, state: { repos: read } satisfies PullState, warnings };
     },
     async reply(entry, text) {
       const { repo, number } = parseRef(entry.externalId);

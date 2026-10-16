@@ -31,7 +31,7 @@ import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult, type ScannedBranch } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
-import { Sessions, sessionContext, type SessionMoment } from "./sessions.js";
+import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
@@ -383,7 +383,7 @@ export class CodeLink extends Service {
         handOver: (projectId, itemId, repoId) => this.handOver(projectId, itemId, repoId),
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
-        attach: (projectId, sessionId, itemId, branch, delivery) => this.attach(projectId, sessionId, itemId, branch, delivery),
+        attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
         connected: (projectId, connection) => this.connected(projectId, connection),
         bindConnection: (projectId, connection, sessionId) => this.bindConnection(projectId, connection, sessionId),
@@ -407,13 +407,7 @@ export class CodeLink extends Service {
       for (const projectId of this.ctx.db.openIds()) this.rebindSessions(projectId);
       ctx.on("db/opened", (projectId) => this.rebindSessions(projectId));
     });
-    // A ticket an agent creates mid-session belongs to that session too.
     this.ctx.on("write/committed", (intent) => {
-      const bound = sessionContext.getStore();
-      if (bound && intent.entity === "item" && intent.op === "create" && intent.projectId === bound.projectId) {
-        const session = this.store.session(bound.projectId, bound.sessionId);
-        if (session && !session.itemIds.includes(intent.id)) this.store.patchSession(bound.projectId, session.id, { itemIds: [...session.itemIds, intent.id] });
-      }
       if (intent.entity !== "item" || intent.op !== "update") return;
       const before = intent.before as Item | null;
       const after = intent.after as Item | null;
@@ -772,14 +766,16 @@ export class CodeLink extends Service {
     return n;
   }
 
-  /** A session took a ticket on — its first, or another beside it. */
-  attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void {
+  /** A session took a ticket on — its first, another beside it, or (`replace`) the next once the last is finished. */
+  attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts: { replace?: boolean } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
+    // A new delivery is new work: the branch merged in the last one must not be read as this one's.
+    const fresh = opts.replace || (session.itemIds.includes(itemId) && session.delivery !== delivery);
     this.store.patchSession(projectId, sessionId, {
       delivery,
-      itemIds: session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
-      ...(session.branch ? {} : { branch }),
+      itemIds: opts.replace ? [itemId] : session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
+      ...(session.branch && !fresh ? {} : { branch }),
       ...(session.state === "ended" ? {} : { state: "running" as const }),
       lastEventAt: Date.now()
     });

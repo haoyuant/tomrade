@@ -100,8 +100,12 @@ export interface InboxSource {
   /**
    * What arrived since `since` (epoch ms; null: from the start); entries already here are skipped. With
    * `cursor`, the source says where the next pull starts — needed when it leaves some of what it read out.
+   * `state` is the source's own bookkeeping from its last pull (such as a cursor per repository), kept as given.
+   * `warnings` are what went wrong without failing the pull; the next pull's replace them.
    */
-  pull(scope: { projectId: string; since: number | null }): Promise<InboxEntryInput[] | { entries: InboxEntryInput[]; cursor: number | null; activity?: InboxActivity[] }>;
+  pull(scope: { projectId: string; since: number | null; state: unknown }): Promise<
+    InboxEntryInput[] | { entries: InboxEntryInput[]; cursor: number | null; activity?: InboxActivity[]; state?: unknown; warnings?: string[] }
+  >;
   reply?(entry: InboxEntry, text: string): Promise<void>;
   setStatus?(entry: InboxEntry, change: TriageChange): Promise<void>;
   options?: InboxSourceOption[];
@@ -117,6 +121,8 @@ export interface InboxSourceView {
   keyPattern: string | null;
   pulledAt: number | null;
   error: string | null;
+  /** What went wrong in the last pull without failing it, such as one repository refusing. */
+  warnings: string[];
   /** Triage it has not heard about yet. */
   pending: number;
   options: { id: string; title: string; description: string | null; value: boolean }[];
@@ -226,6 +232,13 @@ ALTER TABLE plugin_inbox_entries ADD COLUMN shipped_in TEXT;
 ALTER TABLE plugin_inbox_entries ADD COLUMN duplicate_of TEXT;
 ALTER TABLE plugin_inbox_projects ADD COLUMN source_options_json TEXT NOT NULL DEFAULT '{}';
 `
+  },
+  {
+    version: 3,
+    up: `
+ALTER TABLE plugin_inbox_pulls ADD COLUMN state_json TEXT;
+ALTER TABLE plugin_inbox_pulls ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]';
+`
   }
 ];
 
@@ -281,6 +294,8 @@ interface PullRow {
   cursor: number | null;
   pulled_at: number | null;
   error: string | null;
+  state_json: string | null;
+  warnings_json: string;
 }
 
 const TRIAGED = "('accepted', 'merged')";
@@ -404,6 +419,7 @@ export class Inbox extends Service {
           keyPattern: s.keyPattern ?? null,
           pulledAt: pull?.pulled_at ?? null,
           error: pull?.error ?? null,
+          warnings: pull ? (JSON.parse(pull.warnings_json) as string[]) : [],
           pending: pending.find((p) => p.source === s.id)?.n ?? 0,
           options: (s.options ?? []).map((o) => ({ id: o.id, title: text(o.title), description: o.description ? text(o.description) : null, value: this.option(projectId, s.id, o.id) }))
         };
@@ -540,8 +556,13 @@ export class Inbox extends Service {
       if (!source) continue;
       const db = this.db(projectId);
       const prior = db.prepare("SELECT * FROM plugin_inbox_pulls WHERE project_id = ? AND source = ?").get(projectId, id) as PullRow | undefined;
-      const record = (cursor: number | null, error: string | null) =>
-        db.prepare("INSERT INTO plugin_inbox_pulls (project_id, source, cursor, pulled_at, error) VALUES (?, ?, ?, ?, ?) ON CONFLICT(project_id, source) DO UPDATE SET cursor = excluded.cursor, pulled_at = excluded.pulled_at, error = excluded.error").run(projectId, id, cursor, Date.now(), error);
+      const state = prior?.state_json ? (JSON.parse(prior.state_json) as unknown) : null;
+      const record = (cursor: number | null, error: string | null, next: unknown = state, warnings: string[] = []) =>
+        db
+          .prepare(
+            "INSERT INTO plugin_inbox_pulls (project_id, source, cursor, pulled_at, error, state_json, warnings_json) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_id, source) DO UPDATE SET cursor = excluded.cursor, pulled_at = excluded.pulled_at, error = excluded.error, state_json = excluded.state_json, warnings_json = excluded.warnings_json"
+          )
+          .run(projectId, id, cursor, Date.now(), error, next === null || next === undefined ? null : JSON.stringify(next), JSON.stringify(warnings));
       const unavailable = await this.unavailable(source, projectId);
       if (unavailable) {
         record(prior?.cursor ?? null, unavailable);
@@ -549,12 +570,12 @@ export class Inbox extends Service {
       }
       try {
         const since = prior?.cursor ?? null;
-        const pulled = await source.pull({ projectId, since });
+        const pulled = await source.pull({ projectId, since, state });
         const inputs = Array.isArray(pulled) ? pulled : pulled.entries;
         added += this.add(projectId, id, inputs);
         if (!Array.isArray(pulled) && pulled.activity?.length) this.noteActivity(projectId, id, pulled.activity);
         const cursor = Array.isArray(pulled) ? inputs.reduce<number | null>((max, e) => (max === null || e.receivedAt > max ? e.receivedAt : max), since) : pulled.cursor;
-        record(cursor, null);
+        record(cursor, null, Array.isArray(pulled) ? state : (pulled.state ?? state), Array.isArray(pulled) ? [] : (pulled.warnings ?? []));
       } catch (error) {
         record(prior?.cursor ?? null, message(error));
       }
@@ -813,7 +834,7 @@ export class Inbox extends Service {
 
   private pulls(projectId: string): PullRow[] {
     if (!this.has(projectId)) return [];
-    return this.db(projectId).prepare("SELECT source, cursor, pulled_at, error FROM plugin_inbox_pulls WHERE project_id = ?").all(projectId) as PullRow[];
+    return this.db(projectId).prepare("SELECT source, cursor, pulled_at, error, state_json, warnings_json FROM plugin_inbox_pulls WHERE project_id = ?").all(projectId) as PullRow[];
   }
 
   private async unavailable(source: InboxSource, projectId: string): Promise<string | null> {

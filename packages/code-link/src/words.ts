@@ -113,7 +113,8 @@ const en = {
   cmdRescan: "Rescan repositories",
   needsApproval: "needs your approval",
   limited: (when: string, known: boolean, resumes: boolean) => `usage limit — ${known ? "lifts at" : "next try at"} ${when}${resumes ? "; continues then" : ""}`,
-  askingYou: "asking you something"
+  askingYou: "asking you something",
+  filedFrom: (key: string) => `Filed from ${key}'s coding session.`
 };
 
 export type CodeWords = typeof en;
@@ -221,7 +222,8 @@ const zh: CodeWords = {
   cmdRescan: "重新扫描仓库",
   needsApproval: "需要你批准",
   limited: (when: string, known: boolean, resumes: boolean) => `用量到了上限，${when} ${known ? "解除" : "再试"}${resumes ? "，届时自动继续" : ""}`,
-  askingYou: "在问你问题"
+  askingYou: "在问你问题",
+  filedFrom: (key: string) => `由 ${key} 的编码会话创建。`
 };
 
 export const CODE_WORDS: Record<Locale, CodeWords> = { en, zh };
