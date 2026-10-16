@@ -2,6 +2,7 @@
 name: code.implement
 title: Implement a ticket
 description: A thread was started from a ticket and runs in that ticket's branch — implement it, push, open a pull request, report back
+workTypes: [coding]
 tools:
   - get_item
   - list_decisions

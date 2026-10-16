@@ -690,9 +690,10 @@ export class Agent extends Service {
       const text = `${input.title} ${input.body ?? ""}`.toLowerCase();
       const workType = input.workType ?? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "coding" : "general");
       const preferred = workType === "coding"
-        ? (text.match(/bug|fix|implement|code|refactor|repository|repo|api|feature/) ? "code.implement" : null)
+        ? "code.implement"
         : (text.match(/design|visual|\bui\b|\bux\b|brand|logo/) ? "design.create" : text.match(/document|guide|write|proposal|spec|文章|文档/) ? "document.write" : text.match(/music|audio|animation|video|media|动图|音乐|视频/) ? "media.generate" : "task.assist");
-      const playbookId = preferred && candidateIds.has(preferred) ? preferred : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
+      // Words alone cannot tell a code change that mentions a design from a design ask: without code.implement, a coding ticket gets no method rather than a medium's.
+      const playbookId = candidateIds.has(preferred) ? preferred : workType === "coding" ? null : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
       const selected = candidates.find((entry) => entry.id === playbookId);
       return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words.recommendedByType, source: "fallback", requires: selected?.requires ?? [] };
     };
@@ -705,7 +706,7 @@ export class Agent extends Service {
         ...(budget ? { maxTokens: 400, repair: false } : {}),
         signal,
         purpose: "playbook",
-        system: `Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
+        system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       }), signal);
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();

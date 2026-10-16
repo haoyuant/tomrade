@@ -125,6 +125,46 @@ describe("playbook sources", () => {
     await base.ctx.fiber.dispose();
   });
 
+  /** Code changes and bug reports filed by an agent kept landing on design.create: code.implement was never offered. */
+  describe("a coding ticket's method", () => {
+    const codeLink = { name: "code-playbooks", inject: ["agent"], apply(ctx: Context) { for (const playbook of loadPlaybookDir(path.resolve("packages/code-link/playbooks"))) ctx.agent.playbook(playbook); } };
+    const hung = (requests: CompletionRequest[] = []) => ({ name: "hung-llm", apply(ctx: Context) { ctx.provide("llm", { worker: async () => ({ ok: true, via: "profile", title: "hung" }), completeJson: (_schema: unknown, request: CompletionRequest) => (requests.push(request), new Promise(() => {})) } as unknown as LlmService); } });
+
+    it("is code.implement from the keywords, for a coding ticket and a bug report alike, and a design ask keeps design.create", async () => {
+      const base = await fresh({ plugins: [Tools, [...tmpSettings()], hung(), [Agent, {}], codeLink, engineLoop] });
+      await settle();
+      const recommend = (input: { title: string; body?: string; workType?: "coding" | "general" }) => base.ctx.agent.recommendPlaybook(base.project.id, input, { withinMs: 30 });
+      expect(await recommend({ title: "Model adapters drop cached-input counts", workType: "coding" })).toMatchObject({ source: "fallback", playbookId: "code.implement" });
+      expect(await recommend({ title: "Settings dialog UI misaligned on narrow windows", workType: "coding" })).toMatchObject({ playbookId: "code.implement" });
+      expect(await recommend({ title: "CSV export bug: the header row is missing" })).toMatchObject({ workType: "coding", playbookId: "code.implement" });
+      expect(await recommend({ title: "Design a new logo for the app" })).toMatchObject({ workType: "general", playbookId: "design.create" });
+      await base.ctx.fiber.dispose();
+    });
+
+    it("is offered to the worker model, which may pick it", async () => {
+      const asked: { candidates: { id: string }[] }[] = [];
+      const base = await fresh({
+        plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([]), (_system, user) => (asked.push(JSON.parse(user)), { workType: "coding", playbookId: "code.implement", confidence: 0.9, reason: "a code change" })), [Agent, {}], codeLink, engineLoop]
+      });
+      await settle();
+      expect(await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Playbook recommendation picks design.create", workType: "coding" })).toMatchObject({ source: "llm", playbookId: "code.implement" });
+      expect(asked[0].candidates.map((c) => c.id)).toContain("code.implement");
+      const created = await base.ctx.tools.execute("create_item", { title: "Fix the OpenAI max_tokens 400", workType: "coding" }, { by: "ai:claude-code", projectId: base.project.id });
+      expect(created).toMatchObject({ workType: "coding", playbookId: "code.implement" });
+      // never a general ticket's method
+      await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Plan the offsite", workType: "general" });
+      expect(asked[2].candidates.map((c) => c.id)).not.toContain("code.implement");
+      await base.ctx.fiber.dispose();
+    });
+
+    it("is none, not a medium's, where code.implement is not installed", async () => {
+      const base = await fresh({ plugins: [Tools, [...tmpSettings()], hung(), [Agent, {}], engineLoop] });
+      await settle();
+      expect(await base.ctx.agent.recommendPlaybook(base.project.id, { title: "Fix the API bug", workType: "coding" }, { withinMs: 30 })).toMatchObject({ source: "fallback", playbookId: null });
+      await base.ctx.fiber.dispose();
+    });
+  });
+
   it("keeps a user SKILL.md and a plugin playbook with the same id — user wins by default", async () => {
     const dir = tmp("user-playbooks");
     skillMd(dir, "backlog.intake", "MY intake ritual.", { title: "My intake", description: "my own way" });
