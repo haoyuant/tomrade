@@ -2529,6 +2529,14 @@ button.kref { cursor: pointer; }
 .about-update-pref .meta-txt { margin: 2px 0 0; }
 .about-update-pref-name { font-size: var(--text-sm); color: var(--fg); }
 .about-update-pref .seg button:disabled { opacity: 0.55; cursor: not-allowed; }
+.background-prefs { display: flex; flex-direction: column; padding-top: var(--space-1); padding-bottom: var(--space-1); }
+.background-pref { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; }
+.background-pref + .background-pref { border-top: 1px solid var(--border-soft); }
+.background-pref > div:first-child { flex: 1; min-width: 0; }
+.background-pref .meta-txt { margin: 2px 0 0; }
+.background-pref-name { font-size: var(--text-sm); color: var(--fg); }
+.background-login-note { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.background-login-note .meta-txt { color: var(--fg-2); }
 .palette.sheet-sm { width: min(460px, calc(100vw - 64px)); }
 .update-notice-body { display: flex; align-items: flex-start; gap: var(--space-5); }
 .update-notice-body .meta-txt { margin: 0; }

@@ -12,6 +12,7 @@ import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { AboutPane } from "./AboutPane";
 import { KeybindingsPane } from "./KeybindingsPane";
 import { UsagePane } from "./UsagePane";
+import { BackgroundPane } from "./BackgroundPane";
 import { HubPane } from "./HubPane";
 import { EngineTryRow } from "./EngineTryRow";
 import { LocalCliSection } from "./LocalCliSection";
@@ -22,6 +23,7 @@ import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
+import { useBackgroundStatus } from "~/lib/background";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useCacheDir, useHubInfo, useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
@@ -304,6 +306,7 @@ export function SettingsDialog({
   const mcp = useMcpUrl();
   const cacheDir = useCacheDir();
   const hub = useHubInfo();
+  const background = useBackgroundStatus();
   const providers = useStorageProviders();
   const { preference, customThemes, automation, setAutomation, createCustomTheme, deleteCustomTheme } = useTheme();
   const [active, setActive] = useState("appearance");
@@ -522,6 +525,10 @@ export function SettingsDialog({
     // Drawn only while the plugin that owns the section is loaded.
     ...(sections.data?.some((s) => s.id === "mcpServers")
       ? [{ id: "mcpServers", label: t("mcpServers.label"), icon: "i-plug" as IconId, group: "app" as const, render: () => <McpServersPane /> }]
+      : []),
+    // Only in the desktop app, while the background row runs.
+    ...(background.data
+      ? [{ id: "background", label: t("background.label"), icon: "i-moon" as IconId, group: "app" as const, render: () => <BackgroundPane scopeTag={<ScopeTag scope="machine" />} /> }]
       : []),
     {
       id: "hub",

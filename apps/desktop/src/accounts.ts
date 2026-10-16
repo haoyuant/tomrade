@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { relaunchArgs } from "./background.js";
 
 export interface Roots {
   userData: string;
@@ -127,7 +128,7 @@ export function restart(): void {
       app.exit(code);
     });
   } else {
-    app.relaunch();
+    app.relaunch({ args: relaunchArgs() });
   }
   app.quit();
 }

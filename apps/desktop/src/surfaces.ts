@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
 import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/settings";
+import { showMainWindow } from "./main-window.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";
@@ -57,13 +58,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     ipcMain.on(INTERACTIVE_CHANNEL, onInteractive);
     ipcMain.on(MESSAGE_CHANNEL, onMessage);
     // A surface that asks for Settings is outside the window; the window comes forward to show it.
-    this.ctx.on("settings/show", () => {
-      const win = this.mainWindow();
-      if (!win) return;
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-    });
+    // Running in the background there may be none yet, and one opens.
+    this.ctx.on("settings/show", () => void showMainWindow());
     app.on("before-quit", onQuit);
     autoUpdater.on("before-quit-for-update", onQuit);
     return () => {

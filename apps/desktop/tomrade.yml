@@ -357,6 +357,14 @@ plugins:
   # and installs only when the person says so. A checkout updates with git.
   - id: updater
     name: ./dist/updater.js
+  # Tomrade without its window: closing the last one leaves the MCP server,
+  # routines and sync running behind a tray icon, and the background part can
+  # start at login. Both are the person's choice (Settings → Background), kept
+  # per machine; switched off, closing the last window quits as before.
+  - id: background
+    name: ./dist/background.js
+    config:
+      file: "${machineData}/background.json"
   # Says when an agent waits on the person: a count on the Dock, a taskbar
   # flash, and a notification while Tomrade is in the background.
   - id: attention

@@ -1,6 +1,7 @@
 import { about } from "./about";
 import { legal } from "./legal";
 import { usage } from "./usage";
+import { background } from "./background";
 import { projectRules } from "./projectRules";
 import { templates } from "./templates";
 import { agentPanel } from "./agentPanel";
@@ -66,6 +67,7 @@ export const en = {
   about: about.en,
   legal: legal.en,
   usage: usage.en,
+  background: background.en,
   projectRules: projectRules.en,
   templates: templates.en,
   playbooks: playbooks.en,
@@ -133,6 +135,7 @@ export const zh: typeof en = {
   about: about.zh,
   legal: legal.zh,
   usage: usage.zh,
+  background: background.zh,
   projectRules: projectRules.zh,
   templates: templates.zh,
   playbooks: playbooks.zh,

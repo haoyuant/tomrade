@@ -1,0 +1,42 @@
+export const background = {
+  en: {
+    label: "Background",
+    title: "Running in the background",
+    lede: "Tomrade can keep working with its window closed: the MCP server your coding agents connect to, routines on their schedule, agent runs already going, and sync. Quitting from the menu or the tray icon still quits everything.",
+    keepRunning: "Keep running when the window closes",
+    keepRunningNote: "Closing the last window leaves Tomrade running behind its icon in the menu bar or system tray. Off, closing the window quits Tomrade, as before.",
+    startAtLogin: "Start the background part at login",
+    startAtLoginNote: "When you sign in to this computer, Tomrade starts without a window: the MCP server and routines are ready before you open it.",
+    needsKeepRunning: "Turn on running in the background first.",
+    approval: "Waiting for your approval: allow Tomrade under Login Items → Allow in the Background in System Settings.",
+    disabledWin: "Switched off in Startup apps. Turn Tomrade back on in Settings → Apps → Startup, or in Task Manager.",
+    disabledLinux: "Switched off in your desktop's startup applications. Turn it back on there.",
+    disabledMac: "Switched off in System Settings → Login Items.",
+    openSettings: "Open system settings",
+    checkout: "Not available when running from a checkout: only an installed Tomrade can start at login.",
+    location: "Move Tomrade to the Applications folder first: a copy run from elsewhere cannot start at login.",
+    unsupported: "This system does not let Tomrade start at login.",
+    failed: "The system did not accept that change: {message}",
+    trayNoteLinux: "On GNOME the tray icon needs the AppIndicator extension. Without it, open Tomrade again to bring the window back."
+  },
+  zh: {
+    label: "后台运行",
+    title: "在后台运行",
+    lede: "关掉窗口后，Tomrade 可以继续工作：编码代理连接的 MCP 服务、按计划执行的例行任务、已经在跑的智能体运行，以及同步。从菜单或托盘图标选择退出，仍然会彻底退出。",
+    keepRunning: "关闭窗口后继续在后台运行",
+    keepRunningNote: "关掉最后一个窗口后，Tomrade 留在菜单栏或系统托盘的图标里继续运行。关闭这个选项，关窗口就退出 Tomrade，和以前一样。",
+    startAtLogin: "登录时启动后台部分",
+    startAtLoginNote: "登录这台电脑时，Tomrade 不打开窗口直接启动：在你打开它之前，MCP 服务和例行任务就已经就绪。",
+    needsKeepRunning: "需要先打开“在后台运行”。",
+    approval: "等待你的批准：在系统设置的“登录项 → 允许在后台”里允许 Tomrade。",
+    disabledWin: "已在“启动应用”里关闭。可以在“设置 → 应用 → 启动”或任务管理器里重新打开 Tomrade。",
+    disabledLinux: "已在桌面环境的“启动应用程序”里关闭，请在那里重新打开。",
+    disabledMac: "已在“系统设置 → 登录项”里关闭。",
+    openSettings: "打开系统设置",
+    checkout: "从源码运行时不可用：只有安装版的 Tomrade 才能在登录时启动。",
+    location: "请先把 Tomrade 移到“应用程序”文件夹：从其他位置运行的副本无法在登录时启动。",
+    unsupported: "这个系统不支持让 Tomrade 在登录时启动。",
+    failed: "系统没有接受这个更改：{message}",
+    trayNoteLinux: "在 GNOME 上，托盘图标需要 AppIndicator 扩展。没有它的话，再次打开 Tomrade 就能找回窗口。"
+  }
+};

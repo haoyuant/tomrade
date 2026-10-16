@@ -5,6 +5,7 @@ import type { RunView, ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
 import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
+import { showMainWindow, whenLoaded } from "./main-window.js";
 
 /** One thing an agent is waiting on the person for. */
 export interface AttentionEntry {
@@ -275,14 +276,10 @@ export const attention = {
     };
 
     const open = (entry: AttentionEntry) => {
-      // the main window, not a plugin's surface (those never take focus)
-      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !w.getParentWindow() && w.isFocusable());
-      if (win) {
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
-      }
-      ctx.ipc.send("attention.open", entry);
+      // Running in the background there may be no window yet: one opens, and hears the entry once it has loaded.
+      const win = showMainWindow();
+      if (win) whenLoaded(win, () => ctx.ipc.send("attention.open", entry));
+      else ctx.ipc.send("attention.open", entry);
     };
 
     const teller = new Teller({

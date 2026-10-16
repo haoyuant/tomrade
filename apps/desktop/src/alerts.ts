@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { BrowserWindow, Notification } from "electron";
+import { Notification } from "electron";
 import { Context, Service } from "cordis";
 import { AUDIO_EXTENSIONS, type AlertHost, type AlertNotice, type AlertSound } from "@tomradex/alerts";
+import { showMainWindow } from "./main-window.js";
 
 interface SoundSource {
   dir: string;
@@ -85,14 +86,7 @@ export class ElectronAlerts extends Service implements AlertHost {
   notify(notice: AlertNotice): void {
     if (!Notification.isSupported()) return;
     const note = new Notification({ title: notice.title, body: notice.body ?? "", silent: true });
-    note.on("click", () => {
-      // the main window, not a plugin's surface (those never take focus)
-      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !w.getParentWindow() && w.isFocusable());
-      if (!win) return;
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-    });
+    note.on("click", () => void showMainWindow());
     note.show();
   }
 }

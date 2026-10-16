@@ -56,6 +56,15 @@ mac:
   hardenedRuntime: true
   entitlements: assets/entitlements.mac.plist
   entitlementsInherit: assets/entitlements.mac.plist
+  # The background part at login: SMAppService finds its LaunchAgent inside the
+  # signed bundle, under Contents/Library/LaunchAgents (src/login-item.ts).
+  extraFiles:
+    - from: assets/launch-agent
+      to: Library/LaunchAgents
+  # A background Tomrade with no window still answers MCP and runs routines on
+  # time; App Nap would throttle both while it is out of sight.
+  extendInfo:
+    LSAppNapIsDisabled: true
   target:
     - target: dmg
     - target: zip

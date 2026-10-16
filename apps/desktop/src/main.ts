@@ -3,9 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots } from "./accounts.js";
+import { cameBack, keepsRunning, launchMode, PREFS_FILE, wentAway } from "./background.js";
 import { boot } from "./boot.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
+import { loginItem } from "./login-item.js";
+import { provideMainWindow } from "./main-window.js";
 import { leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { followSystemProxy } from "./system-proxy.js";
@@ -35,6 +38,20 @@ registerExtensionResolution([path.resolve(here, "../../.."), app.getAppPath()]);
 
 app.whenReady().then(async () => {
   if (!primary) return;
+  const machine = machineRoots();
+  // At login, or a restart that left with no window: the background part only.
+  const mode = launchMode(argv, path.join(machine.userData, PREFS_FILE), loginItem());
+  if (mode === "stale") {
+    // Background running was switched off since this entry was made; it goes, and so does this start.
+    try {
+      loginItem().set(false);
+    } catch {
+      // nothing left to remove
+    }
+    app.quit();
+    return;
+  }
+  if (mode === "hidden" && process.platform === "darwin") app.dock?.hide();
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
@@ -56,7 +73,6 @@ app.whenReady().then(async () => {
   // After it, so a proxy the shell sets stands.
   await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
 
-  const machine = machineRoots();
   // Plugins and their switches belong to the machine; projects and settings to the account last signed in.
   const accounts = new AccountFolders(machine);
   const { userData, hubDir } = accounts.dirs(accounts.active);
@@ -98,19 +114,27 @@ app.whenReady().then(async () => {
     });
   const mainWindows = new Set<BrowserWindow>();
   const openMain = () => {
+    cameBack();
     const win = open();
     mainWindows.add(win);
     // Closing the last Tomrade window quits, on macOS too, whatever surfaces are
     // still up; it waits on the quit so that cancelling it keeps the window.
+    // With background running on it only closes, and the process stays.
     win.on("close", (event) => {
-      if (quitApproved() || [...mainWindows].some((other) => other !== win && !other.isDestroyed())) return;
+      if (quitApproved() || keepsRunning() || [...mainWindows].some((other) => other !== win && !other.isDestroyed())) return;
       event.preventDefault();
       app.quit();
     });
-    win.on("closed", () => mainWindows.delete(win));
+    win.on("closed", () => {
+      mainWindows.delete(win);
+      if (!leaving() && !quitApproved() && ![...mainWindows].some((w) => !w.isDestroyed())) wentAway();
+    });
     return win;
   };
-  openMain();
+  provideMainWindow({ open: openMain, current: () => [...mainWindows].find((w) => !w.isDestroyed()) });
+  // Reached only with background running on: any other last close became a quit.
+  app.on("window-all-closed", () => {});
+  if (mode === "window") openMain();
   app.on("second-instance", () => {
     if (leaving()) return;
     const win = [...mainWindows].find((w) => !w.isDestroyed()) ?? openMain();
