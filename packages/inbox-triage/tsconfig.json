@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../agent-backlog"
+    },
+    {
+      "path": "../domain"
+    },
+    {
+      "path": "../inbox"
+    },
+    {
+      "path": "../items"
+    },
+    {
+      "path": "../llm"
+    },
+    {
+      "path": "../settings"
+    }
+  ]
+}

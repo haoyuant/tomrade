@@ -13,7 +13,9 @@ export const WORDS = {
     quoted: (source: string, when: string) => `From ${source}, ${when}`,
     reporter: "Reported by",
     notConfigured: "This source is not set up here",
-    noReply: (source: string) => `${source} takes no replies`
+    noReply: (source: string) => `${source} takes no replies`,
+    noTriager: "Nothing here suggests triage",
+    noSuggestion: "There is no suggestion to confirm yet"
   },
   zh: {
     module: "收件箱",
@@ -27,7 +29,9 @@ export const WORDS = {
     quoted: (source: string, when: string) => `来自 ${source}，${when}`,
     reporter: "反馈人",
     notConfigured: "这个来源在这里还没设置好",
-    noReply: (source: string) => `${source} 不能回复`
+    noReply: (source: string) => `${source} 不能回复`,
+    noTriager: "这里没有能给分诊建议的插件",
+    noSuggestion: "还没有可以确认的建议"
   }
 } satisfies Record<Locale, unknown>;
 

@@ -128,6 +128,9 @@ importers:
       '@tomradex/inbox-tomrade':
         specifier: workspace:*
         version: link:../../packages/inbox-tomrade
+      '@tomradex/inbox-triage':
+        specifier: workspace:*
+        version: link:../../packages/inbox-triage
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -1335,6 +1338,40 @@ importers:
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/inbox-triage:
+    dependencies:
+      '@tomradex/agent-backlog':
+        specifier: workspace:*
+        version: link:../agent-backlog
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

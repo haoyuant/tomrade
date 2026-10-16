@@ -1,0 +1,34 @@
+{
+  "name": "@tomradex/inbox-triage",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Pre-triage for the inbox: the worker model proposes a duplicate, kind, priority, title and draft reply for each new entry, for a person to confirm",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent-backlog": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/inbox": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

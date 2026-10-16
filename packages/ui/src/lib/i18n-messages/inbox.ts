@@ -66,7 +66,21 @@ export const inbox = {
     duplicateNone: "No other entry matches.",
     duplicateUnnamed: "Close as duplicate without naming one",
     reopen: "Reopen",
-    cancel: "Cancel"
+    cancel: "Cancel",
+    suggestion: "Suggested by {{by}}",
+    suggestAccept: "Accept as {{kind}}, {{priority}} priority: “{{title}}”",
+    suggestMerge: "Merge into {{key}} “{{title}}”",
+    suggestDuplicate: "Close as a duplicate of {{ref}}",
+    suggestReply: "Reply draft",
+    suggestSendReply: "Send this reply too",
+    suggestAdopt: "Confirm",
+    suggestEdit: "Change it",
+    suggestAgain: "Suggest again",
+    suggestAsk: "Suggest triage",
+    suggesting: "Suggesting…",
+    suggestFailed: "No suggestion: {{error}}",
+    adopted: "Done as suggested",
+    adoptedReplyFailed: "Triaged, but the reply did not go out: {{error}}"
   },
   zh: {
     title: "收件箱",
@@ -135,7 +149,21 @@ export const inbox = {
     duplicateNone: "没有匹配的条目。",
     duplicateUnnamed: "不指定，直接按重复关闭",
     reopen: "重新打开",
-    cancel: "取消"
+    cancel: "取消",
+    suggestion: "{{by}} 的建议",
+    suggestAccept: "接收为{{kind}}，优先级{{priority}}：“{{title}}”",
+    suggestMerge: "并入 {{key}}“{{title}}”",
+    suggestDuplicate: "按与 {{ref}} 重复关闭",
+    suggestReply: "回复草稿",
+    suggestSendReply: "同时发送这条回复",
+    suggestAdopt: "确认",
+    suggestEdit: "改一改",
+    suggestAgain: "重新建议",
+    suggestAsk: "给个分诊建议",
+    suggesting: "分析中…",
+    suggestFailed: "没能给出建议：{{error}}",
+    adopted: "已按建议处理",
+    adoptedReplyFailed: "已分诊，但回复没发出去：{{error}}"
   }
 };
 

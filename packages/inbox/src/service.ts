@@ -62,6 +62,63 @@ export interface InboxEntry {
   shippedIn: string | null;
   /** Closed as a duplicate of this entry. */
   duplicateOf: string | null;
+  /** What the triager proposes; a person confirms it or triages by hand. */
+  suggestion: InboxSuggestion | null;
+  /** Why the last suggestion could not be made; null when it was, or none was asked. */
+  suggestError: string | null;
+}
+
+/**
+ * A proposed triage: accept as a ticket, merge into a ticket it repeats, or
+ * close as a duplicate of another entry — with the kind, priority and title a
+ * ticket would get, and a draft answer for whoever wrote.
+ */
+export interface TriageSuggestion {
+  action: "accept" | "merge" | "duplicate";
+  kind: InboxKind;
+  priority: Priority | null;
+  title: string;
+  /** merge: the ticket it repeats. */
+  itemId: string | null;
+  /** duplicate: the inbox entry it repeats. */
+  duplicateOf: string | null;
+  /** Why, in the person's language. */
+  reason: string;
+  /** Null when the source takes no replies, or nothing needs saying. */
+  reply: string | null;
+}
+
+export interface InboxSuggestion extends TriageSuggestion {
+  /** Who suggested it: the triager's title. */
+  by: string;
+  at: number;
+}
+
+/** Proposes the triage of an untriaged entry. One is active at a time. */
+export interface InboxTriager {
+  id: string;
+  title: string | (() => string);
+  /** Null when it can suggest now; otherwise why not, in the person's language. */
+  available?(): string | null | Promise<string | null>;
+  /** `entries` are the project's other untriaged entries, which this one may repeat. */
+  suggest(entry: InboxEntry, scope: { projectId: string; canReply: boolean; entries: InboxEntry[] }): Promise<TriageSuggestion>;
+}
+
+export interface InboxTriagerView {
+  title: string;
+  unavailable: string | null;
+}
+
+export interface AdoptOptions {
+  /** The reply to send instead of the draft; false sends none. */
+  reply?: string | false;
+}
+
+export interface AdoptResult {
+  entry: InboxEntry;
+  item: Item | null;
+  /** The triage went through but the reply did not. */
+  replyError: string | null;
 }
 
 /** What the inbox tells a source after a triage, so whoever wrote sees it where they wrote. */
@@ -166,6 +223,9 @@ declare module "@tomradex/ipc" {
     "inbox.seen": (projectId: string, entryId: string) => InboxEntry;
     "inbox.reopen": (projectId: string, entryId: string) => InboxEntry;
     "inbox.reply": (projectId: string, entryId: string, text: string) => InboxEntry;
+    "inbox.triager": () => InboxTriagerView | null;
+    "inbox.suggest": (projectId: string, entryId: string) => InboxEntry;
+    "inbox.adopt": (projectId: string, entryId: string, opts?: AdoptOptions) => AdoptResult;
   }
   interface Broadcasts {
     "inbox.changed": (projectId: string) => void;
@@ -239,6 +299,13 @@ ALTER TABLE plugin_inbox_projects ADD COLUMN source_options_json TEXT NOT NULL D
 ALTER TABLE plugin_inbox_pulls ADD COLUMN state_json TEXT;
 ALTER TABLE plugin_inbox_pulls ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]';
 `
+  },
+  {
+    version: 4,
+    up: `
+ALTER TABLE plugin_inbox_entries ADD COLUMN suggestion_json TEXT;
+ALTER TABLE plugin_inbox_entries ADD COLUMN suggest_error TEXT;
+`
   }
 ];
 
@@ -276,6 +343,8 @@ interface EntryRow {
   activity_seen_at: number | null;
   shipped_in: string | null;
   duplicate_of: string | null;
+  suggestion_json: string | null;
+  suggest_error: string | null;
   updated_at: number;
 }
 
@@ -305,6 +374,17 @@ const FEEDBACK_EXPR_SQL = `SELECT NULLIF(COUNT(*), 0) FROM plugin_inbox_entries 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const text = (value: string | (() => string)) => (typeof value === "function" ? value() : value);
 const isKind = (k: unknown): k is InboxKind => (INBOX_KINDS as readonly unknown[]).includes(k);
+/** How many new arrivals one pull has suggested on its own; the rest wait for a person to ask. */
+const AUTO_SUGGEST = 20;
+
+function parseSuggestion(json: string | null): InboxSuggestion | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as InboxSuggestion;
+  } catch {
+    return null;
+  }
+}
 
 /** Stable across machines: two of them pulling the same report make one entry. */
 export const entryId = (source: string, externalId: string): string => createHash("sha1").update(`${source}\n${externalId}`).digest("hex").slice(0, 24);
@@ -334,7 +414,9 @@ function rowToEntry(r: EntryRow): InboxEntry {
     triagedAt: r.triaged_at,
     activityAt: r.activity_at,
     shippedIn: r.shipped_in,
-    duplicateOf: r.duplicate_of
+    duplicateOf: r.duplicate_of,
+    suggestion: parseSuggestion(r.suggestion_json),
+    suggestError: r.suggest_error
   };
 }
 
@@ -354,6 +436,9 @@ export class Inbox extends Service {
   private readonly sourceMap = new Map<string, InboxSource>();
   private readonly pulling = new Map<string, Promise<number>>();
   private readonly flushing = new Map<string, Promise<void>>();
+  private triagerDef: InboxTriager | null = null;
+  private readonly suggesting = new Map<string, Promise<InboxEntry>>();
+  private readonly suggestQueue = new Map<string, Promise<void>>();
 
   constructor(
     ctx: Context,
@@ -383,6 +468,9 @@ export class Inbox extends Service {
       ctx.ipc.handle("inbox.seen", (projectId, entryId) => inbox().seen(projectId, entryId));
       ctx.ipc.handle("inbox.reopen", (projectId, entryId) => inbox().reopen(projectId, entryId));
       ctx.ipc.handle("inbox.reply", (projectId, entryId, text) => inbox().reply(projectId, entryId, text));
+      ctx.ipc.handle("inbox.triager", () => inbox().triagerView());
+      ctx.ipc.handle("inbox.suggest", (projectId, entryId) => inbox().suggest(projectId, entryId));
+      ctx.ipc.handle("inbox.adopt", (projectId, entryId, opts) => inbox().adopt(projectId, entryId, opts ?? {}));
       ctx.on("inbox/changed", (projectId) => ctx.ipc.send("inbox.changed", projectId));
     });
     ctx.inject(["contributions"], (ctx) => {
@@ -525,15 +613,20 @@ export class Inbox extends Service {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const now = Date.now();
-    const added = db.transaction(() =>
-      inputs.reduce((n, e) => {
+    const fresh: string[] = [];
+    db.transaction(() => {
+      for (const e of inputs) {
+        const id = entryId(sourceId, e.externalId);
         const title = e.title.trim() || e.body?.trim().split("\n")[0]?.slice(0, 120) || e.externalId;
-        const r = insert.run(entryId(sourceId, e.externalId), projectId, sourceId, e.externalId, e.url ?? null, isKind(e.kind) ? e.kind : "feedback", e.reporter ?? null, title, e.body ?? "", JSON.stringify(e.attachments ?? []), e.receivedAt, now);
-        return n + r.changes;
-      }, 0)
-    );
-    if (added) this.changed(projectId);
-    return added;
+        const r = insert.run(id, projectId, sourceId, e.externalId, e.url ?? null, isKind(e.kind) ? e.kind : "feedback", e.reporter ?? null, title, e.body ?? "", JSON.stringify(e.attachments ?? []), e.receivedAt, now);
+        if (r.changes) fresh.push(id);
+      }
+    });
+    if (fresh.length) {
+      this.changed(projectId);
+      this.suggestLater(projectId, fresh.slice(0, AUTO_SUGGEST));
+    }
+    return fresh.length;
   }
 
   /** Pull every enabled source now — or one — after telling them what was triaged since. Returns how many arrived. */
@@ -657,6 +750,128 @@ export class Inbox extends Service {
     this.db(projectId).prepare("UPDATE plugin_inbox_entries SET reply = ?, replied_at = ?, updated_at = ? WHERE id = ?").run(body, now, now, id);
     this.changed(projectId);
     return this.get(projectId, id)!;
+  }
+
+  // ── suggestions ────────────────────────────────────────────────────────────
+
+  /** What proposes triage for new entries. Suggestions only: a person still confirms each. */
+  triager(def: InboxTriager): () => void {
+    if (this.triagerDef) throw new Error(`an inbox triager ("${this.triagerDef.id}") is already registered`);
+    return this.ctx.effect(() => {
+      this.triagerDef = def;
+      return () => {
+        if (this.triagerDef === def) this.triagerDef = null;
+      };
+    }, `inbox.triager(${def.id})`);
+  }
+
+  async triagerView(): Promise<InboxTriagerView | null> {
+    const def = this.triagerDef;
+    if (!def) return null;
+    return { title: text(def.title), unavailable: await this.triagerUnavailable(def) };
+  }
+
+  /** Ask the triager about one untriaged entry now; what it says, or why it could not, is kept on the entry. */
+  suggest(projectId: string, id: string): Promise<InboxEntry> {
+    const key = `${projectId}\n${id}`;
+    const running = this.suggesting.get(key);
+    if (running) return running;
+    const run = this.suggestNow(projectId, id).finally(() => this.suggesting.delete(key));
+    this.suggesting.set(key, run);
+    return run;
+  }
+
+  private async suggestNow(projectId: string, id: string): Promise<InboxEntry> {
+    const entry = this.open(projectId, id);
+    const def = this.triagerDef;
+    if (!def) throw new Error(this.words().noTriager);
+    const unavailable = await this.triagerUnavailable(def);
+    if (unavailable) throw new Error(unavailable);
+    const db = this.db(projectId);
+    try {
+      const entries = this.list(projectId, "new").filter((e) => e.id !== id);
+      const raw = await def.suggest(entry, { projectId, canReply: !!this.sourceMap.get(entry.source)?.reply, entries });
+      const suggestion: InboxSuggestion = { ...this.checked(projectId, entry, raw, entries), by: text(def.title), at: Date.now() };
+      db.prepare("UPDATE plugin_inbox_entries SET suggestion_json = ?, suggest_error = NULL, updated_at = ? WHERE id = ?").run(JSON.stringify(suggestion), Date.now(), id);
+    } catch (error) {
+      db.prepare("UPDATE plugin_inbox_entries SET suggest_error = ?, updated_at = ? WHERE id = ?").run(message(error), Date.now(), id);
+      this.changed(projectId);
+      throw error;
+    }
+    this.changed(projectId);
+    return this.get(projectId, id)!;
+  }
+
+  /** A suggestion that names a ticket or entry that is not there becomes a plain accept. */
+  private checked(projectId: string, entry: InboxEntry, s: TriageSuggestion, entries: InboxEntry[]): TriageSuggestion {
+    const kind = isKind(s.kind) ? s.kind : entry.kind;
+    const priority = s.priority !== null && [0, 1, 2, 3, 4].includes(s.priority) ? s.priority : null;
+    const base = { ...s, kind, priority, title: s.title?.trim() || entry.title, reply: s.reply?.trim() || null, itemId: null, duplicateOf: null };
+    if (s.action === "merge" && s.itemId) {
+      const item = this.home.items.get(projectId, s.itemId) ?? this.home.items.getByKey(projectId, s.itemId);
+      if (item) return { ...base, action: "merge", itemId: item.id };
+    }
+    if (s.action === "duplicate" && s.duplicateOf && s.duplicateOf !== entry.id && entries.some((e) => e.id === s.duplicateOf)) return { ...base, action: "duplicate", duplicateOf: s.duplicateOf };
+    return { ...base, action: "accept" };
+  }
+
+  /** New arrivals are suggested on in the background, one at a time; a failure stays on the entry and blocks nothing. */
+  private suggestLater(projectId: string, ids: string[]): void {
+    const def = this.triagerDef;
+    if (!def || !ids.length) return;
+    const prior = this.suggestQueue.get(projectId) ?? Promise.resolve();
+    const run = prior.then(async () => {
+      if (await this.triagerUnavailable(def)) return;
+      for (const id of ids) {
+        const entry = this.has(projectId) ? this.get(projectId, id) : null;
+        if (!entry || entry.status !== "new" || entry.suggestion) continue;
+        await this.suggest(projectId, id).catch(() => undefined);
+      }
+    });
+    const tail: Promise<void> = run.finally(() => {
+      if (this.suggestQueue.get(projectId) === tail) this.suggestQueue.delete(projectId);
+    });
+    this.suggestQueue.set(projectId, tail);
+  }
+
+  /** Settles once the background suggestions queued so far are done. */
+  async suggestionsIdle(projectId: string): Promise<void> {
+    while (this.suggestQueue.has(projectId)) await this.suggestQueue.get(projectId);
+  }
+
+  /** The suggestion, confirmed as it stands: the triage it names, then its reply. */
+  async adopt(projectId: string, id: string, opts: AdoptOptions = {}): Promise<AdoptResult> {
+    const entry = this.open(projectId, id);
+    const s = entry.suggestion;
+    if (!s) throw new Error(this.words().noSuggestion);
+    let item: Item | null = null;
+    let done: InboxEntry;
+    if (s.action === "merge" && s.itemId) {
+      done = await this.merge(projectId, id, s.itemId, "human");
+      item = this.home.items.get(projectId, s.itemId);
+    } else if (s.action === "duplicate" && s.duplicateOf) {
+      done = await this.close(projectId, id, "duplicate", s.duplicateOf);
+    } else {
+      ({ entry: done, item } = await this.accept(projectId, id, { title: s.title, kind: s.kind, ...(s.priority !== null ? { priority: s.priority } : {}) }, "human"));
+    }
+    const answer = opts.reply === false ? null : (opts.reply ?? s.reply);
+    let replyError: string | null = null;
+    if (answer?.trim() && this.sourceMap.get(entry.source)?.reply) {
+      try {
+        done = await this.reply(projectId, id, answer);
+      } catch (error) {
+        replyError = message(error);
+      }
+    }
+    return { entry: done, item, replyError };
+  }
+
+  private async triagerUnavailable(def: InboxTriager): Promise<string | null> {
+    try {
+      return (await def.available?.()) ?? null;
+    } catch (error) {
+      return message(error);
+    }
   }
 
   private open(projectId: string, id: string): InboxEntry {

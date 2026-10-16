@@ -398,6 +398,7 @@ contracts:
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 | `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
 | `inboxSource` | `ctx.inbox.source` | `inbox-tomrade`, `inbox-github` |
+| `inboxTriager` | `ctx.inbox.triager` | `inbox-triage` |
 
 Unlike a module's, membership **is** declared, on the row: `implements:
 [engine]`. A row switched off registers nothing, and a disabled engine is
@@ -1008,10 +1009,28 @@ holds, and the ticket's **Feedback** section lists them. Entries and their
 triage travel with the project; where each source was read up to stays on the
 machine that read it.
 
+A **triager** proposes triage; one is active at a time, registered with
+`ctx.inbox.triager({ id, title, available?, suggest })`. `suggest(entry,
+{ projectId, canReply, entries })` returns a suggestion — `accept` (with the
+`kind`, `priority` and `title` a ticket would get), `merge` into the ticket it
+repeats (`itemId`), or `duplicate` of another untriaged entry (`duplicateOf`) —
+with a one-sentence `reason` and a draft `reply` when the source takes one.
+The inbox asks about up to 20 new arrivals per pull in the background, one at
+a time, and on demand (`ctx.inbox.suggest`); a suggestion naming a ticket or
+entry that is not there becomes a plain accept, and one that failed keeps its
+reason on the entry (`suggestError`) and blocks nothing. Suggestions travel
+with the entry. Nothing is triaged until a person confirms:
+`ctx.inbox.adopt(projectId, entryId, { reply? })` runs the triage as
+suggested and then sends the draft (or the `reply` given; `false` sends none)
+— a reply that fails leaves the triage done and says why (`replyError`).
+`@tomradex/inbox-triage` is the triager the app ships: one worker-model call
+per entry, shown the nearest tickets and untriaged entries by word overlap.
+
 The renderer reaches it over `inbox.list` (a status, `all`, or `activity`),
 `inbox.sources`, `inbox.setSource`, `inbox.setSourceOption`, `inbox.refresh`,
-`inbox.accept`, `inbox.merge`, `inbox.close`, `inbox.reopen`, `inbox.seen`
-and `inbox.reply`, and hears `inbox.changed`. Its sidebar module opens the
+`inbox.accept`, `inbox.merge`, `inbox.close`, `inbox.reopen`, `inbox.seen`,
+`inbox.reply`, `inbox.triager`, `inbox.suggest` and `inbox.adopt`, and hears
+`inbox.changed`. Its sidebar module opens the
 inbox and counts what waits: untriaged entries and those with new activity.
 
 `@tomradex/inbox-tomrade` is the source for Tomrade's own reports. It pulls

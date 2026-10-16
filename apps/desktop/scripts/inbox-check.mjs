@@ -7,7 +7,8 @@
  * at the source on a triaged one shows as new activity until it is seen. GitHub
  * issues are a source with per-project switches. And the bottom bar's
  * Feedback sends an idea through the troubleshooter's outbox, listed by kind
- * under My reports.
+ * under My reports. A new arrival comes with a suggested triage, confirmed with
+ * one click.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:inbox
@@ -57,8 +58,9 @@ const run = async () => {
       { externalId: "F-3", kind: "idea", title: "Board freezes when dragging", body: "Seen it too.", reporter: "cy", receivedAt: day + 7_200_000 }
     ],
     setStatus: async (entry, change) => void told.push([entry.externalId, change.state, change.reason ?? change.ticket?.key ?? null]),
-    reply: async () => {}
+    reply: async (_entry, text) => void replies.push(text)
   });
+  const replies = [];
   const sent = [];
   ctx.doctor.transport = async (report) => void sent.push(report);
   ctx.doctor.fetchReports = async () => [];
@@ -154,6 +156,21 @@ const run = async () => {
   await shot("activity");
   await press(button("Mark as seen", dialog));
   check("seen, the mark and the count go", await waitFor(`!${dialog}?.querySelector('[data-testid="inbox-activity"]') && !document.querySelector('.side-module-head .side-count')`));
+
+  // ── a suggested triage, confirmed with one click ──────────────────────
+  const answer = { action: "accept", target: null, kind: "bug", priority: 3, title: "Export loses the last row", reason: "Data is lost on export.", reply: "Thanks — we are on it." };
+  ctx.llm.lend({ id: "check", title: "Check model", ready: async () => true, model: { capabilities: { json: true }, async *chat() { yield { type: "text", delta: JSON.stringify(answer) }; yield { type: "stop", reason: "end" }; } } });
+  ctx.inbox.add(project.id, "checks", [{ externalId: "F-4", kind: "feedback", title: "csv export drops a row", body: "The last row is missing from the CSV.", receivedAt: day + 9_000_000 }]);
+  await ctx.inbox.suggestionsIdle(project.id);
+  await press(`${dialog}.querySelector('.inbox-tabs [data-tab="new"]')`);
+  check("a new arrival comes with a suggestion", await waitFor(`${dialog}?.querySelector('[data-testid="inbox-suggestion"][data-action="accept"]')?.textContent.includes('Accept as Bug, High priority: “Export loses the last row”')`), await $(`${dialog}?.querySelector('[data-testid="inbox-suggestion"]')?.textContent`));
+  check("with its reason and the reply draft", await waitFor(`${dialog}?.querySelector('[data-testid="inbox-suggestion"]')?.textContent.includes('Data is lost on export.') && ${dialog}.querySelector('[data-testid="inbox-suggestion"] textarea')?.value === 'Thanks — we are on it.'`));
+  await shot("suggestion");
+  await press(`${dialog}.querySelector('[data-testid="inbox-adopt"]')`);
+  check("confirmed, it says so", await waitFor(`document.body.textContent.includes('Done as suggested')`));
+  const suggested = ctx.items.list({ projectId: project.id }).find((i) => i.title === "Export loses the last row");
+  check("the ticket has the suggested title and priority, and the reply went out", suggested?.priority === 3 && replies.includes("Thanks — we are on it."), { suggested, replies });
+  check("and nothing waits", await waitFor(`${dialog}?.textContent.includes('Nothing waits for triage')`));
 
   // ── the ticket counts what came in ────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);

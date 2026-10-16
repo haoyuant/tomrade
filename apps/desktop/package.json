@@ -114,6 +114,7 @@
     "@tomradex/inbox": "workspace:*",
     "@tomradex/inbox-tomrade": "workspace:*",
     "@tomradex/inbox-github": "workspace:*",
+    "@tomradex/inbox-triage": "workspace:*",
     "@tomradex/alerts": "workspace:*",
     "@tomradex/pomodoro": "workspace:*"
   },

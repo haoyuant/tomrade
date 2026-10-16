@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Contributions } from "@tomradex/contributions";
 import { fresh, settle } from "@tomradex/testkit";
-import { Inbox, entryId, type InboxEntryInput, type InboxSource, type TriageChange } from "@tomradex/inbox";
+import { Inbox, entryId, type InboxEntry, type InboxEntryInput, type InboxSource, type TriageChange, type TriageSuggestion } from "@tomradex/inbox";
 
 const DAY = 86_400_000;
 
@@ -247,5 +247,110 @@ describe("after triage", () => {
     expect(t.inbox.option(t.p, "app", "close")).toBe(true);
     expect(t.inbox.option(t.p, "app", "comment")).toBe(true);
     await expect(t.inbox.setSourceOption(t.p, "app", "nope", true)).rejects.toThrow();
+  });
+});
+
+describe("suggestions", () => {
+  const triager = (answer: (entry: InboxEntry, others: InboxEntry[]) => TriageSuggestion, opts: { unavailable?: () => string | null } = {}) => {
+    const asked: string[] = [];
+    return {
+      asked,
+      def: {
+        id: "test",
+        title: "Test model",
+        available: () => opts.unavailable?.() ?? null,
+        suggest: async (entry: InboxEntry, scope: { entries: InboxEntry[] }) => (asked.push(entry.externalId), answer(entry, scope.entries))
+      }
+    };
+  };
+  const plain = (extra: Partial<TriageSuggestion> = {}): TriageSuggestion => ({ action: "accept", kind: "bug", priority: 3, title: "Login times out", itemId: null, duplicateOf: null, reason: "It is broken", reply: "Thanks — we track it.", ...extra });
+
+  it("suggests on new arrivals by itself, and one click accepts as suggested and sends the draft reply", async () => {
+    const t = await boot();
+    const tr = triager(() => plain());
+    t.inbox.triager(tr.def);
+    t.feed.push(report("R-AAAAAA", 1 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    await t.inbox.suggestionsIdle(t.p);
+    const id = entryId("app", "R-AAAAAA");
+    expect(t.inbox.get(t.p, id)!.suggestion).toMatchObject({ action: "accept", priority: 3, by: "Test model" });
+
+    const { entry, item, replyError } = await t.inbox.adopt(t.p, id);
+    expect(entry).toMatchObject({ status: "accepted", reply: "Thanks — we track it." });
+    expect(item).toMatchObject({ title: "Login times out", priority: 3 });
+    expect(replyError).toBeNull();
+    expect(t.replies).toEqual(["Thanks — we track it."]);
+    // pulling again asks nothing more
+    await t.inbox.refresh(t.p);
+    await t.inbox.suggestionsIdle(t.p);
+    expect(tr.asked).toEqual(["R-AAAAAA"]);
+  });
+
+  it("merges into the ticket it repeats, or closes as a duplicate of the entry it repeats, and a reply can be changed or left out", async () => {
+    const t = await boot();
+    const known = t.items.create({ projectId: t.p, boardId: t.board.id, title: "Login is slow", by: "human" });
+    t.inbox.triager(triager((entry, others) => (entry.externalId === "R-AAAAAA" ? plain({ action: "merge", itemId: known.key }) : plain({ action: "duplicate", duplicateOf: others[0]?.id ?? null }))).def);
+    t.feed.push(report("R-AAAAAA", 1 * DAY), report("R-BBBBBB", 2 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    await t.inbox.suggestionsIdle(t.p);
+    const a = entryId("app", "R-AAAAAA");
+    const b = entryId("app", "R-BBBBBB");
+    expect(t.inbox.get(t.p, a)!.suggestion).toMatchObject({ action: "merge", itemId: known.id });
+
+    expect((await t.inbox.adopt(t.p, b, { reply: false })).entry).toMatchObject({ status: "closed", closeReason: "duplicate", duplicateOf: a });
+    const merged = await t.inbox.adopt(t.p, a, { reply: "Already on it" });
+    expect(merged.entry).toMatchObject({ status: "merged", itemId: known.id });
+    expect(t.replies).toEqual(["Already on it"]);
+  });
+
+  it("turns a suggestion naming nothing that exists into a plain accept", async () => {
+    const t = await boot();
+    t.inbox.triager(triager(() => plain({ action: "merge", itemId: "TOM-999" })).def);
+    t.feed.push(report("R-AAAAAA", 1 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    await t.inbox.suggestionsIdle(t.p);
+    expect(t.inbox.get(t.p, entryId("app", "R-AAAAAA"))!.suggestion).toMatchObject({ action: "accept", itemId: null });
+  });
+
+  it("keeps a failed suggestion's reason on the entry without blocking triage, and waits while the triager can't answer", async () => {
+    let down: string | null = "No model configured";
+    let fail = true;
+    const t = await boot();
+    const tr = triager(
+      () => {
+        if (fail) throw new Error("model timed out");
+        return plain();
+      },
+      { unavailable: () => down }
+    );
+    t.inbox.triager(tr.def);
+    t.feed.push(report("R-AAAAAA", 1 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    await t.inbox.suggestionsIdle(t.p);
+    const id = entryId("app", "R-AAAAAA");
+    expect(tr.asked).toEqual([]);
+    expect(await t.inbox.triagerView()).toEqual({ title: "Test model", unavailable: "No model configured" });
+    await expect(t.inbox.suggest(t.p, id)).rejects.toThrow("No model configured");
+
+    down = null;
+    await expect(t.inbox.suggest(t.p, id)).rejects.toThrow("model timed out");
+    expect(t.inbox.get(t.p, id)).toMatchObject({ suggestion: null, suggestError: "model timed out" });
+    await expect(t.inbox.adopt(t.p, id)).rejects.toThrow(/no suggestion/);
+
+    fail = false;
+    expect((await t.inbox.suggest(t.p, id)).suggestError).toBeNull();
+    expect((await t.inbox.accept(t.p, id)).entry.status).toBe("accepted");
+    await expect(t.inbox.suggest(t.p, id)).rejects.toThrow(/reopen/);
+  });
+
+  it("keeps the triage when the reply fails, and says so", async () => {
+    const t = await boot({ reply: async () => Promise.reject(new Error("offline")) });
+    t.inbox.triager(triager(() => plain()).def);
+    t.feed.push(report("R-AAAAAA", 1 * DAY));
+    await t.inbox.setSource(t.p, "app", true);
+    await t.inbox.suggestionsIdle(t.p);
+    const out = await t.inbox.adopt(t.p, entryId("app", "R-AAAAAA"));
+    expect(out.entry.status).toBe("accepted");
+    expect(out.replyError).toBe("offline");
   });
 });

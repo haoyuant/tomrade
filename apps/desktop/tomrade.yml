@@ -107,6 +107,9 @@ contracts:
   - id: inboxSource
     title: Inbox sources
     registry: inbox.source
+  - id: inboxTriager
+    title: Inbox triage
+    registry: inbox.triager
   - id: webSearch
     title: Web search
     registry: webSearch.register
@@ -293,6 +296,11 @@ plugins:
   - id: inbox-github
     name: "@tomradex/inbox-github"
     implements: [inboxSource]
+  # Pre-triage: the worker model proposes, for each new entry, the ticket it
+  # repeats, its kind and priority, and a draft reply. A person confirms it.
+  - id: inbox-triage
+    name: "@tomradex/inbox-triage"
+    implements: [inboxTriager]
   # The backlog method: playbooks, workflows, compound tools, the dedup policy.
   - id: agent-backlog
     name: "@tomradex/agent-backlog"

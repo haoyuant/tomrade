@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { InboxEntry, InboxKind, InboxListFilter, InboxSourceView } from "@tomradex/inbox";
+import type { InboxEntry, InboxKind, InboxListFilter, InboxSourceView, InboxSuggestion, InboxTriagerView } from "@tomradex/inbox";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { Spacer, Tag } from "~/components/ui/atoms";
-import { agoLabel } from "~/lib/domain";
+import { agoLabel, PRIORITY_LABEL } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useInboxActions, useInboxEntries, useInboxSources } from "~/lib/inbox";
+import { useInboxActions, useInboxEntries, useInboxSources, useInboxTriager } from "~/lib/inbox";
 import { useItems } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
@@ -206,11 +206,12 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
   const [kind, setKind] = useState<InboxKind>(entry.kind);
   const [search, setSearch] = useState("");
   const [reply, setReply] = useState("");
+  const triager = useInboxTriager(projectId, entry.status === "new");
   const ticket = entry.itemId ? (items.data ?? []).find((i) => i.id === entry.itemId) : undefined;
-  const others = useInboxEntries(projectId, "all", mode === "duplicate" || !!entry.duplicateOf);
+  const others = useInboxEntries(projectId, "all", mode === "duplicate" || !!entry.duplicateOf || entry.suggestion?.action === "duplicate");
   const main = entry.duplicateOf ? (others.data ?? []).find((e) => e.id === entry.duplicateOf) : undefined;
   const sourceName = source?.title ?? entry.source;
-  const busy = actions.accept.isPending || actions.merge.isPending || actions.close.isPending || actions.reopen.isPending || actions.seen.isPending;
+  const busy = actions.accept.isPending || actions.merge.isPending || actions.close.isPending || actions.reopen.isPending || actions.seen.isPending || actions.adopt.isPending;
 
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -249,6 +250,30 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
         <span>{agoLabel(entry.receivedAt)}</span>
       </p>
       {entry.body && <pre className="inbox-detail-body">{entry.body}</pre>}
+
+      {entry.status === "new" && triager.data && (
+        <SuggestionCard
+          projectId={projectId}
+          entry={entry}
+          triager={triager.data}
+          canReply={!!source?.canReply}
+          busy={busy}
+          others={others.data ?? []}
+          onOpenIssue={onOpenIssue}
+          onEdit={(s, draft) => {
+            setTitle(s.title);
+            setKind(s.kind);
+            if (draft) setReply(draft);
+            if (s.action === "merge") {
+              setSearch(items.data?.find((i) => i.id === s.itemId)?.key ?? "");
+              setMode("merge");
+            } else if (s.action === "duplicate") {
+              setSearch(others.data?.find((e) => e.id === s.duplicateOf)?.externalId ?? "");
+              setMode("duplicate");
+            } else setMode("accept");
+          }}
+        />
+      )}
 
       {entry.status !== "new" && (
         <div className="row inbox-status">
@@ -415,5 +440,105 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
         </div>
       )}
     </article>
+  );
+}
+
+/** The triager's proposal for an untriaged entry: confirmed with one click, changed in the usual forms, or asked again. */
+function SuggestionCard({
+  projectId,
+  entry,
+  triager,
+  canReply,
+  busy,
+  others,
+  onOpenIssue,
+  onEdit
+}: {
+  projectId: string;
+  entry: InboxEntry;
+  triager: InboxTriagerView;
+  canReply: boolean;
+  busy: boolean;
+  others: InboxEntry[];
+  onOpenIssue: (id: string) => void;
+  onEdit: (s: InboxSuggestion, draft: string | null) => void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const reportError = useErrorToast();
+  const actions = useInboxActions(projectId);
+  const items = useItems(projectId);
+  const s = entry.suggestion;
+  const [draft, setDraft] = useState(s?.reply ?? "");
+  const [send, setSend] = useState(true);
+  useEffect(() => setDraft(s?.reply ?? ""), [s?.reply]);
+  const asking = actions.suggest.isPending;
+  const ask = () => actions.suggest.mutate(entry.id, { onError: reportError });
+
+  if (!s) {
+    return (
+      <div className="row inbox-suggestion" data-testid="inbox-suggestion">
+        <Icon name="i-pen" size={14} />
+        <span className="meta-txt">{entry.suggestError ? t("inbox.suggestFailed", { error: entry.suggestError }) : triager.unavailable ?? triager.title}</span>
+        <Spacer />
+        <button type="button" className="btn btn-secondary" disabled={asking || busy || !!triager.unavailable} title={triager.unavailable ?? undefined} onClick={ask}>
+          {asking ? t("inbox.suggesting") : t("inbox.suggestAsk")}
+        </button>
+      </div>
+    );
+  }
+
+  const ticket = s.itemId ? (items.data ?? []).find((i) => i.id === s.itemId) : undefined;
+  const main = s.duplicateOf ? others.find((e) => e.id === s.duplicateOf) : undefined;
+  const headline =
+    s.action === "merge"
+      ? t("inbox.suggestMerge", { key: ticket?.key ?? "…", title: ticket?.title ?? "" })
+      : s.action === "duplicate"
+        ? t("inbox.suggestDuplicate", { ref: main?.externalId ?? "…" })
+        : t("inbox.suggestAccept", { kind: t(`inbox.kind_${s.kind}` as MessageKey), priority: PRIORITY_LABEL[s.priority ?? 2] ?? "", title: s.title });
+  const withReply = canReply && send && !!draft.trim();
+  const adopt = () =>
+    actions.adopt.mutate(
+      { id: entry.id, opts: { reply: withReply ? draft : false } },
+      {
+        onSuccess: ({ item, replyError }) =>
+          replyError
+            ? reportError(new Error(t("inbox.adoptedReplyFailed", { error: replyError })))
+            : toast({ body: t("inbox.adopted"), ...(item ? { actions: [{ label: t("inbox.openTicket"), run: () => onOpenIssue(item.id) }] } : {}) }),
+        onError: reportError
+      }
+    );
+
+  return (
+    <div className="panel stack-2 inbox-suggestion" data-testid="inbox-suggestion" data-action={s.action}>
+      <div className="row">
+        <Icon name="i-pen" size={14} />
+        <span className="meta-txt">{t("inbox.suggestion", { by: s.by })}</span>
+        <Spacer />
+        <button type="button" className="btn btn-ghost" disabled={asking || busy || !!triager.unavailable} title={triager.unavailable ?? undefined} onClick={ask}>
+          <Icon name="i-sync" size={13} className={asking ? "is-spinning" : undefined} /> {asking ? t("inbox.suggesting") : t("inbox.suggestAgain")}
+        </button>
+      </div>
+      <strong className="inbox-suggestion-head">{headline}</strong>
+      {s.reason && <p className="meta-txt dense">{s.reason}</p>}
+      {canReply && s.reply && (
+        <>
+          <label className="row inbox-suggestion-send">
+            <input type="checkbox" checked={send} onChange={(e) => setSend(e.target.checked)} />
+            <span className="meta-txt">{t("inbox.suggestSendReply")}</span>
+          </label>
+          {send && <textarea className="input report-note" rows={3} value={draft} aria-label={t("inbox.suggestReply")} onChange={(e) => setDraft(e.target.value)} />}
+        </>
+      )}
+      <div className="row">
+        <Spacer />
+        <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => onEdit(s, canReply && s.reply ? draft : null)}>
+          {t("inbox.suggestEdit")}
+        </button>
+        <button type="button" className="btn btn-primary" data-testid="inbox-adopt" disabled={busy || asking} onClick={adopt}>
+          <Icon name="i-check" size={13} /> {t("inbox.suggestAdopt")}
+        </button>
+      </div>
+    </div>
   );
 }

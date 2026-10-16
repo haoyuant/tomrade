@@ -197,6 +197,9 @@
       "path": "./packages/inbox-github"
     },
     {
+      "path": "./packages/inbox-triage"
+    },
+    {
       "path": "./packages/inbox"
     }
   ]

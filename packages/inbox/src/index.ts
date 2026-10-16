@@ -18,6 +18,12 @@ export {
   type InboxActivity,
   type InboxSourceOption,
   type InboxListFilter,
-  type AcceptOptions
+  type AcceptOptions,
+  type TriageSuggestion,
+  type InboxSuggestion,
+  type InboxTriager,
+  type InboxTriagerView,
+  type AdoptOptions,
+  type AdoptResult
 } from "./service.js";
 export { Inbox as default } from "./service.js";
