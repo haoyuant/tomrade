@@ -396,6 +396,7 @@ export class Host {
                   append: host.back(session.stream.append.bind(session.stream), `IM adapter ${spec.id} stream append`),
                   stop: host.back(session.stream.stop.bind(session.stream), `IM adapter ${spec.id} stream stop`)
                 } } : {}),
+                ...(session.identity ? { identity: session.identity } : {}),
                 close: host.back(session.close.bind(session), `IM adapter ${spec.id} close`)
               };
             } }));

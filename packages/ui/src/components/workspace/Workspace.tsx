@@ -105,6 +105,7 @@ export function Workspace() {
     if (surface === "code-inbox") setCodeInbox(true);
     else if (surface === "inbox") setInbox(true);
     else if (surface === "feedback") setFeedback(true);
+    else if (surface.startsWith("settings:")) setSettings(surface.slice("settings:".length));
   }, []);
   const runCommand = useRunCommand(ws.project.id);
   const [syncIssues, setSyncIssues] = useState(false);

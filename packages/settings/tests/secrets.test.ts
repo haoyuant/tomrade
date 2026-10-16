@@ -29,7 +29,8 @@ function keychain(key = "k1", up = true): SecretCipher & { calls: number } {
 const SECRETS = {
   models: { profiles: [{ id: "p1", provider: "openai-compatible", model: "deepseek-chat", baseURL: "https://api.deepseek.com", apiKey: "sk-live-111" }], roles: { worker: "" } },
   github: { token: "ghp_222" },
-  mcpServers: { servers: [{ id: "remote", transport: { type: "http", url: "https://mcp.example", headers: { "X-Team": "team-333" } } }, { id: "local", transport: { type: "stdio", command: "npx", env: { HOME_DIR: "/home/444" } } }] }
+  mcpServers: { servers: [{ id: "remote", transport: { type: "http", url: "https://mcp.example", headers: { "X-Team": "team-333" } } }, { id: "local", transport: { type: "stdio", command: "npx", env: { HOME_DIR: "/home/444" } } }] },
+  im: { connections: [{ id: "bot", adapterId: "feishu", credentials: { appId: "cli_555", appSecret: "s-666" } }] }
 };
 
 async function open(p: string, cipher?: SecretCipher) {
@@ -45,7 +46,7 @@ it("keeps keys, tokens, headers and env values encrypted in the file, and plain 
   const ctx = await open(p, cipher);
   ctx.settings.set({ ...ctx.settings.get(), ...SECRETS });
   const text = fs.readFileSync(p, "utf8");
-  for (const secret of ["sk-live-111", "ghp_222", "team-333", "/home/444"]) expect(text).not.toContain(secret);
+  for (const secret of ["sk-live-111", "ghp_222", "team-333", "/home/444", "cli_555", "s-666"]) expect(text).not.toContain(secret);
   // What isn't secret stays readable.
   expect(text).toContain("deepseek-chat");
   expect(text).toContain("https://api.deepseek.com");
@@ -57,6 +58,7 @@ it("keeps keys, tokens, headers and env values encrypted in the file, and plain 
   expect(again.settings.get().github).toEqual({ token: "ghp_222" });
   expect(again.settings.get().models.profiles[0].apiKey).toBe("sk-live-111");
   expect((again.settings.get().mcpServers as typeof SECRETS.mcpServers).servers[0]!.transport.headers).toEqual({ "X-Team": "team-333" });
+  expect((again.settings.get().im as typeof SECRETS.im).connections[0]!.credentials).toEqual({ appId: "cli_555", appSecret: "s-666" });
 });
 
 it("seals a plain file the first time it is opened, and loosens nothing", async () => {

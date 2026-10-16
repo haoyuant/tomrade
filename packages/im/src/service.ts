@@ -7,8 +7,8 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
-import { resolveImCapabilities, type ImAdapter, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
-import { ImConfig, ImSettings, InboundSchema, type ImRoute } from "./config.js";
+import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
+import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
 import { prepare } from "./render.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox } from "./store.js";
 
@@ -17,16 +17,55 @@ const token = () => randomBytes(24).toString("hex");
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 /** Platforms drop a typing indicator after a few seconds; refresh it while the run works. */
 const TYPING_MS = 4_000;
+const PAIR_MS = 10 * 60 * 1000;
+/** Wrong codes a connection takes before its pairing code is withdrawn. */
+const PAIR_TRIES = 5;
 
 export interface ImConnectionView {
-  id: string; adapterId: string; state: ImConnectionState | "unconfigured";
-  detail?: string; pending: number; uncertain: number;
+  id: string; adapterId: string; label?: string; state: ImConnectionState | "unconfigured";
+  detail?: string; pending: number; uncertain: number; failed: number;
+  /** The bot the credentials signed in as, once the adapter has checked them. */
+  identity?: { id: string; name?: string };
+  /** Required credential fields still empty. */
+  missing: string[];
+}
+/** An adapter as the settings wizard shows it, in the desktop's language. */
+export interface ImAdapterView {
+  id: string; title: string; capabilities: ImCapabilities;
+  setup: { fields: { key: string; label: string; secret: boolean; optional: boolean; placeholder?: string; help?: string }[];
+    steps: string[]; permissions: string[]; manifest?: ImAdapterSetup["manifest"]; docsUrl?: string } | null;
+}
+/** A message that was not let in. Never its text. */
+export interface ImIgnoredView {
+  id: string; at: number; connectionId: string; tenantId: string; conversationId: string;
+  actorId: string; actorName?: string; group: boolean;
+  reason: "actor" | "conversation" | "activation" | "bot";
+}
+export interface ImPairingView {
+  connectionId: string; code: string; projectId: string; expiresAt: number;
+  /** Who sent the code, waiting for the desktop to confirm. */
+  claim?: { tenantId: string; conversationId: string; actorId: string; name?: string; at: number };
+}
+export interface ImDeliveryView {
+  id: string; connectionId: string; conversationId: string; state: "uncertain" | "failed";
+  error: string | null; attempts: number; createdAt: number; preview: string;
+}
+export interface ImAllowRequest {
+  /** An ignored message's id. */
+  ignoredId: string;
+  /** `person` lets the sender in; `group` opens the conversation to the paired people, and the sender. */
+  scope: "person" | "group";
+  /** For a conversation with no route yet. */
+  projectId?: string;
 }
 interface Connection {
   id: string; adapterId: string; controller: AbortController;
   session?: ImAdapterSession; opening: boolean; flushing: boolean;
   state: ImConnectionState; detail?: string; retryAt: number; attempts: number;
+  /** The credentials it was opened with; a change reopens it. */
+  credentials: string;
 }
+interface Pairing { connectionId: string; code: string; projectId: string; expiresAt: number; failures: number; claim?: ImPairingView["claim"] }
 
 declare module "cordis" {
   interface Context { im: Im }
@@ -38,9 +77,23 @@ declare module "cordis" {
 declare module "@tomradex/ipc" {
   interface Channels {
     "im.connections": () => ImConnectionView[];
+    "im.adapters": () => ImAdapterView[];
+    "im.ignored": () => ImIgnoredView[];
+    "im.allow": (request: ImAllowRequest) => boolean;
+    "im.deliveries": () => ImDeliveryView[];
     /** A person explicitly retries an uncertain operation; it may have reached IM already. */
     "im.retry": (operationId: string) => boolean;
     "im.discard": (operationId: string) => boolean;
+    "im.pairings": () => ImPairingView[];
+    "im.pairStart": (connectionId: string, projectId: string) => ImPairingView;
+    "im.pairConfirm": (connectionId: string) => boolean;
+    "im.pairCancel": (connectionId: string) => void;
+    /** Takes a paired identity off the connection's allow lists. */
+    "im.revoke": (connectionId: string, tenantId: string, actorId: string) => void;
+  }
+  interface Broadcasts {
+    /** Connections, pairings, ignored messages or deliveries changed; the settings panel refetches. */
+    "im.changed": () => void;
   }
 }
 
@@ -65,8 +118,11 @@ export class Im extends Service {
   private readonly dirty = new Set<string>();
   private sweptAt = 0;
   private stopped = false;
-  private settings: ImSettings = { connections: [], routes: [] };
-  private ignored: { at: number; connectionId: string; actorId: string; conversationId: string; reason: string }[] = [];
+  private settings: ImSettings = { connections: [], identities: [], routes: [] };
+  private ignored: ImIgnoredView[] = [];
+  private readonly pairings = new Map<string, Pairing>();
+  /** The settings panel and the status bar, told when connections, pairings or stuck deliveries change. */
+  private readonly watchers = new Set<() => void>();
 
   constructor(ctx: Context, readonly config: ImConfig) {
     super(ctx, "im");
@@ -86,10 +142,27 @@ export class Im extends Service {
     this.home.on("agent/event", (threadId, event) => this.onAgentEvent(threadId, event));
     this.home.inject(["ipc"], ctx => {
       ctx.ipc.handle("im.connections", () => this.views());
+      ctx.ipc.handle("im.adapters", () => this.adapterViews());
+      ctx.ipc.handle("im.ignored", () => this.ignoredMessages());
+      ctx.ipc.handle("im.allow", request => this.allow(request));
+      ctx.ipc.handle("im.deliveries", () => this.deliveries());
       ctx.ipc.handle("im.retry", id => this.retry(id));
       ctx.ipc.handle("im.discard", id => this.discard(id));
+      ctx.ipc.handle("im.pairings", () => this.pairingViews());
+      ctx.ipc.handle("im.pairStart", (connectionId, projectId) => this.pairStart(connectionId, projectId));
+      ctx.ipc.handle("im.pairConfirm", connectionId => this.pairConfirm(connectionId));
+      ctx.ipc.handle("im.pairCancel", connectionId => { this.pairings.delete(connectionId); this.changed(); });
+      ctx.ipc.handle("im.revoke", (connectionId, tenantId, actorId) => this.revoke(connectionId, tenantId, actorId));
+      const notify = () => ctx.ipc.send("im.changed");
+      this.watchers.add(notify);
+      return () => { this.watchers.delete(notify); };
     });
-    this.home.inject(["contributions"], ctx => ctx.contributions.statusItem({ id: "im", icon: "message-circle",
+    this.home.inject(["contributions"], ctx => {
+      const notify = () => ctx.contributions.changed();
+      this.watchers.add(notify);
+      return () => { this.watchers.delete(notify); };
+    });
+    this.home.inject(["contributions"], ctx => ctx.contributions.statusItem({ id: "im", icon: "message-circle", opens: "settings:im",
       title: () => this.say("IM connections", "IM 连接"),
       text: () => {
         const views = this.views();
@@ -114,6 +187,7 @@ export class Im extends Service {
       this.caps.set(adapter.id, caps);
       this.home.emit("im/registered", adapter.id);
       this.tick();
+      this.changed();
       return async () => {
         this.adapters.delete(adapter.id);
         this.caps.delete(adapter.id);
@@ -122,6 +196,7 @@ export class Im extends Service {
           await this.close(c);
         }));
         this.home.emit("im/unregistered", adapter.id);
+        this.changed();
       };
     }, `im.register(${adapter.id})`);
   }
@@ -129,25 +204,151 @@ export class Im extends Service {
   views(): ImConnectionView[] {
     return this.settings.connections.map(spec => {
       const c = this.connections.get(spec.id);
-      const counts = this.store.get<{ pending: number; uncertain: number }>(`SELECT
+      const counts = this.store.get<{ pending: number; uncertain: number; failed: number }>(`SELECT
         SUM(CASE WHEN o.state IN ('queued', 'sending') THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN o.state = 'uncertain' THEN 1 ELSE 0 END) AS uncertain
+        SUM(CASE WHEN o.state = 'uncertain' THEN 1 ELSE 0 END) AS uncertain,
+        SUM(CASE WHEN o.state = 'failed' THEN 1 ELSE 0 END) AS failed
         FROM plugin_im_outbox o JOIN plugin_im_bindings b ON b.id = o.binding_id WHERE b.connection_id = ?`, spec.id);
-      return { id: spec.id, adapterId: spec.adapterId, state: c?.state ?? (this.adapters.has(spec.adapterId) ? "offline" : "unconfigured"),
-        detail: c?.detail, pending: counts?.pending ?? 0, uncertain: counts?.uncertain ?? 0 };
+      const missing = this.missing(spec);
+      const identity = c?.state === "connected" ? c.session?.identity : undefined;
+      return { id: spec.id, adapterId: spec.adapterId, ...(spec.label ? { label: spec.label } : {}),
+        state: c?.state ?? (this.adapters.has(spec.adapterId) && !missing.length ? "offline" : "unconfigured"),
+        detail: c?.detail, pending: counts?.pending ?? 0, uncertain: counts?.uncertain ?? 0, failed: counts?.failed ?? 0,
+        ...(identity ? { identity: { id: identity.id, ...(identity.name ? { name: identity.name } : {}) } } : {}), missing };
     });
   }
 
+  adapterViews(): ImAdapterView[] {
+    return [...this.adapters.values()].map(a => ({ id: a.id, title: a.title, capabilities: a.capabilities,
+      setup: a.setup ? {
+        fields: a.setup.fields.map(f => ({ key: f.key, label: this.word(f.label), secret: !!f.secret, optional: !!f.optional,
+          ...(f.placeholder ? { placeholder: f.placeholder } : {}), ...(f.help ? { help: this.word(f.help) } : {}) })),
+        steps: a.setup.steps.map(step => this.word(step)), permissions: a.setup.permissions ?? [],
+        ...(a.setup.manifest ? { manifest: a.setup.manifest } : {}), ...(a.setup.docsUrl ? { docsUrl: a.setup.docsUrl } : {})
+      } : null }));
+  }
+
   /** Redacted, bounded diagnostics; rejected message bodies are not retained. */
-  ignoredMessages() { return this.ignored.map(row => ({ ...row })); }
+  ignoredMessages(): ImIgnoredView[] { return this.ignored.map(row => ({ ...row })); }
+
+  deliveries(): ImDeliveryView[] {
+    return this.store.all<Outbox & { connection_id: string; address_json: string }>(`SELECT o.*, b.connection_id, b.address_json FROM plugin_im_outbox o
+      JOIN plugin_im_bindings b ON b.id = o.binding_id WHERE o.state IN ('uncertain', 'failed') ORDER BY o.seq LIMIT 100`).map(row => ({
+      id: row.id, connectionId: row.connection_id, conversationId: (JSON.parse(row.address_json) as ImAddress).conversationId,
+      state: row.state as "uncertain" | "failed", error: row.error, attempts: row.attempts, createdAt: row.created_at,
+      preview: (JSON.parse(row.content_json) as ImContent).text.slice(0, 120)
+    }));
+  }
 
   retry(operationId: string): boolean {
-    return this.store.run("UPDATE plugin_im_outbox SET state = 'queued', retry_at = 0, error = NULL WHERE id = ? AND state IN ('uncertain', 'failed')", operationId).changes > 0;
+    const done = this.store.run("UPDATE plugin_im_outbox SET state = 'queued', retry_at = 0, error = NULL WHERE id = ? AND state IN ('uncertain', 'failed')", operationId).changes > 0;
+    if (done) this.changed();
+    return done;
   }
 
   discard(operationId: string): boolean {
-    return this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ? AND state IN ('uncertain', 'failed')", operationId).changes > 0;
+    const done = this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ? AND state IN ('uncertain', 'failed')", operationId).changes > 0;
+    if (done) this.changed();
+    return done;
   }
+
+  pairingViews(): ImPairingView[] {
+    return [...this.pairings.values()].filter(p => p.expiresAt > Date.now() || p.claim)
+      .map(({ failures: _failures, ...p }) => ({ ...p, ...(p.claim ? { claim: { ...p.claim } } : {}) }));
+  }
+
+  /** A one-time code the person sends the bot in a direct message; a new one replaces the last. */
+  pairStart(connectionId: string, projectId: string): ImPairingView {
+    if (!this.settings.connections.some(c => c.id === connectionId)) throw new Error(`Unknown IM connection ${connectionId}`);
+    if (!this.home.projects.get(projectId)) throw new Error(`Unknown project ${projectId}`);
+    const code = String(100_000 + (randomBytes(4).readUInt32BE() % 900_000));
+    const pairing: Pairing = { connectionId, code, projectId, expiresAt: Date.now() + PAIR_MS, failures: 0 };
+    this.pairings.set(connectionId, pairing);
+    this.changed();
+    return { connectionId, code, projectId, expiresAt: pairing.expiresAt };
+  }
+
+  /** Lets the person who sent the code in: their direct chat goes to the chosen project. */
+  pairConfirm(connectionId: string): boolean {
+    const pairing = this.pairings.get(connectionId);
+    const claim = pairing?.claim;
+    if (!pairing || !claim) return false;
+    this.pairings.delete(connectionId);
+    const im = this.snapshot();
+    im.identities = [...im.identities.filter(i => !(i.connectionId === connectionId && i.tenantId === claim.tenantId && i.actorId === claim.actorId)),
+      { connectionId, tenantId: claim.tenantId, actorId: claim.actorId, ...(claim.name ? { name: claim.name } : {}), pairedAt: Date.now() }];
+    this.admit(im, { connectionId, tenantId: claim.tenantId, conversationId: claim.conversationId }, [claim.actorId], "dm", pairing.projectId);
+    this.save(im);
+    const c = this.connections.get(connectionId);
+    if (c) this.tell(c, { tenantId: claim.tenantId, conversationId: claim.conversationId }, "Paired with Tomrade. Send a message to start.", "已与 Tomrade 配对，发消息即可开始。");
+    this.changed();
+    return true;
+  }
+
+  revoke(connectionId: string, tenantId: string, actorId: string) {
+    const im = this.snapshot();
+    im.identities = im.identities.filter(i => !(i.connectionId === connectionId && i.tenantId === tenantId && i.actorId === actorId));
+    im.routes = im.routes.map(r => r.connectionId === connectionId && r.tenantId === tenantId ? { ...r, allowedActors: r.allowedActors.filter(a => a !== actorId) } : r)
+      .filter(r => r.allowedActors.length);
+    this.save(im);
+    this.changed();
+  }
+
+  /** One click on an ignored message: the sender, or the group with the paired people in it, may use the assistant there. */
+  allow(request: ImAllowRequest): boolean {
+    const row = this.ignored.find(r => r.id === request.ignoredId);
+    if (!row || row.reason === "bot") return false;
+    const im = this.snapshot();
+    const where = { connectionId: row.connectionId, tenantId: row.tenantId, conversationId: row.conversationId };
+    const paired = im.identities.filter(i => i.connectionId === row.connectionId && i.tenantId === row.tenantId).map(i => i.actorId);
+    const actors = request.scope === "group" ? [...new Set([...paired, row.actorId])] : [row.actorId];
+    const projectId = request.projectId ?? im.routes.find(r => r.connectionId === row.connectionId && r.tenantId === row.tenantId)?.projectId;
+    if (!im.routes.some(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId) && !projectId) return false;
+    this.admit(im, where, actors, row.group ? "group" : "dm", projectId);
+    this.save(im);
+    this.ignored = this.ignored.filter(r => !(r.connectionId === row.connectionId && r.tenantId === row.tenantId && r.conversationId === row.conversationId
+      && (request.scope === "group" || r.actorId === row.actorId)));
+    this.changed();
+    return true;
+  }
+
+  /** Adds people to a conversation's route, opening the way they wrote in; makes the route when there is none. */
+  private admit(im: ImSettings, where: { connectionId: string; tenantId: string; conversationId: string }, actors: string[], kind: "dm" | "group", projectId?: string) {
+    const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
+    if (i >= 0) {
+      const r = im.routes[i];
+      im.routes[i] = { ...r, allowedActors: [...new Set([...r.allowedActors, ...actors])], ...(kind === "dm" ? { allowDirectMessages: true } : { allowGroups: true }) };
+      return;
+    }
+    if (!projectId) throw new Error("Choose a project for this conversation");
+    im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, projectId, boardId: null, allowedActors: actors,
+      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress" });
+  }
+
+  private snapshot(): ImSettings { return structuredClone(ImSettings.parse(this.home.settings.get().im)); }
+
+  private save(im: ImSettings) {
+    this.home.settings.set({ ...this.home.settings.get(), im: ImSettings.parse(im) });
+  }
+
+  private missing(spec: ImConnection): string[] {
+    return (this.adapters.get(spec.adapterId)?.setup?.fields ?? []).filter(f => !f.optional && !spec.credentials[f.key]?.trim()).map(f => f.key);
+  }
+
+  /** A word an adapter supplies, in the desktop's language. */
+  private word(text: Localized): string {
+    return typeof text === "string" ? text : text[this.home.settings.locale()] ?? text.en;
+  }
+
+  /** A direct reply outside any conversation, e.g. about pairing. Best effort, never queued. */
+  private tell(c: Connection, address: ImAddress, en: string, zh: string) {
+    const caps = this.caps.get(c.adapterId);
+    if (!caps || !c.session || c.state !== "connected") return;
+    const [content] = prepare({ text: this.say(en, zh) }, caps, (a, b) => this.say(a, b));
+    this.bestEffort(c.session.deliver({ operationId: `notice:${token()}`, address, content }));
+  }
+
+  private changed() { for (const notify of this.watchers) notify(); }
 
   private say(en: string, zh: string): string { return this.home.settings.locale() === "zh" ? zh : en; }
 
@@ -206,9 +407,11 @@ export class Im extends Service {
     this.settings = ImSettings.parse(this.home.settings.get().im);
     for (const c of this.connections.values()) {
       const spec = this.settings.connections.find(s => s.id === c.id && s.enabled && s.adapterId === c.adapterId);
-      if (!spec) { this.connections.delete(c.id); void this.close(c); }
+      if (!spec || JSON.stringify(spec.credentials) !== c.credentials || this.missing(spec).length) { this.connections.delete(c.id); void this.close(c); }
     }
+    for (const id of this.pairings.keys()) if (!this.settings.connections.some(c => c.id === id)) this.pairings.delete(id);
     this.tick();
+    this.changed();
   }
 
   private current(c: Connection) { return !this.stopped && !c.controller.signal.aborted && this.connections.get(c.id) === c; }
@@ -224,10 +427,11 @@ export class Im extends Service {
   private tick() {
     if (this.stopped || !this.store) return;
     for (const spec of this.settings.connections.filter(c => c.enabled)) {
-      if (!this.adapters.has(spec.adapterId)) continue;
+      if (!this.adapters.has(spec.adapterId) || this.missing(spec).length) continue;
       let c = this.connections.get(spec.id);
       if (!c) {
-        c = { id: spec.id, adapterId: spec.adapterId, controller: new AbortController(), opening: false, flushing: false, state: "offline", retryAt: 0, attempts: 0 };
+        c = { id: spec.id, adapterId: spec.adapterId, controller: new AbortController(), opening: false, flushing: false, state: "offline", retryAt: 0, attempts: 0,
+          credentials: JSON.stringify(spec.credentials) };
         this.connections.set(c.id, c);
       }
       if (!c.session && !c.opening && c.retryAt <= Date.now()) void this.open(c);
@@ -259,9 +463,11 @@ export class Im extends Service {
     try {
       const opening = adapter.open(c.id, {
         signal: c.controller.signal,
+        credentials: JSON.parse(c.credentials) as Record<string, string>,
         receive: event => active() ? this.receive(c, event) : Promise.reject(new Error("IM connection is no longer active")),
         status: (state) => {
           if (!active()) return;
+          if (c.state !== state) this.changed();
           c.state = state;
           c.detail = state === "error" ? this.say("Connection failed; check adapter configuration", "连接失败，请检查适配器配置") : undefined;
           if (c.session && (state === "offline" || state === "error")) {
@@ -278,6 +484,7 @@ export class Im extends Service {
       c.state = "connected";
       c.detail = undefined;
       c.attempts = 0;
+      this.changed();
       if (this.caps.get(c.adapterId)?.nativeCommands && session.commands) this.bestEffort(session.commands(this.commands()));
     } catch {
       if (!active()) return;
@@ -285,13 +492,16 @@ export class Im extends Service {
       c.detail = this.say("Connection failed; check adapter configuration", "连接失败，请检查适配器配置");
       c.retryAt = Date.now() + Math.min(60_000, this.config.retryMs * 2 ** Math.min(c.attempts++, 6));
       controller.abort();
+      this.changed();
     } finally { c.opening = false; }
   }
 
   /** What the conversation is bound to. Who may use it and where it activates are checked live, so editing them keeps the thread. */
   private routeHash(route: ImRoute) {
     return hash([route.id, route.connectionId, route.tenantId, route.conversationId, route.projectId, route.boardId, route.engine ?? null,
-      this.settings.connections.find(c => c.id === route.connectionId)?.adapterId]);
+      this.settings.connections.find(c => c.id === route.connectionId)?.adapterId,
+      // Appended only when set, so routes saved before options keep their threads.
+      ...(route.options && Object.keys(route.options).length ? [route.options] : [])]);
   }
 
   private authorizedBinding(b: Binding): boolean {
@@ -304,12 +514,19 @@ export class Im extends Service {
     if (!this.current(c)) throw new Error("IM connection is no longer active");
     const event = InboundSchema.parse(raw);
     const id = hash([c.id, event.address.tenantId, event.eventId]);
+    const pair = event.kind === "message" && event.activation === "dm" && !event.actor.isBot ? /^\/pair\s+(\d{6})$/.exec(event.text.trim()) : null;
+    if (pair) { this.claim(c, event, pair[1]); return { receiptId: `pair:${id}` }; }
     const route = this.settings.routes.find(r => r.connectionId === c.id && r.tenantId === event.address.tenantId && r.conversationId === event.address.conversationId);
-    const allowed = route && route.allowedActors.includes(event.actor.id) && !event.actor.isBot
-      && (event.kind === "action" || (event.activation === "dm" ? route.allowDirectMessages : route.allowGroups));
-    if (!allowed) {
-      this.ignored.unshift({ at: Date.now(), connectionId: c.id, actorId: event.actor.id, conversationId: event.address.conversationId, reason: "Not authorized or activation disabled" });
-      this.ignored = this.ignored.slice(0, 20);
+    const reason: ImIgnoredView["reason"] | null = event.actor.isBot ? "bot" : !route ? "conversation" : !route.allowedActors.includes(event.actor.id) ? "actor"
+      : event.kind === "message" && !activates(route, event.activation) ? "activation" : null;
+    if (reason) {
+      // Ambient group chatter is not addressed to the bot; recording it would bury the messages that were.
+      if (event.kind === "message" && event.activation === "ambient" && reason !== "activation") return { receiptId: `ignored:${id}` };
+      const group = event.kind === "message" ? event.activation !== "dm" : true;
+      this.ignored = [{ id, at: Date.now(), connectionId: c.id, tenantId: event.address.tenantId, conversationId: event.address.conversationId,
+        actorId: event.actor.id, ...(event.actor.name ? { actorName: event.actor.name } : {}), group, reason },
+        ...this.ignored.filter(r => !(r.connectionId === c.id && r.tenantId === event.address.tenantId && r.conversationId === event.address.conversationId && r.actorId === event.actor.id))].slice(0, 20);
+      this.changed();
       return { receiptId: `ignored:${id}` };
     }
     const fingerprint = hash(event);
@@ -325,13 +542,28 @@ export class Im extends Service {
     if (event.kind === "action" && !b) throw new Error("Invalid or expired IM action");
     if (!b) {
       if (!this.home.projects.get(route!.projectId) || !this.home.db.has(route!.projectId)) throw new Error("IM target project is unavailable");
-      const th = this.home.agent.newThread(route!.projectId, route!.engine, route!.boardId, { surface: "assistant" });
+      const th = this.home.agent.newThread(route!.projectId, route!.engine, route!.boardId, { surface: "assistant", ...(route!.options ? { options: route!.options } : {}) });
       this.store.run("INSERT INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         bindingId, route!.id, this.routeHash(route!), c.id, JSON.stringify(event.address), route!.projectId, th.id, event.actor.id, Date.now());
       b = this.store.binding(bindingId)!;
     }
     this.store.run("INSERT INTO plugin_im_inbox (id, message_key, binding_id, event_json, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)", id, messageKey, b.id, JSON.stringify(event), fingerprint, Date.now());
     return { receiptId: id };
+  }
+
+  /** A `/pair` code in a direct chat. The desktop confirms who it was; a wrong code counts toward withdrawing it. */
+  private claim(c: Connection, event: ImInbound, code: string) {
+    const pairing = this.pairings.get(c.id);
+    const address = { tenantId: event.address.tenantId, conversationId: event.address.conversationId };
+    if (!pairing || pairing.expiresAt < Date.now() || pairing.claim || pairing.code !== code) {
+      if (pairing && !pairing.claim && ++pairing.failures >= PAIR_TRIES) this.pairings.delete(c.id);
+      this.tell(c, address, "That pairing code is wrong or has expired. Make a new one in Tomrade's IM settings.", "配对码错误或已过期，请在 Tomrade 的 IM 设置中重新生成。");
+      this.changed();
+      return;
+    }
+    pairing.claim = { ...address, actorId: event.actor.id, ...(event.actor.name ? { name: event.actor.name } : {}), at: Date.now() };
+    this.tell(c, address, "Code received. Confirm the pairing in Tomrade on your computer.", "已收到配对码，请在电脑上的 Tomrade 中确认配对。");
+    this.changed();
   }
 
   private async process(b: Binding) {
@@ -377,7 +609,7 @@ export class Im extends Service {
         if (text === "/new") {
           if (detail.pending) this.refuse("Answer or stop the current question before opening a new conversation", "请先回答或停止当前问题，再开始新会话");
           const route = this.settings.routes.find(r => r.id === b.route_id)!;
-          const th = this.home.agent.newThread(b.project_id, route.engine, route.boardId);
+          const th = this.home.agent.newThread(b.project_id, route.engine, route.boardId, route.options ? { options: route.options } : {});
           this.store.db.transaction(() => {
             this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
             this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ?", b.id);
@@ -530,9 +762,11 @@ export class Im extends Service {
     for (const b of this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b))) {
       const caps = this.capsOf(b);
       if (!caps) continue;
-      const streaming = this.streamMode(caps, this.connections.get(b.connection_id)?.session) !== "none";
+      const quiet = this.settings.routes.find(r => r.id === b.route_id)?.output === "final";
+      const streaming = !quiet && this.streamMode(caps, this.connections.get(b.connection_id)?.session) !== "none";
       if (event.type === "progress" || event.type === "delta") {
         if (Date.now() - (this.typingAt.get(b.id) ?? 0) >= TYPING_MS) { this.typingAt.set(b.id, Date.now()); this.indicate(b, "typing"); }
+        if (quiet) continue;
         if (event.type === "delta" && streaming) { this.stream(b, event.runId, event.text); continue; }
         const last = this.progressAt.get(b.id) ?? 0;
         // Non-editing providers only receive stable output, so token streams don't spam chats.
@@ -550,7 +784,7 @@ export class Im extends Service {
         this.typingAt.delete(b.id);
         this.indicate(b, "idle");
         // Without edits a routine "finished" line would follow every reply; only report what the reply can't show.
-        if (caps.edit || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.finished(event.run.status) });
+        if ((caps.edit && !quiet) || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.finished(event.run.status) });
         const trigger = this.store.get<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? AND run_id = ? ORDER BY seq LIMIT 1", b.id, event.run.id);
         const e = trigger && JSON.parse(trigger.event_json) as ImInbound;
         if (e?.kind === "message" && (event.run.status === "error" || event.run.status === "done")) this.react(b, e.messageId, event.run.status === "error" ? "failed" : "done");
@@ -689,6 +923,7 @@ export class Im extends Service {
           disposition === "retryable" ? "queued" : disposition === "permanent" ? "failed" : "uncertain",
           "Delivery failed; check adapter diagnostics", superseded ? 0 : Date.now() + (Number.isFinite(retryAfter) ? Math.max(0, retryAfter!) : Math.min(60_000, this.config.retryMs * 2 ** Math.min(row.attempts, 6))),
           superseded ? null : JSON.stringify(parts), superseded ? 0 : row.part, row.id);
+        if (disposition !== "retryable") this.changed();
       }
     } finally { c.flushing = false; }
   }
@@ -702,6 +937,13 @@ export class Im extends Service {
     }
     throw new Error("File is not part of this connection's current delivery");
   }
+}
+
+/** Whether a message in this conversation is for the assistant, by how the route lets it be woken. */
+function activates(route: ImRoute, activation: "dm" | "mention" | "reply" | "ambient"): boolean {
+  if (activation === "dm") return route.allowDirectMessages;
+  if (!route.allowGroups) return false;
+  return activation === "mention" || (activation === "reply" && route.groupActivation !== "mention") || (activation === "ambient" && route.groupActivation === "all");
 }
 
 /** Group replies attach to the message that asked; a direct chat needs no anchor. */

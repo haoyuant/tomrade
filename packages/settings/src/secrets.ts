@@ -1,6 +1,6 @@
 /**
  * Which settings values are secrets: strings under a secret-sounding key, and
- * every value in an `env` or `headers` map. One rule decides both what an
+ * every value in an `env`, `headers` or `credentials` map. One rule decides both what an
  * agent never reads and what settings.json keeps encrypted, so the two can't
  * drift apart — and it needs no schema, so a section whose plugin is switched
  * off is still covered.
@@ -14,7 +14,7 @@ const join = (path: string, key: string | number) => (typeof key === "number" ? 
 export function mapSecrets(value: unknown, fn: (secret: string, path: string) => unknown, key = "", path = ""): unknown {
   if (Array.isArray(value)) return value.map((v, i) => mapSecrets(v, fn, key, join(path, i)));
   if (isRecord(value)) {
-    const whole = key === "env" || key === "headers";
+    const whole = key === "env" || key === "headers" || key === "credentials";
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [k, whole && typeof v === "string" ? fn(v, join(path, k)) : mapSecrets(v, fn, k, join(path, k))])
     );

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Localized } from "./contract.js";
 
 /** Provider-neutral transport contract. Adapters never receive Agent or project access. */
 export interface ImAddress {
@@ -23,7 +24,8 @@ export type ImInbound = {
   address: ImAddress;
   actor: { id: string; name?: string; isBot: boolean };
 } & (
-  | { kind: "message"; messageId: string; text: string; activation: "dm" | "mention" | "reply"; attachments?: ImAttachmentRef[]; permalink?: string }
+  /** `ambient` (SDK 0.2.5): a group message that neither mentions nor replies to the bot, sent only by adapters that receive every group message. */
+  | { kind: "message"; messageId: string; text: string; activation: "dm" | "mention" | "reply" | "ambient"; attachments?: ImAttachmentRef[]; permalink?: string }
   /** An adapter acknowledges the platform within its callback deadline before awaiting `receive`; the outcome updates the card later. */
   | { kind: "action"; token: string; value?: string | string[] }
 );
@@ -98,7 +100,32 @@ export interface ImAdapterSession {
   };
   /** SDK 0.2.5. Registers the commands natively, when `nativeCommands`. Called after every connect. */
   commands?(commands: ImCommand[]): Promise<void>;
+  /** SDK 0.2.5. The bot the credentials signed in as, checked against the platform; shown so the person sees setup worked. */
+  identity?: { id: string; name?: string };
   close(): void | Promise<void>;
+}
+
+/** SDK 0.2.5. One value a person copies from the platform's developer console. */
+export interface ImCredentialField {
+  key: string;
+  label: Localized;
+  /** Drawn as a password field. Every value is sealed by the OS keychain either way. */
+  secret?: boolean;
+  optional?: boolean;
+  placeholder?: string;
+  help?: Localized;
+}
+
+/** SDK 0.2.5. What connecting one bot takes, for the settings wizard. */
+export interface ImAdapterSetup {
+  fields: ImCredentialField[];
+  /** What to do in the platform's console, in order; Markdown. */
+  steps: Localized[];
+  /** Scopes or permissions the app needs. */
+  permissions?: string[];
+  /** An app manifest to paste, e.g. Slack's. */
+  manifest?: { format: "json" | "yaml"; text: string };
+  docsUrl?: string;
 }
 
 /** What the platform can do. Fields marked 0.2.5 are optional; leaving them out declares the 0.2.2 behaviour. */
@@ -185,9 +212,13 @@ export interface ImAdapter {
   id: string;
   title: string;
   capabilities: ImCapabilities;
-  /** Credentials stay in the adapter's machine settings, never in events or routes. */
+  /** SDK 0.2.5. Without it, connections take no credentials in settings and the adapter keeps its own. */
+  setup?: ImAdapterSetup;
+  /** Credentials never go into events, routes, Agent context or logs. */
   open(connectionId: string, io: {
     signal: AbortSignal;
+    /** SDK 0.2.5. The connection's values for `setup.fields`, decrypted. */
+    credentials: Record<string, string>;
     /** Resolves after local persistence, not after the Agent finishes. */
     receive(event: ImInbound): Promise<{ receiptId: string }>;
     status(state: ImConnectionState, detail?: string): void;

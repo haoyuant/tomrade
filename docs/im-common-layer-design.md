@@ -260,9 +260,9 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 
 尚未实现（需另开工单或后续切片）：
 
-- Slack、飞书真实适配器与真实账号验证；连接设置向导（目前设置用通用 JSON 编辑器）。
+- Slack、飞书真实适配器与真实账号验证（连接向导见 TOM-121 一节）。
 - 在 IM 中完成交付验收（Accept/Request changes）；输出链接、Files 版本导出和任意文档导入。目前只支持 Agent media 支持的附件。
-- uncertain/failed 投递的桌面处理界面（目前仅 IPC）；跨平台不承诺 exactly-once。
+- 跨平台不承诺 exactly-once（uncertain/failed 投递的桌面处理见 TOM-121 一节）。
 - TOM-92 与平台子工单的范围仍是旧的“只建工单”，需按新目标重新确认。
 
 ## 适配器契约 v2（TOM-117，SDK 0.2.5）
@@ -280,3 +280,14 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 
 流式回答的完整渲染（工具摘要、卡片、变更链接）见 TOM-120；收件回执三态、插话见 TOM-118。
 
+## IM 设置面板（TOM-121）
+
+设置里的 IM 面板替代通用 JSON 编辑器，状态栏的 IM 项点击直接打开它（`opens: "settings:im"`）。
+
+- **连接向导**：适配器可声明 `setup`（SDK 0.2.5）：凭据字段（`secret` 画成密码框）、平台后台步骤、权限清单、可复制的 manifest、文档链接。面板按它生成表单；必填凭据没填完连接保持“未配置”、不会打开。保存后连接打开，适配器在 session 上给出 `identity`，面板显示“已登录为 …”作为验证结果；凭据变化会重开连接。
+- **凭据加密**：凭据存在 `im.connections[].credentials`，`credentials` 与 `env`、`headers` 一样整张表按 TOM-61 的规则用系统钥匙串加密写入 settings.json，`open` 时以 `io.credentials` 解密后交给适配器；不进路由、事件、Agent 上下文和日志。钥匙串不可用时面板明示“明文保存”，改动凭据必须勾选确认才能保存。
+- **配对**：桌面为某个连接生成 6 位一次性码（10 分钟有效，新码替换旧码，连错 5 次作废）。用户私聊机器人发 `/pair 123456`，公共层先回复“请在桌面确认”，桌面确认后才写入：身份进 `im.identities`，该私聊会话建 route（选定项目、允许此人）。可在面板撤销：身份移除，并从该连接所有 route 的允许名单去掉，空 route 随之删除。
+- **route 编辑**：项目、助手 engine 及其选项（engine 的 picks，如模型/effort，写入 `options`，新线程带上）、私聊/群聊开关、群聊激活方式（`mention` 仅 @；`reply` @ 或回复，默认；`all` 所有消息，适配器以 `activation: "ambient"` 送来）、输出（`progress` 进度和逐步生成；`final` 只发回答和问题）。`options` 仅在设置时进入绑定哈希，旧 route 不会因此换新会话。
+- **被忽略的消息**：最近 20 条，记连接、会话、发送人、是否群聊和原因（不在名单 / 会话未接入 / 激活方式未开 / 机器人），不含正文；群里与机器人无关的 ambient 消息不记录。一键“允许此人”把发送人加入该会话 route；“允许此群”开启群聊，并放行已配对的人和发送人（群白名单只开入口，不放行全体成员）。会话还没有 route 时用面板选定的项目新建。
+- **投递异常**：列出 uncertain / failed 投递（连接、会话、正文前 120 字、错误），可重试（`im.retry`）或丢弃（`im.discard`）；面板提示 uncertain 可能已送达、重试可能重复。
+- 面板数据走 `im.connections`、`im.adapters`、`im.ignored`、`im.deliveries`、`im.pairings` 等 IPC，主进程变化时广播 `im.changed` 刷新。

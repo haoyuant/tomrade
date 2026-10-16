@@ -59,6 +59,7 @@
     "@tomradex/doctor": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/files": "workspace:*",
+    "@tomradex/im": "workspace:*",
     "@tomradex/inbox": "workspace:*",
     "@tomradex/inbox-tomrade": "workspace:*",
     "@tomradex/ipc": "workspace:*",

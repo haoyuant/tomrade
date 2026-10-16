@@ -70,7 +70,7 @@ export interface Inbox {
 export interface Outbox {
   seq: number; id: string; binding_id: string; content_json: string; state: string;
   thread_id: string; revision: number; prepared_revision: number; parts_json: string | null; part: number; message_ids_json: string; sending_json: string | null;
-  message_id: string | null; attempts: number; retry_at: number; error: string | null;
+  message_id: string | null; attempts: number; retry_at: number; error: string | null; created_at: number;
   anchor: string | null; visible_to: string | null;
   /** 1 while the row is a growing snapshot of a reply; 0 once final. */
   stream: number;

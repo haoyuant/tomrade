@@ -141,7 +141,9 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
       return need("im", {
         register: (spec) => {
           const caps = (spec.capabilities ?? {}) as unknown as Record<string, unknown>;
-          const declared = IM_CAPABILITIES_V2.filter((k) => caps[k] !== undefined);
+          const declared: string[] = IM_CAPABILITIES_V2.filter((k) => caps[k] !== undefined);
+          // A host before 0.2.5 never asks for the credentials `setup` describes.
+          if (spec.setup) declared.push("setup");
           const parsed = ImCapabilitiesSchema.safeParse(spec.capabilities);
           rec.imContracts.push({ id: spec.id, contract: declared.length ? "0.2.5" : "0.2.2", capabilities: [...declared],
             ...(parsed.success ? {} : { invalid: parsed.error.issues.map((i) => `${i.path.join(".") || "capabilities"}: ${i.message}`).join("; ") }) });

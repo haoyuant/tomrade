@@ -18,6 +18,7 @@ import { EngineTryRow } from "./EngineTryRow";
 import { LocalCliSection } from "./LocalCliSection";
 import { McpLinkSection } from "./McpLinkSection";
 import { McpServersPane } from "./McpServersPane";
+import { ImPane } from "./ImPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
@@ -88,7 +89,7 @@ function ThemePreview({ customThemes }: { customThemes: CustomTheme[] }) {
 }
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
-const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "language", "models", "agent", "mcpServers", "updates", "onboarding"]);
+const HAND_DRAWN = new Set(["keybindings", "theme", "themeAutomation", "customThemes", "language", "models", "agent", "mcpServers", "im", "updates", "onboarding"]);
 
 /** Whether a section stays on this machine or follows the Hub folder — said on every card, so nobody has to guess. */
 function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
@@ -525,6 +526,9 @@ export function SettingsDialog({
     // Drawn only while the plugin that owns the section is loaded.
     ...(sections.data?.some((s) => s.id === "mcpServers")
       ? [{ id: "mcpServers", label: t("mcpServers.label"), icon: "i-plug" as IconId, group: "app" as const, render: () => <McpServersPane /> }]
+      : []),
+    ...(sections.data?.some((s) => s.id === "im")
+      ? [{ id: "im", label: t("imSettings.label"), icon: "i-send" as IconId, group: "app" as const, render: () => <ImPane scopeTag={<ScopeTag scope="machine" />} /> }]
       : []),
     // Only in the desktop app, while the background row runs.
     ...(background.data

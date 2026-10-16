@@ -2331,6 +2331,9 @@ importers:
       '@tomradex/files':
         specifier: workspace:*
         version: link:../files
+      '@tomradex/im':
+        specifier: workspace:*
+        version: link:../im
       '@tomradex/inbox':
         specifier: workspace:*
         version: link:../inbox

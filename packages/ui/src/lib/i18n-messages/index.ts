@@ -33,6 +33,7 @@ import { openProjectDialog } from "./openProjectDialog";
 import { playbooks } from "./playbooks";
 import { plugins } from "./plugins";
 import { mcpServers } from "./mcpServers";
+import { imSettings } from "./imSettings";
 import { petProfiles } from "./petProfiles";
 import { pluginsPanel } from "./pluginsPanel";
 import { projectSettingsDialog } from "./projectSettingsDialog";
@@ -74,6 +75,7 @@ export const en = {
   pluginsPanel: pluginsPanel.en,
   plugins: plugins.en,
   mcpServers: mcpServers.en,
+  imSettings: imSettings.en,
   petProfiles: petProfiles.en,
   deleteIssueDialog: deleteIssueDialog.en,
   syncIssues: syncIssues.en,
@@ -142,6 +144,7 @@ export const zh: typeof en = {
   pluginsPanel: pluginsPanel.zh,
   plugins: plugins.zh,
   mcpServers: mcpServers.zh,
+  imSettings: imSettings.zh,
   petProfiles: petProfiles.zh,
   deleteIssueDialog: deleteIssueDialog.zh,
   syncIssues: syncIssues.zh,
