@@ -110,6 +110,8 @@ export class Im extends Service {
   private readonly processing = new Set<string>();
   private readonly progressAt = new Map<string, number>();
   private readonly typingAt = new Map<string, number>();
+  /** What each running thread last said it was doing, for `/status`. */
+  private readonly activity = new Map<string, string>();
   /** The reply being streamed per binding and run; the text is what the Agent has written so far. */
   private readonly streams = new Map<string, { id: string; text: string; at: number }>();
   /** Recent sends per binding, for adapters that declare a rate limit. */
@@ -358,8 +360,25 @@ export class Im extends Service {
       { name: "stop", description: this.say("Stop the current run and clear queued messages", "停止当前执行并清空等待消息") },
       { name: "status", description: this.say("Show what the assistant is doing", "查看助手当前状态") },
       { name: "new", description: this.say("Start a new conversation", "开始新会话") },
-      { name: "answer", description: this.say("Answer the open question", "回答当前问题"), args: this.say("token answer", "令牌 回答") }
+      { name: "answer", description: this.say("Answer the open question", "回答当前问题"), args: this.say("token answer", "令牌 回答") },
+      { name: "steer", description: this.say("Send into the running turn; the assistant reads it after its current step", "插话：送进正在运行的这一轮，助手做完当前这一步就会读到"), args: this.say("message", "内容") },
+      { name: "queue", description: this.say("List messages waiting for the current turn", "列出等待当前这一轮结束的消息") },
+      { name: "unqueue", description: this.say("Withdraw a waiting message", "撤回一条等待中的消息"), args: "N" },
+      { name: "help", description: this.say("Show these commands", "显示这些指令") }
     ];
+  }
+
+  /** `/help`: every command the conversation takes, from the same list registered natively, and where it goes. */
+  private help(b: Binding): string {
+    const { thread } = this.home.agent.thread(b.project_id, b.thread_id);
+    const engine = this.home.agent.engineOf(thread.engine);
+    const project = this.home.projects.get(b.project_id)?.name ?? b.project_id;
+    return [
+      this.say(`Project: ${project} · Assistant: ${engine?.title ?? thread.engine}`, `项目：${project} · 助手：${engine?.title ?? thread.engine}`),
+      ...this.commands().map(c => `/${c.name}${c.args ? ` ${c.args}` : ""} — ${c.description}`),
+      engine?.steers ? this.say("Replying to the progress message also steers.", "回复进度消息也算插话。")
+        : this.say("This assistant can't take messages mid-turn: /steer queues instead.", "当前助手不支持运行中插话：/steer 会改为排队。")
+    ].join("\n");
   }
 
   private capsOf(b: Binding): ResolvedImCapabilities | undefined {
@@ -522,6 +541,8 @@ export class Im extends Service {
     if (reason) {
       // Ambient group chatter is not addressed to the bot; recording it would bury the messages that were.
       if (event.kind === "message" && event.activation === "ambient" && reason !== "activation") return { receiptId: `ignored:${id}` };
+      // Withdrawing or editing a message is not a message to the bot.
+      if (event.kind === "retract" || event.kind === "edit") return { receiptId: `ignored:${id}` };
       const group = event.kind === "message" ? event.activation !== "dm" : true;
       this.ignored = [{ id, at: Date.now(), connectionId: c.id, tenantId: event.address.tenantId, conversationId: event.address.conversationId,
         actorId: event.actor.id, ...(event.actor.name ? { actorName: event.actor.name } : {}), group, reason },
@@ -529,6 +550,7 @@ export class Im extends Service {
       this.changed();
       return { receiptId: `ignored:${id}` };
     }
+    if (event.kind === "retract" || event.kind === "edit") { this.amend(c, event); return { receiptId: `${event.kind}:${id}` }; }
     const fingerprint = hash(event);
     const messageKey = event.kind === "message" ? hash([c.id, event.address.tenantId, event.address.conversationId, event.messageId]) : null;
     const existing = this.store.get<Inbox>("SELECT * FROM plugin_im_inbox WHERE id = ? OR message_key = ?", id, messageKey);
@@ -566,6 +588,48 @@ export class Im extends Service {
     this.changed();
   }
 
+  /** A message the person withdrew or edited on the platform. Withdrawing a waiting one keeps it from running; an edit never reruns. */
+  private amend(c: Connection, event: ImInbound & { kind: "retract" | "edit" }) {
+    const row = this.store.get<Inbox>("SELECT * FROM plugin_im_inbox WHERE message_key = ?", hash([c.id, event.address.tenantId, event.address.conversationId, event.messageId]));
+    const b = row && this.store.binding(row.binding_id);
+    if (!row || !b || !this.authorizedBinding(b) || (JSON.parse(row.event_json) as ImInbound).actor.id !== event.actor.id) return;
+    const original = JSON.parse(row.event_json) as ImInbound;
+    const anchor = anchorOf(original);
+    if (event.kind === "retract") {
+      if (this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE id = ? AND state = 'queued'", row.id).changes) {
+        this.receipt(b, row, this.say("Withdrawn; it won't run.", "已撤回，不会执行。"), anchor, true);
+      }
+      return;
+    }
+    if (row.state !== "queued" && row.state !== "accepted") return;
+    this.enqueue(b, `edited:${row.id}:${event.eventId}`, { text: row.state === "queued"
+      ? this.say("Edits aren't picked up: the original is still waiting. Withdraw it with /unqueue and send the new version.", "编辑不会生效：原消息仍在等待。用 /unqueue 撤回后重新发送。")
+      : this.say("Edits don't rerun a message. Send it again if the change should count.", "编辑不会重新执行消息。需要按新内容执行请重新发送。") }, { anchor });
+  }
+
+  /** A waiting message's receipt: kept current in place where the platform edits; elsewhere the first one stands and a withdrawal is said once. */
+  private receipt(b: Binding, row: Inbox, text: string, anchor: string | null, final = false) {
+    const id = `queued:${row.id}`;
+    if (this.capsOf(b)?.edit) {
+      this.enqueue(b, id, { text }, { anchor });
+      this.replace(b, id, { text });
+    } else this.enqueue(b, final ? `withdrawn:${row.id}` : id, { text }, { anchor });
+  }
+
+  /** Ordinary messages waiting behind a running turn or an open question, oldest first. */
+  private waiting(rows: Inbox[]): Inbox[] {
+    return rows.filter(row => {
+      const e = JSON.parse(row.event_json) as ImInbound;
+      return e.kind === "message" && !isControl(row, e);
+    });
+  }
+
+  /** The messages a reply can quote to steer: what the running turn is showing. */
+  private progressMessages(b: Binding, runId: string): string[] {
+    return this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND (id = ? OR id LIKE ?)", b.id, `progress:${b.id}:${runId}`, `stream:${b.id}:${runId}:%`)
+      .flatMap(o => JSON.parse(o.message_ids_json) as string[]);
+  }
+
   private async process(b: Binding) {
     this.processing.add(b.thread_id);
     let handling: Inbox | undefined;
@@ -573,11 +637,24 @@ export class Im extends Service {
       const rows = this.store.all<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? AND state = 'queued' ORDER BY seq", b.id);
       const detail = this.home.agent.thread(b.project_id, b.thread_id);
       const busy = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
+      const running = this.home.agent.activeRuns().find(r => r.thread.id === b.thread_id);
+      const progress = running ? this.progressMessages(b, running.run.id) : [];
+      // Replying to what the running turn shows is a steer, like /steer.
+      const steering = (e: ImInbound) => !!running && e.kind === "message" && !!e.replyTo && progress.includes(e.replyTo);
       // A control or explicit answer can unblock a run even with ordinary text waiting before it.
       const row = rows.find(row => {
         const e = JSON.parse(row.event_json) as ImInbound;
-        return e.kind === "action" || (e.kind === "message" && (/^\/(stop|status)$/.test(e.text.trim()) || /^\/answer\s/.test(e.text.trim())));
+        return e.kind === "action" || (e.kind === "message" && (isControl(row, e) || (!row.input_json && steering(e))));
       }) ?? (!busy && !detail.pending ? rows[0] : undefined);
+      if (busy || detail.pending) {
+        const queue = this.waiting(rows).filter(r => r !== row);
+        for (const [i, q] of queue.entries()) {
+          this.receipt(b, q, detail.pending && !busy
+            ? this.say(`Waiting (${i + 1} in line) for the open question to be answered. /queue lists, /unqueue ${i + 1} withdraws.`, `排队中（第 ${i + 1} 位），等待先回答当前问题。/queue 查看，/unqueue ${i + 1} 撤回。`)
+            : this.say(`Queued (${i + 1} in line); it runs after the current turn. /queue lists, /unqueue ${i + 1} withdraws.`, `已排队（第 ${i + 1} 位），本轮结束后执行。/queue 查看，/unqueue ${i + 1} 撤回。`),
+            anchorOf(JSON.parse(q.event_json) as ImInbound));
+        }
+      }
       if (!row) return;
       handling = row;
       const event = JSON.parse(row.event_json) as ImInbound;
@@ -588,15 +665,57 @@ export class Im extends Service {
       if (replay) {
         this.store.run("UPDATE plugin_im_inbox SET state = 'accepted', run_id = ? WHERE id = ?", replay.run_id, row.id); return;
       }
+      // Withdrawals and edits are handled as they arrive and never queued; an old row is only settled.
+      if (event.kind === "retract" || event.kind === "edit") { this.accept(row); return; }
       const reply = { anchor: anchorOf(event) };
       let input: UserInput;
       if (event.kind === "action") {
         input = this.answer(b, event.token, event.actor.id, event.value);
       } else {
         const text = event.text.trim();
+        const queue = this.waiting(rows).filter(r => r !== row);
         if (text === "/status") {
-          this.enqueue(b, `status:${row.id}`, { text: detail.pending ? this.say(`Waiting for answer: ${detail.pending.question.text}`, `等待回答：${detail.pending.question.text}`) : busy ? this.say("Working", "正在执行") : this.say("No task is running", "当前没有执行中的任务") }, reply);
+          const doing = this.activity.get(b.thread_id);
+          const lines = [detail.pending ? this.say(`Waiting for answer: ${detail.pending.question.text}`, `等待回答：${detail.pending.question.text}`)
+            : busy ? (doing ? this.say(`Working: ${doing}`, `正在执行：${doing}`) : this.say("Working", "正在执行")) : this.say("No task is running", "当前没有执行中的任务")];
+          if (queue.length) lines.push(this.say(`${queue.length} waiting`, `${queue.length} 条等待中`));
+          this.enqueue(b, `status:${row.id}`, { text: lines.join("\n") }, reply);
           this.accept(row); return;
+        }
+        if (text === "/help") {
+          this.enqueue(b, `help:${row.id}`, { text: this.help(b) }, reply);
+          this.accept(row); return;
+        }
+        if (text === "/queue") {
+          this.enqueue(b, `queue:${row.id}`, { text: queue.length
+            ? queue.map((q, i) => `${i + 1}. ${preview(q)}`).join("\n")
+            : this.say("Nothing is waiting", "没有等待中的消息") }, reply);
+          this.accept(row); return;
+        }
+        const unqueue = /^\/unqueue\s+(\d+)$/.exec(text);
+        if (unqueue) {
+          const target = queue[Number(unqueue[1]) - 1];
+          if (!target) this.refuse(`No waiting message ${unqueue[1]}; /queue lists them`, `没有第 ${unqueue[1]} 条等待中的消息；/queue 可查看`);
+          if ((JSON.parse(target.event_json) as ImInbound).actor.id !== event.actor.id) this.refuse("Only its sender can withdraw that message", "只有发送人可以撤回这条消息");
+          this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE id = ? AND state = 'queued'", target.id);
+          if (this.capsOf(b)?.edit) this.receipt(b, target, this.say("Withdrawn; it won't run.", "已撤回，不会执行。"), anchorOf(JSON.parse(target.event_json) as ImInbound), true);
+          this.enqueue(b, `unqueue:${row.id}`, { text: this.say(`Withdrawn: ${preview(target)}`, `已撤回：${preview(target)}`) }, reply);
+          this.accept(row); return;
+        }
+        const steer = /^\/steer\s+([\s\S]+)$/.exec(text)?.[1].trim() ?? (!row.input_json && steering(event) ? text : null);
+        if (steer !== null && running) {
+          const engine = this.home.agent.engineOf(running.thread.engine);
+          if (engine?.steers && await this.home.agent.steer(b.project_id, b.thread_id, `im:${row.id}`, steer)) {
+            this.react(b, event.messageId, "received");
+            if (!this.capsOf(b)?.reactions) this.enqueue(b, `steered:${row.id}`, { text: this.say("Sent into the current turn", "已送进当前这一轮") }, reply);
+            this.accept(row); return;
+          }
+          // Not taken: it waits for the turn to end like any message, and says so.
+          this.store.run("UPDATE plugin_im_inbox SET input_json = ? WHERE id = ?", JSON.stringify({ kind: "text", text: steer }), row.id);
+          this.enqueue(b, `steer-queued:${row.id}`, { text: engine?.steers
+            ? this.say("The turn couldn't take it right now; it's queued and runs after this turn.", "当前这一轮暂时无法接收，已改为排队，本轮结束后执行。")
+            : this.say("This assistant can't take messages mid-turn; it's queued and runs after this turn.", "当前助手不支持运行中插话，已改为排队，本轮结束后执行。") }, reply);
+          return;
         }
         if (text === "/stop") {
           const run = this.home.agent.activeRuns().find(r => r.thread.id === b.thread_id);
@@ -624,6 +743,7 @@ export class Im extends Service {
         else {
           if (!text && !event.attachments?.length) this.refuse("Empty message", "消息为空");
           if (row.input_json) input = JSON.parse(row.input_json) as UserInput;
+          else if (steer !== null) input = { kind: "text", text: steer };
           else {
           const attachments = [];
           for (const ref of event.attachments ?? []) {
@@ -652,6 +772,9 @@ export class Im extends Service {
       } });
       if (input.kind === "text") this.store.run("UPDATE plugin_im_bindings SET actor_id = ?, anchor = ? WHERE id = ?", event.actor.id, reply.anchor, b.id);
       if (event.kind === "message") this.react(b, event.messageId, "received");
+      if (input.kind === "text" && this.capsOf(b)?.edit && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `queued:${row.id}`)) {
+        this.replace(b, `queued:${row.id}`, { text: this.say("Running now", "正在执行") });
+      }
       if (input.kind === "answer") this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ? AND question_id = ?", b.id, input.questionId);
       this.store.run("UPDATE plugin_im_inbox SET state = 'accepted', run_id = ? WHERE id = ?", runId, row.id);
     } catch (e) {
@@ -764,6 +887,7 @@ export class Im extends Service {
       if (!caps) continue;
       const quiet = this.settings.routes.find(r => r.id === b.route_id)?.output === "final";
       const streaming = !quiet && this.streamMode(caps, this.connections.get(b.connection_id)?.session) !== "none";
+      if (event.type === "progress" && event.activity) this.activity.set(threadId, event.activity);
       if (event.type === "progress" || event.type === "delta") {
         if (Date.now() - (this.typingAt.get(b.id) ?? 0) >= TYPING_MS) { this.typingAt.set(b.id, Date.now()); this.indicate(b, "typing"); }
         if (quiet) continue;
@@ -780,6 +904,7 @@ export class Im extends Service {
         this.streams.delete(`${b.id}:${event.message.runId}`);
         if (open) this.store.run("UPDATE plugin_im_outbox SET stream_of = ? WHERE id = ? AND stream = 1", event.message.id, open.id);
       } else if (event.type === "done") {
+        this.activity.delete(threadId);
         this.streams.delete(`${b.id}:${event.run.id}`);
         this.typingAt.delete(b.id);
         this.indicate(b, "idle");
@@ -938,6 +1063,18 @@ export class Im extends Service {
     throw new Error("File is not part of this connection's current delivery");
   }
 }
+
+/** Commands that act at once, ahead of ordinary messages waiting for the turn. A demoted /steer carries its text in `input_json`. */
+function isControl(row: Inbox, event: ImInbound & { kind: "message" }): boolean {
+  const text = event.text.trim();
+  return !row.input_json && (/^\/(stop|status|queue|help)$/.test(text) || /^\/(answer|steer|unqueue)\s/.test(text));
+}
+
+const preview = (row: Inbox) => {
+  const e = JSON.parse(row.event_json) as ImInbound;
+  const text = e.kind === "message" ? e.text.replace(/\s+/g, " ").trim() : "";
+  return [...text].length > 60 ? `${[...text].slice(0, 60).join("")}…` : text;
+};
 
 /** Whether a message in this conversation is for the assistant, by how the route lets it be woken. */
 function activates(route: ImRoute, activation: "dm" | "mention" | "reply" | "ambient"): boolean {

@@ -25,7 +25,12 @@ export type ImInbound = {
   actor: { id: string; name?: string; isBot: boolean };
 } & (
   /** `ambient` (SDK 0.2.5): a group message that neither mentions nor replies to the bot, sent only by adapters that receive every group message. */
-  | { kind: "message"; messageId: string; text: string; activation: "dm" | "mention" | "reply" | "ambient"; attachments?: ImAttachmentRef[]; permalink?: string }
+  | { kind: "message"; messageId: string; text: string; activation: "dm" | "mention" | "reply" | "ambient"; attachments?: ImAttachmentRef[]; permalink?: string;
+    /** SDK 0.2.5. The message this one quotes or replies to; replying to the progress message steers the running turn. */
+    replyTo?: string }
+  /** SDK 0.2.5. The person withdrew or edited a message they sent; a queued one that was withdrawn never runs, an edit never reruns. */
+  | { kind: "retract"; messageId: string }
+  | { kind: "edit"; messageId: string }
   /** An adapter acknowledges the platform within its callback deadline before awaiting `receive`; the outcome updates the card later. */
   | { kind: "action"; token: string; value?: string | string[] }
 );
