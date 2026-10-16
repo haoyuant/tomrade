@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { COMPLETION_IDLE_MS, FakeChatModel, collect, completeJson, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
+import { COMPLETION_IDLE_MS, UNSTREAMED_ANSWER_MS, FakeChatModel, collect, completeJson, userMessage, withPromptTools, type ChatModel } from "@tomradex/llm";
 
 describe("collect", () => {
   it("gathers text, tool calls and the stop reason", async () => {
@@ -97,6 +97,46 @@ describe("completeJson", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // A signed-in CLI: nothing at all until the whole answer is ready.
+  const unstreamed = (answerAfterMs: number, seen: AbortSignal[] = []): ChatModel => ({
+    capabilities: { tools: false, streaming: false, json: false },
+    chat: async function* (_request, signal) {
+      if (signal) seen.push(signal);
+      await new Promise((resolve) => answerAfterMs < Infinity && setTimeout(resolve, answerAfterMs));
+      yield { type: "text", delta: '{"priority": 3}' } as const;
+      yield { type: "stop", reason: "end" } as const;
+    }
+  });
+
+  it("waits past the silence limit for a model that does not stream", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const pending = completeJson(unstreamed(120_000), schema, { system: "s", user: "u" }, "Codex");
+      await vi.advanceTimersByTimeAsync(120_000);
+      await expect(pending).resolves.toEqual({ priority: 3 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still ends a model that does not stream and never answers, withdrawing its request", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const seen: AbortSignal[] = [];
+      const pending = completeJson(unstreamed(Infinity, seen), schema, { system: "s", user: "u" }, "Codex");
+      const settled = expect(pending).rejects.toThrow("Codex did not answer within 10 minutes");
+      await vi.advanceTimersByTimeAsync(UNSTREAMED_ANSWER_MS);
+      await settled;
+      expect(seen[0]?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the caller's deadline for a model that does not stream", async () => {
+    await expect(completeJson(unstreamed(10_000), schema, { system: "s", user: "u", timeoutMs: 50 }, "Codex")).rejects.toThrow("Codex did not answer within 0.05s");
   });
 });
 

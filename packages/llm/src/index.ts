@@ -27,7 +27,7 @@ export interface CompletionRequest {
   maxTokens?: number;
   /** Ends the request; a caller that cannot wait long passes AbortSignal.timeout(…). */
   signal?: AbortSignal;
-  /** The whole call, repair round included, ends after this long. Absent, only silence ends it (COMPLETION_IDLE_MS). */
+  /** The whole call, repair round included, ends after this long. Absent, only silence ends it (COMPLETION_IDLE_MS, or UNSTREAMED_ANSWER_MS for a model that does not stream). */
   timeoutMs?: number;
   /** False skips the repair round: a caller with a fallback takes it rather than a second request. */
   repair?: boolean;
@@ -35,6 +35,12 @@ export interface CompletionRequest {
 
 /** A model that sends nothing for this long has stopped answering; a long document still streaming is never cut. */
 export const COMPLETION_IDLE_MS = 90_000;
+
+/**
+ * A model that does not stream (a signed-in CLI) sends nothing until its whole
+ * answer is ready, so silence means nothing until this long has passed.
+ */
+export const UNSTREAMED_ANSWER_MS = 10 * 60_000;
 
 /** The structured seam: one JSON document matching a schema. Kept from v1; compound tools live on it. */
 export interface LLMProvider {
@@ -222,7 +228,7 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
   for (let attempt = 0; attempt < (request.repair === false ? 1 : 2); attempt += 1) {
     const out = await collectWithin(
       (signal) => model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens }, signal),
-      { label, signal: request.signal, deadline, timeoutMs: request.timeoutMs }
+      { label, signal: request.signal, deadline, timeoutMs: request.timeoutMs, streaming: model.capabilities.streaming }
     );
     // A model that reasons before it answers can spend the whole limit thinking.
     if (!out.text && out.stop === "max_tokens") throw new LlmError(`${label} used its whole output limit (${maxTokens} tokens) before answering — a model that reasons first can spend it all thinking`);
@@ -237,21 +243,23 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
 
 /**
  * Collect one reply, ending it when the caller withdraws, the deadline passes, or the model goes
- * silent. Settles on abort even when the model ignores its signal, so no caller waits on a hang.
+ * silent — for one that does not stream, stays silent past UNSTREAMED_ANSWER_MS. Settles on abort
+ * even when the model ignores its signal, so no caller waits on a hang.
  */
 async function collectWithin(
   open: (signal: AbortSignal) => AsyncIterable<ChatEvent>,
-  opts: { label: string; signal?: AbortSignal; deadline?: AbortSignal; timeoutMs?: number }
+  opts: { label: string; signal?: AbortSignal; deadline?: AbortSignal; timeoutMs?: number; streaming: boolean }
 ): Promise<Collected> {
+  const quietMs = opts.streaming ? COMPLETION_IDLE_MS : UNSTREAMED_ANSWER_MS;
   const idle = new AbortController();
   const signal = AbortSignal.any([idle.signal, ...(opts.signal ? [opts.signal] : []), ...(opts.deadline ? [opts.deadline] : [])]);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const touch = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => idle.abort(), COMPLETION_IDLE_MS);
+    timer = setTimeout(() => idle.abort(), quietMs);
   };
   const why = (): unknown =>
-    idle.signal.aborted ? new LlmError(`${opts.label} sent nothing for ${COMPLETION_IDLE_MS / 1000}s`)
+    idle.signal.aborted ? new LlmError(opts.streaming ? `${opts.label} sent nothing for ${quietMs / 1000}s` : `${opts.label} did not answer within ${quietMs / 60_000} minutes`)
     : opts.deadline?.aborted ? new LlmError(`${opts.label} did not answer within ${(opts.timeoutMs ?? 0) / 1000}s`)
     : opts.signal?.reason ?? new LlmError(`${opts.label} request was cancelled`);
   let onAbort = () => {};
