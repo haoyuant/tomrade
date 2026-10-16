@@ -28,3 +28,13 @@ it('keeps paused time, counts rounds, settles one phase after sleep and resets',
   expect(timer.completed).toBe(0);
   expect(timer.ended).toBe(ended);
 });
+
+it('moves through the rounds whether phases are skipped or run out, then starts over', () => {
+  const timer = new Timer(rules);
+  const seen: string[] = [];
+  for (let n = 0; n < 9; n++) { seen.push(`${timer.phase}:${timer.snapshot(0).round}`); timer.skip(0); }
+  expect(seen).toEqual(['focus:1', 'shortBreak:1', 'focus:2', 'shortBreak:2', 'focus:3', 'shortBreak:3', 'focus:4', 'longBreak:4', 'focus:1']);
+  expect(timer.completed).toBe(0);
+  timer.reset(); timer.start(0); timer.tick(25 * 60_000); timer.start(25 * 60_000); timer.tick(30 * 60_000);
+  expect(timer.snapshot(30 * 60_000)).toMatchObject({ phase: 'focus', round: 2, completed: 1 });
+});

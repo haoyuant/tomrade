@@ -64,12 +64,7 @@ export default definePlugin({
     let serial = Promise.resolve();
     let announced = 0;
     const label = () => words[locale];
-    // The round a phase belongs to: a break counts as the focus it follows.
-    const round = (s: ReturnType<Timer['snapshot']>) => {
-      const every = config.longBreakEvery;
-      const n = s.phase === 'focus' ? (s.completed % every) + 1 : Math.max(1, ((s.completed - 1) % every) + 1);
-      return label().round.replace('{n}', String(n)).replace('{of}', String(every));
-    };
+    const round = (s: ReturnType<Timer['snapshot']>) => label().round.replace('{n}', String(s.round)).replace('{of}', String(config.longBreakEvery));
     const state = () => { const s = timer.snapshot(); return { ...s, round: round(s), words: label(), lang: locale, config }; };
     const place = async (x: number, y: number) => {
       if (!desktop) return;
