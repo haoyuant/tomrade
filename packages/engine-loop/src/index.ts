@@ -197,6 +197,10 @@ export function createLoopEngine(ctx: Context): Engine {
       // assistant: thinking-mode endpoints read it as an unfinished turn and refuse it without its reasoning.
       if (messages.at(-1)?.role === "assistant") messages.push({ role: "user", content: [{ type: "text", text: "(That ran in reply to the user's last message. Reply to the user now.)" }] });
       const usage = { inputTokens: 0, outputTokens: 0 };
+      // Only what the provider reported: a profile whose endpoint says nothing about its cache gets no counts, not zeros.
+      const cache: { cacheReadTokens?: number; cacheWriteTokens?: number } = {};
+      const spent = (): Pick<TurnResult, "usage" | "metrics"> =>
+        cache.cacheReadTokens !== undefined || cache.cacheWriteTokens !== undefined ? { usage, metrics: { transport: "http", runtime: "warm", ...cache } } : { usage };
       // Dropped for the rest of the turn once the model has thought its way past the output limit.
       let effort = options.effort;
       let invalidStreak = 0;
@@ -232,13 +236,17 @@ export function createLoopEngine(ctx: Context): Engine {
         io.retry?.(null);
         usage.inputTokens += collected.usage.inputTokens;
         usage.outputTokens += collected.usage.outputTokens;
+        for (const key of ["cacheReadTokens", "cacheWriteTokens"] as const) {
+          const n = collected.usage[key];
+          if (n !== undefined) cache[key] = (cache[key] ?? 0) + n;
+        }
         io.progress(usage);
         if (collected.text.trim()) io.emit({ type: "text", text: collected.text.trim() });
         for (const media of collected.media ?? []) {
           if (!io.media) throw new Error("This runtime cannot publish media");
           io.media.publish(media);
         }
-        if (collected.stop === "refusal") return { stop: "error", error: "the model declined to answer", usage };
+        if (collected.stop === "refusal") return { stop: "error", error: "the model declined to answer", ...spent() };
         // Cut off with no call to make. Ending as "done" here read as the agent going quiet mid-task.
         if (collected.stop === "max_tokens" && !collected.toolCalls.length) {
           // Nothing but reasoning, which is never kept: the same step again, without extended thinking.
@@ -252,13 +260,13 @@ export function createLoopEngine(ctx: Context): Engine {
             error: zh()
               ? `模型在${collected.text.trim() ? "回答到一半时" : "开始回答前"}就到了输出上限（${options.maxTokens} 个 token）。换个小一点的请求，或者给这个对话选低一点的推理强度。`
               : `The model reached its output limit (${options.maxTokens} tokens) ${collected.text.trim() ? "mid-answer" : "before answering"}. Ask for something smaller, or pick a lower effort for this thread.`,
-            usage
+            ...spent()
           };
         }
         if (!collected.toolCalls.length) {
           // A message that came in while the model wrote its last reply still belongs to this turn.
           const late = io.takeSteers?.() ?? [];
-          if (!late.length) return { stop: "end", usage };
+          if (!late.length) return { stop: "end", ...spent() };
           messages.push(assistantMessage(collected), { role: "user", content: [steering(late, !!collected.text.trim())] });
           continue;
         }
@@ -293,7 +301,7 @@ export function createLoopEngine(ctx: Context): Engine {
         const answered = toolResultsMessage(results);
         if (results.some((r) => r.suspended)) {
           messages.push(answered);
-          return { stop: "asked", usage };
+          return { stop: "asked", ...spent() };
         }
         const steered = io.takeSteers?.() ?? [];
         if (steered.length) answered.content.push(steering(steered));
@@ -301,7 +309,7 @@ export function createLoopEngine(ctx: Context): Engine {
         if (step === options.maxSteps - 1)
           messages.push({ role: "user", content: [{ type: "text", text: "(budget nearly spent: wrap up — summarize what happened, make no more writes)" }] });
       }
-      return { stop: "budget", usage };
+      return { stop: "budget", ...spent() };
     }
   };
 }

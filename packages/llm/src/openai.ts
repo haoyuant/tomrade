@@ -75,7 +75,8 @@ const parseArgs = (raw: string): unknown => {
 };
 
 interface StreamChunk {
-  usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+  /** Cached input, by provider: OpenAI and OpenRouter `prompt_tokens_details.cached_tokens`, DeepSeek `prompt_cache_hit_tokens`, Kimi `cached_tokens`. */
+  usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null; prompt_cache_hit_tokens?: number; cached_tokens?: number } | null;
   choices?: {
     finish_reason?: string | null;
     delta?: { content?: string | { type: string; text?: string; image_url?: { url: string } }[] | null; images?: { image_url: { url: string }; index?: number }[]; audio?: { data?: string; transcript?: string }; tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[] };
@@ -215,7 +216,11 @@ export class OpenAiCompatible implements ChatModel {
       } catch {
         continue;
       }
-      if (chunk.usage) yield { type: "usage", inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens };
+      if (chunk.usage) {
+        const u = chunk.usage;
+        const cached = u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? u.cached_tokens;
+        yield { type: "usage", inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, ...(cached != null ? { cacheReadTokens: cached } : {}) };
+      }
       const choice = chunk.choices?.[0];
       if (!choice) continue;
       const delta = choice.delta ?? {};

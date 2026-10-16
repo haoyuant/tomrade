@@ -45,7 +45,8 @@ export type ChatEvent =
   | { type: "text"; delta: string }
   | { type: "media"; media: MediaData }
   | { type: "tool_call"; id: string; name: string; args: unknown }
-  | { type: "usage"; inputTokens?: number; outputTokens?: number }
+  /** `inputTokens` is every prompt token read, cached ones included; the cache counts are parts of it, absent when the provider does not say. */
+  | { type: "usage"; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   /** The request failed before anything streamed and is sent again after `delayMs`; `attempt` counts the retries. */
   | { type: "retry"; attempt: number; max: number; reason: string; delayMs: number }
   | { type: "stop"; reason: StopReason };
@@ -72,7 +73,7 @@ export interface Collected {
   text: string;
   toolCalls: { id: string; name: string; args: unknown }[];
   stop: StopReason;
-  usage: { inputTokens: number; outputTokens: number };
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
 }
 
 /** Drain one turn; `onText` sees deltas as they stream. */
@@ -89,6 +90,8 @@ export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta:
     } else if (event.type === "usage") {
       out.usage.inputTokens += event.inputTokens ?? 0;
       out.usage.outputTokens += event.outputTokens ?? 0;
+      if (event.cacheReadTokens !== undefined) out.usage.cacheReadTokens = (out.usage.cacheReadTokens ?? 0) + event.cacheReadTokens;
+      if (event.cacheWriteTokens !== undefined) out.usage.cacheWriteTokens = (out.usage.cacheWriteTokens ?? 0) + event.cacheWriteTokens;
     } else if (event.type === "retry") {
       onRetry?.(event);
     } else {

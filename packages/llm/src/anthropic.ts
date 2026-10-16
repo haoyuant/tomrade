@@ -89,7 +89,14 @@ export class AnthropicModel implements ChatModel {
     let tool: { id: string; name: string; json: string } | null = null;
     for await (const event of stream) {
       if (event.type === "message_start") {
-        yield { type: "usage", inputTokens: event.message.usage.input_tokens };
+        // Anthropic's input_tokens leaves out what the cache read and wrote; the other adapters' input counts all of it.
+        const { input_tokens, cache_read_input_tokens: read, cache_creation_input_tokens: write } = event.message.usage;
+        yield {
+          type: "usage",
+          inputTokens: input_tokens + (read ?? 0) + (write ?? 0),
+          ...(read != null ? { cacheReadTokens: read } : {}),
+          ...(write != null ? { cacheWriteTokens: write } : {})
+        };
       } else if (event.type === "content_block_start") {
         if (event.content_block.type === "tool_use") tool = { id: event.content_block.id, name: event.content_block.name, json: "" };
       } else if (event.type === "content_block_delta") {
