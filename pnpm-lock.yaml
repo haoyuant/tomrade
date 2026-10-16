@@ -1482,6 +1482,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.122.0
         version: 0.122.0(zod@4.4.3)
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain

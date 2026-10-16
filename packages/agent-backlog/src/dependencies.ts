@@ -128,7 +128,7 @@ export async function proposeDependencies(ctx: Context, llm: LlmService, project
     "BACKLOG:",
     ...listed.map(line)
   ].join("\n");
-  const review = await llm.completeJson(dependencyReviewSchema, { system: REVIEW_SYSTEM, user, signal: opts.signal, timeoutMs: opts.timeoutMs ?? REVIEW_TIMEOUT_MS });
+  const review = await llm.completeJson(dependencyReviewSchema, { system: REVIEW_SYSTEM, user, signal: opts.signal, timeoutMs: opts.timeoutMs ?? REVIEW_TIMEOUT_MS, purpose: "dependencies" });
   return applicable(review, tickets);
 }
 

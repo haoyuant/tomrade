@@ -25,8 +25,10 @@ function answer(result: SDKResultMessage): ChatEvent[] {
   if (result.subtype !== "success" || result.is_error) {
     throw new Error(`Claude Code could not answer: ${result.subtype === "success" ? result.result : result.errors.join("; ") || result.subtype}`);
   }
+  // input_tokens leaves out what the cache read and wrote; Tomrade counts input as all of it.
+  const { input_tokens, cache_read_input_tokens: read, cache_creation_input_tokens: write, output_tokens } = result.usage;
   return [
-    { type: "usage", inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens },
+    { type: "usage", inputTokens: input_tokens + (read ?? 0) + (write ?? 0), outputTokens: output_tokens, ...(read != null ? { cacheReadTokens: read } : {}), ...(write != null ? { cacheWriteTokens: write } : {}) },
     { type: "text", delta: result.result },
     { type: "stop", reason: "end" }
   ];

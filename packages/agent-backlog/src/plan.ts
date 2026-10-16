@@ -60,7 +60,7 @@ export async function generatePlan(llm: LlmService | null, requirement: string, 
     ...existing.slice(0, 200).map((i) => `- [${i.key}] (${i.kind}) ${i.title}`),
     existing.length ? "" : "- (empty)"
   ].join("\n");
-  return llm.completeJson(planSchema, { system, user });
+  return llm.completeJson(planSchema, { system, user, purpose: "plan" });
 }
 
 export interface ApplyOutcome {
@@ -129,6 +129,6 @@ const GAP_SYSTEM = [
 export async function findGaps(llm: LlmService | null, requirement: string, existing: Item[]): Promise<{ title: string; body: string | null; reason: string }[]> {
   if (!llm) throw new LlmError("gap analysis needs a worker model — configure one in Settings → Assistant");
   const user = ["REQUIREMENT:", requirement, "", "EXISTING BACKLOG:", ...existing.slice(0, 300).map((i) => `- [${i.key}] ${i.title}${i.body ? " — " + i.body.slice(0, 100) : ""}`)].join("\n");
-  const out = await llm.completeJson(gapSchema, { system: GAP_SYSTEM, user });
+  const out = await llm.completeJson(gapSchema, { system: GAP_SYSTEM, user, purpose: "gaps" });
   return out.missing.map((m) => ({ title: m.title, body: m.body ?? null, reason: m.reason }));
 }

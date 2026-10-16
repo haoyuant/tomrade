@@ -19,5 +19,5 @@ process.stdin.on("end", () => {
   }
   say({ type: "item.completed", item: { type: "reasoning", text: "thinking" } });
   say({ type: "item.completed", item: { type: "agent_message", text: JSON.stringify({ args: process.argv.slice(2), prompt }) } });
-  say({ type: "turn.completed", usage: { input_tokens: 12, output_tokens: 3 } });
+  say({ type: "turn.completed", usage: { input_tokens: 12, cached_input_tokens: 8, output_tokens: 3 } });
 });

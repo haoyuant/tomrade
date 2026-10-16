@@ -16,7 +16,22 @@ export const usage = {
     spend: "Spend",
     unknown: "not reported",
     none: "No runs yet.",
-    ticketNote: "A ticket's own spend is its Cost field: show it in a table view to sort by it."
+    ticketNote: "A ticket's own spend is its Cost field: show it in a table view to sort by it.",
+    workerTitle: "Worker calls",
+    workerLede: "What the worker model spent answering inside tools — plans, duplicate checks, dependency reviews and more — by who answered and what for. A signed-in Claude Code or Codex answering here uses your plan's limits, the same ones your own coding sessions draw on. Only the numbers are kept, never what was asked or answered.",
+    workerNone: "No worker calls yet.",
+    source: "Answered by",
+    purpose: "For",
+    calls: "Calls",
+    failed: "Failed",
+    purposePlan: "Planning",
+    purposeGaps: "Finding gaps",
+    purposeSimilar: "Duplicate check",
+    purposeDependencies: "Dependency review",
+    purposeInbox: "Inbox triage",
+    purposePlaybook: "Playbook pick",
+    purposeBranch: "Branch name",
+    purposeOther: "Other"
   },
   zh: {
     label: "用量",
@@ -35,6 +50,21 @@ export const usage = {
     spend: "花费",
     unknown: "未报告",
     none: "还没有运行记录。",
-    ticketNote: "每张工单的花费在它的「花费」字段里：在表格视图中显示这一列，就能按它排序。"
+    ticketNote: "每张工单的花费在它的「花费」字段里：在表格视图中显示这一列，就能按它排序。",
+    workerTitle: "Worker 调用",
+    workerLede: "执行模型在工具里干活花掉的用量——规划、查重、依赖审查等等——按由谁回答、做什么分开。由已登录的 Claude Code 或 Codex 回答时，用的是你订阅的额度，和你自己写代码的会话共用同一份。这里只记数字，不记问了什么、答了什么。",
+    workerNone: "还没有 worker 调用。",
+    source: "回答方",
+    purpose: "用途",
+    calls: "次数",
+    failed: "失败",
+    purposePlan: "规划",
+    purposeGaps: "查找遗漏",
+    purposeSimilar: "查重",
+    purposeDependencies: "依赖审查",
+    purposeInbox: "收件箱分拣",
+    purposePlaybook: "推荐 playbook",
+    purposeBranch: "分支命名",
+    purposeOther: "其他"
   }
 };

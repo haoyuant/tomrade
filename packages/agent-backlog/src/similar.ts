@@ -102,7 +102,7 @@ export async function findSimilarBatch(llm: LlmService | null, proposals: { titl
           .filter(Boolean)
           .join("\n")
       );
-      const out = await llm.completeJson(judgeSchema, { system: JUDGE_SYSTEM, user: sections.join("\n\n") });
+      const out = await llm.completeJson(judgeSchema, { system: JUDGE_SYSTEM, user: sections.join("\n\n"), purpose: "similar" });
       return proposals.map((_p, i) => {
         const judged = out.results.find((r) => r.index === i);
         if (!judged) return lexicalVerdict(scored[i], limit);

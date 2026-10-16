@@ -9,7 +9,7 @@ import { CodexOptions, codexModel } from "./engine.js";
 interface ExecLine {
   type?: string;
   item?: { type?: string; text?: string };
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
   message?: string;
   error?: { message?: string };
 }
@@ -35,7 +35,7 @@ export function codexLentModel(ctx: Context, ready: () => Promise<boolean>): Len
         ...(options.effort ? ["-c", `model_reasoning_effort="${options.effort}"`] : [])];
       let text = "";
       let failure: string | null = null;
-      const usage = { inputTokens: 0, outputTokens: 0 };
+      const usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number } = { inputTokens: 0, outputTokens: 0 };
       try {
         const run = runJsonl(await localCli("codex").launch(chosenCommand(ctx, "codex")), args, {
           cwd: tmp,
@@ -47,6 +47,8 @@ export function codexLentModel(ctx: Context, ready: () => Promise<boolean>): Len
             else if (line.type === "turn.completed") {
               usage.inputTokens += line.usage?.input_tokens ?? 0;
               usage.outputTokens += line.usage?.output_tokens ?? 0;
+              // part of input_tokens, as OpenAI counts it
+              if (line.usage?.cached_input_tokens !== undefined) usage.cacheReadTokens = (usage.cacheReadTokens ?? 0) + line.usage.cached_input_tokens;
             } else if (line.type === "turn.failed") failure = line.error?.message ?? "the turn failed";
             else if (line.type === "error") failure = line.message ?? "codex reported an error";
           }

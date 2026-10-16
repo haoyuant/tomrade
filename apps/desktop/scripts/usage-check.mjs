@@ -1,8 +1,9 @@
 /**
  * Usage regression: what runs spend is seen where a person looks for it — a
  * ticket's Cost as a column a table view sorts on and a row in the detail
- * pane, and Settings → Usage per engine. A stand-in engine that reports its
- * spend makes it deterministic.
+ * pane, and Settings → Usage per engine, with worker calls apart by who
+ * answered and what for. A stand-in engine and a stand-in lent model that
+ * report their spend make it deterministic.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:usage
@@ -56,6 +57,15 @@ const run = async () => {
   };
   await spendOn(big, 1);
   await spendOn(small, 2);
+  // worker calls on a lent model the person chose, as a signed-in CLI would answer them
+  ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [], roles: { worker: "lent:fake-cli" } } });
+  ctx.llm.lend({ id: "fake-cli", title: "Fake CLI", ready: async () => true, model: { capabilities: { tools: false, streaming: false, json: false }, async *chat() {
+    yield { type: "usage", inputTokens: 15000, cacheReadTokens: 14000, outputTokens: 40 };
+    yield { type: "text", delta: '{"ok":true}' };
+    yield { type: "stop", reason: "end" };
+  } } });
+  const anything = { safeParse: (data) => ({ success: true, data }) };
+  for (const purpose of ["similar", "similar", "plan"]) await ctx.llm.completeJson(anything, { system: "s", user: "u", purpose });
   const view = ctx.views.create({ projectId: project.id, name: "Spend", icon: "i-bars", layout: "table", query: { filter: [], columnBy: "status", columns: [], groupBy: null, sortBy: [{ field: "cost", dir: "desc" }], fields: ["status", "cost"], wip: {}, graph: null } });
 
   const win = new BrowserWindow({ width: 1500, height: 900, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
@@ -91,6 +101,12 @@ const run = async () => {
   const usage = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] tr[data-engine="spender"]')].map((r) => [...r.querySelectorAll('td')].map((d) => d.textContent))`);
   check("Usage lists the engine for today and the week", usage.length === 2, usage);
   check("with its runs, tokens and spend", JSON.stringify(usage[0]) === JSON.stringify(["Spender", "3", "6,000", "6,000", "0", "0", "900", "$1.75"]), usage[0]);
+  const worker = await $(`[...document.querySelectorAll('[data-testid="worker-usage"] tr[data-source="lent:fake-cli"]')].map((r) => [...r.querySelectorAll('td')].map((d) => d.textContent))`);
+  check("worker calls are listed apart, today and for the week", worker.length === 4, worker);
+  check("by who answered and what for, with calls and tokens", JSON.stringify(worker.slice(0, 2)) === JSON.stringify([["Fake CLI", "Duplicate check", "2", "0", "30,000", "28,000", "80"], ["Fake CLI", "Planning", "1", "0", "15,000", "14,000", "40"]]), worker);
+  await $(`document.querySelector('[data-testid="worker-usage"]')?.scrollIntoView();true`);
+  await sleep(300);
+  await shot("usage-03-worker-calls");
   check("harness reached the end", true);
 };
 

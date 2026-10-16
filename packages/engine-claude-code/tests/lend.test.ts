@@ -41,7 +41,7 @@ describe("Claude Code lent to the worker role", () => {
     expect((await ask("one")).text).toBe('{"seen":1}');
     const second = await ask("two");
     expect(second.text).toBe('{"seen":1}');
-    expect(second.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+    expect(second.usage).toEqual({ inputTokens: 9005, outputTokens: 2, cacheReadTokens: 9000, cacheWriteTokens: 0 });
     expect(spawns()).toHaveLength(1);
     const args = spawns()[0].args.join("\n");
     expect(args).toContain("--strict-mcp-config");

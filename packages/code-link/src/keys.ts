@@ -74,7 +74,7 @@ export async function titleSlug(llm: LlmService | null, title: string, max = SLU
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(new Error("the model did not answer in time")), SLUG_TIMEOUT_MS);
     try {
-      const out = await llm.completeJson(slugAnswer, { system: SLUG_SYSTEM, user: trimmed, temperature: 0, maxTokens: 100, signal: deadline.signal });
+      const out = await llm.completeJson(slugAnswer, { system: SLUG_SYSTEM, user: trimmed, temperature: 0, maxTokens: 100, signal: deadline.signal, purpose: "branch" });
       const slug = usableSlug(out.slug, max);
       if (slug) return slug;
     } catch {

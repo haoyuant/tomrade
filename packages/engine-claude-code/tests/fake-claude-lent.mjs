@@ -9,7 +9,7 @@ if (process.argv[2] === 'auth') { console.log(JSON.stringify({ loggedIn: !fs.exi
 record({ spawn: process.pid, args: process.argv.slice(2) });
 let seen = 0;
 const result = (text) => send({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: 's', uuid: 'r' + Math.random(),
-  total_cost_usd: 0, duration_ms: 1, duration_api_ms: 1, num_turns: 1, usage: { input_tokens: 5, output_tokens: 2 }, modelUsage: {}, permission_denials: [] });
+  total_cost_usd: 0, duration_ms: 1, duration_api_ms: 1, num_turns: 1, usage: { input_tokens: 5, cache_read_input_tokens: 9000, cache_creation_input_tokens: 0, output_tokens: 2 }, modelUsage: {}, permission_denials: [] });
 for await (const line of readline.createInterface({ input: process.stdin })) {
   const m = JSON.parse(line);
   if (m.type === 'control_request') {

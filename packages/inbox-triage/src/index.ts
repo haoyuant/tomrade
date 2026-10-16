@@ -96,7 +96,7 @@ export async function suggest(
     "ENTRIES",
     ...(others.size ? [...others].map(([label, e]) => `- ${label} ${e.title}${e.body ? ` — ${clip(e.body.replace(/\s+/g, " "), 200)}` : ""}`) : ["- (none)"])
   ].join("\n");
-  const out = await llm.completeJson(answerSchema, { system: SYSTEM(WORDS[scope.locale].language, scope.canReply), user, maxTokens: 1500, timeoutMs: 120_000 });
+  const out = await llm.completeJson(answerSchema, { system: SYSTEM(WORDS[scope.locale].language, scope.canReply), user, maxTokens: 1500, timeoutMs: 120_000, purpose: "inbox" });
   const target = out.target ?? null;
   const ticket = out.action === "merge" && target ? tickets.get(target) : undefined;
   const other = out.action === "duplicate" && target ? others.get(target) : undefined;

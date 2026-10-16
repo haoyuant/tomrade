@@ -704,6 +704,7 @@ export class Agent extends Service {
         // a JSON object with one sentence of reason; no room to ramble, and no second round when there is a fallback
         ...(budget ? { maxTokens: 400, repair: false } : {}),
         signal,
+        purpose: "playbook",
         system: `Recommend one execution playbook for a ticket. Return only JSON. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. Explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       }), signal);

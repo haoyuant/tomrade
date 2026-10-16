@@ -1,6 +1,7 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import { modelErrorKind, type ModelErrorKind } from "@tomradex/domain";
+import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
 import { AnthropicModel } from "./anthropic.js";
@@ -11,6 +12,7 @@ import { assistantMessage, collect, userMessage, type ChatEvent, type ChatModel,
 import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
 import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, usableModels, type ModelListing, type QuickSetupResult } from "./providers.js";
+import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
 
 export * from "./model.js";
 export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
@@ -18,6 +20,7 @@ export { LlmError, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
 export { withPromptTools } from "./prompt-tools.js";
+export type { WorkerPurpose, WorkerSpend, WorkerUsage, WorkerUsageSummary } from "./worker-usage.js";
 
 export interface CompletionRequest {
   system: string;
@@ -31,7 +34,11 @@ export interface CompletionRequest {
   timeoutMs?: number;
   /** False skips the repair round: a caller with a fallback takes it rather than a second request. */
   repair?: boolean;
+  /** What the call is for, so the Usage pane can say what the worker spent on what. */
+  purpose?: WorkerPurpose;
 }
+
+const NO_PROFILE = "No model profile configured — add one in Settings → Assistant";
 
 /** A model that sends nothing for this long has stopped answering; a long document still streaming is never cut. */
 export const COMPLETION_IDLE_MS = 90_000;
@@ -153,6 +160,7 @@ declare module "@tomradex/ipc" {
     "llm.detect": () => DetectedModel[];
     "llm.quickSetup": (input: { preset: string; apiKey?: string }) => QuickSetupResult;
     "llm.adopt": (id: string) => QuickSetupResult;
+    "llm.workerUsage": () => WorkerUsageSummary;
   }
 }
 
@@ -220,7 +228,7 @@ function fit<T>(schema: z.ZodType<T>, content: string): { ok: true; value: T } |
  * naming `label` and the field, because the model answering here is the worker,
  * not whichever engine runs the conversation.
  */
-export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, request: CompletionRequest, label = "The worker model"): Promise<T> {
+export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, request: CompletionRequest, label = "The worker model", spent?: WorkerSpend): Promise<T> {
   const messages: Message[] = [userMessage(request.user)];
   const deadline = request.timeoutMs !== undefined ? AbortSignal.timeout(request.timeoutMs) : undefined;
   let problem = "";
@@ -230,6 +238,11 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
       (signal) => model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens }, signal),
       { label, signal: request.signal, deadline, timeoutMs: request.timeoutMs, streaming: model.capabilities.streaming }
     );
+    if (spent) {
+      spent.inputTokens += out.usage.inputTokens;
+      spent.cacheReadTokens += out.usage.cacheReadTokens ?? 0;
+      spent.outputTokens += out.usage.outputTokens;
+    }
     // A model that reasons before it answers can spend the whole limit thinking.
     if (!out.text && out.stop === "max_tokens") throw new LlmError(`${label} used its whole output limit (${maxTokens} tokens) before answering — a model that reasons first can spend it all thinking`);
     if (!out.text) throw new LlmError(`${label} returned no content`);
@@ -295,6 +308,7 @@ export class Llm extends Service implements LlmService {
   private lent: LentModel[] = [];
   private lentRunning = 0;
   private lentWaiting: (() => void)[] = [];
+  private calls: WorkerCallLog | null = null;
 
   constructor(ctx: Context) {
     super(ctx, "llm");
@@ -311,6 +325,14 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.detect", () => this.detect());
       ctx.ipc.handle("llm.quickSetup", (input) => this.quickSetup(input));
       ctx.ipc.handle("llm.adopt", (id) => this.adopt(id));
+      ctx.ipc.handle("llm.workerUsage", () => this.workerUsage());
+    });
+    this.ctx.inject(["db"], (ctx) => {
+      ctx.db.migrate("llm", WORKER_CALLS_MIGRATIONS, { scope: "hub", tables: WORKER_CALLS_TABLES });
+      ctx.effect(() => {
+        this.calls = new WorkerCallLog(ctx.db.hub);
+        return () => (this.calls = null);
+      });
     });
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
@@ -337,7 +359,7 @@ export class Llm extends Service implements LlmService {
 
   for(role: LlmRole): ChatModel {
     const profile = this.profileFor(role);
-    if (!profile) throw new LlmError("No model profile configured — add one in Settings → Assistant");
+    if (!profile) throw new LlmError(NO_PROFILE);
     return this.adapterOf(profile);
   }
 
@@ -390,12 +412,38 @@ export class Llm extends Service implements LlmService {
     const source = await this.workerSource();
     if (source.kind === "lent") {
       const lent = source.lent;
-      return this.lentSlot(() => completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`), request.signal);
+      return this.lentSlot(
+        () => this.tallied(`lent:${lent.id}`, lent.title, request, (spent) => completeJson(lent.model, schema, request, `${lent.title} (signed in on this computer)`, spent)),
+        request.signal
+      );
     }
-    if (source.kind === "none" && source.chosen) throw new LlmError(source.reason);
-    const profile = source.kind === "profile" ? source.profile : undefined;
-    const label = profile ? `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)` : undefined;
-    return completeJson(this.for("worker"), schema, request, label);
+    if (source.kind === "none") throw new LlmError(source.chosen ? source.reason : NO_PROFILE);
+    const profile = source.profile;
+    const label = `Worker model ${profile.title || profile.model} (${profile.model}, Settings → Assistant)`;
+    return this.tallied(`profile:${profile.id}`, profile.title || profile.model, request, (spent) => completeJson(this.for("worker"), schema, request, label, spent));
+  }
+
+  /** What worker calls spent today and over the last week, by source and purpose. */
+  workerUsage(now = Date.now()): WorkerUsageSummary {
+    return this.calls?.summary(now) ?? { today: [], week: [] };
+  }
+
+  /** One worker call, its tokens kept for the Usage pane. Keeping them never fails the call. */
+  private async tallied<T>(source: string, title: string, request: CompletionRequest, call: (spent: WorkerSpend) => Promise<T>): Promise<T> {
+    const at = Date.now();
+    const spent: WorkerSpend = { inputTokens: 0, cacheReadTokens: 0, outputTokens: 0 };
+    let ok = false;
+    try {
+      const out = await call(spent);
+      ok = true;
+      return out;
+    } finally {
+      try {
+        this.calls?.record({ at, source, title, purpose: request.purpose ?? null, ...spent, ok });
+      } catch (err) {
+        this.ctx.logger.warn(`worker usage not recorded: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   /**

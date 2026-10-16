@@ -35,7 +35,7 @@ it("asks Codex in a read-only sandbox with the instructions leading the prompt",
   // Codex's coding-agent prompt is swapped for a short one that lives beside the call
   expect(echoed.args.find((arg) => arg.startsWith("model_instructions_file="))).toMatch(/tomrade-codex-lent-.*instructions\.md"$/);
   expect(echoed.prompt).toBe("Reply in JSON.\n\n---\n\nplan it");
-  expect(out.usage).toEqual({ inputTokens: 12, outputTokens: 3 });
+  expect(out.usage).toEqual({ inputTokens: 12, outputTokens: 3, cacheReadTokens: 8 });
 
   await expect(collect(model.chat({ system: "", messages: [userMessage("FAIL")] }))).rejects.toThrow(/not supported when using Codex/);
 }, 30_000);
