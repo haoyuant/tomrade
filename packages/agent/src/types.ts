@@ -499,8 +499,11 @@ export interface Engine {
    * the waiting question in its prompt and resumes or cancels the workflow itself.
    */
   literal?: boolean;
-  /** `fresh` looks again instead of answering from a recent probe — after the person installs or points at a CLI. */
-  available(opts?: { fresh?: boolean }): Promise<EngineAvailability>;
+  /**
+   * `fresh` looks again instead of answering from a recent probe — after the person installs or points at a CLI.
+   * `options`: whether it can run a turn with these engine options, such as the model a thread picked.
+   */
+  available(opts?: { fresh?: boolean; options?: unknown }): Promise<EngineAvailability>;
   /** For an engine that runs a local CLI: whether this file is one it can use. */
   checkCli?(file: string): Promise<CliCheck>;
   setup?: EngineSetup;

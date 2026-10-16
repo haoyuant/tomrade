@@ -31,8 +31,12 @@ function hostOf(profile: ModelProfile): string {
 export const customProvider = (profile: ModelProfile): string => `tomrade-${profile.id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 const keyVariable = (profile: ModelProfile): string => `TOMRADE_KEY_${profile.id.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}`;
 
-/** Profiles pi can talk to: a chat endpoint it has an API for. */
-export const usableProfile = (profile: ModelProfile): boolean => profile.provider !== "openai-images" && (profile.provider !== "anthropic" || !!profile.apiKey);
+/**
+ * Profiles pi can talk to: a chat endpoint it has an API for, and a model that calls tools itself —
+ * pi has no way to render tools into the prompt, which the loop does for `promptTools`.
+ */
+export const usableProfile = (profile: ModelProfile): boolean =>
+  profile.provider !== "openai-images" && (profile.provider !== "anthropic" || !!profile.apiKey) && !profile.promptTools;
 
 /**
  * A known endpoint whose model pi's catalog lists runs as that provider, so pi

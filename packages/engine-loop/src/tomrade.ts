@@ -34,7 +34,7 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
   const ownPart = () => own.map(part).find(Boolean);
   const either = () => ownPart() ?? part(config.work);
   const zh = () => ctx.settings.locale?.() === "zh";
-  const runs = async (engine: Engine | undefined, opts?: { fresh?: boolean }): Promise<EngineAvailability | null> => {
+  const runs = async (engine: Engine | undefined, opts?: { fresh?: boolean; options?: unknown }): Promise<EngineAvailability | null> => {
     if (!engine) return null;
     try {
       return await engine.available(opts);
@@ -50,11 +50,17 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     }
     return undefined;
   };
-  /** The first in-app part that can run; otherwise the first signed-in local agent; otherwise the first part, to say what it needs. */
-  const backlogPart = async (): Promise<{ engine: Engine | undefined; borrowed: boolean }> => {
+  // A part's own saved settings still count, under what was picked for Tomrade and for this thread.
+  // A borrowed agent keeps only its own: the model and effort picked here are for the in-app parts.
+  const optionsFor = (engine: Engine, picked: unknown, borrowed: boolean): Record<string, unknown> => {
+    const saved = (ctx.agent.settingsOf().engines[engine.id] ?? {}) as Record<string, unknown>;
+    return borrowed ? saved : { ...saved, ...((picked ?? {}) as Record<string, unknown>) };
+  };
+  /** The first in-app part that can run with what was picked; otherwise the first signed-in local agent; otherwise the first part, to say what it needs. */
+  const backlogPart = async (picked: unknown): Promise<{ engine: Engine | undefined; borrowed: boolean }> => {
     for (const id of own) {
       const engine = part(id);
-      if (engine && (await runs(engine))?.ok) return { engine, borrowed: false };
+      if (engine && (await runs(engine, { options: optionsFor(engine, picked, false) }))?.ok) return { engine, borrowed: false };
     }
     const borrowed = await borrowable();
     return borrowed ? { engine: borrowed, borrowed: true } : { engine: either(), borrowed: false };
@@ -87,12 +93,9 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
       return work ? state : { ...state, capabilities: ["backlog"] };
     },
     async turn(input, io) {
-      const { engine, borrowed } = input.purpose === "backlog" ? await backlogPart() : { engine: part(config.work), borrowed: false };
+      const { engine, borrowed } = input.purpose === "backlog" ? await backlogPart(input.options) : { engine: part(config.work), borrowed: false };
       if (!engine) return { stop: "error", error: "No in-app agent is installed for this kind of work" };
-      // A part's own saved settings still count, under what was picked for Tomrade and for this thread.
-      // A borrowed agent keeps only its own: the model and effort picked here are for the in-app parts.
-      const saved = (ctx.agent.settingsOf().engines[engine.id] ?? {}) as Record<string, unknown>;
-      const options = borrowed ? saved : { ...saved, ...((input.options ?? {}) as Record<string, unknown>) };
+      const options = optionsFor(engine, input.options, borrowed);
       const turnInput = { ...input, options: engine.options ? engine.options.parse(options) : options };
       if (!borrowed) {
         // A borrowed agent's session is no use to an in-app part, which starts its own with the conversation carried in.

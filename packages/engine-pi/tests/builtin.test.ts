@@ -56,6 +56,21 @@ it("asks for nothing but a model", async () => {
   expect(await engine()).toMatchObject({ ok: false, need: "model" });
 });
 
+it("leaves a model that renders tools into the prompt to the loop, saying why", async () => {
+  const { ctx, engine, useModel } = await boot(fs.existsSync(bundled) ? bundled : process.execPath);
+  useModel({ promptTools: true });
+  expect(await engine()).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("cannot call tools") });
+  ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [profile({ id: "local", title: "Local", promptTools: true }), profile({ id: "cloud" })], roles: { worker: "" } } });
+  const pi = ctx.agent.engineOf("pi-builtin")!;
+  // Picked for a thread, it is refused rather than swapped for the model pi can run.
+  expect(await pi.available({ options: { profile: "local" } })).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining('"Local"') });
+  expect(modelsFile(ctx.settings.get().models.profiles).providers).not.toHaveProperty("tomrade-local");
+  if (fs.existsSync(bundled)) {
+    expect(await pi.available({ options: { profile: "cloud" } })).toMatchObject({ ok: true });
+    expect(await pi.available()).toMatchObject({ ok: true });
+  }
+});
+
 const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");
 
 /** The real bundled pi against a stand-in chat-completions endpoint: one Tomrade tool call, then an answer. */

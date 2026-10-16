@@ -52,7 +52,16 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
   const zh = () => ctx.settings.locale?.() === "zh";
   const launch = bundledLaunch({ file: config.cli, runtime: process.execPath }, { platform: process.platform, env: process.env });
   const home = { PI_CODING_AGENT_DIR: config.home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" };
-  const profiles = (): ModelProfile[] => ((ctx.settings.get().models as ModelsSettings | undefined)?.profiles ?? []).filter(usableProfile);
+  const connected = (): ModelProfile[] => (ctx.settings.get().models as ModelsSettings | undefined)?.profiles ?? [];
+  const profiles = (): ModelProfile[] => connected().filter(usableProfile);
+  // A thread that picked a model pi cannot drive is not answered on another one.
+  const refusedPick = (options: unknown): string | null => {
+    const chosen = BuiltinPiOptions.safeParse(options ?? {}).data?.profile;
+    const picked = chosen ? connected().find((p) => p.id === chosen) : undefined;
+    if (!picked?.promptTools) return null;
+    const name = picked.title || picked.model;
+    return zh() ? `内置智能体不能用“${name}”：它不能自己调用工具` : `The built-in agent cannot run on "${name}": it does not call tools itself`;
+  };
   const profileOf = (options: unknown): ModelProfile | undefined => {
     const all = profiles();
     const chosen = BuiltinPiOptions.parse(options ?? {}).profile;
@@ -70,6 +79,8 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     (catalog ??= run(launch, ["--list-models", "--offline"], { ...process.env, ...home, ...CATALOG_ENV }).then((r) => new Set(r.ok ? listedModels(r.stdout) : [])));
 
   const start = async (input: TurnInput): Promise<PiLaunch> => {
+    const refused = refusedPick(input.options);
+    if (refused) throw new Error(refused);
     const profile = profileOf(input.options);
     if (!profile) throw new Error("Connect a model in Settings → Assistant — the built-in agent runs on it");
     fs.mkdirSync(config.home, { recursive: true, mode: 0o700 });
@@ -106,7 +117,18 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     async available(opts): Promise<EngineAvailability> {
       if (!fs.existsSync(config.cli)) return { ok: false, need: "install", reason: zh() ? "这个版本没有内置智能体——运行 `pnpm --filter @tomrade/desktop fetch:pi`" : "This build has no built-in agent — run `pnpm --filter @tomrade/desktop fetch:pi`" };
       if (!ctx.get("mcp")?.url) return { ok: false, need: "service", reason: zh() ? "MCP 服务没有运行——请启用 mcp 插件" : "The MCP server is not running — enable the mcp plugin" };
-      if (!profiles().length) return { ok: false, need: "model", reason: zh() ? "先连接一个模型——内置智能体用它工作" : "Connect a model — the built-in agent runs on it" };
+      if (!profiles().length) {
+        const promptOnly = connected().some((p) => p.promptTools);
+        return {
+          ok: false,
+          need: "model",
+          reason: promptOnly
+            ? zh() ? "已连接的模型不能自己调用工具，内置智能体需要一个能调用工具的模型" : "The connected models cannot call tools themselves — the built-in agent needs one that can"
+            : zh() ? "先连接一个模型——内置智能体用它工作" : "Connect a model — the built-in agent runs on it"
+        };
+      }
+      const refused = refusedPick(opts?.options);
+      if (refused) return { ok: false, need: "model", reason: refused };
       const probe = await starts(opts?.fresh);
       if (!probe.ok) return { ok: false, need: "repair", reason: zh() ? `内置智能体启动失败：${probe.detail}` : `The built-in agent does not start: ${probe.detail}` };
       return { ok: true };

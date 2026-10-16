@@ -184,3 +184,26 @@ it("hands a conversation to the loop while the built-in pi cannot run, with the 
     expect(ctx.agent.store.messages(project.id, chat.id).some((m) => m.block.type === "note")).toBe(false);
   } finally { await done(); }
 });
+
+it("hands a conversation to the loop when the built-in pi cannot run the model the thread picked", async () => {
+  const { ctx, project, turns, done } = await setup();
+  try {
+    const pi = ctx.agent.engineOf("pi-builtin")!;
+    const asked: unknown[] = [];
+    pi.available = async (opts) => {
+      asked.push(opts?.options);
+      return (opts?.options as { profile?: string } | undefined)?.profile === "local" ? { ok: false, need: "model", reason: "it does not call tools itself" } : { ok: true };
+    };
+    const chat = ctx.agent.newThread(project.id);
+    const say = async (options: object) => {
+      ctx.agent.store.touchThread(project.id, chat.id, { options });
+      const { runId } = ctx.agent.send(project.id, chat.id, { kind: "text", text: "what is open?" });
+      await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).toBe("done");
+    };
+    await say({ profile: "local" });
+    expect(turns.at(-1)).toMatchObject({ engine: "loop", input: { options: { profile: "local" } } });
+    expect(asked.at(-1)).toMatchObject({ profile: "local" });
+    await say({ profile: "cloud" });
+    expect(turns.at(-1)).toMatchObject({ engine: "pi-builtin", input: { options: { profile: "cloud" } } });
+  } finally { await done(); }
+});
