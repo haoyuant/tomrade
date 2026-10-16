@@ -60,11 +60,17 @@ CREATE TABLE plugin_im_window (
 );
 CREATE INDEX idx_plugin_im_window_place ON plugin_im_window(place, seq);
 CREATE INDEX idx_plugin_im_window_route ON plugin_im_window(route_id, created_at);
+` }, { version: 7, up: `
+CREATE TABLE plugin_im_watch (
+ binding_id TEXT NOT NULL, project_id TEXT NOT NULL, item_id TEXT NOT NULL, seen_json TEXT NOT NULL, at INTEGER NOT NULL,
+ PRIMARY KEY (binding_id, item_id)
+);
+CREATE INDEX idx_plugin_im_watch_project ON plugin_im_watch(project_id);
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
   plugin_im_outbox: { export: false }, plugin_im_actions: { export: false }, plugin_im_runs: { export: false },
-  plugin_im_window: { export: false }
+  plugin_im_window: { export: false }, plugin_im_watch: { export: false }
 } as const;
 
 export interface Binding {
@@ -100,6 +106,8 @@ export interface WindowRow {
   seq: number; route_id: string; place: string; message_key: string; message_id: string;
   author_json: string; text: string; created_at: number;
 }
+/** A ticket a conversation was shown, and its code as last told there; news of the code goes to that conversation. */
+export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
   actor_id: string; run_id: string | null; value_json: string | null; expires_at: number; consumed: number;
@@ -124,6 +132,7 @@ export class ImStore {
       this.run("DELETE FROM plugin_im_actions WHERE retired = 1 AND created_at < ?", before);
       this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'remind:%' AND expires_at < ?", before);
       this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'cmd:%' AND expires_at < ?", before);
+      this.run("DELETE FROM plugin_im_watch WHERE at < ? OR binding_id NOT IN (SELECT id FROM plugin_im_bindings)", before);
     });
   }
 }

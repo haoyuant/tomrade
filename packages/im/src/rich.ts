@@ -10,9 +10,18 @@ export const links = {
 };
 
 /** The part of the items service a reply reads: a changed ticket's current state. */
-export interface ItemLookup { getByKey(projectId: string, key: string): { key: string; title: string; status: string; priority: number } | null }
+type ItemRow = { id: string; key: string; title: string; status: string; priority: number };
+export interface ItemLookup { getByKey(projectId: string, key: string): ItemRow | null; get(projectId: string, id: string): ItemRow | null }
 
-export interface RenderScope { projectId: string; threadId: string; say: Say; items?: ItemLookup }
+/** The part of `ctx.codeLink.summary` a reply reads: the ticket's code for its current delivery, primary link first. */
+export interface CodeSummary {
+  links: { branch: string | null; prNumber: number | null; prUrl: string | null; prState: "open" | "merged" | "closed" | null; mergedSha: string | null }[];
+  session: { state: string; blocked: string | null } | null;
+  proposals: { id: string; kind: "propose" | "flag"; toStatus: string | null; reason: string }[];
+}
+export interface CodeLookup { summary(projectId: string, itemId: string): CodeSummary }
+
+export interface RenderScope { projectId: string; threadId: string; say: Say; items?: ItemLookup; code?: CodeLookup }
 
 /** How many changed tickets get a card each; the rest are counted. */
 const CARD_LIMIT = 8;
@@ -24,19 +33,79 @@ const STATUS: Record<string, [string, string]> = {
 const PRIORITY: [string, string][] = [["None", "无"], ["Low", "低"], ["Medium", "中"], ["High", "高"], ["Urgent", "紧急"]];
 const OP: Record<string, [string, string]> = { created: ["Created", "已创建"], updated: ["Updated", "已更新"], deleted: ["Deleted", "已删除"] };
 
-/** A ticket as a card: key and title, its state, and a link that opens it on the desktop. */
-function ticket(scope: RenderScope, key: string, title: string, op?: string): ImElement[] {
+const PR_STATE: Record<string, [string, string]> = { open: ["Open", "进行中"], merged: ["Merged", "已合并"], closed: ["Closed", "已关闭"] };
+const SESSION: Record<string, [string, string]> = {
+  running: ["Running", "运行中"], waiting: ["Waiting for you", "等你处理"], idle: ["Idle", "空闲"], error: ["Stopped", "已停止"], lost: ["Lost", "已失联"]
+};
+
+/** The code a card shows. Code link is optional: without it, or when it fails, the card is the ticket alone. */
+function codeOf(scope: RenderScope, itemId: string): CodeSummary | null {
+  try { return scope.code?.summary(scope.projectId, itemId) ?? null; } catch { return null; }
+}
+
+/** The primary branch and pull request, and the session at work, as card fields; the pull request's page as a link. */
+export function codeFields(say: Say, code: CodeSummary | null): { fields: { label: string; value: string }[]; links: { label: string; url: string }[] } {
+  const primary = code?.links[0];
+  const fields: { label: string; value: string }[] = [];
+  const urls: { label: string; url: string }[] = [];
+  if (primary?.branch) fields.push({ label: say("Branch", "分支"), value: primary.branch });
+  if (primary && (primary.prNumber !== null || primary.prUrl)) {
+    const state = primary.prState ? say(...PR_STATE[primary.prState]) : "";
+    fields.push({ label: say("Pull request", "PR"), value: [primary.prNumber !== null ? `#${primary.prNumber}` : "", state].filter(Boolean).join(" · ") });
+    if (primary.prUrl && /^https?:\/\//.test(primary.prUrl)) urls.push({ label: primary.prNumber !== null ? say(`Pull request #${primary.prNumber}`, `PR #${primary.prNumber}`) : say("Pull request", "PR"), url: primary.prUrl });
+  } else if (primary?.mergedSha) fields.push({ label: say("Merged", "已合并"), value: primary.mergedSha.slice(0, 7) });
+  const session = code?.session;
+  if (session && SESSION[session.state]) fields.push({ label: say("Session", "编码会话"), value: session.blocked === "merge" ? say("Merge waits on you", "等你合并") : say(...SESSION[session.state]) });
+  return { fields, links: urls };
+}
+
+/** A ticket as a card: key and title, its state and code, and links to its pull request and to the ticket on the desktop. */
+export function ticket(scope: RenderScope, key: string, title: string, op?: string): ImElement[] {
   const { say } = scope;
   const item = op === "deleted" ? null : scope.items?.getByKey(scope.projectId, key);
+  const code = item ? codeFields(say, codeOf(scope, item.id)) : { fields: [], links: [] };
   const fields = item ? [
     { label: say("Status", "状态"), value: say(...(STATUS[item.status] ?? [item.status, item.status])) },
-    { label: say("Priority", "优先级"), value: say(...(PRIORITY[item.priority] ?? [String(item.priority), String(item.priority)])) }
+    { label: say("Priority", "优先级"), value: say(...(PRIORITY[item.priority] ?? [String(item.priority), String(item.priority)])) },
+    ...code.fields
   ] : [];
   const verb = op && OP[op] ? `${say(...OP[op])} · ` : "";
   return [
     { type: "section", title: `${verb}${key} ${item?.title ?? title}`, ...(fields.length ? { fields } : {}) },
-    ...(op === "deleted" ? [] : [{ type: "links" as const, links: [{ label: say("Open in Tomrade", "在 Tomrade 打开"), url: links.item(scope.projectId, key) }] }])
+    ...(op === "deleted" ? [] : [{ type: "links" as const, links: [...code.links, { label: say("Open in Tomrade", "在 Tomrade 打开"), url: links.item(scope.projectId, key) }] }])
   ];
+}
+
+/** What changed in a ticket's code worth telling a conversation that saw the ticket, compared by `codeSeen`. */
+export interface CodeSeen { pr: string | null; merged: boolean; blocked: boolean; proposals: string[] }
+
+export function codeSeen(code: CodeSummary): CodeSeen {
+  const primary = code.links[0];
+  return {
+    pr: primary && (primary.prNumber !== null || primary.prUrl) ? `${primary.prNumber ?? primary.prUrl}:${primary.prState ?? ""}` : null,
+    merged: !!primary && (primary.prState === "merged" || !!primary.mergedSha),
+    blocked: code.session?.blocked === "merge",
+    proposals: code.proposals.map(p => p.id)
+  };
+}
+
+/** The events between two sightings, as the card's headline; empty when nothing new is worth a message. */
+export function codeNews(say: Say, was: CodeSeen, now: CodeSeen, code: CodeSummary): string[] {
+  const primary = code.links[0];
+  const pr = primary?.prNumber !== null && primary?.prNumber !== undefined ? ` #${primary.prNumber}` : "";
+  const news: string[] = [];
+  if (now.merged && !was.merged) news.push(say("Merged", "已合并"));
+  else if (now.pr !== was.pr && primary?.prState === "open") news.push(say(`Pull request${pr} opened`, `已开 PR${pr}`));
+  else if (now.pr !== was.pr && primary?.prState === "closed") news.push(say(`Pull request${pr} closed without merging`, `PR${pr} 已关闭，未合并`));
+  if (now.blocked && !was.blocked) news.push(say("The agent couldn't merge; the merge waits on you", "agent 无法合并，需要你来合并"));
+  for (const p of code.proposals.filter(p => p.kind === "flag" && !was.proposals.includes(p.id))) news.push(`⚠ ${p.reason}`);
+  return news;
+}
+
+/** A status change git proposes, worded for the buttons that settle it. */
+export function proposalText(say: Say, key: string, proposal: CodeSummary["proposals"][number]): string {
+  const to = proposal.toStatus ? say(...(STATUS[proposal.toStatus] ?? [proposal.toStatus, proposal.toStatus])) : "";
+  return say(`${key}: move it to ${to}?\n${proposal.reason}`, `${key}：改为「${to}」吗？\n${proposal.reason}`);
 }
 
 /** Known card schemas as semantic cards; any other gets its title and a way into the conversation. */

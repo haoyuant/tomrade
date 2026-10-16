@@ -1,6 +1,6 @@
 import type {} from "cordis";
 
-export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, primaryOf, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
+export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, primaryOf, type CodeSummaryView, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
 export { codexSyncSkill, tomradeSection, writeConnectFiles, type ConnectInput } from "./connect.js";
 export { SYNC_PROMPT, syncInstructions, syncPrompt, syncSteps, type SyncScope } from "./sync.js";
 export { covered, decisionsDir, listDecisions, recordDecision, type Decision as DecisionNote, type DecisionInput, type DecisionStatus } from "./decisions.js";

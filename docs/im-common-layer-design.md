@@ -344,3 +344,12 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - **出站**：Discord Markdown，2000 字分段；小节为 embed，按钮和选择器为组件（最多 5 行），编辑时总带上 components 以便收口后摘掉按钮；`tomrade://` 链接 Discord 不允许做链接按钮，作为文字显示。消息带强制 nonce，丢回应后重试也不会重复发；429 按 `retry_after` 退避；每频道每 5 秒 5 条。👀 / ✅ / ❌ 表情回执，typing。文件上限 10 MB（multipart）。
 - `/tomrade` 指令：每个 IM 指令一个子命令（带 `args` 文本参数），每次连上后整体覆盖注册。
 - 测试：`src/fake.ts` 是内存中的 Discord（Gateway + REST）；`tests/` 接真实 IM 公共层和 Agent 跑完整对话；`src/test.ts` 是 `tomrade-plugin test` 场景；`apps/desktop/scripts/im-discord-check.mjs` 在真实界面里走向导和连接。真实账号逐项验收需要你的 Discord 测试服务器。
+
+## 代码进展（TOM-171）
+
+IM 不依赖 code link 包，只在运行时读 `ctx.codeLink`（没有加载就不显示代码信息，读取失败也只是不显示）。
+
+- **工单卡**：在状态、优先级之后加上当前交付的主链接（有开着的 PR 优先），显示分支、PR（`#12 · 进行中/已合并/已关闭`）或合并提交，以及编码会话状态（合并被阻塞时显示“等你合并”）。PR 的 http 链接排在“在 Tomrade 打开”之前，Discord 上会成为链接按钮。
+- **读取工具** `get_code_links(key)`（只读，桌面和 IM 的 agent 都能用）：返回当前交付的分支和 PR、ahead/behind、合并状态、编码会话（状态、在做什么、是否阻塞），以及 git 提出的状态变更。数据来自 `CodeLink.summary(projectId, itemId)`。
+- **关注与推送**：会话里出现过的工单（变更卡片、开工卡）记进 `plugin_im_watch`，同时记下当时的代码状态；再次出现会刷新时间，超过 `retentionMs` 就清理。`codeLink/changed` 时逐个比较，只推新的事件：PR 已开、已合并、PR 关闭未合并、合并等你处理、新的 flag。消息不挂在某一轮下面，所以群里只推这个群看到过的工单（受众同 TOM-122）。
+- **状态提议**：新的 propose 提议单独发一张卡，带“接受 / 这次不用”按钮，只有绑定会话的发起人能点。点了就调用 `codeLink.resolve`，和桌面上“接受提议”是同一次人工写入，卡片随后改成结果。在桌面上处理过的提议，IM 卡片会摘掉按钮，写明“已在 Tomrade 处理”。

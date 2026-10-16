@@ -15,6 +15,7 @@ import { mergeLine } from "./prompts.js";
 import { sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
+import type { CodeSummaryView } from "./service.js";
 
 /** What the tools need from the service without importing it. */
 export interface ToolHost {
@@ -39,6 +40,7 @@ export interface ToolHost {
   /** A new session followed only through a client's connection, for a client with no hooks. */
   connectionSession(projectId: string, repoId: string | null): SessionView;
   notify(projectId: string): void;
+  summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
   mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
 }
@@ -350,6 +352,23 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             ...(session ? ["call note_progress with one line at milestones"] : [untracked()])
           ]
         };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "get_code_links",
+      title: "Read a ticket's code",
+      description:
+        "A ticket's code for its current delivery: each branch and pull request (number, URL, open/merged/closed, commits ahead and behind), the coding session working on it (state, what it is doing, whether a merge waits on the person), and the status changes git proposes. Use it to answer where a ticket's code stands.",
+      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      readOnly: true,
+      execute: ({ key, projectId: given }, inv) => {
+        const projectId = requireProjectId("get_code_links", given, inv);
+        const item = ctx.items.getByKey(projectId, key.toUpperCase());
+        if (!item) throw new Error(`get_code_links: no ticket ${key} in this project`);
+        return { key: item.key, status: item.status, workType: item.workType, ...host.summary(projectId, item.id) };
       }
     })
   );

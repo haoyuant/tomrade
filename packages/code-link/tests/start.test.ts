@@ -474,6 +474,14 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "Session")?.value).toMatch(/^idle · run by Tomrade/);
     expect(section.rows.find((r) => r.label === "Worktree")).toMatchObject({ value: result.worktree, command: "code-link.open-terminal" });
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
+    // An agent elsewhere (an IM conversation) reads the same code.
+    const read = await ctx.tools.execute("get_code_links", { key: item.key.toLowerCase() }, { by: "ai:test", projectId: project.id });
+    expect(read).toMatchObject({
+      key: item.key, status: "verifying", delivery: { sequence: 1, state: "active" },
+      links: [{ branch: result.branch, ahead: 1, prNumber: 12, prUrl: "https://github.com/acme/app/pull/12", prState: "open", mergedSha: null }],
+      session: { mode: "headless", agent: "fake-code", state: "idle", blocked: null, threadId: result.threadId },
+      proposals: []
+    });
   });
 
   it("names a new branch on a Chinese title with the model's English slug, and falls back to the local rule without a model", async () => {

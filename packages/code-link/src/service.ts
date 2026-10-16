@@ -91,7 +91,25 @@ export interface MergeLocalResult {
   message: string;
 }
 
-export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness">;
+/** A ticket's current delivery: its code, primary link first, the session working on it, and what git proposes. */
+export interface CodeSummaryView {
+  delivery: { sequence: number; state: DeliveryView["state"] } | null;
+  links: {
+    repo: string;
+    branch: string | null;
+    ahead: number;
+    behind: number;
+    prNumber: number | null;
+    prUrl: string | null;
+    prState: CodeLinkView["prState"];
+    mergedSha: string | null;
+    lastCommitAt: number | null;
+  }[];
+  session: (Pick<SessionView, "id" | "mode" | "agent" | "state" | "summary" | "activity" | "blocked" | "threadId"> & { lastEventAt: number }) | null;
+  proposals: Pick<ProposalView, "id" | "kind" | "toStatus" | "reason">[];
+}
+
+export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness">;
 
 /** The command an agent merges with when the repository lets it. */
 export const MERGE_COMMAND = "gh pr merge";
@@ -389,6 +407,7 @@ export class CodeLink extends Service {
         bindConnection: (projectId, connection, sessionId) => this.bindConnection(projectId, connection, sessionId),
         connectionSession: (projectId, repoId) => this.connectionSession(projectId, repoId),
         notify: (projectId) => this.notify(projectId),
+        summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
       })
     );
@@ -545,6 +564,34 @@ export class CodeLink extends Service {
 
   proposals(projectId: string, itemId?: string): ProposalView[] {
     return this.store.proposals(projectId, itemId, "open");
+  }
+
+  /** A ticket's code as one read for whoever is not looking at the desktop: an IM card, an agent asking. */
+  summary(projectId: string, itemId: string): CodeSummaryView {
+    const delivery = this.store.currentDelivery(projectId, itemId);
+    const current = this.currentLinks(projectId, itemId);
+    const primary = primaryOf(current);
+    const links = primary ? [primary, ...current.filter((l) => l.id !== primary.id)] : [];
+    const sessions = this.store.sessions(projectId, { itemId, ...(delivery ? { delivery: delivery.sequence } : {}) });
+    const live = sessions.find((s) => s.state !== "ended") ?? null;
+    return {
+      delivery: delivery ? { sequence: delivery.sequence, state: delivery.state } : null,
+      links: links.map((l) => ({
+        repo: this.ctx.repos.get(projectId, l.repoId)?.name ?? l.repoId,
+        branch: l.branch || null,
+        ahead: l.ahead,
+        behind: l.behind,
+        prNumber: l.prNumber,
+        prUrl: l.prUrl,
+        prState: l.prState,
+        mergedSha: l.mergedSha,
+        lastCommitAt: l.headAt
+      })),
+      session: live
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.activity, blocked: live.blocked, threadId: live.threadId, lastEventAt: live.lastEventAt ?? live.startedAt }
+        : null,
+      proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
+    };
   }
 
   unlinked(projectId: string): UnlinkedBranch[] {

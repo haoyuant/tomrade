@@ -11,8 +11,8 @@ import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapa
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
-import { FILE_HANDLE, links, renderBlock, toolLine, type ItemLookup } from "./rich.js";
-import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type WindowRow } from "./store.js";
+import { FILE_HANDLE, codeNews, codeSeen, links, proposalText, renderBlock, ticket, toolLine, type CodeLookup, type CodeSeen, type ItemLookup, type RenderScope } from "./rich.js";
+import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Watch, type WindowRow } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
@@ -77,6 +77,8 @@ interface Connection {
   /** The credentials it was opened with; a change reopens it. */
   credentials: string;
 }
+/** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
+interface CodeHost extends CodeLookup { resolve(projectId: string, proposalId: string, accept: boolean): { state: string } }
 interface Pairing { connectionId: string; code: string; projectId: string; expiresAt: number; failures: number; claim?: ImPairingView["claim"] }
 
 declare module "cordis" {
@@ -84,6 +86,8 @@ declare module "cordis" {
   interface Events {
     "im/registered"(id: string): void;
     "im/unregistered"(id: string): void;
+    /** Emitted by code link, when it is loaded. */
+    "codeLink/changed"(projectId: string): void;
   }
 }
 declare module "@tomradex/ipc" {
@@ -167,6 +171,7 @@ export class Im extends Service {
       schema: ImSettings, defaults: this.settings, scope: "machine", agent: "none", order: 80 });
     this.home.on("settings/changed", () => this.reload());
     this.home.on("agent/event", (threadId, event) => this.onAgentEvent(threadId, event));
+    this.home.on("codeLink/changed", projectId => this.onCode(projectId));
     this.home.inject(["ipc"], ctx => {
       ctx.ipc.handle("im.connections", () => this.views());
       ctx.ipc.handle("im.adapters", () => this.adapterViews());
@@ -1061,6 +1066,13 @@ export class Im extends Service {
     return t;
   }
 
+  /** A button that carries its own value, as a select's option would. */
+  private offerValue(b: Binding, kind: string, actorId: string, value: string): string {
+    const t = this.offer(b, kind, actorId);
+    this.store.run("UPDATE plugin_im_actions SET value_json = ? WHERE token = ?", JSON.stringify(value), t);
+    return t;
+  }
+
   /** The command an offered token stands for, and the value it carries, or null when the token is a question's. */
   private commandOf(b: Binding, actionToken: string, actorId: string): { kind: string; value?: string } | null {
     const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
@@ -1169,6 +1181,22 @@ export class Im extends Service {
     const running = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
     const when = running ? this.say(" It applies from the next turn.", "从下一轮开始生效。") : "";
     const done = (text: string, on = b) => { this.enqueue(on, `${kind}:${row.id}`, { text }, reply); this.accept(row); };
+    if (kind === "proposal") {
+      const [, verdict, projectId, proposalId] = /^(accept|reject):([^:]+):(.+)$/.exec(value) ?? [];
+      const code = this.code();
+      if (!verdict || !code || projectId !== b.project_id) this.refuse("That choice is no longer available", "该选项已不可用");
+      // Settled from here, so the change it causes is not news of a settlement elsewhere.
+      for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE binding_id = ?", b.id)) {
+        const seen = JSON.parse(w.seen_json) as CodeSeen;
+        if (seen.proposals.includes(proposalId)) this.store.run("UPDATE plugin_im_watch SET seen_json = ? WHERE binding_id = ? AND item_id = ?",
+          JSON.stringify({ ...seen, proposals: seen.proposals.filter(id => id !== proposalId) }), w.binding_id, w.item_id);
+      }
+      const settled = code.resolve(projectId, proposalId, verdict === "accept");
+      this.settleProposal(b, proposalId, settled.state === "accepted" ? this.say("Accepted", "已接受")
+        : settled.state === "rejected" ? this.say("Dismissed", "已忽略") : this.say("No longer applies", "已不再适用"));
+      this.accept(row);
+      return;
+    }
     if (kind === "switch" || kind === "switch!") {
       const target = this.home.agent.store.thread(b.project_id, value);
       if (!target || target.archived || target.surface !== "assistant") this.refuse("That conversation can't be continued here", "该会话无法在这里继续");
@@ -1248,6 +1276,7 @@ export class Im extends Service {
     this.store.db.transaction(() => {
       for (const message of detail.messages.filter(m => m.seq > b.cursor)) {
         const content = message.role === "agent" && this.visible(b, message.runId) ? this.render(b, message.block) : null;
+        if (content) this.watch(b, message.block);
         const streamed = content && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
         if (streamed) this.replace(b, streamed.id, content, { final: true });
         else if (content) this.enqueue(b, `message:${b.id}:${message.id}`, content);
@@ -1300,7 +1329,81 @@ export class Im extends Service {
 
   private render(b: Binding, block: Block): ImContent | null {
     const detail = this.settings.routes.find(r => r.id === b.route_id)?.output === "verbose";
-    return renderBlock({ projectId: b.project_id, threadId: b.thread_id, say: (en, zh) => this.say(en, zh), items: this.home.get("items") as ItemLookup | undefined }, block, detail);
+    return renderBlock(this.scope(b), block, detail);
+  }
+
+  private scope(b: Binding): RenderScope {
+    const items = this.items();
+    const code = this.code();
+    return { projectId: b.project_id, threadId: b.thread_id, say: (en, zh) => this.say(en, zh), ...(items ? { items } : {}), ...(code ? { code } : {}) };
+  }
+
+  private items() { return this.home.get("items") as ItemLookup | undefined; }
+  private code() { return this.home.get("codeLink") as CodeHost | undefined; }
+
+  /** Tickets a conversation was shown, so what happens to their code reaches it; seeing one again keeps it watched. */
+  private watch(b: Binding, block: Block) {
+    const data = block.type === "card" ? (block.data ?? {}) as Record<string, unknown> : {};
+    const keys = block.type === "changes" ? (block.items ?? []).filter(i => i.op !== "deleted").map(i => i.key)
+      : block.type === "card" && block.schema === "start" && typeof data.key === "string" ? [data.key] : [];
+    const items = this.items();
+    const code = this.code();
+    if (!keys.length || !items || !code) return;
+    for (const key of keys) {
+      const item = items.getByKey(b.project_id, key);
+      if (!item) continue;
+      let seen: CodeSeen;
+      try { seen = codeSeen(code.summary(b.project_id, item.id)); } catch { continue; }
+      this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at`, b.id, b.project_id, item.id, JSON.stringify(seen), Date.now());
+    }
+  }
+
+  /**
+   * A project's code changed: each conversation watching one of its tickets
+   * hears what is new (a pull request opened, merged or closed, a merge that
+   * waits on the person, a flag), and gets git's status proposals with buttons.
+   * A proposal settled elsewhere loses its buttons here.
+   */
+  private onCode(projectId: string) {
+    const items = this.items();
+    const code = this.code();
+    if (this.stopped || !this.store || !items || !code || !this.home.db.has(projectId)) return;
+    for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE project_id = ?", projectId)) {
+      const b = this.store.binding(w.binding_id);
+      const item = items.get(projectId, w.item_id);
+      if (!b || !item || !this.authorizedBinding(b)) continue;
+      let summary: ReturnType<CodeHost["summary"]>;
+      try { summary = code.summary(projectId, item.id); } catch { continue; }
+      const was = JSON.parse(w.seen_json) as CodeSeen;
+      const now = codeSeen(summary);
+      if (JSON.stringify(was) === JSON.stringify(now)) continue;
+      const say = (en: string, zh: string) => this.say(en, zh);
+      this.store.db.transaction(() => {
+        this.store.run("UPDATE plugin_im_watch SET seen_json = ? WHERE binding_id = ? AND item_id = ?", JSON.stringify(now), w.binding_id, w.item_id);
+        const news = codeNews(say, was, now, summary);
+        if (news.length) this.enqueue(b, `code:${b.id}:${item.id}:${hash(now).slice(0, 16)}`, { text: news.join("\n"), elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
+        for (const p of summary.proposals.filter(p => p.kind === "propose" && !was.proposals.includes(p.id))) {
+          const choice = (verdict: "accept" | "reject") => this.offerValue(b, "proposal", b.actor_id, `${verdict}:${projectId}:${p.id}`);
+          this.enqueue(b, `proposal:${b.id}:${p.id}`, { text: proposalText(say, item.key, p), actions: [
+            { label: this.say("Accept", "接受"), token: choice("accept"), style: "primary" },
+            { label: this.say("Not this time", "这次不用"), token: choice("reject") }
+          ] }, { anchor: null });
+        }
+        for (const id of was.proposals.filter(id => !now.proposals.includes(id))) this.settleProposal(b, id, this.say("Handled in Tomrade", "已在 Tomrade 处理"));
+      });
+    }
+  }
+
+  /** A proposal's buttons stop working; its card says how it ended, unless it already does. */
+  private settleProposal(b: Binding, proposalId: string, text: string) {
+    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id = 'cmd:proposal' AND value_json LIKE ?", b.id, `%:${proposalId}"`);
+    const id = `proposal:${b.id}:${proposalId}`;
+    const row = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", id);
+    if (!row || !(JSON.parse(row.content_json) as ImContent).actions?.length) return;
+    const head = (JSON.parse(row.content_json) as ImContent).text.split("\n")[0];
+    if (this.capsOf(b)?.cardUpdate || this.capsOf(b)?.edit) this.replace(b, id, { text: `${head}\n${text}` });
+    else this.enqueue(b, `settled:${id}`, { text: `${head}\n${text}` }, { anchor: null });
   }
 
   /** The progress message: what the turn is doing, a model retry, and the tools it has called. */
