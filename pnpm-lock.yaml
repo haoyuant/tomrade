@@ -1230,6 +1230,9 @@ importers:
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
+      '@tomradex/oplog':
+        specifier: workspace:*
+        version: link:../oplog
       '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk

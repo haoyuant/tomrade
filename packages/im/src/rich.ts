@@ -108,6 +108,49 @@ export function proposalText(say: Say, key: string, proposal: CodeSummary["propo
   return say(`${key}: move it to ${to}?\n${proposal.reason}`, `${key}：改为「${to}」吗？\n${proposal.reason}`);
 }
 
+/** The part of a ticket's evidence a delivery card reads. */
+export interface Delivered {
+  key: string; title: string; status: string;
+  evidence: {
+    resources: { id: string; name: string; file: { fileId: string } }[];
+    submissions: { id: string; report: string; artifactIds: string[] }[];
+    reviews: { submissionId: string; decision: string }[];
+  };
+}
+
+/** How much of a delivery's report the card carries; the rest is on the desktop. */
+const REPORT_LIMIT = 1500;
+
+/** The latest submission, while it still waits on the person's verdict. */
+export function awaitingReview(item: Delivered) {
+  const submission = item.evidence.submissions.at(-1);
+  return submission && item.status === "verifying" && !item.evidence.reviews.some(r => r.submissionId === submission.id) ? submission : null;
+}
+
+/** How a submission stopped waiting, for its card once the buttons go. */
+export function reviewOutcome(say: Say, item: Delivered, submissionId: string): string {
+  const review = item.evidence.reviews.find(r => r.submissionId === submissionId);
+  if (review?.decision === "accepted") return say("Accepted", "已验收通过");
+  if (review) return say("Sent back for changes", "已退回修改");
+  if (item.evidence.submissions.at(-1)?.id !== submissionId) return say("A newer delivery replaced it", "已有更新的交付");
+  return say("No longer waiting for review", "已不再等待验收");
+}
+
+/** A delivery waiting on the person: its report, its artifacts, and the ticket with its code. */
+export function deliveryCard(scope: RenderScope, item: Delivered, submission: Delivered["evidence"]["submissions"][number]): ImContent {
+  const { say } = scope;
+  const report = submission.report.length > REPORT_LIMIT ? `${submission.report.slice(0, REPORT_LIMIT)}…` : submission.report;
+  const artifacts = submission.artifactIds.flatMap(id => item.evidence.resources.filter(r => r.id === id));
+  return {
+    text: [say(`${item.key} is ready for your review`, `${item.key} 已提交交付，等你验收`), report].join("\n\n"),
+    elements: [
+      ...ticket(scope, item.key, item.title),
+      ...(artifacts.length ? [{ type: "section" as const, title: say("Artifacts", "产物"),
+        text: artifacts.map(a => `- [${a.name}](${links.file(scope.projectId, a.file.fileId)})`).join("\n") }] : [])
+    ]
+  };
+}
+
 /** Known card schemas as semantic cards; any other gets its title and a way into the conversation. */
 function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImContent {
   const { say } = scope;

@@ -5,13 +5,14 @@ import { MAX_MEDIA_BYTES, type AgentEvent, type Block, type PendingView, type Us
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
-import { FILE_HANDLE, codeNews, codeSeen, links, proposalText, renderBlock, ticket, toolLine, type CodeLookup, type CodeSeen, type ItemLookup, type RenderScope } from "./rich.js";
+import { FILE_HANDLE, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Watch, type WindowRow } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -79,6 +80,11 @@ interface Connection {
 }
 /** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
 interface CodeHost extends CodeLookup { resolve(projectId: string, proposalId: string, accept: boolean): { state: string } }
+/** The part of `ctx.items` a delivery card reads and settles, the service review_delivery records through. */
+interface ReviewHost {
+  get(projectId: string, id: string): (Delivered & { id: string; version: number }) | null;
+  reviewDelivery(projectId: string, id: string, input: { submissionId: string; decision: "accepted" | "changes-requested"; comment: string }, baseVersion: number): unknown;
+}
 interface Pairing { connectionId: string; code: string; projectId: string; expiresAt: number; failures: number; claim?: ImPairingView["claim"] }
 
 declare module "cordis" {
@@ -172,6 +178,8 @@ export class Im extends Service {
     this.home.on("settings/changed", () => this.reload());
     this.home.on("agent/event", (threadId, event) => this.onAgentEvent(threadId, event));
     this.home.on("codeLink/changed", projectId => this.onCode(projectId));
+    // After the write that appended it has committed.
+    this.home.on("oplog/appended", (projectId, entry) => { if (entry.entity === "item") queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId)); });
     this.home.inject(["ipc"], ctx => {
       ctx.ipc.handle("im.connections", () => this.views());
       ctx.ipc.handle("im.adapters", () => this.adapterViews());
@@ -1077,7 +1085,9 @@ export class Im extends Service {
   private commandOf(b: Binding, actionToken: string, actorId: string): { kind: string; value?: string } | null {
     const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
     if (!a?.question_id.startsWith("cmd:")) return null;
-    if (a.binding_id !== b.id || a.thread_id !== b.thread_id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed) {
+    // A delivery is reviewed by whoever the conversation started with, or by anyone paired with this computer.
+    const mine = a.actor_id === actorId || (a.question_id === "cmd:delivery" && this.paired(b, actorId));
+    if (a.binding_id !== b.id || a.thread_id !== b.thread_id || !mine || a.expires_at < Date.now() || a.consumed) {
       this.refuse("That choice has expired or isn't yours", "该选项已失效，或不由你选择");
     }
     this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", actionToken);
@@ -1194,6 +1204,35 @@ export class Im extends Service {
       const settled = code.resolve(projectId, proposalId, verdict === "accept");
       this.settleProposal(b, proposalId, settled.state === "accepted" ? this.say("Accepted", "已接受")
         : settled.state === "rejected" ? this.say("Dismissed", "已忽略") : this.say("No longer applies", "已不再适用"));
+      this.accept(row);
+      return;
+    }
+    if (kind === "delivery" || kind.startsWith("delivery-changes:")) {
+      const [verdict, projectId, itemId, submissionId] = kind === "delivery" ? value.split(":") : ["changes!", ...kind.slice("delivery-changes:".length).split(":")];
+      const host = this.reviews();
+      const item = host && projectId === b.project_id ? host.get(projectId, itemId) : null;
+      if (!host || !item) this.refuse("That choice is no longer available", "该选项已不可用");
+      if (awaitingReview(item)?.id !== submissionId) {
+        this.settleDelivery(b, submissionId, reviewOutcome((en, zh) => this.say(en, zh), item, submissionId));
+        this.refuse("This delivery is no longer waiting for review", "该交付已不再等待验收");
+      }
+      if (verdict === "changes") {
+        const t = this.offer(b, `delivery-changes:${projectId}:${itemId}:${submissionId}`, actorId);
+        const ask = this.say(`What should change in ${item.key}?`, `${item.key} 需要改什么？`);
+        const input = this.capsOf(b)?.textInput;
+        this.enqueue(b, `delivery-ask:${b.id}:${submissionId}:${row.id}`, input
+          ? { text: ask, elements: [{ type: "input", token: t, label: this.say("What should change", "修改意见") }] }
+          : { text: `${ask}\n${this.say(`Reply /answer ${t} <what should change>`, `回复 /answer ${t} <修改意见>`)}` }, { ...reply, visibleTo: reply.anchor ? actorId : null });
+        this.accept(row); return;
+      }
+      const said = value.trim();
+      if (verdict === "changes!" && !said) this.refuse("Say what should change", "请写下需要修改的内容");
+      const who = this.who(b, actorId);
+      // Their own words, as review_delivery keeps them, and who gave the verdict from where.
+      const comment = verdict === "accept" ? `Accepted in IM by ${who}` : `${said}\n\nRequested in IM by ${who}`;
+      host.reviewDelivery(projectId, item.id, { submissionId, decision: verdict === "accept" ? "accepted" : "changes-requested", comment }, item.version);
+      this.settleDelivery(b, submissionId, verdict === "accept" ? this.say(`Accepted by ${who}`, `${who} 已验收通过`)
+        : this.say(`Sent back for changes by ${who}: ${said}`, `${who} 已退回修改：${said}`));
       this.accept(row);
       return;
     }
@@ -1340,23 +1379,92 @@ export class Im extends Service {
 
   private items() { return this.home.get("items") as ItemLookup | undefined; }
   private code() { return this.home.get("codeLink") as CodeHost | undefined; }
+  private reviews() { return this.home.get("items") as ReviewHost | undefined; }
 
-  /** Tickets a conversation was shown, so what happens to their code reaches it; seeing one again keeps it watched. */
+  /** Tickets a conversation was shown, so what happens to their code and deliveries reaches it; seeing one again keeps it watched. */
   private watch(b: Binding, block: Block) {
     const data = block.type === "card" ? (block.data ?? {}) as Record<string, unknown> : {};
     const keys = block.type === "changes" ? (block.items ?? []).filter(i => i.op !== "deleted").map(i => i.key)
       : block.type === "card" && block.schema === "start" && typeof data.key === "string" ? [data.key] : [];
     const items = this.items();
-    const code = this.code();
-    if (!keys.length || !items || !code) return;
+    if (!keys.length || !items) return;
     for (const key of keys) {
       const item = items.getByKey(b.project_id, key);
-      if (!item) continue;
-      let seen: CodeSeen;
-      try { seen = codeSeen(code.summary(b.project_id, item.id)); } catch { continue; }
-      this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at`, b.id, b.project_id, item.id, JSON.stringify(seen), Date.now());
+      if (item) this.watchItem(b, item.id);
     }
+  }
+
+  private watchItem(b: Binding, itemId: string) {
+    const code = this.code();
+    let seen: CodeSeen = { pr: null, merged: false, blocked: false, proposals: [] };
+    try { if (code) seen = codeSeen(code.summary(b.project_id, itemId)); } catch { return; }
+    this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at`, b.id, b.project_id, itemId, JSON.stringify(seen), Date.now());
+  }
+
+  /**
+   * A ticket changed. A delivery submitted for review reaches each
+   * conversation that saw the ticket, or whose turn submitted it, as a card
+   * with Accept and Request changes; a card whose delivery stopped waiting
+   * (reviewed elsewhere, replaced, moved on) loses its buttons and says why.
+   */
+  private onItem(projectId: string, itemId: string, runId: string | null) {
+    const host = this.reviews();
+    if (this.stopped || !this.store || !host || !this.home.db.has(projectId)) return;
+    let item: ReturnType<ReviewHost["get"]>;
+    try { item = host.get(projectId, itemId); } catch { return; }
+    if (!item?.evidence) return;
+    const open = awaitingReview(item);
+    const thread = runId ? this.home.agent.store.run(projectId, runId)?.threadId : undefined;
+    for (const b of this.store.bindings()) {
+      if (b.project_id !== projectId || !this.authorizedBinding(b)) continue;
+      const watched = !!this.store.get("SELECT 1 FROM plugin_im_watch WHERE binding_id = ? AND item_id = ?", b.id, itemId);
+      const live = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND question_id = 'cmd:delivery' AND retired = 0 AND value_json LIKE ?", b.id, `%:${itemId}:%`);
+      const ours = !!thread && thread === b.thread_id && this.visible(b, runId);
+      if (!watched && !ours && !live.length) continue;
+      this.store.db.transaction(() => {
+        for (const sid of new Set(live.map(a => (JSON.parse(a.value_json!) as string).split(":")[3]))) {
+          if (sid !== open?.id) this.settleDelivery(b, sid, reviewOutcome((en, zh) => this.say(en, zh), item, sid));
+        }
+        if (!open || (!watched && !ours) || this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `delivery:${b.id}:${open.id}`)) return;
+        this.watchItem(b, item.id);
+        const choice = (verdict: "accept" | "changes") => this.offerValue(b, "delivery", b.actor_id, `${verdict}:${projectId}:${item.id}:${open.id}`);
+        this.enqueue(b, `delivery:${b.id}:${open.id}`, { ...deliveryCard(this.scope(b), item, open), actions: [
+          { label: this.say("Accept", "接受"), token: choice("accept"), style: "primary" },
+          { label: this.say("Request changes", "要求修改"), token: choice("changes") }
+        ] }, { anchor: null });
+      });
+    }
+  }
+
+  /** A delivery's buttons stop working; its card, and any open request for changes, say how it ended. */
+  private settleDelivery(b: Binding, submissionId: string, text: string) {
+    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND ((question_id = 'cmd:delivery' AND value_json LIKE ?) OR question_id LIKE ?)",
+      b.id, `%:${submissionId}"`, `cmd:delivery-changes:%:${submissionId}`);
+    const updates = this.capsOf(b)?.cardUpdate || this.capsOf(b)?.edit;
+    const id = `delivery:${b.id}:${submissionId}`;
+    const row = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", id);
+    if (row && (JSON.parse(row.content_json) as ImContent).actions?.length) {
+      const head = (JSON.parse(row.content_json) as ImContent).text.split("\n")[0];
+      if (updates) this.replace(b, id, { text: `${head}\n${text}` });
+      else this.enqueue(b, `settled:${id}`, { text: `${head}\n${text}` }, { anchor: null });
+    }
+    for (const ask of this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND id LIKE ?", b.id, `delivery-ask:${b.id}:${submissionId}:%`)) {
+      const content = JSON.parse(ask.content_json) as ImContent;
+      if (updates && content.elements?.length) this.replace(b, ask.id, { text: `${content.text.split("\n")[0]}\n${text}` });
+    }
+  }
+
+  /** The IM person's paired name, for the verdict they give here. */
+  private who(b: Binding, actorId: string): string {
+    const tenant = (JSON.parse(b.address_json) as ImAddress).tenantId;
+    const id = this.settings.identities.find(i => i.connectionId === b.connection_id && i.tenantId === tenant && i.actorId === actorId);
+    return id?.name ? `${id.name} (${actorId})` : actorId;
+  }
+
+  private paired(b: Binding, actorId: string): boolean {
+    const tenant = (JSON.parse(b.address_json) as ImAddress).tenantId;
+    return this.settings.identities.some(i => i.connectionId === b.connection_id && i.tenantId === tenant && i.actorId === actorId);
   }
 
   /**

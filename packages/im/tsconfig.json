@@ -24,6 +24,9 @@
       "path": "../ipc"
     },
     {
+      "path": "../oplog"
+    },
+    {
       "path": "../plugin-sdk"
     },
     {

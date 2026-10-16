@@ -22,6 +22,7 @@
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/ipc": "workspace:*",
+    "@tomradex/oplog": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/settings": "workspace:*",
