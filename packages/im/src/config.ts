@@ -7,6 +7,8 @@ export const ImSettings = z.object({
     credentials: z.record(z.string(), z.string().max(8192)).default({}) })).default([]),
   /** IM identities paired from the desktop, offered as the people a newly allowed group admits. */
   identities: z.array(z.object({ connectionId: id, tenantId: id, actorId: id, name: z.string().max(256).optional(), pairedAt: z.number() })).default([]),
+  /** Says in each paired direct chat when Tomrade comes online and goes offline on this computer. */
+  announcePresence: z.boolean().default(false),
   routes: z.array(z.object({
     id, connectionId: id, tenantId: id, conversationId: id,
     projectId: id, boardId: id.nullable().default(null), engine: id.optional(),
@@ -21,7 +23,9 @@ export const ImSettings = z.object({
     /** In a group: `mention` only @; `reply` @ or a reply to the bot; `all` every message the adapter sees. */
     groupActivation: z.enum(["mention", "reply", "all"]).default("reply"),
     /** `final` sends answers and questions only; `progress` also shows progress and growing replies; `verbose` adds a line per tool call. */
-    output: z.enum(["final", "progress", "verbose"]).default("progress")
+    output: z.enum(["final", "progress", "verbose"]).default("progress"),
+    /** In a direct chat, turns started on the desktop show here too. A group only ever shows turns started from IM, or shared from the desktop. */
+    desktopTurns: z.boolean().default(true)
   })).default([])
 }).superRefine((value, ctx) => {
   for (const key of ["connections", "routes"] as const) {

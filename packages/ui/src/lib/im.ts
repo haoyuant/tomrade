@@ -21,6 +21,13 @@ export const useImIgnored = () => useQuery({ queryKey: [...KEY, "ignored"], quer
 export const useImDeliveries = () => useQuery({ queryKey: [...KEY, "deliveries"], queryFn: () => invoke("im.deliveries") });
 export const useImPairings = () => useQuery({ queryKey: [...KEY, "pairings"], queryFn: () => invoke("im.pairings") });
 
+/** The IM conversations a thread is bound to; empty where IM isn't running (a browser tab). */
+export function useImThreadBindings(projectId: string, threadId: string | null) {
+  useLive();
+  return useQuery({ queryKey: [...KEY, "threadBindings", projectId, threadId], enabled: !!threadId,
+    queryFn: () => invoke("im.threadBindings", projectId, threadId!).catch(() => []) });
+}
+
 function useImMutation<A extends unknown[], R>(fn: (...args: A) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (args: A) => fn(...args), onSettled: () => qc.invalidateQueries({ queryKey: KEY }) });
@@ -33,3 +40,4 @@ export const useImRevoke = () => useImMutation((connectionId: string, tenantId: 
 export const useImAllow = () => useImMutation((request: ImAllowRequest) => invoke("im.allow", request));
 export const useImRetry = () => useImMutation((id: string) => invoke("im.retry", id));
 export const useImDiscard = () => useImMutation((id: string) => invoke("im.discard", id));
+export const useImShareNext = () => useImMutation((bindingId: string, on: boolean) => invoke("im.shareNext", bindingId, on));

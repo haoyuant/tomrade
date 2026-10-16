@@ -23,6 +23,7 @@ import { useSetupInTerminal } from "~/lib/setup";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { ChecklistBlock, FindingBlock } from "./DoctorCards";
+import { useImShareNext, useImThreadBindings } from "~/lib/im";
 
 const MIN_W = 352;
 const MAX_W = 924;
@@ -1374,6 +1375,7 @@ export function AgentPanel({
             ))}
           </div>
         )}
+        {threadId && <ImGroupShare projectId={projectId} threadId={threadId} />}
         <div className="ai-composer" data-busy={busy || undefined}>
           <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
             addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
@@ -1624,3 +1626,30 @@ export function AgentPanel({
 }
 
 export const aiOpenKey = STORE.open;
+
+/**
+ * A conversation bound to an IM group: its desktop turns stay on the desktop
+ * unless the person shares the next one with the group, here.
+ */
+function ImGroupShare({ projectId, threadId }: { projectId: string; threadId: string }) {
+  const { t } = useI18n();
+  const bindings = useImThreadBindings(projectId, threadId);
+  const share = useImShareNext();
+  const groups = (bindings.data ?? []).filter((b) => b.group);
+  if (!groups.length) return null;
+  return (
+    <>
+      {groups.map((g) => (
+        <div key={g.id} className="ai-queued" data-testid="im-group-share">
+          <span className="q-state">{t("agentPanel.imGroup")}</span>
+          <p className="q-text" title={g.conversationId}>
+            {g.shareNext ? t("agentPanel.imGroupSharing", { group: g.conversationId }) : t("agentPanel.imGroupPrivate", { group: g.conversationId })}
+          </p>
+          <button type="button" className="btn btn-ghost" disabled={share.isPending} onClick={() => share.mutate([g.id, !g.shareNext])}>
+            {g.shareNext ? t("common.cancel") : t("agentPanel.imGroupShare")}
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}

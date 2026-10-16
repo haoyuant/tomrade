@@ -10,7 +10,7 @@ import type {} from "@tomradex/settings";
 import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
 import { prepare } from "./render.js";
-import { FILE_HANDLE, renderBlock, toolLine, type ItemLookup } from "./rich.js";
+import { FILE_HANDLE, links, renderBlock, toolLine, type ItemLookup } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -50,6 +50,16 @@ export interface ImPairingView {
 export interface ImDeliveryView {
   id: string; connectionId: string; conversationId: string; state: "uncertain" | "failed";
   error: string | null; attempts: number; createdAt: number; preview: string;
+}
+export interface ImThreadBinding {
+  id: string; connectionId: string; conversationId: string; group: boolean;
+  /** The next desktop turn will reach this group too. */
+  shareNext: boolean;
+}
+/** Something waiting on the person, as the desktop's attention row decided it; reaches them in their direct chat. */
+export interface ImReminder {
+  projectId: string; threadId: string | null; kind: "permission" | "question" | "waiting" | "stuck";
+  title: string; body: string;
 }
 export interface ImAllowRequest {
   /** An ignored message's id. */
@@ -91,6 +101,10 @@ declare module "@tomradex/ipc" {
     "im.pairCancel": (connectionId: string) => void;
     /** Takes a paired identity off the connection's allow lists. */
     "im.revoke": (connectionId: string, tenantId: string, actorId: string) => void;
+    /** The IM conversations a thread is bound to, for the panel to say where its turns go. */
+    "im.threadBindings": (projectId: string, threadId: string) => ImThreadBinding[];
+    /** Sends the thread's next desktop turn to a group conversation too, or stops it. */
+    "im.shareNext": (bindingId: string, on: boolean) => boolean;
   }
   interface Broadcasts {
     /** Connections, pairings, ignored messages or deliveries changed; the settings panel refetches. */
@@ -126,7 +140,9 @@ export class Im extends Service {
   private readonly dirty = new Set<string>();
   private sweptAt = 0;
   private stopped = false;
-  private settings: ImSettings = { connections: [], identities: [], routes: [] };
+  private settings: ImSettings = { connections: [], identities: [], routes: [], announcePresence: false };
+  /** Connections that have said "online" since this start. */
+  private readonly announced = new Set<string>();
   private ignored: ImIgnoredView[] = [];
   private readonly pairings = new Map<string, Pairing>();
   /** The settings panel and the status bar, told when connections, pairings or stuck deliveries change. */
@@ -161,6 +177,8 @@ export class Im extends Service {
       ctx.ipc.handle("im.pairConfirm", connectionId => this.pairConfirm(connectionId));
       ctx.ipc.handle("im.pairCancel", connectionId => { this.pairings.delete(connectionId); this.changed(); });
       ctx.ipc.handle("im.revoke", (connectionId, tenantId, actorId) => this.revoke(connectionId, tenantId, actorId));
+      ctx.ipc.handle("im.threadBindings", (projectId, threadId) => this.threadBindings(projectId, threadId));
+      ctx.ipc.handle("im.shareNext", (bindingId, on) => this.shareNext(bindingId, on));
       const notify = () => ctx.ipc.send("im.changed");
       this.watchers.add(notify);
       return () => { this.watchers.delete(notify); };
@@ -182,6 +200,7 @@ export class Im extends Service {
       this.stopped = true;
       clearInterval(timer);
       for (const pending of this.progressTimers.values()) clearTimeout(pending);
+      if (this.settings.announcePresence) await Promise.all([...this.connections.values()].map(c => this.presence(c, false)));
       await Promise.all([...this.connections.values()].map(c => this.close(c)));
       this.connections.clear();
     };
@@ -198,6 +217,8 @@ export class Im extends Service {
       this.tick();
       this.changed();
       return async () => {
+        // At shutdown the adapter's plugin goes first: say goodbye while its connections still stand.
+        if (this.settings.announcePresence) await Promise.all([...this.connections.values()].filter(c => c.adapterId === adapter.id).map(c => this.presence(c, false)));
         this.adapters.delete(adapter.id);
         this.caps.delete(adapter.id);
         await Promise.all([...this.connections.values()].filter(c => c.adapterId === adapter.id).map(async c => {
@@ -331,7 +352,7 @@ export class Im extends Service {
     }
     if (!projectId) throw new Error("Choose a project for this conversation");
     im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, projectId, boardId: null, allowedActors: actors,
-      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress" });
+      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true });
   }
 
   private snapshot(): ImSettings { return structuredClone(ImSettings.parse(this.home.settings.get().im)); }
@@ -518,6 +539,7 @@ export class Im extends Service {
       c.detail = undefined;
       c.attempts = 0;
       this.changed();
+      if (this.settings.announcePresence && !this.announced.has(c.id)) { this.announced.add(c.id); void this.presence(c, true); }
       if (this.caps.get(c.adapterId)?.nativeCommands && session.commands) this.bestEffort(session.commands(this.commands()));
     } catch {
       if (!active()) return;
@@ -579,8 +601,9 @@ export class Im extends Service {
     if (!b) {
       if (!this.home.projects.get(route!.projectId) || !this.home.db.has(route!.projectId)) throw new Error("IM target project is unavailable");
       const th = this.openThread(route!);
-      this.store.run("INSERT INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        bindingId, route!.id, this.routeHash(route!), c.id, JSON.stringify(event.address), route!.projectId, th.id, event.actor.id, Date.now());
+      this.store.run("INSERT INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at, grp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        bindingId, route!.id, this.routeHash(route!), c.id, JSON.stringify(event.address), route!.projectId, th.id, event.actor.id, Date.now(),
+        event.kind === "message" ? (event.activation === "dm" ? 0 : 1) : null);
       b = this.store.binding(bindingId)!;
     }
     this.store.run("INSERT INTO plugin_im_inbox (id, message_key, binding_id, event_json, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)", id, messageKey, b.id, JSON.stringify(event), fingerprint, Date.now());
@@ -684,6 +707,7 @@ export class Im extends Service {
       const reply = { anchor: anchorOf(event) };
       let input: UserInput;
       if (event.kind === "action") {
+        if (this.remoteAnswer(b, row, event.token, event.actor.id, event.value)) return;
         const cmd = this.commandOf(b, event.token, event.actor.id);
         if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? String([event.value ?? ""].flat()[0] ?? ""), reply); return; }
         input = this.answer(b, event.token, event.actor.id, event.value);
@@ -752,6 +776,7 @@ export class Im extends Service {
         }
         if (await this.option(b, row, event, text, reply)) return;
         const match = /^\/answer\s+(\S+)(?:\s+([\s\S]+))?$/.exec(text);
+        if (match && this.remoteAnswer(b, row, match[1], event.actor.id, match[2])) return;
         const cmd = match && this.commandOf(b, match[1], event.actor.id);
         if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? match![2]?.trim() ?? "", reply); return; }
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
@@ -792,6 +817,7 @@ export class Im extends Service {
       }
       if (input.kind === "answer") this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ? AND question_id = ?", b.id, input.questionId);
       this.store.run("UPDATE plugin_im_inbox SET state = 'accepted', run_id = ? WHERE id = ?", runId, row.id);
+      this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", b.id, runId);
     } catch (e) {
       if (this.stopped) return;
       // No silent retries of rejected input or stale decisions.
@@ -805,6 +831,137 @@ export class Im extends Service {
           { anchor, visibleTo: anchor ? event.actor.id : null });
       }
     } finally { this.processing.delete(b.thread_id); }
+  }
+
+  /**
+   * Whether a turn shows in this IM conversation. Its own turns always do. A
+   * direct chat also shows turns started on the desktop unless the route says
+   * not to; a group shows them only when the desktop shared that turn.
+   */
+  private visible(b: Binding, runId: string | null): boolean {
+    if (runId && (this.store.get("SELECT 1 FROM plugin_im_runs WHERE binding_id = ? AND run_id = ?", b.id, runId)
+      || this.store.get("SELECT 1 FROM plugin_im_inbox WHERE binding_id = ? AND run_id = ?", b.id, runId))) return true;
+    if (this.isGroup(b)) return false;
+    return this.settings.routes.find(r => r.id === b.route_id)?.desktopTurns !== false;
+  }
+
+  /** The first sight of a turn after the desktop chose to share its next one with this group. */
+  private claimShared(b: Binding, runId: string) {
+    if (!b.share_next || this.store.get("SELECT 1 FROM plugin_im_inbox WHERE binding_id = ? AND run_id = ?", b.id, runId)) return;
+    this.store.db.transaction(() => {
+      this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", b.id, runId);
+      this.store.run("UPDATE plugin_im_bindings SET share_next = 0 WHERE id = ?", b.id);
+    });
+    b.share_next = 0;
+    this.changed();
+  }
+
+  threadBindings(projectId: string, threadId: string): ImThreadBinding[] {
+    return this.store.bindings().filter(b => b.project_id === projectId && b.thread_id === threadId && this.authorizedBinding(b)).map(b => ({
+      id: b.id, connectionId: b.connection_id, conversationId: (JSON.parse(b.address_json) as ImAddress).conversationId,
+      group: this.isGroup(b), shareNext: !!b.share_next
+    }));
+  }
+
+  shareNext(bindingId: string, on: boolean): boolean {
+    const b = this.store.binding(bindingId);
+    if (!b || !this.authorizedBinding(b) || !this.isGroup(b)) return false;
+    this.store.run("UPDATE plugin_im_bindings SET share_next = ? WHERE id = ?", on ? 1 : 0, b.id);
+    this.changed();
+    return true;
+  }
+
+  /** A direct chat of this person on this connection, where reminders reach them. */
+  private directChat(connectionId: string, actorId: string): Binding | undefined {
+    return this.store.bindings().find(x => x.connection_id === connectionId && x.actor_id === actorId && !this.isGroup(x) && this.authorizedBinding(x));
+  }
+
+  /**
+   * Something waits on the person while they are away from the desktop: a
+   * question or approval with its buttons, or a failure, in their direct chat.
+   * Nothing is sent where that conversation already shows the turn. True when
+   * it reached someone.
+   */
+  remind(n: ImReminder): boolean {
+    if (!n.threadId || (n.kind !== "permission" && n.kind !== "question" && n.kind !== "stuck") || !this.home.db.has(n.projectId)) return false;
+    const detail = this.home.agent.thread(n.projectId, n.threadId);
+    const runId = detail.runs.at(-1)?.id ?? null;
+    const bound = this.store.bindings().filter(b => b.thread_id === n.threadId && this.authorizedBinding(b));
+    if (bound.some(b => !this.isGroup(b) && this.visible(b, runId))) return false;
+    // Whoever started the IM conversation, or everyone who paired with the desktop for a thread only the desktop knows.
+    const people = bound.length ? bound.map(b => [b.connection_id, b.actor_id] as const)
+      : this.settings.identities.map(i => [i.connectionId, i.actorId] as const);
+    const pending = n.kind === "stuck" ? null : detail.pending;
+    let reached = false;
+    for (const [connectionId, actorId] of new Map(people.map(p => [p.join("\u0000"), p])).values()) {
+      const dm = this.directChat(connectionId, actorId);
+      if (!dm) continue;
+      const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}\n[${this.say("Open in Tomrade", "在 Tomrade 打开")}](${links.thread(n.projectId, n.threadId)})`;
+      const content: ImContent = pending ? this.remoteQuestion(dm, n.projectId, n.threadId, pending, actorId, head) : { text: head };
+      this.enqueue(dm, `remind:${dm.id}:${n.threadId}:${pending?.question.id ?? `${n.kind}:${runId}`}`, content, { anchor: null });
+      reached = true;
+    }
+    return reached;
+  }
+
+  /** A waiting question of another conversation, answerable from here by the person it was sent to. */
+  private remoteQuestion(dm: Binding, projectId: string, threadId: string, pending: PendingView, actorId: string, head: string): ImContent {
+    const issue = (value: string | null) => {
+      const t = token();
+      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, value_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+        t, dm.id, threadId, `remind:${projectId}:${pending.question.id}`, actorId, value === null ? null : JSON.stringify(value), Date.now() + this.config.actionTtlMs, Date.now());
+      return t;
+    };
+    const { question } = pending;
+    const options = question.options ?? [];
+    const actions = question.multiple ? [] : options.map(value => ({ label: value, token: issue(value) }));
+    const elements: ImElement[] = [];
+    if (question.multiple && options.length) elements.push({ type: "select", token: issue(null), multiple: true, options: options.map(o => ({ label: o, value: o })) });
+    if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.say("Your answer", "你的回答") });
+    return { text: `${head}\n\n${question.text}`, actions, ...(elements.length ? { elements } : {}) };
+  }
+
+  /** An answer from a reminder's buttons. True when the token was a reminder's. */
+  private remoteAnswer(b: Binding, row: Inbox, actionToken: string, actorId: string, value?: string | string[]): boolean {
+    const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
+    const [, projectId, questionId] = /^remind:([^:]+):(.+)$/.exec(a?.question_id ?? "") ?? [];
+    if (!a || !projectId) return false;
+    const pending = this.home.db.has(projectId) ? this.home.agent.thread(projectId, a.thread_id).pending : null;
+    if (a.binding_id !== b.id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed || pending?.question.id !== questionId) {
+      this.refuse("Question already handled, expired, or not yours to answer", "问题已处理、已失效，或不由你回答");
+    }
+    let answer: unknown = a.value_json === null ? value : JSON.parse(a.value_json);
+    if (pending.question.multiple && typeof answer === "string") {
+      try { answer = JSON.parse(answer); } catch { this.refuse("Reply with a JSON array of selected values", "请用 JSON 数组回复所选的值"); }
+    }
+    const options = pending.question.options ?? [];
+    const valid = pending.question.multiple
+      ? Array.isArray(answer) && answer.every(v => typeof v === "string" && (pending.question.freeText || options.includes(v)))
+      : typeof answer === "string" && (pending.accepts === "text" || pending.question.freeText || options.includes(answer));
+    if (!valid) this.refuse("Invalid question answer", "回答无效");
+    const event = JSON.parse(row.event_json) as ImInbound;
+    this.home.agent.send(projectId, a.thread_id, { kind: "answer", questionId, value: answer as string | string[] }, { requestId: `im:${row.id}`, source: {
+      connection: b.connection_id, tenant: event.address.tenantId, conversation: event.address.conversationId, actor: actorId, event: event.eventId
+    } });
+    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id = ?", b.id, a.question_id);
+    const said = Array.isArray(answer) ? answer.join(", ") : String(answer);
+    this.enqueue(b, `remind-answered:${row.id}`, { text: this.say(`Answered: ${said}`, `已回答：${said}`) }, { anchor: null });
+    this.accept(row);
+    return true;
+  }
+
+  /** "Online" or "going offline" in each direct chat on the connection; best effort. */
+  private async presence(c: Connection, online: boolean) {
+    const caps = this.caps.get(c.adapterId);
+    if (!caps || !c.session || c.state !== "connected") return;
+    const chats = new Map(this.store.bindings().filter(b => b.connection_id === c.id && !this.isGroup(b) && this.authorizedBinding(b))
+      .map(b => [b.address_json, JSON.parse(b.address_json) as ImAddress]));
+    const text = online
+      ? this.say("Tomrade is online on your computer.", "电脑上的 Tomrade 已上线。")
+      : this.say("Tomrade is going offline on your computer. Messages sent while it is offline may not arrive; send them again once it is back.", "电脑上的 Tomrade 即将下线。离线期间发的消息可能收不到，上线后请重新发送。");
+    const [content] = prepare({ text }, caps, (en, zh) => this.say(en, zh));
+    await Promise.all([...chats.values()].map(address =>
+      deadline(c.session!.deliver({ operationId: `presence:${token()}`, address, content }), Math.min(2_000, this.config.operationTimeoutMs)).catch(() => {})));
   }
 
   /** A new conversation the way the route opens one: its engine, options and permission mode. */
@@ -849,6 +1006,7 @@ export class Im extends Service {
 
   /** Whether this conversation is a group: its people see whatever the bound thread says. */
   private isGroup(b: Binding): boolean {
+    if (b.grp !== null && b.grp !== undefined) return b.grp === 1;
     const last = this.store.all<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? ORDER BY seq DESC LIMIT 20", b.id)
       .map(r => JSON.parse(r.event_json) as ImInbound).find(e => e.kind === "message");
     return last?.kind === "message" && last.activation !== "dm";
@@ -1021,13 +1179,13 @@ export class Im extends Service {
     const detail = this.home.agent.thread(b.project_id, b.thread_id);
     this.store.db.transaction(() => {
       for (const message of detail.messages.filter(m => m.seq > b.cursor)) {
-        const content = message.role === "agent" ? this.render(b, message.block) : null;
+        const content = message.role === "agent" && this.visible(b, message.runId) ? this.render(b, message.block) : null;
         const streamed = content && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
         if (streamed) this.replace(b, streamed.id, content, { final: true });
         else if (content) this.enqueue(b, `message:${b.id}:${message.id}`, content);
         this.store.run("UPDATE plugin_im_bindings SET cursor = ? WHERE id = ?", message.seq, b.id);
       }
-      this.pending(b, detail.pending);
+      this.pending(b, this.visible(b, detail.runs.at(-1)?.id ?? null) ? detail.pending : null);
       // Settles a progress message whose `done` event was missed, e.g. across a restart; never posts a new one.
       for (const run of detail.runs.filter(r => r.status !== "running")) {
         const progress = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", `progress:${b.id}:${run.id}`);
@@ -1043,7 +1201,7 @@ export class Im extends Service {
 
   private pending(b: Binding, pending: PendingView | null) {
     const runId = this.home.agent.store.runs(b.project_id, b.thread_id).at(-1)?.id ?? null;
-    const previous = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND retired = 0 AND question_id NOT LIKE 'cmd:%'", b.id);
+    const previous = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND retired = 0 AND question_id NOT LIKE 'cmd:%' AND question_id NOT LIKE 'remind:%'", b.id);
     for (const a of previous) if (a.question_id !== pending?.question.id || a.thread_id !== b.thread_id || a.run_id !== runId || a.expires_at < Date.now()) {
       this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", a.token);
       const id = `question:${b.id}:${a.question_id}`;
@@ -1093,9 +1251,12 @@ export class Im extends Service {
     if (this.stopped) return;
     if (event.type === "done") queueMicrotask(() => this.turns.delete(threadId));
     if (event.type !== "delta" && event.type !== "progress") this.dirty.add(threadId);
+    const runId = event.type === "progress" || event.type === "delta" ? event.runId : event.type === "done" ? event.run.id : event.type === "message" ? event.message.runId : null;
     for (const b of this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b))) {
       const caps = this.capsOf(b);
       if (!caps) continue;
+      if (runId) this.claimShared(b, runId);
+      if (runId && !this.visible(b, runId)) continue;
       const quiet = this.settings.routes.find(r => r.id === b.route_id)?.output === "final";
       const streaming = !quiet && this.streamMode(caps, this.connections.get(b.connection_id)?.session) !== "none";
       if (event.type === "progress" && event.activity) this.activity.set(threadId, event.activity);

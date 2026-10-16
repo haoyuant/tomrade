@@ -5,6 +5,7 @@ import type { RunView, ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
 import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
+import type { ImReminder } from "@tomradex/im";
 import { showMainWindow, whenLoaded } from "./main-window.js";
 
 /** One thing an agent is waiting on the person for. */
@@ -37,6 +38,11 @@ export interface NotificationPrefs {
   waiting: boolean;
   stopped: boolean;
   finished: boolean;
+  /**
+   * Where else the same notice reaches the person while they are away from the computer — one place, never two.
+   * Phone push (TOM-93) joins as another value here.
+   */
+  away: "im" | "none";
 }
 
 declare module "cordis" {
@@ -67,13 +73,16 @@ export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
     approvals: z.boolean().default(true).meta({ title: "Approvals and questions" }).describe("An agent needs your permission or asks you something."),
     waiting: z.boolean().default(true).meta({ title: "Waiting for you" }).describe("A coding session ended its turn and has waited 15 seconds without you."),
     stopped: z.boolean().default(true).meta({ title: "Stopped" }).describe("A run or a coding session stopped on an error."),
-    finished: z.boolean().default(true).meta({ title: "Finished" }).describe("A ticket's run, or any run over 30 seconds, finished in the background.")
+    finished: z.boolean().default(true).meta({ title: "Finished" }).describe("A ticket's run, or any run over 30 seconds, finished in the background."),
+    away: z.enum(["im", "none"]).default("im").meta({ title: "While you're away, also remind me in" })
+      .describe("Approvals, questions and failures go to your paired IM direct chat, with buttons to answer there. Only one place is reminded.")
   }),
-  defaults: { enabled: true, approvals: true, waiting: true, stopped: true, finished: true },
+  defaults: { enabled: true, approvals: true, waiting: true, stopped: true, finished: true, away: "im" },
   order: 15,
   scope: "user",
   agent: "write",
   words: {
+    en: { fields: { away: { options: { im: "IM direct chat", none: "Nowhere else" } } } },
     zh: {
       title: "通知",
       description: "Tomrade 的窗口都不在前台时，哪些事要告诉你。Dock 数字和角标不受影响。",
@@ -82,7 +91,8 @@ export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
         approvals: { title: "批准与提问", description: "代理需要你批准，或者在问你问题。" },
         waiting: { title: "在等你", description: "编码会话说完一轮，等了你 15 秒。" },
         stopped: { title: "停下了", description: "运行或编码会话因出错停下。" },
-        finished: { title: "完成", description: "工单的运行，或者超过 30 秒的运行，在后台完成。" }
+        finished: { title: "完成", description: "工单的运行，或者超过 30 秒的运行，在后台完成。" },
+        away: { title: "不在电脑前时，还提醒到", description: "批准、提问和出错会发到你已配对的 IM 私聊，可以直接点按钮处理。只提醒一处。", options: { im: "IM 私聊", none: "不额外提醒" } }
       }
     }
   }
@@ -218,6 +228,14 @@ export class Teller {
   }
 }
 
+export interface ImRemindable { remind(n: ImReminder): boolean }
+
+/** The one other place a notice reaches the person while they are away, as they chose. */
+export function remindAway(prefs: NotificationPrefs, note: AttentionNote, im: ImRemindable | undefined): void {
+  if (prefs.away !== "im") return;
+  im?.remind({ projectId: note.entry.projectId, threadId: note.entry.threadId, kind: note.entry.kind, title: note.title, body: note.body });
+}
+
 /**
  * Says when an agent is waiting on the person: a count on the Dock, a flash
  * of the taskbar, and — while no Tomrade window has focus — a notification
@@ -290,6 +308,11 @@ export const attention = {
       words,
       tell: (note) => {
         ctx.emit("attention/notified", note);
+        try {
+          remindAway({ ...NOTIFICATIONS_SECTION.defaults, ...(ctx.settings.get().notifications as Partial<NotificationPrefs> | undefined) }, note, ctx.get("im") as ImRemindable | undefined);
+        } catch (e) {
+          ctx.logger.warn(`couldn't remind in IM: ${(e as Error).message}`);
+        }
         if (!shows || !Notification.isSupported()) return;
         if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
         const n = new Notification({ title: note.title, body: note.body, silent: false });

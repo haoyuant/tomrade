@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: {}, BrowserWindow: {}, Notification: {} }));
-import { NOTIFICATIONS_SECTION, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { NOTIFICATIONS_SECTION, remindAway, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 
 const WORDS = { assistant: "The assistant", permission: "{who} needs your approval", question: "{who} is asking you something", waiting: "{who} is waiting for you", stuck: "{who} stopped", finished: "{who} finished", lifted: "{who} can go on", liftedBody: "The usage limit has lifted." };
 
@@ -114,4 +114,16 @@ it("says a conversation can go on once its usage limit lifts, unless waits are s
   state.prefs = { ...state.prefs, waiting: false };
   teller.lifted(entry);
   expect(told.map((n) => [n.title, n.body])).toEqual([["TOM-9 · Claude Code can go on", "The usage limit has lifted."]]);
+});
+
+it("reminds in IM only when that is where the person chose to be reminded", () => {
+  const reminded: unknown[] = [];
+  const im = { remind: (n: unknown) => (reminded.push(n), true) };
+  const note: AttentionNote = { title: "AL-1 · Claude Code needs your approval", body: "Run the deploy?", entry: entry("thread:t1", "permission") };
+  remindAway({ ...NOTIFICATIONS_SECTION.defaults }, note, im);
+  expect(reminded).toEqual([{ projectId: "p", threadId: "t1", kind: "permission", title: note.title, body: "Run the deploy?" }]);
+  remindAway({ ...NOTIFICATIONS_SECTION.defaults, away: "none" }, note, im);
+  expect(reminded).toHaveLength(1);
+  // No IM running: nothing to do, and nothing breaks.
+  expect(() => remindAway({ ...NOTIFICATIONS_SECTION.defaults }, note, undefined)).not.toThrow();
 });

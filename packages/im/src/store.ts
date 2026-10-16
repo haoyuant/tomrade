@@ -49,10 +49,14 @@ ALTER TABLE plugin_im_outbox ADD COLUMN stream INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE plugin_im_outbox ADD COLUMN stream_of TEXT;
 ALTER TABLE plugin_im_outbox ADD COLUMN streamed TEXT;
 CREATE INDEX idx_plugin_im_outbox_stream ON plugin_im_outbox(binding_id, stream);
+` }, { version: 5, up: `
+ALTER TABLE plugin_im_bindings ADD COLUMN grp INTEGER;
+ALTER TABLE plugin_im_bindings ADD COLUMN share_next INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE plugin_im_runs (binding_id TEXT NOT NULL, run_id TEXT NOT NULL, PRIMARY KEY (binding_id, run_id));
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
-  plugin_im_outbox: { export: false }, plugin_im_actions: { export: false }
+  plugin_im_outbox: { export: false }, plugin_im_actions: { export: false }, plugin_im_runs: { export: false }
 } as const;
 
 export interface Binding {
@@ -61,6 +65,10 @@ export interface Binding {
   cursor: number; created_at: number;
   /** In a group, the message that started the current turn; replies attach to it. */
   anchor: string | null;
+  /** 1 for a group conversation, 0 for a direct chat; null for a binding made before it was recorded. */
+  grp: number | null;
+  /** 1 while the desktop asked for its next turn on this thread to reach the group too. */
+  share_next: number;
 }
 export interface Inbox {
   seq: number; id: string; message_key: string | null; binding_id: string;
@@ -101,6 +109,7 @@ export class ImStore {
       this.run("DELETE FROM plugin_im_inbox WHERE state NOT IN ('queued') AND created_at < ?", before);
       this.run("DELETE FROM plugin_im_outbox WHERE state IN ('delivered', 'cancelled') AND created_at < ?", before);
       this.run("DELETE FROM plugin_im_actions WHERE retired = 1 AND created_at < ?", before);
+      this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'remind:%' AND expires_at < ?", before);
       this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'cmd:%' AND expires_at < ?", before);
     });
   }

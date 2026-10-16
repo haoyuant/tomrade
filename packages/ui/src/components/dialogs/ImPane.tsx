@@ -14,7 +14,7 @@ import { useProjects, useSaveSettings, useSettings } from "~/lib/queries";
 import { cn } from "~/lib/utils";
 
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
-const EMPTY: ImSettings = { connections: [], identities: [], routes: [] };
+const EMPTY: ImSettings = { connections: [], identities: [], routes: [], announcePresence: false };
 
 const STATE_KEY: Record<ImConnectionView["state"], MessageKey> = {
   connecting: "imSettings.stateConnecting",
@@ -274,7 +274,7 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
         </div>
       </div>
       <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-        {([["allowDirectMessages", "imSettings.allowDirect"], ["allowGroups", "imSettings.allowGroups"]] as const).map(([key, label]) => (
+        {([["allowDirectMessages", "imSettings.allowDirect"], ["allowGroups", "imSettings.allowGroups"], ["desktopTurns", "imSettings.desktopTurns"]] as const).map(([key, label]) => (
           <label key={key} className="row" style={{ gap: 6 }}>
             <button type="button" className="switch" role="switch" aria-checked={route[key]} aria-label={t(label)} onClick={() => set({ [key]: !route[key] })} />
             {t(label)}
@@ -466,7 +466,7 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
                 defaultProject={defaultProject} busy={save.isPending} onError={setError}
                 onEdit={() => setEditing(view.id)}
                 onToggle={() => persist({ ...im, connections: im.connections.map((c) => (c.id === view.id ? { ...c, enabled: !c.enabled } : c)) })}
-                onRemove={() => persist({ connections: im.connections.filter((c) => c.id !== view.id), identities: im.identities.filter((i) => i.connectionId !== view.id), routes: im.routes.filter((r) => r.connectionId !== view.id) })}
+                onRemove={() => persist({ ...im, connections: im.connections.filter((c) => c.id !== view.id), identities: im.identities.filter((i) => i.connectionId !== view.id), routes: im.routes.filter((r) => r.connectionId !== view.id) })}
                 onRoutes={(routes) => persist({ ...im, routes })} />
             )
           )}
@@ -483,6 +483,11 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
           )}
           {error && <p className="meta-txt dense" role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
         </div>
+        <label className="row meta-txt" style={{ gap: 6 }}>
+          <button type="button" className="switch" role="switch" aria-checked={im.announcePresence} aria-label={t("imSettings.announcePresence")}
+            onClick={() => persist({ ...im, announcePresence: !im.announcePresence })} data-testid="im-presence" />
+          {t("imSettings.announcePresence")}
+        </label>
         <Ignored im={im} defaultProject={defaultProject} onError={setError} />
         <Deliveries onError={setError} />
       </div>
