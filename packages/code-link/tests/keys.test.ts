@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LlmService } from "@tomradex/llm";
-import { SLUG_MAX, branchFor, keysInText, parseBranch, slugify, titleSlug, usableSlug } from "@tomradex/code-link";
+import { SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, titleSlug, usableSlug } from "@tomradex/code-link";
 
 /** Only completeJson is exercised; the rest throws so a wrong path is loud. */
 const llmAnswering = (answer: unknown, seen?: string[]): LlmService =>
@@ -99,5 +99,15 @@ describe("keys", () => {
   it("finds every key a commit message names, once, in order", () => {
     expect(keysInText("TOM-42: add push\n\nRefs TOM-42, tom-7. Not XTOM-9 or TOM-10a", "TOM")).toEqual([42, 7]);
     expect(keysInText("nothing here", "TOM")).toEqual([]);
+  });
+
+  it("takes as delivered only what a default-branch commit leads with, lists or closes", () => {
+    // The squash of TOM-147 that only mentioned TOM-149.
+    expect(deliveredKeys("TOM-147: bootstrap a workstream once (#242)", "* TOM-147: bootstrap once\n\n* TOM-147: leave Pi's main-chat permissions to TOM-149", "TOM")).toEqual([147]);
+    expect(deliveredKeys("feat(TOM-38): rate limits", "", "TOM")).toEqual([38]);
+    expect(deliveredKeys("fix: crash in the dialog (TOM-12)", "See TOM-13 for the rest", "TOM")).toEqual([12]);
+    expect(deliveredKeys("Merge pull request #237 from haoyuant/tom-142/pomodoro-desktop-widget", "TOM-142: Pomodoro ships, unlike TOM-90", "TOM")).toEqual([142]);
+    expect(deliveredKeys("Tidy the importer", "Closes TOM-12, fixes: TOM-13 and resolves tom-14; refs TOM-15", "TOM")).toEqual([12, 13, 14]);
+    expect(deliveredKeys("Revert \"TOM-12: add push\"", "This reverts commit abc.", "TOM")).toEqual([]);
   });
 });

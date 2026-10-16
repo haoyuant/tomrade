@@ -1,5 +1,5 @@
 import type { Git } from "@tomradex/storage";
-import { keysInText, parseBranch } from "./keys.js";
+import { deliveredKeys, keysInText, parseBranch } from "./keys.js";
 import { remoteFailureDetail, remoteFailureMessage } from "./remote.js";
 
 /** Project manifests anywhere in a repository — one is enough for `scaffolded`. */
@@ -201,7 +201,7 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     for (const record of log.stdout.split(RS)) {
       const [sha, ct, subject, body] = record.replace(/^\n/, "").split(US);
       if (!sha?.trim()) continue;
-      for (const keyNum of keysInText(`${subject ?? ""}\n${body ?? ""}`, opts.prefix)) {
+      for (const keyNum of deliveredKeys(subject ?? "", body ?? "", opts.prefix)) {
         // Newest evidence wins when a full rescan contains several deliveries.
         if (!mergedKeys.has(keyNum)) mergedKeys.set(keyNum, { sha: sha.trim(), at: Number(ct) * 1000 || 0, subject: (subject ?? "").trim() });
       }

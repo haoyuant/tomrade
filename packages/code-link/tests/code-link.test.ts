@@ -357,6 +357,23 @@ describe("code link", () => {
     expect(codeLink.links(project.id, other.id).map((l) => l.branch)).toEqual([otherBranch]);
   });
 
+  it("does not take another ticket's squash commit that mentions this one as its merge", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const other = ticket("Other", "doing");
+    const item = ticket("Still open", "verifying");
+    commitOn(checkout, `tom-${item.keyNum}/work`, "work.ts", `TOM-${item.keyNum}: the work`);
+    await codeLink.scan(project.id);
+    git(["checkout", "-q", "main"], checkout);
+    fs.writeFileSync(path.join(checkout, "other.ts"), "other\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", `TOM-${other.keyNum}: the other work (#5)`, "-m", `* TOM-${other.keyNum}: leave the rest to TOM-${item.keyNum}`], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ mergedSha: null })]);
+    expect(items.get(project.id, item.id)!.status).toBe("verifying");
+  });
+
   it("finishes a merged ticket while its terminal session is still active", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Merge message while working", "verifying");

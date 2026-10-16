@@ -118,6 +118,35 @@ export function keysInText(text: string, prefix: string): number[] {
   return out;
 }
 
+/** The first key before a line's first colon (`TOM-147: …`, `feat(TOM-38): …`); null when it leads with none. */
+function leadKey(line: string, prefix: string): number | null {
+  const colon = line.indexOf(":");
+  return colon < 0 ? null : (keysInText(line.slice(0, colon), prefix)[0] ?? null);
+}
+
+/**
+ * The tickets a commit on the default branch delivers: the key leading its
+ * subject (or else the first key in it: `fix: … (TOM-12)`, or the branch a
+ * merge names), the keys leading the commit lines a squash body lists
+ * (`* TOM-147: …`), and keys a closing word names (`Closes TOM-12`). Any other
+ * mention is a reference, not merge evidence.
+ */
+export function deliveredKeys(subject: string, body: string, prefix: string): number[] {
+  if (/^Revert\b/i.test(subject.trim())) return [];
+  const out: number[] = [];
+  const add = (key: number | null | undefined) => {
+    if (key != null && !out.includes(key)) out.push(key);
+  };
+  add(leadKey(subject, prefix) ?? keysInText(subject, prefix)[0]);
+  for (const line of body.split("\n")) {
+    const item = /^\s*[*-]\s+(.*)$/.exec(line);
+    if (item) add(leadKey(item[1]!, prefix));
+  }
+  const closing = new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\b:?\\s+(?<![A-Za-z0-9])${escapeRe(prefix)}-(\\d+)(?![A-Za-z0-9])`, "gi");
+  for (const m of `${subject}\n${body}`.matchAll(closing)) add(Number(m[1]));
+  return out;
+}
+
 /** The pull request a squash or merge commit's subject names: `… (#243)` or `Merge pull request #243 from …`. */
 export function subjectPr(subject: string): number | null {
   const m = /\(#(\d+)\)\s*$/.exec(subject) ?? /^Merge pull request #(\d+)\b/.exec(subject);
