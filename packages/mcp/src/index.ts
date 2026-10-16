@@ -364,7 +364,7 @@ export class Mcp extends Service {
       name: "whoami",
       title: "Which Tomrade is this",
       description:
-        "Which Tomrade instance answers this connection (installed app or development build, version, process, data directory, port), the signed-in account, and a project's sync: how many writes made here have not yet reached where the project is shared. Two Tomrades on one machine keep separate data — call this when an item you created seems missing, or before relying on another instance or machine seeing your writes.",
+        "Which Tomrade answers this connection (installed or development build, version, process, data folder, port), the signed-in account, and a project's sync: writes made here not yet shared. Two Tomrades on one machine keep separate data — call it when an item you created seems missing, or before relying on another instance or machine seeing your writes.",
       input: z.object({ projectId: z.string().optional().describe("The project to report sync for; omit for the current one, or for every project when there is none") }),
       readOnly: true,
       execute: ({ projectId }, inv) => {

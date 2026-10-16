@@ -77,6 +77,12 @@ export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
    * The MCP server still serves it; the tool refuses calls from elsewhere.
    */
   surface?: string;
+  /**
+   * A kit of tools few conversations use (routines, plugins, diagrams…). A
+   * conversation whose kind does not carry the kit is offered it on request:
+   * the engine loads it when the model asks, or opens a playbook naming it.
+   */
+  kit?: string;
   /** How to undo this tool's non-oplog effects; undoRun calls it for ledger entries whose tool declares one. */
   revert?(args: z.output<S>, result: unknown, invocation: ToolInvocation): void | Promise<void>;
 }
@@ -98,6 +104,7 @@ export interface ToolDescriptor {
   description: string;
   inputSchema: Record<string, unknown>;
   whole?: boolean;
+  kit?: string;
 }
 
 declare module "cordis" {
@@ -236,9 +243,22 @@ export class Tools extends Service {
   static provide = "tools";
 
   private registry = new Map<string, ToolDefinition>();
+  private kitNotes = new Map<string, string>();
 
   constructor(ctx: Context) {
     super(ctx, "tools");
+  }
+
+  /** What a kit is for, in a few words the model reads before it loads the kit ("recurring tickets on a schedule"). Reversible. */
+  kit(id: string, purpose: string): () => void {
+    return this.ctx.effect(() => {
+      this.kitNotes.set(id, purpose);
+      return () => this.kitNotes.delete(id);
+    }, `tools.kit(${id})`);
+  }
+
+  kits(): Record<string, string> {
+    return Object.fromEntries(this.kitNotes);
   }
 
   /** Reversible: the tool is removed when the registering plugin unloads. */
@@ -268,7 +288,11 @@ export class Tools extends Service {
   }
 
   describe(): ToolDescriptor[] {
-    return this.list().map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: z.toJSONSchema(t.input), ...(t.whole ? { whole: true } : {}) }));
+    // `$schema` names the draft in every tool, and the model pays for it in every request.
+    return this.list().map((t) => {
+      const { $schema: _, ...inputSchema } = z.toJSONSchema(t.input);
+      return { name: t.name, title: t.title, description: t.description, inputSchema, ...(t.whole ? { whole: true } : {}), ...(t.kit ? { kit: t.kit } : {}) };
+    });
   }
 
   /** Validate, pass the tools/pre-execute gate, run, and report the outcome. */

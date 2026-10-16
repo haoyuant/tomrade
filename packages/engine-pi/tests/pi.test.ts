@@ -19,7 +19,7 @@ it("reads pi's model table and its no-credential answer", () => {
 });
 
 it("narrows tools for read-only turns only, the main chat included", () => {
-  expect(toolSelection({ permissionMode: "read-only" })).toBe("read,grep,find,ls,mcp__tomrade__*");
+  expect(toolSelection({ permissionMode: "read-only" })).toBe("read,grep,find,ls,tool_search,mcp__tomrade__*");
   expect(toolSelection({ permissionMode: "full-access" })).toBeNull();
   expect(toolSelection({ permissionMode: "ask" })).toBeNull();
   expect(PERMISSION_MODES).toMatchObject({ default: "full-access", mainDefault: "ask" });
@@ -44,11 +44,22 @@ it("registers Tomrade's MCP server and gates only what may change something", as
   const { gate } = await load(true);
   const asked: string[] = [];
   const ctx = (answer: boolean) => ({ ui: { confirm: async (title: string) => { asked.push(title); return answer; } } });
-  for (const toolName of ["read", "mcp__tomrade__create_item", "mcp__docs__search"]) expect(await gate!({ toolName, input: {} }, ctx(false))).toBeUndefined();
+  for (const toolName of ["read", "tool_search", "mcp__tomrade__create_item", "mcp__docs__search"]) expect(await gate!({ toolName, input: {} }, ctx(false))).toBeUndefined();
   expect(asked).toEqual([]);
   expect(await gate!({ toolName: "bash", input: { command: "rm -rf x" } }, ctx(true))).toBeUndefined();
   expect(await gate!({ toolName: "write", input: {} }, ctx(false))).toMatchObject({ block: true });
   expect(asked).toEqual(["Pi wants to use bash", "Pi wants to use write"]);
+});
+
+it("declares a kit the conversation does not carry only once tool_search loads it, and hides another surface's tools", async () => {
+  const source = bridgeSource({ url: "http://127.0.0.1:9/mcp", token: "t", approval: false, deferred: ["create_template", "schedule_template"], hidden: ["doctor_conclude"], kits: ["routines — recurring tickets", "plugins — build a Tomrade plugin"] });
+  const servers: Record<string, any> = {};
+  (await import(/* @vite-ignore */ `data:text/javascript,${encodeURIComponent(source)}`)).default({ registerMcpServer: (name: string, config: unknown) => { servers[name] = config; }, on: () => {} });
+  expect(servers.tomrade).toMatchObject({ exposure: "direct", toolExposure: { create_template: "deferred", schedule_template: "deferred", doctor_conclude: "hidden" } });
+  expect(servers.tomrade.description).toBe("Tomrade: your mcp__tomrade__ tools are the project's backlog. More via tool_search when asked: routines — recurring tickets; plugins — build a Tomrade plugin");
+  const plain: Record<string, any> = {};
+  (await import(/* @vite-ignore */ `data:text/javascript,${encodeURIComponent(bridgeSource({ url: "u", token: "t", approval: false }))}`)).default({ registerMcpServer: (name: string, config: unknown) => { plain[name] = config; }, on: () => {} });
+  expect(plain.tomrade).not.toHaveProperty("toolExposure");
 });
 
 it("keeps one process across turns, resumes its session id, and answers permission dialogs", async () => {

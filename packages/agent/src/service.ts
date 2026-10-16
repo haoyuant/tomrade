@@ -1409,6 +1409,7 @@ export class Agent extends Service {
       return request;
     };
     const tools = {
+      kits: () => this.ctx.tools.kits(),
       describe: () => this.ctx.tools.describe().filter((tool) => {
         const surface = this.ctx.tools.get(tool.name)?.surface;
         return (!surface || surface === thread.surface) && (engine.literal || !this.workflows.get(tool.name)?.literal);

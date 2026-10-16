@@ -23,7 +23,7 @@ export const PERMISSION_MODES = {
 
 /** The `--tools` allowlist for a turn, or null for pi's own selection; read-only keeps the built-ins that look. */
 export function toolSelection(input: Pick<TurnInput, "permissionMode">): string | null {
-  return input.permissionMode === "read-only" ? "read,grep,find,ls,mcp__tomrade__*" : null;
+  return input.permissionMode === "read-only" ? "read,grep,find,ls,tool_search,mcp__tomrade__*" : null;
 }
 
 const MODEL_TABLE = /^\s*provider\s+model\b/;

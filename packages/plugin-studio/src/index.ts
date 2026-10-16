@@ -182,7 +182,8 @@ export default {
       beforePublishing: report.publishing
     });
 
-    const reg = (tool: Parameters<typeof ctx.tools.register>[0]) => ctx.tools.register(tool);
+    ctx.tools.kit("plugins", "build a Tomrade plugin");
+    const reg = (tool: Parameters<typeof ctx.tools.register>[0]) => ctx.tools.register({ ...tool, kit: "plugins" });
     const plugin = z.string().describe("The workspace name, as plugin_create returned it");
 
     reg(

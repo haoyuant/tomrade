@@ -136,9 +136,11 @@ export function registerTools(ctx: Context, host: ToolHost): void {
     };
   };
 
+  ctx.tools.kit("code", "a coding session's ticket");
   ctx.tools.register(
     defineTool({
       name: "link_code",
+      kit: "code",
       title: "Link code to a ticket",
       description:
         "Attach a branch and/or pull request to a ticket. A coding session must inspect its complete diff and pass scopeChecked: true; then the ticket moves to Verifying (with the pull request, or with the branch alone in a repository that has no remote). Without `key` it applies to the ticket this session was started from.",
@@ -218,6 +220,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
   ctx.tools.register(
     defineTool({
       name: "note_progress",
+      kit: "code",
       title: "Note progress on the ticket",
       description: "One line about where the work stands (\"tests green, wiring the API next\"). Shown on the ticket while the session runs. Applies to this session's ticket unless `key` is given.",
       input: z.object({ text: z.string().min(1).max(280), key: z.string().optional(), projectId: z.string().optional() }),
@@ -237,6 +240,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
   ctx.tools.register(
     defineTool({
       name: "report_merge_blocked",
+      kit: "code",
       title: "Report that the pull request could not be merged",
       description:
         "Only where the brief says merging is yours: the pull request's checks could not be read (e.g. 'Resource not accessible by integration') or failed, or gh pr merge was refused (a permission denied, a safety check, branch protection, a review still required). Say why in one line; Tomrade stops the session and hands the merge to the person. Do not try to merge another way.",
@@ -263,6 +267,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
   ctx.tools.register(
     defineTool({
       name: "merge_branch",
+      kit: "code",
       title: "Merge the ticket's branch into the default branch, in a repository with no remote",
       description:
         "Only in a repository with no remote, and only where the brief says merging is yours: after link_code, merge the ticket's branch into the default branch on this machine. Tomrade merges only from a clean default-branch checkout or a temporary worktree, aborts on a conflict, and finishes the ticket. When it does not merge, report its message with note_progress and stop; the person merges.",
@@ -279,6 +284,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
   ctx.tools.register(
     defineTool({
       name: "claim_ticket",
+      kit: "code",
       title: "Claim a ticket to work on",
       description:
         "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. A session owns one ticket at a time: another can be claimed only once that one is done (and never in a session Tomrade started).",

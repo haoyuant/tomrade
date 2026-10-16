@@ -4,9 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { attachedMedia, describeFailure, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { attachedMedia, deferredTools, describeFailure, kitLines, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
+import type {} from "@tomradex/tools";
 import { bridgeSource } from "./bridge.js";
 import { PiOptions, toolSelection } from "./options.js";
 
@@ -135,7 +136,11 @@ export class PiRuntime implements Runtime {
     const bridge = path.join(this.dir, "tomrade.ts");
     const system = path.join(this.dir, "system.md");
     const approval = input.permissionMode === "ask";
-    fs.writeFileSync(bridge, bridgeSource({ url: this.ctx.mcp.url!, token: this.token, approval }), { mode: 0o600 });
+    const listed = io.tools.describe();
+    const shown = new Set(listed.map((t) => t.name));
+    const deferred = deferredTools(listed, input.purpose, input.messages);
+    const hidden = this.ctx.tools.served("run").map((t) => t.name).filter((name) => !shown.has(name));
+    fs.writeFileSync(bridge, bridgeSource({ url: this.ctx.mcp.url!, token: this.token, approval, deferred: deferred.map((t) => t.name), hidden, kits: kitLines(deferred, io.tools.kits?.(), { names: false }) }), { mode: 0o600 });
     fs.writeFileSync(system, sessionSystem(input, "Pi"), { mode: 0o600 });
     const tools = toolSelection(input);
     const start = await this.start(input);

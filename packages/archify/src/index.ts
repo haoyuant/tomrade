@@ -42,8 +42,9 @@ export default {
       ].join("\n")
     });
     ctx.effect(() => ctx.agent.capability("diagram.render"));
+    ctx.tools.kit("diagrams", "system diagrams");
     ctx.tools.register(defineTool({
-      name: "diagram_schema", title: "Read diagram schema",
+      name: "diagram_schema", kit: "diagrams", title: "Read diagram schema",
       description: "Read Archify's JSON schema, shared definitions or one example for a system diagram. Fetch all three resources before authoring. Installs the pinned Archify runtime on first use.",
       input: z.object({ type: z.enum(diagramTypes), resource: z.enum(["schema", "common", "example"]) }),
       whole: true,
@@ -53,7 +54,7 @@ export default {
       }
     }));
     ctx.tools.register(defineTool({
-      name: "diagram_render", title: "Render a system diagram",
+      name: "diagram_render", kit: "diagrams", title: "Render a system diagram",
       description: "Validate an Archify JSON specification and display its interactive HTML diagram in the conversation. Returns a media reference on success or repair diagnostics on failure. No Files save occurs until requested.",
       input: z.object({ type: z.enum(diagramTypes), spec: z.record(z.string(), z.unknown()), title: z.string().min(1).max(180) }),
       execute: async ({ type, spec, title }, inv) => {
@@ -85,7 +86,7 @@ export default {
       }
     }));
     ctx.tools.register(defineTool({
-      name: "diagram_export", title: "Export diagram artifacts to Files",
+      name: "diagram_export", kit: "diagrams", title: "Export diagram artifacts to Files",
       description: "Write the complete rendered HTML and its editable source JSON from a successful diagram_render call into a project Files directory. Use only the media IDs returned by diagram_render; never recreate or truncate the HTML.",
       input: z.object({
         htmlMediaId: z.string().min(1), sourceMediaId: z.string().min(1),

@@ -1,9 +1,9 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, focusSuffix, isSuspended, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
-import { LONG_RESULT, ToolInputError, compactList } from "@tomradex/tools";
+import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 
 export const LoopOptions = z.object({
   /** auto: the playbook index guides the model; none: the bare loop. */
@@ -25,6 +25,20 @@ const HISTORY_LIMIT = 48;
 
 /** Tools that only read; an identical call within one turn returns the same thing, so it is not run twice. */
 const READ_TOOL = /^(list|get|count|find|read|open)_|^diagram_schema$/;
+
+/** The loop's own tool: brings a kit this conversation was not given into the requests that follow. */
+export const LOAD_TOOLS = "load_tools";
+
+const spec = (t: ToolDescriptor): ToolSpec => ({ name: t.name, description: t.description, inputSchema: t.inputSchema });
+
+function loadToolsSpec(deferred: ToolDescriptor[], purposes: Record<string, string> = {}): ToolSpec {
+  return {
+    name: LOAD_TOOLS,
+    description: `Load a kit of tools this conversation was not given. As soon as the person asks for what a kit does, load it and use its tools — do not make do without them. Kits: ${kitLines(deferred, purposes).join("; ")}.`,
+    inputSchema: { type: "object", properties: { kit: { type: "string", enum: [...new Set(deferred.map((t) => t.kit))] } }, required: ["kit"], additionalProperties: false }
+  };
+}
+
 const RESULT_CAP = LONG_RESULT;
 /** A tool that answers in text (the shell) has already sized it; the cap is only a backstop. */
 const TEXT_RESULT_CAP = 20_000;
@@ -190,7 +204,14 @@ export function createLoopEngine(ctx: Context): Engine {
       if (!profileId) return { stop: "error", error: "no language model profile configured" };
       const model = io.llm.forProfile(profileId);
       const described = io.tools.describe().sort((a, b) => a.name.localeCompare(b.name));
-      const tools: ToolSpec[] = model.capabilities.tools ? described.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : [];
+      // A kit this kind of conversation does not carry stays out of every request until the model loads it.
+      const deferred = new Map(deferredTools(described, input.purpose, input.messages).map((t) => [t.name, t]));
+      const load = (names: readonly string[]) => names.filter((name) => deferred.delete(name));
+      const offered = (): ToolSpec[] => {
+        if (!model.capabilities.tools) return [];
+        const carried = described.filter((t) => !deferred.has(t.name)).map(spec);
+        return deferred.size ? [...carried, loadToolsSpec([...deferred.values()], io.tools.kits?.())] : carried;
+      };
       const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
       const messages = historyMessages(input.messages, io, model.capabilities.mediaInput ?? []);
       // A workflow that finished on the user's answer may have spoken last. A request may not end on the
@@ -221,7 +242,7 @@ export function createLoopEngine(ctx: Context): Engine {
             {
               system: system(input, io, options),
               messages,
-              tools,
+              tools: offered(),
               toolChoice: invalidStreak >= 2 ? "none" : undefined,
               maxTokens: options.maxTokens,
               effort
@@ -283,10 +304,19 @@ export function createLoopEngine(ctx: Context): Engine {
           collected.toolCalls.map(async (call) => {
             const broken = brokenJson(call.name, call.args);
             if (broken) return { id: call.id, suspended: false, content: `ERROR: ${broken}`, isError: true, invalid: true };
+            if (call.name === LOAD_TOOLS) {
+              const kit = (call.args as { kit?: unknown }).kit;
+              const loaded = load([...deferred.values()].filter((t) => t.kit === kit).map((t) => t.name));
+              return loaded.length
+                ? { id: call.id, suspended: false, content: `Loaded ${loaded.join(", ")}: call them directly.`, invalid: false }
+                : { id: call.id, suspended: false, content: `ERROR: no kit "${String(kit)}" left to load`, isError: true, invalid: true };
+            }
             const key = READ_TOOL.test(call.name) ? `${call.name} ${JSON.stringify(call.args)}` : null;
             if (key && memo.has(key)) return { id: call.id, suspended: false, content: "(identical to an earlier call this turn — nothing has changed since; use the result you already have)", invalid: false };
             try {
               const result = await io.tools.execute(call.name, call.args);
+              // A playbook names the tools its method uses: opening it brings them in.
+              if (call.name === "open_playbook") load(io.playbooks.index().find((p) => p.id === (call.args as { id?: unknown }).id)?.tools ?? []);
               const content = isSuspended(result) ? result.note : render(result, whole.has(call.name));
               if (key) memo.set(key, content);
               return { id: call.id, suspended: isSuspended(result), content, invalid: false };

@@ -69,12 +69,11 @@ const BashArgs = z.object({
 
 const description = (approval: Approval): string =>
   [
-    "Run a shell command (bash -c) in this conversation's working folder: the workstream's checkout when the conversation has one, else the project's Files folder — pwd says which. " +
-      "Non-interactive: no stdin, no pager, no password prompts. Returns the exit code, then stdout and stderr together, shortened in the middle when long. " +
-      "The turn as a whole is time-limited too, so don't start servers, watchers or anything that waits for input. Each call is a fresh shell: cd and variables do not carry over — chain steps with && in one command.",
-    "Use it for what the conversation needs — reading code and git history, counting, running a check or a script, converting a file. Tomrade's own tools stay the way to read and change tickets and Files. Writing a ticket's implementation belongs to a coding agent started from the ticket, not to this conversation.",
-    "What a command changes is outside the run's one-click undo: delete, overwrite, commit, push or switch branches only when the user asked for it.",
-    ...(approval === "ask" ? ["Each command waits for the user's approval, so make each one count: combine related steps into one command, and don't run one just to look around when another tool already answers."] : [])
+    "Run a shell command (bash -c) in this conversation's working folder: the workstream's checkout, else the project's Files folder (pwd says which). " +
+      "Non-interactive and time-limited: no stdin, pager or password prompts, and no servers, watchers or anything that waits. Returns the exit code, then stdout and stderr, shortened in the middle when long. Each call is a fresh shell: chain steps with &&.",
+    "Use it to read code and git history, count, run a check or a script, convert a file. Tickets and Files change through Tomrade's own tools, and a ticket's implementation belongs to a coding agent started from it.",
+    "Commands are outside the run's one-click undo: delete, overwrite, commit, push or switch branches only when the user asked.",
+    ...(approval === "ask" ? ["Each command waits for the user's approval: combine related steps, and don't run one when another tool already answers."] : [])
   ].join("\n");
 
 /** The run's workstream folder, else the project's Files folder; null when the conversation has neither. */

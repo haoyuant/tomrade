@@ -4,9 +4,7 @@ export const itemKindSchema = z.enum(["ticket", "epic"]);
 export const workTypeSchema = z.enum(["coding", "general"]);
 export const itemStatusSchema = z.enum(["backlog", "todo", "doing", "verifying", "done", "cancelled"]);
 // Agents read a bare 0–4 as "1 is most urgent" unless told otherwise.
-export const prioritySchema = z
-  .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
-  .describe("0 none, 1 low, 2 medium, 3 high, 4 urgent — higher is more urgent");
+export const prioritySchema = z.literal([0, 1, 2, 3, 4]).describe("0 none, 1 low, 2 medium, 3 high, 4 urgent — higher is more urgent");
 
 export const listItemsFilterSchema = z.object({
   projectId: z.string().optional(),

@@ -295,6 +295,8 @@ export interface TurnIO {
     describe(): ToolDescriptor[];
     /** Run-bound and ledgered; throws on refusal or failure so the engine can feed the error back. */
     execute(name: string, args: unknown): Promise<unknown>;
+    /** What each kit is for, by kit id (see ToolDefinition.kit). */
+    kits?(): Record<string, string>;
   };
   playbooks: { index(): PlaybookIndexEntry[]; open(id: string): string | null };
   workflows: { list(): WorkflowInfo[] };

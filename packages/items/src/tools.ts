@@ -163,7 +163,7 @@ export function registerTools(ctx: Context): void {
       name: "list_items",
       title: "List backlog items",
       description:
-        `List backlog items, at most \`limit\` rows (default ${DEFAULT_LIST_LIMIT}; raise it for more). To find items about a topic, search with one or two distinctive words, then try synonyms (goal/target, sign-in/login): search matches title and body in any script, every word must appear, and when no item has them all the items with some of them come back instead, best matches first; a "quoted phrase" must appear contiguously. Filters (board, status, kind, priority, label, parent, filter clauses) narrow the set; sort keys only reorder it, so never repeat a search with another sort. Omit projectId to use the current project. Use count_items for totals and breakdowns; do not fetch rows merely to count them.`,
+        `List backlog items, at most \`limit\` rows (default ${DEFAULT_LIST_LIMIT}). To find items about a topic, search one or two distinctive words, then synonyms (goal/target, sign-in/login): every word must appear in the title or body, in any script; when no item has them all, items with some come back, best first; a "quoted phrase" matches as written. Filters (board, status, kind, priority, label, parent, filter clauses) narrow the set; sort only reorders it, so never repeat a search with another sort. Omit projectId for the current project. For totals use count_items, not rows.`,
       input: listInput,
       readOnly: true,
       execute: ({ limit = DEFAULT_LIST_LIMIT, ...args }, inv) => find("list_items", args, inv, { limit, widen: true }).items.map(listed)
@@ -175,7 +175,7 @@ export function registerTools(ctx: Context): void {
       name: "count_items",
       title: "Count backlog items",
       description:
-        "Answer backlog quantity questions in one call without listing rows. Returns the exact matched count plus breakdowns by kind, status, and workstream. Takes the same filters as list_items; a search here is strict (every word must appear). In Tomrade, `ticket` and `epic` are distinct item kinds; for 'how many tickets', pass kind: ticket.",
+        "Answer how-many questions without listing rows: the exact count, with breakdowns by kind, status and workstream. Same filters as list_items; search here is strict (every word must appear). `ticket` and `epic` are separate kinds: for 'how many tickets', pass kind: ticket.",
       input: readInput,
       readOnly: true,
       execute(args, inv) {
@@ -216,7 +216,7 @@ export function registerTools(ctx: Context): void {
       name: "create_item",
       title: "Create item",
       description:
-        "Create a ticket or epic. Recorded in the oplog with the caller as author; lands on the project's first board unless boardId is given. playbookId: omit it and Tomrade picks one (the worker model gets a few seconds, then a keyword match decides); pass null for none, or a playbook id to set it. Pass a requestId when you may retry: a repeat with the same requestId returns the item the first call created instead of a second one.",
+        "Create a ticket or epic, recorded with you as author, on the project's first board unless boardId is given. Omit playbookId and Tomrade picks one; pass null for none, or an id to set it. When you may retry, pass a requestId: a repeat returns the item the first call made instead of a second.",
       input: createItemSchema.extend({
         requestId: z.string().trim().min(1).max(200).optional().describe("Any unique string for this creation; reuse it when retrying the same call")
       }),

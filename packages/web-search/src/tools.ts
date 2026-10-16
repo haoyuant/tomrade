@@ -49,8 +49,8 @@ const searchTool = (service: WebSearch) =>
     name: "web_search",
     title: "Web search",
     description: [
-      "Search the web. Returns the top results, each with title, URL and a short excerpt (dated for news).",
-      "Use it for what lies outside this project and may have changed or you are unsure of — current events, releases and docs, prices, people, organisations — and cite the URLs you relied on. When an excerpt is not enough, read the page with web_fetch.",
+      "Search the web: the top results with title, URL and a short excerpt (dated for news).",
+      "For what lies outside this project and may have changed — current events, releases and docs, prices, people, organisations; cite the URLs you relied on, and read a page with web_fetch when its excerpt is not enough.",
       UNTRUSTED
     ].join(" "),
     input: SearchArgs,

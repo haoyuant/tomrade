@@ -471,9 +471,11 @@ export class Schedules extends Service {
       const w = ASK_WORDS[this.locale()];
       return (await inv.ask(question, [w.yes, w.no])) === w.yes;
     };
+    ctx.tools.kit("routines", "recurring tickets or prompts, now or scheduled");
     ctx.tools.register(
       defineTool({
         name: "list_templates",
+        kit: "routines",
         title: "List templates",
         description: "The project's templates (the user sees them as Routines / 例行事务) — reusable tickets (a daily to-do, weekly chores, a checklist) or prompts for the assistant — with the schedules that run them and how their last runs went.",
         input: z.object({}),
@@ -486,6 +488,7 @@ export class Schedules extends Service {
     ctx.tools.register(
       defineTool({
         name: "create_template",
+        kit: "routines",
         title: "Create a template",
         description:
           "Save something the user does again and again as a template: one or more tickets (titles may use {date}, {weekday}, {week}, {month}, {year}; bodies may hold - [ ] checklists; General and To Do by default) or a prompt for the assistant. Optionally with a schedule (`cadence`) so it runs on its own on this machine while Tomrade is open. The user confirms before anything is saved.",
@@ -503,6 +506,7 @@ export class Schedules extends Service {
     ctx.tools.register(
       defineTool({
         name: "run_template",
+        kit: "routines",
         title: "Run a template",
         description: "Run one of the project's templates now, by id: it makes its tickets or sends its prompt, as if the user pressed Run.",
         input: z.object({ id: z.string() }),
@@ -512,6 +516,7 @@ export class Schedules extends Service {
     ctx.tools.register(
       defineTool({
         name: "schedule_template",
+        kit: "routines",
         title: "Schedule a template",
         description: "Make one of the project's templates run on its own, on a cadence, on this machine while Tomrade is open. The user confirms first.",
         input: z.object({ id: z.string(), cadence: Cadence }),
@@ -528,6 +533,7 @@ export class Schedules extends Service {
     ctx.tools.register(
       defineTool({
         name: "delete_template",
+        kit: "routines",
         title: "Delete a template",
         description: "Remove one of the project's templates by id, with its schedules. Only when the user asked for it.",
         input: z.object({ id: z.string() }),
