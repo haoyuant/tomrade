@@ -7,6 +7,7 @@
  */
 import { app, BrowserWindow } from "electron";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scaffold } from "@tomradex/plugin-cli";
@@ -35,9 +36,9 @@ const check = (name, cond, extra = "") => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const key = generateSigningKey();
 
-async function extension(name, { official, permissions }) {
+async function extension(name, { official, permissions, publisher = "someone" }) {
   const dir = path.join(WORK, "src", name);
-  scaffold(dir, { id: `someone/${name}`, title: name[0].toUpperCase() + name.slice(1), description: `The ${name} plugin.` });
+  scaffold(dir, { id: `${publisher}/${name}`, title: name[0].toUpperCase() + name.slice(1), description: `The ${name} plugin.` });
   const file = path.join(dir, "tomrade-plugin.json");
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), permissions, inject: ["items", "tools", "contributions"] }, null, 2));
   const built = await build(dir);
@@ -49,11 +50,47 @@ async function extension(name, { official, permissions }) {
   return packPlugin(dir, path.join(WORK, `${name}.tomrade-plugin`));
 }
 
+/** Tomrade's plugins repository, as its release serves it: a catalog and the signed packages next to it. */
+async function officialCatalog() {
+  const memo = await extension("memo", { official: true, publisher: "tomrade", permissions: { network: [], fs: "none", exec: false } });
+  const manifest = JSON.parse(fs.readFileSync(path.join(WORK, "src", "memo", "tomrade-plugin.json"), "utf8"));
+  const attestation = JSON.parse(fs.readFileSync(path.join(WORK, "src", "memo", ATTESTATION_FILE), "utf8"));
+  const catalog = {
+    v: 1,
+    generatedAt: new Date().toISOString(),
+    plugins: [
+      {
+        id: "tomrade/memo",
+        title: "Memo",
+        description: "Quick notes, from Tomrade's plugins repository.",
+        license: "MIT",
+        repository: "https://github.com/haoyuant/tomrade-plugins",
+        versions: [{ version: manifest.version, sdkRange: manifest.engines.sdk, commit: "f".repeat(40), manifest, risk: attestation.risk, riskReasons: [], digest: memo.digest, size: fs.statSync(memo.file).size, url: "memo.tomrade-plugin", releasedAt: new Date().toISOString(), attestation }]
+      }
+    ],
+    revoked: []
+  };
+  const server = http.createServer((req, res) => {
+    if (req.url === "/catalog.json") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(catalog));
+    if (req.url === "/memo.tomrade-plugin") return res.writeHead(200).end(fs.readFileSync(memo.file));
+    res.writeHead(404).end();
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return `http://127.0.0.1:${server.address().port}/catalog.json`;
+}
+
 const run = async () => {
+  const catalogUrl = await officialCatalog();
   const { ctx } = await boot({
     configFile: path.join(__dirname, "../tomrade.yml"),
     vars: { userData: path.join(WORK, "userData"), pluginsRoot: path.join(WORK, "plugins"), pluginsDevRoot: path.join(WORK, "plugins-dev") },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]],
+    patches: [
+      [
+        { id: "mcp", config: { port: 0 } },
+        { id: "hub-cloud", disabled: true },
+        { id: "community", config: { nodeBinary: "${nodeRuntime}", officialCatalog: { url: catalogUrl, cacheFile: path.join(WORK, "userData", "official-catalog.json") } } }
+      ]
+    ],
     extensions: { root: path.join(WORK, "plugins"), trustedKeys: { [key.keyId]: key.publicKey } }
   });
   ctx.hub.configure(path.join(WORK, "hub"));
@@ -181,8 +218,39 @@ const run = async () => {
 
   await tab("browse");
   await sleep(1500);
-  check("Browse says plainly when the store cannot be reached", /could not be reached/.test(await $(`document.querySelector('.dlg-body')?.textContent`)));
+  const memoRow = `document.querySelector('[data-testid="official-results"] [data-id="tomrade/memo"]')`;
+  check("Browse lists the official plugins with nothing typed", (await $(`!!${memoRow}`)) === true);
+  check("marked Official and from Tomrade's plugins repository", (await $(`${memoRow}?.textContent ?? ''`)).includes("Official") && (await $(`${memoRow}?.textContent ?? ''`)).includes("plugins repository"));
+  check("and says plainly that Community cannot be reached, while official plugins still show", /only official plugins are shown/.test(await $(`document.querySelector('[data-testid="community-unavailable"]')?.textContent ?? ''`)));
   await shot("34-plugins-browse");
+  await press(`document.querySelector('[data-testid="browse-filter"] [data-filter="official"]')`);
+  await sleep(900);
+  check("Official only leaves Community out, its notice too", (await $(`!!document.querySelector('[data-testid="community-unavailable"]')`)) === false && (await $(`!!${memoRow}`)) === true);
+  const browseFor = (text) =>
+    $(`(() => {
+      const input = document.querySelector('[data-testid="community-search"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(text)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.form.requestSubmit();
+      return true;
+    })()`);
+  await browseFor("nothing-called-this");
+  await sleep(900);
+  check("a search with no match says so", /Nothing matches/.test(await $(`document.querySelector('.dlg-body')?.textContent`)) && (await $(`!!${memoRow}`)) === false);
+  await browseFor("quick notes");
+  await sleep(900);
+  check("a search finds an official plugin by its description", (await $(`!!${memoRow}`)) === true);
+  await press(memoRow);
+  await sleep(1200);
+  check("its details carry no unreviewed warning", (await $(`!!document.querySelector('[data-testid="plugin-detail"]')`)) === true && !/Nobody at Tomrade reviewed/.test(await $(`document.querySelector('[data-testid="plugin-detail"]')?.textContent ?? ''`)));
+  await press(`document.querySelector('[data-testid="store-install"]')`);
+  await sleep(2500);
+  check("installing reads the package here first", (await $(`!!document.querySelector('[data-testid="store-install-confirm"]:not([disabled])')`)) === true);
+  await shot("34-plugins-official-install");
+  await press(`document.querySelector('[data-testid="store-install-confirm"]')`);
+  await sleep(3000);
+  check("an official plugin installs from Browse, signed and running", view("tomrade/memo")?.extension?.tier === "official" && view("tomrade/memo")?.state === "active", JSON.stringify(view("tomrade/memo")?.extension));
+  check("and Browse then shows it installed", /Installed/.test(await $(`${memoRow}?.textContent ?? ''`)));
   await tab("updates");
   await sleep(900);
   await shot("35-plugins-updates");
@@ -195,6 +263,11 @@ const run = async () => {
   const zh = await $(`document.querySelector('.dlg-body')?.textContent ?? ''`);
   check("在中文界面中显示信任标识与风险", zh.includes("社区") && zh.includes("官方") && zh.includes("高风险") && zh.includes("本地"), zh.slice(0, 200));
   await shot("36-plugins-installed-zh");
+  await tab("browse");
+  await sleep(1500);
+  const zhBrowse = await $(`document.querySelector('.dlg-body')?.textContent ?? ''`);
+  check("浏览页分出官方插件，并说明社区商店连不上", zhBrowse.includes("官方插件") && zhBrowse.includes("只显示官方插件") && !zhBrowse.includes("Community needs"), zhBrowse.slice(0, 200));
+  await shot("37-plugins-browse-zh");
 };
 
 app.whenReady().then(async () => {

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { Listing } from "@tomradex/community";
+import type { Listing, SourceName } from "@tomradex/community";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { agoLabel } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCommunityAccount, useCommunityPlugin, useCommunitySearch, useInspect, useReport, useStoreInstall } from "~/lib/plugins";
+import { useBrowse, useCommunityAccount, useCommunityPlugin, useInspect, useReport, useStoreInstall } from "~/lib/plugins";
 import { openExternal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { Field, Findings, Reach, TrustTags, messageOf } from "./parts";
@@ -16,25 +17,40 @@ export function BrowseTab() {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("downloads");
-  const search = useCommunitySearch(query, sort);
+  const [officialOnly, setOfficialOnly] = useState(false);
+  const browse = useBrowse(query, sort, officialOnly);
   const [open, setOpen] = useState<string | null>(null);
   const SORTS: [Sort, MessageKey][] = [
     ["downloads", "plugins.sortDownloads"],
     ["updated", "plugins.sortUpdated"],
     ["title", "plugins.sortTitle"]
   ];
+  const listings = browse.data?.listings ?? [];
+  const official = listings.filter((l) => l.source === "official");
+  const community = listings.filter((l) => l.source === "community");
+  const status = (name: SourceName) => browse.data?.sources.find((s) => s.name === name);
+  const officialStatus = status("official");
+  const communityStatus = status("community");
   return (
     <>
       <SectionHead title={t("plugins.tabBrowse")}>{t("plugins.browseLede")}</SectionHead>
       <form
         className="row"
-        style={{ gap: "var(--space-2)", marginBottom: "var(--space-3)" }}
+        style={{ gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}
         onSubmit={(e) => {
           e.preventDefault();
           setQuery(text.trim());
         }}
       >
-        <input className="input" style={{ flex: 1 }} value={text} placeholder={t("plugins.search")} aria-label={t("plugins.search")} onChange={(e) => setText(e.target.value)} data-testid="community-search" />
+        <input className="input" style={{ flex: "1 1 200px" }} value={text} placeholder={t("plugins.search")} aria-label={t("plugins.search")} onChange={(e) => setText(e.target.value)} data-testid="community-search" />
+        <div className="seg quiet" role="group" aria-label={t("plugins.filterLabel")} data-testid="browse-filter">
+          <button type="button" aria-pressed={!officialOnly} onClick={() => setOfficialOnly(false)} data-filter="all">
+            {t("plugins.filterAll")}
+          </button>
+          <button type="button" aria-pressed={officialOnly} onClick={() => setOfficialOnly(true)} data-filter="official">
+            {t("plugins.filterOfficial")}
+          </button>
+        </div>
         <div className="seg quiet" role="group" aria-label={t("plugins.search")}>
           {SORTS.map(([id, key]) => (
             <button key={id} type="button" aria-pressed={sort === id} onClick={() => setSort(id)}>
@@ -43,10 +59,42 @@ export function BrowseTab() {
           ))}
         </div>
       </form>
-      {search.error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: messageOf(search.error) })}</p>}
-      {search.data && !search.data.length && <p className="meta-txt">{t("plugins.nothingFound")}</p>}
-      <div className="stack-2" data-testid="community-results">
-        {search.data?.map((listing) => <ListingRow key={listing.id} listing={listing} onOpen={() => setOpen(listing.id)} />)}
+      <div className="stack-2" style={{ marginBottom: "var(--space-3)" }}>
+        {browse.error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{t("plugins.storeUnavailable", { message: messageOf(browse.error) })}</p>}
+        {officialStatus && !officialStatus.available && (
+          <p className="meta-txt" style={{ color: "var(--danger)" }} data-testid="official-unavailable">
+            {t("plugins.officialUnavailable", { message: officialStatus.error ?? "" })}
+          </p>
+        )}
+        {officialStatus?.available && officialStatus.stale && officialStatus.fetchedAt && (
+          <p className="meta-txt" data-testid="official-stale">
+            {t("plugins.officialStale", { time: agoLabel(officialStatus.fetchedAt) })}
+          </p>
+        )}
+        {communityStatus && !communityStatus.available && (
+          <p className="meta-txt" data-testid="community-unavailable">
+            {communityStatus.reason === "no-cloud" ? t("plugins.communityNoCloud") : t("plugins.communityUnavailable", { message: communityStatus.error ?? "" })}
+          </p>
+        )}
+        {browse.data && !listings.length && <p className="meta-txt">{t("plugins.nothingFound")}</p>}
+      </div>
+      <div className="stack-3" data-testid="community-results">
+        {!!official.length && (
+          <section className="stack-2" data-testid="official-results">
+            <Eyebrow>{t("plugins.groupOfficial")}</Eyebrow>
+            {official.map((listing) => (
+              <ListingRow key={listing.id} listing={listing} onOpen={() => setOpen(listing.id)} />
+            ))}
+          </section>
+        )}
+        {!!community.length && (
+          <section className="stack-2" data-testid="community-group">
+            <Eyebrow>{t("plugins.groupCommunity")}</Eyebrow>
+            {community.map((listing) => (
+              <ListingRow key={listing.id} listing={listing} onOpen={() => setOpen(listing.id)} />
+            ))}
+          </section>
+        )}
       </div>
       {open && <PluginDetailDialog id={open} onClose={() => setOpen(null)} />}
     </>
@@ -57,7 +105,7 @@ function ListingRow({ listing, onOpen }: { listing: Listing; onOpen: () => void 
   const { t } = useI18n();
   const latest = listing.latest;
   return (
-    <button type="button" className="cfg-row plug-listing" onClick={onOpen} data-id={listing.id}>
+    <button type="button" className="cfg-row plug-listing" onClick={onOpen} data-id={listing.id} data-source={listing.source}>
       <Icon name="i-plug" size={15} style={{ color: "var(--accent)" }} />
       <div className="cfg-name" style={{ textAlign: "left" }}>
         {listing.title} <span className="meta-txt">{t("plugins.by", { publisher: listing.publisher })}</span>
@@ -66,7 +114,7 @@ function ListingRow({ listing, onOpen }: { listing: Listing; onOpen: () => void 
           {latest && <TrustTags tier={latest.tier} risk={latest.risk} />}
           {latest && !latest.compatible && <Tag tone="faint">{t("plugins.incompatible")}</Tag>}
           {latest?.revoked && <span className="tag risk-high">{t("plugins.revoked")}</span>}
-          <span className="meta-txt">{t("plugins.installs", { count: listing.downloads })}</span>
+          <span className="meta-txt">{listing.source === "official" ? t("plugins.fromOfficial") : t("plugins.installs", { count: listing.downloads })}</span>
         </div>
       </div>
       {listing.installed ? <Tag tone="neutral">{t("plugins.installedVersion", { version: listing.installed.version })}</Tag> : latest && <Tag tone="strong">{t("plugins.version", { version: latest.version })}</Tag>}

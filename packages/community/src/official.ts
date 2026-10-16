@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseCatalog, type Attestation, type Catalog, type CatalogPlugin } from "@tomradex/plugin-kit";
-import { OFFICIAL_PUBLISHER, compareVersions, nameOf } from "@tomradex/plugin-sdk";
+import { OFFICIAL_PUBLISHER, compareVersions, nameOf, namespaceOf, parseManifest } from "@tomradex/plugin-sdk";
 import type { Manifest } from "@tomradex/plugin-sdk";
 import type { Revocation, VersionRow } from "./rules.js";
 
@@ -118,7 +118,13 @@ export class OfficialCatalog {
     return plugin.versions.flatMap((v) => {
       const attestation = this.opts.verify(v.attestation, v.digest);
       if (!attestation || attestation.id !== plugin.id || attestation.version !== v.version) return [];
-      if (v.manifest.id !== plugin.id || v.manifest.version !== v.version) return [];
+      let manifest: Manifest;
+      try {
+        manifest = parseManifest(v.manifest);
+      } catch {
+        return [];
+      }
+      if (manifest.id !== plugin.id || manifest.version !== v.version) return [];
       let url: URL;
       try {
         url = new URL(v.url, this.opts.url);
@@ -137,7 +143,7 @@ export class OfficialCatalog {
           risk: v.risk,
           risk_reasons: v.riskReasons,
           sdk_range: v.sdkRange,
-          manifest: v.manifest as unknown as Manifest,
+          manifest,
           digest: v.digest,
           attestation,
           package_path: url.href,
@@ -162,7 +168,7 @@ export class OfficialCatalog {
           description: p.description,
           icon: p.icon ?? null,
           publisher: OFFICIAL_PUBLISHER,
-          namespace: (latest.manifest?.namespace as string | undefined) ?? nameOf(p.id).replace(/-/g, "_"),
+          namespace: latest.manifest ? namespaceOf(latest.manifest) : nameOf(p.id),
           repository: p.repository,
           license: p.license,
           downloads: 0,

@@ -8,7 +8,7 @@ import { invalidateProject } from "./queries";
 const keys = {
   plugins: ["plugins"] as const,
   community: ["community"] as const,
-  search: (text: string, sort: string) => ["community", "search", text, sort] as const,
+  browse: (text: string, sort: string, officialOnly: boolean) => ["community", "browse", text, sort, officialOnly] as const,
   plugin: (id: string) => ["community", "plugin", id] as const,
   updates: ["community", "updates"] as const,
   revoked: ["community", "revoked"] as const,
@@ -54,8 +54,9 @@ export function useUndoVia(projectId: string | undefined) {
   });
 }
 
-export const useCommunitySearch = (text: string, sort: "downloads" | "updated" | "title") =>
-  useQuery({ queryKey: keys.search(text, sort), queryFn: () => invoke("community.search", { text, sort }), retry: false, staleTime: 60_000 });
+/** Official and Community in one search; each source says on its own whether it answered. */
+export const useBrowse = (text: string, sort: "downloads" | "updated" | "title", officialOnly: boolean) =>
+  useQuery({ queryKey: keys.browse(text, sort, officialOnly), queryFn: () => invoke("community.browse", { text, sort, officialOnly }), retry: false, staleTime: 60_000 });
 export const useCommunityPlugin = (id: string | null) => useQuery({ queryKey: keys.plugin(id ?? ""), queryFn: () => invoke("community.plugin", id!), enabled: !!id, retry: false });
 export const useUpdates = () => useQuery({ queryKey: keys.updates, queryFn: () => invoke("community.updates"), retry: false });
 export const useRevoked = () => useQuery({ queryKey: keys.revoked, queryFn: () => invoke("community.revoked") });

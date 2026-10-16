@@ -63,6 +63,15 @@ export interface SourceStatus {
   /** The last fetch failed and an earlier copy is in use. */
   stale: boolean;
   error: string | null;
+  /** `no-cloud`: Community is not part of this build, which is no failure. */
+  reason: "no-cloud" | null;
+}
+
+/** Both sources in one answer: what each found, and how each one fared. */
+export interface BrowseResult {
+  /** Official first, then Community; an id appears once. */
+  listings: Listing[];
+  sources: SourceStatus[];
 }
 
 export interface Listing {
@@ -136,6 +145,7 @@ declare module "@tomradex/ipc" {
   interface Channels {
     "community.search": (query: { text?: string; sort?: SortKey; source?: SourceName }) => Listing[];
     "community.sources": () => SourceStatus[];
+    "community.browse": (query: { text?: string; sort?: SortKey; officialOnly?: boolean }) => BrowseResult;
     "community.plugin": (id: string) => PluginDetail;
     "community.inspect": (id: string, version?: string) => Inspection;
     "community.install": (id: string, version?: string) => PluginsSnapshot;
@@ -226,6 +236,7 @@ export class Community extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("community.search", (q) => this.search(q));
       ctx.ipc.handle("community.sources", () => this.sources());
+      ctx.ipc.handle("community.browse", (q) => this.browse(q));
       ctx.ipc.handle("community.plugin", (id) => this.plugin(id));
       ctx.ipc.handle("community.inspect", (id, version) => this.inspect(id, version));
       ctx.ipc.handle("community.install", (id, version) => this.install(id, version));
@@ -336,8 +347,8 @@ export class Community extends Service {
 
   sources(): SourceStatus[] {
     return [
-      { name: "official", available: true, ...this.official.state() },
-      { name: "community", available: !!this.cloud, fetchedAt: null, stale: false, error: this.cloud ? null : "Community needs Tomrade cloud" }
+      { name: "official", available: true, ...this.official.state(), reason: null },
+      { name: "community", available: !!this.cloud, fetchedAt: null, stale: false, error: this.cloud ? null : "Community needs Tomrade cloud", reason: this.cloud ? null : "no-cloud" }
     ];
   }
 
@@ -353,6 +364,21 @@ export class Community extends Service {
     const plugins = await source.search(safeText(query.text ?? ""), query.sort ?? "downloads");
     const [versions, revocations] = await Promise.all([source.versions(plugins.map((p) => String(p.id))), source.revocations()]);
     return plugins.map((p) => this.listing(source.name, p, versions.filter((v) => v.plugin_id === p.id), revocations));
+  }
+
+  /** One search over Tomrade's own plugins and Community; one source that cannot answer leaves the other's results. */
+  async browse(query: { text?: string; sort?: SortKey; officialOnly?: boolean } = {}): Promise<BrowseResult> {
+    const names: SourceName[] = query.officialOnly ? ["official"] : ["official", "community"];
+    const settled = await Promise.allSettled(names.map((source) => this.search({ text: query.text, sort: query.sort, source })));
+    const seen = new Set<string>();
+    const listings = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : [])).filter((l) => !seen.has(l.id) && !!seen.add(l.id));
+    const known = this.sources();
+    const sources = names.map((name, i) => {
+      const r = settled[i]!;
+      const status = known.find((k) => k.name === name)!;
+      return r.status === "fulfilled" ? { ...status, available: true } : { ...status, available: false, error: message(r.reason) };
+    });
+    return { listings, sources };
   }
 
   private listing(source: SourceName, p: Record<string, unknown>, versions: VersionRow[], revocations: Revocation[]): Listing {
