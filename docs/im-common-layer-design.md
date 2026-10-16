@@ -333,3 +333,14 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - 绑定记下是私聊还是群聊（`grp`，旧绑定按最近一条消息推断）。私有桌面会话接管到群仍按 TOM-119 需要发起人确认。
 - **提醒到 IM**：桌面 attention 模块决定要发通知（没有窗口在前台、该类开关打开）时，按通知设置里的“不在电脑前时，还提醒到”（`notifications.away`：`im` / `none`，单选）交给 `im.remind`。只处理权限请求、提问和执行失败：发到发起人的私聊（会话没绑定 IM 时发给已配对的人），带“在 Tomrade 打开”链接；问题和权限带按钮（多选用选择器、自由文本用输入框，无控件时 `/answer`），点按钮直接回答原会话，答过后再点提示已处理。该私聊已经显示这一轮时不重复提醒。TOM-93 的手机推送作为 `away` 的另一个取值加入，同一事件只去一处。
 - **上下线提示**（`im.announcePresence`，默认关）：连接上线时在已绑定私聊说一次“已上线”；适配器卸载或应用退出前说“即将下线，离线期间的消息可能收不到，上线后请重新发送”。各平台离线补发能力不同，统一按“可能收不到”提示。
+
+## Discord 适配器（TOM-100）
+
+`packages/im-discord`（扩展 `tomrade/discord`，命名空间 `discord`，随应用加载，配置连接前什么都不做）。网络权限只声明 `discord.com`、`discord.gg`、`discordapp.com`、`discordapp.net`。只需要 Bot Token，不开特权 Intent（GUILDS、GUILD_MESSAGES、DIRECT_MESSAGES）：私信和 @ 本身带正文；没有 Message Content 时频道里的其他消息正文为空，不送公共层。
+
+- **Gateway**：心跳带抖动，漏一次 ack 视为僵尸连接；断线后用 `resume_gateway_url` + 会话号 resume，Discord 补发漏掉的事件，公共层按事件 id 去重；op 7/9、4007/4009 按规定重连或重新 identify；4004（令牌错误）和 Intent 类关闭码直接报“连接失败”，交给公共层退避重开。
+- **入站**：私信 → `dm`（tenant `@me`）；@ 机器人 → `mention`；回复机器人消息 → `reply`。帖子（thread）是父频道的话题（`topicId`），所以父频道的 route 覆盖它。附件按 CDN 地址下载。删除自己发的消息 → `retract`，编辑 → `edit`。
+- **交互**：按钮、单选/多选 string select、自由文本用按钮弹出 modal；组件先回 `DEFERRED_UPDATE_MESSAGE`（type 6），`/tomrade <子命令>` 先回 `DEFERRED_CHANNEL_MESSAGE`（type 5），都在 3 秒内，之后再交给公共层。延迟回复被改写成“› /status”这条可见消息，回复引用它。
+- **出站**：Discord Markdown，2000 字分段；小节为 embed，按钮和选择器为组件（最多 5 行），编辑时总带上 components 以便收口后摘掉按钮；`tomrade://` 链接 Discord 不允许做链接按钮，作为文字显示。消息带强制 nonce，丢回应后重试也不会重复发；429 按 `retry_after` 退避；每频道每 5 秒 5 条。👀 / ✅ / ❌ 表情回执，typing。文件上限 10 MB（multipart）。
+- `/tomrade` 指令：每个 IM 指令一个子命令（带 `args` 文本参数），每次连上后整体覆盖注册。
+- 测试：`src/fake.ts` 是内存中的 Discord（Gateway + REST）；`tests/` 接真实 IM 公共层和 Agent 跑完整对话；`src/test.ts` 是 `tomrade-plugin test` 场景；`apps/desktop/scripts/im-discord-check.mjs` 在真实界面里走向导和连接。真实账号逐项验收需要你的 Discord 测试服务器。

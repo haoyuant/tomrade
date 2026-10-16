@@ -45,6 +45,21 @@ describe("tomrade-plugin", () => {
     expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["outside allowlist creates no conversation", "one execution despite duplicate"]));
   }, 60_000);
 
+  it("checks and runs the Discord adapter against a fake Discord", async () => {
+    const dir = path.join(tmp, "discord");
+    const source = path.join(import.meta.dirname, "../../im-discord");
+    fs.mkdirSync(dir);
+    for (const entry of ["tomrade-plugin.json", "README.md", "src"]) fs.cpSync(path.join(source, entry), path.join(dir, entry), { recursive: true });
+    const report = await check(dir);
+    expect(report.problems).toEqual([]);
+    expect(report.verdict).toBe("ok");
+    expect(report.analysis?.findings.filter((f) => f.severity !== "info")).toEqual([]);
+    expect(report.imAdapters).toEqual([expect.objectContaining({ id: "discord", contract: "0.2.5" })]);
+    const result = await test(dir, { build: false });
+    expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["a button is acknowledged within three seconds", "a redelivered event runs once"]));
+  }, 90_000);
+
   it("recognizes an IM adapter written against contract 0.2.5", async () => {
     const dir = path.join(tmp, "fake-im-v2");
     fs.cpSync(path.join(import.meta.dirname, "../../im/tests/fixtures/fake-adapter"), dir, { recursive: true });

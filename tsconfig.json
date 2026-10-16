@@ -190,6 +190,7 @@
     {
       "path": "./packages/im"
     },
+    { "path": "./packages/im-discord" },
     {
       "path": "./packages/inbox-tomrade"
     },

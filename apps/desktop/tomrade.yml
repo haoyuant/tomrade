@@ -225,6 +225,9 @@ plugins:
       mediaDir: "${userData}/agent-media"
   - id: im
     name: "@tomradex/im"
+  # Discord, as an IM adapter extension: it does nothing until a connection is set up in Settings → IM.
+  - id: im-discord
+    name: "@tomradex/im-discord"
   # Engines are conductors; several can be installed, a thread picks one.
   # Tomrade: the one in-app choice — the built-in pi holds backlog conversations (the loop when pi cannot run,
   # a signed-in Claude Code or Codex when no model is connected) and implements tickets.
