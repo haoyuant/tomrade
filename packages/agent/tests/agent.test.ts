@@ -301,9 +301,13 @@ describe("the loop engine on the platform", () => {
     expect(items.list({ projectId: project.id }).find((i) => i.title === "Water reminder")).toBeUndefined();
   });
 
-  it("writes nothing when the person turns the plan down, asked in their language", async () => {
-    const respond = (system: string) =>
-      system.includes("You decompose") ? { epics: [{ title: "Tracking", body: "", features: [{ title: "Log a glass with one tap", body: "" }] }] } : { duplicates: [], related: [] };
+  it("plans in the person's language, and writes nothing when they turn the plan down", async () => {
+    const planned: string[] = [];
+    const respond = (system: string) => {
+      if (!system.includes("You decompose")) return { duplicates: [], related: [] };
+      planned.push(system);
+      return { epics: [{ title: "记录", body: "", features: [{ title: "一键记录一杯水", body: "" }] }] };
+    };
     const script = (_req: ChatRequest, step: number): FakeTurn =>
       step === 0 ? { toolCalls: [{ name: "plan_and_apply", args: { requirement: "A water reminder", rootTitle: "Water reminder" } }] } : { text: "好的，不写了。" };
     const { ctx, agent, items, project } = await boot(script, respond);
@@ -311,6 +315,7 @@ describe("the loop engine on the platform", () => {
     const thread = agent.newThread(project.id);
     const first = agent.send(project.id, thread.id, { kind: "text", text: "拆一下" });
     expect((await settled(ctx, project.id, first.runId)).status).toBe("asked");
+    expect(planned[0]).toContain("Write every title, body and note in Simplified Chinese");
     const pending = agent.thread(project.id, thread.id).pending!;
     expect(pending.question).toMatchObject({ text: expect.stringContaining("写入 backlog 吗"), options: ["写入", "取消"] });
     const second = agent.send(project.id, thread.id, { kind: "answer", questionId: pending.question.id, value: "取消" });
@@ -413,9 +418,12 @@ describe("dependencies after ticket changes", () => {
 
   it("asks once whether to add what the worker proposes after a turn that creates tickets, and applies it as its own revertible run", async () => {
     const reviews: string[] = [];
+    const planned: string[] = [];
     const respond = (system: string, user: string) => {
-      if (system.includes("You decompose"))
+      if (system.includes("You decompose")) {
+        planned.push(system);
         return { epics: [{ title: "Timeline", body: "", features: [{ title: "Define the record model", body: "" }, { title: "Show the chronicle view", body: "" }] }] };
+      }
       if (system.includes("dependencies between backlog tickets")) {
         reviews.push(user);
         return { add: [{ prerequisite: keyIn(user, "Define the record model"), dependent: keyIn(user, "Show the chronicle view"), reason: "The view reads the model." }] };
@@ -428,6 +436,7 @@ describe("dependencies after ticket changes", () => {
     const thread = agent.newThread(project.id);
     const first = agent.send(project.id, thread.id, { kind: "text", text: "plan it" });
     expect((await settled(ctx, project.id, first.runId)).status).toBe("asked");
+    expect(planned[0]).toContain("Write every title, body and note in English");
     expect(reviews).toHaveLength(0);
     const plan = agent.thread(project.id, thread.id).pending!;
     const written = agent.send(project.id, thread.id, { kind: "answer", questionId: plan.question.id, value: "Apply" });

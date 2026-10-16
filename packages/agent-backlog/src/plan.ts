@@ -45,8 +45,13 @@ const PLAN_SYSTEM = [
   '- Return JSON: {"epics": [{"title", "body", "features": [{"title", "body", "workType": "coding" | "general", "priority"?: 0-4}]}], "notes"?}'
 ].join("\n");
 
-export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[]): Promise<Plan> {
+/** The language a plan is written in: the person's, which the requirement may not show (an agent can restate it in English). */
+export type PlanLanguage = "en" | "zh";
+const LANGUAGE_NAME: Record<PlanLanguage, string> = { en: "English", zh: "Simplified Chinese (简体中文)" };
+
+export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[], language: PlanLanguage = "en"): Promise<Plan> {
   if (!llm) throw new LlmError("planning needs a worker model — configure one in Settings → Assistant");
+  const system = `${PLAN_SYSTEM}\n- Write every title, body and note in ${LANGUAGE_NAME[language]}, the person's language, whatever language the requirement is written in. JSON keys and workType values stay in English.`;
   const user = [
     "REQUIREMENT:",
     requirement,
@@ -55,7 +60,7 @@ export async function generatePlan(llm: LlmService | null, requirement: string, 
     ...existing.slice(0, 200).map((i) => `- [${i.key}] (${i.kind}) ${i.title}`),
     existing.length ? "" : "- (empty)"
   ].join("\n");
-  return llm.completeJson(planSchema, { system: PLAN_SYSTEM, user });
+  return llm.completeJson(planSchema, { system, user });
 }
 
 export interface ApplyOutcome {

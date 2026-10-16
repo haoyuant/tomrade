@@ -9,13 +9,13 @@ import type { LlmService } from "@tomradex/llm";
 import { defineTool, type RunHandle } from "@tomradex/tools";
 import { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier, type RequiredField } from "./dossier.js";
 import { applyDependencies, proposeDependencies, reviewQuestion, ticketChanges, type DependencyProposal } from "./dependencies.js";
-import { applyPlan, findGaps, generatePlan, planSchema, type Plan } from "./plan.js";
+import { applyPlan, findGaps, generatePlan, planSchema, type Plan, type PlanLanguage } from "./plan.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
 
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
-export { applyPlan, findGaps, generatePlan, planSchema, type ApplyOutcome, type Plan } from "./plan.js";
+export { applyPlan, findGaps, generatePlan, planSchema, type ApplyOutcome, type Plan, type PlanLanguage } from "./plan.js";
 export { applyDependencies, dependencyReviewSchema, proposeDependencies, REVIEW_TIMEOUT_MS, ticketChanges, type DependencyProposal, type TicketChange } from "./dependencies.js";
 export { PLAYBOOKS } from "./playbooks.js";
 
@@ -56,6 +56,14 @@ export default {
     const dossierOf = (run: RunHandle): Dossier => {
       const card = ctx.agent.store.cards(run.projectId, run.threadId).find((c) => c.id === "dossier");
       return card ? dossierSchema.parse(card.data) : emptyDossier();
+    };
+    // The language the person writes in this conversation; the app's when they have written nothing yet.
+    const languageOf = (run: RunHandle): PlanLanguage => {
+      const said = ctx.agent.store.messages(run.projectId, run.threadId)
+        .filter((m) => m.role === "user" && m.block.type === "text").slice(-3)
+        .map((m) => (m.block.type === "text" ? m.block.text : "")).join(" ");
+      if (said.trim()) return /[\u3400-\u9fff]/.test(said) ? "zh" : "en";
+      return ctx.settings.locale?.() === "zh" ? "zh" : "en";
     };
     const saveDossier = (run: RunHandle, dossier: Dossier) =>
       ctx.agent.setCard(run.id, { id: "dossier", schema: "backlog.dossier", title: "Requirement dossier", data: dossier });
@@ -122,7 +130,7 @@ export default {
       id: "plan_and_apply",
       title: "Plan & apply",
       description:
-        "Decompose a requirement into a root epic → epics → independently deliverable coding or general tickets, show the person the proposed tree, and write it in ONE transaction (revertible in one click) only once they agree. Pass {requirement} for a written spec, or {} to use this thread's dossier.",
+        "Decompose a requirement into a root epic → epics → independently deliverable coding or general tickets, show the person the proposed tree, and write it in ONE transaction (revertible in one click) only once they agree. Pass {requirement} for a written spec, or {} to use this thread's dossier; write requirement and rootTitle in the person's language.",
       input: z.object({ requirement: z.string().optional(), rootTitle: z.string().optional() }),
       state: z.object({ requirement: z.string(), rootTitle: z.string(), plan: planSchema.nullable(), writes: z.number() }),
       entry: "plan",
@@ -141,7 +149,7 @@ export default {
             return APPLY.some((word) => answerText(answer).startsWith(word)) ? { next: "apply", state } : { done: { cancelled: true, reason: "the user declined the plan" } };
           }
           const existing = existingOf(io.run.projectId);
-          const plan = await generatePlan(io.llm, state.requirement, existing);
+          const plan = await generatePlan(io.llm, state.requirement, existing, languageOf(io.run));
           const features = plan.epics.reduce((n, e) => n + e.features.length, 0);
           const next: PlanState = { ...state, plan, writes: 1 + plan.epics.length + features };
           io.emit({ type: "card", id: "proposal", schema: "backlog.proposal", title: "Plan proposal", data: { rootTitle: state.rootTitle, ...plan } });
@@ -197,7 +205,7 @@ export default {
           if (answer === undefined) return { ask: { text: "Dossier complete. Plan the backlog and write it now?", options: ["Go", "Stop"] }, state };
           if (answerText(answer) !== "Go") return { done: { dossier: state.dossier, applied: false } };
           const requirement = renderDossier(state.dossier);
-          const plan = await generatePlan(io.llm, requirement, existingOf(io.run.projectId));
+          const plan = await generatePlan(io.llm, requirement, existingOf(io.run.projectId), languageOf(io.run));
           const outcome = applyPlan(ctx, {
             projectId: io.run.projectId,
             author: io.run.author,
