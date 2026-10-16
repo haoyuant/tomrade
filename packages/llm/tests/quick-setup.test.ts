@@ -9,7 +9,7 @@ import path from "node:path";
 import { Context } from "cordis";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { Settings } from "@tomradex/settings";
-import { guessProviders, Llm, pickModel, type ModelsSettings } from "@tomradex/llm";
+import { guessProviders, Llm, pickModel, usableModels, type ModelsSettings } from "@tomradex/llm";
 
 let server: http.Server;
 let base = "";
@@ -80,4 +80,12 @@ it("finds keys in the environment and a local Ollama, and adopts them without th
   expect(await ctx.llm.adopt("local:ollama")).toMatchObject({ ok: true, profile: { id: "ollama", model: "qwen3:8b" } });
   expect(await ctx.llm.detect()).toEqual([]);
   vi.unstubAllEnvs();
+});
+
+it("lists an endpoint's chat models for the profile form, or why it cannot", async () => {
+  const ctx = await llm();
+  expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "sk-good" })).toEqual({ ok: true, models: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"] });
+  expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "" })).toMatchObject({ ok: false, kind: "auth" });
+  expect(usableModels("openai-compatible", ["gpt-5", "text-embedding-3-large", "whisper-1", "gpt-image-2", "tts-1", "gpt-5.10"])).toEqual(["gpt-5.10", "gpt-5"]);
+  expect(usableModels("openai-images", ["gpt-5", "gpt-image-2", "dall-e-3"])).toEqual(["gpt-image-2", "dall-e-3"]);
 });

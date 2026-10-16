@@ -97,6 +97,19 @@ export async function listModels(preset: Pick<ProviderPreset, "provider" | "base
   }
 }
 
+/**
+ * The listed models a profile of this kind can use, newest-looking first. An
+ * OpenAI-style listing mixes in embeddings, speech and moderation models.
+ */
+export function usableModels(provider: "openai-compatible" | "anthropic" | "openai-images", listed: string[]): string[] {
+  const images = /image|dall-e/i;
+  const notChat = /embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|davinci|babbage/i;
+  const kept = provider === "openai-images" ? listed.filter((id) => images.test(id)) : listed.filter((id) => !notChat.test(id));
+  return [...new Set(kept)].sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
+}
+
+export type ModelListing = { ok: true; models: string[] } | { ok: false; kind: ModelErrorKind; detail: string };
+
 export type QuickSetupResult =
   | { ok: true; profile: { id: string; title: string; model: string } }
   | { ok: false; kind: ModelErrorKind; detail: string };
