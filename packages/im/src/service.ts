@@ -9,9 +9,10 @@ import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
+import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
 import { FILE_HANDLE, links, renderBlock, toolLine, type ItemLookup } from "./rich.js";
-import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox } from "./store.js";
+import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type WindowRow } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
@@ -105,6 +106,8 @@ declare module "@tomradex/ipc" {
     "im.threadBindings": (projectId: string, threadId: string) => ImThreadBinding[];
     /** Sends the thread's next desktop turn to a group conversation too, or stops it. */
     "im.shareNext": (bindingId: string, on: boolean) => boolean;
+    /** Deletes the group messages kept on this computer, for one route or all of them; returns how many. */
+    "im.clearContext": (routeId?: string) => number;
   }
   interface Broadcasts {
     /** Connections, pairings, ignored messages or deliveries changed; the settings panel refetches. */
@@ -179,6 +182,7 @@ export class Im extends Service {
       ctx.ipc.handle("im.revoke", (connectionId, tenantId, actorId) => this.revoke(connectionId, tenantId, actorId));
       ctx.ipc.handle("im.threadBindings", (projectId, threadId) => this.threadBindings(projectId, threadId));
       ctx.ipc.handle("im.shareNext", (bindingId, on) => this.shareNext(bindingId, on));
+      ctx.ipc.handle("im.clearContext", routeId => this.clearContext(routeId));
       const notify = () => ctx.ipc.send("im.changed");
       this.watchers.add(notify);
       return () => { this.watchers.delete(notify); };
@@ -464,6 +468,7 @@ export class Im extends Service {
       if (!spec || JSON.stringify(spec.credentials) !== c.credentials || this.missing(spec).length) { this.connections.delete(c.id); void this.close(c); }
     }
     for (const id of this.pairings.keys()) if (!this.settings.connections.some(c => c.id === id)) this.pairings.delete(id);
+    if (this.store) this.pruneWindow();
     this.tick();
     this.changed();
   }
@@ -495,6 +500,7 @@ export class Im extends Service {
     if (sweep) {
       this.sweptAt = Date.now();
       this.store.prune(Date.now() - this.config.retentionMs);
+      this.pruneWindow();
     }
     const dirty = new Set(this.dirty);
     this.dirty.clear();
@@ -575,6 +581,8 @@ export class Im extends Service {
     const reason: ImIgnoredView["reason"] | null = event.actor.isBot ? "bot" : !route ? "conversation" : !route.allowedActors.includes(event.actor.id) ? "actor"
       : event.kind === "message" && !activates(route, event.activation) ? "activation" : null;
     if (reason) {
+      // What the Agent is not handed as a message of its own may still be the discussion it is asked about.
+      if (route && event.kind === "message") this.remember(c, route, event);
       // Ambient group chatter is not addressed to the bot; recording it would bury the messages that were.
       if (event.kind === "message" && event.activation === "ambient" && reason !== "activation") return { receiptId: `ignored:${id}` };
       // Withdrawing or editing a message is not a message to the bot.
@@ -608,6 +616,66 @@ export class Im extends Service {
     }
     this.store.run("INSERT INTO plugin_im_inbox (id, message_key, binding_id, event_json, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)", id, messageKey, b.id, JSON.stringify(event), fingerprint, Date.now());
     return { receiptId: id };
+  }
+
+  private windowed(route: ImRoute | undefined): route is ImRoute & { groupContext: { enabled: true; messages: number; retentionHours: number } } {
+    return !!route?.allowGroups && !!route.groupContext?.enabled;
+  }
+
+  /** A group message the Agent was not handed, kept on this computer only where its route turned the window on. */
+  private remember(c: Connection, route: ImRoute, event: ImInbound & { kind: "message" }) {
+    if (!this.windowed(route) || event.activation === "dm" || event.actor.isBot || !event.text.trim()) return;
+    this.store.run("INSERT OR IGNORE INTO plugin_im_window (route_id, place, message_key, message_id, author_json, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      route.id, placeOf(c.id, event.address), hash([c.id, event.address.tenantId, event.address.conversationId, event.messageId]), event.messageId,
+      JSON.stringify({ id: event.actor.id, ...(event.actor.name ? { name: event.actor.name } : {}), isBot: false }), event.text, Date.now());
+  }
+
+  /** Past retention, beyond the route's count, or no longer turned on: gone. */
+  private pruneWindow() {
+    const on = this.settings.routes.filter(r => this.windowed(r));
+    this.store.db.transaction(() => {
+      this.store.run(`DELETE FROM plugin_im_window WHERE route_id NOT IN (${on.map(() => "?").join(", ")})`, ...on.map(r => r.id));
+      for (const r of on) {
+        this.store.run("DELETE FROM plugin_im_window WHERE route_id = ? AND created_at < ?", r.id, Date.now() - r.groupContext!.retentionHours * 3_600_000);
+        this.store.run(`DELETE FROM plugin_im_window WHERE seq IN (SELECT seq FROM (SELECT seq, ROW_NUMBER() OVER (PARTITION BY place ORDER BY seq DESC) AS n
+          FROM plugin_im_window WHERE route_id = ?) WHERE n > ?)`, r.id, r.groupContext!.messages);
+      }
+    });
+  }
+
+  clearContext(routeId?: string): number {
+    const n = routeId ? this.store.run("DELETE FROM plugin_im_window WHERE route_id = ?", routeId).changes : this.store.run("DELETE FROM plugin_im_window").changes;
+    this.changed();
+    return n;
+  }
+
+  /**
+   * The message as the Agent reads it: what it replies to and its thread's
+   * first message where the adapter has them, and in a windowed group the
+   * discussion since the conversation's last turn, each line with its author.
+   */
+  private contextual(b: Binding, row: Inbox, event: ImInbound & { kind: "message" }): string {
+    const route = this.settings.routes.find(r => r.id === b.route_id);
+    const windowed = event.activation !== "dm" && this.windowed(route);
+    const place = placeOf(b.connection_id, event.address);
+    const line = (w: WindowRow): ContextLine => ({ author: JSON.parse(w.author_json) as ContextLine["author"], text: w.text });
+    const given = (role: "quoted" | "root") => event.context?.find(m => m.role === role);
+    const kept = event.replyTo && windowed ? this.store.get<WindowRow>("SELECT * FROM plugin_im_window WHERE place = ? AND message_id = ?", place, event.replyTo) : undefined;
+    const quotedId = given("quoted")?.messageId ?? kept?.message_id;
+    let recent: ContextLine[] = [];
+    if (windowed) {
+      const since = this.store.get<{ at: number | null }>("SELECT MAX(created_at) AS at FROM plugin_im_inbox WHERE binding_id = ? AND run_id IS NOT NULL AND id != ?", b.id, row.id)?.at ?? 0;
+      const from = Math.max(since, Date.now() - route.groupContext.retentionHours * 3_600_000);
+      recent = this.store.all<WindowRow>("SELECT * FROM plugin_im_window WHERE place = ? AND created_at > ? AND message_id NOT IN (?, ?) ORDER BY seq DESC LIMIT ?",
+        place, from, event.messageId, quotedId ?? "", route.groupContext.messages).reverse().map(line);
+    }
+    const quoted = given("quoted");
+    const root = given("root");
+    return withContext(event.text, {
+      ...(quoted ? { quoted: fromAdapter(quoted) } : kept ? { quoted: line(kept) } : {}),
+      ...(root && root.messageId !== quotedId ? { root: fromAdapter(root) } : {}),
+      recent
+    }, this.home.settings.locale() === "zh" ? "zh" : "en");
   }
 
   /** A `/pair` code in a direct chat. The desktop confirms who it was; a wrong code counts toward withdrawing it. */
@@ -798,7 +866,7 @@ export class Im extends Service {
             if (bytes.byteLength !== ref.size) this.refuse("Attachment size does not match its metadata", "附件大小与声明不符");
             attachments.push(this.home.agent.uploadMedia(b.project_id, b.thread_id, { name: ref.name, mime: ref.mimeType, base64: Buffer.from(bytes).toString("base64") }));
           }
-          input = { kind: "text", text: event.text, ...(attachments.length ? { attachments } : {}) };
+          input = { kind: "text", text: this.contextual(b, row, event), ...(attachments.length ? { attachments } : {}) };
           this.store.run("UPDATE plugin_im_inbox SET input_json = ? WHERE id = ?", JSON.stringify(input), row.id);
           }
         }
@@ -1480,6 +1548,11 @@ function activates(route: ImRoute, activation: "dm" | "mention" | "reply" | "amb
   if (activation === "dm") return route.allowDirectMessages;
   if (!route.allowGroups) return false;
   return activation === "mention" || (activation === "reply" && route.groupActivation !== "mention") || (activation === "ambient" && route.groupActivation === "all");
+}
+
+/** A conversation and topic, as the window keeps them apart. */
+function placeOf(connectionId: string, address: ImAddress): string {
+  return hash([connectionId, address.tenantId, address.conversationId, address.topicId ?? null]);
 }
 
 /** Group replies attach to the message that asked; a direct chat needs no anchor. */

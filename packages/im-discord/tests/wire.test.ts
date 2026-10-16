@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inboundMessage, messageOf, parseControl, type DMessage } from "../src/wire.js";
+import { INTENTS, MESSAGE_CONTENT, inboundMessage, messageOf, parseControl, wantsContent, type DMessage } from "../src/wire.js";
 
 const BOT = "900";
 const msg = (o: Partial<DMessage>): DMessage => ({ id: "1", channel_id: "10", type: 0, content: "hi", author: { id: "5", username: "ana" }, ...o });
@@ -23,6 +23,22 @@ describe("Discord messages in", () => {
     const event = inboundMessage(msg({ guild_id: "77", channel_id: "11", content: `<@!${BOT}> go` }), BOT, id => (id === "11" ? "10" : null));
     expect(event?.address).toEqual({ tenantId: "77", conversationId: "10", topicId: "11" });
     expect(event?.text).toBe("go");
+  });
+
+  it("carries the replied-to message's text and author, when Discord sent it", () => {
+    const quoting = (content: string) => inboundMessage(msg({ guild_id: "77", type: 19, content: `<@${BOT}> realistic?`, mentions: [{ id: BOT, username: "bot" }],
+      message_reference: { message_id: "2" }, referenced_message: { id: "2", content, author: { id: "6", username: "carol", global_name: "Carol" } } }), BOT, noThreads);
+    expect(quoting("ship on Friday")?.context).toEqual([{ role: "quoted", messageId: "2", author: { id: "6", name: "Carol", isBot: false }, text: "ship on Friday" }]);
+    // Without Message Content someone else's message may come empty; the reply still goes through.
+    expect(quoting("")).toMatchObject({ activation: "mention", replyTo: "2" });
+    expect(quoting("")?.context).toBeUndefined();
+  });
+
+  it("asks for Message Content only when the person opted in", () => {
+    expect(wantsContent(undefined)).toBe(false);
+    expect(wantsContent("")).toBe(false);
+    expect(wantsContent(" ON ")).toBe(true);
+    expect(INTENTS & MESSAGE_CONTENT).toBe(0);
   });
 
   it("keeps attachments by reference", () => {

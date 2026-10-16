@@ -40,4 +40,5 @@ export const useImRevoke = () => useImMutation((connectionId: string, tenantId: 
 export const useImAllow = () => useImMutation((request: ImAllowRequest) => invoke("im.allow", request));
 export const useImRetry = () => useImMutation((id: string) => invoke("im.retry", id));
 export const useImDiscard = () => useImMutation((id: string) => invoke("im.discard", id));
+export const useImClearContext = () => useImMutation((routeId?: string) => invoke("im.clearContext", routeId));
 export const useImShareNext = () => useImMutation((bindingId: string, on: boolean) => invoke("im.shareNext", bindingId, on));

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { ImDeliveryError, type ImAdapter, type ImAdapterSession, type ImAddress, type ImCapabilities, type ImCommand, type ImDelivery, type ImInbound } from "@tomradex/plugin-sdk";
+import { ImDeliveryError, type ImAdapter, type ImAdapterSession, type ImAddress, type ImCapabilities, type ImCommand, type ImContextMessage, type ImDelivery, type ImInbound } from "@tomradex/plugin-sdk";
 import { Gateway, net, type Net } from "./gateway.js";
-import { actorOf, addressOf, API, inboundMessage, isThread, messageOf, parseControl, REACTIONS, type DInteraction, type DMessage, type DOption } from "./wire.js";
+import { actorOf, addressOf, API, INTENTS, inboundMessage, isThread, MESSAGE_CONTENT, messageOf, parseControl, REACTIONS, wantsContent, type DInteraction, type DMessage, type DOption } from "./wire.js";
 
 export const CAPABILITIES: ImCapabilities = {
   edit: true, buttons: true, inboundFiles: true, outboundFiles: true,
@@ -83,6 +83,20 @@ export async function openDiscord(connectionId: string, io: IO, opts: { net?: Ne
 
   const learnChannel = (c: { id: string; type: number; parent_id?: string | null }) => { parents.set(c.id, isThread(c.type) ? c.parent_id ?? null : null); };
   const parentOf = (id: string) => parents.get(id) ?? null;
+  /** A thread's first message, read once per thread. */
+  const roots = new Recent<ImContextMessage | null>(200);
+  const rootOf = async (threadId: string, parentId: string): Promise<ImContextMessage | null> => {
+    if (roots.has(threadId)) return roots.get(threadId)!;
+    let root: ImContextMessage | null = null;
+    // A thread opened from a message shares its id, in the parent channel; a forum post's starter is inside the thread.
+    for (const channel of [parentId, threadId]) {
+      const m = await rest("GET", `/channels/${channel}/messages/${threadId}`).catch(() => null) as DMessage | null;
+      if (m?.author && m.content?.trim()) { root = { role: "root", messageId: m.id, author: actorOf(m.author), text: m.content }; break; }
+      if (m) break;
+    }
+    roots.set(threadId, root);
+    return root;
+  };
   const ensureChannel = async (guildId: string | undefined, channelId: string | undefined) => {
     if (!guildId || !channelId || parents.has(channelId)) return;
     try { learnChannel(await rest("GET", `/channels/${channelId}`) as { id: string; type: number; parent_id?: string | null }); }
@@ -140,8 +154,14 @@ export async function openDiscord(connectionId: string, io: IO, opts: { net?: Ne
         const m = data as DMessage;
         later(async () => {
           await ensureChannel(m.guild_id, m.channel_id);
-          const event = inboundMessage(m, botId, parentOf);
-          if (!event) return;
+          const found = inboundMessage(m, botId, parentOf);
+          if (!found) return;
+          let event = found;
+          const topic = event.address.topicId;
+          if (topic && event.activation !== "ambient" && topic !== event.replyTo) {
+            const root = await rootOf(topic, event.address.conversationId);
+            if (root) event = { ...event, context: [...(event.context ?? []), root] };
+          }
           authors.set(m.id, m.author.id);
           for (const a of m.attachments ?? []) attachments.set(a.id, a.url);
           await receive(event);
@@ -171,7 +191,7 @@ export async function openDiscord(connectionId: string, io: IO, opts: { net?: Ne
   const gateway = new Gateway(token, n, {
     dispatch,
     state: (state, detail) => io.status(state === "connected" ? "connected" : state === "connecting" ? "connecting" : "error", detail)
-  }, { ...(opts.backoffMs !== undefined ? { backoffMs: opts.backoffMs } : {}) });
+  }, { ...(opts.backoffMs !== undefined ? { backoffMs: opts.backoffMs } : {}), intents: wantsContent(io.credentials.messageContent) ? INTENTS | MESSAGE_CONTENT : INTENTS });
   io.signal.addEventListener("abort", () => gateway.stop(), { once: true });
   const ready = await gateway.start();
   botId = ready.user.id;

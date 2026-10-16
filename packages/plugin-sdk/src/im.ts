@@ -15,6 +15,14 @@ export interface ImAttachmentRef {
   size: number;
 }
 
+/** SDK 0.2.5. An earlier message the adapter read beside an inbound one: the one it quotes, or its thread's first message. */
+export interface ImContextMessage {
+  role: "quoted" | "root";
+  messageId: string;
+  author: { id: string; name?: string; isBot: boolean };
+  text: string;
+}
+
 /**
  * A native slash command or menu entry arrives as a message whose text is the
  * plain command (`/stop`), so plain-text commands keep working everywhere.
@@ -27,7 +35,9 @@ export type ImInbound = {
   /** `ambient` (SDK 0.2.5): a group message that neither mentions nor replies to the bot, sent only by adapters that receive every group message. */
   | { kind: "message"; messageId: string; text: string; activation: "dm" | "mention" | "reply" | "ambient"; attachments?: ImAttachmentRef[]; permalink?: string;
     /** SDK 0.2.5. The message this one quotes or replies to; replying to the progress message steers the running turn. */
-    replyTo?: string }
+    replyTo?: string;
+    /** SDK 0.2.5. What the adapter already holds of the quoted message and the thread's first message, so the Agent sees what is being discussed. */
+    context?: ImContextMessage[] }
   /** SDK 0.2.5. The person withdrew or edited a message they sent; a queued one that was withdrawn never runs, an edit never reruns. */
   | { kind: "retract"; messageId: string }
   | { kind: "edit"; messageId: string }

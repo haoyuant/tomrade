@@ -40,7 +40,7 @@ export class Gateway {
     dispatch(type: string, data: unknown): void;
     /** Reconnecting (`connecting`), back (`connected`), or given up (`error`). */
     state(state: "connecting" | "connected" | "error", detail?: string): void;
-  }, private readonly opts: { backoffMs?: number } = {}) {}
+  }, private readonly opts: { backoffMs?: number; intents?: number } = {}) {}
 
   start(): Promise<Ready> {
     return new Promise((resolve, reject) => {
@@ -93,7 +93,7 @@ export class Gateway {
         // The first beat is jittered so many clients reconnecting together don't beat in step.
         this.schedule(interval * Math.random(), interval);
         if (this.session) this.send({ op: 6, d: { token: this.token, session_id: this.session.id, seq: this.seq } });
-        else this.send({ op: 2, d: { token: this.token, intents: INTENTS, properties: { os: "tomrade", browser: "tomrade", device: "tomrade" } } });
+        else this.send({ op: 2, d: { token: this.token, intents: this.opts.intents ?? INTENTS, properties: { os: "tomrade", browser: "tomrade", device: "tomrade" } } });
         return;
       }
       case 11: this.acked = true; return;

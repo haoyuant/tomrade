@@ -25,7 +25,13 @@ export const ImSettings = z.object({
     /** `final` sends answers and questions only; `progress` also shows progress and growing replies; `verbose` adds a line per tool call. */
     output: z.enum(["final", "progress", "verbose"]).default("progress"),
     /** In a direct chat, turns started on the desktop show here too. A group only ever shows turns started from IM, or shared from the desktop. */
-    desktopTurns: z.boolean().default(true)
+    desktopTurns: z.boolean().default(true),
+    /** In a group, keep its recent messages on this computer and show them to the Agent when it is woken. Off unless set. */
+    groupContext: z.object({
+      enabled: z.boolean().default(false),
+      messages: z.number().int().min(1).max(100).default(20),
+      retentionHours: z.number().int().min(1).max(720).default(24)
+    }).optional()
   })).default([])
 }).superRefine((value, ctx) => {
   for (const key of ["connections", "routes"] as const) {
@@ -62,7 +68,9 @@ export const InboundSchema = z.discriminatedUnion("kind", [
   z.object({ ...common, kind: z.literal("message"), messageId: id, text: z.string().max(32_000),
     activation: z.enum(["dm", "mention", "reply", "ambient"]),
     attachments: z.array(z.object({ id, name: z.string().min(1).max(255), mimeType: z.string().min(1).max(128), size: z.number().int().min(1).max(32 * 1024 * 1024) })).max(8).optional(),
-    permalink: z.url().max(2048).optional(), replyTo: id.optional() }),
+    permalink: z.url().max(2048).optional(), replyTo: id.optional(),
+    context: z.array(z.object({ role: z.enum(["quoted", "root"]), messageId: id,
+      author: z.object({ id, name: z.string().max(256).optional(), isBot: z.boolean() }), text: z.string().max(32_000) })).max(4).optional() }),
   z.object({ ...common, kind: z.literal("retract"), messageId: id }),
   z.object({ ...common, kind: z.literal("edit"), messageId: id }),
   z.object({ ...common, kind: z.literal("action"), token: id, value: z.union([z.string().max(32_000), z.array(z.string().max(512)).max(24)]).optional() })

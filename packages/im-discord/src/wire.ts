@@ -6,7 +6,7 @@ export interface DAttachment { id: string; filename: string; content_type?: stri
 export interface DMessage {
   id: string; channel_id: string; guild_id?: string; type: number; content: string; author: DUser; webhook_id?: string;
   mentions?: DUser[]; attachments?: DAttachment[]; edited_timestamp?: string | null;
-  message_reference?: { message_id?: string }; referenced_message?: { author?: DUser } | null;
+  message_reference?: { message_id?: string }; referenced_message?: { id?: string; content?: string; author?: DUser } | null;
 }
 export interface DInteraction {
   id: string; application_id: string; type: number; token: string; channel_id?: string; guild_id?: string;
@@ -20,6 +20,9 @@ export const API = "https://discord.com/api/v10";
 export const GATEWAY = "wss://gateway.discord.gg/?v=10&encoding=json";
 /** GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES. Message Content stays off: a mention or a direct message carries its text anyway. */
 export const INTENTS = (1 << 0) | (1 << 9) | (1 << 12);
+/** The privileged intent that lets other people's channel messages arrive with their text; only when the person turned it on in the portal. */
+export const MESSAGE_CONTENT = 1 << 15;
+export const wantsContent = (value: string | undefined) => /^(on|yes|true|1)$/i.test(value?.trim() ?? "");
 export const LIMIT = { text: 2000, embeds: 10, title: 256, description: 4096, fields: 25, fieldName: 256, fieldValue: 1024, rows: 5, perRow: 5, label: 80, options: 25, optionText: 100 };
 
 /** Message types a person sends: a plain message and a reply. */
@@ -48,13 +51,17 @@ export function inboundMessage(m: DMessage, botId: string, parentOf: (id: string
   const text = m.content.replace(mention, "").trim();
   // Without the Message Content intent other people's channel chatter arrives empty; there is nothing to act on.
   if (activation === "ambient" && !text) return null;
+  const ref = m.referenced_message;
+  // Without Message Content a quoted message by someone else may arrive empty; then there is nothing to show.
+  const quoted = ref?.id && ref.author && ref.content?.trim() ? { role: "quoted" as const, messageId: ref.id, author: actorOf(ref.author), text: ref.content } : null;
   const attachments = (m.attachments ?? []).slice(0, 8).filter(a => a.size > 0).map(a => ({ id: a.id, name: clip(a.filename, 255), mimeType: a.content_type || "application/octet-stream", size: a.size }));
   return {
     kind: "message", eventId: `m:${m.id}`, messageId: m.id, text, activation,
     actor: actorOf(m.author), address: addressOf(m.guild_id, m.channel_id, parentOf),
     ...(attachments.length ? { attachments } : {}),
     permalink: `https://discord.com/channels/${m.guild_id ?? "@me"}/${m.channel_id}/${m.id}`,
-    ...(m.message_reference?.message_id ? { replyTo: m.message_reference.message_id } : {})
+    ...(m.message_reference?.message_id ? { replyTo: m.message_reference.message_id } : {}),
+    ...(quoted ? { context: [quoted] } : {})
   };
 }
 

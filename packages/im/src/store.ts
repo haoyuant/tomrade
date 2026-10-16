@@ -53,10 +53,18 @@ CREATE INDEX idx_plugin_im_outbox_stream ON plugin_im_outbox(binding_id, stream)
 ALTER TABLE plugin_im_bindings ADD COLUMN grp INTEGER;
 ALTER TABLE plugin_im_bindings ADD COLUMN share_next INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE plugin_im_runs (binding_id TEXT NOT NULL, run_id TEXT NOT NULL, PRIMARY KEY (binding_id, run_id));
+` }, { version: 6, up: `
+CREATE TABLE plugin_im_window (
+ seq INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT NOT NULL, place TEXT NOT NULL, message_key TEXT NOT NULL UNIQUE,
+ message_id TEXT NOT NULL, author_json TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_plugin_im_window_place ON plugin_im_window(place, seq);
+CREATE INDEX idx_plugin_im_window_route ON plugin_im_window(route_id, created_at);
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
-  plugin_im_outbox: { export: false }, plugin_im_actions: { export: false }, plugin_im_runs: { export: false }
+  plugin_im_outbox: { export: false }, plugin_im_actions: { export: false }, plugin_im_runs: { export: false },
+  plugin_im_window: { export: false }
 } as const;
 
 export interface Binding {
@@ -86,6 +94,11 @@ export interface Outbox {
   stream_of: string | null;
   /** Text already sent through a native stream that has not been stopped. */
   streamed: string | null;
+}
+/** A group message kept on this computer for a route with `groupContext`; `place` is its conversation and topic. */
+export interface WindowRow {
+  seq: number; route_id: string; place: string; message_key: string; message_id: string;
+  author_json: string; text: string; created_at: number;
 }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;

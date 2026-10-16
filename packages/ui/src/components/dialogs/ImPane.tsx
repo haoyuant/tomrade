@@ -7,7 +7,7 @@ import { invoke, messageOf } from "~/lib/api";
 import { useEngines } from "~/lib/agent";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import {
-  useImAdapters, useImAllow, useImConnections, useImDeliveries, useImDiscard, useImIgnored,
+  useImAdapters, useImAllow, useImClearContext, useImConnections, useImDeliveries, useImDiscard, useImIgnored,
   useImPairCancel, useImPairConfirm, useImPairings, useImPairStart, useImRetry, useImRevoke
 } from "~/lib/im";
 import { useProjects, useSaveSettings, useSettings } from "~/lib/queries";
@@ -215,6 +215,10 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
   const engine = (engines.data ?? []).find((e) => e.id === route.engine);
   const set = (patch: Partial<ImRoute>) => onChange({ ...route, ...patch });
   const id = (key: string) => `im-route-${route.id}-${key}`;
+  const clear = useImClearContext();
+  const [cleared, setCleared] = useState<number | null>(null);
+  const windowed = { enabled: false, messages: 20, retentionHours: 24, ...route.groupContext };
+  const setWindow = (patch: Partial<typeof windowed>) => set({ groupContext: { ...windowed, ...patch } });
   return (
     <div className="panel stack-2" data-im-route={route.id}>
       <div className="row" style={{ gap: 8 }}>
@@ -281,6 +285,34 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
           </label>
         ))}
       </div>
+      {route.allowGroups && (
+        <div className="stack-2" data-im-group-context={route.id}>
+          <label className="row" style={{ gap: 6 }}>
+            <button type="button" className="switch" role="switch" aria-checked={windowed.enabled} aria-label={t("imSettings.groupContext")} onClick={() => setWindow({ enabled: !windowed.enabled })} />
+            {t("imSettings.groupContext")}
+          </label>
+          <p className="meta-txt dense">{t("imSettings.groupContextHelp")}</p>
+          {windowed.enabled && (
+            <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="field">
+                <label htmlFor={id("window-messages")}>{t("imSettings.groupContextMessages")}</label>
+                <input id={id("window-messages")} className="input num" type="number" min={1} max={100} value={windowed.messages}
+                  onChange={(e) => setWindow({ messages: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })} />
+              </div>
+              <div className="field">
+                <label htmlFor={id("window-hours")}>{t("imSettings.groupContextHours")}</label>
+                <input id={id("window-hours")} className="input num" type="number" min={1} max={720} value={windowed.retentionHours}
+                  onChange={(e) => setWindow({ retentionHours: Math.min(720, Math.max(1, Number(e.target.value) || 1)) })} />
+              </div>
+              <button type="button" className="btn btn-secondary" disabled={clear.isPending}
+                onClick={() => clear.mutate([route.id], { onSuccess: (n) => setCleared(n) })}>
+                {t("imSettings.groupContextClear")}
+              </button>
+              {cleared !== null && <span className="meta-txt">{t("imSettings.groupContextCleared", { n: cleared })}</span>}
+            </div>
+          )}
+        </div>
+      )}
       <div className="field">
         <label>{t("imSettings.people")}</label>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
