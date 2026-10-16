@@ -180,3 +180,13 @@ it("repairs a checkout whose other-Tomrade helper can no longer run, because the
   expect(await usesTomradeCredential(f.git, f.dir, f.settings)).toBe(true);
   expect((await f.fill()).stdout).toContain("password=test-token-one");
 });
+
+it("runs on the Node binary it is given, so on macOS git's requests start the app's Helper rather than its Dock-visible main binary", async () => {
+  const f = await fixture();
+  const marker = path.join(f.dir, "ran");
+  const node = path.join(f.dir, "Tomrade Helper");
+  fs.writeFileSync(node, `#!/bin/sh\ntouch '${marker}'\nexec '${process.execPath}' "$@"\n`, { mode: 0o700 });
+  await installGithubCredential(f.git, f.dir, f.settings, node);
+  expect((await f.fill()).stdout).toContain("password=test-token-one");
+  expect(fs.existsSync(marker)).toBe(true);
+});

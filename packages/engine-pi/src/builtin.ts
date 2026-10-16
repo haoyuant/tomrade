@@ -20,7 +20,9 @@ export const BuiltinPiConfig = z.object({
   /** The bundled `dist/bundle/cli.js`, run by the app's own binary as Node. */
   cli: z.string(),
   /** pi's config folder for this account — sessions and models.json; never the person's ~/.pi. */
-  home: z.string()
+  home: z.string(),
+  /** The binary that runs it as Node; defaults to the running one. */
+  nodeBinary: z.string().default(process.execPath)
 });
 export type BuiltinPiConfig = z.infer<typeof BuiltinPiConfig>;
 
@@ -50,7 +52,7 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
   const pool = new RuntimePool<PiRuntime>();
   ctx.effect(() => () => pool.close());
   const zh = () => ctx.settings.locale?.() === "zh";
-  const launch = bundledLaunch({ file: config.cli, runtime: process.execPath }, { platform: process.platform, env: process.env });
+  const launch = bundledLaunch({ file: config.cli, runtime: config.nodeBinary }, { platform: process.platform, env: process.env });
   const home = { PI_CODING_AGENT_DIR: config.home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" };
   const connected = (): ModelProfile[] => (ctx.settings.get().models as ModelsSettings | undefined)?.profiles ?? [];
   const profiles = (): ModelProfile[] => connected().filter(usableProfile);

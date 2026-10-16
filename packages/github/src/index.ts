@@ -50,6 +50,8 @@ export interface GitHubConfig {
   apiUrl?: string;
   /** The device flow's poll interval unit in ms, for tests. */
   pollUnitMs?: number;
+  /** The binary git's credential helper runs as Node; defaults to the running one. */
+  nodeBinary?: string;
 }
 
 /** A session renews this long before it runs out, so git never meets an expired token while the app runs. */
@@ -113,7 +115,7 @@ export class GitHubAccount extends Service {
   [Service.init]() {
     this.home.settings.register(SECTION);
     try {
-      this.helper = writeGithubHelper(this.settingsFile);
+      this.helper = writeGithubHelper(this.settingsFile, this.config.nodeBinary);
     } catch (error) {
       this.home.logger.warn(`github: credential helper not written — ${message(error)}`);
     }
@@ -317,11 +319,11 @@ export class GitHubAccount extends Service {
   // ── code checkouts: the helper written into a checkout's own config, for the agents working there ──
 
   installHelper(git: Git, checkout: string): Promise<void> {
-    return installGithubCredential(git, checkout, this.settingsFile);
+    return installGithubCredential(git, checkout, this.settingsFile, this.config.nodeBinary);
   }
 
   migrateHelper(git: Git, checkout: string): Promise<boolean> {
-    return migrateGithubCredential(git, checkout, this.settingsFile);
+    return migrateGithubCredential(git, checkout, this.settingsFile, this.config.nodeBinary);
   }
 
   usesHelper(git: Git, checkout: string): Promise<boolean> {

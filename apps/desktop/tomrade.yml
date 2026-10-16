@@ -119,6 +119,7 @@ plugins:
     name: "@tomradex/archify"
     config:
       cacheDirectory: "${userData}/runtimes/archify"
+      nodeBinary: "${nodeRuntime}"
   # Caches only: every file under here can be rebuilt from a project's folder.
   - id: db
     name: "@tomradex/db"
@@ -187,6 +188,7 @@ plugins:
       userData: "${userData}"
       clientId: Iv23lilOnDQLgcQBtlrt
       appSlug: tomradex
+      nodeBinary: "${nodeRuntime}"
   # Remote transports for a project's own repository: any git URL…
   - id: storage-git
     name: "@tomradex/storage-git"
@@ -244,6 +246,7 @@ plugins:
     config:
       cli: "${appDir}/vendor/pi/dist/bundle/cli.js"
       home: "${userData}/pi"
+      nodeBinary: "${nodeRuntime}"
   # Off until switched on in Settings → Manage plugins: a menu of workflows, no model.
   - id: engine-scripted
     name: "@tomradex/engine-scripted"
@@ -402,7 +405,10 @@ plugins:
     name: "@tomradex/keybindings"
   - id: community
     name: "@tomradex/community"
+    config:
+      nodeBinary: "${nodeRuntime}"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"
     config:
       devRoot: "${pluginsDevRoot}"
+      nodeBinary: "${nodeRuntime}"

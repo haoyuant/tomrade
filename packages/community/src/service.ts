@@ -21,7 +21,9 @@ export const CommunityConfig = z.preprocess(
     /** A mirror or CDN in front of the package bucket; the digest the store lists, not the host, is what is checked. */
     packagesBaseUrl: z.string().optional(),
     /** How often revocations and updates are checked while online. */
-    checkEveryMs: z.number().int().min(60_000).default(6 * 3_600_000)
+    checkEveryMs: z.number().int().min(60_000).default(6 * 3_600_000),
+    /** The binary that runs a plugin's check as Node; defaults to the running one. */
+    nodeBinary: z.string().default(process.execPath)
   })
 );
 export type CommunityConfig = z.infer<typeof CommunityConfig>;
@@ -443,7 +445,7 @@ export class Community extends Service {
     if (!account.publisher) throw new Error("Link GitHub and become a publisher first");
     const store = this.plugins.extensions!;
     const before = readManifest(dir).id;
-    const release = await prepareRelease(dir, account.publisher, this.github, { checkOptions: { execPath: process.execPath } });
+    const release = await prepareRelease(dir, account.publisher, this.github, { checkOptions: { execPath: this.config.nodeBinary } });
     fs.rmSync(path.join(dir, ATTESTATION_FILE), { force: true });
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-publish-"));
     let digest: string;

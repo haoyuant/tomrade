@@ -98,13 +98,13 @@ const helperRunnable = (value: string): boolean => {
 };
 
 /** Repoint a checkout whose helper still lives under a Hub folder at the userData one, or whose helper can no longer run. */
-export async function migrateGithubCredential(git: Git, checkout: string, settings: string): Promise<boolean> {
+export async function migrateGithubCredential(git: Git, checkout: string, settings: string, node?: string): Promise<boolean> {
   const result = await git(["config", "--local", "--get-all", key], { cwd: checkout, ok: true });
   if (result.code !== 0) return false;
   const current = credentialCommand(settings);
   const stale = result.stdout.split("\n").map((line) => line.trimEnd()).some((line) => !!line && line !== current && namesOurHelper(line) && (!readsOtherSettings(line, settings) || !helperRunnable(line)));
   if (!stale) return false;
-  await installGithubCredential(git, checkout, settings);
+  await installGithubCredential(git, checkout, settings, node);
   return true;
 }
 
@@ -113,7 +113,7 @@ export async function migrateGithubCredential(git: Git, checkout: string, settin
  * request, so token rotation never leaves a stale secret in git config; it is
  * rewritten at every start, so a checkout that named it keeps the current one.
  */
-export function writeGithubHelper(settings: string): string {
+export function writeGithubHelper(settings: string, node = process.execPath): string {
   const bin = helperDir(settings);
   fs.mkdirSync(bin, { recursive: true });
   const helper = helperPath(settings);
@@ -141,13 +141,13 @@ export function writeGithubHelper(settings: string): string {
     '} catch { process.exit(action === "run" ? 1 : 0); }',
     ''
   ].join("\n"), 0o600);
-  writeHelper(helper, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${quote(process.execPath)} ${quote(source)} "$@"\n`, 0o700);
+  writeHelper(helper, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${quote(node)} ${quote(source)} "$@"\n`, 0o700);
   return credentialCommand(settings);
 }
 
 /** Point a checkout's own git at the helper, for the agents and terminals working in it. */
-export async function installGithubCredential(git: Git, checkout: string, settings: string): Promise<void> {
-  writeGithubHelper(settings);
+export async function installGithubCredential(git: Git, checkout: string, settings: string, node?: string): Promise<void> {
+  writeGithubHelper(settings, node);
 
   // Linked worktrees share this config. Use git's lock convention so nobody sees half a helper chain.
   const common = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: checkout });

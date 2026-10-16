@@ -18,7 +18,9 @@ export const Config = z.preprocess(
     /** Where the agent's plugins are written: one folder each, a git repository the person owns. */
     devRoot: z.string(),
     /** The publisher part of a new plugin's id until it is published under a GitHub login. */
-    publisher: z.string().default("local")
+    publisher: z.string().default("local"),
+    /** The binary that runs a plugin's check and tests as Node; defaults to the running one. */
+    nodeBinary: z.string().default(process.execPath)
   })
 );
 export type Config = z.infer<typeof Config>;
@@ -284,7 +286,7 @@ export default {
         title: "Test a plugin",
         description: "Build, then run the plugin against a throwaway project in a sandbox that cannot write to disk or start programs: loads it, computes its badges/sections/status items/graphs, and runs src/test.ts. The person's data is never touched.",
         input: z.object({ plugin }),
-        execute: async ({ plugin: name }) => test(dirOf(name))
+        execute: async ({ plugin: name }) => test(dirOf(name), { execPath: config.nodeBinary })
       })
     );
     reg(
@@ -293,7 +295,7 @@ export default {
         title: "Check a plugin",
         description: "Build, inspect in the sandbox and read the code: namespace problems, what the code does compared with what the manifest says, risk, and what stands before publishing.",
         input: z.object({ plugin }),
-        execute: async ({ plugin: name }) => summary(await check(dirOf(name)))
+        execute: async ({ plugin: name }) => summary(await check(dirOf(name), { execPath: config.nodeBinary }))
       })
     );
     reg(
@@ -304,7 +306,7 @@ export default {
         input: z.object({ plugin }),
         execute: async ({ plugin: name }) => {
           const dir = dirOf(name);
-          const report = await check(dir);
+          const report = await check(dir, { execPath: config.nodeBinary });
           if (report.verdict === "blocked") return { waiting: false, ...summary(report) };
           const id = idOf(dir);
           await manager().addFolder(dir, "studio");
