@@ -38,9 +38,31 @@ describe("tomrade-plugin", () => {
     expect(report.problems).toEqual([]);
     expect(report.verdict).toBe("ok");
     expect(report.manifest?.contributes?.imAdapters).toEqual(["fake_im"]);
+    expect(report.imAdapters).toEqual([{ id: "fake_im", contract: "0.2.2", capabilities: [] }]);
+    expect(report.notes).toEqual([]);
     const result = await test(dir, { build: false });
     expect(result.checks.filter((c) => !c.ok)).toEqual([]);
     expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["outside allowlist creates no conversation", "one execution despite duplicate"]));
+  }, 60_000);
+
+  it("recognizes an IM adapter written against contract 0.2.5", async () => {
+    const dir = path.join(tmp, "fake-im-v2");
+    fs.cpSync(path.join(import.meta.dirname, "../../im/tests/fixtures/fake-adapter"), dir, { recursive: true });
+    const source = path.join(dir, "src/index.ts");
+    fs.writeFileSync(source, fs.readFileSync(source, "utf8").replace("maxFileBytes: 0 }", 'maxFileBytes: 0, stream: "native", reactions: true, markdown: "slack" }'));
+    const lenient = await check(dir);
+    expect(lenient.verdict).toBe("ok");
+    expect(lenient.imAdapters).toEqual([{ id: "fake_im", contract: "0.2.5", capabilities: ["reactions", "stream", "markdown"] }]);
+    expect(lenient.notes).toEqual([expect.stringMatching(/fake_im.*\^0\.2\.5/)]);
+
+    const manifest = path.join(dir, "tomrade-plugin.json");
+    fs.writeFileSync(manifest, fs.readFileSync(manifest, "utf8").replace("^0.2.2", "^0.2.5"));
+    expect((await check(dir)).notes).toEqual([]);
+
+    fs.writeFileSync(source, fs.readFileSync(source, "utf8").replace('stream: "native"', 'stream: "sometimes"'));
+    const invalid = await check(dir);
+    expect(invalid.verdict).toBe("blocked");
+    expect(invalid.problems).toEqual([expect.stringMatching(/IM adapter "fake_im" declares invalid capabilities: stream/)]);
   }, 60_000);
 
   it("blocks a plugin whose ids leave its namespace", async () => {

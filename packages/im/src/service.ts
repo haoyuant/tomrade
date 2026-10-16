@@ -7,13 +7,16 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
-import type { ImAdapter, ImAdapterSession, ImAddress, ImContent, ImConnectionState, ImInbound } from "@tomradex/plugin-sdk";
+import { resolveImCapabilities, type ImAdapter, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImRoute } from "./config.js";
+import { prepare } from "./render.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
+/** Platforms drop a typing indicator after a few seconds; refresh it while the run works. */
+const TYPING_MS = 4_000;
 
 export interface ImConnectionView {
   id: string; adapterId: string; state: ImConnectionState | "unconfigured";
@@ -49,9 +52,15 @@ export class Im extends Service {
   store!: ImStore;
   private readonly home: Context;
   private readonly adapters = new Map<string, ImAdapter>();
+  private readonly caps = new Map<string, ResolvedImCapabilities>();
   private readonly connections = new Map<string, Connection>();
   private readonly processing = new Set<string>();
   private readonly progressAt = new Map<string, number>();
+  private readonly typingAt = new Map<string, number>();
+  /** The reply being streamed per binding and run; the text is what the Agent has written so far. */
+  private readonly streams = new Map<string, { id: string; text: string; at: number }>();
+  /** Recent sends per binding, for adapters that declare a rate limit. */
+  private readonly sentAt = new Map<string, number[]>();
   /** Threads whose history changed since they were last projected. */
   private readonly dirty = new Set<string>();
   private sweptAt = 0;
@@ -98,14 +107,16 @@ export class Im extends Service {
 
   register(adapter: ImAdapter): () => void {
     if (this.adapters.has(adapter.id)) throw new Error(`IM adapter ${adapter.id} already registered`);
-    const caps = adapter.capabilities;
-    if (!Number.isInteger(caps.maxTextLength) || caps.maxTextLength < 128 || !Number.isInteger(caps.maxFileBytes) || caps.maxFileBytes < 0) throw new Error("Invalid IM adapter limits");
+    let caps: ResolvedImCapabilities;
+    try { caps = resolveImCapabilities(adapter.capabilities); } catch { throw new Error(`Invalid IM adapter capabilities for ${adapter.id}`); }
     return this.ctx.effect(() => {
       this.adapters.set(adapter.id, adapter);
+      this.caps.set(adapter.id, caps);
       this.home.emit("im/registered", adapter.id);
       this.tick();
       return async () => {
         this.adapters.delete(adapter.id);
+        this.caps.delete(adapter.id);
         await Promise.all([...this.connections.values()].filter(c => c.adapterId === adapter.id).map(async c => {
           this.connections.delete(c.id);
           await this.close(c);
@@ -139,6 +150,43 @@ export class Im extends Service {
   }
 
   private say(en: string, zh: string): string { return this.home.settings.locale() === "zh" ? zh : en; }
+
+  /** The plain-text commands, for adapters that register them natively. */
+  private commands(): ImCommand[] {
+    return [
+      { name: "stop", description: this.say("Stop the current run and clear queued messages", "停止当前执行并清空等待消息") },
+      { name: "status", description: this.say("Show what the assistant is doing", "查看助手当前状态") },
+      { name: "new", description: this.say("Start a new conversation", "开始新会话") },
+      { name: "answer", description: this.say("Answer the open question", "回答当前问题"), args: this.say("token answer", "令牌 回答") }
+    ];
+  }
+
+  private capsOf(b: Binding): ResolvedImCapabilities | undefined {
+    const adapterId = this.settings.connections.find(c => c.id === b.connection_id)?.adapterId;
+    return adapterId ? this.caps.get(adapterId) : undefined;
+  }
+
+  /** A connected session, for best-effort extras that are never queued. */
+  private liveSession(b: Binding): ImAdapterSession | undefined {
+    const c = this.connections.get(b.connection_id);
+    return c && c.state === "connected" && this.current(c) ? c.session : undefined;
+  }
+
+  /** Indicators and reactions are cosmetic: a failure is dropped, never retried or surfaced as an error. */
+  private bestEffort(work: Promise<unknown>) { void deadline(work, this.config.operationTimeoutMs).catch(() => {}); }
+
+  private react(b: Binding, messageId: string, reaction: ImReaction) {
+    const session = this.liveSession(b);
+    if (this.capsOf(b)?.reactions && session?.react) this.bestEffort(session.react({ address: JSON.parse(b.address_json) as ImAddress, messageId, reaction }));
+  }
+
+  private indicate(b: Binding, state: "typing" | "idle") {
+    const session = this.liveSession(b);
+    if (!this.capsOf(b)?.typing || !session?.indicate) return;
+    const address = JSON.parse(b.address_json) as ImAddress;
+    const threadId = address.topicId ?? (b.anchor && this.capsOf(b)?.threads ? b.anchor : undefined);
+    this.bestEffort(session.indicate({ address, ...(threadId ? { threadId } : {}), state }));
+  }
 
   private stateWord(state: ImConnectionView["state"]): string {
     switch (state) {
@@ -230,6 +278,7 @@ export class Im extends Service {
       c.state = "connected";
       c.detail = undefined;
       c.attempts = 0;
+      if (this.caps.get(c.adapterId)?.nativeCommands && session.commands) this.bestEffort(session.commands(this.commands()));
     } catch {
       if (!active()) return;
       c.state = "error";
@@ -307,13 +356,14 @@ export class Im extends Service {
       if (replay) {
         this.store.run("UPDATE plugin_im_inbox SET state = 'accepted', run_id = ? WHERE id = ?", replay.run_id, row.id); return;
       }
+      const reply = { anchor: anchorOf(event) };
       let input: UserInput;
       if (event.kind === "action") {
         input = this.answer(b, event.token, event.actor.id, event.value);
       } else {
         const text = event.text.trim();
         if (text === "/status") {
-          this.enqueue(b, `status:${row.id}`, { text: detail.pending ? this.say(`Waiting for answer: ${detail.pending.question.text}`, `等待回答：${detail.pending.question.text}`) : busy ? this.say("Working", "正在执行") : this.say("No task is running", "当前没有执行中的任务") });
+          this.enqueue(b, `status:${row.id}`, { text: detail.pending ? this.say(`Waiting for answer: ${detail.pending.question.text}`, `等待回答：${detail.pending.question.text}`) : busy ? this.say("Working", "正在执行") : this.say("No task is running", "当前没有执行中的任务") }, reply);
           this.accept(row); return;
         }
         if (text === "/stop") {
@@ -321,7 +371,7 @@ export class Im extends Service {
           if ((run || detail.pending) && b.actor_id !== event.actor.id) this.refuse("Only the initiating user can stop this run", "只有发起人可以停止当前执行");
           const stopped = run ? this.home.agent.cancel(run.run.id) : this.home.agent.cancelWaiting(b.project_id, b.thread_id);
           this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE binding_id = ? AND state = 'queued' AND id != ?", b.id, row.id);
-          this.enqueue(b, `stop:${row.id}`, { text: stopped ? this.say("Stop requested", "已请求停止执行") : this.say("No task is running; queued messages cleared", "当前没有执行中的任务；已清空等待消息") });
+          this.enqueue(b, `stop:${row.id}`, { text: stopped ? this.say("Stop requested", "已请求停止执行") : this.say("No task is running; queued messages cleared", "当前没有执行中的任务；已清空等待消息") }, reply);
           this.accept(row); return;
         }
         if (text === "/new") {
@@ -333,7 +383,7 @@ export class Im extends Service {
             this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ?", b.id);
             this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = 0, actor_id = ? WHERE id = ?", th.id, event.actor.id, b.id);
             this.accept(row);
-            this.enqueue(b, `new:${row.id}`, { text: this.say("New conversation started", "已开始新会话") });
+            this.enqueue(b, `new:${row.id}`, { text: this.say("New conversation started", "已开始新会话") }, reply);
           });
           return;
         }
@@ -368,7 +418,8 @@ export class Im extends Service {
         connection: b.connection_id, tenant: event.address.tenantId, conversation: event.address.conversationId,
         actor: event.actor.id, event: event.eventId
       } });
-      if (input.kind === "text") this.store.run("UPDATE plugin_im_bindings SET actor_id = ? WHERE id = ?", event.actor.id, b.id);
+      if (input.kind === "text") this.store.run("UPDATE plugin_im_bindings SET actor_id = ?, anchor = ? WHERE id = ?", event.actor.id, reply.anchor, b.id);
+      if (event.kind === "message") this.react(b, event.messageId, "received");
       if (input.kind === "answer") this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ? AND question_id = ?", b.id, input.questionId);
       this.store.run("UPDATE plugin_im_inbox SET state = 'accepted', run_id = ? WHERE id = ?", runId, row.id);
     } catch (e) {
@@ -377,7 +428,11 @@ export class Im extends Service {
       const row = handling;
       if (row) {
         this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorText(e), row.id);
-        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.say(`Cannot process message: ${errorText(e)}`, `无法处理消息：${errorText(e)}`) });
+        const event = JSON.parse(row.event_json) as ImInbound;
+        const anchor = anchorOf(event);
+        // In a group, a refusal is for the sender only where the platform can say so privately.
+        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.say(`Cannot process message: ${errorText(e)}`, `无法处理消息：${errorText(e)}`) },
+          { anchor, visibleTo: anchor ? event.actor.id : null });
       }
     } finally { this.processing.delete(b.thread_id); }
   }
@@ -404,13 +459,19 @@ export class Im extends Service {
     this.store.db.transaction(() => {
       for (const message of detail.messages.filter(m => m.seq > b.cursor)) {
         const content = message.role === "agent" ? this.render(message.block) : null;
-        if (content) this.enqueue(b, `message:${b.id}:${message.id}`, content);
+        const streamed = content && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
+        if (streamed) this.replace(b, streamed.id, content, { final: true });
+        else if (content) this.enqueue(b, `message:${b.id}:${message.id}`, content);
         this.store.run("UPDATE plugin_im_bindings SET cursor = ? WHERE id = ?", message.seq, b.id);
       }
       this.pending(b, detail.pending);
       // Settles a progress message whose `done` event was missed, e.g. across a restart; never posts a new one.
       for (const run of detail.runs.filter(r => r.status !== "running")) {
         if (this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `progress:${b.id}:${run.id}`)) this.replace(b, `progress:${b.id}:${run.id}`, { text: this.finished(run.status) });
+        // A stream that never became a message (a crash, an engine that stopped mid-reply) keeps what it showed.
+        for (const open of this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND stream = 1 AND id LIKE ?", b.id, `stream:${b.id}:${run.id}:%`)) {
+          this.replace(b, open.id, JSON.parse(open.content_json) as ImContent, { final: true });
+        }
       }
     });
   }
@@ -422,30 +483,28 @@ export class Im extends Service {
       this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", a.token);
       const id = `question:${b.id}:${a.question_id}`;
       const row = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", id);
-      if (row && (JSON.parse(row.content_json).actions || JSON.parse(row.content_json).text.includes("/answer "))) {
+      if (row) {
         const text = this.say("Question handled or expired", "问题已处理或失效");
-        const adapterId = this.settings.connections.find(c => c.id === b.connection_id)?.adapterId;
-        if (adapterId && this.adapters.get(adapterId)?.capabilities.edit) this.replace(b, id, { text });
+        if (this.capsOf(b)?.cardUpdate) this.replace(b, id, { text });
         else this.enqueue(b, `resolved:${id}`, { text });
       }
     }
     if (!pending) return;
     const id = `question:${b.id}:${pending.question.id}`;
     if (this.store.get("SELECT 1 FROM plugin_im_actions WHERE binding_id = ? AND question_id = ? AND run_id = ? AND consumed = 0 AND expires_at > ?", b.id, pending.question.id, runId, Date.now())) return;
-    const actions: { label: string; token: string }[] = [];
-    for (const value of pending.question.options ?? []) {
-      if (pending.question.multiple) break;
+    // A token with a value is one choice; without, the answer comes from the action or the /answer reply.
+    const issue = (value: string | null) => {
       const t = token();
-      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, value_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, runId, JSON.stringify(value), Date.now() + this.config.actionTtlMs, Date.now());
-      actions.push({ label: value, token: t });
-    }
-    let text = pending.question.text;
-    if (pending.accepts === "text" || pending.question.freeText || pending.question.multiple) {
-      const t = token();
-      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, runId, Date.now() + this.config.actionTtlMs, Date.now());
-      text += this.say(`\nReply /answer ${t} your answer`, `\n请回复 /answer ${t} 你的回答`);
-    }
-    this.replace(b, id, { text, actions });
+      this.store.run("INSERT INTO plugin_im_actions (token, binding_id, thread_id, question_id, actor_id, run_id, value_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", t, b.id, b.thread_id, pending.question.id, b.actor_id, runId, value === null ? null : JSON.stringify(value), Date.now() + this.config.actionTtlMs, Date.now());
+      return t;
+    };
+    const { question } = pending;
+    const options = question.options ?? [];
+    const actions = question.multiple ? [] : options.map(value => ({ label: value, token: issue(value) }));
+    const elements: ImElement[] = [];
+    if (question.multiple && options.length) elements.push({ type: "select", token: issue(null), multiple: true, options: options.map(o => ({ label: o, value: o })) });
+    if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.say("Your answer", "你的回答") });
+    this.replace(b, id, { text: question.text, actions, ...(elements.length ? { elements } : {}) });
   }
 
   private render(block: Block): ImContent | null {
@@ -469,48 +528,99 @@ export class Im extends Service {
     if (this.stopped) return;
     if (event.type !== "delta" && event.type !== "progress") this.dirty.add(threadId);
     for (const b of this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b))) {
-      const adapterId = this.settings.connections.find(c => c.id === b.connection_id)?.adapterId;
-      const edit = !!adapterId && !!this.adapters.get(adapterId)?.capabilities.edit;
+      const caps = this.capsOf(b);
+      if (!caps) continue;
+      const streaming = this.streamMode(caps, this.connections.get(b.connection_id)?.session) !== "none";
       if (event.type === "progress" || event.type === "delta") {
+        if (Date.now() - (this.typingAt.get(b.id) ?? 0) >= TYPING_MS) { this.typingAt.set(b.id, Date.now()); this.indicate(b, "typing"); }
+        if (event.type === "delta" && streaming) { this.stream(b, event.runId, event.text); continue; }
         const last = this.progressAt.get(b.id) ?? 0;
         // Non-editing providers only receive stable output, so token streams don't spam chats.
-        if (!edit || Date.now() - last < this.config.progressMs) continue;
+        if (!caps.edit || Date.now() - last < this.config.progressMs) continue;
         this.progressAt.set(b.id, Date.now());
         const text = event.type === "progress" ? event.activity || this.say("Working", "正在执行") : this.say("Writing a reply", "正在生成回复");
         this.replace(b, `progress:${b.id}:${event.runId}`, { text });
+      } else if (event.type === "message" && event.message.role === "agent" && event.message.block.type === "text" && event.message.runId) {
+        // The text that was streaming is now this message; the next delta starts a new stream.
+        const open = this.streams.get(`${b.id}:${event.message.runId}`);
+        this.streams.delete(`${b.id}:${event.message.runId}`);
+        if (open) this.store.run("UPDATE plugin_im_outbox SET stream_of = ? WHERE id = ? AND stream = 1", event.message.id, open.id);
       } else if (event.type === "done") {
+        this.streams.delete(`${b.id}:${event.run.id}`);
+        this.typingAt.delete(b.id);
+        this.indicate(b, "idle");
         // Without edits a routine "finished" line would follow every reply; only report what the reply can't show.
-        if (edit || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.finished(event.run.status) });
+        if (caps.edit || event.run.status === "error" || event.run.status === "cancelled") this.replace(b, `progress:${b.id}:${event.run.id}`, { text: this.finished(event.run.status) });
+        const trigger = this.store.get<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? AND run_id = ? ORDER BY seq LIMIT 1", b.id, event.run.id);
+        const e = trigger && JSON.parse(trigger.event_json) as ImInbound;
+        if (e?.kind === "message" && (event.run.status === "error" || event.run.status === "done")) this.react(b, e.messageId, event.run.status === "error" ? "failed" : "done");
       }
     }
   }
 
-  private enqueue(b: Binding, id: string, content: ImContent) {
-    this.store.run("INSERT OR IGNORE INTO plugin_im_outbox (id, binding_id, thread_id, content_json, created_at) VALUES (?, ?, ?, ?, ?)", id, b.id, b.thread_id, JSON.stringify(content), Date.now());
+  /** Grows the reply's snapshot, at most once per `progressMs`; the final message always follows. */
+  private stream(b: Binding, runId: string, delta: string) {
+    const key = `${b.id}:${runId}`;
+    let open = this.streams.get(key);
+    if (!open) {
+      const n = this.store.get<{ n: number }>("SELECT COUNT(*) AS n FROM plugin_im_outbox WHERE binding_id = ? AND id LIKE ?", b.id, `stream:${b.id}:${runId}:%`)!.n;
+      open = { id: `stream:${b.id}:${runId}:${n}`, text: "", at: 0 };
+      this.streams.set(key, open);
+    }
+    open.text += delta;
+    if (!open.text.trim() || Date.now() - open.at < this.config.progressMs) return;
+    open.at = Date.now();
+    this.replace(b, open.id, { text: open.text }, { stream: true });
   }
 
-  private replace(b: Binding, id: string, content: ImContent) {
-    this.enqueue(b, id, content);
+  /** Content is Markdown with every element; `prepare` fits it to the adapter when it is sent. */
+  private enqueue(b: Binding, id: string, content: ImContent, opts: { anchor?: string | null; visibleTo?: string | null; stream?: boolean } = {}) {
+    this.store.run("INSERT OR IGNORE INTO plugin_im_outbox (id, binding_id, thread_id, content_json, created_at, anchor, visible_to, stream) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      id, b.id, b.thread_id, JSON.stringify(content), Date.now(), opts.anchor === undefined ? b.anchor : opts.anchor, opts.visibleTo ?? null, opts.stream ? 1 : 0);
+  }
+
+  /** `stream` updates a growing reply while it is still open; `final` settles it. */
+  private replace(b: Binding, id: string, content: ImContent, opts: { stream?: boolean; final?: boolean } = {}) {
+    this.enqueue(b, id, content, { stream: opts.stream });
+    const json = JSON.stringify(content);
     // Preserve an in-flight snapshot. Completion schedules the newer revision.
     this.store.run(`UPDATE plugin_im_outbox SET content_json = ?, revision = revision + 1,
+      stream = CASE WHEN ? THEN 0 ELSE stream END,
       state = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN state ELSE 'queued' END,
       parts_json = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN parts_json ELSE NULL END,
       part = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN part ELSE 0 END,
       retry_at = CASE WHEN state IN ('sending', 'uncertain', 'failed') THEN retry_at ELSE 0 END
-      WHERE id = ? AND state != 'cancelled' AND content_json != ?`, JSON.stringify(content), id, JSON.stringify(content));
+      WHERE id = ? AND state != 'cancelled' AND (content_json != ? OR (? AND stream = 1))${opts.stream ? " AND stream = 1" : ""}`,
+      json, opts.final ? 1 : 0, id, json, opts.final ? 1 : 0);
+  }
+
+  /** How replies grow on this platform: a native stream, edits of one message, or only the final message. */
+  private streamMode(caps: ResolvedImCapabilities, session?: ImAdapterSession): "native" | "edit" | "none" {
+    if (caps.stream === "native" && session?.stream) return "native";
+    return caps.stream !== "none" && caps.edit ? "edit" : "none";
+  }
+
+  private limited(bindingId: string, caps: ResolvedImCapabilities): boolean {
+    if (!caps.rateLimit) return false;
+    const now = Date.now();
+    const recent = (this.sentAt.get(bindingId) ?? []).filter(t => now - t < caps.rateLimit!.windowMs);
+    this.sentAt.set(bindingId, recent);
+    return recent.length >= caps.rateLimit.messages;
   }
 
   private async flush(c: Connection) {
     c.flushing = true;
     try {
-      const adapter = this.adapters.get(c.adapterId)!;
+      const caps = this.caps.get(c.adapterId)!;
+      const session = c.session!;
       // A delayed operation holds its target's place, but does not block other conversations.
       // An uncertain or failed one waits for a person and must not silence the conversation meanwhile.
-      const row = this.store.get<Outbox>(`SELECT o.* FROM plugin_im_outbox o JOIN plugin_im_bindings b ON b.id = o.binding_id
+      const rows = this.store.all<Outbox>(`SELECT o.* FROM plugin_im_outbox o JOIN plugin_im_bindings b ON b.id = o.binding_id
         WHERE b.connection_id = ? AND o.state = 'queued' AND o.retry_at <= ?
         AND NOT EXISTS (SELECT 1 FROM plugin_im_outbox earlier WHERE earlier.binding_id = o.binding_id
           AND earlier.seq < o.seq AND earlier.state IN ('queued', 'sending'))
-        ORDER BY o.seq LIMIT 1`, c.id, Date.now());
+        ORDER BY o.seq LIMIT 50`, c.id, Date.now());
+      const row = rows.find(r => !this.limited(r.binding_id, caps));
       if (!row) return;
       const b = this.store.binding(row.binding_id)!;
       if (!this.authorizedBinding(b) || row.thread_id !== b.thread_id) {
@@ -520,29 +630,43 @@ export class Im extends Service {
       let parts: ImContent[];
       if (row.parts_json) parts = JSON.parse(row.parts_json) as ImContent[];
       else {
-        const content = JSON.parse(row.content_json) as ImContent;
-        if (!adapter.capabilities.buttons && content.actions?.length) {
-          content.text += "\n" + content.actions.map(a => `${a.label}：/answer ${a.token}`).join("\n");
-          delete content.actions;
-        }
-        if (content.files?.length && (!adapter.capabilities.outboundFiles || content.files.some(f => f.size > adapter.capabilities.maxFileBytes))) {
-          content.text += this.say("\nView attachments in the Tomrade conversation", "\n附件请在 Tomrade 会话中查看");
-          delete content.files;
-        }
-        const chunks = splitText(content.text, adapter.capabilities.maxTextLength);
-        parts = chunks.map((text, i) => i === chunks.length - 1 ? { ...content, text } : { text });
+        parts = prepare(JSON.parse(row.content_json) as ImContent, caps, (en, zh) => this.say(en, zh));
+        // A growing reply shows what fits one message; the final version carries the rest.
+        if (row.stream) parts = parts.slice(0, 1);
         // Clear obsolete segments when an edited question or status became shorter.
-        if (adapter.capabilities.edit) while (parts.length < messageIds.length) parts.push({ text: this.say("This message was superseded", "此消息已被更新") });
+        if (caps.edit) while (parts.length < messageIds.length) parts.push({ text: this.say("This message was superseded", "此消息已被更新") });
         row.prepared_revision = row.revision;
         row.part = 0;
         this.store.run("UPDATE plugin_im_outbox SET parts_json = ?, prepared_revision = ?, part = 0 WHERE id = ?", JSON.stringify(parts), row.prepared_revision, row.id);
       }
       const content = parts[row.part];
       this.store.run("UPDATE plugin_im_outbox SET state = 'sending', sending_json = ?, attempts = attempts + 1 WHERE id = ?", JSON.stringify(content), row.id);
+      const address = JSON.parse(b.address_json) as ImAddress;
+      const threadId = address.topicId ?? (row.anchor && caps.threads ? row.anchor : undefined);
+      const operationId = `${row.id}:v${row.prepared_revision}:p${row.part}`;
+      const delivery = { operationId, address, content,
+        ...(threadId ? { threadId } : row.anchor ? { replyTo: row.anchor } : {}),
+        ...(row.visible_to && caps.ephemeral ? { visibleTo: row.visible_to } : {}),
+        ...(caps.edit && messageIds[row.part] ? { replaceMessageId: messageIds[row.part] } : {}) };
+      const native = this.streamMode(caps, session) === "native" && row.part === 0 ? session.stream! : null;
+      let streamed = row.streamed;
       try {
-        const result = await deadline(c.session!.deliver({ operationId: `${row.id}:v${row.prepared_revision}:p${row.part}`,
-          address: JSON.parse(b.address_json) as ImAddress,
-          ...(adapter.capabilities.edit && messageIds[row.part] ? { replaceMessageId: messageIds[row.part] } : {}), content }), this.config.operationTimeoutMs);
+        if (caps.rateLimit) this.sentAt.set(row.binding_id, [...(this.sentAt.get(row.binding_id) ?? []), Date.now()]);
+        let result: { messageId: string };
+        if (native && row.stream && !messageIds[0]) {
+          result = await deadline(native.start(delivery), this.config.operationTimeoutMs);
+          streamed = content.text;
+        } else if (native && row.stream) {
+          // Appending only works while the snapshot extends what was sent; otherwise the final version settles it.
+          if (streamed !== null && content.text.length > streamed.length && content.text.startsWith(streamed)) {
+            await deadline(native.append({ operationId, address, messageId: messageIds[0], delta: content.text.slice(streamed.length) }), this.config.operationTimeoutMs);
+            streamed = content.text;
+          }
+          result = { messageId: messageIds[0] };
+        } else if (native && streamed !== null && messageIds[0]) {
+          result = await deadline(native.stop({ operationId, address, messageId: messageIds[0], content }), this.config.operationTimeoutMs);
+          streamed = null;
+        } else result = await deadline(session.deliver(delivery), this.config.operationTimeoutMs);
         if (!result.messageId) throw new Error("Adapter returned no message id");
         if (this.stopped) return;
         messageIds[row.part] = result.messageId;
@@ -550,12 +674,13 @@ export class Im extends Service {
         const changed = latest.revision !== row.prepared_revision;
         const next = row.part + 1;
         this.store.run(`UPDATE plugin_im_outbox SET state = ?, message_id = ?, message_ids_json = ?,
-          parts_json = ?, part = ?, sending_json = NULL, retry_at = 0, error = NULL WHERE id = ?`,
+          parts_json = ?, part = ?, sending_json = NULL, retry_at = 0, error = NULL, streamed = ? WHERE id = ?`,
           changed || next < parts.length ? "queued" : "delivered", messageIds[0], JSON.stringify(messageIds),
-          changed ? null : JSON.stringify(parts), changed ? 0 : next, row.id);
+          changed ? null : JSON.stringify(parts), changed ? 0 : next, streamed, row.id);
       } catch (e) {
         if (this.stopped) return;
-        const disposition = (e as { disposition?: string } | null)?.disposition;
+        // A lost append only delays the stream; the final version still settles the message.
+        const disposition = native && row.stream && messageIds[0] ? "retryable" : (e as { disposition?: string } | null)?.disposition;
         const retryAfter = (e as { retryAfterMs?: number } | null)?.retryAfterMs;
         const latest = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", row.id)!;
         const superseded = disposition === "retryable" && latest.revision !== row.prepared_revision;
@@ -579,16 +704,9 @@ export class Im extends Service {
   }
 }
 
-function splitText(text: string, max: number): string[] {
-  const chunks: string[] = [];
-  while (text.length > max) {
-    let end = max;
-    if (/[\uD800-\uDBFF]/.test(text[end - 1])) end--;
-    chunks.push(text.slice(0, end));
-    text = text.slice(end);
-  }
-  chunks.push(text);
-  return chunks;
+/** Group replies attach to the message that asked; a direct chat needs no anchor. */
+function anchorOf(event: ImInbound): string | null {
+  return event.kind === "message" && event.activation !== "dm" ? event.messageId : null;
 }
 
 async function deadline<T>(work: Promise<T>, ms: number): Promise<T> {

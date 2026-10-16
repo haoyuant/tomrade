@@ -99,6 +99,7 @@ returns is disposed when the service goes.
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
+| `im` | `register(adapter)` — an IM transport: `capabilities`, `open(connectionId, io)` returning a session with `deliver` (and optionally `download`). SDK 0.2.5 adds optional capabilities (`threads`, `reactions`, `typing`, `stream`, `select`, `multiSelect`, `textInput`, `cards`, `cardUpdate`, `nativeCommands`, `ephemeral`, `markdown` dialect, `rateLimit`), session methods `indicate`, `react`, `stream.start/append/stop`, `commands`, and `toImDialect` / `splitImText`; an adapter that declares none of them keeps the 0.2.2 behaviour |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
 | `id`, `namespace`, `dataDir`, `logger` | who it is, its prefix, a directory only it writes, its log |

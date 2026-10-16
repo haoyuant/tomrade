@@ -1,4 +1,6 @@
 import {
+  IM_CAPABILITIES_V2,
+  ImCapabilitiesSchema,
   ownsId,
   type AgentApi,
   type ImApi,
@@ -32,13 +34,15 @@ export interface Recording {
   surfaces: string[];
   tables: string[];
   imAdapters: string[];
+  /** Which IM contract each adapter is written against, from the capabilities it declares. */
+  imContracts: { id: string; contract: "0.2.2" | "0.2.5"; capabilities: string[]; invalid?: string }[];
   /** Ids that do not carry the namespace. */
   violations: { kind: string; id: string }[];
   /** Why the dry run stopped early, if it did. */
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -50,7 +54,7 @@ const DRY = "dry run: nothing is written while a plugin is inspected";
  */
 export function recordingContext(namespace: string, allowed: ServiceName[], rec: Recording): PluginContext {
   const settings = new Map<string, unknown>();
-  const note = (kind: keyof Omit<Recording, "violations" | "stopped">, id: string, label: string) => {
+  const note = (kind: keyof Omit<Recording, "violations" | "stopped" | "imContracts">, id: string, label: string) => {
     rec[kind].push(id);
     if (!ownsId(namespace, id)) rec.violations.push({ kind: label, id });
     return Promise.resolve(noop);
@@ -134,7 +138,16 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
       return need("agent", { playbook: (spec) => note("playbooks", spec.id, "playbook") });
     },
     get im(): ImApi {
-      return need("im", { register: (spec) => note("imAdapters", spec.id, "IM adapter") });
+      return need("im", {
+        register: (spec) => {
+          const caps = (spec.capabilities ?? {}) as unknown as Record<string, unknown>;
+          const declared = IM_CAPABILITIES_V2.filter((k) => caps[k] !== undefined);
+          const parsed = ImCapabilitiesSchema.safeParse(spec.capabilities);
+          rec.imContracts.push({ id: spec.id, contract: declared.length ? "0.2.5" : "0.2.2", capabilities: [...declared],
+            ...(parsed.success ? {} : { invalid: parsed.error.issues.map((i) => `${i.path.join(".") || "capabilities"}: ${i.message}`).join("; ") }) });
+          return note("imAdapters", spec.id, "IM adapter");
+        }
+      });
     },
     get surfaces(): SurfacesApi {
       return need("surfaces", {

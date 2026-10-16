@@ -26,6 +26,8 @@ function printCheck(report: CheckReport) {
   if (m) console.log(`${m.id} ${m.version} — ${report.verdict}${report.risk ? ` · risk ${report.risk.level}` : ""}`);
   for (const p of report.problems) console.log(`  ✗ ${p}`);
   for (const f of report.analysis?.findings ?? []) console.log(`  ${f.severity === "info" ? "·" : "!"} [${f.severity}] ${f.message} (${f.file}:${f.line})`);
+  for (const n of report.notes) console.log(`  · ${n}`);
+  for (const im of report.imAdapters) console.log(`  IM adapter ${im.id}: contract ${im.contract}${im.capabilities.length ? ` (${im.capabilities.join(", ")})` : ""}`);
   if (report.publishing.length) console.log("  before publishing:");
   for (const p of report.publishing) console.log(`    - ${p}`);
   const c = report.manifest?.contributes;

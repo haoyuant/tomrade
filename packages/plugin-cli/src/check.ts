@@ -2,15 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { ZodError } from "zod";
 import { analyzePackage, atLeast, packPlugin, readManifest, type Analysis } from "@tomradex/plugin-kit";
-import { MANIFEST_FILE, isOpenSource, riskOf, type Manifest, type Risk } from "@tomradex/plugin-sdk";
+import { MANIFEST_FILE, isOpenSource, riskOf, satisfies, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import { build, scenarioOf, type BuildResult } from "./build.js";
 import { runSandboxed, type InspectResult, type SandboxOptions, type TestResult } from "./sandbox.js";
+import type { Recording } from "./record.js";
 
 export interface CheckReport {
   manifest: Manifest | null;
   problems: string[];
   /** What stands between this plugin and the store, beyond the problems. */
   publishing: string[];
+  /** Worth knowing, never blocking. */
+  notes: string[];
+  /** The IM contract each adapter declares. */
+  imAdapters: Recording["imContracts"];
   build: BuildResult | null;
   inspection: InspectResult | null;
   analysis: Analysis | null;
@@ -55,7 +60,7 @@ export function publishingProblems(dir: string, manifest: Manifest): string[] {
  * side before a plugin is listed.
  */
 export async function check(dir: string, opts: SandboxOptions & { build?: boolean } = {}): Promise<CheckReport> {
-  const report: CheckReport = { manifest: null, problems: [], publishing: [], build: null, inspection: null, analysis: null, risk: null, verdict: "blocked" };
+  const report: CheckReport = { manifest: null, problems: [], publishing: [], notes: [], imAdapters: [], build: null, inspection: null, analysis: null, risk: null, verdict: "blocked" };
   try {
     report.manifest = readManifest(dir);
   } catch (error) {
@@ -79,6 +84,13 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
   const rec = report.inspection.recording!;
   for (const v of rec.violations) report.problems.push(`${v.kind} "${v.id}" must start with the namespace`);
   if (rec.stopped) report.problems.push(`apply() stopped when inspected: ${rec.stopped}`);
+  report.imAdapters = rec.imContracts ?? [];
+  for (const im of report.imAdapters) {
+    if (im.invalid) report.problems.push(`IM adapter "${im.id}" declares invalid capabilities: ${im.invalid}`);
+    // An older host ignores these fields, so the adapter still loads there, only without them.
+    else if (im.contract === "0.2.5" && satisfies("0.2.4", report.manifest.engines.sdk))
+      report.notes.push(`IM adapter "${im.id}" declares ${im.capabilities.join(", ")} (SDK 0.2.5); with engines.sdk "${report.manifest.engines.sdk}" a Tomrade older than 0.2.5 loads it without them — use "^0.2.5" to require them`);
+  }
   report.analysis = analyzePackage(dir, report.manifest);
   report.risk = riskOf(report.manifest);
   report.publishing = publishingProblems(dir, report.manifest);

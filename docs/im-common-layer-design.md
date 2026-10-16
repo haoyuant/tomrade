@@ -264,3 +264,19 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - 在 IM 中完成交付验收（Accept/Request changes）；输出链接、Files 版本导出和任意文档导入。目前只支持 Agent media 支持的附件。
 - uncertain/failed 投递的桌面处理界面（目前仅 IPC）；跨平台不承诺 exactly-once。
 - TOM-92 与平台子工单的范围仍是旧的“只建工单”，需按新目标重新确认。
+
+## 适配器契约 v2（TOM-117，SDK 0.2.5）
+
+增量契约：0.2.2 适配器不改代码继续可用（没声明的能力按 0.2.2 行为处理）。
+
+- **能力声明**（都可选）：`threads`、`reactions`、`typing`、`stream`（`native` / `edit` / `none`）、`select`、`multiSelect`、`textInput`、`cards`、`cardUpdate`（默认同 `edit`）、`nativeCommands`、`ephemeral`、`markdown` 方言（`plain`、`markdown`、`slack`、`telegram-html`、`discord`、`lark`、`dingtalk`、`wecom`，默认 `markdown` 原样透传）、`rateLimit`（每会话窗口内条数）。注册时用 `ImCapabilitiesSchema` 校验。
+- **内容**：公共层统一写 Markdown，`ImContent` 增加 `elements`（section/fields、links、单选/多选 select、自由文本 input）和按钮 `style`。投递前 `prepare()` 按能力降级：不支持的元素折成文字（选项和 `/answer` 用法写明，不丢信息），再转成平台方言、按长度分段（`splitImText`：按行切，代码块能放下就整块保留，过长则闭合后带语言重开，不切代理对；长度按转换后计）。控件和文件放在最后一段。
+- **回复锚点**：群聊激活（mention/reply）时绑定记下触发消息；有话题的地址回到原话题，平台支持 `threads` 时 `threadId` = 触发消息，否则 `replyTo` 引用回复。群里的拒绝提示在支持 `ephemeral` 的平台只给发送人看（`visibleTo`）。
+- **新 io**（都是 best effort，失败不重试不报错）：`indicate`（运行中每 4 秒刷新 typing，结束 idle）、`react`（接受 received，结束 done / failed）、`commands`（每次连上后注册原生指令；原生指令以纯文本命令进入，纯文本始终可用）。
+- **流式**：`native` 用 `stream.start / append / stop`，`edit` 退化为按 `progressMs` 节流编辑同一条消息，`none` 只发终稿。流式行是 outbox 里的一行（`stream = 1`），Agent 文本消息落库时标记 `stream_of`，投影时用终稿替换并定稿；运行结束仍未定稿的保留已显示内容。append 失败只算可重试，终稿 stop 兜底。
+- **交互回调时限**：适配器先在平台时限内确认，`receive` 持久收件后立即返回，结果再更新卡片（`cardUpdate`）。
+- **限流**：`rateLimit` 按会话计数，超限的会话暂缓、其他会话照常，同会话顺序不变。
+- **plugin check**：报告每个适配器的契约版本和声明的 v2 能力（`imAdapters`）；能力不合法为阻断问题；声明了 v2 能力但 `engines.sdk` 仍允许 0.2.5 以下时只给提示（旧版 Tomrade 会忽略这些能力）。
+
+流式回答的完整渲染（工具摘要、卡片、变更链接）见 TOM-120；收件回执三态、插话见 TOM-118。
+

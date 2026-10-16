@@ -175,6 +175,8 @@ export default {
       findings: report.analysis?.findings.map((f) => `[${f.severity}] ${f.rule}: ${f.message} (${f.file}:${f.line})`) ?? [],
       risk: report.risk,
       contributes: report.manifest?.contributes,
+      ...(report.imAdapters.length ? { imAdapters: report.imAdapters } : {}),
+      ...(report.notes.length ? { notes: report.notes } : {}),
       beforePublishing: report.publishing
     });
 

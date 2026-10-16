@@ -388,6 +388,14 @@ export class Host {
               return {
                 deliver: host.back(session.deliver.bind(session), `IM adapter ${spec.id} deliver`),
                 ...(session.download ? { download: host.back(session.download.bind(session), `IM adapter ${spec.id} download`) } : {}),
+                ...(session.indicate ? { indicate: host.back(session.indicate.bind(session), `IM adapter ${spec.id} indicate`) } : {}),
+                ...(session.react ? { react: host.back(session.react.bind(session), `IM adapter ${spec.id} react`) } : {}),
+                ...(session.commands ? { commands: host.back(session.commands.bind(session), `IM adapter ${spec.id} commands`) } : {}),
+                ...(session.stream ? { stream: {
+                  start: host.back(session.stream.start.bind(session.stream), `IM adapter ${spec.id} stream start`),
+                  append: host.back(session.stream.append.bind(session.stream), `IM adapter ${spec.id} stream append`),
+                  stop: host.back(session.stream.stop.bind(session.stream), `IM adapter ${spec.id} stream stop`)
+                } } : {}),
                 close: host.back(session.close.bind(session), `IM adapter ${spec.id} close`)
               };
             } }));

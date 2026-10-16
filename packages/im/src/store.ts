@@ -41,6 +41,14 @@ UPDATE plugin_im_outbox SET message_ids_json = json_array(message_id) WHERE mess
 ALTER TABLE plugin_im_actions ADD COLUMN retired INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE plugin_im_actions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX idx_plugin_im_actions_binding ON plugin_im_actions(binding_id, retired);
+` }, { version: 4, up: `
+ALTER TABLE plugin_im_bindings ADD COLUMN anchor TEXT;
+ALTER TABLE plugin_im_outbox ADD COLUMN anchor TEXT;
+ALTER TABLE plugin_im_outbox ADD COLUMN visible_to TEXT;
+ALTER TABLE plugin_im_outbox ADD COLUMN stream INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plugin_im_outbox ADD COLUMN stream_of TEXT;
+ALTER TABLE plugin_im_outbox ADD COLUMN streamed TEXT;
+CREATE INDEX idx_plugin_im_outbox_stream ON plugin_im_outbox(binding_id, stream);
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
@@ -51,6 +59,8 @@ export interface Binding {
   id: string; route_id: string; route_hash: string; connection_id: string;
   address_json: string; project_id: string; thread_id: string; actor_id: string;
   cursor: number; created_at: number;
+  /** In a group, the message that started the current turn; replies attach to it. */
+  anchor: string | null;
 }
 export interface Inbox {
   seq: number; id: string; message_key: string | null; binding_id: string;
@@ -61,6 +71,13 @@ export interface Outbox {
   seq: number; id: string; binding_id: string; content_json: string; state: string;
   thread_id: string; revision: number; prepared_revision: number; parts_json: string | null; part: number; message_ids_json: string; sending_json: string | null;
   message_id: string | null; attempts: number; retry_at: number; error: string | null;
+  anchor: string | null; visible_to: string | null;
+  /** 1 while the row is a growing snapshot of a reply; 0 once final. */
+  stream: number;
+  /** The Agent message a stream became. */
+  stream_of: string | null;
+  /** Text already sent through a native stream that has not been stopped. */
+  streamed: string | null;
 }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
