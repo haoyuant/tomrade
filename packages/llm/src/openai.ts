@@ -102,7 +102,31 @@ export const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
 export class OpenAiCompatible implements ChatModel {
   get capabilities() { return { tools: true, streaming: true, json: true, mediaInput: inputMimes(this.config.inputModalities ?? []), mediaOutput: this.config.outputModalities ?? [] }; }
 
-  constructor(private readonly config: OpenAiConfig) {}
+  /**
+   * OpenAI's newer models take only `max_completion_tokens` and only the default
+   * temperature; most other compatible endpoints still want `max_tokens`. OpenAI
+   * gets the new name from the start, and any endpoint that refuses a parameter
+   * this way is asked again without it, remembered for later requests.
+   */
+  private tokenField: "max_tokens" | "max_completion_tokens";
+  private omitTemperature = false;
+
+  constructor(private readonly config: OpenAiConfig) {
+    this.tokenField = /^https?:\/\/api\.openai\.com(\/|$)/i.test(config.baseURL) ? "max_completion_tokens" : "max_tokens";
+  }
+
+  /** Whether a 400 named a parameter this model will not take, now adjusted for. */
+  private adjustTo(refusal: string): boolean {
+    if (this.tokenField === "max_tokens" && /'max_tokens'[^"]*'max_completion_tokens'/.test(refusal)) {
+      this.tokenField = "max_completion_tokens";
+      return true;
+    }
+    if (!this.omitTemperature && /Unsupported (value|parameter): 'temperature'/.test(refusal)) {
+      this.omitTemperature = true;
+      return true;
+    }
+    return false;
+  }
 
   /**
    * One hiccup — a rate limit, an overloaded server, a dropped connection — no
@@ -135,33 +159,40 @@ export class OpenAiCompatible implements ChatModel {
     for (const message of request.messages) for (const block of message.content) {
       if (block.type === "media" && !this.capabilities.mediaInput.includes(block.media.mime)) throw new LlmError(`This model profile does not accept ${block.media.mime}`);
     }
-    const body: Record<string, unknown> = {
-      model: this.config.model,
-      stream: true,
-      stream_options: { include_usage: true },
-      messages: toMessages(request)
+    const messages = toMessages(request);
+    const body = (): Record<string, unknown> => {
+      const out: Record<string, unknown> = {
+        model: this.config.model,
+        stream: true,
+        stream_options: { include_usage: true },
+        messages
+      };
+      if (this.config.outputModalities?.length) out.modalities = ["text", ...this.config.outputModalities];
+      if (this.config.outputModalities?.includes("audio")) out.audio = { voice: "alloy", format: "pcm16" };
+      if (request.temperature !== undefined && !this.omitTemperature) out.temperature = request.temperature;
+      if (request.maxTokens !== undefined) out[this.tokenField] = request.maxTokens;
+      if (request.effort) out.reasoning_effort = request.effort;
+      if (request.tools?.length) {
+        out.tools = request.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
+        const choice = request.toolChoice;
+        if (choice) out.tool_choice = typeof choice === "string" ? choice : { type: "function", function: { name: choice.name } };
+      }
+      if (request.json) out.response_format = { type: "json_object" };
+      return out;
     };
-    if (this.config.outputModalities?.length) body.modalities = ["text", ...this.config.outputModalities];
-    if (this.config.outputModalities?.includes("audio")) body.audio = { voice: "alloy", format: "pcm16" };
-    if (request.temperature !== undefined) body.temperature = request.temperature;
-    if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
-    if (request.effort) body.reasoning_effort = request.effort;
-    if (request.tools?.length) {
-      body.tools = request.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
-      const choice = request.toolChoice;
-      if (choice) body.tool_choice = typeof choice === "string" ? choice : { type: "function", function: { name: choice.name } };
-    }
-    if (request.json) body.response_format = { type: "json_object" };
 
     const url = this.config.baseURL.replace(/\/$/, "") + "/chat/completions";
-    const res = yield* this.post(url, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal
-    });
-    if (!res.ok) {
+    let res: Response;
+    for (let adjusted = 0; ; adjusted += 1) {
+      res = yield* this.post(url, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify(body()),
+        signal
+      });
+      if (res.ok) break;
       const text = await res.text().catch(() => "");
+      if (res.status === 400 && adjusted < 2 && this.adjustTo(text)) continue;
       const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
       throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
     }
