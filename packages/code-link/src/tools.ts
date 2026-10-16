@@ -39,6 +39,8 @@ export interface ToolHost {
   bindConnection(projectId: string, connection: string, sessionId: string): void;
   /** A new session followed only through a client's connection, for a client with no hooks. */
   connectionSession(projectId: string, repoId: string | null): SessionView;
+  /** The same outside agent, as a new session for its next ticket; the one it leaves stays on the ticket whose merge it handed over. */
+  successor(projectId: string, from: SessionView, repoId: string | null): SessionView;
   notify(projectId: string): void;
   summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
@@ -300,15 +302,19 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
         let session = tokened ?? connected ?? (repoId ? host.externalSession(projectId, repoId) : null);
         const others = (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
-        // An outside terminal moves on once its ticket is finished; until then its wrap-up (merging, a blocked merge) is still owed.
-        // A session Tomrade started is one ticket's thread and worktree.
-        const owed = others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled"));
+        // An outside terminal moves on once its ticket is finished, or once it handed that ticket's merge to the person
+        // (report_merge_blocked); until then its wrap-up is still owed. A session Tomrade started is one ticket's thread and worktree.
+        const handedOff = session?.blocked === "merge";
+        const owed = others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled" && !(held.status === "verifying" && handedOff)));
         if (others.length && (tokened || owed)) {
           const held = owed ?? others[0];
           if (tokened || !held) throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
-          throw new Error(`claim_ticket: this session still owns ${held.key}, which is ${held.status} — merge it or hand the merge to the person (report_merge_blocked), then claim ${item.key}`);
+          if (held.status === "verifying") throw new Error(`claim_ticket: this session still owns ${held.key}, which is verifying — merge its pull request once the checks pass, or if the merge is refused call report_merge_blocked, then claim ${item.key}`);
+          throw new Error(`claim_ticket: this session still owns ${held.key}, which is ${held.status} — finish it (open its pull request and link_code, then merge or report_merge_blocked), then claim ${item.key}`);
         }
-        const switched = others.length > 0;
+        // The session waiting on the person's merge keeps its ticket and says so; the next ticket gets a session of its own.
+        if (session && others.some((held) => held?.status === "verifying") && handedOff) session = host.successor(projectId, session, repoId);
+        const switched = (session?.itemIds ?? []).some((id) => id !== item.id);
         // A client with no hooks is still followed, through its connection.
         if (!session && inv.connection) session = host.connectionSession(projectId, repoId);
         if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id);

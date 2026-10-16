@@ -406,6 +406,7 @@ export class CodeLink extends Service {
         connected: (projectId, connection) => this.connected(projectId, connection),
         bindConnection: (projectId, connection, sessionId) => this.bindConnection(projectId, connection, sessionId),
         connectionSession: (projectId, repoId) => this.connectionSession(projectId, repoId),
+        successor: (projectId, from, repoId) => this.successor(projectId, from, repoId),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
@@ -864,6 +865,22 @@ export class CodeLink extends Service {
     return this.store.createSession(projectId, { repoId: repoId ?? "", branch: "", itemIds: [], mode: "terminal", agent: MCP_AGENT, threadId: null, device: this.ctx.hub.deviceId });
   }
 
+  /**
+   * An outside agent that handed its ticket's merge to the person goes on to the next ticket as a
+   * new session with the same identity, so its hooks and calls follow the new one (the newest is
+   * matched first). The one it leaves keeps the ticket and the merge waiting on the person.
+   */
+  successor(projectId: string, from: SessionView, repoId: string | null): SessionView {
+    return this.store.createSession(projectId, { repoId: repoId ?? from.repoId, branch: "", itemIds: [], mode: from.mode, agent: from.agent, threadId: null, device: this.ctx.hub.deviceId, externalId: from.externalId });
+  }
+
+  /** A session another one took over from: nothing reaches it any more, so once its merge lands it is over. */
+  private superseded(projectId: string, s: SessionView): boolean {
+    if (s.threadId !== null) return false;
+    if (s.externalId) return this.store.sessions(projectId, { live: true }).some((o) => o.id !== s.id && o.agent === s.agent && o.externalId === s.externalId && o.startedAt >= s.startedAt);
+    return s.agent === MCP_AGENT && ![...this.connections.values()].some((c) => c.sessionId === s.id);
+  }
+
   private disconnected(connection: string): void {
     const bound = this.connections.get(connection);
     if (!bound) return;
@@ -1233,7 +1250,9 @@ export class CodeLink extends Service {
       for (const session of this.store.sessions(projectId, { live: true })) {
         if (session.repoId !== repo.id || session.blocked !== "merge") continue;
         const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repo.id);
-        if (links.length && links.every((l) => !!l.mergedSha || l.prState === "merged")) this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+        if (!links.length || !links.every((l) => !!l.mergedSha || l.prState === "merged")) continue;
+        if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true);
+        else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
       }
       summary.links += outcome.links;
       summary.changed += outcome.changed;

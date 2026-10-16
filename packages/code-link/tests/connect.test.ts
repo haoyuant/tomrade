@@ -292,6 +292,39 @@ describe("outside clients, told apart by their connection", () => {
     expect(await ctx.tools.execute("note_progress", { text: "on the next one" }, a)).toMatchObject({ ok: true, key: next.key });
   });
 
+  it("takes the next ticket as a new session once it handed the last one's merge to the person, which keeps waiting on them", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await post({ hook_event_name: "SessionStart", session_id: "cli-7", cwd: checkout });
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });
+    const next = items.create({ projectId: project.id, boardId: board.id, title: "Next", status: "todo", by: "human" });
+    const a = { by: "ai:claude-code" as const, projectId: project.id, connection: "conn-a" };
+    const { tracking } = (await ctx.tools.execute("claim_ticket", { key: first.key }, a)) as { tracking: { sessionId: string } };
+    await ctx.tools.execute("link_code", { prUrl: "https://github.com/acme/app/pull/31", scopeChecked: true }, a);
+    // Verifying with an open pull request is still owed: merging it, or saying the merge was refused.
+    await expect(ctx.tools.execute("claim_ticket", { key: next.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying — merge its pull request once the checks pass, or if the merge is refused call report_merge_blocked`);
+    await ctx.tools.execute("report_merge_blocked", { reason: "the merge was refused" }, a);
+
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: next.key }, a)) as { branch: string; tracking: { sessionId: string } };
+    expect(claimed.tracking.sessionId).not.toBe(tracking.sessionId);
+    expect(codeLink.store.session(project.id, tracking.sessionId)).toMatchObject({ itemIds: [first.id], blocked: "merge" });
+    expect(codeLink.summary(project.id, first.id).session).toMatchObject({ id: tracking.sessionId, blocked: "merge" });
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)).toMatchObject({ itemIds: [next.id], branch: claimed.branch, blocked: null, externalId: "cli-7" });
+    expect(items.get(project.id, first.id)!.status).toBe("verifying");
+
+    // Its notes and hooks belong to the new ticket now.
+    expect(await ctx.tools.execute("note_progress", { text: "on the next one" }, a)).toMatchObject({ ok: true, key: next.key });
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "cli-7", cwd: checkout });
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)).toMatchObject({ summary: "on the next one", state: "running" });
+    expect(codeLink.store.session(project.id, tracking.sessionId)).toMatchObject({ state: "error", blocked: "merge" });
+
+    // Once the person merges, the session left behind is over; the ticket is done as usual.
+    await ctx.tools.execute("link_code", { key: first.key, prUrl: "https://github.com/acme/app/pull/31", prState: "merged" }, { by: "human", projectId: project.id });
+    await codeLink.scan(project.id);
+    expect(codeLink.store.session(project.id, tracking.sessionId)?.state).toBe("ended");
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)?.state).toBe("running");
+  });
+
   it("follows a client with no hooks through its connection until it closes", async () => {
     const { codeLink, ctx, items, project, board, repo } = await machine();
     const item = items.create({ projectId: project.id, boardId: board.id, title: "Cursor work", status: "todo", by: "human" });
