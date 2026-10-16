@@ -84,6 +84,13 @@ export interface OpenPrResult {
   message: string;
 }
 
+export interface MergeLocalResult {
+  merged: boolean;
+  /** The default branch's head after the merge; null when nothing was merged. */
+  sha: string | null;
+  message: string;
+}
+
 export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness">;
 
 /** The command an agent merges with when the repository lets it. */
@@ -134,6 +141,8 @@ declare module "@tomradex/ipc" {
     "codeLink.sessions": (projectId: string, itemId?: string) => SessionView[];
     /** Push the ticket's branch from its worktree and open a pull request (gh), or hand back the compare page. */
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
+    /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
+    "codeLink.mergeLocal": (projectId: string, itemId: string) => MergeLocalResult;
     /** Where this machine's worktree for the ticket is, if it has one. */
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
@@ -169,6 +178,8 @@ export const CodeLinkConfig = z.preprocess(
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+/** git's last word on a failure, which is the one that says why. */
+const lastLine = (text: string | undefined) => (text ?? "").trim().split("\n").pop() ?? "";
 
 /** Relative time for a status line or a section row. */
 export function ago(at: number, now = Date.now()): string {
@@ -369,7 +380,8 @@ export class CodeLink extends Service {
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery) => this.attach(projectId, sessionId, itemId, branch, delivery),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
-        notify: (projectId) => this.notify(projectId)
+        notify: (projectId) => this.notify(projectId),
+        mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
       })
     );
     this.home.inject(["mcp"], (ctx) => {
@@ -487,6 +499,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
+      ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
@@ -905,6 +918,75 @@ export class CodeLink extends Service {
       await this.git(["worktree", "remove", "--force", worktree], { cwd: placement.checkout, ok: true });
       fs.rmSync(temporary, { recursive: true, force: true });
       this.notify(projectId);
+    }
+  }
+
+  /**
+   * In a repository with no remote, merge the ticket's branch into the default
+   * branch here and record that merge as the link's evidence, whatever its
+   * message says. Only where nothing can be lost: the default branch checked out
+   * with a clean tree, or not checked out at all (a temporary worktree). A
+   * conflict is aborted. `agent`: asked by an agent, which needs agent merging on.
+   */
+  async mergeLocal(projectId: string, itemId: string, opts: { agent?: boolean } = {}): Promise<MergeLocalResult> {
+    const w = this.words();
+    const no = (message: string): MergeLocalResult => ({ merged: false, sha: null, message });
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown item ${itemId}`);
+    const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha);
+    if (!open.length) return no(w.mergeNoBranch(item.key));
+    if (open.length > 1) return no(w.mergeMany(item.key));
+    const link = open[0]!;
+    const repo = this.ctx.repos.get(projectId, link.repoId);
+    if (!repo) return no(w.mergeNoBranch(item.key));
+    const base = repo.defaultBranch;
+    if (link.branch === base) return no(w.mergeNoBranch(item.key));
+    const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+    if (!checkout || !fs.existsSync(checkout)) return no(w.mergeNoCheckout(repo.name));
+    if (await new GitFolder(this.git, checkout).remoteUrl()) return no(w.mergeHasRemote(repo.name));
+    if (opts.agent && !this.store.repoState(projectId, repo.id)?.agentMerge) return no(w.mergeAgentOff(repo.name));
+
+    const list = await this.git(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
+    const holder = list.stdout.split("\n\n").map((block) => ({ path: /^worktree (.+)$/m.exec(block)?.[1], branch: /^branch (.+)$/m.exec(block)?.[1] })).find((b) => b.branch === `refs/heads/${base}`)?.path;
+    let cwd = holder;
+    let temporary: string | null = null;
+    if (cwd) {
+      const dirty = await this.git(["status", "--porcelain", "--untracked-files=no"], { cwd, ok: true });
+      if (dirty.code !== 0 || dirty.stdout.trim()) return no(w.mergeDirty(base, cwd));
+    } else {
+      temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-merge-"));
+      cwd = path.join(temporary, "repo");
+      const added = await this.git(["worktree", "add", "-q", cwd, base], { cwd: checkout, ok: true });
+      if (added.code !== 0) {
+        fs.rmSync(temporary, { recursive: true, force: true });
+        return no(w.mergeFailed(lastLine(added.stderr)));
+      }
+    }
+    try {
+      const head = async () => (await this.git(["rev-parse", "HEAD"], { cwd: cwd! })).stdout.trim();
+      let message: string;
+      if ((await this.git(["merge-base", "--is-ancestor", link.branch, "HEAD"], { cwd, ok: true })).code === 0) {
+        message = w.mergeAlready(link.branch, base);
+      } else {
+        // The subject leads with the key, so the commit also reads as this ticket's on any later scan.
+        const merged = await this.git(["merge", "--no-ff", "-m", `${item.key}: ${item.title}`, "-m", `Merge branch '${link.branch}'`, link.branch], { cwd, ok: true });
+        if (merged.code !== 0) {
+          const conflicted = (await this.git(["diff", "--name-only", "--diff-filter=U"], { cwd, ok: true })).stdout.trim().split("\n").filter(Boolean);
+          await this.git(["merge", "--abort"], { cwd, ok: true });
+          return no(conflicted.length ? w.mergeConflict(link.branch, base, conflicted.join(", ")) : w.mergeFailed(lastLine(merged.stderr || merged.stdout)));
+        }
+        message = "";
+      }
+      const sha = await head();
+      this.store.patchLink(projectId, link.id, { mergedSha: sha, ahead: 0 });
+      this.reevaluate(projectId, itemId, repo.id);
+      this.notify(projectId);
+      return { merged: true, sha, message: message || w.mergeDone(link.branch, base, sha.slice(0, 7)) };
+    } finally {
+      if (temporary) {
+        await this.git(["worktree", "remove", "--force", cwd!], { cwd: checkout, ok: true });
+        fs.rmSync(temporary, { recursive: true, force: true });
+      }
     }
   }
 
@@ -1448,7 +1530,7 @@ export class CodeLink extends Service {
               href: l.prUrl ?? undefined
             });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.store.repoState(item.projectId, l.repoId)?.remote === "none") {
-            rows.push({ label: w.pullRequest, icon: "i-merge", value: w.noRemote(repo?.defaultBranch ?? "main") });
+            rows.push({ label: w.pullRequest, icon: "i-merge", value: w.mergeLocal(repo?.defaultBranch ?? "main"), command: "code-link.merge-local" });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
             rows.push({ label: w.pullRequest, icon: "i-merge", value: w.openPr, command: "code-link.open-pr" });
           }
@@ -1571,6 +1653,15 @@ export class CodeLink extends Service {
         if (!projectId || !itemId) return { toast: this.words().selectTicket };
         const r = await this.openPr(projectId, itemId);
         return { toast: r.message };
+      }
+    });
+    ctx.contributions.command({
+      id: "code-link.merge-local",
+      title: () => this.words().cmdMergeLocal,
+      group,
+      run: async ({ projectId, itemId }) => {
+        if (!projectId || !itemId) return { toast: this.words().selectTicket };
+        return { toast: (await this.mergeLocal(projectId, itemId)).message };
       }
     });
     ctx.contributions.command({

@@ -543,7 +543,7 @@ describe("starting a ticket", () => {
     expect(codeLink.repoStates(project.id)[0]).toMatchObject({ remote: "none", readiness: "scaffolded" });
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ ahead: 1 });
     const section = (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!;
-    expect(section.rows.find((r) => r.label === "Pull request")).toMatchObject({ value: "none — no remote; merge the branch into main here" });
+    expect(section.rows.find((r) => r.label === "Pull request")).toMatchObject({ value: "none — no remote · merge into main", command: "code-link.merge-local" });
     expect(await codeLink.openPr(project.id, item.id)).toMatchObject({ pushed: false, message: expect.stringContaining("has no remote") });
 
     const handed = (await sessionContext.run({ projectId: project.id, sessionId: result.sessionId }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:fake-code", projectId: project.id }))) as { status: string };
@@ -552,6 +552,81 @@ describe("starting a ticket", () => {
     git(["merge", "-q", "--no-ff", "-m", `Merge ${item.key}`, result.branch], folder);
     await codeLink.scan(project.id);
     expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+  });
+
+  describe("merging from Tomrade in a repository with no remote", () => {
+    /** A local repository, a ticket worked to Verifying on its branch, and that branch's worktree removed. */
+    async function handed(title: string, opts: { agentMerge?: boolean } = {}) {
+      const folder = localRepo();
+      const world = await machine(null);
+      const { codeLink, ctx, agent, project, board, ticket } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      if (opts.agentMerge) codeLink.setRepoPolicy(project.id, repo.id, { agentMerge: true });
+      const item = ticket(title);
+      const result = await codeLink.start(project.id, item.id, { mode: "run" });
+      if (!result.ok) throw new Error(result.message);
+      await untilRunsSettle(agent);
+      await codeLink.scan(project.id);
+      const as = (call: () => Promise<unknown>) => sessionContext.run({ projectId: project.id, sessionId: result.sessionId }, call);
+      await as(() => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:fake-code", projectId: project.id }));
+      expect(ctx.items.get(project.id, item.id)!.status).toBe("verifying");
+      const main = () => git(["rev-parse", "main"], folder);
+      return { ...world, folder, item, result, as, main, before: main() };
+    }
+
+    it("merges from a clean checkout on the default branch and finishes the ticket on that merge", async () => {
+      const { codeLink, ctx, project, item, result, folder, main, before } = await handed("Merge here");
+      const merged = await codeLink.mergeLocal(project.id, item.id);
+      expect(merged).toMatchObject({ merged: true, sha: main() });
+      expect(main()).not.toBe(before);
+      expect(git(["log", "-1", "--format=%s", "main"], folder)).toBe(`${item.key}: Merge here`);
+      expect(git(["merge-base", "--is-ancestor", result.branch, "main"], folder)).toBe("");
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: main() });
+      expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+    });
+
+    it("merges through a temporary worktree when the default branch is not checked out, leaving the checkout as it was", async () => {
+      const { codeLink, ctx, project, item, folder, main, before } = await handed("Merge elsewhere");
+      git(["checkout", "-q", "-b", "side", "main"], folder);
+      expect(await codeLink.mergeLocal(project.id, item.id)).toMatchObject({ merged: true });
+      expect(main()).not.toBe(before);
+      expect(git(["rev-parse", "--abbrev-ref", "HEAD"], folder)).toBe("side");
+      expect(git(["worktree", "list", "--porcelain"], folder)).not.toContain("tomrade-merge-");
+      expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+    });
+
+    it("refuses a default branch with uncommitted changes, and aborts a conflict, changing nothing", async () => {
+      const { codeLink, ctx, project, item, folder, main, before } = await handed("Not now");
+      fs.writeFileSync(path.join(folder, "package.json"), '{ "name": "changed" }\n');
+      expect(await codeLink.mergeLocal(project.id, item.id)).toMatchObject({ merged: false, message: expect.stringContaining("uncommitted changes") });
+      expect(main()).toBe(before);
+      git(["checkout", "-q", "--", "package.json"], folder);
+
+      fs.writeFileSync(path.join(folder, "work-1.ts"), "export const clash = 1;\n");
+      git(["add", "-A"], folder);
+      git(["commit", "-q", "-m", "clash on main"], folder);
+      const clashed = main();
+      expect(await codeLink.mergeLocal(project.id, item.id)).toMatchObject({ merged: false, message: expect.stringContaining("conflicts with main in work-1.ts") });
+      expect(main()).toBe(clashed);
+      expect(fs.existsSync(path.join(folder, ".git", "MERGE_HEAD"))).toBe(false);
+      expect(git(["status", "--porcelain"], folder)).toBe("");
+      expect(ctx.items.get(project.id, item.id)!.status).toBe("verifying");
+    });
+
+    it("lets the agent merge only where agent merging is on, and tells it so", async () => {
+      const off = await handed("Person merges");
+      const refused = (await off.as(() => off.ctx.tools.execute("merge_branch", {}, { by: "ai:fake-code", projectId: off.project.id }))) as { merged: boolean; message: string };
+      expect(refused).toMatchObject({ merged: false, message: expect.stringContaining("Agents don't merge") });
+      expect(off.main()).toBe(off.before);
+
+      const on = await handed("Agent merges", { agentMerge: true });
+      const prompt = JSON.stringify(on.agent.store.messages(on.project.id, on.result.threadId)[0].block);
+      expect(prompt).toContain("call merge_branch");
+      const merged = (await on.as(() => on.ctx.tools.execute("merge_branch", {}, { by: "ai:fake-code", projectId: on.project.id }))) as { merged: boolean };
+      expect(merged).toMatchObject({ merged: true });
+      expect(on.ctx.items.get(on.project.id, on.item.id)!.status).toBe("done");
+    });
   });
 
   it("scans a repository added while a slower scan is still fetching", async () => {

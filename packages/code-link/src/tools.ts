@@ -31,6 +31,8 @@ export interface ToolHost {
   /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet. */
   externalSession(projectId: string, repoId: string): SessionView | null;
   notify(projectId: string): void;
+  /** A repository with no remote: merge the ticket's branch into the default branch here. */
+  mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
 }
 
 /** The ticket, repository and branch a call is about: named by key, or implied by the session or the run's thread. */
@@ -183,6 +185,22 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
   ctx.tools.register(
     defineTool({
+      name: "merge_branch",
+      title: "Merge the ticket's branch into the default branch, in a repository with no remote",
+      description:
+        "Only in a repository with no remote, and only where the brief says merging is yours: after link_code, merge the ticket's branch into the default branch on this machine. Tomrade merges only from a clean default-branch checkout or a temporary worktree, aborts on a conflict, and finishes the ticket. When it does not merge, report its message with note_progress and stop; the person merges.",
+      input: z.object({ key: z.string().optional(), projectId: z.string().optional() }),
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("merge_branch", args.projectId, inv);
+        const { item } = subject("merge_branch", projectId, args.key, inv);
+        const result = await host.mergeLocal(projectId, item.id, { agent: true });
+        return { key: item.key, ...result, ...(result.merged ? {} : { next: "call note_progress with this message and stop — the person merges" }) };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
       name: "claim_ticket",
       title: "Claim a ticket to work on",
       description:
@@ -198,6 +216,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const repoId = board?.repoId ?? null;
         const repo = repoId ? ctx.repos.get(projectId, repoId) : null;
         const state = repoId ? host.store.repoState(projectId, repoId) : null;
+        const local = state?.remote === "none";
         const blockers = item.blockedBy.map((id) => ctx.items.get(projectId, id)).filter((b): b is Item => !!b && b.status !== "done" && b.status !== "cancelled");
 
         const bound = sessionContext.getStore();
@@ -237,8 +256,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             "before pushing, review the full diff and remove anything this ticket does not require",
             `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
             `every commit message names ${item.key}`,
-            "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",
-            mergeLine(!!state?.agentMerge).replace(/^- /, ""),
+            local
+              ? `this repository has no remote: do not push or open a pull request; after the full-diff review call link_code with scopeChecked: true and no prUrl; do not mark the ticket done — merging does`
+              : "call link_code with the pull request URL when you open one; do not mark the ticket done — merging does",
+            local && !state?.agentMerge ? `the person merges your branch into ${repo?.defaultBranch ?? "the default branch"}` : mergeLine(!!state?.agentMerge, local).replace(/^- /, ""),
             ...(session ? ["call note_progress with one line at milestones"] : [untracked()])
           ]
         };

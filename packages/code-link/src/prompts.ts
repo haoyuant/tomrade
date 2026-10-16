@@ -36,10 +36,12 @@ export const languageLine = (locale: "en" | "zh" = "en") =>
     ? "Language: the person reads Tomrade in Simplified Chinese — write everything the person will read (your replies, note_progress, questions, reports) in Simplified Chinese; keep code, identifiers, commands, file paths and commit messages as they are."
     : "Language: the person reads Tomrade in English — write everything the person will read (your replies, note_progress, questions, reports) in English; keep code, identifiers, commands, file paths and commit messages as they are.";
 
-/** Who merges the pull request; nothing to say for a repository with no remote. */
+/** Who merges: the pull request, or, with no remote, the branch into the default branch here. */
 export const mergeLine = (merge: boolean, local = false): string =>
   local
-    ? ""
+    ? merge
+      ? "- merging is yours: after link_code, call merge_branch to merge your branch into the default branch here; if it does not merge (a dirty checkout, a conflict), call note_progress with its message and stop — the person merges it"
+      : ""
     : merge
       ? "- merging is yours: after link_code, wait for the pull request's checks with gh pr checks <url> --watch and merge only once they pass, with gh pr merge <url> --squash or the method CLAUDE.md names; never pass --admin or work around branch protection. 'no checks reported' means there is nothing to wait for. If the checks cannot be read at all (an error such as 'Resource not accessible by integration'), do not merge without them: call report_merge_blocked saying the check status could not be read, and stop. If the checks fail or the merge is refused — a permission denied, a safety check, branch protection, a review still required — do not try another way: call report_merge_blocked with the reason and stop; the human merges it"
       : "- do not merge the pull request; the human merges it";
@@ -53,7 +55,7 @@ const conventions = (key: string, defaultBranch: string, completionPolicy: "merg
     "- if required work belongs to another ticket, report it with note_progress and leave it for a separate branch and session",
     `- every commit message names ${key}; never commit to ${defaultBranch}, stay on your branch`,
     local
-      ? `- this repository has no remote: commit on your branch, do not push, do not add a remote, and open no pull request; after the full-diff scope review, call link_code with scopeChecked: true and no prUrl — that moves the ticket to Verifying, and the human merges your branch into ${defaultBranch} here`
+      ? `- this repository has no remote: commit on your branch, do not push, do not add a remote, and open no pull request; after the full-diff scope review, call link_code with scopeChecked: true and no prUrl — that moves the ticket to Verifying${merge ? "" : `, and the human merges your branch into ${defaultBranch} here`}`
       : "- after the full-diff scope review, call link_code with the pull request URL and scopeChecked: true — that moves the ticket to Verifying",
     mergeLine(merge, local),
     "- call note_progress with one line at each milestone; it is what the ticket shows while you work",

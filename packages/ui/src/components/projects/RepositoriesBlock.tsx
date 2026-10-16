@@ -384,33 +384,35 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       )}
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
       <AgentConnection projectId={projectId} repoId={repo.id} />
-      {remoteState?.remote !== "none" && <AgentMerge projectId={projectId} repoId={repo.id} on={remoteState?.agentMerge ?? false} />}
+      <AgentMerge projectId={projectId} repoId={repo.id} on={remoteState?.agentMerge ?? false} local={remoteState?.remote === "none"} />
     </div>
   );
 }
 
 /** The repository's merge policy, and what each agent's own settings say about it — with the one rule that would let it. */
-function AgentMerge({ projectId, repoId, on }: { projectId: string; repoId: string; on: boolean }) {
+function AgentMerge({ projectId, repoId, on, local }: { projectId: string; repoId: string; on: boolean; local: boolean }) {
   const { t } = useI18n();
   const policy = useSetRepoPolicy(projectId);
-  const checks = useMergeChecks(projectId, repoId, on);
+  // With no remote the agent merges through Tomrade's own tool, which its shell rules don't gate.
+  const checks = useMergeChecks(projectId, repoId, on && !local);
+  const label = t(local ? "repositories.agentMergeLocal" : "repositories.agentMerge");
   const toast = useToast();
   return (
     <>
       <div className="cfg-row" style={{ marginTop: 0 }}>
         <Icon name="i-merge" size={14} style={{ color: on ? "var(--accent)" : "var(--meta)" }} />
-        <span className="cfg-name">{t("repositories.agentMerge")}</span>
+        <span className="cfg-name">{label}</span>
         <button
           type="button"
           className="switch repo-agent-merge"
           role="switch"
           aria-checked={on}
-          aria-label={t("repositories.agentMerge")}
+          aria-label={label}
           disabled={policy.isPending}
           onClick={() => policy.mutate({ repoId, patch: { agentMerge: !on } }, { onError: (error) => toast({ body: message(error) }) })}
         />
       </div>
-      <p className="meta-txt dense">{t("repositories.agentMergeNote")}</p>
+      <p className="meta-txt dense">{t(local ? "repositories.agentMergeLocalNote" : "repositories.agentMergeNote")}</p>
       {on && checks.isLoading && <p className="meta-txt dense repo-merge-checking">{t("repositories.mergeChecking")}</p>}
       {on && checks.data?.length === 0 && <p className="meta-txt dense">{t("repositories.mergeNoEngines")}</p>}
       {on && checks.data?.map((view) => <MergeCheckRow key={view.engine} projectId={projectId} repoId={repoId} view={view} />)}
