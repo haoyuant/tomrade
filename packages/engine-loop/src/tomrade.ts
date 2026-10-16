@@ -1,17 +1,28 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Engine, EngineAvailability, TurnPurpose } from "@tomradex/agent";
+import type { Engine, EngineAvailability } from "@tomradex/agent";
 
 export const TomradeEngineConfig = z.object({
-  /** Holds the backlog conversations: the loop, quick and tuned to the models it runs on. */
-  backlog: z.string().default("loop"),
+  /**
+   * Holds the backlog conversations: the first of these in-app parts that can run. The built-in pi
+   * held them better than the loop on the same model (pnpm eval:backlog); the loop stays as the backup.
+   */
+  backlog: z.union([z.string(), z.array(z.string()).min(1)]).default(["pi-builtin", "loop"]),
   /** Implements tickets — code and General work: the built-in pi. */
-  work: z.string().default("pi-builtin")
+  work: z.string().default("pi-builtin"),
+  /**
+   * Signed-in local agents, in order, that hold a backlog conversation while no `backlog` part can run —
+   * no model connected. Each stays a choice of its own, so they are not among `includes`.
+   */
+  fallback: z.array(z.string()).default(["claude-code", "codex"])
 }).prefault({});
 export type TomradeEngineConfig = z.infer<typeof TomradeEngineConfig>;
 
 // What both parts take; each part parses its own options from it.
 const TomradeOptions = z.looseObject({ profile: z.string().optional(), effort: z.string().optional() });
+
+/** A borrowed agent's session is stored marked as its own, so no other part is handed it to resume. */
+const borrowedSession = (id: string) => `@${id}:`;
 
 /**
  * One choice for the in-app agent. A thread's purpose is fixed when it is made,
@@ -19,14 +30,41 @@ const TomradeOptions = z.looseObject({ profile: z.string().optional(), effort: z
  */
 export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): Engine {
   const part = (id: string) => ctx.agent.engineOf(id);
-  const partFor = (purpose: TurnPurpose) => (purpose === "backlog" ? (part(config.backlog) ?? part(config.work)) : part(config.work));
-  const either = () => part(config.backlog) ?? part(config.work);
+  const own = [config.backlog].flat();
+  const ownPart = () => own.map(part).find(Boolean);
+  const either = () => ownPart() ?? part(config.work);
+  const zh = () => ctx.settings.locale?.() === "zh";
+  const runs = async (engine: Engine | undefined, opts?: { fresh?: boolean }): Promise<EngineAvailability | null> => {
+    if (!engine) return null;
+    try {
+      return await engine.available(opts);
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  };
+  const borrowable = async (opts?: { fresh?: boolean }): Promise<Engine | undefined> => {
+    for (const id of config.fallback) {
+      const engine = part(id);
+      if (!engine || !(engine.capabilities ?? ["backlog"]).includes("backlog")) continue;
+      if ((await runs(engine, opts))?.ok) return engine;
+    }
+    return undefined;
+  };
+  /** The first in-app part that can run; otherwise the first signed-in local agent; otherwise the first part, to say what it needs. */
+  const backlogPart = async (): Promise<{ engine: Engine | undefined; borrowed: boolean }> => {
+    for (const id of own) {
+      const engine = part(id);
+      if (engine && (await runs(engine))?.ok) return { engine, borrowed: false };
+    }
+    const borrowed = await borrowable();
+    return borrowed ? { engine: borrowed, borrowed: true } : { engine: either(), borrowed: false };
+  };
   return {
     id: "tomrade",
     title: "Tomrade",
     author: "ai:agent",
     capabilities: ["backlog", "code", "general"],
-    includes: [config.backlog, config.work],
+    includes: [...new Set([...own, config.work])],
     terminal: false,
     usesModels: true,
     steers: true,
@@ -40,29 +78,36 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     media: (options) => either()?.media?.(options) ?? { input: [], output: [] },
     picks: () => either()?.picks?.() ?? [],
     async available(opts): Promise<EngineAvailability> {
-      const probe = async (id: string): Promise<EngineAvailability | null> => {
-        const engine = part(id);
-        if (!engine) return null;
-        try {
-          return await engine.available(opts);
-        } catch (err) {
-          return { ok: false, reason: err instanceof Error ? err.message : String(err) };
-        }
-      };
-      const [backlog, work] = await Promise.all([probe(config.backlog), probe(config.work)]);
+      const [work, ...backlogs] = await Promise.all([config.work, ...own].map((id) => runs(part(id), opts)));
+      const backlog = backlogs.find((state) => state?.ok) ?? backlogs.find(Boolean);
       if (work?.ok) return { ok: true };
-      if (backlog?.ok) return { ok: true, capabilities: ["backlog"] };
+      if (backlog?.ok || (await borrowable(opts))) return { ok: true, capabilities: ["backlog"] };
       const state = backlog ?? work ?? { ok: false, need: "service", reason: "No in-app agent is installed" };
       // With the built-in pi switched off, there is no ticket work to wait for.
       return work ? state : { ...state, capabilities: ["backlog"] };
     },
     async turn(input, io) {
-      const engine = partFor(input.purpose);
+      const { engine, borrowed } = input.purpose === "backlog" ? await backlogPart() : { engine: part(config.work), borrowed: false };
       if (!engine) return { stop: "error", error: "No in-app agent is installed for this kind of work" };
       // A part's own saved settings still count, under what was picked for Tomrade and for this thread.
+      // A borrowed agent keeps only its own: the model and effort picked here are for the in-app parts.
       const saved = (ctx.agent.settingsOf().engines[engine.id] ?? {}) as Record<string, unknown>;
-      const options = { ...saved, ...((input.options ?? {}) as Record<string, unknown>) };
-      return engine.turn({ ...input, options: engine.options ? engine.options.parse(options) : options }, io);
+      const options = borrowed ? saved : { ...saved, ...((input.options ?? {}) as Record<string, unknown>) };
+      const turnInput = { ...input, options: engine.options ? engine.options.parse(options) : options };
+      if (!borrowed) {
+        // A borrowed agent's session is no use to an in-app part, which starts its own with the conversation carried in.
+        const resume = io.resume?.startsWith("@") ? undefined : io.resume;
+        return engine.turn(turnInput, resume === io.resume ? io : { ...io, resume });
+      }
+      const mark = borrowedSession(engine.id);
+      const resume = io.resume?.startsWith(mark) ? io.resume.slice(mark.length) : undefined;
+      if (!resume)
+        io.emit({
+          type: "note",
+          text: zh() ? `还没有可用的模型，这段对话由 ${engine.title} 接手。` : `No model is connected, so ${engine.title} is holding this conversation.`
+        });
+      const result = await engine.turn(turnInput, { ...io, resume });
+      return result.resume ? { ...result, resume: mark + result.resume } : result;
     }
   };
 }
@@ -72,7 +117,7 @@ function adoptPartSettings(ctx: Context, config: TomradeEngineConfig): void {
   const agent = ctx.agent.settingsOf();
   if (agent.engines.tomrade) return;
   const picked: Record<string, unknown> = {};
-  for (const id of [config.work, config.backlog]) {
+  for (const id of [config.work, ...[config.backlog].flat()]) {
     const options = (agent.engines[id] ?? {}) as Record<string, unknown>;
     for (const key of ["profile", "effort"]) if (typeof options[key] === "string" && options[key]) picked[key] = options[key];
   }

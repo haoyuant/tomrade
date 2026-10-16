@@ -54,6 +54,12 @@ export function registerTools(ctx: Context): void {
     if (!item) throw new NotFoundError(id);
     return item.id;
   };
+  // A parent or blocked item named by key was stored as that string — a parent that is not there.
+  const resolveRefs = <T extends { parentId?: string | null; blocks?: string[] }>(projectId: string, value: T): T => ({
+    ...value,
+    ...(value.parentId ? { parentId: resolve(projectId, value.parentId) } : {}),
+    ...(value.blocks ? { blocks: value.blocks.map((id) => resolve(projectId, id)) } : {})
+  });
 
   ctx.tools.register(defineTool({
     name: "add_delivery_resource", title: "Link a file version",
@@ -118,6 +124,7 @@ export function registerTools(ctx: Context): void {
       throw new ToolInputError(tool, [{ code: "custom", path: ["projectId"], message: `unknown project ${projectId} — omit projectId for the current project, or call list_projects`, input: projectId } as unknown as z.core.$ZodIssue]);
     }
     if (filter.boardId !== undefined && !ctx.boards.list(projectId).some((b) => b.id === filter.boardId)) throw new NotFoundError(filter.boardId);
+    if (filter.parentId) filter = { ...filter, parentId: resolve(projectId, filter.parentId) };
     const { limit, widen } = opts;
     if (!clauses?.length && !sort?.length) return { projectId, items: ctx.items.list({ ...filter, projectId, limit, widen }) };
     // The scalar filters run in JS after a clause query, so SQL may only cut when there are none.
@@ -148,7 +155,7 @@ export function registerTools(ctx: Context): void {
         }
       }
     }
-    return ctx.items.create({ ...args, playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
+    return ctx.items.create({ ...resolveRefs(projectId, args), playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
   };
 
   ctx.tools.register(
@@ -242,7 +249,7 @@ export function registerTools(ctx: Context): void {
       execute({ projectId, id, patch, baseVersion }, inv) {
         const scope = requireProjectId("update_item", projectId, inv);
         const target = resolve(scope, id);
-        return ctx.items.update(scope, target, patch as Patch, inv.by, { baseVersion: versionOf(scope, target, baseVersion) });
+        return ctx.items.update(scope, target, resolveRefs(scope, patch) as Patch, inv.by, { baseVersion: versionOf(scope, target, baseVersion) });
       }
     })
   );

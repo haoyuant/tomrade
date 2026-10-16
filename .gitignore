@@ -26,6 +26,7 @@ apps/desktop/vendor/
 # UI harness output
 apps/desktop/scripts/shots/
 artifacts/agent-eval/
+artifacts/backlog-eval/
 artifacts/search-bench/
 
 # Supabase CLI cache

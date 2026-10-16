@@ -148,6 +148,20 @@ describe("tool arguments", () => {
     // another project's prefix is not this item
     await expect(run("get_item", { id: `XYZ-${ticket.keyNum}` })).resolves.toBeNull();
   });
+
+  it("takes a key for a parent or a blocked item, and refuses one that names nothing instead of storing it", async () => {
+    const { run, items, board, project } = await withTools();
+    const epic = items.create({ projectId: project.id, title: "Board export", kind: "epic", boardId: board.id, by: "human" });
+    const ticket = items.create({ projectId: project.id, title: "CSV drops Due", boardId: board.id, by: "human" });
+    expect(await run("update_item", { id: ticket.key, patch: { parentId: epic.key } })).toMatchObject({ parentId: epic.id });
+    expect(await run("create_item", { title: "PDF export", parentId: epic.key.toLowerCase(), playbookId: null })).toMatchObject({ parentId: epic.id });
+    expect(await run("list_items", { parentId: epic.key })).toHaveLength(2);
+    expect(await run("update_item", { id: epic.key, patch: { blocks: [ticket.key] } })).toMatchObject({ blocks: [ticket.id] });
+    await expect(run("update_item", { id: ticket.key, patch: { parentId: "TOM-999" } })).rejects.toThrow("Item TOM-999 not found");
+    await expect(run("create_item", { title: "Orphan", parentId: "TOM-999", playbookId: null })).rejects.toThrow("Item TOM-999 not found");
+    expect(items.get(project.id, ticket.id)?.parentId).toBe(epic.id);
+    expect(await run("update_item", { id: ticket.key, patch: { parentId: null } })).toMatchObject({ parentId: null });
+  });
 });
 
 describe("review_delivery tool", () => {

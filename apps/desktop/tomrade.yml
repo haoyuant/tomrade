@@ -226,7 +226,8 @@ plugins:
   - id: im
     name: "@tomradex/im"
   # Engines are conductors; several can be installed, a thread picks one.
-  # Tomrade: the one in-app choice — the loop holds backlog conversations, the built-in pi implements tickets.
+  # Tomrade: the one in-app choice — the built-in pi holds backlog conversations (the loop when pi cannot run,
+  # a signed-in Claude Code or Codex when no model is connected) and implements tickets.
   - id: engine-tomrade
     name: "@tomradex/engine-loop/tomrade"
     implements: [engine]
