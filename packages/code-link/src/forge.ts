@@ -1,4 +1,4 @@
-import { remoteIdentity, sshHostName } from "@tomradex/repos";
+import { remoteIdentity, serverHost } from "@tomradex/repos";
 
 /** What GitHub says about one pull request. */
 export interface ForgePull {
@@ -17,8 +17,7 @@ export async function githubPull(prUrl: string | null, prNumber: number | null, 
   const id = remoteIdentity(remote);
   if (!id || id.path.split("/").length !== 2) return null;
   // An SSH alias (`github.com-work`) stands for whatever its HostName says.
-  const host = id.ssh ? await sshHostName(id.host) : id.host;
-  return host === "github.com" ? { repo: id.path, number: prNumber } : null;
+  return (await serverHost(id)) === "github.com" ? { repo: id.path, number: prNumber } : null;
 }
 
 /** GitHub's REST answer for a pull request, or null when it is not one. */

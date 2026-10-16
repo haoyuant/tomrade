@@ -3,7 +3,7 @@ import type { Item } from "@tomradex/domain";
 import type {} from "@tomradex/github";
 import type { Inbox, InboxActivity, InboxEntry, InboxEntryInput, InboxKind, InboxSource, TriageChange } from "@tomradex/inbox";
 import type {} from "@tomradex/items";
-import { remoteIdentity, sshHostName } from "@tomradex/repos";
+import { remoteIdentity, serverHost, sshHostName } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 
 export const name = "inbox-github";
@@ -100,7 +100,7 @@ const isPullState = (state: unknown): state is PullState => !!state && typeof st
 export async function githubRepo(remote: string, resolveHost: (host: string) => Promise<string> = sshHostName): Promise<string | null> {
   const id = remoteIdentity(remote);
   if (!id) return null;
-  const host = id.host === "github.com" ? id.host : id.ssh ? (await resolveHost(id.host)).toLowerCase() : id.host;
+  const host = id.host === "github.com" ? id.host : await serverHost(id, resolveHost);
   const [owner, repo, ...rest] = id.path.split("/");
   return host === "github.com" && owner && repo && !rest.length ? `${owner}/${repo}` : null;
 }

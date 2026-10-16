@@ -104,10 +104,11 @@ const id = (n: number) => entryId("github", `${REPO}#${n}`);
 
 describe("reading GitHub", () => {
   it("finds the GitHub repository behind any spelling of its remote", async () => {
-    const alias = async (host: string) => (host === "github.com-work" ? "github.com" : host);
+    const alias = async (host: string) => ({ "github.com-work": "github.com", "github.com-443": "ssh.github.com" })[host] ?? host;
     expect(await githubRepo("git@github.com:acme/app.git", alias)).toBe("acme/app");
     expect(await githubRepo("https://github.com/Acme/App", alias)).toBe("acme/app");
     expect(await githubRepo("git@github.com-work:acme/app.git", alias)).toBe("acme/app");
+    expect(await githubRepo("git@github.com-443:acme/app.git", alias)).toBe("acme/app");
     expect(await githubRepo("git@gitlab.com:acme/app.git", alias)).toBeNull();
     expect(await githubRepo("/Users/me/app", alias)).toBeNull();
   });

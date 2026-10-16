@@ -50,6 +50,10 @@ export const sshHostName = (host: string): Promise<string> =>
     });
   });
 
+/** The server a network remote really reaches: an SSH alias resolved, an SSH-over-443 endpoint read as its main host. */
+export const serverHost = async (id: RemoteIdentity, resolveHost: (host: string) => Promise<string> = sshHostName): Promise<string> =>
+  id.ssh ? canonicalHost(await resolveHost(id.host)) : id.host;
+
 /**
  * Whether two remotes are one repository: `git@github.com:acme/app.git`,
  * `https://github.com/acme/app` and an SSH alias of github.com all are.
@@ -60,7 +64,6 @@ export async function sameRepository(a: string, b: string, resolveHost: (host: s
   const y = remoteIdentity(b);
   if (!x || !y || x.path !== y.path) return false;
   if (x.host === y.host) return true;
-  const real = async (id: RemoteIdentity) => (id.ssh ? canonicalHost(await resolveHost(id.host)) : id.host);
-  const [hx, hy] = await Promise.all([real(x), real(y)]);
+  const [hx, hy] = await Promise.all([serverHost(x, resolveHost), serverHost(y, resolveHost)]);
   return hx === hy;
 }
