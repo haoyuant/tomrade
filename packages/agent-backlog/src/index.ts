@@ -16,7 +16,7 @@ import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
 export { applyPlan, findGaps, generatePlan, planSchema, type ApplyOutcome, type Plan } from "./plan.js";
-export { applyDependencies, dependencyReviewSchema, proposeDependencies, ticketChanges, type DependencyProposal, type TicketChange } from "./dependencies.js";
+export { applyDependencies, dependencyReviewSchema, proposeDependencies, REVIEW_TIMEOUT_MS, ticketChanges, type DependencyProposal, type TicketChange } from "./dependencies.js";
 export { PLAYBOOKS } from "./playbooks.js";
 
 export const DEDUP_RULE = "dedup-before-create";
@@ -251,11 +251,14 @@ export default {
           const model = llm();
           if ((!changes.length && !state.full) || !model || !(await model.worker()).ok) return { done: { proposed: 0 } };
           let proposal: DependencyProposal;
+          io.activity(ctx.settings.locale?.() === "zh" ? "正在检查依赖…" : "Checking dependencies…");
           try {
-            proposal = await proposeDependencies(ctx, model, projectId, changes);
+            proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal });
           } catch (err) {
-            ctx.logger.warn(`dependency review failed: ${err instanceof Error ? err.message : String(err)}`);
+            if (!io.signal.aborted) ctx.logger.warn(`dependency review failed: ${err instanceof Error ? err.message : String(err)}`);
             return { done: { proposed: 0 } };
+          } finally {
+            io.activity(null);
           }
           if (!proposal.add.length && !proposal.remove.length) return { done: { proposed: 0 } };
           const items = ctx.items.list({ projectId });

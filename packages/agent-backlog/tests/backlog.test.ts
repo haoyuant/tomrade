@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyDossier, overlap, readiness, renderDossier } from "@tomradex/agent-backlog";
-import { findSimilar, planSchema, proposeDependencies, PLAYBOOKS } from "@tomradex/agent-backlog";
-import { FakeLlm } from "@tomradex/llm";
+import { findSimilar, planSchema, proposeDependencies, PLAYBOOKS, REVIEW_TIMEOUT_MS } from "@tomradex/agent-backlog";
+import { completeJson, FakeLlm, type ChatModel, type CompletionRequest, type LlmService } from "@tomradex/llm";
 import { fresh } from "@tomradex/testkit";
 import type { Item } from "@tomradex/domain";
 
@@ -113,5 +113,22 @@ describe("proposeDependencies", () => {
     const proposal = await proposeDependencies(ctx, llm, project.id, []);
     expect(proposal.add.map((e) => `${e.from}>${e.to}`)).toEqual([`${importer.key}>${view.key}`]);
     expect(proposal.remove).toEqual([]);
+  });
+});
+
+describe("the dependency review's model call", () => {
+  // Never answers: a model that reasons for longer than the review waits.
+  const hung: ChatModel = { capabilities: { tools: false, streaming: true, json: true }, chat: async function* () { await new Promise(() => {}); } };
+  const worker = (seen: CompletionRequest[]) => ({ completeJson: (schema, request) => (seen.push(request), completeJson(hung, schema, request, "DeepSeek (deepseek-flash)")) }) as Pick<LlmService, "completeJson"> as LlmService;
+
+  it("is given up after its time limit, and ends with the run's stop", async () => {
+    const { ctx, project } = await fresh();
+    const seen: CompletionRequest[] = [];
+    await expect(proposeDependencies(ctx, worker(seen), project.id, [], { timeoutMs: 50 })).rejects.toThrow(/did not answer within 0.05s/);
+    const stop = new AbortController();
+    const pending = proposeDependencies(ctx, worker(seen), project.id, [], { signal: stop.signal });
+    stop.abort(new Error("stopped"));
+    await expect(pending).rejects.toThrow("stopped");
+    expect(seen[1]).toMatchObject({ timeoutMs: REVIEW_TIMEOUT_MS, signal: stop.signal });
   });
 });

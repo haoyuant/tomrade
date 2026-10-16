@@ -64,6 +64,13 @@ describe("completeJson", () => {
     expect(model.requests).toHaveLength(1);
   });
 
+  it("says a reply cut off before any answer spent the output limit, as a model that reasons first does", async () => {
+    const thinking: ChatModel = { capabilities: { tools: false, streaming: true, json: true }, chat: async function* () { yield { type: "stop", reason: "max_tokens" } as const; } };
+    await expect(completeJson(thinking, schema, { system: "s", user: "u", maxTokens: 8000 }, "DeepSeek (deepseek-flash)")).rejects.toThrow(/DeepSeek \(deepseek-flash\) used its whole output limit \(8000 tokens\) before answering/);
+    const empty: ChatModel = { capabilities: { tools: false, streaming: true, json: true }, chat: async function* () { yield { type: "stop", reason: "end" } as const; } };
+    await expect(completeJson(empty, schema, { system: "s", user: "u" }, "Kimi")).rejects.toThrow("Kimi returned no content");
+  });
+
   // Never answers and ignores its signal: the worst a provider can do.
   const hung: ChatModel = { capabilities: { tools: false, streaming: true, json: true }, chat: async function* () { await new Promise(() => {}); } };
 

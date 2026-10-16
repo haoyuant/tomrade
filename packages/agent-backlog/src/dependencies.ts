@@ -97,9 +97,11 @@ const REVIEW_SYSTEM = [
 ].join("\n");
 
 const LIMIT = 80;
+/** The review is a nicety after the turn: one that takes longer is skipped rather than held open. */
+export const REVIEW_TIMEOUT_MS = 30_000;
 
 /** The worker's judgement on these changes, cut down to edits that can actually be applied. */
-export async function proposeDependencies(ctx: Context, llm: LlmService, projectId: string, changes: TicketChange[]): Promise<DependencyProposal> {
+export async function proposeDependencies(ctx: Context, llm: LlmService, projectId: string, changes: TicketChange[], opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<DependencyProposal> {
   const items = ctx.items.list({ projectId });
   const byId = new Map(items.map((i) => [i.id, i]));
   const tickets = items.filter((i) => i.kind === "ticket");
@@ -126,7 +128,7 @@ export async function proposeDependencies(ctx: Context, llm: LlmService, project
     "BACKLOG:",
     ...listed.map(line)
   ].join("\n");
-  const review = await llm.completeJson(dependencyReviewSchema, { system: REVIEW_SYSTEM, user });
+  const review = await llm.completeJson(dependencyReviewSchema, { system: REVIEW_SYSTEM, user, signal: opts.signal, timeoutMs: opts.timeoutMs ?? REVIEW_TIMEOUT_MS });
   return applicable(review, tickets);
 }
 

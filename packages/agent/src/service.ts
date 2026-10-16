@@ -1493,7 +1493,7 @@ export class Agent extends Service {
         this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
       }
     };
-    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle }, partial, clock, settleRetry, steers, forward: null };
+    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, forward: null };
     return rc;
   }
 
@@ -1601,6 +1601,7 @@ export class Agent extends Service {
   private async runFollowUps(rc: RunCtx, result: TurnResult): Promise<TurnResult> {
     let canAsk = result.stop === "end" && !rc.abort.signal.aborted && !this.store.pending(rc.projectId, rc.threadId);
     for (const followUp of this.followUps.values()) {
+      if (rc.abort.signal.aborted) break;
       try {
         const start = await followUp.after({ projectId: rc.projectId, threadId: rc.threadId, runId: rc.run.id, canAsk });
         const spec = start && canAsk ? this.workflows.get(start.workflow) : undefined;
@@ -1611,10 +1612,11 @@ export class Agent extends Service {
           canAsk = false;
         }
       } catch (err) {
-        this.ctx.logger.warn(`follow-up ${followUp.id} failed: ${message(err)}`);
+        if (!rc.abort.signal.aborted) this.ctx.logger.warn(`follow-up ${followUp.id} failed: ${message(err)}`);
       }
     }
-    return result;
+    // A stop while a follow-up still worked ends the run as stopped, not as the turn's own ending.
+    return rc.abort.signal.aborted && result.stop !== "error" ? { ...result, stop: "cancelled" } : result;
   }
 
   /** Writes a workflow makes outside a tool call still belong to the run, so they count and revert with it. */

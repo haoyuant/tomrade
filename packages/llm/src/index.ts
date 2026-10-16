@@ -203,11 +203,14 @@ export async function completeJson<T>(model: ChatModel, schema: z.ZodType<T>, re
   const messages: Message[] = [userMessage(request.user)];
   const deadline = request.timeoutMs !== undefined ? AbortSignal.timeout(request.timeoutMs) : undefined;
   let problem = "";
+  const maxTokens = request.maxTokens ?? 8000;
   for (let attempt = 0; attempt < (request.repair === false ? 1 : 2); attempt += 1) {
     const out = await collectWithin(
-      (signal) => model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens: request.maxTokens ?? 8000 }, signal),
+      (signal) => model.chat({ system: request.system, messages, json: model.capabilities.json, temperature: request.temperature ?? 0.2, maxTokens }, signal),
       { label, signal: request.signal, deadline, timeoutMs: request.timeoutMs }
     );
+    // A model that reasons before it answers can spend the whole limit thinking.
+    if (!out.text && out.stop === "max_tokens") throw new LlmError(`${label} used its whole output limit (${maxTokens} tokens) before answering — a model that reasons first can spend it all thinking`);
     if (!out.text) throw new LlmError(`${label} returned no content`);
     const result = fit(schema, out.text.trim());
     if (result.ok) return result.value;

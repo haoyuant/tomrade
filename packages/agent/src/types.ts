@@ -636,6 +636,10 @@ export interface WorkflowIO {
   tools: TurnIO["tools"];
   llm: LlmService | null;
   run: RunHandle;
+  /** Aborts when the run is stopped or runs out of time; a step's model calls end with it. */
+  signal: AbortSignal;
+  /** What a step is doing while no tool runs, for the run's live line; null clears it. */
+  activity(label: string | null): void;
 }
 
 /**
