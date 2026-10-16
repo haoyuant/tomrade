@@ -21,6 +21,7 @@ import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch, subjectPr } from "./keys.js";
+import { githubPull, readPull, type ForgePull } from "./forge.js";
 import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
 import { writeConnectFiles } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
@@ -244,6 +245,25 @@ export class CodeLink extends Service {
   static provide = "codeLink";
   static inject = ["db", "items", "boards", "repos", "hub", "settings", "storage", "github"];
   static Config = CodeLinkConfig;
+
+  /**
+   * What GitHub says about a pull request: through Tomrade's GitHub account, else `gh`;
+   * null when neither can ask. Replaceable, so tests never reach the network.
+   */
+  pulls = async (repo: string, number: number, cwd: string): Promise<ForgePull | null> => {
+    const route = `/repos/${repo}/pulls/${number}`;
+    try {
+      if (await this.ctx.github.token()) return readPull(await this.ctx.github.api.request("GET", route));
+    } catch {
+      // Not readable with this account: gh may still have one that is.
+    }
+    if (!(await commandOk("gh"))) return null;
+    try {
+      return readPull(JSON.parse(await exec("gh", ["api", route.slice(1)], cwd, await this.ctx.github.environment(this.git, cwd))));
+    } catch {
+      return null;
+    }
+  };
 
   store!: CodeLinkStore;
   sessions!: Sessions;
@@ -1162,6 +1182,41 @@ export class CodeLink extends Service {
 
     for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
 
+    // A link's pull request is settled by what GitHub says about it; the commit-message rules
+    // below are for links it cannot answer for (no pull request, not GitHub, no account, offline).
+    const answered = new Set<string>();
+    if (result.defaultRef) {
+      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
+      const asked = new Map<string, Promise<ForgePull | null>>();
+      for (const l of this.store.linksForRepo(projectId, repo.id)) {
+        if (l.mergedSha || l.prState === "closed" || (l.prNumber === null && !l.prUrl)) continue;
+        const item = this.ctx.items.get(projectId, l.itemId);
+        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
+        const ref = await githubPull(l.prUrl, l.prNumber, repo.remote);
+        if (!ref) continue;
+        const key = `${ref.repo}#${ref.number}`;
+        if (!asked.has(key)) asked.set(key, this.pulls(ref.repo, ref.number, cwd));
+        const pull = await asked.get(key)!;
+        if (!pull) continue;
+        if (pull.merged && pull.mergeSha) {
+          // Merged into the default branch, or into another branch that has not reached it yet.
+          const landed = await this.git(["merge-base", "--is-ancestor", pull.mergeSha, result.defaultRef], { cwd, ok: true });
+          if (landed.code > 1) continue; // the merge commit is not here yet: the local rules decide
+          answered.add(l.id);
+          if (landed.code === 0) {
+            this.store.patchLink(projectId, l.id, { mergedSha: pull.mergeSha, prState: "merged" });
+            touched.add(item.id);
+          }
+        } else {
+          answered.add(l.id);
+          if (pull.state === "closed") {
+            this.store.patchLink(projectId, l.id, { prState: "closed" });
+            touched.add(item.id);
+          }
+        }
+      }
+    }
+
     for (const [keyNum, commit] of result.mergedKeys) {
       const item = byNum.get(keyNum);
       if (!item) continue;
@@ -1181,6 +1236,7 @@ export class CodeLink extends Service {
       const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === active.sequence);
       if (own.length) {
         for (const l of own) {
+          if (answered.has(l.id)) continue;
           // A ticket mention in a squash commit cannot identify which of
           // several branches was merged. Multi-link deliveries require
           // branch ancestry or explicit PR evidence for each link.
@@ -1195,13 +1251,13 @@ export class CodeLink extends Service {
       touched.add(item.id);
     }
 
-    // A squash merge never makes the branch an ancestor of the default branch, and a scan
-    // that read its commit before the links settled will not read it again: look for the
-    // pull request's own commit, `… (#N)`, wherever it is.
+    // Without GitHub's answer: a squash merge never makes the branch an ancestor of the default
+    // branch, and a scan that read its commit before the links settled will not read it again,
+    // so look for the pull request's own commit, `… (#N)`, wherever it is.
     if (result.defaultRef) {
       const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
       for (const l of this.store.linksForRepo(projectId, repo.id)) {
-        if (l.prNumber === null || l.mergedSha || l.prState === "closed") continue;
+        if (l.prNumber === null || l.mergedSha || l.prState === "closed" || answered.has(l.id)) continue;
         const item = this.ctx.items.get(projectId, l.itemId);
         if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
         const log = await this.git(["log", "--format=%H%x1f%s", "-n", "20", "--fixed-strings", `--grep=#${l.prNumber}`, result.defaultRef], { cwd, ok: true });

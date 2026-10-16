@@ -115,6 +115,8 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
     bag.boards.update(bag.project.id, bag.board.id, { repoId: row.id });
   }
   const ticket = (title: string, status: "backlog" | "todo" | "doing" = "todo") => bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, workType: "coding", status, by: "human" });
+  // GitHub is never asked from a test; one that needs its answer sets its own.
+  bag.ctx.codeLink.pulls = async () => null;
   return { ...bag, codeLink: bag.ctx.codeLink, agent: bag.ctx.agent, repo: row, checkout: repo?.checkout ?? null, hubDir, turns, ticket };
 }
 

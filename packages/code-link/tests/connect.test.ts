@@ -69,6 +69,8 @@ async function machine() {
   const row = bag.ctx.repos.create({ projectId: bag.project.id, remote: repo.remote });
   bag.boards.update(bag.project.id, bag.board.id, { repoId: row.id });
   await bag.ctx.repos.setCheckout(repo.remote, repo.checkout);
+  // GitHub is never asked from a test; one that needs its answer sets its own.
+  bag.ctx.codeLink.pulls = async () => null;
   return { ...bag, codeLink: bag.ctx.codeLink, repo: row, checkout: repo.checkout, remote: repo.remote };
 }
 

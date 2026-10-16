@@ -28,6 +28,7 @@ export {
 } from "./store.js";
 export { BRIEF_FILES, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, type ScanResult, type ScannedBranch } from "./scanner.js";
 export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput, type RemoteFailure, type RemoteIdentity, type RemoteProbe } from "./remote.js";
+export { githubPull, readPull, type ForgePull } from "./forge.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
 export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectPr, titleSlug, usableSlug } from "./keys.js";
 export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult } from "./start.js";

@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CodeLink } from "@tomradex/code-link";
+import { CodeLink, type ForgePull } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -80,6 +80,8 @@ async function machine(repo: { remote: string; checkout: string }) {
   await bag.ctx.codeLink.scan(bag.project.id);
   const ticket = (title: string, status?: "backlog" | "todo" | "doing" | "verifying" | "done" | "cancelled") =>
     bag.items.create({ projectId: bag.project.id, boardId: bag.board.id, title, status, by: "human" });
+  // GitHub is never asked from a test; one that needs its answer sets its own.
+  bag.ctx.codeLink.pulls = async () => null;
   return { ...bag, codeLink: bag.ctx.codeLink, repo: row, checkout: repo.checkout, ticket };
 }
 
@@ -372,6 +374,83 @@ describe("code link", () => {
     await codeLink.scan(project.id);
     expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ mergedSha: null })]);
     expect(items.get(project.id, item.id)!.status).toBe("verifying");
+  });
+
+  describe("a pull request GitHub can answer for", () => {
+    async function pr(title: string) {
+      const world = await machine(codeRepo());
+      const { codeLink, project, repo, checkout, ticket } = world;
+      const item = ticket(title, "verifying");
+      const branch = `tom-${item.keyNum}/work`;
+      commitOn(checkout, branch, "work.ts", `TOM-${item.keyNum}: the work`);
+      git(["push", "-q", "origin", branch], checkout);
+      git(["checkout", "-q", "main"], checkout);
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch }, { prNumber: 9, prUrl: "https://github.com/example/app/pull/9", prState: "open", source: "mcp" });
+      const asked: string[] = [];
+      const answer = (pull: ForgePull | null) => {
+        codeLink.pulls = async (repoName, number) => {
+          asked.push(`${repoName}#${number}`);
+          return pull;
+        };
+      };
+      return { ...world, item, branch, asked, answer };
+    }
+
+    it("settles a squash whose title names neither the ticket nor the pull request", async () => {
+      const { codeLink, items, project, item, branch, checkout, asked, answer } = await pr("Squashed under another title");
+      git(["merge", "-q", "--squash", branch], checkout);
+      git(["commit", "-q", "-m", "Tidy things up"], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+      const squash = git(["rev-parse", "main"], checkout);
+      answer({ merged: true, state: "closed", mergeSha: squash, base: "main" });
+
+      await codeLink.scan(project.id);
+      expect(asked).toEqual(["example/app#9"]);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: squash, prState: "merged" });
+      expect(items.get(project.id, item.id)!.status).toBe("done");
+      await codeLink.scan(project.id);
+      expect(asked).toHaveLength(1);
+    });
+
+    it("records a pull request closed unmerged, even when a default-branch commit names the ticket", async () => {
+      const { codeLink, items, project, item, checkout, answer } = await pr("Closed unmerged");
+      fs.writeFileSync(path.join(checkout, "elsewhere.ts"), "x\n");
+      git(["add", "-A"], checkout);
+      git(["commit", "-q", "-m", `TOM-${item.keyNum}: a commit naming it (#9)`], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+      answer({ merged: false, state: "closed", mergeSha: null, base: "main" });
+
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: null, prState: "closed" });
+      expect(items.get(project.id, item.id)!.status).not.toBe("done");
+    });
+
+    it("does not count a merge into another branch as delivered", async () => {
+      const { codeLink, items, project, item, branch, checkout, answer } = await pr("Stacked");
+      git(["checkout", "-q", "-b", "stack", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", "Merge pull request #9 from example/work", branch], checkout);
+      git(["push", "-q", "origin", "stack"], checkout);
+      const merge = git(["rev-parse", "stack"], checkout);
+      git(["checkout", "-q", "main"], checkout);
+      answer({ merged: true, state: "closed", mergeSha: merge, base: "stack" });
+
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: null, prState: "open" });
+      expect(items.get(project.id, item.id)!.status).toBe("verifying");
+    });
+
+    it("falls back to the default branch's commits when GitHub cannot be asked", async () => {
+      const { codeLink, items, project, item, branch, checkout, answer } = await pr("No answer");
+      git(["merge", "-q", "--squash", branch], checkout);
+      git(["commit", "-q", "-m", `TOM-${item.keyNum}: the work (#9)`], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+      answer(null);
+
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: git(["rev-parse", "main"], checkout), prState: "merged" });
+      expect(items.get(project.id, item.id)!.status).toBe("done");
+    });
   });
 
   it("finishes a merged ticket while its terminal session is still active", async () => {
