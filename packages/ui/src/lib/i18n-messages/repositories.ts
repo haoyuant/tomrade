@@ -6,7 +6,7 @@ export const repositories = {
     agentInstructions: "Instructions only",
     agentNotConfigured: "Not configured",
     agentHooks: "Session hooks configured",
-    agentNoTracking: "No automatic session tracking",
+    agentNoTracking: "No lifecycle hooks; followed through its connection once it claims a ticket",
     agentReviewHooks: "Trust the project and review /hooks in Codex; requires a hooks-capable version",
 
     "connection_unconnected": "Coding agents are not connected",
@@ -109,7 +109,7 @@ export const repositories = {
     agentInstructions: "仅有说明文档",
     agentNotConfigured: "未配置",
     agentHooks: "已配置会话 hooks",
-    agentNoTracking: "无自动会话跟踪",
+    agentNoTracking: "没有生命周期 hooks；认领工单后按连接跟踪",
     agentReviewHooks: "请在支持 hooks 的 Codex 中信任项目并通过 /hooks 审阅",
 
     "connection_unconnected": "尚未连接编码智能体",

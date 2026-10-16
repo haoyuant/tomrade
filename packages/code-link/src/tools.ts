@@ -28,8 +28,13 @@ export interface ToolHost {
   blockMerge(projectId: string, sessionId: string, reason: string): void;
   /** A session took (another) ticket on: the session's list grows, its branch is set when it had none. */
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number): void;
-  /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet. */
+  /** The hooks session a tokenless claim most likely comes from: live on that repository, holding no ticket and no client's connection. */
   externalSession(projectId: string, repoId: string): SessionView | null;
+  /** The session an outside client's connection claimed for. */
+  connected(projectId: string, connection: string): SessionView | null;
+  bindConnection(projectId: string, connection: string, sessionId: string): void;
+  /** A new session followed only through a client's connection, for a client with no hooks. */
+  connectionSession(projectId: string, repoId: string | null): SessionView;
   notify(projectId: string): void;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
   mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
@@ -52,13 +57,22 @@ export function registerTools(ctx: Context, host: ToolHost): void {
     const session = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
     const thread = inv.run ? (ctx.get("agent")?.store.thread(projectId, inv.run.threadId) ?? null) : null;
     const runSession = thread ? (host.store.sessions(projectId, { live: true }).find((s) => s.threadId === thread.id) ?? null) : null;
-    const s = session ?? runSession;
+    const connected = !session && inv.connection ? host.connected(projectId, inv.connection) : null;
+    let s = session ?? runSession ?? connected;
 
     let item: Item | null = null;
     if (key) item = ctx.items.getByKey(projectId, key.toUpperCase());
     else if (s?.itemIds[0]) item = ctx.items.get(projectId, s.itemIds[0]);
     else if (thread?.itemId) item = ctx.items.get(projectId, thread.itemId);
-    if (!item) throw new Error(key ? `${tool}: no ticket ${key} in this project` : `${tool}: this session is not on a ticket — pass key`);
+    if (!item) throw new Error(key ? `${tool}: no ticket ${key} in this project` : `${tool}: this connection has not claimed a ticket — pass key, or call claim_ticket first`);
+    // A client back after a reconnect or a restart names its ticket: its outside session is found again, and kept for the calls after.
+    if (!s && key && inv.connection) {
+      const held = host.store.sessions(projectId, { itemId: item.id, live: true }).find((x) => x.threadId === null && x.mode === "terminal") ?? null;
+      if (held) {
+        host.bindConnection(projectId, inv.connection, held.id);
+        s = held;
+      }
+    }
     if (s?.itemIds.length && !s.itemIds.includes(item.id)) {
       const held = ctx.items.get(projectId, s.itemIds[0]);
       throw new Error(`${tool}: this session owns ${held?.key ?? "another ticket"}, not ${item.key} — use a separate session`);
@@ -220,7 +234,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const blockers = item.blockedBy.map((id) => ctx.items.get(projectId, id)).filter((b): b is Item => !!b && b.status !== "done" && b.status !== "cancelled");
 
         const bound = sessionContext.getStore();
-        const session = (bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null) ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        const tokened = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
+        // Without a token the claim belongs to the client's connection: the session it claimed before, else a hooks session nobody holds.
+        const connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
+        let session = tokened ?? connected ?? (repoId ? host.externalSession(projectId, repoId) : null);
         const other = session?.itemIds.find((id) => id !== item.id);
         const currentDelivery = host.store.currentDelivery(projectId, item.id);
         if (session?.itemIds.includes(item.id) && currentDelivery && session.delivery !== currentDelivery.sequence) throw new Error("claim_ticket: this session belongs to an earlier delivery; start a new session");
@@ -228,6 +245,9 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           const held = ctx.items.get(projectId, other);
           throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
         }
+        // A client with no hooks is still followed, through its connection.
+        if (!session && inv.connection) session = host.connectionSession(projectId, repoId);
+        if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id);
         const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.

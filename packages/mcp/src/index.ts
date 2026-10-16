@@ -19,6 +19,10 @@ declare module "cordis" {
   interface Context {
     mcp: Mcp;
   }
+  interface Events {
+    /** An outside client's connection closed: the client went away, or ended its MCP session. */
+    "mcp/closed"(connection: string): void;
+  }
 }
 
 declare module "@tomradex/ipc" {
@@ -230,6 +234,7 @@ export class Mcp extends Service {
       });
       transport.onclose = () => {
         for (const [sid, t] of transports) if (t === transport) transports.delete(sid);
+        if (transport.sessionId) this.ctx.emit("mcp/closed", transport.sessionId);
         void server.close();
       };
       await server.connect(transport);
@@ -458,7 +463,7 @@ export class Mcp extends Service {
           const target = (args as { projectId?: unknown }).projectId;
           const pid = typeof target === "string" ? target : projectId;
           const mark = storage && pid ? storage.writeMark(pid) : null;
-          const result = textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal }), tool.whole);
+          const result = textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal, ...(extra.sessionId ? { connection: extra.sessionId } : {}) }), tool.whole);
           // Only after a call that wrote: the agent learns whether the write is still on this instance alone.
           if (storage && pid && mark !== null && storage.writeMark(pid) > mark) result.content.push(block(syncNote(storage.syncSummary(pid), this.config.instance)));
           return result;

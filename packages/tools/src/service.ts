@@ -46,6 +46,12 @@ export interface ToolInvocation {
   run?: RunHandle;
   /** Aborted when the caller stops waiting — a cancelled run, a client that withdrew the call. Work outside the process should stop with it. */
   signal?: AbortSignal;
+  /**
+   * The outside client's connection the call came over (its MCP session id):
+   * the same for every call one agent process makes until it reconnects,
+   * whichever agent it is. Absent for calls made inside this process.
+   */
+  connection?: string;
   /** Ask the person behind the call to pick one of `options`; null when the call was cancelled. Absent when nobody can be asked. */
   ask?(text: string, options: string[]): Promise<string | null>;
 }

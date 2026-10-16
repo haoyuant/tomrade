@@ -217,6 +217,9 @@ export function compareUrl(remote: string, defaultBranch: string, branch: string
   return m ? `https://github.com/${m[1]}/${m[2]}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branch)}?expand=1` : null;
 }
 
+/** The agent of a session known only by its MCP connection. */
+export const MCP_AGENT = "mcp";
+
 const SETTINGS_SECTION = {
   id: "codeLink",
   title: "Code link",
@@ -287,6 +290,8 @@ export class CodeLink extends Service {
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
   private readonly worktrees = new Map<string, string>();
+  /** Which session each outside client's MCP connection claimed for; in memory, so a restart asks the client to name its ticket again. */
+  private readonly connections = new Map<string, { projectId: string; sessionId: string }>();
   /** Threads with a run going, so a question raised mid-run finds its session: agent events name only the thread. */
   private readonly running = new Map<string, ThreadSummary>();
   /** What the Start dialog last ran with on this machine (see `defaults.ts`). */
@@ -380,6 +385,9 @@ export class CodeLink extends Service {
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery) => this.attach(projectId, sessionId, itemId, branch, delivery),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
+        connected: (projectId, connection) => this.connected(projectId, connection),
+        bindConnection: (projectId, connection, sessionId) => this.bindConnection(projectId, connection, sessionId),
+        connectionSession: (projectId, repoId) => this.connectionSession(projectId, repoId),
         notify: (projectId) => this.notify(projectId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
       })
@@ -387,6 +395,7 @@ export class CodeLink extends Service {
     this.home.inject(["mcp"], (ctx) => {
       // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
       ctx.mcp.onEvent((payload) => this.externalEvent(payload));
+      ctx.on("mcp/closed", (connection) => this.disconnected(connection));
       ctx.mcp.prompt({
         name: SYNC_PROMPT,
         title: "Sync with Tomrade",
@@ -777,10 +786,48 @@ export class CodeLink extends Service {
     this.notify(projectId);
   }
 
-  /** The external session a tokenless claim most likely comes from: the latest live one on that repository with no ticket yet, else any live one there. */
+  /**
+   * The hooks session a tokenless claim most likely comes from: the latest live
+   * one on that repository that holds no ticket and no client's connection yet.
+   * Never one that already holds a ticket — that is another terminal's.
+   */
   externalSession(projectId: string, repoId: string): SessionView | null {
-    const live = this.store.sessions(projectId, { live: true }).filter((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost");
-    return live.find((s) => s.itemIds.length === 0) ?? live[0] ?? null;
+    const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).map((c) => c.sessionId));
+    return this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id)) ?? null;
+  }
+
+  /** The live session an outside client's connection claimed for, if any. */
+  connected(projectId: string, connection: string): SessionView | null {
+    const bound = this.connections.get(connection);
+    if (!bound || bound.projectId !== projectId) return null;
+    const session = this.store.session(projectId, bound.sessionId);
+    if (session && session.endedAt === null && session.state !== "ended" && session.state !== "lost") return session;
+    this.connections.delete(connection);
+    return null;
+  }
+
+  /** From now on this connection's calls belong to the session; a connection it had before is let go. */
+  bindConnection(projectId: string, connection: string, sessionId: string): void {
+    for (const [other, bound] of this.connections) if (bound.sessionId === sessionId && other !== connection) this.connections.delete(other);
+    this.connections.set(connection, { projectId, sessionId });
+  }
+
+  /**
+   * A session for a client that reports no hooks — Cursor, Gemini CLI, any MCP
+   * client: followed only through its connection, so its notes and merge
+   * hand-offs still reach the ticket. It ends when the connection closes.
+   */
+  connectionSession(projectId: string, repoId: string | null): SessionView {
+    return this.store.createSession(projectId, { repoId: repoId ?? "", branch: "", itemIds: [], mode: "terminal", agent: MCP_AGENT, threadId: null, device: this.ctx.hub.deviceId });
+  }
+
+  private disconnected(connection: string): void {
+    const bound = this.connections.get(connection);
+    if (!bound) return;
+    this.connections.delete(connection);
+    // A hooks session ends when its agent says so; one known only by its connection ends with it.
+    const session = this.store.session(bound.projectId, bound.sessionId);
+    if (session?.agent === MCP_AGENT && ![...this.connections.values()].some((c) => c.sessionId === session.id)) this.sessions.end(bound.projectId, session.id);
   }
 
   /** A branch that names no ticket becomes one, linked from the start. */

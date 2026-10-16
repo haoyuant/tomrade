@@ -44,6 +44,30 @@ describe("the MCP surface", () => {
       expect(seen).toEqual([{ search: "dark" }]);
     } finally { await client.close(); await ctx.fiber.dispose(); }
   });
+  it("hands every outside client's connection to the tools, the same for all its calls, and says when it closes", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const seen: (string | undefined)[] = [];
+    const closed: string[] = [];
+    ctx.on("mcp/closed", (connection) => void closed.push(connection));
+    ctx.tools.register(defineTool({ name: "who", title: "Who", description: "test", input: z.object({}), execute: (_args, inv) => (seen.push(inv.connection), "ok") }));
+    const a = new Client({ name: "a", version: "0" });
+    const b = new Client({ name: "b", version: "0" });
+    const ta = new StreamableHTTPClientTransport(new URL(ctx.mcp.url!));
+    try {
+      await a.connect(ta);
+      await b.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      await a.callTool({ name: "who", arguments: {} });
+      await b.callTool({ name: "who", arguments: {} });
+      await a.callTool({ name: "who", arguments: {} });
+      expect(seen[0]).toBe(ta.sessionId);
+      expect(seen[2]).toBe(seen[0]);
+      expect(seen[1]).toBeTruthy();
+      expect(seen[1]).not.toBe(seen[0]);
+      await ta.terminateSession();
+      expect(closed).toEqual([seen[0]]);
+    } finally { await a.close(); await b.close(); await ctx.fiber.dispose(); }
+  });
   it("logs a slow tool call by name and time, never its arguments", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0, slowCallMs: 0 }]] });
     await settle();

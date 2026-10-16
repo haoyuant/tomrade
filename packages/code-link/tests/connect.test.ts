@@ -246,6 +246,82 @@ describe("untracked terminal sessions", () => {
   });
 });
 
+describe("outside clients, told apart by their connection", () => {
+  it("never hands one terminal's claim to another terminal's session", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    // One terminal's hooks reach Tomrade; the other's (a worktree elsewhere, or no hooks at all) do not.
+    await post({ hook_event_name: "SessionStart", session_id: "cli-1", cwd: checkout });
+    const [hooked] = codeLink.sessionsOf(project.id);
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });
+    const second = items.create({ projectId: project.id, boardId: board.id, title: "Second", status: "todo", by: "human" });
+    const a = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const b = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-b" };
+
+    expect(await ctx.tools.execute("claim_ticket", { key: first.key }, a)).toMatchObject({ tracking: { tracked: true, sessionId: hooked.id } });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: second.key }, b)) as { tracking: { tracked: boolean; sessionId: string }; conventions: string[] };
+    expect(claimed.tracking.tracked).toBe(true);
+    expect(claimed.tracking.sessionId).not.toBe(hooked.id);
+    expect(claimed.conventions).toContain("call note_progress with one line at milestones");
+
+    expect(await ctx.tools.execute("note_progress", { text: "first going" }, a)).toMatchObject({ key: first.key });
+    expect(await ctx.tools.execute("note_progress", { text: "second going" }, b)).toMatchObject({ key: second.key });
+    expect(codeLink.sessionsOf(project.id, first.id).map((s) => [s.id, s.summary])).toEqual([[hooked.id, "first going"]]);
+    expect(codeLink.sessionsOf(project.id, second.id).map((s) => s.summary)).toEqual(["second going"]);
+    await expect(ctx.tools.execute("claim_ticket", { key: second.key }, a)).rejects.toThrow(`this session already owns ${first.key}`);
+  });
+
+  it("follows a client with no hooks through its connection until it closes", async () => {
+    const { codeLink, ctx, items, project, board, repo } = await machine();
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Cursor work", status: "todo", by: "human" });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-cursor" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, inv)) as { tracking: { tracked: boolean }; branch: string };
+    expect(claimed.tracking.tracked).toBe(true);
+    const [session] = codeLink.sessionsOf(project.id, item.id);
+    expect(session).toMatchObject({ agent: "mcp", mode: "terminal", threadId: null, repoId: repo.id, branch: claimed.branch, state: "running" });
+
+    expect(await ctx.tools.execute("note_progress", { text: "half way" }, inv)).toMatchObject({ ok: true, key: item.key });
+    expect(await ctx.tools.execute("link_code", { prUrl: "https://github.com/acme/app/pull/12", scopeChecked: true }, inv)).toMatchObject({ key: item.key });
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: claimed.branch, prNumber: 12 });
+    expect(await ctx.tools.execute("report_merge_blocked", { reason: "checks failed" }, inv)).toMatchObject({ ok: true, key: item.key });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ blocked: "merge" });
+
+    ctx.emit("mcp/closed", "conn-cursor");
+    expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("ended");
+  });
+
+  it("finds its session again when a client comes back on a new connection and names its ticket", async () => {
+    const { codeLink, ctx, items, project, board } = await machine();
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Long work", status: "todo", by: "human" });
+    await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "before" });
+    const [session] = codeLink.sessionsOf(project.id, item.id);
+    // Tomrade restarted, or the client reconnected: the new connection has claimed nothing yet.
+    const after = { by: "ai:mcp" as const, projectId: project.id, connection: "after" };
+    await expect(ctx.tools.execute("note_progress", { text: "x" }, after)).rejects.toThrow("pass key");
+    expect(await ctx.tools.execute("note_progress", { key: item.key, text: "back" }, after)).toMatchObject({ ok: true });
+    expect(await ctx.tools.execute("note_progress", { text: "and on" }, after)).toMatchObject({ ok: true, key: item.key });
+    expect(codeLink.sessionsOf(project.id, item.id)).toMatchObject([{ id: session.id, summary: "and on", state: "running" }]);
+    // the old connection closing later does not end what the new one holds
+    ctx.emit("mcp/closed", "before");
+    expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("running");
+  });
+
+  it("works end to end over MCP: a claim, then a note without the key", async () => {
+    const { codeLink, ctx, items, project, board } = await machine();
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Over the wire", status: "todo", by: "human" });
+    const client = new Client({ name: "any-agent", version: "0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.urlFor(project.id)!)));
+      expect((await client.callTool({ name: "claim_ticket", arguments: { key: item.key } })).isError).toBeFalsy();
+      const noted = await client.callTool({ name: "note_progress", arguments: { text: "wired" } });
+      expect(noted.isError).toBeFalsy();
+      expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ agent: "mcp", summary: "wired" });
+    } finally {
+      await client.close();
+    }
+  });
+});
+
 describe("a developer's own Codex session", () => {
   it("uses generated hooks to report start, claim, progress and end with its source", async () => {
     const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
@@ -281,21 +357,21 @@ describe("a developer's own Claude Code session", () => {
     const [session] = codeLink.sessionsOf(project.id);
     expect(session).toMatchObject({ mode: "terminal", threadId: null, repoId: repo.id, externalId: "cli-9", state: "running", itemIds: [] });
 
-    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:claude-code", projectId: project.id })) as { branch: string; status: string; repository: { name: string } };
+    const inv = { by: "ai:claude-code" as const, projectId: project.id, connection: "conn-cli-9" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, inv)) as { branch: string; status: string; repository: { name: string } };
     expect(claimed.status).toBe("doing");
     expect(claimed).toMatchObject({ tracking: { tracked: true } });
     expect(claimed.branch).toBe(`tom-${item.keyNum}/offline-work`);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: session.id, itemIds: [item.id], branch: claimed.branch });
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: claimed.branch, source: "mcp" });
 
-    // No token: the note finds the session through the ticket it claimed.
-    expect(await ctx.tools.execute("note_progress", { key: item.key, text: "parser done" }, { by: "ai:claude-code", projectId: project.id })).toMatchObject({ ok: true });
+    // No token: the connection that claimed says whose the note is, with or without the key.
+    expect(await ctx.tools.execute("note_progress", { text: "parser done" }, inv)).toMatchObject({ ok: true, key: item.key });
     expect(codeLink.sessionsOf(project.id, item.id)[0].summary).toBe("parser done");
+    expect(await ctx.tools.execute("note_progress", { key: item.key, text: "lexer done" }, inv)).toMatchObject({ ok: true });
 
     const other = items.create({ projectId: project.id, boardId: board.id, title: "Separate work", status: "todo", by: "human" });
-    await expect(ctx.tools.execute("claim_ticket", { key: other.key }, { by: "ai:claude-code", projectId: project.id })).rejects.toThrow(
-      `this session already owns ${item.key}`
-    );
+    await expect(ctx.tools.execute("claim_ticket", { key: other.key }, inv)).rejects.toThrow(`this session already owns ${item.key}`);
     expect(items.get(project.id, other.id)!.status).toBe("todo");
     await expect(ctx.tools.execute("note_progress", { key: other.key, text: "x" }, { by: "ai:claude-code", projectId: project.id })).rejects.toThrow(
       `Tomrade is not tracking a session on ${other.key}`
