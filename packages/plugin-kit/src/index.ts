@@ -17,3 +17,14 @@ export {
   type UnpackedPackage
 } from "./package.js";
 export { AttestationSchema, attest, generateSigningKey, keyIdOf, verifyAttestation, type Attestation, type AttestationClaims } from "./sign.js";
+export {
+  CatalogPluginSchema,
+  CatalogRevocationSchema,
+  CatalogSchema,
+  CatalogVersionSchema,
+  parseCatalog,
+  type Catalog,
+  type CatalogPlugin,
+  type CatalogRevocation,
+  type CatalogVersion
+} from "./catalog.js";

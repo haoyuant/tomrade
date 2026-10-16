@@ -145,7 +145,7 @@ async function storePackage(version: string, opts: { official?: boolean; served?
   return { file, attestation, digest };
 }
 
-async function storeHost(tables: Record<string, Record<string, unknown>[]>, base: string, user: Record<string, unknown> | null = null) {
+async function storeHost(tables: Record<string, Record<string, unknown>[]>, base: string, user: Record<string, unknown> | null = null, opts: { cloud?: boolean; config?: Record<string, unknown> } = {}) {
   const client = fakeSupabase(tables, base, user);
   class FakeCloud extends Service {
     static provide = "cloudHub";
@@ -155,10 +155,10 @@ async function storeHost(tables: Record<string, Record<string, unknown>[]>, base
     }
   }
   const root = fs.mkdtempSync(path.join(tmp, "root-"));
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], GitHubAccount, FakeCloud] });
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], GitHubAccount, ...(opts.cloud === false ? [] : [FakeCloud])] });
   const store = new ExtensionStore({ root, lockFile: path.join(root, LOCK_FILE), trustedKeys: { [key.keyId]: key.publicKey }, importer });
   await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }) });
-  await w.ctx.plugin(Community, {});
+  await w.ctx.plugin(Community, opts.config ?? {});
   await settle();
   return { ...w, client, store, community: w.ctx.community };
 }
@@ -240,5 +240,118 @@ describe("the store client", () => {
     const [name, args] = client.calls.find(([n]) => n === "tomrade_publish_plugin")!;
     expect(name).toBe("tomrade_publish_plugin");
     expect(args).toMatchObject({ p_commit: published.commit, p_tag: "v0.1.0", p_digest: published.digest, p_package_path: packagePath, p_risk: "low", p_manifest: { id: "alice/notes" } });
+  }, 60_000);
+});
+
+describe("the official catalog", () => {
+  const other = generateSigningKey();
+  const memo = (version: string, over: Partial<Manifest> = {}) => manifest({ id: "tomrade/memo", version, inject: ["tools"], repository: "https://github.com/haoyuant/tomrade-plugins", ...over });
+
+  /** A build of tomrade/memo, signed by `signer` (or for another digest), served under official/. */
+  async function officialPackage(version: string, opts: { signer?: typeof key; attestDigest?: string; id?: string } = {}) {
+    const id = opts.id ?? "tomrade/memo";
+    const dir = path.join(tmp, `official-${id.replace("/", "-")}-${version}`);
+    fs.mkdirSync(path.join(dir, "dist"), { recursive: true });
+    const m = memo(version, { id });
+    fs.writeFileSync(path.join(dir, "tomrade-plugin.json"), JSON.stringify(m));
+    fs.writeFileSync(
+      path.join(dir, "dist/index.js"),
+      `export default { [Symbol.for("tomrade.sdk-plugin")]: 1, inject: ["tools"], async apply(ctx) { await ctx.tools.register({ name: "memo_version", title: "v", description: "v", input: { safeParse: (v) => ({ success: true, data: v }) }, execute: () => "${version}" }); } };`
+    );
+    const digest = packageDigest(dir);
+    const attestation = attest({ v: 1, id, version, digest: opts.attestDigest ?? digest, tier: "official", risk: "low", issuedAt: 1 }, (opts.signer ?? key).privateKey);
+    const file = path.join(tmp, "served", "official", id.replace("/", "-"), `${version}.tomrade-plugin`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const packed = await packPlugin(dir, file);
+    return { version, sdkRange: "^0.2.0", commit: "f".repeat(40), manifest: m, risk: "low", riskReasons: [], digest: packed.digest, size: fs.statSync(file).size, url: `${id.replace("/", "-")}/${version}.tomrade-plugin`, releasedAt: `2026-10-1${version.split(".")[1]}T00:00:00Z`, attestation };
+  }
+
+  async function catalogServer() {
+    const catalog = { v: 1, generatedAt: "2026-10-17T00:00:00Z", plugins: [] as Record<string, unknown>[], revoked: [] as Record<string, unknown>[] };
+    const server = http.createServer((req, res) => {
+      if (req.url === "/official/catalog.json") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(catalog));
+      const file = path.join(tmp, "served", decodeURIComponent(req.url ?? ""));
+      if (!fs.existsSync(file)) return res.writeHead(404).end();
+      res.writeHead(200).end(fs.readFileSync(file));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/official/catalog.json`;
+    return { catalog, server, url };
+  }
+
+  it("lists, reads and installs Tomrade's own plugins without a cloud account, signed and kept up to date", async () => {
+    const { catalog, server, url } = await catalogServer();
+    const v1 = await officialPackage("1.0.0");
+    catalog.plugins.push({ id: "tomrade/memo", title: "Memo", description: "Quick notes", license: "Apache-2.0", repository: "https://github.com/haoyuant/tomrade-plugins", versions: [v1] });
+    const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url } } });
+
+    expect(community.sources()).toMatchObject([{ name: "official", available: true }, { name: "community", available: false }]);
+    await expect(community.search({ text: "memo" })).rejects.toThrow(/needs Tomrade cloud/);
+    const [listing] = await community.search({ text: "quick", source: "official" });
+    expect(listing).toMatchObject({ source: "official", id: "tomrade/memo", publisher: "tomrade", license: "Apache-2.0", latest: { version: "1.0.0", tier: "official", compatible: true }, installed: null });
+    expect(await community.search({ text: "nothing like it", source: "official" })).toEqual([]);
+    expect(await community.plugin("tomrade/memo")).toMatchObject({ source: "official", versions: [{ version: "1.0.0" }], manifest: { id: "tomrade/memo" } });
+    expect(await community.inspect("tomrade/memo")).toMatchObject({ version: "1.0.0", tier: "official", inject: ["tools"] });
+
+    await community.install("tomrade/memo");
+    expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.0.0");
+    expect(store.info("tomrade/memo")).toMatchObject({ tier: "official", source: "store" });
+
+    // Official plugins update by themselves, to versions Tomrade signed.
+    (catalog.plugins[0]!.versions as unknown[]).push(await officialPackage("1.1.0"));
+    await community.sweep();
+    expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.1.0");
+
+    catalog.revoked.push({ id: "tomrade/memo", versions: "*", reason: "leaks drafts" });
+    await community.sweep();
+    expect(ctx.plugins.snapshot().plugins.find((p) => p.id === "tomrade/memo")?.state).toBe("disabled");
+    server.close();
+  }, 60_000);
+
+  it("shows and installs only versions Tomrade signed for that exact build, under its own publisher, that this Tomrade can run", async () => {
+    const { catalog, server, url } = await catalogServer();
+    const good = await officialPackage("1.0.0");
+    const foreignKey = await officialPackage("1.1.0", { signer: other });
+    const otherDigest = await officialPackage("1.2.0", { attestDigest: "a".repeat(64) });
+    const future = { ...(await officialPackage("1.3.0")), sdkRange: "^9.0.0" };
+    const swapped = { ...(await officialPackage("1.4.0")), digest: good.digest };
+    catalog.plugins.push(
+      { id: "tomrade/memo", title: "Memo", license: "MIT", versions: [good, foreignKey, otherDigest, future, swapped] },
+      { id: "alice/memo", title: "Not ours", license: "MIT", versions: [await officialPackage("1.0.0", { id: "alice/memo" })] },
+      { id: "tomrade/unsigned", title: "Unsigned", license: "MIT", versions: [{ ...(await officialPackage("1.0.0", { id: "tomrade/unsigned", signer: other })) }] },
+      { id: "tomrade/broken", title: "Broken", versions: "not a list" }
+    );
+    const { store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url } } });
+
+    const listings = await community.search({ source: "official" });
+    expect(listings.map((l) => l.id)).toEqual(["tomrade/memo"]);
+    expect((await community.plugin("tomrade/memo")).versions.map((v) => [v.version, v.compatible])).toEqual([
+      ["1.3.0", false],
+      ["1.0.0", true]
+    ]);
+    await expect(community.install("tomrade/memo", "1.1.0")).rejects.toThrow(/not available/);
+    await expect(community.install("tomrade/memo", "1.2.0")).rejects.toThrow(/not available/);
+    await expect(community.install("tomrade/memo", "1.4.0")).rejects.toThrow(/not available/);
+    await expect(community.plugin("alice/memo")).rejects.toThrow(/needs Tomrade cloud/);
+    await community.install("tomrade/memo");
+    expect(store.info("tomrade/memo")).toMatchObject({ version: "1.0.0", tier: "official" });
+    server.close();
+  }, 60_000);
+
+  it("keeps listing what it fetched last when the catalog cannot be reached, and says so", async () => {
+    const { catalog, server, url } = await catalogServer();
+    catalog.plugins.push({ id: "tomrade/memo", title: "Memo", license: "MIT", versions: [await officialPackage("1.0.0")] });
+    const cacheFile = path.join(tmp, "official-catalog.json");
+    const online = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url, cacheFile } } });
+    expect(await online.community.search({ source: "official" })).toHaveLength(1);
+    expect(online.community.sources()[0]).toMatchObject({ stale: false, error: null });
+    await new Promise((r) => server.close(r));
+
+    const offline = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url, cacheFile } } });
+    expect((await offline.community.search({ source: "official" })).map((l) => l.id)).toEqual(["tomrade/memo"]);
+    expect(offline.community.sources()[0]).toMatchObject({ name: "official", stale: true, error: expect.any(String) });
+
+    const never = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url, cacheFile: path.join(tmp, "none.json") } } });
+    await expect(never.community.search({ source: "official" })).rejects.toThrow(/official catalog is unavailable/);
   }, 60_000);
 });

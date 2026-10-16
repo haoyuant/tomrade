@@ -215,6 +215,14 @@ signed. Tomrade revokes what reports show to be malicious
 (`apps/store-admin`), and revocations switch a plugin off at the next check
 while online.
 
+**The official catalog** lists Tomrade's own plugins, released from
+github.com/haoyuant/tomrade-plugins as `catalog.json` (format in
+`packages/plugin-kit/src/catalog.ts`) next to the packages, and needs no cloud
+account. Only `tomrade/*` ids come from it, Community can never list them, and
+a version shows only when its attestation verifies for the exact digest, id and
+version listed — the host serving it is not trusted. The last good catalog is
+kept on disk, so a machine offline still lists what it saw.
+
 ## Built-in rows
 
 A built-in is a function `(ctx, config)`, a class whose constructor takes

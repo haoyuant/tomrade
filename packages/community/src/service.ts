@@ -12,6 +12,7 @@ import { ATTESTATION_FILE, LIMITS, PACKAGE_EXT, analyzePackage, observedRisk, pa
 import { SDK_CONTRACT, satisfies, type Manifest } from "@tomradex/plugin-sdk";
 import type { Plugins, PluginsSnapshot } from "@tomradex/plugins";
 import { linkGitHub } from "./oauth.js";
+import { OFFICIAL_CATALOG_URL, OfficialCatalog, isOfficialId } from "./official.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
 
@@ -20,6 +21,16 @@ export const CommunityConfig = z.preprocess(
   z.object({
     /** A mirror or CDN in front of the package bucket; the digest the store lists, not the host, is what is checked. */
     packagesBaseUrl: z.string().optional(),
+    /** Tomrade's own plugins, released from its plugins repository; needs no cloud account. */
+    officialCatalog: z.preprocess(
+      (v) => v ?? {},
+      z.object({
+        /** A mirror may serve it elsewhere: what is trusted is each version's signature, not the host. */
+        url: z.string().default(OFFICIAL_CATALOG_URL),
+        cacheFile: z.string().optional(),
+        freshMs: z.number().int().min(60_000).default(15 * 60_000)
+      })
+    ),
     /** How often revocations and updates are checked while online. */
     checkEveryMs: z.number().int().min(60_000).default(6 * 3_600_000),
     /** The binary that runs a plugin's check as Node; defaults to the running one. */
@@ -41,7 +52,21 @@ export interface VersionSummary {
   revoked: boolean;
 }
 
+/** `official`: Tomrade's own plugins repository; `community`: the store anyone publishes to. */
+export type SourceName = "official" | "community";
+
+export interface SourceStatus {
+  name: SourceName;
+  available: boolean;
+  /** Official: when the catalog in use was fetched. */
+  fetchedAt: number | null;
+  /** The last fetch failed and an earlier copy is in use. */
+  stale: boolean;
+  error: string | null;
+}
+
 export interface Listing {
+  source: SourceName;
   id: string;
   title: string;
   description: string;
@@ -109,7 +134,8 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    "community.search": (query: { text?: string; sort?: "downloads" | "updated" | "title" }) => Listing[];
+    "community.search": (query: { text?: string; sort?: SortKey; source?: SourceName }) => Listing[];
+    "community.sources": () => SourceStatus[];
     "community.plugin": (id: string) => PluginDetail;
     "community.inspect": (id: string, version?: string) => Inspection;
     "community.install": (id: string, version?: string) => PluginsSnapshot;
@@ -128,6 +154,8 @@ declare module "@tomradex/ipc" {
   }
 }
 
+export type SortKey = "downloads" | "updated" | "title";
+
 const safeText = (text: string) => text.replace(/[^\p{L}\p{N}\s_./-]/gu, " ").trim().slice(0, 80);
 
 const summarize = (v: VersionRow, revocations: Revocation[]): VersionSummary => ({
@@ -141,16 +169,30 @@ const summarize = (v: VersionRow, revocations: Revocation[]): VersionSummary => 
   revoked: v.status === "revoked" || !!revoked(v.plugin_id, v.version, revocations)
 });
 
+/** Where listings, versions, revocations and packages come from. */
+interface Source {
+  name: SourceName;
+  search(text: string, sort: SortKey): Promise<Record<string, unknown>[]>;
+  plugin(id: string): Promise<Record<string, unknown> | null>;
+  versions(ids: string[]): Promise<VersionRow[]>;
+  revocations(): Promise<Revocation[]>;
+  packageUrl(row: VersionRow): string;
+  downloaded(id: string): void;
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /**
- * The store, as the app sees it: browse Community, read a version on this
- * machine and install it, keep installed plugins up to date within the rules,
- * switch off what the store revoked, report a plugin, and publish one. Nobody
- * reviews what is listed: every plugin is open source and its person judges
- * it. What is installed must be the exact build the store lists.
+ * The store, as the app sees it: browse Tomrade's official plugins and
+ * Community, read a version on this machine and install it, keep installed
+ * plugins up to date within the rules, switch off what was revoked, report a
+ * plugin, and publish one. Nobody reviews what Community lists: every plugin
+ * is open source and its person judges it. What is installed must be the
+ * exact build its source lists; an official one must carry Tomrade's signature.
  */
 export class Community extends Service {
   static provide = "community";
-  static inject = ["cloudHub", "settings", "github"];
+  static inject = ["settings", "github"];
   static Config = CommunityConfig;
 
   private readonly home: Context;
@@ -160,6 +202,9 @@ export class Community extends Service {
   private downloadDir: string | null = null;
   /** For tests: GitHub access other than through the connected account. */
   github: GitHubAccess;
+  readonly official: OfficialCatalog;
+  private readonly officialSource: Source;
+  private readonly storeSource: Source;
 
   constructor(
     ctx: Context,
@@ -168,11 +213,19 @@ export class Community extends Service {
     super(ctx, "community");
     this.home = ctx;
     this.github = githubAccess(() => this.home.github.token());
+    this.official = new OfficialCatalog({
+      ...config.officialCatalog,
+      verify: (raw, digest) => this.plugins.extensions!.verify(raw, digest),
+      warn: (text) => this.home.logger.warn(text)
+    });
+    this.officialSource = this.officialFrom(this.official);
+    this.storeSource = this.store();
   }
 
   [Service.init]() {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("community.search", (q) => this.search(q));
+      ctx.ipc.handle("community.sources", () => this.sources());
       ctx.ipc.handle("community.plugin", (id) => this.plugin(id));
       ctx.ipc.handle("community.inspect", (id, version) => this.inspect(id, version));
       ctx.ipc.handle("community.install", (id, version) => this.install(id, version));
@@ -185,7 +238,7 @@ export class Community extends Service {
         const { url, done } = await linkGitHub(this.client);
         void done.then(
           () => this.changed(),
-          (error: unknown) => this.home.logger.warn(`GitHub link: ${error instanceof Error ? error.message : String(error)}`)
+          (error: unknown) => this.home.logger.warn(`GitHub link: ${message(error)}`)
         );
         return { url };
       });
@@ -193,7 +246,7 @@ export class Community extends Service {
       ctx.ipc.handle("community.publish", (dir) => this.publish(dir));
       ctx.ipc.handle("community.published", () => this.published());
     });
-    const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${error instanceof Error ? error.message : String(error)}`));
+    const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${message(error)}`));
     const first = setTimeout(sweep, 15_000);
     const every = setInterval(sweep, this.config.checkEveryMs);
     first.unref?.();
@@ -205,8 +258,14 @@ export class Community extends Service {
     };
   }
 
+  private get cloud(): { client: SupabaseClient } | undefined {
+    return this.home.get("cloudHub") as { client: SupabaseClient } | undefined;
+  }
+
   private get client(): SupabaseClient {
-    return this.home.cloudHub.client;
+    const cloud = this.cloud;
+    if (!cloud) throw new Error("Community needs Tomrade cloud, which this build does not have");
+    return cloud.client;
   }
 
   private get plugins(): Plugins {
@@ -225,13 +284,61 @@ export class Community extends Service {
     return data ?? [];
   }
 
-  private revocations(): Promise<Revocation[]> {
-    return this.rows<Revocation>(this.client.from("tomrade_plugin_revocations").select("plugin_id, versions, reason"));
+  private store(): Source {
+    return {
+      name: "community",
+      search: (text, sort) => {
+        let q = this.client.from("tomrade_plugins").select("*").eq("delisted", false);
+        if (text) q = q.or(`title.ilike.%${text}%,description.ilike.%${text}%,id.ilike.%${text}%`);
+        const order = sort === "title" ? "title" : sort === "updated" ? "updated_at" : "downloads";
+        return this.rows<Record<string, unknown>>(q.order(order, { ascending: order === "title" }).limit(100));
+      },
+      plugin: async (id) => (await this.rows<Record<string, unknown>>(this.client.from("tomrade_plugins").select("*").eq("id", id).limit(1)))[0] ?? null,
+      versions: (ids) => {
+        if (!ids.length) return Promise.resolve([]);
+        return this.rows<VersionRow>(this.client.from("tomrade_plugin_versions").select("*").in("plugin_id", ids).in("status", ["listed", "revoked"]));
+      },
+      revocations: () => this.rows<Revocation>(this.client.from("tomrade_plugin_revocations").select("plugin_id, versions, reason")),
+      packageUrl: (row) => {
+        if (this.config.packagesBaseUrl) return `${this.config.packagesBaseUrl.replace(/\/$/, "")}/${row.package_path}`;
+        return this.client.storage.from("plugin-packages").getPublicUrl(row.package_path!).data.publicUrl;
+      },
+      downloaded: (id) => void this.client.rpc("tomrade_count_download", { p_plugin: id })
+    };
   }
 
-  private versionsOf(ids: string[]): Promise<VersionRow[]> {
-    if (!ids.length) return Promise.resolve([]);
-    return this.rows<VersionRow>(this.client.from("tomrade_plugin_versions").select("*").in("plugin_id", ids).in("status", ["listed", "revoked"]));
+  private officialFrom(catalog: OfficialCatalog): Source {
+    return {
+      name: "official",
+      search: async (text, sort) => {
+        const needle = text.toLowerCase();
+        const rows = (await catalog.plugins()).filter((p) => !needle || [p.title, p.description, p.id].some((f) => String(f).toLowerCase().includes(needle)));
+        const byTitle = (a: Record<string, unknown>, b: Record<string, unknown>) => String(a.title).localeCompare(String(b.title));
+        return rows.sort(sort === "updated" ? (a, b) => String(b.updated_at).localeCompare(String(a.updated_at)) || byTitle(a, b) : byTitle);
+      },
+      plugin: async (id) => (await catalog.plugins()).find((p) => p.id === id) ?? null,
+      versions: (ids) => catalog.versions(ids),
+      revocations: () => catalog.revocations(),
+      // The catalog resolved it to a full URL; the digest and signature are what is checked.
+      packageUrl: (row) => row.package_path!,
+      downloaded: () => undefined
+    };
+  }
+
+  private source(name: SourceName): Source {
+    return name === "official" ? this.officialSource : this.storeSource;
+  }
+
+  /** Only Tomrade's own publisher comes from the official catalog, and Community cannot list it. */
+  private sourceFor(id: string): Source {
+    return this.source(isOfficialId(id) ? "official" : "community");
+  }
+
+  sources(): SourceStatus[] {
+    return [
+      { name: "official", available: true, ...this.official.state() },
+      { name: "community", available: !!this.cloud, fetchedAt: null, stale: false, error: this.cloud ? null : "Community needs Tomrade cloud" }
+    ];
   }
 
   private installedOf(id: string): Listing["installed"] {
@@ -241,19 +348,17 @@ export class Community extends Service {
     return { version: entry.version, tier: tierOf(entry) };
   }
 
-  async search(query: { text?: string; sort?: "downloads" | "updated" | "title" } = {}): Promise<Listing[]> {
-    let q = this.client.from("tomrade_plugins").select("*").eq("delisted", false);
-    const text = safeText(query.text ?? "");
-    if (text) q = q.or(`title.ilike.%${text}%,description.ilike.%${text}%,id.ilike.%${text}%`);
-    const order = query.sort === "title" ? "title" : query.sort === "updated" ? "updated_at" : "downloads";
-    const plugins = await this.rows<Record<string, unknown>>(q.order(order, { ascending: order === "title" }).limit(100));
-    const [versions, revocations] = await Promise.all([this.versionsOf(plugins.map((p) => String(p.id))), this.revocations()]);
-    return plugins.map((p) => this.listing(p, versions.filter((v) => v.plugin_id === p.id), revocations));
+  async search(query: { text?: string; sort?: SortKey; source?: SourceName } = {}): Promise<Listing[]> {
+    const source = this.source(query.source ?? "community");
+    const plugins = await source.search(safeText(query.text ?? ""), query.sort ?? "downloads");
+    const [versions, revocations] = await Promise.all([source.versions(plugins.map((p) => String(p.id))), source.revocations()]);
+    return plugins.map((p) => this.listing(source.name, p, versions.filter((v) => v.plugin_id === p.id), revocations));
   }
 
-  private listing(p: Record<string, unknown>, versions: VersionRow[], revocations: Revocation[]): Listing {
+  private listing(source: SourceName, p: Record<string, unknown>, versions: VersionRow[], revocations: Revocation[]): Listing {
     const latest = latestInstallable(versions, revocations) ?? versions.filter((v) => v.status === "listed").sort((a, b) => (a.version < b.version ? 1 : -1))[0] ?? null;
     return {
+      source,
       id: String(p.id),
       title: String(p.title),
       description: String(p.description ?? ""),
@@ -269,10 +374,11 @@ export class Community extends Service {
   }
 
   async plugin(id: string): Promise<PluginDetail> {
-    const [plugin] = await this.rows<Record<string, unknown>>(this.client.from("tomrade_plugins").select("*").eq("id", id).limit(1));
-    if (!plugin) throw new Error(`${id} is not in the store`);
-    const [versions, revocations] = await Promise.all([this.versionsOf([id]), this.revocations()]);
-    const listing = this.listing(plugin, versions, revocations);
+    const source = this.sourceFor(id);
+    const plugin = await source.plugin(id);
+    if (!plugin) throw new Error(`${id} is not in the ${source.name === "official" ? "official catalog" : "store"}`);
+    const [versions, revocations] = await Promise.all([source.versions([id]), source.revocations()]);
+    const listing = this.listing(source.name, plugin, versions, revocations);
     const latest = versions.find((v) => v.version === listing.latest?.version) ?? null;
     return {
       ...listing,
@@ -281,18 +387,13 @@ export class Community extends Service {
     };
   }
 
-  private packageUrl(pathInBucket: string): string {
-    if (this.config.packagesBaseUrl) return `${this.config.packagesBaseUrl.replace(/\/$/, "")}/${pathInBucket}`;
-    return this.client.storage.from("plugin-packages").getPublicUrl(pathInBucket).data.publicUrl;
-  }
-
   /** Fetched once per digest: reading a version before installing it costs no second download. */
-  private async download(row: VersionRow): Promise<string> {
+  private async download(row: VersionRow, source: Source): Promise<string> {
     if (!row.package_path || !row.digest) throw new Error(`${row.plugin_id} ${row.version} has no package`);
     this.downloadDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-download-"));
     const file = path.join(this.downloadDir, `${row.digest}${PACKAGE_EXT}`);
     if (fs.existsSync(file)) return file;
-    const res = await fetch(this.packageUrl(row.package_path), { signal: AbortSignal.timeout(120_000) });
+    const res = await fetch(source.packageUrl(row), { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`the package could not be downloaded (${res.status})`);
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.length > LIMITS.packageBytes) throw new Error("the package is larger than a plugin may be");
@@ -301,18 +402,19 @@ export class Community extends Service {
     return file;
   }
 
-  private async pick(id: string, version?: string): Promise<VersionRow> {
-    const [versions, revocations] = await Promise.all([this.versionsOf([id]), this.revocations()]);
+  private async pick(id: string, version?: string): Promise<{ row: VersionRow; source: Source }> {
+    const source = this.sourceFor(id);
+    const [versions, revocations] = await Promise.all([source.versions([id]), source.revocations()]);
     const row = version ? versions.find((v) => v.version === version && v.status === "listed") : latestInstallable(versions, revocations);
     if (!row) throw new Error(version ? `${id} ${version} is not available` : `${id} has no version this Tomrade can run`);
     if (revoked(id, row.version, revocations)) throw new Error(`${id} ${row.version} was revoked by the store`);
-    return row;
+    return { row, source };
   }
 
   /** Reads the exact package that would be installed, here, with the same analyzer the publisher ran. */
   async inspect(id: string, version?: string): Promise<Inspection> {
-    const row = await this.pick(id, version);
-    const unpacked = await unpackPlugin(await this.download(row));
+    const { row, source } = await this.pick(id, version);
+    const unpacked = await unpackPlugin(await this.download(row, source));
     try {
       if (unpacked.digest !== row.digest) throw new Error(`${id} ${row.version} is not the build the store lists for it`);
       const m = unpacked.manifest;
@@ -335,11 +437,11 @@ export class Community extends Service {
     }
   }
 
-  private async installVersion(row: VersionRow): Promise<PluginsSnapshot> {
-    const file = await this.download(row);
+  private async installVersion(row: VersionRow, source: Source): Promise<PluginsSnapshot> {
+    const file = await this.download(row, source);
     try {
       const snapshot = await this.plugins.installFile(file, { source: "store", digest: row.digest!, attestation: row.attestation ?? undefined });
-      void this.client.rpc("tomrade_count_download", { p_plugin: row.plugin_id });
+      source.downloaded(row.plugin_id);
       this.changed();
       return snapshot;
     } finally {
@@ -348,10 +450,11 @@ export class Community extends Service {
   }
 
   async install(id: string, version?: string): Promise<PluginsSnapshot> {
-    return this.installVersion(await this.pick(id, version));
+    const { row, source } = await this.pick(id, version);
+    return this.installVersion(row, source);
   }
 
-  private async installedFromStore() {
+  private installedFromStore() {
     const store = this.plugins.extensions!;
     return store
       .entries()
@@ -367,32 +470,57 @@ export class Community extends Service {
       });
   }
 
+  /** Each source on its own: one that cannot be reached leaves the other's plugins checked. */
+  private async perSource<T>(ids: string[], read: (source: Source, ids: string[]) => Promise<T>): Promise<{ source: Source; ids: string[]; result: T }[]> {
+    const groups = (["official", "community"] as const).map((name) => ({ source: this.source(name), ids: ids.filter((id) => this.sourceFor(id).name === name) })).filter((g) => g.ids.length);
+    const settled = await Promise.allSettled(groups.map((g) => read(g.source, g.ids)));
+    const ok = groups.flatMap((g, i) => (settled[i]!.status === "fulfilled" ? [{ ...g, result: (settled[i] as PromiseFulfilledResult<T>).value }] : []));
+    const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
+    if (failed && !ok.length) throw failed.reason;
+    return ok;
+  }
+
   async updates(): Promise<UpdatePlan[]> {
-    const installed = await this.installedFromStore();
-    const [versions, revocations] = await Promise.all([this.versionsOf(installed.map((i) => i.id)), this.revocations()]);
-    return installed.flatMap((entry) => planUpdate(entry, versions.filter((v) => v.plugin_id === entry.id), revocations) ?? []);
+    const installed = this.installedFromStore();
+    const read = await this.perSource(
+      installed.map((i) => i.id),
+      async (source, ids) => {
+        const [versions, revocations] = await Promise.all([source.versions(ids), source.revocations()]);
+        return installed.filter((e) => ids.includes(e.id)).flatMap((entry) => planUpdate(entry, versions.filter((v) => v.plugin_id === entry.id), revocations) ?? []);
+      }
+    );
+    return read.flatMap((r) => r.result);
   }
 
   async update(id: string): Promise<PluginsSnapshot> {
     const plan = (await this.updates()).find((u) => u.id === id);
     if (!plan) throw new Error(`${id} is up to date`);
-    return this.installVersion(plan.to);
+    return this.installVersion(plan.to, this.sourceFor(id));
   }
 
   /** Revocations switch a plugin off; updates the rules allow land by themselves. */
   async sweep(): Promise<void> {
+    this.official.expire();
     const store = this.plugins.extensions!;
-    const revocations = await this.revocations();
-    const now = new Map<string, string>();
-    for (const entry of store.entries()) {
-      const hit = revoked(entry.id, entry.version, revocations);
-      if (!hit) continue;
-      now.set(entry.id, hit.reason);
-      if (!entry.disabled) await this.plugins.setEnabled(entry.id, false).catch(() => undefined);
+    const entries = store.entries();
+    const read = await this.perSource(
+      entries.map((e) => e.id),
+      (source) => source.revocations()
+    );
+    // A source that could not be reached keeps what it said last time.
+    const checked = new Set(read.flatMap((r) => r.ids));
+    const now = new Map([...this.revokedNow].filter(([id]) => !checked.has(id)));
+    for (const { ids, result } of read) {
+      for (const entry of entries.filter((e) => ids.includes(e.id))) {
+        const hit = revoked(entry.id, entry.version, result);
+        if (!hit) continue;
+        now.set(entry.id, hit.reason);
+        if (!entry.disabled) await this.plugins.setEnabled(entry.id, false).catch(() => undefined);
+      }
     }
     this.revokedNow = now;
-    for (const plan of await this.updates()) {
-      if (plan.automatic && !now.has(plan.id)) await this.installVersion(plan.to).catch((error: unknown) => this.home.logger.warn(`update ${plan.id}: ${error instanceof Error ? error.message : String(error)}`));
+    for (const plan of await this.updates().catch(() => [])) {
+      if (plan.automatic && !now.has(plan.id)) await this.installVersion(plan.to, this.sourceFor(plan.id)).catch((error: unknown) => this.home.logger.warn(`update ${plan.id}: ${message(error)}`));
     }
     this.changed();
   }

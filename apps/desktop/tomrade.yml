@@ -407,6 +407,8 @@ plugins:
     name: "@tomradex/community"
     config:
       nodeBinary: "${nodeRuntime}"
+      officialCatalog:
+        cacheFile: "${userData}/official-catalog.json"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"
     config:

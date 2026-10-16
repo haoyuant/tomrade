@@ -264,6 +264,11 @@ export class ExtensionStore {
     this.put({ ...this.entry(id), autoUpdate, updatedAt: now() });
   }
 
+  /** Whether this build believes an attestation for a digest, before anything is downloaded. */
+  verify(raw: unknown, digest: string): Attestation | null {
+    return verifyAttestation(raw, digest, this.config.trustedKeys);
+  }
+
   /** Tomrade signed the installed build as official after it was installed. */
   setAttestation(id: string, raw: unknown): Attestation | null {
     const entry = this.entry(id);
