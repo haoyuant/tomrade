@@ -43,6 +43,13 @@ export const PROVIDERS: ProviderPreset[] = [
     hint: { en: "GPT models, from a paid OpenAI API account", zh: "GPT 模型，需要付费的 OpenAI API 账户" }
   },
   {
+    // Google's OpenAI-compatible endpoint; it lists models as `models/<id>`.
+    id: "gemini", title: "Google Gemini", provider: "openai-compatible", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "",
+    prefer: [/^(models\/)?gemini-\d+(\.\d+)?-flash$/, /^(models\/)?gemini-\d+(\.\d+)?-pro$/],
+    keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY",
+    hint: { en: "Gemini models with a Google AI Studio key; a free tier to start", zh: "用 Google AI Studio 的 Key 跑 Gemini 模型，有免费额度" }
+  },
+  {
     id: "openrouter", title: "OpenRouter", provider: "openai-compatible", baseURL: "https://openrouter.ai/api/v1", model: "", prefer: [/^anthropic\/claude-sonnet-/, /^deepseek\/deepseek-chat/],
     keyPage: "https://openrouter.ai/keys", env: "OPENROUTER_API_KEY",
     hint: { en: "One key for models from many providers", zh: "一个 Key 用多家的模型" }
@@ -58,6 +65,7 @@ export function guessProviders(key: string): string[] {
   const k = key.trim();
   if (/^sk-ant-/.test(k)) return ["anthropic"];
   if (/^sk-or-/.test(k)) return ["openrouter"];
+  if (/^AIza[0-9A-Za-z_-]{35}$/.test(k)) return ["gemini"];
   if (/^sk-(proj|svcacct|admin)-/.test(k)) return ["openai"];
   if (/^sk-[0-9a-f]{32}$/.test(k)) return ["deepseek"];
   if (/^sk-[A-Za-z0-9]{40,}$/.test(k)) return ["kimi", "openai"];

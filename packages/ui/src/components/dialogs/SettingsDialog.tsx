@@ -637,6 +637,7 @@ const PRESETS = [
   { titleKey: "settingsDialog.presetAnthropic" as const, provider: "anthropic" as const, baseURL: "", model: "claude-sonnet-5" },
   { titleKey: "settingsDialog.presetOpenai" as const, provider: "openai-compatible" as const, baseURL: "https://api.openai.com/v1", model: "" },
   { titleKey: "settingsDialog.presetKimi" as const, provider: "openai-compatible" as const, baseURL: "https://api.moonshot.cn/v1", model: "" },
+  { titleKey: "settingsDialog.presetGemini" as const, provider: "openai-compatible" as const, baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "" },
   { titleKey: "settingsDialog.presetOpenrouter" as const, provider: "openai-compatible" as const, baseURL: "https://openrouter.ai/api/v1", model: "" },
   { titleKey: "settingsDialog.presetOllama" as const, provider: "openai-compatible" as const, baseURL: "http://127.0.0.1:11434/v1", model: "" },
   { titleKey: "settingsDialog.presetCustom" as const, provider: "openai-compatible" as const, baseURL: "", model: "" }
@@ -1030,7 +1031,8 @@ const KEY_PAGES: Record<string, string> = {
   "api.anthropic.com": "https://console.anthropic.com/settings/keys",
   "api.openai.com": "https://platform.openai.com/api-keys",
   "api.moonshot.cn": "https://platform.moonshot.cn/console/api-keys",
-  "openrouter.ai": "https://openrouter.ai/keys"
+  "openrouter.ai": "https://openrouter.ai/keys",
+  "generativelanguage.googleapis.com": "https://aistudio.google.com/apikey"
 };
 
 const hostOf = (p: ModelProfile): string => {
