@@ -8,6 +8,7 @@ import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent, type RequestUsage }
 import { localCli, type BundledCli, type CliHost } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/llm";
 import { codebuddyLentModel } from "./lend.js";
+import { workbuddyMcpLink } from "./mcp-link.js";
 
 export const WorkBuddyOptions = z.object({
   command: z.string().default("codebuddy"),
@@ -152,7 +153,7 @@ export const workbuddy: AcpAgent<WorkBuddyOptions> = {
 };
 
 export function createWorkBuddyEngine(ctx: Context) {
-  return createAcpEngine(ctx, workbuddy);
+  return { ...createAcpEngine(ctx, workbuddy), mcpLink: workbuddyMcpLink(ctx, workbuddy.cli) };
 }
 
 export default {
@@ -171,3 +172,4 @@ export default {
 };
 
 export { codebuddyLentModel, ownModel } from "./lend.js";
+export { codebuddyUserFile, workbuddyMcpLink } from "./mcp-link.js";

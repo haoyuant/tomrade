@@ -256,9 +256,10 @@ export class Mcp extends Service {
     // Hooks committed into a repository carry no token: whoever listens sorts
     // them out by the cwd and session id in the payload.
     app.post("/sessions/event", (req, res) => {
+      const agent = req.get("X-Tomrade-Agent");
       for (const listener of this.eventListeners) {
         try {
-          listener(req.get("X-Tomrade-Agent") === "codex" ? { ...req.body, tomrade_agent: "codex" } : req.body);
+          listener(agent === "codex" || agent === "workbuddy" ? { ...req.body, tomrade_agent: agent } : req.body);
         } catch {
           // one listener's failure is not another's
         }
