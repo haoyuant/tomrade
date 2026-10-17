@@ -317,7 +317,7 @@ export interface ThemeAutomation {
 }
 
 /** 'system' follows the OS locale, falling back to English when that locale isn't supported. */
-export type LanguagePreference = "system" | "en" | "zh";
+export type LanguagePreference = "system" | "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr";
 
 export interface LlmSettings {
   apiKey: string;

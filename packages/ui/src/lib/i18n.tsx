@@ -2,12 +2,15 @@ import { createContext, Fragment, useCallback, useContext, useLayoutEffect, useM
 import type { AppSettings, LanguagePreference } from "@tomradex/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
-import { en, zh } from "./i18n-messages";
-import { setDomainLocale } from "./domain";
+import { en, zh, type PartialMessages } from "./i18n-messages";
+import { de, es, fr, ja, zhHant } from "./i18n-messages/locales";
+import { INTL_TAG, setDomainLocale } from "./domain";
+
+export { INTL_TAG };
 import { shortcut } from "./keys";
 import { announceKeymap, formatChord, isCommandId, primeKeymap, resolveKeymap, type Keymap } from "./keybindings";
 
-export type Locale = "en" | "zh";
+export type Locale = "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr";
 
 type Messages = typeof en;
 
@@ -16,9 +19,10 @@ export type MessageKey = {
   [N in keyof Messages]: `${N & string}.${keyof Messages[N] & string}`;
 }[keyof Messages];
 
-const DICTS: Record<Locale, Messages> = { en, zh };
+/** English and Simplified Chinese are complete; the rest may miss a string, which then shows in English. */
+const DICTS: Record<Locale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr };
 
-function lookupIn(dict: Messages, path: string): string | undefined {
+function lookupIn(dict: PartialMessages, path: string): string | undefined {
   const [ns, key] = path.split(".");
   const value = (dict as Record<string, Record<string, unknown>>)[ns]?.[key];
   return typeof value === "string" ? value : undefined;
@@ -53,8 +57,10 @@ let activeLocale: Locale = "en";
 export const translate = (key: MessageKey, vars?: Record<string, string | number>): string => interpolate(lookup(activeLocale, key), vars);
 
 export function detectSystemLocale(): Locale {
-  const tag = (typeof navigator !== "undefined" && navigator.language) || "en";
-  return tag.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const tag = ((typeof navigator !== "undefined" && navigator.language) || "en").toLowerCase();
+  if (tag.startsWith("zh")) return /^zh-(hant|tw|hk|mo)/.test(tag) ? "zh-Hant" : "zh";
+  const base = tag.split("-")[0];
+  return base === "ja" || base === "es" || base === "de" || base === "fr" ? base : "en";
 }
 
 export function resolveLocale(preference: LanguagePreference): Locale {
@@ -64,7 +70,12 @@ export function resolveLocale(preference: LanguagePreference): Locale {
 export const LANGUAGE_OPTIONS: { value: LanguagePreference; labelKey?: MessageKey; literal?: string }[] = [
   { value: "system", labelKey: "common.system" },
   { value: "en", literal: "English" },
-  { value: "zh", literal: "中文" }
+  { value: "zh", literal: "简体中文" },
+  { value: "zh-Hant", literal: "繁體中文" },
+  { value: "ja", literal: "日本語" },
+  { value: "es", literal: "Español" },
+  { value: "de", literal: "Deutsch" },
+  { value: "fr", literal: "Français" }
 ];
 
 interface I18nContextValue {
@@ -107,7 +118,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // than threading a locale prop through every call site that formats one of those strings.
   setDomainLocale(locale);
   activeLocale = locale;
-  if (typeof document !== "undefined") document.documentElement.lang = locale;
+  if (typeof document !== "undefined") document.documentElement.lang = INTL_TAG[locale];
 
   const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map]);
 
