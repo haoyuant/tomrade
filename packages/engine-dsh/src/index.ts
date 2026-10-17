@@ -4,6 +4,8 @@ import { z } from "zod";
 import type {} from "@tomradex/agent";
 import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent } from "@tomradex/engine-acp";
 import { localCli, type BundledCli, type CliHost } from "@tomradex/engine-claude-code";
+import type {} from "@tomradex/llm";
+import { dshLentModel } from "./lend.js";
 
 export const DshOptions = z.object({
   command: z.string().default("dsh"),
@@ -64,5 +66,18 @@ export function createDshEngine(ctx: Context) {
 export default {
   name: "engine-dsh",
   inject: ["agent", "mcp", "tools"],
-  apply(ctx: Context) { ctx.agent.engine(createDshEngine(ctx)); }
+  apply(ctx: Context) {
+    const engine = createDshEngine(ctx);
+    ctx.agent.engine(engine);
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(dshLentModel(ctx, {
+      cli: dsh.cli,
+      found: async () => (await engine.available()).ok,
+      options: () => {
+        const { model, effort } = (ctx.get("agent")?.settingsOf().engines.dsh ?? {}) as { model?: unknown; effort?: unknown };
+        return { model: typeof model === "string" ? model : undefined, effort: typeof effort === "string" ? effort : undefined };
+      }
+    }))));
+  }
 };
+
+export { DSH_LENT_PLUGIN, dshLentModel, dshPatch, dshSelection, dshWorkerDir } from "./lend.js";
