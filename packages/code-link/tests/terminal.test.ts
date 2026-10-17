@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { TerminalSettings, fillTemplate, optionFlags, withOptions } from "@tomradex/code-link";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { TerminalSettings, fillTemplate, optionFlags, terminalTemplate, withOptions, writeGeminiHome } from "@tomradex/code-link";
 
 describe("terminal command options", () => {
   it("turns the model and effort picked at Start into each CLI's own flags", () => {
@@ -35,5 +38,41 @@ describe("terminal command options", () => {
     const legacy = 'claude --mcp-config "{mcpConfig}" "$(cat "{prompt}")"';
     expect(withOptions(legacy, "--effort high")).toBe('claude --effort high --mcp-config "{mcpConfig}" "$(cat "{prompt}")"');
     expect(withOptions(legacy, "")).toBe(legacy);
+  });
+});
+
+describe("Gemini CLI's session home", () => {
+  it("is the person's own ~/.gemini, linked, with the server added to a copy of its settings", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-gemini-home-"));
+    const own = path.join(root, "me", ".gemini");
+    fs.mkdirSync(path.join(own, "extensions"), { recursive: true });
+    fs.writeFileSync(path.join(own, "oauth_creds.json"), "{}");
+    // Gemini reads its settings as JSON with comments.
+    fs.writeFileSync(path.join(own, "settings.json"), '{\n  // the person\'s own\n  "theme": "Dracula", /* a "quoted" note */\n  "url": "http://x//y",\n  "mcpServers": { "mine": { "command": "mine" } }\n}\n');
+    fs.writeFileSync(path.join(root, "me", ".env"), "GEMINI_API_KEY=k\n");
+    const home = path.join(root, "session", "gemini-home");
+    const tomrade = { httpUrl: "http://127.0.0.1:1/mcp/p", headers: { "X-Tomrade-Run": "t" } };
+    writeGeminiHome(home, { tomrade }, own);
+
+    expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"))).toEqual({ theme: "Dracula", url: "http://x//y", mcpServers: { mine: { command: "mine" }, tomrade } });
+    expect(fs.realpathSync(path.join(home, ".gemini", "oauth_creds.json"))).toBe(fs.realpathSync(path.join(own, "oauth_creds.json")));
+    expect(fs.realpathSync(path.join(home, ".gemini", "extensions"))).toBe(fs.realpathSync(path.join(own, "extensions")));
+    expect(fs.realpathSync(path.join(home, ".env"))).toBe(fs.realpathSync(path.join(root, "me", ".env")));
+    // The person's own settings are read, never written.
+    expect(fs.readFileSync(path.join(own, "settings.json"), "utf8")).toContain("// the person's own");
+
+    // Bound again (a resumed session): laid down afresh, the same way.
+    writeGeminiHome(home, { tomrade: { ...tomrade, headers: { "X-Tomrade-Run": "t2" } } }, own);
+    expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8")).mcpServers.tomrade.headers).toEqual({ "X-Tomrade-Run": "t2" });
+
+    // No ~/.gemini yet, or settings Gemini could not read either: the server alone.
+    writeGeminiHome(home, { tomrade }, path.join(root, "nobody", ".gemini"));
+    expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"))).toEqual({ mcpServers: { tomrade } });
+  });
+
+  it("moves a command saved before Gemini 0.64 onto the session home", () => {
+    expect(terminalTemplate(TerminalSettings.parse({}), "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" gemini {options} {resume} -i "$(cat "{prompt}")"');
+    const saved = TerminalSettings.parse({ geminiCommand: 'GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini --yolo {options} {resume} -i "$(cat "{prompt}")"' });
+    expect(terminalTemplate(saved, "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" gemini --yolo {options} {resume} -i "$(cat "{prompt}")"');
   });
 });

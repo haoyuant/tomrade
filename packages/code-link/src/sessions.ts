@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type {} from "@tomradex/mcp";
@@ -69,8 +70,9 @@ export interface SessionFiles {
   settings: string;
   /** The extension a terminal pi session loads: the MCP server and hook-style reports in one. */
   piExtension: string;
-  /** Gemini CLI's and OpenCode's own shapes of the same MCP server. */
-  geminiSettings: string;
+  /** A Gemini CLI home for this session (`GEMINI_CLI_HOME`): the person's own ~/.gemini, with the server added to its settings. */
+  geminiHome: string;
+  /** OpenCode's own shape of the same MCP server. */
   opencodeConfig: string;
   /** DeepSeek Harness: a `--patch` overlay adding the server, and the script that shows its `--json` run and reports it. */
   dshPatch: string;
@@ -218,7 +220,7 @@ export class Sessions {
     const mcpConfig = path.join(dir, "mcp.json");
     const settings = path.join(dir, "settings.json");
     const piFile = path.join(dir, "pi-extension.ts");
-    const geminiSettings = path.join(dir, "gemini-settings.json");
+    const geminiHome = path.join(dir, "gemini-home");
     const opencodeConfig = path.join(dir, "opencode.json");
     const dshPatch = path.join(dir, "dsh-patch.yml");
     const dshReporter = path.join(dir, "dsh-report.mjs");
@@ -226,13 +228,13 @@ export class Sessions {
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(settings, JSON.stringify(hooksSettings(eventUrl), null, 2));
     fs.writeFileSync(piFile, piExtension(mcpUrl, token, eventUrl));
-    fs.writeFileSync(geminiSettings, JSON.stringify({ mcpServers: { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
+    writeGeminiHome(geminiHome, { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } });
     fs.writeFileSync(opencodeConfig, JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { tomrade: { type: "remote", url: mcpUrl, enabled: true, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(dshPatch, dshMcpPatch(mcpUrl, token));
     fs.writeFileSync(dshReporter, dshReport(eventUrl));
     fs.writeFileSync(promptFile, prompt);
     fs.rmSync(path.join(dir, "pid"), { force: true });
-    return { dir, mcpConfig, settings, piExtension: piFile, geminiSettings, opencodeConfig, dshPatch, dshReporter, prompt: promptFile, mcpUrl, eventUrl, token };
+    return { dir, mcpConfig, settings, piExtension: piFile, geminiHome, opencodeConfig, dshPatch, dshReporter, prompt: promptFile, mcpUrl, eventUrl, token };
   }
 
   token(sessionId: string): string | null {
@@ -473,6 +475,65 @@ export class Sessions {
     }
     if (changed) this.options.onChange(projectId);
   }
+}
+
+/** Gemini CLI reads settings.json as JSON with comments. */
+function stripJsonComments(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === '"') {
+      const start = i;
+      for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === "\\") i++;
+      out += text.slice(start, i + 1);
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      i = text.indexOf("*/", i + 2);
+      if (i < 0) break;
+      i++;
+    } else out += c;
+  }
+  return out;
+}
+
+/**
+ * A Gemini CLI home for one terminal session. Gemini 0.64 skips a system
+ * defaults file that root does not own, so the session's server goes into
+ * user settings instead: a copy of the person's own with the server added.
+ * Every other entry of their ~/.gemini (sign-in, extensions, history, trust)
+ * is linked, so the session reads and writes those as always. A file Gemini
+ * replaces whole stays in the copy: a settings change made during the
+ * session, and its project list, whose folders it finds again by their marker.
+ */
+export function writeGeminiHome(home: string, servers: Record<string, unknown>, source = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), ".gemini")): void {
+  const own = path.join(home, ".gemini");
+  fs.rmSync(home, { recursive: true, force: true });
+  fs.mkdirSync(own, { recursive: true });
+  const link = (target: string, at: string) => {
+    try {
+      fs.symlinkSync(target, at, process.platform === "win32" && fs.statSync(target).isDirectory() ? "junction" : undefined);
+    } catch {
+      // Windows without the right to make file links: a copy still signs the session in.
+      try { if (fs.statSync(target).isFile()) fs.copyFileSync(target, at); } catch { /* a link to nothing is left out */ }
+    }
+  };
+  let settings: Record<string, unknown> = {};
+  for (const name of fs.existsSync(source) ? fs.readdirSync(source) : []) {
+    if (name !== "settings.json") link(path.join(source, name), path.join(own, name));
+  }
+  try {
+    const parsed = JSON.parse(stripJsonComments(fs.readFileSync(path.join(source, "settings.json"), "utf8"))) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) settings = parsed as Record<string, unknown>;
+  } catch {
+    // None, or one Gemini could not read either: the session starts from the server alone.
+  }
+  // Gemini looks for ~/.env last, under the home it was given.
+  const dotenv = path.join(path.dirname(source), ".env");
+  if (fs.existsSync(dotenv)) link(dotenv, path.join(home, ".env"));
+  const mcpServers = { ...((settings.mcpServers as Record<string, unknown> | undefined) ?? {}), ...servers };
+  fs.writeFileSync(path.join(own, "settings.json"), JSON.stringify({ ...settings, mcpServers }, null, 2));
 }
 
 /** Claude Code settings that make every lifecycle event a POST to Tomrade. Loaded with `--settings`, so the repository is left alone. */

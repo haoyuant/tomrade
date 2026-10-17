@@ -1279,14 +1279,22 @@ describe("starting a ticket", () => {
     await ctx.plugin(Mcp, { port: 0 });
     await settle();
 
+    // The person's own Gemini home, which the session's is made from.
+    const ownHome = fs.mkdtempSync(path.join(root, "gemini-own-"));
+    fs.mkdirSync(path.join(ownHome, ".gemini"));
+    fs.writeFileSync(path.join(ownHome, ".gemini", "settings.json"), JSON.stringify({ security: { auth: { selectedType: "gemini-api-key" } } }));
+    const savedHome = process.env.GEMINI_CLI_HOME;
+    process.env.GEMINI_CLI_HOME = ownHome;
     const item = ticket("Gemini terminal work");
     expect(await codeLink.start(project.id, item.id, { mode: "run", engine: "gemini" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringMatching(/only in a terminal/) });
     const gemini = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "gemini", options: { model: "pro" } });
+    if (savedHome === undefined) delete process.env.GEMINI_CLI_HOME;
+    else process.env.GEMINI_CLI_HOME = savedHome;
     expect(gemini.ok).toBe(true);
     if (!gemini.ok) return;
-    expect(gemini.command).toMatch(/^GEMINI_CLI_SYSTEM_DEFAULTS_PATH=".*gemini-settings\.json" gemini -m pro -i "\$\(cat ".*prompt\.md"\)"$/);
-    const geminiSettings = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(gemini.sessionId), "gemini-settings.json"), "utf8"));
-    expect(geminiSettings).toEqual({ mcpServers: { tomrade: { httpUrl: ctx.mcp.urlFor(project.id), headers: { "X-Tomrade-Run": codeLink.sessions.token(gemini.sessionId) } } } });
+    expect(gemini.command).toMatch(/^GEMINI_CLI_HOME=".*gemini-home" gemini -m pro -i "\$\(cat ".*prompt\.md"\)"$/);
+    const geminiSettings = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(gemini.sessionId), "gemini-home", ".gemini", "settings.json"), "utf8"));
+    expect(geminiSettings).toEqual({ security: { auth: { selectedType: "gemini-api-key" } }, mcpServers: { tomrade: { httpUrl: ctx.mcp.urlFor(project.id), headers: { "X-Tomrade-Run": codeLink.sessions.token(gemini.sessionId) } } } });
     // a terminal-only engine takes no turn inside Tomrade
     expect(() => ctx.agent.send(project.id, gemini.threadId, { kind: "text", text: "go on" })).toThrow(/only in a terminal/);
 

@@ -359,7 +359,7 @@ export class Starter {
     const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "dsh" ? `--session-id ${id}` : engineId === "agy" ? `--conversation ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
     return fillTemplate(withOptions(template, optionFlags(engineId, options)), {
       cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension,
-      geminiSettings: files.geminiSettings, opencodeConfig: files.opencodeConfig, dshPatch: files.dshPatch, dshReporter: files.dshReporter, resume,
+      geminiHome: files.geminiHome, opencodeConfig: files.opencodeConfig, dshPatch: files.dshPatch, dshReporter: files.dshReporter, resume,
       // The CLI Tomrade located (an app's own copy included), and a runtime for scripts that needs no Node installed.
       bin, node: process.execPath
     });
