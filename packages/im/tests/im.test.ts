@@ -292,7 +292,6 @@ describe("IM common layer through the SDK", () => {
     await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("Pick"))).toBeDefined();
     const pick = w.delivered.find(d => d.content.text.startsWith("Pick"))!;
     expect(pick.content.actions).toEqual([]);
-    await w.receive(message("plain-yes", "好"));
     await w.receive(message("pick", `/answer ${tokenIn(pick.content.text)} ["A","C"]`));
     await expect.poll(() => answers).toEqual([["A", "C"]]);
     await w.receive(message("free", "free"));
@@ -300,9 +299,34 @@ describe("IM common layer through the SDK", () => {
     const why = w.delivered.find(d => d.content.text.startsWith("Why?"))!;
     await w.receive(message("because", `/answer ${tokenIn(why.content.text)} because it is late\nand urgent`));
     await expect.poll(() => answers).toEqual([["A", "C"], "because it is late\nand urgent"]);
-    // The plain "好" waited its turn as ordinary chat; it never answered the question.
-    const th = w.ctx.agent.store.threads(w.project.id)[0];
-    expect(w.ctx.agent.thread(w.project.id, th.id).messages.some(m => m.role === "user" && m.block.type === "text" && m.block.text === "好")).toBe(true);
+  });
+
+  it("goes on with a message sent while a question waits, as the desktop does", async () => {
+    const inputs: unknown[] = [];
+    const w = await boot(async (input, io) => {
+      inputs.push(input.input.kind === "text" ? input.input.text : input.input);
+      if (inputs.length === 1) await io.tools.execute("ask_user", { question: "Which first?", options: ["A", "B"] });
+      return { stop: "end" };
+    });
+    await w.receive(message("go", "go"));
+    await expect.poll(() => w.delivered.find(d => d.content.text === "Which first?")?.content.actions?.length).toBe(2);
+    await w.receive(message("moving-on", "something else"));
+    await ended(w, 2);
+    // It ran at once as chat, never as the answer, and the card stopped offering its choices.
+    expect(inputs).toEqual(["go", "something else"]);
+    await expect.poll(() => w.delivered.some(d => d.replaceMessageId && d.content.text === "问题已处理或失效")).toBe(true);
+    expect(w.delivered.some(d => d.content.text.startsWith("排队中"))).toBe(false);
+  });
+
+  it("opens a new conversation while a question waits, leaving the question where it was asked", async () => {
+    const w = await boot(async (_input, io) => { await io.tools.execute("ask_user", { question: "Which first?", options: ["A", "B"] }); return { stop: "end" }; });
+    await w.receive(message("go", "go"));
+    await expect.poll(() => w.delivered.some(d => d.content.text === "Which first?")).toBe(true);
+    const before = w.ctx.agent.store.threads(w.project.id)[0].id;
+    await w.receive(message("new", "/new"));
+    await expect.poll(() => w.delivered.some(d => d.content.text === "已开始新会话")).toBe(true);
+    expect(w.im.store.bindings()[0].thread_id).not.toBe(before);
+    expect(w.ctx.agent.thread(w.project.id, before).pending?.question.text).toBe("Which first?");
   });
 
   it("reports status and refuses another member's stop in the desktop language", async () => {
