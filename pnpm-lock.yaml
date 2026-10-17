@@ -928,6 +928,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/engine-acp':
+        specifier: workspace:*
+        version: link:../engine-acp
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
@@ -940,6 +943,9 @@ importers:
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -947,9 +953,6 @@ importers:
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
 
   packages/engine-workbuddy:
     dependencies:

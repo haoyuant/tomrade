@@ -4,7 +4,7 @@
   "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
-  "description": "Gemini CLI and OpenCode as terminal-only coding agents: found on this machine, handed a ticket in a terminal, heard over MCP",
+  "description": "Gemini CLI as an in-app agent over ACP that can also take a ticket in a terminal, and OpenCode as a terminal-only coding agent",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -19,14 +19,15 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/engine-acp": "workspace:*",
     "@tomradex/engine-claude-code": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
-    "cordis": "4.0.0-rc.8"
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "typescript": "^6.0.0",
-    "zod": "^4.4.3"
+    "typescript": "^6.0.0"
   }
 }

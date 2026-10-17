@@ -45,8 +45,14 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   mode?(policy: Policy): string | undefined;
   /** "always": it registers HTTP MCP servers without advertising that it can. */
   httpMcp?: "advertised" | "always";
-  /** How a stored session reopens; by default `session/resume` when offered, else `session/load`. */
-  reopen?: "resume" | "load";
+  /**
+   * How a stored session reopens; by default `session/resume` when offered, else `session/load`.
+   * "never": its load replays the history after answering, into the turn that follows, so a cold
+   * turn opens a new session with the conversation recapped instead.
+   */
+  reopen?: "resume" | "load" | "never";
+  /** A tool call's own name, for an agent whose updates carry none but put it in the call's id. */
+  callName?(toolCallId: string): string | undefined;
   /**
    * Where tokens are reported: the prompt's answer for this turn alone
    * ("turn"), the prompt's answer as a running session total ("session"), or
