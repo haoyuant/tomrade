@@ -418,6 +418,7 @@ export class CodeLink extends Service {
         bound: (sessionId) => this.boundAnywhere(sessionId),
         connectionSession: (projectId, repoId, worktree) => this.connectionSession(projectId, repoId, worktree),
         successor: (projectId, from, repoId, worktree) => this.successor(projectId, from, repoId, worktree),
+        rescan: (projectId) => this.rescan(projectId),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
