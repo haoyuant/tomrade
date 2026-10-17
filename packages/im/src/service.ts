@@ -1124,9 +1124,8 @@ export class Im extends Service {
   /** Where a question this conversation moved away from still waits. */
   private waitsIn(b: Binding, threadId: string): string {
     const thread = this.home.agent.store.thread(b.project_id, threadId);
-    const title = thread?.title || this.say("Untitled", "未命名");
-    return thread?.archived ? this.say(`This question was archived with “${title}”.`, `该问题已随“${title}”一起归档。`)
-      : this.say(`This question stays in “${title}”; /switch back to answer it.`, `该问题留在“${title}”中，/switch 回去即可回答。`);
+    const title = thread?.title || this.w("untitled");
+    return this.w(thread?.archived ? "questionArchived" : "questionStays", { title });
   }
 
   /** A choice from a question left open in a conversation this one moved away from: says where it waits instead of refusing it. */
