@@ -12,6 +12,11 @@ process.stdin.on("data", (chunk) => (prompt += chunk));
 process.stdin.on("end", () => {
   const say = (event) => process.stdout.write(JSON.stringify(event) + "\n");
   if (log) fs.appendFileSync(log, JSON.stringify({ args, prompt }) + "\n");
+  if (log && fs.existsSync(log + ".personal")) {
+    // As 0.64.0 answers a personal Google sign-in now: an ordinary error exit.
+    process.stderr.write("Failed to sign in. Message: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products: https://antigravity.google\n");
+    process.exit(1);
+  }
   if (log && fs.existsSync(log + ".signed-out")) {
     process.stderr.write("    at async main (gemini.js:17559:9) {\n  exitCode: 41\n}\n\x1b[31mManual authorization is required but the current session is non-interactive.\x1b[0m\n");
     process.exit(41);

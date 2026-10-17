@@ -37,7 +37,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
       title: agent.title,
       cli: agent.cli,
       install: agent.install,
-      ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } } : {})
+      ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
+        : agent.signedIn ? { signIn: { ask: async () => agent.signedIn!.ask(), reason: agent.signedIn.reason } } : {})
     }),
     checkCli: (file) => agent.cli.check(file),
     diagnostics: {

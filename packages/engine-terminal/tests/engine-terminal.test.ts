@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent, type TurnInput } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
-import engineTerminal, { agyMcpFile, gemini, geminiCallName } from "@tomradex/engine-terminal";
+import engineTerminal, { agyMcpFile, gemini, geminiCallName, geminiCanSignIn } from "@tomradex/engine-terminal";
 
 it("registers Gemini CLI as an in-app agent that also takes a ticket in a terminal", async () => {
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-engine-terminal-${Date.now()}.json` }], Agent, [Mcp, { port: 0 }], engineTerminal] });
@@ -64,4 +64,26 @@ if [ "$2" = "add" ]; then printf '{"mcpServers":{"%s":{"serverUrl":"%s","disable
     process.env.HOME = home;
     await ctx.fiber.dispose();
   }
+});
+
+it("reads from Gemini CLI's own settings whether it can sign in, now that a personal Google sign-in is refused", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-gemini-auth-"));
+  const auth = (selectedType?: string) => fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify(selectedType ? { security: { auth: { selectedType } } } : {}));
+  auth("oauth-personal");
+  expect(geminiCanSignIn({}, dir)).toBe(false);
+  // A Cloud project means a Code Assist licence, which still signs in with Google.
+  expect(geminiCanSignIn({ GOOGLE_CLOUD_PROJECT: "acme" }, dir)).toBeNull();
+  auth("gemini-api-key");
+  expect(geminiCanSignIn({}, dir)).toBe(false);
+  expect(geminiCanSignIn({ GEMINI_API_KEY: "AIza…" }, dir)).toBe(true);
+  fs.writeFileSync(path.join(dir, ".env"), "GEMINI_API_KEY=AIzaSyExample\n");
+  expect(geminiCanSignIn({}, dir)).toBe(true);
+  auth("vertex-ai");
+  expect(geminiCanSignIn({}, dir)).toBeNull();
+  auth();
+  // Not chosen yet, but a key is there: nothing says no.
+  expect(geminiCanSignIn({}, dir)).toBeNull();
+  fs.rmSync(path.join(dir, ".env"));
+  expect(geminiCanSignIn({}, dir)).toBe(false);
+  expect(gemini.signedIn?.reason).toContain("personal Google account");
 });

@@ -6,6 +6,7 @@ import { localCli } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import { createAgyEngine } from "./agy.js";
+import { GEMINI_SIGN_IN, geminiCanSignIn } from "./auth.js";
 import { geminiLentModel } from "./lend.js";
 
 export const GeminiOptions = z.object({
@@ -26,7 +27,7 @@ export const gemini: AcpAgent<GeminiOptions> = {
   title: "Gemini CLI",
   cli: localCli("gemini"),
   install: "install Gemini CLI (npm install -g @google/gemini-cli) and sign in",
-  // Its first run asks how to sign in: a Google account or an API key.
+  // Google ended personal Google sign-in for it: individuals use an API key or Vertex AI.
   setup: { install: ["npm install -g @google/gemini-cli"], signIn: "gemini", signInRuns: true, docs: "https://github.com/google-gemini/gemini-cli" },
   options: GeminiOptions,
   permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
@@ -40,7 +41,8 @@ export const gemini: AcpAgent<GeminiOptions> = {
   // Code link hands it a ticket in a terminal with a session-only settings file.
   terminal: true,
   usage: "turn",
-  signIn: "run `gemini`, enter /auth and choose Use Gemini API Key (or Vertex AI)"
+  signIn: GEMINI_SIGN_IN,
+  signedIn: { ask: () => geminiCanSignIn(), reason: `Gemini CLI cannot sign in with a personal Google account any more — ${GEMINI_SIGN_IN}` }
 };
 
 export function createGeminiEngine(ctx: Context): Engine {
@@ -61,3 +63,4 @@ export default {
 
 export { forgetSession, geminiDir, geminiLentModel, ownModel } from "./lend.js";
 export { agyMcpFile, createAgyEngine } from "./agy.js";
+export { GEMINI_SIGN_IN, geminiCanSignIn } from "./auth.js";
