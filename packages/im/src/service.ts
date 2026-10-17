@@ -797,16 +797,15 @@ export class Im extends Service {
       // Replying to what the running turn shows is a steer, like /steer.
       const steering = (e: ImInbound) => !!running && e.kind === "message" && !!e.replyTo && progress.includes(e.replyTo);
       // A control or explicit answer can unblock a run even with ordinary text waiting before it.
+      // An open question holds nothing: as on the desktop, the agent reads the next message as its answer or as moving on.
       const row = rows.find(row => {
         const e = JSON.parse(row.event_json) as ImInbound;
         return e.kind === "action" || (e.kind === "message" && (isControl(row, e) || (!row.input_json && steering(e))));
-      }) ?? (!busy && !detail.pending ? rows[0] : undefined);
-      if (busy || detail.pending) {
+      }) ?? (!busy ? rows[0] : undefined);
+      if (busy) {
         const queue = this.waiting(rows).filter(r => r !== row);
         for (const [i, q] of queue.entries()) {
-          this.receipt(b, q, detail.pending && !busy
-            ? this.say(`Waiting (${i + 1} in line) for the open question to be answered. /queue lists, /unqueue ${i + 1} withdraws.`, `排队中（第 ${i + 1} 位），等待先回答当前问题。/queue 查看，/unqueue ${i + 1} 撤回。`)
-            : this.say(`Queued (${i + 1} in line); it runs after the current turn. /queue lists, /unqueue ${i + 1} withdraws.`, `已排队（第 ${i + 1} 位），本轮结束后执行。/queue 查看，/unqueue ${i + 1} 撤回。`),
+          this.receipt(b, q, this.say(`Queued (${i + 1} in line); it runs after the current turn. /queue lists, /unqueue ${i + 1} withdraws.`, `已排队（第 ${i + 1} 位），本轮结束后执行。/queue 查看，/unqueue ${i + 1} 撤回。`),
             anchorOf(JSON.parse(q.event_json) as ImInbound));
         }
       }
@@ -885,7 +884,6 @@ export class Im extends Service {
           this.accept(row); return;
         }
         if (text === "/new") {
-          if (detail.pending) this.refuse("Answer or stop the current question before opening a new conversation", "请先回答或停止当前问题，再开始新会话");
           const th = this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
           this.rebind(b, th.id, 0, event.actor.id, rebound => {
             this.accept(row);
@@ -924,7 +922,7 @@ export class Im extends Service {
         }
       }
       // A desktop turn may have started while attachment bytes were being downloaded.
-      if (input.kind === "text" && (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending)) return;
+      if (input.kind === "text" && this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) return;
       // Identity is provenance, never a forged human author or a policy bypass.
       const { runId } = this.home.agent.send(b.project_id, b.thread_id, input, { requestId: `im:${row.id}`, source: {
         connection: b.connection_id, tenant: event.address.tenantId, conversation: event.address.conversationId,
@@ -1225,9 +1223,7 @@ export class Im extends Service {
       return true;
     }
     if (name === "archive") {
-      if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending) {
-        this.refuse("Stop the current turn or answer its question before archiving", "请先停止当前执行或回答问题，再归档");
-      }
+      if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse("Stop the current turn before archiving", "请先停止当前执行，再归档");
       this.home.agent.archiveThread(b.project_id, b.thread_id);
       const th = this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
       this.rebind(b, th.id, 0, actor, rebound => {
@@ -1352,7 +1348,7 @@ export class Im extends Service {
       if (!target || target.archived || target.surface !== "assistant") this.refuse("That conversation can't be continued here", "该会话无法在这里继续");
       if (target.id === b.thread_id) { done(this.say("Already here", "已经是当前会话")); return; }
       if (this.home.agent.activeRuns().some(r => r.thread.id === target.id)) this.refuse("That conversation is running; try again when it finishes", "该会话正在运行，结束后再试");
-      if (running || this.home.agent.thread(b.project_id, b.thread_id).pending) this.refuse("Stop the current turn or answer its question first", "请先停止当前执行或回答问题");
+      if (running) this.refuse("Stop the current turn first", "请先停止当前执行");
       const title = target.title || this.say("Untitled", "未命名");
       // In a group, the conversation's history becomes visible to everyone there; the person who asked confirms.
       if (kind === "switch" && this.isGroup(b)) {
@@ -1570,9 +1566,7 @@ export class Im extends Service {
     const item = this.startable(b.project_id, draft.itemId);
     if (!code || !item) this.refuse("That ticket can no longer be started", "该工单已无法开工");
     if (this.isGroup(b) && actorId !== b.actor_id) this.refuse("Only the person this conversation is with can start work here", "只有发起人可以在这里开工");
-    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending) {
-      this.refuse("Stop the current turn or answer its question first", "请先停止当前执行或回答问题");
-    }
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse("Stop the current turn first", "请先停止当前执行");
     const address = JSON.parse(b.address_json) as ImAddress;
     const general = item.workType === "general";
     // The card clicked says at once that the start is under way, and takes no more clicks.
@@ -1619,9 +1613,7 @@ export class Im extends Service {
     const target = this.home.agent.store.thread(b.project_id, threadId);
     if (!target || target.archived) this.refuse("That session has ended; /sessions lists the others", "该会话已结束；/sessions 可查看其他会话");
     if (target.id === b.thread_id) { this.enqueue(b, `follow:${row.id}`, { text: this.say("Already here", "已经是当前会话") }, reply); this.accept(row); return; }
-    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending) {
-      this.refuse("Stop the current turn or answer its question first", "请先停止当前执行或回答问题");
-    }
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse("Stop the current turn first", "请先停止当前执行");
     const cursor = this.home.agent.thread(b.project_id, threadId).messages.at(-1)?.seq ?? 0;
     // Back to where this began once the ticket's thread is archived; from one ticket's thread, where that one began.
     const home = this.home.agent.store.thread(b.project_id, b.thread_id)?.itemId ? b.home_thread ?? undefined : b.thread_id;

@@ -27,6 +27,7 @@ const turn: Engine["turn"] = async (input, io) => {
   if (text === "ask") await io.tools.execute("ask_user", { question: "Which targets?", options: ["web", "cli"], multiple: true });
   else if (text === "pick") await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] });
   else if (text === "why") await io.tools.execute("ask_user", { question: "Why?", freeText: true });
+  else if (text === "slow") { await new Promise<void>(r => io.signal.addEventListener("abort", () => r(), { once: true })); return { stop: "cancelled" }; }
   else io.emit({ type: "text", text: `echo: ${text}${input.input.kind === "text" && input.input.attachments?.length ? ` +${input.input.attachments.length} file` : ""}` });
   return { stop: "end" };
 };
@@ -181,10 +182,10 @@ describe("Discord adapter against the IM layer", () => {
   it("drops a waiting message its sender deletes", async () => {
     const w = await boot();
     await expect.poll(() => w.im.views()[0]?.state).toBe("connected");
-    w.discord.message({ channel: DM, author: OWNER, content: "pick" });
-    await w.said(DM, "Ship it?");
+    w.discord.message({ channel: DM, author: OWNER, content: "slow" });
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(1);
     const waiting = w.discord.message({ channel: DM, author: OWNER, content: "never mind" });
-    await w.said(DM, /^Waiting \(1 in line\)/);
+    await w.said(DM, /^Queued \(1 in line\)/);
     w.discord.dispatch("MESSAGE_DELETE", { id: waiting.id, channel_id: DM });
     await w.said(DM, "Withdrawn; it won't run.");
   });
