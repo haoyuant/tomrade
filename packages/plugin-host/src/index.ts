@@ -6,6 +6,8 @@ import { Agent, type Engine } from "@tomradex/agent";
 import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 import type { AlertNotice } from "@tomradex/alerts";
+import type { DesktopSurfaceSpec } from "@tomradex/desktop-surface";
+import { cordisName } from "@tomradex/extensions";
 import { Service, type Context } from "cordis";
 
 export interface TestCheck {
@@ -48,6 +50,39 @@ function recordingAlerts() {
   return { Alerts, played, notices };
 }
 
+/** The sandbox's windows: none opens; each one is remembered with the last state it was given, and the scenario can speak for its document. */
+function recordingSurfaces() {
+  const opened: { spec: DesktopSurfaceSpec; state: unknown; closed: boolean }[] = [];
+  class Surfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open = (spec: DesktopSurfaceSpec) => {
+      const entry = { spec, state: spec.initialState, closed: false };
+      opened.push(entry);
+      const area = { x: 0, y: 0, width: 1440, height: 900 };
+      return {
+        id: spec.id,
+        capabilities: { programmaticPosition: true, forwardedMouseMoves: false },
+        bounds: () => ({ x: 0, y: 0, width: spec.width, height: spec.height }),
+        workArea: () => area,
+        setPosition: () => {},
+        setState: (state: unknown) => void (entry.state = state),
+        close: () => void (entry.closed = true)
+      };
+    };
+  }
+  const view = () => opened.map((o) => ({ id: o.spec.id, title: o.spec.title, width: o.spec.width, height: o.spec.height, state: o.state, closed: o.closed }));
+  const message = async (id: string, msg: unknown) => {
+    const entry = [...opened].reverse().find((o) => o.spec.id === id && !o.closed);
+    if (!entry) throw new Error(`no open window ${id}`);
+    await entry.spec.onMessage?.(msg);
+    await settle();
+  };
+  return { Surfaces, view, message };
+}
+
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const timeout = (ms: number, what: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${what} did not finish within ${ms} ms`)), ms));
 
@@ -70,7 +105,8 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const wants = [...(p.inject ?? []), ...(p.optional ?? [])];
   const im = wants.includes("im");
   const alerts = wants.includes("alerts") ? recordingAlerts() : null;
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(im ? [Agent, Im] : [])] });
+  const surfaces = wants.includes("surfaces") ? recordingSurfaces() : null;
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(im ? [Agent, Im] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
@@ -87,7 +123,13 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
     check("loads", false, messageOf(error));
     return { ok: false, checks, logs };
   }
-  check("loads", fiber.state === 2 && !logs.some((l) => l.startsWith("error")), logs.find((l) => l.startsWith("error")));
+  // A plugin waiting on a service never applies, and says nothing of it: name what it waits for.
+  const missing = fiber.state === 2 ? [] : (p.inject ?? []).filter((name) => !w.ctx.get(cordisName(name as never)));
+  const loaded = fiber.state === 2 && !logs.some((l) => l.startsWith("error"));
+  check("loads", loaded, missing.length
+    ? `waits for ${missing.join(", ")}, which this sandbox does not provide; move ${missing.length > 1 ? "them" : "it"} to optional to load without ${missing.length > 1 ? "them" : "it"}`
+    : (logs.find((l) => l.startsWith("error")) ?? (loaded ? undefined : "it did not start")));
+  if (fiber.state !== 2) return { ok: false, checks, logs };
 
   const scope = { projectId: w.project.id };
   const guarded = async (name: string, fn: () => Promise<unknown>) => {
@@ -127,6 +169,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
         sections: (itemId: string) => w.ctx.contributions.sectionsFor(w.project.id, itemId),
         graph: (id: string) => w.ctx.contributions.graphEdges(id, scope),
         sidebarModules: () => w.ctx.contributions.sidebarModules(w.project.id),
+        ...(surfaces ? { surfaces: { opened: surfaces.view, message: surfaces.message } } : {}),
         ...(alerts ? { alerts: { played: () => [...alerts.played], notices: () => [...alerts.notices] } } : {}),
         ...(im ? { im: {
           configure: (settings: unknown) => w.ctx.settings.set({ ...w.ctx.settings.get(), im: ImSettings.parse(settings) }),

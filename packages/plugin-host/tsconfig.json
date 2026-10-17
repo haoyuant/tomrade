@@ -31,6 +31,12 @@
     },
     {
       "path": "../agent"
+    },
+    {
+      "path": "../desktop-surface"
+    },
+    {
+      "path": "../extensions"
     }
   ]
 }

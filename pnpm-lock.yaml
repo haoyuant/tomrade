@@ -1849,6 +1849,12 @@ importers:
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
+      '@tomradex/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
+      '@tomradex/extensions':
+        specifier: workspace:*
+        version: link:../extensions
       '@tomradex/im':
         specifier: workspace:*
         version: link:../im

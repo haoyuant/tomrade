@@ -79,3 +79,4 @@ export default async function (t) {
   await t.command(`${ns}.cmd`, a.id);
 }
 ```
+A plugin that names `surfaces` gets windows that never open: `t.surfaces.opened()` lists them (`{ id, title, state, closed }`, `state` the last `setState`), and `await t.surfaces.message(id, msg)` sends `msg` as if the document had. A plugin that waits on a service the sandbox lacks fails `loads`, naming it.
