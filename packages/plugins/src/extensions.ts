@@ -304,7 +304,14 @@ export class ExtensionStore {
   private watch(entry: LockEntry): void {
     if (entry.source !== "folder" && entry.source !== "studio") return;
     this.unwatch(entry.id);
-    const dist = path.dirname(path.join(entry.dir, readManifest(entry.dir).main));
+    let main: string;
+    try {
+      main = readManifest(entry.dir).main;
+    } catch {
+      // Loading reports a folder that lost its manifest; watching it must not stop the boot.
+      return;
+    }
+    const dist = path.dirname(path.join(entry.dir, main));
     if (!fs.existsSync(dist)) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let last = this.currentDigest(entry);
