@@ -134,7 +134,7 @@ describe("the MCP surface", () => {
         seen.push({ name, args });
         return { routed: true };
       },
-      event: (payload) => ({ additionalContext: `heard ${(payload as { event: string }).event}` })
+      event: (payload) => ({ additionalContext: `heard ${(payload as { event: string; herdr_pane?: string }).event} in ${(payload as { herdr_pane?: string }).herdr_pane ?? "no pane"}` })
     });
     const bound = new Client({ name: "t2", version: "0" });
     await bound.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { "X-Tomrade-Run": "tok-1" } } }));
@@ -142,7 +142,10 @@ describe("the MCP surface", () => {
     expect(JSON.stringify(result.content)).toContain("routed");
     expect(seen).toEqual([{ name: "echo_tool", args: { v: "hi" } }]);
     const event = await fetch(ctx.mcp.eventUrlFor("tok-1")!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: "stop" }) });
-    expect(await event.json()).toEqual({ additionalContext: "heard stop" });
+    expect(await event.json()).toEqual({ additionalContext: "heard stop in no pane" });
+    // A hook run in a herdr pane names it in a header; the binding reads it off the payload.
+    const paned = await fetch(ctx.mcp.eventUrlFor("tok-1")!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Herdr-Pane": "w1:p1" }, body: JSON.stringify({ event: "stop" }) });
+    expect(await paned.json()).toEqual({ additionalContext: "heard stop in w1:p1" });
     await bound.close();
   });
 

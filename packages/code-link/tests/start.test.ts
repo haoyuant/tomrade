@@ -1221,7 +1221,12 @@ describe("starting a ticket", () => {
       return res.status;
     };
     expect(await post({ hook_event_name: "SessionStart", session_id: "cli-abc" })).toBe(200);
-    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "running", externalId: "cli-abc", mode: "terminal" });
+    expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ state: "running", externalId: "cli-abc", mode: "terminal", herdrPane: null });
+    // Run inside a herdr pane, the hook names it: the ticket says so, and the row leads back to that pane.
+    const paned = await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Herdr-Pane": "w2:p1" }, body: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "cli-abc" }) });
+    expect(paned.status).toBe(200);
+    expect(codeLink.sessionsOf(project.id, item.id)[0].herdrPane).toBe("w2:p1");
+    expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("in herdr"), command: "code-link.open-terminal" });
     await post({ hook_event_name: "Stop", session_id: "cli-abc" });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([{ id: "waiting", label: "waiting", tone: "strong", title: "The coding session is waiting for you" }]));

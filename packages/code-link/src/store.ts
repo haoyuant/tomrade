@@ -149,7 +149,9 @@ CREATE UNIQUE INDEX idx_plugin_code_link_links_key ON plugin_code_link_links(pro
   // Where a parallel outside session works, so its hooks find it among the others with the same identity.
   { version: 8, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worktree TEXT" },
   // The agents a repository is connected for; NULL until someone chooses or connects.
-  { version: 9, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN connect_agents_json TEXT" }
+  { version: 9, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN connect_agents_json TEXT" },
+  // The herdr pane a session runs in, as its hooks report it: where "open in terminal" finds it again.
+  { version: 10, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN herdr_pane TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -260,6 +262,8 @@ export interface SessionView {
   threadId: string | null;
   /** The worktree or folder an outside session said it works in (claim_ticket's worktree); null when it did not say. */
   worktree: string | null;
+  /** The herdr pane (`w1:p1`) the session's hooks report from; null outside herdr. */
+  herdrPane: string | null;
   state: SessionState;
   lastEventAt: number | null;
   lastToolAt: number | null;
@@ -345,6 +349,7 @@ interface SessionRow {
   external_id: string | null;
   thread_id: string | null;
   worktree: string | null;
+  herdr_pane: string | null;
   state: string;
   last_event_at: number | null;
   last_tool_at: number | null;
@@ -429,6 +434,7 @@ const toSession = (r: SessionRow): SessionView => ({
   externalId: r.external_id,
   threadId: r.thread_id,
   worktree: r.worktree ?? null,
+  herdrPane: r.herdr_pane ?? null,
   state: r.state as SessionState,
   lastEventAt: r.last_event_at,
   lastToolAt: r.last_tool_at,
@@ -480,6 +486,7 @@ export interface SessionPatch {
   externalId?: string | null;
   threadId?: string | null;
   worktree?: string | null;
+  herdrPane?: string | null;
   state?: SessionState;
   lastEventAt?: number | null;
   lastToolAt?: number | null;
@@ -813,6 +820,7 @@ export class CodeLinkStore {
       externalId: "external_id",
       threadId: "thread_id",
       worktree: "worktree",
+      herdrPane: "herdr_pane",
       state: "state",
       lastEventAt: "last_event_at",
       lastToolAt: "last_tool_at",

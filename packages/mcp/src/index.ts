@@ -167,6 +167,13 @@ const paragraph = (render: (scope: McpScope) => string | null, scope: McpScope):
   }
 };
 
+/** A hook that ran in a herdr pane names it in a header; the payload carries it on as `herdr_pane`. */
+const withPane = (req: express.Request): Record<string, unknown> => {
+  const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+  const pane = req.get("X-Tomrade-Herdr-Pane")?.trim();
+  return pane ? { ...body, herdr_pane: pane } : body;
+};
+
 const sessionIdOf = (req: express.Request): string | undefined => {
   const header = req.headers["mcp-session-id"];
   if (typeof header === "string") return header;
@@ -261,9 +268,10 @@ export class Mcp extends Service {
     // them out by the cwd and session id in the payload.
     app.post("/sessions/event", (req, res) => {
       const agent = req.get("X-Tomrade-Agent");
+      const body = withPane(req);
       for (const listener of this.eventListeners) {
         try {
-          listener(agent === "codex" || agent === "workbuddy" || agent === "pi" || agent === "hermes" || agent === "opencode" || agent === "cursor" ? { ...req.body, tomrade_agent: agent } : req.body);
+          listener(agent === "codex" || agent === "workbuddy" || agent === "pi" || agent === "hermes" || agent === "opencode" || agent === "cursor" ? { ...body, tomrade_agent: agent } : body);
         } catch {
           // one listener's failure is not another's
         }
@@ -276,7 +284,7 @@ export class Mcp extends Service {
       const binding = this.bindings.get(req.params.token);
       if (!binding?.event) return res.status(404).json({ error: "unknown session" });
       try {
-        res.json((await binding.event(req.body)) ?? {});
+        res.json((await binding.event(withPane(req))) ?? {});
       } catch (e) {
         res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
       }

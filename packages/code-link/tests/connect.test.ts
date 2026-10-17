@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { Agent } from "@tomradex/agent";
-import { CodeLink, writeConnectFiles } from "@tomradex/code-link";
+import { CodeLink, hookCommand, writeConnectFiles } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
@@ -179,6 +179,7 @@ describe("connecting a repository", () => {
     const read = (name: string) => JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
     expect(read(".claude/settings.json").hooks.SessionStart[0].hooks[0].command).toContain(input.eventUrl);
     expect(read(".claude/settings.json").hooks.SessionStart[0].hooks[0].command).not.toContain("X-Tomrade-Agent");
+    expect(read(".claude/settings.json").hooks.SessionStart[0].hooks[0].command).toContain(`-H "X-Tomrade-Herdr-Pane: $HERDR_PANE_ID"`);
     // WorkBuddy takes Claude Code's hook format in its own file; its hooks name it.
     const codebuddy = read(".codebuddy/settings.json");
     expect(codebuddy.model).toBe("hy3");
@@ -345,6 +346,26 @@ describe("connecting a repository", () => {
     expect(view.agents.find((agent) => agent.id === "pi")).toMatchObject({ title: "Pi", tools: true, tracking: "hooks", instructions: true });
     expect(view.agents.find((agent) => agent.id === "opencode")).toMatchObject({ title: "OpenCode", tools: true, tracking: "hooks", instructions: true });
     expect(view.agents.find((agent) => agent.id === "cursor")).toMatchObject({ title: "Cursor", tools: true, tracking: "hooks", instructions: true });
+  });
+
+  it("still reads a repository connected before hooks named their herdr pane as tracked", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    const input = { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(checkout, input);
+    // As the Tomrade before this one wrote them: the same hooks, without the pane header.
+    for (const [file, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"], [".cursor/hooks/tomrade.sh", "cursor"]] as const) {
+      // settings files hold the command as a JSON string, the script as it is
+      const quoted = (command: string) => (file.endsWith(".json") ? JSON.stringify(command).slice(1, -1) : command);
+      const now = quoted(hookCommand(input.eventUrl, agent));
+      const text = fs.readFileSync(path.join(checkout, file), "utf8");
+      expect(text).toContain(now);
+      fs.writeFileSync(path.join(checkout, file), text.split(now).join(quoted(hookCommand(input.eventUrl, agent, { pane: false }))));
+    }
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "connected before"], checkout);
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view.state).toBe("connected");
+    for (const id of ["claude-code", "workbuddy", "cursor"]) expect(view.agents.find((agent) => agent.id === id)).toMatchObject({ tools: true, tracking: "hooks" });
   });
 
   it("asks a repository connected before Cursor's hooks existed to connect again", async () => {

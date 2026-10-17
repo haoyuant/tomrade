@@ -37,6 +37,8 @@ interface HookPayload {
   error_type?: string;
   error_message?: string;
   reason?: string;
+  /** The herdr pane the hook ran in, from the header or the script. */
+  herdr_pane?: string;
 }
 
 /**
@@ -45,6 +47,13 @@ interface HookPayload {
  * `Stop` does not fire on a user interrupt — the process check covers that end.
  */
 export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStop", "SessionEnd"] as const;
+
+/**
+ * A hook run inside a herdr pane says which one, so the ticket can find the
+ * session there again; outside herdr the variable is empty and curl sends no
+ * such header. Scripts that post from JavaScript add `herdr_pane` themselves.
+ */
+export const HERDR_PANE_HEADER = `-H "X-Tomrade-Herdr-Pane: $HERDR_PANE_ID"`;
 
 /** A moment worth a line in the ticket's thread, as the session's owner reports it. */
 export interface SessionMoment {
@@ -296,6 +305,7 @@ export class Sessions {
     if (!session) return {};
     const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
+    if (typeof p.herdr_pane === "string" && p.herdr_pane.trim()) patch.herdrPane = p.herdr_pane.trim();
     const command = bashCommand(p);
     if (p.hook_event_name === "PreToolUse" && session.blocked === "credentials" && BLOCKED_COMMAND.test(command)) {
       this.touch(projectId, sessionId, { ...patch, state: "error", activity: null });
@@ -372,7 +382,7 @@ export class Sessions {
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: SessionBlock | null } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: SessionBlock | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();
@@ -385,6 +395,7 @@ export class Sessions {
       ...(patch.tool ? { lastToolAt: now } : {}),
       ...(state ? { state } : {}),
       ...(patch.externalId ? { externalId: patch.externalId } : {}),
+      ...(patch.herdrPane ? { herdrPane: patch.herdrPane } : {}),
       ...(patch.endedAt ? { endedAt: patch.endedAt } : {}),
       ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
       ...(patch.activity !== undefined ? { activity: patch.activity } : {}),
@@ -539,7 +550,7 @@ export function writeGeminiHome(home: string, servers: Record<string, unknown>, 
 
 /** Claude Code settings that make every lifecycle event a POST to Tomrade. Loaded with `--settings`, so the repository is left alone. */
 export function hooksSettings(eventUrl: string): Record<string, unknown> {
-  const post = { type: "command", command: `curl -s -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- '${eventUrl}' 2>/dev/null || true` };
+  const post = { type: "command", command: `curl -s -m 5 -X POST -H 'Content-Type: application/json' ${HERDR_PANE_HEADER} --data-binary @- '${eventUrl}' 2>/dev/null || true` };
   const hooks: Record<string, unknown> = {};
   for (const event of HOOK_EVENTS) hooks[event] = [{ hooks: [post] }];
   return { hooks };
@@ -557,12 +568,13 @@ export function piExtension(mcpUrl: string, token: string, eventUrl: string): st
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
+const pane = process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {};
 
 export default function (pi) {
   pi.registerMcpServer("tomrade", server);
   let sessionId;
   const post = (payload) => fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, ...payload }), signal: AbortSignal.timeout(5000) })
+    body: JSON.stringify({ session_id: sessionId, ...pane, ...payload }), signal: AbortSignal.timeout(5000) })
     .then((response) => response.json()).catch(() => ({}));
   pi.on("session_start", async (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
@@ -625,8 +637,9 @@ const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob" };
 let sessionId;
 const sent = [];
+const pane = process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {};
 const post = (payload) => { sent.push(fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ session_id: sessionId, ...payload }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
+  body: JSON.stringify({ session_id: sessionId, ...pane, ...payload }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
 const brief = (input) => { const text = typeof input === "string" ? input : JSON.stringify(input ?? {}); return text.length > 120 ? text.slice(0, 117) + "..." : text; };
 const lines = readline.createInterface({ input: process.stdin });
 lines.on("line", (line) => {

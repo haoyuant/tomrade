@@ -28,6 +28,7 @@ const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
 const loaded = Symbol.for("tomrade.pi.outside");
+const pane = process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {};
 
 export default function (pi) {
   // A session Tomrade started registers its own server, with its token.
@@ -37,7 +38,7 @@ export default function (pi) {
   let sessionId;
   let cwd;
   const post = (payload) => { void fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "pi" },
-    body: JSON.stringify({ session_id: sessionId, cwd, ...payload }), signal: AbortSignal.timeout(2000) }).catch(() => {}); };
+    body: JSON.stringify({ session_id: sessionId, cwd, ...pane, ...payload }), signal: AbortSignal.timeout(2000) }).catch(() => {}); };
   pi.on("session_start", (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
     cwd = ctx.cwd;
