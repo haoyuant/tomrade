@@ -52,6 +52,8 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       title: "Claude Code",
       cli,
       install: "install Claude Code and sign in",
+      // The Claude desktop app has no `claude` command.
+      desktopApp: { title: "Claude", mac: ["Claude"], windows: ["AnthropicClaude"] },
       signIn: { args: ["auth", "status"], says: claudeSignedIn, reason: "Claude Code is not signed in — run `claude` in a terminal and log in" },
       configDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
     }),

@@ -69,6 +69,8 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       title: "Codex",
       cli,
       install: "install OpenAI Codex and sign in",
+      // The Codex desktop app does not put the `codex` CLI on this machine.
+      desktopApp: { title: "Codex", mac: ["Codex"], windows: ["Programs\\Codex"] },
       signIn: {
         async ask(manual) {
           const key = modelsKey(manual);

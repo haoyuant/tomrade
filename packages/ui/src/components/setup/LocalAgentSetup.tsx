@@ -74,7 +74,8 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
               <span className="setup-name">
                 {e.title} <span className="meta-txt">· {engineStateLabel(e, t, t("settingsDialog.engineUnavailable"))}</span>
               </span>
-              {status === "missing" && (
+              {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
+              {(status === "missing" || status === "desktop-only") && (
                 <span className="setup-fix">
                   <CommandLine command={setup.install[0]} />
                   <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`install-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "install")}>
@@ -90,7 +91,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                   </button>
                 </span>
               )}
-              {!e.ok && status !== "missing" && status !== "sign-in" && (
+              {!e.ok && status !== "missing" && status !== "desktop-only" && status !== "sign-in" && (
                 <button type="button" className="link-btn setup-fix" onClick={() => onOpenSettings(e.id)}>
                   {t("localCli.configure")} →
                 </button>
