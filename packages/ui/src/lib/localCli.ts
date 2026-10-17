@@ -4,11 +4,12 @@ import { agentKeys } from "./agent";
 import { invoke } from "./api";
 import type { MessageKey } from "./i18n";
 
-export type EngineStatus = "ready" | "missing" | "broken" | "wsl" | "sign-in" | "service" | "model" | "other";
+export type EngineStatus = "ready" | "missing" | "desktop-only" | "broken" | "wsl" | "sign-in" | "service" | "model" | "other";
 
 export function engineStatus(engine: EngineView): EngineStatus {
   if (engine.ok) return "ready";
   if (engine.cli?.wsl && engine.cli.state === "missing") return "wsl";
+  if (engine.cli?.desktopApp && engine.cli.state === "missing") return "desktop-only";
   if (engine.need === "install") return "missing";
   if (engine.need === "repair") return "broken";
   if (engine.need === "sign-in") return "sign-in";
@@ -20,6 +21,7 @@ export function engineStatus(engine: EngineView): EngineStatus {
 
 const STATE_KEYS: Record<Exclude<EngineStatus, "ready" | "other">, MessageKey> = {
   missing: "localCli.stateMissing",
+  "desktop-only": "localCli.stateDesktopOnly",
   broken: "localCli.stateBroken",
   wsl: "localCli.stateWsl",
   "sign-in": "localCli.stateSignIn",

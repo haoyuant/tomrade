@@ -45,7 +45,7 @@ export default {
 
 export { ClaudeCodeOptions, claudeCodeEngineInfo, retryReason } from "./engine.js";
 export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
-export { localAvailability, chosenCommand } from "./availability.js";
+export { localAvailability, chosenCommand, desktopAppPaths, type DesktopApp } from "./availability.js";
 export { claudeLentModel, LENT_IDLE_MS } from "./lend.js";
 export { cliLentModel, NotSignedIn, SIGN_IN_RECHECK_MS, type CliAnswer } from "./lend-cli.js";
 export { MCP_NAME, claudeConfigDirOf, claudeConfigDirs, claudeMcpLink, claudeProfileEnv, claudeProjectServerApproval, claudeUserFile, userMcpLink, type UserMcpConfig } from "./mcp-link.js";

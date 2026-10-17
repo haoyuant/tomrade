@@ -392,6 +392,8 @@ export interface LocalCliStatus {
   manual?: { path: string; error: string };
   /** Found only inside WSL, where a Windows app cannot run it. */
   wsl?: string;
+  /** Not found, but this agent's desktop app is installed — which does not include the CLI. */
+  desktopApp?: string;
   attempts: CliAttempt[];
   /** Directories searched, in order. */
   searched: string[];

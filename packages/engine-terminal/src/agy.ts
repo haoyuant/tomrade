@@ -37,7 +37,10 @@ export function createAgyEngine(ctx: Context): Engine {
       { key: "model", title: "Model", choices: [], freeText: true },
       { key: "effort", title: "Effort", choices: ["low", "medium", "high", "xhigh", "max"].map((value) => ({ value })) }
     ],
-    available: localAvailability(ctx, { engineId: "agy", title: "Antigravity CLI", cli, install: "install the Antigravity CLI (curl -fsSL https://antigravity.google/cli/install.sh | bash) and sign in; the Antigravity desktop app does not include it" }),
+    available: localAvailability(ctx, {
+      engineId: "agy", title: "Antigravity CLI", cli, install: "install the Antigravity CLI (curl -fsSL https://antigravity.google/cli/install.sh | bash) and sign in",
+      desktopApp: { title: "Antigravity", mac: ["Antigravity"], windows: ["Programs\\Antigravity"] }
+    }),
     checkCli: (file) => cli.check(file),
     mcpLink: userMcpLink(ctx, {
       engineId: "agy",

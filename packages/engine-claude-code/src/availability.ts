@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Context } from "cordis";
 import type { EngineAvailability, EngineNeed } from "@tomradex/agent";
 import type {} from "@tomradex/mcp";
@@ -17,6 +20,30 @@ interface LocalEngine {
   signIn?: ({ args: string[]; says(output: string): boolean | null } | { ask(command: string | undefined): Promise<boolean | null> }) & { reason: string; need?: EngineNeed };
   /** Where the CLI reads its sign-in and settings from, shown when it is not signed in. */
   configDir?(): string;
+  /** A desktop app of the same agent that does not include the CLI: named when the CLI is missing but the app is there. */
+  desktopApp?: DesktopApp;
+}
+
+export interface DesktopApp {
+  title: string;
+  /** macOS bundle names, looked for in /Applications and ~/Applications. */
+  mac?: string[];
+  /** Windows install folders, relative to %LOCALAPPDATA% or Program Files. */
+  windows?: string[];
+  /** Further places, as absolute paths. */
+  paths?: string[];
+}
+
+/** Where a desktop app may be installed on this machine, whether or not it is. */
+export function desktopAppPaths(app: DesktopApp, host: { platform: NodeJS.Platform; env: NodeJS.ProcessEnv; home: string } = { platform: process.platform, env: process.env, home: os.homedir() }): string[] {
+  const extra = app.paths ?? [];
+  if (host.platform === "darwin") return [...extra, ...(app.mac ?? []).flatMap((name) => ["/Applications", path.posix.join(host.home, "Applications")].map((root) => path.posix.join(root, `${name}.app`)))];
+  if (host.platform === "win32") {
+    const env = (key: string) => Object.entries(host.env).find(([name]) => name.toUpperCase() === key)?.[1];
+    const roots = [env("LOCALAPPDATA") ?? path.win32.join(host.home, "AppData", "Local"), env("PROGRAMFILES")].filter((dir): dir is string => !!dir);
+    return [...extra, ...(app.windows ?? []).flatMap((dir) => roots.map((root) => path.win32.join(root, dir)))];
+  }
+  return extra;
 }
 
 /** The CLI path the person chose in Settings, if any. */
@@ -36,10 +63,13 @@ export function localAvailability(ctx: Context, engine: LocalEngine): (opts?: { 
     const command = chosenCommand(ctx, engine.engineId);
     if (!opts?.fresh && probe && probe.command === command && Date.now() - probe.at < 30_000) return probe.state;
     const manual = engine.cli.manualOf(command);
-    const cli = await engine.cli.locate({ manual, fresh: opts?.fresh });
+    const found = await engine.cli.locate({ manual, fresh: opts?.fresh });
+    // The app people install first rarely brings the CLI; say so rather than only "not found".
+    const app = found.state === "missing" && engine.desktopApp && desktopAppPaths(engine.desktopApp).some((dir) => fs.existsSync(dir)) ? engine.desktopApp.title : null;
+    const cli = app ? { ...found, desktopApp: app } : found;
     const state: EngineAvailability =
       cli.state !== "ready"
-        ? { ok: false, reason: cliReason(engine.title, cli, engine.install), need: cli.state === "missing" ? "install" : "repair", cli }
+        ? { ok: false, reason: app ? `${engine.title}: the ${app} app is installed, but not its command-line tool ${cli.name}, which Tomrade runs — ${engine.install}` : cliReason(engine.title, cli, engine.install), need: cli.state === "missing" ? "install" : "repair", cli }
         : !ctx.get("mcp")?.url
           ? { ok: false, reason: "the MCP server is not running — enable the mcp plugin", need: "service", cli }
           : engine.signIn && !(await canWork(engine.cli, manual, engine.signIn))
