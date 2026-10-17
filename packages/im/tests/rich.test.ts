@@ -77,7 +77,8 @@ describe("rich IM replies", () => {
     expect(text).toContain("Status: Todo");
   });
 
-  it("sends a document the turn saved as the exact Files version, with a link to it", async () => {
+  // Creating the store and two versioned saves run ~27 git commands; a busy machine stretches each spawn to most of a second.
+  it("sends a document the turn saved as the exact Files version, with a link to it", { timeout: 30_000 }, async () => {
     const body = "# Release plan\n\n1. Freeze\n2. Ship\n";
     const w = await boot(CARDS, async (_input, io) => {
       await io.tools.execute("write_file", { path: "Docs/release-plan.md", content: body });
@@ -86,7 +87,7 @@ describe("rich IM replies", () => {
       return { stop: "end" };
     });
     await w.receive(hello());
-    await expect.poll(() => w.delivered.filter(d => d.content.files?.length).length, { timeout: 5000 }).toBe(2);
+    await expect.poll(() => w.delivered.filter(d => d.content.files?.length).length, { timeout: 25_000 }).toBe(2);
     const [first] = w.delivered.filter(d => d.content.files?.length);
     const file = first.content.files![0];
     expect(file).toMatchObject({ name: "release-plan.md", mimeType: "text/markdown" });

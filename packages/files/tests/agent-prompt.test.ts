@@ -98,6 +98,8 @@ describe("what an agent is told about a project's files", () => {
       const input = turnOf(project.id, "backlog");
       await ctx.parallel("agent/prepare-turn", input);
       expect(input.filesIndex).toBeUndefined();
+      // Asking did not create the store, so a first turn runs no git.
+      expect(fs.existsSync(ctx.files.dirFor(project.id)!)).toBe(false);
     } finally {
       await ctx.fiber.dispose();
     }
