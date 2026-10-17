@@ -10,6 +10,11 @@
  * 30 tickets vanished on every run. `--second-instance` adds another process
  * on the same userData, idle, as when the app is launched twice.
  *
+ * Then publishes are made to meet — a write's own, the catch-up, a quit's —
+ * with the reconcile still running. Before they took turns, two staged the same
+ * change and the second commit found nothing left: `git commit … failed:` with
+ * no reason, in the log of an installed app.
+ *
  *   pnpm build:backend && pnpm --filter @tomrade/desktop test:storage-race
  */
 import { app } from "electron";
@@ -90,6 +95,26 @@ async function run() {
   check("every ticket written during a slow reconcile stays in the cache", lostCache.length === 0, `lost: ${lostCache.join(", ")}`);
   check("and reaches the folder's snapshot", lostFolder.length === 0, `lost: ${lostFolder.join(", ")}`);
   check("the folder ends in step with the cache", (await ctx.storage.statusFor(project.id)).state === "synced");
+
+  const warnings = [];
+  ctx.logger.exporter({ colors: 0, export: (m) => m.type === "warn" && warnings.push(m.args.map(String).join(" ")) });
+  const rejected = [];
+  for (let i = 0; i < 3; i++) {
+    ctx.items.create({ projectId: project.id, boardId: board.id, title: `published from every side ${i + 1}`, by: "human" });
+    const met = await Promise.allSettled([ctx.storage.publish(project.id, "write"), ctx.storage.reconcileAll("reconcile"), ctx.storage.publish(project.id, "catch-up"), ctx.storage.flushAll("quit")]);
+    rejected.push(...met.filter((o) => o.status === "rejected").map((o) => String(o.reason?.message ?? o.reason)));
+  }
+  const gitFailures = warnings.filter((w) => /git .* failed/.test(w));
+  check("publishes that meet all go through", rejected.length === 0, rejected.join("\n  "));
+  check("and no git command fails meanwhile", gitFailures.length === 0, gitFailures.join("\n  "));
+  // Once the turns queued so far are through, with nothing left to write: no step of a publish is caught half-way.
+  await ctx.storage.publish(project.id, "check");
+  const git = (args, cwd) => execFileSync("git", args, { cwd, encoding: "utf8" });
+  const projectDir = ctx.hub.catalog.project(project.id).dir;
+  const onRemote = git(["show", "main:.tomrade/state/items.jsonl"], remote);
+  const committed = git(["status", "--porcelain", "--", ".tomrade"], projectDir).trim() === "" && git(["rev-parse", "HEAD"], projectDir) === git(["rev-parse", "main"], remote);
+  check("every one of them is committed and pushed", committed && [1, 2, 3].every((i) => onRemote.includes(`published from every side ${i}`)));
+  check("and the project reads synced", (await ctx.storage.statusFor(project.id)).state === "synced");
 
   fs.writeFileSync(path.join(work, "idle-stop"), "1");
   await sleep(300);
