@@ -27,6 +27,7 @@
     "@tomradex/engine-opencode": "workspace:*",
     "@tomradex/engine-pi": "workspace:*",
     "@tomradex/github": "workspace:*",
+    "@tomradex/herdr": "workspace:*",
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",

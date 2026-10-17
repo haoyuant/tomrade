@@ -334,6 +334,10 @@ plugins:
   # "blocked" badge. Optional — the platform stores the edges either way.
   - id: deps-graph
     name: "@tomradex/deps-graph"
+  # herdr, the terminal workspace manager coding agents run in, when this
+  # machine has it: a session remembers its pane, and the ticket finds it again.
+  - id: herdr
+    name: "@tomradex/herdr"
   # Ticket ↔ code: the branches, pull requests and coding sessions of a ticket,
   # its status read from git, and the Start button that hands a ticket to a
   # local coding agent. Optional — nothing else reads its tables.

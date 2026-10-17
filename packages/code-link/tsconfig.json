@@ -16,6 +16,7 @@
     { "path": "../engine-opencode" },
     { "path": "../engine-pi" },
     { "path": "../github" },
+    { "path": "../herdr" },
     { "path": "../hub" },
     { "path": "../ipc" },
     { "path": "../items" },

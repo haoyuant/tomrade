@@ -41,6 +41,17 @@ describe("code-link delivery migration", () => {
     expect(store.links(project.id, item.id)[0]).toMatchObject({ delivery: 1, mergedSha: "old" });
   });
 
+  it("keeps the herdr pane a session's hooks report", async () => {
+    const { ctx, project } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    const session = store.createSession(project.id, { repoId: "repo", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "here" });
+    expect(session.herdrPane).toBeNull();
+    expect(store.patchSession(project.id, session.id, { herdrPane: "w3:p1" }).herdrPane).toBe("w3:p1");
+    expect(store.session(project.id, session.id)!.herdrPane).toBe("w3:p1");
+    await ctx.fiber.dispose();
+  });
+
   it("backfills existing links as delivery 1 without losing merge history", () => {
     const db = new ProjectDb("test", ":memory:");
     db.exec("CREATE TABLE items (id TEXT PRIMARY KEY, status TEXT NOT NULL)");

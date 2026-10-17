@@ -122,6 +122,9 @@ importers:
       '@tomradex/github':
         specifier: workspace:*
         version: link:../../packages/github
+      '@tomradex/herdr':
+        specifier: workspace:*
+        version: link:../../packages/herdr
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../../packages/hub
@@ -496,6 +499,9 @@ importers:
       '@tomradex/github':
         specifier: workspace:*
         version: link:../github
+      '@tomradex/herdr':
+        specifier: workspace:*
+        version: link:../herdr
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
@@ -1318,6 +1324,25 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/herdr:
+    dependencies:
+      '@tomradex/doctor':
+        specifier: workspace:*
+        version: link:../doctor
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

@@ -74,6 +74,9 @@
       "path": "./packages/engine-workbuddy"
     },
     {
+      "path": "./packages/herdr"
+    },
+    {
       "path": "./packages/engine-loop"
     },
     {

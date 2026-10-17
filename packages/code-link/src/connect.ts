@@ -4,7 +4,7 @@ import { parse as parseToml } from "smol-toml";
 import { CURSOR_HOOK_SCRIPT, cursorHookScript, withCursorHooks } from "@tomradex/engine-cursor";
 import { opencodePlugin, withMcpEntry } from "@tomradex/engine-opencode";
 import { outsideExtension } from "@tomradex/engine-pi";
-import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
+import { HERDR_PANE_HEADER, HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
 
 /** The agents a repository can be connected for, in the order they are shown. */
@@ -52,20 +52,25 @@ export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
 /** OpenCode loads a project plugin from here by itself. */
 export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
 
-export function hookCommand(eventUrl: string, agent?: HookAgent): string {
+/** The committed hook's command; `pane: false` is the one written before hooks named their herdr pane, which still counts as connected. */
+export function hookCommand(eventUrl: string, agent?: HookAgent, options: { pane?: boolean } = {}): string {
   const url = eventUrl.replace(/'/g, "'\\''");
-  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
+  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${options.pane === false ? "" : ` ${HERDR_PANE_HEADER}`}${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
 }
+
+/** Every command of ours a hook may carry: today's, and the one from before the pane header. */
+export const hookCommands = (eventUrl: string, agent?: HookAgent): string[] => [hookCommand(eventUrl, agent), hookCommand(eventUrl, agent, { pane: false })];
 
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 /** Whether every event runs `command` among its hooks, in Claude Code's (and Codex's) hook format. */
-export function hasHooks(config: Record<string, unknown>, events: readonly string[], command: string): boolean {
+export function hasHooks(config: Record<string, unknown>, events: readonly string[], commands: string | string[]): boolean {
+  const ours = Array.isArray(commands) ? commands : [commands];
   return events.every((event) => {
     const entries = object(config.hooks)[event];
     return Array.isArray(entries) && entries.some((entry) => {
       const hooks = object(entry).hooks;
-      return Array.isArray(hooks) && hooks.some((hook) => object(hook).command === command);
+      return Array.isArray(hooks) && hooks.some((hook) => ours.includes(object(hook).command as string));
     });
   });
 }
@@ -85,7 +90,7 @@ function withCodexHooks(existing: string, eventUrl: string): string | null {
   ]), end].join("\n");
   const clean = existing.replace(/# BEGIN TOMRADE HOOKS[\s\S]*?# END TOMRADE HOOKS\n?/, "").trimEnd();
   try {
-    if (clean.includes("X-Tomrade-Agent: codex")) return hasHooks(parseToml(clean), CODEX_HOOK_EVENTS, command) ? existing : null;
+    if (clean.includes("X-Tomrade-Agent: codex")) return hasHooks(parseToml(clean), CODEX_HOOK_EVENTS, hookCommands(eventUrl, "codex")) ? existing : null;
     const candidate = `${clean}\n\n${block}\n`;
     parseToml(candidate);
     return candidate;

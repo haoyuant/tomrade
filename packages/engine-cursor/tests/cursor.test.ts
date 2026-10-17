@@ -123,6 +123,8 @@ describe("Cursor's hooks", () => {
     const at = { session_id: "c1", cwd: "/repo", tomrade_agent: "cursor" };
     expect(read({ ...base, hook_event_name: "beforeSubmitPrompt", prompt: "go" })).toEqual({ ...at, hook_event_name: "UserPromptSubmit" });
     expect(read({ ...base, hook_event_name: "sessionStart" })).toEqual({ ...at, hook_event_name: "SessionStart" });
+    // the herdr pane the event endpoint added from the hook's header comes along
+    expect(read({ ...base, hook_event_name: "sessionStart", herdr_pane: "w1:p1" })).toEqual({ ...at, herdr_pane: "w1:p1", hook_event_name: "SessionStart" });
     expect(read({ ...base, hook_event_name: "preToolUse", tool_name: "Shell", tool_input: { command: "ls" } })).toEqual({ ...at, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } });
     expect(read({ ...base, hook_event_name: "postToolUse", tool_name: "Read", tool_input: { file_path: "/repo/a" }, tool_output: "{}" })).toEqual({ ...at, hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: "/repo/a" }, tool_output: "{}" });
     expect(read({ ...base, hook_event_name: "postToolUseFailure", tool_name: "Shell", tool_input: { command: "x" }, error_message: "exit 1" })).toMatchObject({ hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_error: "exit 1" });

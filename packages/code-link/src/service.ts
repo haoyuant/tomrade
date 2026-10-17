@@ -13,6 +13,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
+import type {} from "@tomradex/herdr";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/repos";
 import { normalizeRemote, sameRepository } from "@tomradex/repos";
@@ -1831,7 +1832,7 @@ export class CodeLink extends Service {
         }
         const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];
         if (live) {
-          const where = live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
+          const where = live.herdrPane ? w("inHerdr") : live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
           const when = since(live.lastEventAt ?? live.startedAt);
           const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[live.state];
           // What it is doing beats what it last said; an error is what it last said.
@@ -1840,7 +1841,9 @@ export class CodeLink extends Service {
             label: w("session"),
             icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
             state,
-            value: `${named(w, SESSION_STATES, live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w("lastSignal", { when })}`
+            value: `${named(w, SESSION_STATES, live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w("lastSignal", { when })}`,
+            // a session in a herdr pane is a click away
+            ...(live.herdrPane && live.state !== "ended" ? { command: "code-link.open-terminal" } : {})
           });
           if (live.state !== "running") rows.push({ label: w("continue"), icon: "i-send", value: live.mode === "terminal" ? w("continueTerminal") : w("continueHere"), command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
           if (live.threadId) rows.push({ label: w("conversation"), icon: "i-panel", value: live.state === "waiting" ? w("openWaiting") : w("openInAssistant"), command: "code-link.open-thread" });
@@ -1975,6 +1978,9 @@ export class CodeLink extends Service {
       group,
       run: async ({ projectId, itemId }) => {
         if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
+        // The session already has a terminal, in herdr: show that one rather than open another.
+        const pane = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost")?.herdrPane;
+        if (pane && (await this.ctx.get("herdr")?.focus(pane))) return { toast: this.words()("shownInHerdr", { pane }) };
         const cwd = this.worktreeOf(projectId, itemId);
         if (!cwd) return { toast: this.words()("noWorktree") };
         const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});

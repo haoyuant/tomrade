@@ -110,6 +110,7 @@
     "@tomradex/engine-terminal": "workspace:*",
     "@tomradex/schedules": "workspace:*",
     "@tomradex/doctor": "workspace:*",
+    "@tomradex/herdr": "workspace:*",
     "@tomradex/shell": "workspace:*",
     "@tomradex/storage": "workspace:*",
     "@tomradex/storage-git": "workspace:*",
