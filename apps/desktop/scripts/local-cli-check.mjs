@@ -133,6 +133,9 @@ const run = async () => {
   await wait(async () => (await $(`document.querySelector('[data-testid="resume-after-limit"]')?.getAttribute('aria-checked')`)) === "false", "switch shows off");
   await click('[data-testid="resume-after-limit"]');
   check("and back on", await wait(() => ctx.settings.get().agent?.resumeAfterLimit === true, "resumeAfterLimit on"));
+  check("it lets a conversation run a quarter hour before stopping it", (await $(`document.querySelector('[data-testid="run-limit"]')?.value`)) === "15");
+  await $(`(() => { const s = document.querySelector('[data-testid="run-limit"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, '60'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  check("and a longer limit is saved", await wait(() => ctx.settings.get().agent?.maxRunMinutes === 60, "maxRunMinutes 60"));
   const rowText = await text('[data-testid="cli-setup-claude-code"]');
   check("the row names the chosen file and that it was chosen", rowText.includes(claude) && rowText.includes("chosen by you"), rowText);
   check("and says how to sign in", rowText.includes("Sign in: run claude and follow the prompts"), rowText);

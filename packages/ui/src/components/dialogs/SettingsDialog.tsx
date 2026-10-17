@@ -646,7 +646,9 @@ const PRESETS = [
 const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
 // LENT_WORKER in @tomradex/llm: roles.worker naming a signed-in local agent
 const LENT_WORKER = "lent:";
-const EMPTY_AGENT: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
+const EMPTY_AGENT: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, maxRunMinutes: 15, engines: {}, playbookChoices: {} };
+// a conversation's run ceiling, in minutes; 240 matches a ticket's
+const RUN_LIMITS = [5, 10, 15, 30, 60, 120, 240];
 
 /** Model profiles + role bindings + the default engine: the two halves of "who does the work". */
 function AssistantPane({
@@ -668,6 +670,7 @@ function AssistantPane({
   const enginesOff = (usePlugins().data?.plugins ?? []).filter((p) => p.implements.includes("engine") && p.state === "disabled");
   const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
+  const runMinutes = agent.maxRunMinutes ?? EMPTY_AGENT.maxRunMinutes;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
   // An agent's first sign-in check can take a model call; look again until each has answered.
   const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000,
@@ -836,6 +839,26 @@ function AssistantPane({
             />
           </div>
           <span className="meta-txt">{t("settingsDialog.resumeAfterLimitNote")}</span>
+        </div>
+        <div className="field">
+          <div className="cfg-row">
+            <label className="cfg-name" htmlFor="run-limit">{t("settingsDialog.runLimitLabel")}</label>
+            <select
+              id="run-limit"
+              className="input"
+              style={{ width: "auto" }}
+              data-testid="run-limit"
+              value={runMinutes}
+              onChange={(e) => saveAgent({ ...agent, maxRunMinutes: Number(e.target.value) })}
+            >
+              {[...new Set([...RUN_LIMITS, runMinutes])].sort((a, b) => a - b).map((n) => (
+                <option key={n} value={n}>
+                  {t("settingsDialog.runLimitMinutes", { n })}
+                </option>
+              ))}
+            </select>
+          </div>
+          <span className="meta-txt">{t("settingsDialog.runLimitNote")}</span>
         </div>
       </div>
 

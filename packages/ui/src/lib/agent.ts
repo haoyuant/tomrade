@@ -76,7 +76,7 @@ export const conducts = (engine: Pick<EngineView, "capabilities">): boolean => e
 export const usePlaybooks = (projectId?: string) =>
   useQuery({ queryKey: agentKeys.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });
 
-const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} };
+const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, maxRunMinutes: 15, engines: {}, playbookChoices: {} };
 
 /**
  * Surfaces playbook id collisions the user has not ruled on: one toast per id,
