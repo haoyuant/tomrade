@@ -14,6 +14,8 @@ export interface AccountInfo {
   status: StorageStatus;
   pending: number;
   offlineAccess: boolean;
+  /** Chosen on the sign-in page: projects stay on this computer and nothing syncs until someone signs in. */
+  localOnly: boolean;
   conflicts: { id: string; local: unknown; cloud: unknown }[];
   /** Whose projects this local Hub holds, when one account already owns it. */
   owner: { email: string | null } | null;
@@ -54,6 +56,7 @@ declare module "@tomradex/ipc" {
     "account.resendConfirmation": (email: string, lang?: string) => void;
     "account.resetPassword": (email: string, lang?: string) => void;
     "account.signOut": () => void;
+    "account.useLocally": () => AccountInfo;
     "account.deleteAccount": (password: string) => AccountInfo;
     "account.sync": () => AccountInfo;
     "account.resolve": (id: string, choice: "local" | "cloud") => AccountInfo;
@@ -157,7 +160,7 @@ export class CloudHub extends Service {
       // user's project UI behind a network timeout; a locked one waits for the
       // stored session rather than flash the sign-in form.
       ctx.ipc.handle("account.info", async () => {
-        if (!this.cache.data.offlineAccess) await this.sessionRead;
+        if (!this.cache.data.offlineAccess && !this.cache.data.localOnly) await this.sessionRead;
         return this.info();
       });
       ctx.ipc.handle("account.signIn", (email, password, agreed) => this.signIn(email, password, agreed));
@@ -166,6 +169,7 @@ export class CloudHub extends Service {
       ctx.ipc.handle("account.resendConfirmation", (email, lang) => this.resendConfirmation(email, lang));
       ctx.ipc.handle("account.resetPassword", (email, lang) => this.resetPassword(email, lang));
       ctx.ipc.handle("account.signOut", () => this.signOut());
+      ctx.ipc.handle("account.useLocally", () => this.useLocally());
       ctx.ipc.handle("account.deleteAccount", password => this.deleteAccount(password));
       ctx.ipc.handle("account.sync", async () => { await this.ctx.storage.writeHub(); await this.sync(); return this.info(); });
       ctx.ipc.handle("account.resolve", async (id, choice) => {
@@ -258,7 +262,7 @@ export class CloudHub extends Service {
   info(): AccountInfo {
     return { user: this.user ? { id: this.user.id, email: this.user.email ?? "" } : null,
       hubId: this.cache.data.hubId, status: this.status(), pending: this.cache.data.outbox.length,
-      offlineAccess: this.cache.data.offlineAccess && !!this.cache.data.userId,
+      offlineAccess: this.cache.data.offlineAccess && !!this.cache.data.userId, localOnly: this.cache.data.localOnly,
       owner: this.cache.data.userId ? { email: this.cache.data.email } : null, switchingTo: this.switchingTo,
       terms: { current: TERMS_VERSION, accepted: this.termsAccepted() },
       conflicts: this.cache.data.conflicts.map(r => ({ id: recordKey(r), cloud: r.value, local: this.cache.view().find(v => recordKey(v) === recordKey(r))?.value })) };
@@ -289,6 +293,7 @@ export class CloudHub extends Service {
     if (this.closed || this.user?.id !== userId) return;
     this.cache.bind(userId, z.uuid().parse(hubId));
     this.cache.data.offlineAccess = true;
+    this.cache.data.localOnly = false;
     this.cache.data.email = this.user?.email ?? this.cache.data.email;
     this.cache.save();
     this.config.accounts?.claim({ id: userId, email: this.cache.data.email ?? "" });
@@ -415,6 +420,16 @@ export class CloudHub extends Service {
   private page(name: "confirmed" | "reset", lang?: string): string {
     return new URL(`${lang === "zh" ? "/zh" : ""}/auth/${name}/`, this.config.site).href;
   }
+  /**
+   * The account is optional. Without one, projects stay on this computer and their
+   * catalog entries wait in the outbox until an account signs in here.
+   */
+  useLocally(): AccountInfo {
+    this.cache.data.localOnly = true;
+    this.cache.save();
+    this.notify();
+    return this.info();
+  }
   async signOut(): Promise<void> {
     // Complete any in-flight commit before ending the session; unsent edits stay in the durable outbox.
     this.signingOut = true;
@@ -424,7 +439,9 @@ export class CloudHub extends Service {
       const { error } = await this.client.auth.signOut({ scope: "local" });
       if (error) await this.config.sessionStorage.removeItem(this.sessionKey);
       this.user = null;
+      // Back to the sign-in page, which offers local use again.
       this.cache.data.offlineAccess = false;
+      this.cache.data.localOnly = false;
       this.cache.save();
       this.notify();
     } finally { this.signingOut = false; }

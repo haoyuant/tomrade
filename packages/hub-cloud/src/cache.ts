@@ -21,6 +21,8 @@ const State = z.object({
   observed: z.record(z.string(), z.string()), conflicts: z.array(RecordSchema),
   migrated: z.boolean(), lastSyncAt: z.number().nullable(),
   offlineAccess: z.boolean().default(false),
+  /** Chosen on the sign-in page: this local Hub is used without an account until someone signs in here. */
+  localOnly: z.boolean().default(false),
   /** The terms version agreed to here, kept until the account carries it too. */
   terms: z.string().nullable().default(null)
 });
@@ -34,7 +36,7 @@ function canonical(v: unknown): unknown {
 }
 
 const empty = (endpoint: string): CacheState => ({
-  v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, terms: null
+  v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, localOnly: false, terms: null
 });
 
 /** A durable outbox, outside the disposable SQLite caches. No credentials or project rows. */

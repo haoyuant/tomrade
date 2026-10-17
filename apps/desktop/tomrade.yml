@@ -177,8 +177,12 @@ plugins:
     config:
       file: "${userData}/announcements.json"
       version: "${appVersion}"
-  # Activated when the deployment supplies a Supabase URL and publishable key.
-  # Migrates only Hub metadata; project storage providers below keep their role.
+  # Accounts and the portable Hub catalog, in Supabase. Always on: the build
+  # carries the production project's URL and publishable key, which
+  # TOMRADE_SUPABASE_URL / TOMRADE_SUPABASE_PUBLISHABLE_KEY or url/publishableKey
+  # here override. The account itself is optional: the Hub syncs nothing until
+  # someone signs in, and without one, projects stay on this machine. Migrates
+  # only Hub metadata; project storage providers below keep their role.
   - id: hub-cloud
     name: ./dist/hub-cloud.js
     config:

@@ -106,6 +106,10 @@
 .account-gate__form .account-step__actions { padding-top: 4px; }
 .account-gate__form .link-btn { color: var(--poster-red); font-size: 12px; }
 .account-gate__form .account-step > .link-btn { display: block; margin-inline: auto; }
+/* The way past the account: set apart below whatever the panel is showing. */
+.account-gate__form .account-local { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.account-gate__form .account-local .link-btn { font-size: 15px; }
+.account-gate__form .account-local .field-note { text-align: center; color: var(--poster-muted); }
 /* Keyboard users can enter immediately, even during the entrance; once shown, it never plays again. */
 .account-gate__form.is-entered { animation: none; }
 @keyframes account-cat-rise { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

@@ -6,7 +6,7 @@ Talk to the agent → it shapes the requirement with you → plans epics and **f
 
 ## Product decisions (direction of record)
 
-1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. Configured cloud builds use Supabase for accounts and portable Hub metadata, with an offline outbox; project storage remains local-first. See [`docs/supabase-hub.md`](docs/supabase-hub.md).
+1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. The desktop build uses Supabase for an optional account that syncs portable Hub metadata, with an offline outbox; without an account that metadata stays on this machine. Project storage remains local-first either way. See [`docs/supabase-hub.md`](docs/supabase-hub.md).
 2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
 3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
 4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A plugin from outside the app — Community, a file, a folder, or one an agent wrote in Plugin Studio — is written against `@tomradex/plugin-sdk` and loaded behind an async, attributed, namespaced facade — see [`docs/plugin-api.md`](docs/plugin-api.md).
@@ -35,7 +35,7 @@ apps/desktop/tomrade.yml   the application — the modules it needs, then one ro
 packages/domain       types + zod schemas + typed errors. Zero I/O, zero ctx. Everyone imports this.
 packages/db           ctx.db           a pool of SQLite caches — hub.db plus one project.db per project; core schema, plugin table registry
 packages/hub          ctx.hub          this machine: device id, and the catalog of projects and repository checkouts it knows
-packages/hub-cloud    ctx.cloudHub     Supabase accounts and Hub metadata; encrypted sessions, durable outbox and conflicts (when configured)
+packages/hub-cloud    ctx.cloudHub     Supabase accounts and Hub metadata; encrypted sessions, durable outbox and conflicts (the account is optional)
 packages/oplog        ctx.oplog        append, read, undo — per project, each row stamped with the machine that wrote it
 packages/write        —                write/pre-commit waterfall + the default policy plugins
 packages/items        ctx.items        issues, labels, relations (+ their tools and channels)
