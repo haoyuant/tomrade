@@ -2,7 +2,7 @@ import fs from 'node:fs';
 const log = process.env.TOMRADE_TEST_LOG;
 const record = (value) => { if (log) fs.appendFileSync(log, JSON.stringify(value) + '\n'); };
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
-record({ spawn: process.pid, argv: process.argv.slice(2), bridge: fs.readFileSync(process.argv[process.argv.indexOf('-e') + 1], 'utf8') });
+record({ spawn: process.pid, argv: process.argv.slice(2), bridge: fs.readFileSync(process.argv[process.argv.indexOf('-e') + 1], 'utf8'), token: process.env.TOMRADE_MCP_TOKEN ?? null });
 const usage = (input, output) => ({ input, output, cacheRead: 7, cacheWrite: 1, totalTokens: input + output + 8, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 } });
 const assistant = (text, extra = {}) => ({ role: 'assistant', content: [{ type: 'text', text }], provider: 'fake', model: 'fixed-model', usage: usage(10, 3), stopReason: 'stop', ...extra });
 let waiting;

@@ -12,6 +12,7 @@
     { "path": "../contributions" },
     { "path": "../db" },
     { "path": "../domain" },
+    { "path": "../engine-pi" },
     { "path": "../github" },
     { "path": "../hub" },
     { "path": "../ipc" },

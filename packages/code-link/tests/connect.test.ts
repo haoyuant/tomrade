@@ -1,6 +1,6 @@
 /**
  * The fast path for a developer's own terminal: a repository connected to
- * Tomrade (Claude, Codex and WorkBuddy MCP config, agent instructions, hooks) as a pull request, tokenless hooks that
+ * Tomrade (Claude, Codex, WorkBuddy and Pi MCP config, agent instructions, hooks) as a pull request, tokenless hooks that
  * still find their session by cwd, claim_ticket from such a session, and a
  * branch nobody's ticket names becoming a ticket.
  */
@@ -86,7 +86,7 @@ describe("connecting a repository", () => {
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
+    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
     const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
@@ -193,6 +193,19 @@ describe("connecting a repository", () => {
     expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "other-instance", configuredUrl: otherUrl });
   });
 
+  it("gives Pi a project extension that reaches this project and reports to Tomrade", () => {
+    const dir = path.join(root, `pi-${n++}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(dir, input);
+    const source = fs.readFileSync(path.join(dir, ".pi/extensions/tomrade.ts"), "utf8");
+    expect(source).toContain(`const server = {"url":"${input.mcpUrl}"`);
+    expect(source).toContain(`const eventUrl = "${input.eventUrl}";`);
+    expect(source).toContain('"x-tomrade-agent": "pi"');
+    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1", eventUrl: "http://127.0.0.1:19091/sessions/event" })).toContain(".pi/extensions/tomrade.ts");
+  });
+
   it("asks a repository connected before WorkBuddy's hooks existed to connect again", async () => {
     const { codeLink, ctx, project, repo, checkout } = await machine();
     writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });
@@ -203,6 +216,7 @@ describe("connecting a repository", () => {
     expect(view.state).toBe("unconnected");
     expect(view.agents.find((agent) => agent.id === "workbuddy")).toMatchObject({ title: "WorkBuddy", tools: true, tracking: "none", instructions: true });
     expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ tools: true, tracking: "hooks" });
+    expect(view.agents.find((agent) => agent.id === "pi")).toMatchObject({ title: "Pi", tools: true, tracking: "hooks", instructions: true });
   });
 
   it("keeps the branch and explains push-off, push failure and local merge", async () => {
@@ -234,7 +248,7 @@ describe("connecting a repository", () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
     const result = await codeLink.connect(project.id, repo.id);
     expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
-    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", "AGENTS.md", "CLAUDE.md"]);
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
     git(["fetch", "-q", "origin"], checkout);
@@ -257,6 +271,7 @@ describe("untracked terminal sessions", () => {
     expect(claimed.tracking.message).toContain(".claude/settings.json");
     expect(claimed.tracking.message).toContain(".codex/config.toml");
     expect(claimed.tracking.message).toContain(".codebuddy/settings.json");
+    expect(claimed.tracking.message).toContain(".pi/extensions/tomrade.ts");
     expect(claimed.tracking.message).toContain(language === "zh" ? "未被 Tomrade 跟踪" : "not tracked by Tomrade");
     expect(claimed.conventions).not.toContain("call note_progress with one line at milestones");
     expect(items.get(project.id, item.id)?.status).toBe("doing");
@@ -441,6 +456,24 @@ describe("a developer's own WorkBuddy session", () => {
     const item = items.create({ projectId: project.id, boardId: board.id, title: "WorkBuddy work", by: "human" });
     const inv = { by: "ai:mcp", projectId: project.id };
     expect(await ctx.tools.execute("claim_ticket", { key: item.key }, inv)).toMatchObject({ tracking: { tracked: true, sessionId: session.id } });
+    await post("Stop");
+    expect(codeLink.sessionsOf(project.id)[0].state).toBe("waiting");
+    await post("SessionEnd");
+    expect(codeLink.sessionsOf(project.id)[0].state).toBe("ended");
+  });
+});
+
+describe("a developer's own Pi session", () => {
+  it("is followed through the project extension's reports and claims a ticket as Pi", async () => {
+    const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
+    // What .pi/extensions/tomrade.ts posts, as pi 1.3 runs it.
+    const post = (event: string) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "pi" },
+      body: JSON.stringify({ session_id: "pi-1", cwd: checkout, hook_event_name: event }) });
+    await post("SessionStart");
+    const [session] = codeLink.sessionsOf(project.id);
+    expect(session).toMatchObject({ agent: "pi", repoId: repo.id, externalId: "pi-1", state: "running" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Pi work", by: "human" });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id })).toMatchObject({ tracking: { tracked: true, sessionId: session.id } });
     await post("Stop");
     expect(codeLink.sessionsOf(project.id)[0].state).toBe("waiting");
     await post("SessionEnd");

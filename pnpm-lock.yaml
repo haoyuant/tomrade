@@ -447,6 +447,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/engine-pi':
+        specifier: workspace:*
+        version: link:../engine-pi
       '@tomradex/github':
         specifier: workspace:*
         version: link:../github
