@@ -200,3 +200,27 @@ it("tells the main conversation what it can do with the code and where the code 
   expect(main).toContain("- Site: site — no checkout on this machine");
   expect(promptSections({ ...base, purpose: "code" }, io, { playbooks: false }).join("\n")).not.toContain("main conversation");
 });
+
+it("runs a General ticket on the first engine that can take one now, passing over one that can only chat", async () => {
+  const { ctx, items, project, board } = await fresh({ plugins: [Tools, [Settings, { path: path.join(os.tmpdir(), `general-settings-${crypto.randomUUID()}.json`) }], Agent] });
+  await settle();
+  const ran: string[] = [];
+  const engine = (id: string, title: string, live?: ["backlog"]) => ({ id, title, author: "ai:test", capabilities: ["backlog", "general"] as ("backlog" | "general")[], available: async () => ({ ok: true, ...(live ? { capabilities: live } : {}) }), async turn() {
+    ran.push(id);
+    return { stop: "end" as const };
+  } });
+  // Tomrade with no model: available, but only to chat.
+  ctx.agent.engine(engine("chat-only", "Tomrade", ["backlog"]));
+  ctx.agent.engine(engine("worker", "Worker"));
+  try {
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Write the launch note", workType: "general", by: "human" });
+    const started = await ctx.agent.startGeneral(project.id, item.id);
+    expect(ctx.agent.store.thread(project.id, started.threadId)?.engine).toBe("worker");
+    await expect.poll(() => ran).toEqual(["worker"]);
+
+    const other = items.create({ projectId: project.id, boardId: board.id, title: "Plan the offsite", workType: "general", by: "human" });
+    await expect(ctx.agent.startGeneral(project.id, other.id, { engine: "chat-only" })).rejects.toThrow("Tomrade can only chat for now — connect a model");
+  } finally {
+    await ctx.fiber.dispose();
+  }
+});

@@ -1443,6 +1443,27 @@ describe("starting a ticket", () => {
     expect(codeLink.sessionsOf(project.id, item.id).map((s) => s.id)).toEqual([started.sessionId]);
   });
 
+  it("passes over an engine that can only chat when none is named, and says why when it is named", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    // Tomrade with no model: available, but only to chat; it comes before every CLI.
+    const chatOnly: Engine = { ...fakeCodeEngine([]), id: "chat-only", title: "Tomrade", available: async () => ({ ok: true, capabilities: ["backlog"] }) };
+    await ctx.plugin({ name: "chat-only", inject: ["agent"], apply: (c: Context) => void c.agent.engine(chatOnly) });
+    await settle();
+    const engines = vi.spyOn(agent, "codeEngines").mockImplementation(() => [chatOnly, ...agent.allEngines().filter((e) => e.id === "fake-code")]);
+    try {
+      const started = await codeLink.start(project.id, ticket("Run on whoever can").id, { mode: "run" });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      expect(agent.store.thread(project.id, started.threadId)?.engine).toBe("fake-code");
+      await untilRunsSettle(agent);
+
+      expect(await codeLink.start(project.id, ticket("Run on Tomrade").id, { mode: "run", engine: "chat-only" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringContaining("Tomrade: can only chat for now — connect a model") });
+    } finally {
+      engines.mockRestore();
+    }
+  });
+
   it("starts Cursor in a terminal once its own config names Tomrade, and tells it to claim first", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, project, repo, checkout, ticket } = world;

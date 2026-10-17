@@ -27,6 +27,7 @@ import {
   type RetryState,
   type CardView,
   type Engine,
+  type EngineAvailability,
   type CliCheck,
   type McpLinkView,
   type EngineTry,
@@ -893,6 +894,26 @@ export class Agent extends Service {
     return this.withGeneralLock(projectId, itemId, async () => (await this.prepare(projectId, itemId, opts)).preparation);
   }
 
+  /**
+   * The engine a General ticket runs on: the one named, else the first that can take one right now.
+   * Available is not enough: Tomrade with no model is available, but only to chat.
+   */
+  private async generalEngine(named?: string): Promise<Engine> {
+    const candidates = named ? [this.engines.get(named)].filter((e): e is Engine => !!e) : [...this.engines.values()].filter((e) => e.capabilities?.includes("general"));
+    const reasons: string[] = [];
+    for (const engine of candidates) {
+      if (!engine.capabilities?.includes("general")) {
+        reasons.push(`${engine.title} cannot run General tickets`);
+        continue;
+      }
+      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
+      if (!state.ok) reasons.push(state.reason ?? `${engine.title} is unavailable`);
+      else if (state.capabilities && !state.capabilities.includes("general")) reasons.push(`${engine.title} can only chat for now — connect a model in Settings → Assistant to run tickets`);
+      else return engine;
+    }
+    throw new Error(reasons.length ? reasons.join(" · ") : "No compatible General execution engine is available");
+  }
+
   async startGeneral(projectId: string, itemId: string, opts: GeneralStartOptions = {}): Promise<{ threadId: string; runId: string; continued: boolean }> {
     return this.withGeneralLock(projectId, itemId, async () => {
       const { preparation, item } = await this.prepare(projectId, itemId, { ...opts, external: false });
@@ -917,11 +938,7 @@ export class Agent extends Service {
     const asked = opts.engine && this.answering(opts.engine);
     let engineId = asked && this.engines.has(asked) ? asked : thread?.engine ?? this.answering(this.settingsOf().defaultEngine);
     if (!opts.external) {
-      const engine = asked ? this.engines.get(asked) : (thread ? this.engines.get(thread.engine) : [...this.engines.values()].find(e => e.capabilities?.includes("general")));
-      if (!engine?.capabilities?.includes("general")) throw new Error("No compatible General execution engine is available");
-      const available = await engine.available();
-      if (!available.ok) throw new Error(available.reason ?? "The selected engine is unavailable");
-      engineId = engine.id;
+      engineId = (await this.generalEngine(asked || thread?.engine)).id;
     }
     await this.refreshProjectPlaybooks(projectId);
     let selected = thread?.execution?.playbook;
