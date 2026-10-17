@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { Settings, type SettingsSectionView } from "@tomradex/settings";
+import { resolveLocale, Settings, type SettingsSectionView } from "@tomradex/settings";
 import { fresh } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-settings-"));
@@ -119,5 +119,17 @@ describe("settings", () => {
     ctx.settings.mergeUser({ v: 1, sections: { theme: { value: "matcha", updatedAt: Date.now() + 1000 }, language: { value: "zh", updatedAt: 1 } } });
     expect(ctx.settings.get().theme).toBe("matcha");
     expect(ctx.settings.get().language).toBe("system");
+  });
+});
+
+describe("resolveLocale", () => {
+  it("speaks Chinese only for Simplified Chinese, and English for every other language", () => {
+    expect(resolveLocale("zh", "en-US")).toBe("zh");
+    expect(resolveLocale("ja", "zh-CN")).toBe("en");
+    expect(resolveLocale("zh-Hant", "zh-CN")).toBe("en");
+    expect(resolveLocale("system", "zh-CN")).toBe("zh");
+    expect(resolveLocale("system", "zh-Hant-TW")).toBe("en");
+    expect(resolveLocale("system", "zh-TW")).toBe("en");
+    expect(resolveLocale(undefined, "fr-FR")).toBe("en");
   });
 });
