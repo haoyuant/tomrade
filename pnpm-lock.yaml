@@ -813,12 +813,18 @@ importers:
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3

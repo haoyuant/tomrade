@@ -15,6 +15,7 @@ export const TerminalSettings = z.object({
   /** Gemini CLI reads a session-only settings file as its lowest layer, so the person's own settings still win. */
   geminiCommand: z.string().default('GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command" }),
   opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" opencode {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command" }),
+  hermesCommand: z.string().default('hermes chat {options} {resume} --query-file "{prompt}"').meta({ title: "Hermes command" }).describe("Hermes takes no MCP flag: it reads its tomrade server from its own config.yaml, the header naming the $TOMRADE_MCP_TOKEN this terminal exports. Connect it under Hermes in Settings first."),
   otherCommand: z.string().default("").meta({ title: "Other agent command" }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
@@ -27,6 +28,7 @@ export function terminalTemplate(settings: TerminalSettings, engine: string): st
     case "workbuddy": return settings.workbuddyCommand;
     case "gemini": return settings.geminiCommand;
     case "opencode": return settings.opencodeCommand;
+    case "hermes": return settings.hermesCommand;
     case "other": return settings.otherCommand;
     default: return settings.claudeCommand;
   }
@@ -64,6 +66,9 @@ export function optionFlags(engine: string, options: unknown): string {
     if (model) flags.push(`--model ${bare(model)}`);
     if (effort) flags.push(`--thinking ${bare(effort)}`);
   } else if (engine === "gemini") {
+    if (model) flags.push(`-m ${bare(model)}`);
+  } else if (engine === "hermes") {
+    // a model id, or provider:model
     if (model) flags.push(`-m ${bare(model)}`);
   } else if (engine === "opencode") {
     // provider/model, as OpenCode names them

@@ -17,6 +17,7 @@ import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureM
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
+import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
 
 export type StartMode = "run" | "terminal";
@@ -378,7 +379,8 @@ export class Starter {
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const other = opts.mode === "terminal" && opts.engine === "other";
     if (other && !terminalSettings.otherCommand.trim()) return { ok: false, gate: "engine", message: "No command is set for another CLI agent — add one under Settings → Code link" };
-    const refused = opts.mode === "terminal" && !other && opts.engine ? insideOnly(agent, opts.engine) : null;
+    const asked = opts.mode === "terminal" && !other && opts.engine ? agent.codeEngines().find((e) => e.id === agent.answering(opts.engine!)) : undefined;
+    const refused = opts.mode === "terminal" && !other && opts.engine ? insideOnly(agent, opts.engine) ?? (asked ? await linkFirst(asked, locale) : null) : null;
     if (refused) return { ok: false, gate: "engine", message: refused, ...(opts.engine ? { engine: opts.engine } : {}) };
     const blockers = this.openBlockers(projectId, item);
     if (blockers.length && !opts.allowBlocked) return blockedGate(item, blockers);
@@ -411,7 +413,8 @@ export class Starter {
     }
 
     // The thread may have brought its own engine; one that runs only inside Tomrade has no terminal session.
-    const inside = insideOnly(agent, engineId);
+    const chosen = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
+    const inside = insideOnly(agent, engineId) ?? (chosen ? await linkFirst(chosen, locale) : null);
     if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), `${prepared.prompt}\n\n${languageLine(locale)}`);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
@@ -434,8 +437,16 @@ export class Starter {
     const reasons: string[] = [];
     for (const engine of candidates) {
       const state = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
-      if (state.ok) return { ok: true, engine };
-      reasons.push(`${engine.title}: ${state.reason ?? "not available"}`);
+      if (!state.ok) {
+        reasons.push(`${engine.title}: ${state.reason ?? "not available"}`);
+        continue;
+      }
+      const unlinked = terminal ? await linkFirst(engine, this.host.ctx.settings.locale?.()) : null;
+      if (unlinked) {
+        reasons.push(unlinked);
+        continue;
+      }
+      return { ok: true, engine };
     }
     return { ok: false, reason: reasons.join(" · ") };
   }
@@ -457,6 +468,13 @@ export class Starter {
 }
 
 export type { RepoStateView };
+
+/** An engine that reaches Tomrade in a terminal only through its own connection, while that is not made. */
+async function linkFirst(engine: Engine, locale: string | undefined): Promise<string | null> {
+  if (!engine.terminalViaLink) return null;
+  const state = (await engine.mcpLink?.status().catch(() => null))?.state;
+  return state === "connected" ? null : CODE_WORDS[locale === "zh" ? "zh" : "en"].linkFirst(engine.title);
+}
 
 /** Why an engine cannot be handed a ticket in a terminal, or null when it can. */
 function insideOnly(agent: Agent, engineId: string): string | null {

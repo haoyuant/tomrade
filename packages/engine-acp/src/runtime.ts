@@ -210,7 +210,8 @@ export class AcpRuntime implements Runtime {
   private async open(input: TurnInput, io: TurnIO, options: AcpOptions): Promise<boolean> {
     const launch = await this.agent.cli.launch(options.command);
     const child = spawnCli(launch, this.agent.args(input, options), {
-      cwd: this.cwd, env: { ...process.env, ...input.env, ...this.agent.env?.(input, options) }, stdio: ["pipe", "pipe", "pipe"]
+      // A user-level server naming ${TOMRADE_MCP_TOKEN} (Hermes) then carries this session's token too.
+      cwd: this.cwd, env: { ...process.env, ...input.env, ...this.agent.env?.(input, options), TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"]
     }) as ChildProcessWithoutNullStreams;
     this.child = child;
     // CodeBuddy outlives a closed stdin; Tomrade quits without closing its runtimes, so it takes the agent down itself.

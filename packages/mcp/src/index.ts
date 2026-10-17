@@ -222,7 +222,10 @@ export class Mcp extends Service {
       if (sid) return res.status(404).json({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found — start a new one" }, id: null });
       const header = req.headers["x-tomrade-run"];
       const bearer = /^Bearer\s+(.+)$/i.exec(typeof req.headers.authorization === "string" ? req.headers.authorization : "")?.[1];
-      const token = typeof header === "string" ? header : bearer;
+      const given = typeof header === "string" ? header.trim() : bearer;
+      // A user-level entry names `${TOMRADE_MCP_TOKEN}`: outside a Tomrade session it arrives as written,
+      // empty, or as "none" (Hermes must have it set) — no token, as from any other outside client.
+      const token = given && given !== "none" && !/^\$\{[^}]*\}$/.test(given) ? given : undefined;
       // Keep the identity, not a closure over the first turn's ledger. An idle
       // or revoked runtime must never fall back to the unbound MCP gateway.
       const server = this.session(token, projectId);
@@ -259,7 +262,7 @@ export class Mcp extends Service {
       const agent = req.get("X-Tomrade-Agent");
       for (const listener of this.eventListeners) {
         try {
-          listener(agent === "codex" || agent === "workbuddy" || agent === "pi" ? { ...req.body, tomrade_agent: agent } : req.body);
+          listener(agent === "codex" || agent === "workbuddy" || agent === "pi" || agent === "hermes" ? { ...req.body, tomrade_agent: agent } : req.body);
         } catch {
           // one listener's failure is not another's
         }

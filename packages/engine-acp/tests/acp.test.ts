@@ -114,6 +114,8 @@ describe("an ACP agent as an engine", () => {
     const [opened] = sent("session/new");
     expect(opened.params.cwd).toBe(dir);
     expect(opened.params.mcpServers).toEqual([{ type: "http", name: "tomrade", url: ctx.mcp.url, headers: [{ name: "X-Tomrade-Run", value: expect.any(String) }] }]);
+    // The same token in the environment, for a user-level server that names ${TOMRADE_MCP_TOKEN}.
+    expect(requests().find((r) => r.spawn)?.token).toBe(opened.params.mcpServers[0].headers[0].value);
     expect(sent("session/set_config_option").map((r) => [r.params.configId, r.params.value])).toEqual([["mode", "bypass"], ["model", '["fake","large"]'], ["reasoning_effort", "low"]]);
     const [first] = sent("session/prompt");
     expect(first.params.prompt[0].text).toContain("You are conducting a thread inside Tomrade");

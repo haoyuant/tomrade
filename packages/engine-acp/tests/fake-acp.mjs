@@ -7,7 +7,7 @@ const style = process.env.FAKE_STYLE ?? 'config';
 const record = (value) => { if (log) fs.appendFileSync(log, JSON.stringify(value) + '\n'); };
 const send = (value) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n');
 const update = (sessionId, body) => send({ method: 'session/update', params: { sessionId, update: body } });
-record({ spawn: process.pid, argv: process.argv.slice(2) });
+record({ spawn: process.pid, argv: process.argv.slice(2), token: process.env.TOMRADE_MCP_TOKEN ?? null });
 process.stdout.write('not json: a log line on stdout\n');
 
 const config = () => [
