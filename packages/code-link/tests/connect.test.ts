@@ -601,6 +601,94 @@ describe("one outside session working tickets in parallel", () => {
   });
 });
 
+describe("the branch a claim suggested, when the work went elsewhere", () => {
+  type Claimed = { branch: string; tracking: { sessionId: string } };
+  const setup = async () => {
+    const world = await machine();
+    const { items, project, board, checkout } = world;
+    const ticket = (title: string) => items.create({ projectId: project.id, boardId: board.id, title, status: "todo", by: "human" });
+    const push = (branch: string, file: string, message: string) => {
+      git(["checkout", "-q", "-B", branch, "main"], checkout);
+      fs.writeFileSync(path.join(checkout, file), `${message}\n`);
+      git(["add", "-A"], checkout);
+      git(["commit", "-q", "-m", message], checkout);
+      git(["push", "-q", "origin", branch], checkout);
+    };
+    const squash = (branch: string, message: string) => {
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--squash", branch], checkout);
+      git(["commit", "-q", "-m", message], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+    };
+    return { ...world, ticket, push, squash };
+  };
+  const branches = (codeLink: CodeLink, projectId: string, itemId: string) => codeLink.links(projectId, itemId).map((l) => l.branch);
+
+  it("drops the empty suggested branch once link_code names another, and finishes on the squash merge", async () => {
+    const { codeLink, ctx, items, project, ticket, push, squash } = await setup();
+    const item = ticket("Worked elsewhere");
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-elsewhere" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, inv)) as Claimed;
+    expect(branches(codeLink, project.id, item.id)).toEqual([claimed.branch]);
+
+    const branch = `tom-${item.keyNum}/actual-work`;
+    push(branch, "work.ts", `${item.key}: the work`);
+    expect(await ctx.tools.execute("link_code", { branch, prUrl: "https://github.com/acme/app/pull/7", scopeChecked: true }, inv)).toMatchObject({ status: "verifying", branch });
+    expect(branches(codeLink, project.id, item.id)).toEqual([branch]);
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)?.branch).toBe(branch);
+
+    squash(branch, `${item.key}: the work (#7)`);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)?.status).toBe("done");
+  });
+
+  it("keeps a suggested branch that holds commits or a pull request", async () => {
+    const { codeLink, ctx, project, ticket, push } = await setup();
+    const committed = ticket("Commits on the suggestion");
+    const a = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-commits" };
+    const first = (await ctx.tools.execute("claim_ticket", { key: committed.key }, a)) as Claimed;
+    push(first.branch, "first.ts", `${committed.key}: started here`);
+    await codeLink.scan(project.id);
+    await ctx.tools.execute("link_code", { branch: `tom-${committed.keyNum}/second`, scopeChecked: true }, a);
+    expect(branches(codeLink, project.id, committed.id)).toEqual([first.branch, `tom-${committed.keyNum}/second`]);
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)?.branch).toBe(first.branch);
+
+    const opened = ticket("Pull request on the suggestion");
+    const b = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-pr" };
+    const second = (await ctx.tools.execute("claim_ticket", { key: opened.key }, b)) as Claimed;
+    await ctx.tools.execute("link_code", { prUrl: "https://github.com/acme/app/pull/8", scopeChecked: true }, b);
+    await ctx.tools.execute("link_code", { branch: `tom-${opened.keyNum}/follow-up`, prUrl: "https://github.com/acme/app/pull/9", scopeChecked: true }, b);
+    expect(branches(codeLink, project.id, opened.id)).toEqual([second.branch, `tom-${opened.keyNum}/follow-up`]);
+  });
+
+  it("changes nothing when link_code names the suggested branch itself", async () => {
+    const { codeLink, ctx, project, ticket } = await setup();
+    const item = ticket("Worked as suggested");
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-as-suggested" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, inv)) as Claimed;
+    await ctx.tools.execute("link_code", { branch: claimed.branch, prUrl: "https://github.com/acme/app/pull/10", scopeChecked: true }, inv);
+    expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ branch: claimed.branch, prNumber: 10 })]);
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)?.branch).toBe(claimed.branch);
+  });
+
+  it("clears a suggested branch an earlier version left beside the pull request, and finishes the ticket", async () => {
+    const { codeLink, ctx, items, project, repo, ticket, push, squash } = await setup();
+    const item = ticket("Linked before the fix");
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-before" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, inv)) as Claimed;
+    const branch = `tom-${item.keyNum}/actual-work`;
+    push(branch, "work.ts", `${item.key}: the work`);
+    // What link_code used to leave: the pull request's branch beside the claim's, the session still on the claim's.
+    codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch, delivery: 1 }, { prNumber: 5, prUrl: "https://github.com/acme/app/pull/5", prState: "open", source: "mcp" });
+    squash(branch, `${item.key}: the work (#5)`);
+
+    await codeLink.scan(project.id);
+    expect(branches(codeLink, project.id, item.id)).toEqual([branch]);
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)?.branch).toBe(branch);
+    expect(items.get(project.id, item.id)?.status).toBe("done");
+  });
+});
+
 describe("a developer's own Codex session", () => {
   it("uses generated hooks to report start, claim, progress and end with its source", async () => {
     const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
