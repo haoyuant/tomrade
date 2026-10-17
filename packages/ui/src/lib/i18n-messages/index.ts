@@ -61,6 +61,10 @@ import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
 import { feedback, inbox } from "./inbox";
 import { errors } from "./errors";
+import { domain } from "./domain";
+import { ledger } from "./ledger";
+import { cadence } from "./cadence";
+import { account } from "./account";
 
 export const en = {
   common: common.en,
@@ -130,7 +134,11 @@ export const en = {
   history: history.en,
   inbox: inbox.en,
   feedback: feedback.en,
-  errors: errors.en
+  errors: errors.en,
+  domain: domain.en,
+  ledger: ledger.en,
+  cadence: cadence.en,
+  account: account.en
 };
 
 export const zh: typeof en = {
@@ -201,7 +209,11 @@ export const zh: typeof en = {
   history: history.zh,
   inbox: inbox.zh,
   feedback: feedback.zh,
-  errors: errors.zh
+  errors: errors.zh,
+  domain: domain.zh,
+  ledger: ledger.zh,
+  cadence: cadence.zh,
+  account: account.zh
 };
 
 /** A translation beyond en and zh: any string it lacks shows in English. */
