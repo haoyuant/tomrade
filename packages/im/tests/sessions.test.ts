@@ -31,9 +31,10 @@ async function boot(capabilities: ImCapabilities = RICH) {
   const turns: { text: string; options: Record<string, unknown>; mode?: string }[] = [];
   let release: (() => void) | null = null;
   const turn: Engine["turn"] = async (input, io) => {
-    const text = input.input.kind === "text" ? input.input.text : "";
+    const text = input.input.kind === "text" ? input.input.text : `answer:${String(input.input.value)}`;
     turns.push({ text, options: { ...(input.options as Record<string, unknown>) }, ...(input.permissionMode ? { mode: input.permissionMode } : {}) });
     if (text === "slow") await new Promise<void>(r => { release = r; });
+    if (text === "ask") { await io.tools.execute("ask_user", { question: "Which first?", options: ["A", "B"] }); return { stop: "end" }; }
     io.emit({ type: "text", text: `re:${text}` });
     return { stop: "end" };
   };
@@ -194,5 +195,61 @@ describe("IM sessions and options", () => {
     // Saying so goes out on the new conversation, as /new's does.
     await w.receive(say("n", "/new"));
     await w.said(/^New conversation started$/);
+  });
+
+  describe("a question left open in the conversation it moves away from", () => {
+    const STAYS = "This question stays in “ask”; /switch back to answer it.";
+    /** Asks in this conversation; the card and the message id later edits of it target. */
+    const ask = async (w: Awaited<ReturnType<typeof boot>>) => {
+      await w.receive(say("a", "ask"));
+      await w.said(/^Which first\?$/);
+      const card = w.delivered.find(d => d.content.text === "Which first?")!;
+      return { card, id: `m-${w.delivered.indexOf(card) + 1}`, thread: w.bound() };
+    };
+    const edits = (w: Awaited<ReturnType<typeof boot>>, id: string) => w.delivered.filter(d => d.replaceMessageId === id);
+
+    it("after /new, the card stops offering choices and a press on it says where the question waits; back there it is live again", async () => {
+      const w = await boot();
+      const { card, id, thread } = await ask(w);
+      await w.receive(say("n", "/new"));
+      await w.said(/^New conversation started$/);
+      await expect.poll(() => edits(w, id).at(-1)?.content).toEqual({ text: `Which first?\n\n${STAYS}` });
+      await w.receive(act("old", card.content.actions![0].token));
+      await expect.poll(() => w.delivered.at(-1)?.content.text).toBe(STAYS);
+      expect(w.delivered.some(d => d.content.text.startsWith("Cannot process message"))).toBe(false);
+      expect(w.ctx.agent.thread(w.project.id, thread).pending?.question.text).toBe("Which first?");
+
+      await w.receive(say("s", "/sessions"));
+      await w.said(/ask · Test/);
+      const select = w.delivered.filter(d => /ask · Test/.test(d.content.text)).at(-1)!.content.elements!.find(e => e.type === "select")!;
+      await w.receive(act("back", select.type === "select" ? select.token : "", thread));
+      await w.said(/Continuing “ask” here/);
+      await expect.poll(() => edits(w, id).at(-1)?.content.actions?.length).toBe(2);
+      await w.receive(act("answer", edits(w, id).at(-1)!.content.actions![1].token));
+      await expect.poll(() => w.turns.map(t => t.text)).toContain("answer:B");
+    });
+
+    it("after /switch, the card says where the question waits, and so does a typed /answer", async () => {
+      const w = await boot();
+      const desk = w.ctx.agent.newThread(w.project.id, "test", null, { title: "Launch plan" });
+      const { card, id } = await ask(w);
+      await w.receive(say("s", "/sessions"));
+      await w.said(/Launch plan · Test/);
+      const select = w.delivered.filter(d => /Launch plan · Test/.test(d.content.text)).at(-1)!.content.elements!.find(e => e.type === "select")!;
+      await w.receive(act("away", select.type === "select" ? select.token : "", desk.id));
+      await w.said(/Continuing “Launch plan” here/);
+      await expect.poll(() => edits(w, id).at(-1)?.content).toEqual({ text: `Which first?\n\n${STAYS}` });
+      await w.receive(say("typed", `/answer ${card.content.actions![0].token}`));
+      await expect.poll(() => w.delivered.at(-1)?.content.text).toBe(STAYS);
+      expect(w.turns.map(t => t.text)).not.toContain("answer:A");
+    });
+
+    it("after /archive, the card says the question went with the archived conversation", async () => {
+      const w = await boot();
+      const { id } = await ask(w);
+      await w.receive(say("ar", "/archive"));
+      await w.said(/^Archived “ask”; new conversation started$/);
+      await expect.poll(() => edits(w, id).at(-1)?.content).toEqual({ text: "Which first?\n\nThis question was archived with “ask”." });
+    });
   });
 });

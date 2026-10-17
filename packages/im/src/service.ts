@@ -828,6 +828,7 @@ export class Im extends Service {
         const cmd = this.commandOf(b, event.token, event.actor.id);
         if (cmd === "spent") { this.accept(row); return; }
         if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? String([event.value ?? ""].flat()[0] ?? ""), reply, undefined, [event.value ?? ""].flat()[0]); return; }
+        if (this.leftBehind(b, row, event.token, reply)) return;
         input = this.answer(b, event.token, event.actor.id, event.value);
       } else {
         const text = event.text.trim();
@@ -897,6 +898,7 @@ export class Im extends Service {
         const cmd = match && this.commandOf(b, match[1], event.actor.id);
         if (cmd === "spent") { this.accept(row); return; }
         if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? match![2]?.trim() ?? "", reply, undefined, match![2]?.trim()); return; }
+        if (match && this.leftBehind(b, row, match[1], reply)) return;
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
         else {
           if (!text && !event.attachments?.length) this.refuse("Empty message", "消息为空");
@@ -1107,10 +1109,34 @@ export class Im extends Service {
       this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
       this.store.run("UPDATE plugin_im_actions SET consumed = max(consumed, 1), retired = 1 WHERE binding_id = ?", b.id);
       this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = ?, actor_id = ?, anchor = NULL, home_thread = ? WHERE id = ?", threadId, cursor, actorId, opts.home ?? null, b.id);
+      // An open question's card stops offering choices and says where it waits. The edit is its own row on the new
+      // thread, so the card's row stays the old thread's and lights up again on a /switch back.
+      const asked = this.capsOf(b)?.cardUpdate ? this.home.agent.store.pending(b.project_id, b.thread_id)?.question : undefined;
+      if (asked) this.store.run(`INSERT INTO plugin_im_outbox (id, binding_id, thread_id, content_json, created_at, anchor, visible_to, message_ids_json)
+        SELECT ?, binding_id, ?, ?, ?, anchor, visible_to, message_ids_json FROM plugin_im_outbox WHERE id = ? AND message_ids_json != '[]'`,
+        `left:${b.id}:${asked.id}:${token()}`, threadId, JSON.stringify({ text: `${asked.text}\n\n${this.waitsIn(b, b.thread_id)}` }), Date.now(), `question:${b.id}:${asked.id}`);
       // What says so goes out on the new thread; one queued on the old would be dropped as stale.
       also(this.store.binding(b.id)!);
     });
     this.listed.delete(b.id);
+  }
+
+  /** Where a question this conversation moved away from still waits. */
+  private waitsIn(b: Binding, threadId: string): string {
+    const thread = this.home.agent.store.thread(b.project_id, threadId);
+    const title = thread?.title || this.say("Untitled", "未命名");
+    return thread?.archived ? this.say(`This question was archived with “${title}”.`, `该问题已随“${title}”一起归档。`)
+      : this.say(`This question stays in “${title}”; /switch back to answer it.`, `该问题留在“${title}”中，/switch 回去即可回答。`);
+  }
+
+  /** A choice from a question left open in a conversation this one moved away from: says where it waits instead of refusing it. */
+  private leftBehind(b: Binding, row: Inbox, actionToken: string, reply: { anchor: string | null }): boolean {
+    const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
+    if (!a || a.binding_id !== b.id || a.thread_id === b.thread_id || /^(cmd|remind):/.test(a.question_id)) return false;
+    if (this.home.agent.store.pending(b.project_id, a.thread_id)?.question.id !== a.question_id) return false;
+    this.enqueue(b, `left:${row.id}`, { text: this.waitsIn(b, a.thread_id) }, reply);
+    this.accept(row);
+    return true;
   }
 
   /**

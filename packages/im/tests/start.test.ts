@@ -67,6 +67,7 @@ async function boot() {
       world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
     }
     if (text === "wait" && probe.hold) await probe.hold;
+    if (text === "ask") { await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] }); return { stop: "end" }; }
     if (text.startsWith("Brief")) {
       await io.tools.execute("ask_user", { question: "Which page first?", freeText: true });
       return { stop: "end" };
@@ -136,6 +137,18 @@ describe("starting a ticket from IM", () => {
     await expect.poll(() => w.ctx.agent.thread(w.project.id, thread).pending).toBeNull();
     expect(w.code.starts).toHaveLength(1);
     expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
+  });
+
+  it("starts and follows a ticket while a question waits here, leaving the question's card saying where it stays", async () => {
+    const w = await boot();
+    await w.receive(say("a", "ask"));
+    const card = await w.said(/^Ship it\?$/);
+    const id = `m-${w.delivered.indexOf(card) + 1}`;
+    await w.receive(say("s", `/start ${w.item.key} engine=test`));
+    await w.follow();
+    await expect.poll(() => w.delivered.filter(d => d.replaceMessageId === id).at(-1)?.content).toEqual({ text: "Ship it?\n\nThis question stays in “ask”; /switch back to answer it." });
+    await w.receive(act("old", card.content.actions![0].token));
+    await w.said(/^This question stays in “ask”; \/switch back to answer it\.$/);
   });
 
   it("/start shows what will run, changes it in place from its selects, and starts on Start", async () => {
