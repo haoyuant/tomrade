@@ -72,7 +72,7 @@ export const about = {
     website: "Website",
     downloads: "All downloads",
     licenseTitle: "License",
-    license: "Tomrade is licensed under the Business Source License 1.1. Each version becomes Apache 2.0 two years after it is released; the plugin SDK is Apache 2.0 already."
+    license: "Tomrade is open source under the Apache License 2.0, the plugin SDK included. Plugins may use any license."
   },
   zh: {
     label: "关于",
@@ -147,6 +147,6 @@ export const about = {
     website: "官网",
     downloads: "全部下载",
     licenseTitle: "许可",
-    license: "Tomrade 采用 Business Source License 1.1 许可。每个版本发布两年后转为 Apache 2.0；插件 SDK 现在就是 Apache 2.0。"
+    license: "Tomrade 以 Apache License 2.0 开源，插件 SDK 也在内。插件可以使用任何许可证。"
   }
 };

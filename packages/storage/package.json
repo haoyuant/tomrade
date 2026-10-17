@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/storage",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.storage \u2014 the provider registry, the text artifact a project is shared as, and the flush/refresh scheduling",

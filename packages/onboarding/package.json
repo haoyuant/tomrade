@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/onboarding",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "A first run's sample project (the tour), the person's seen-hints, and the playbook that lets the assistant explain Tomrade",

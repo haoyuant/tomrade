@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/contributions",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.contributions \u2014 declarative UI contributions: commands, card badges, status-bar items and detail sections, rendered by the UI's own primitives",

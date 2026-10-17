@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/items",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.items \u2014 issues, labels and relations, written through the write protocol",

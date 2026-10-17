@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/deps-graph",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Dependency graph over Item.blocks: contributes the Dependencies board graph and a 'blocked' badge for issues waiting on unfinished work. First-party, but optional — remove the row and nothing else changes.",

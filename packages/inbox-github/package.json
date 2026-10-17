@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/inbox-github",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "GitHub issues as an inbox source: the issues of a project's repositories, answered with comments and closed once their ticket ships",

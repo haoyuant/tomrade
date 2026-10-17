@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/files-github",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "GitHub as the place a project's files are shared: a repository per project, found or created with the account Tomrade already publishes with",

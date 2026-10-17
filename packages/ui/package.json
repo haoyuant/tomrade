@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/ui",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "React UI (TanStack Router + Query, Tailwind v4, Radix). Talks to the main process through the typed channel contract and renders plugin contributions as data.",

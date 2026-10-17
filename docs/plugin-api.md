@@ -128,11 +128,9 @@ not enforced; it is checked against the code. Starting programs, disk anywhere
 and any host are **high risk**: labelled everywhere a person decides, never
 refused for that alone.
 
-**Licenses.** The SDK, `@tomradex/domain`, `@tomradex/plugin-kit` and the CLI are
-Apache-2.0, and a plugin may use any license, commercial ones included.
-`tomrade-plugin test` loads the plugin into `@tomradex/plugin-host`, which is
-Tomrade's own code and comes with the CLI under the repository's Business Source
-License — testing a plugin with it is a permitted use.
+**Licenses.** Tomrade, the SDK, `@tomradex/domain`, `@tomradex/plugin-kit`,
+`@tomradex/plugin-host` and the CLI are all Apache-2.0, and a plugin may use any
+license, commercial ones included.
 
 `tomrade-plugin build` bundles `src/index.ts` into one readable ESM file,
 `dist/index.js`, with every dependency inside it except the three the host

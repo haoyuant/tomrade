@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/ipc",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.ipc \u2014 the typed channel contract between the main process and the renderer. Channels are contributed by plugins; the shell supplies the transport.",

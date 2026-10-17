@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/boards",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.boards and ctx.views \u2014 workstreams and their saved slices",

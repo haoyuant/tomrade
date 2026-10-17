@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/hub-cloud",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Account-owned Hub metadata, encrypted sessions and a durable offline outbox",

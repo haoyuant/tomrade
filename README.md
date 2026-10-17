@@ -149,14 +149,9 @@ Reboot of `tomrade` (legacy enterprise-style design: Supabase + FastAPI + TanSta
 
 ## License
 
-Tomrade is source-available under the **Business Source License 1.1** ([`LICENSE`](LICENSE)), and each version becomes **Apache-2.0** two years after it is first published.
+Tomrade is open source under the **Apache License 2.0** ([`LICENSE`](LICENSE)) — the app, every package and the plugin SDK alike.
 
-- **You may** read, change and redistribute it, and use it in production — at work and inside your company included.
-- **You may not** offer it, or a work derived from it, to others as a commercial product or service that substitutes for Tomrade or does substantially the same thing — reselling a rebranded copy, for example — until that version's two years are up.
-- **Plugins are yours.** The plugin SDK and its tooling are Apache-2.0, and a plugin may use any license, commercial ones included. Packages with their own `LICENSE` file are not under the BSL:
-
-| Under Apache-2.0 | Under the BSL |
-|---|---|
-| `packages/domain`, `packages/plugin-sdk`, `packages/plugin-kit`, `packages/plugin-cli` | everything else, `packages/plugin-host` included |
+- **You may** use, change and redistribute it, in production and commercially, as the license says.
+- **Plugins are yours.** A plugin may use any license, commercial ones included.
 
 The license does not grant any right to the Tomrade name or logo.

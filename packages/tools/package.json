@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/tools",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.tools \u2014 one tool registry with guarded execution, feeding the assistant and MCP alike",

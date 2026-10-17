@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/engine-claude-code",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Claude Agent SDK conductor with one reusable local runtime per hot thread, MCP tools, and resumable sessions",

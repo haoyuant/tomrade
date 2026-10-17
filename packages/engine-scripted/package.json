@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/engine-scripted",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "The no-model conductor: a menu of registered workflows, run deterministically — offline and keyless",

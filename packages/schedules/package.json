@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/schedules",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Automations: on a cadence, create a ticket from a template or send the assistant a prompt — on this machine, while Tomrade is open",

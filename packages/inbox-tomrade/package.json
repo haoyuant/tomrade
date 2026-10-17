@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/inbox-tomrade",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Tomrade's own feedback as an inbox source: the reports, feedback and ideas people send from the app, for whoever maintains Tomrade",

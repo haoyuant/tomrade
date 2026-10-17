@@ -2,7 +2,7 @@
  * The packages plugin authors install from npm: @tomradex/domain (the types a
  * plugin sees), @tomradex/plugin-sdk (the contract), @tomradex/plugin-cli (one
  * bundled file per entry) and @tomradex/plugin-host (the Tomrade the CLI tests
- * a plugin against, bundled, under the repository's Business Source License).
+ * a plugin against, bundled). All four are Apache-2.0, like the rest of the repository.
  * Staged under build/npm/, packed there, and published only with --publish.
  *
  *   node scripts/npm-release.mjs              stage and pack
@@ -41,14 +41,13 @@ const common = {
   publishConfig: { access: "public" }
 };
 
-// A package with its own LICENSE carries that; everything else is under the repository's root LICENSE.
-const licenseFile = (source) => (fs.existsSync(path.join(source, "LICENSE")) ? path.join(source, "LICENSE") : path.join(root, "LICENSE"));
+// Every package ships the repository's root LICENSE; the field must agree with it.
+const ROOT_LICENSE = json(path.join(root, "package.json")).license;
+const licenseFile = () => path.join(root, "LICENSE");
 function licensed(source) {
   const { license } = json(path.join(source, "package.json"));
   if (!license) throw new Error(`${source} needs a "license" field`);
-  const own = fs.existsSync(path.join(source, "LICENSE"));
-  if (license === "BUSL-1.1" && own) throw new Error(`${source} is under the root LICENSE and must not carry its own`);
-  if (license !== "BUSL-1.1" && !own) throw new Error(`${source} needs a LICENSE file for ${license}`);
+  if (license !== ROOT_LICENSE) throw new Error(`${source} is ${license} but ships the root LICENSE (${ROOT_LICENSE})`);
   return license;
 }
 

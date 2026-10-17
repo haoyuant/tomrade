@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/storage-github",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "GitHub as a destination: repository discovery and creation on top of the git provider",
