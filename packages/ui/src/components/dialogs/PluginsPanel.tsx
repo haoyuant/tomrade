@@ -3,6 +3,7 @@ import type { ContractSpec, ModuleView, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { usePanelOpen } from "~/lib/panel";
 import { useAddFolder, useInstallFile, useUpdates } from "~/lib/plugins";
 import { usePlugins, useSetPluginEnabled } from "~/lib/queries";
 import { pickDirectory, pickFiles } from "~/lib/shell";
@@ -152,7 +153,70 @@ function PluginRow({
   );
 }
 
-type Tab = "installed" | "browse" | "updates" | "mine";
+/**
+ * A section of Installed that folds from its title; the fold is remembered per
+ * machine. A search holds it open, since the matches are what was asked for.
+ */
+function FoldSection({
+  id,
+  title,
+  aside,
+  lede,
+  forceOpen,
+  children
+}: {
+  id: string;
+  title: string;
+  aside?: React.ReactNode;
+  lede?: React.ReactNode;
+  forceOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [stored, setOpen] = usePanelOpen(`tomrade.plugins.fold.${id}`);
+  const open = stored || !!forceOpen;
+  return (
+    <section className={cn("plug-fold", !open && "folded")} data-fold={id}>
+      <div className="sec-head">
+        <div>
+          <button type="button" className="plug-fold-head" aria-expanded={open} disabled={forceOpen} onClick={() => setOpen(!stored)}>
+            <Icon className="plug-fold-chev" name="i-chev" size={14} />
+            <h3 className="sec-title">{title}</h3>
+          </button>
+          {open && lede && (
+            <p className="sec-lede" style={{ marginTop: 4 }}>
+              {lede}
+            </p>
+          )}
+        </div>
+        {aside && <div style={{ marginLeft: "auto" }}>{aside}</div>}
+      </div>
+      {open && children}
+    </section>
+  );
+}
+
+function ModulesTab() {
+  const { t } = useI18n();
+  const plugins = usePlugins();
+  const modules = plugins.data?.modules ?? [];
+  const unfilled = modules.filter((m) => m.required && !m.providers.length);
+  return (
+    <>
+      <SectionHead title={t("pluginsPanel.modulesTitle")}>{t("pluginsPanel.modulesLede")}</SectionHead>
+      <ModuleTable modules={modules} />
+      {unfilled.length > 0 && (
+        <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
+          {t("pluginsPanel.nothingProvides", {
+            list: unfilled.map((m) => m.title).join(", "),
+            pronoun: t(unfilled.length > 1 ? "pluginsPanel.pronounThem" : "pluginsPanel.pronounIt")
+          })}
+        </p>
+      )}
+    </>
+  );
+}
+
+type Tab = "installed" | "modules" | "browse" | "updates" | "mine";
 
 /**
  * Plugins: what is installed and what it may reach, the Community store, the
@@ -169,6 +233,7 @@ export function PluginsPanel({ onLeave, query }: { onLeave?: () => void; /** Ope
   const pendingUpdates = updates.data?.length ?? 0;
   const TABS: [Tab, MessageKey][] = [
     ["installed", "plugins.tabInstalled"],
+    ["modules", "plugins.tabModules"],
     ["browse", "plugins.tabBrowse"],
     ["updates", "plugins.tabUpdates"],
     ["mine", "plugins.tabMine"]
@@ -184,6 +249,7 @@ export function PluginsPanel({ onLeave, query }: { onLeave?: () => void; /** Ope
         ))}
       </div>
       {tab === "installed" && <InstalledTab initialQuery={query} />}
+      {tab === "modules" && <ModulesTab />}
       {tab === "browse" && <BrowseTab />}
       {tab === "updates" && <UpdatesTab />}
       {tab === "mine" && <MineTab onLeave={onLeave} />}
@@ -214,9 +280,7 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
   const rows = all.filter((p) => !p.extension);
   const shownRows = shown.filter((p) => !p.extension);
   const extensions = shown.filter((p) => p.extension);
-  const modules = plugins.data?.modules ?? [];
   const running = rows.filter((p) => p.state === "active").length;
-  const unfilled = modules.filter((m) => m.required && !m.providers.length);
   const showExtensions = !words.length || extensions.length > 0;
   const showInstalled = !words.length || shownRows.length > 0;
   // A row sits under the first contract it fills, so each switch is drawn once.
@@ -283,22 +347,22 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
 
       {/* While searching, a section shows only when something in it matches. */}
       {showExtensions && (
-        <>
-          <SectionHead
-            title={t("plugins.extensionsTitle")}
-            aside={
-              <div className="row" style={{ gap: "var(--space-2)" }}>
-                <button type="button" className="btn btn-secondary" onClick={() => void fromFile()} disabled={installFile.isPending} data-testid="install-file">
-                  <Icon name="i-file" size={13} /> {t("plugins.installFile")}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => void fromFolder()} disabled={addFolder.isPending} data-testid="load-folder">
-                  <Icon name="i-folder" size={13} /> {t("plugins.loadFolder")}
-                </button>
-              </div>
-            }
-          >
-            {t("plugins.extensionsLede")}
-          </SectionHead>
+        <FoldSection
+          id="extensions"
+          title={t("plugins.extensionsTitle")}
+          forceOpen={words.length > 0}
+          lede={t("plugins.extensionsLede")}
+          aside={
+            <div className="row" style={{ gap: "var(--space-2)" }}>
+              <button type="button" className="btn btn-secondary" onClick={() => void fromFile()} disabled={installFile.isPending} data-testid="install-file">
+                <Icon name="i-file" size={13} /> {t("plugins.installFile")}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => void fromFolder()} disabled={addFolder.isPending} data-testid="load-folder">
+                <Icon name="i-folder" size={13} /> {t("plugins.loadFolder")}
+              </button>
+            </div>
+          }
+        >
           {installError && <p className="meta-txt" style={{ color: "var(--danger)", whiteSpace: "pre-wrap" }}>{installError}</p>}
           <div className="stack-2" data-testid="extensions">
             {extensions.map((plugin) => (
@@ -306,50 +370,38 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
             ))}
           </div>
           {!extensions.length && <p className="meta-txt">{t("plugins.noExtensions")}</p>}
-        </>
-      )}
-
-      {/* A search is after a plugin, and the table answers a different question. */}
-      {!words.length && (
-        <>
-          <hr className="rule" />
-          <SectionHead title={t("pluginsPanel.modulesTitle")}>{t("pluginsPanel.modulesLede")}</SectionHead>
-          <ModuleTable modules={modules} />
-          {unfilled.length > 0 && (
-            <p className="meta-txt dense" style={{ marginTop: "var(--space-3)", color: "var(--danger)" }}>
-              {t("pluginsPanel.nothingProvides", {
-                list: unfilled.map((m) => m.title).join(", "),
-                pronoun: t(unfilled.length > 1 ? "pluginsPanel.pronounThem" : "pluginsPanel.pronounIt")
-              })}
-            </p>
-          )}
-        </>
+        </FoldSection>
       )}
 
       {showInstalled && (
         <>
           {showExtensions && <hr className="rule" />}
           {/* `.tag` is a flex box, so whitespace between elements would be dropped: one string. */}
-          <SectionHead title={t("pluginsPanel.installedTitle")} aside={<Tag tone="neutral">{t("pluginsPanel.runningOfTotal", { running, total: rows.length })}</Tag>}>
-            {t("pluginsPanel.installedLede")}
-          </SectionHead>
-          {groups.map(({ contract, rows: members }) => (
-            <section key={contract?.id ?? ""} className="plug-group" data-contract={contract?.id ?? ""}>
-              <div className="plug-group-head">
-                <Eyebrow>{contract ? contractTitle(contract) : t("pluginsPanel.otherPlugins")}</Eyebrow>
-                {contract && (
-                  <span className="meta-txt mono" title={t("pluginsPanel.contractWhy", { registry: contract.registry })}>
-                    {contract.registry}
+          <FoldSection
+            id="installed"
+            title={t("pluginsPanel.installedTitle")}
+            forceOpen={words.length > 0}
+            lede={t("pluginsPanel.installedLede")}
+            aside={<Tag tone="neutral">{t("pluginsPanel.runningOfTotal", { running, total: rows.length })}</Tag>}
+          >
+            {groups.map(({ contract, rows: members }) => (
+              <section key={contract?.id ?? ""} className="plug-group" data-contract={contract?.id ?? ""}>
+                <div className="plug-group-head">
+                  <Eyebrow>{contract ? contractTitle(contract) : t("pluginsPanel.otherPlugins")}</Eyebrow>
+                  {contract && (
+                    <span className="meta-txt mono" title={t("pluginsPanel.contractWhy", { registry: contract.registry })}>
+                      {contract.registry}
+                    </span>
+                  )}
+                  <span className="meta-txt plug-group-count">
+                    {t("pluginsPanel.runningOfTotal", { running: members.filter((p) => p.state === "active").length, total: members.length })}
                   </span>
-                )}
-                <span className="meta-txt plug-group-count">
-                  {t("pluginsPanel.runningOfTotal", { running: members.filter((p) => p.state === "active").length, total: members.length })}
-                </span>
-              </div>
-              {contract && CONTRACT_TEXT[contract.id] && <p className="meta-txt dense plug-group-lede">{t(CONTRACT_TEXT[contract.id]![1])}</p>}
-              <div className="stack-2">{members.map(row)}</div>
-            </section>
-          ))}
+                </div>
+                {contract && CONTRACT_TEXT[contract.id] && <p className="meta-txt dense plug-group-lede">{t(CONTRACT_TEXT[contract.id]![1])}</p>}
+                <div className="stack-2">{members.map(row)}</div>
+              </section>
+            ))}
+          </FoldSection>
         </>
       )}
       {!rows.length && <p className="meta-txt">{t("pluginsPanel.emptyRows")}</p>}

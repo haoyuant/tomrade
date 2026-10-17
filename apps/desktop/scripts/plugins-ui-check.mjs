@@ -138,7 +138,7 @@ const run = async () => {
   const tab = (id) => press(`document.querySelector('.plug-tabs [data-tab="${id}"]')`);
 
   await openPane();
-  check("the pane opens on its tabs", (await $(`document.querySelectorAll('.plug-tabs [role="tab"]').length`)) === 4);
+  check("the pane opens on its tabs", (await $(`document.querySelectorAll('.plug-tabs [role="tab"]').length`)) === 5);
   const ext = (id) => `document.querySelector('[data-testid="extensions"] .plug-ext[data-id="${id}"]')`;
   check("each extension is listed with where it came from", (await $(`${ext("someone/counter")}?.textContent.includes('Community')`)) === true && (await $(`${ext("someone/keeper")}?.textContent.includes('Official')`)) === true);
   check("a hand-installed package is listed as Local", (await $(`${ext("someone/runner")}?.textContent.includes('Local')`)) === true);
@@ -203,6 +203,28 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === 'Manage plugins')`);
   await sleep(500);
   check("coming back by the menu opens it unfiltered", (await $(`document.querySelector('[data-testid="plugins-search"]')?.value`)) === "");
+
+  // Extensions and Installed fold from their titles; a search holds them open.
+  const foldHead = (id) => `document.querySelector('.plug-fold[data-fold="${id}"] .plug-fold-head')`;
+  await press(foldHead("extensions"));
+  await sleep(300);
+  check("Extensions folds from its title", (await $(`!document.querySelector('[data-testid="extensions"]') && ${foldHead("extensions")}.getAttribute('aria-expanded') === 'false'`)) === true);
+  await search("counter");
+  await sleep(300);
+  check("a search opens a folded section", (await $(`!!document.querySelector('[data-testid="extensions"] .plug-ext[data-id="someone/counter"]')`)) === true);
+  await search("");
+  await sleep(300);
+  check("and clearing it folds it again", (await $(`!document.querySelector('[data-testid="extensions"]')`)) === true);
+  await press(foldHead("extensions"));
+  await sleep(300);
+
+  await tab("modules");
+  await sleep(500);
+  check("Modules is a tab of its own, with the module table", (await $(`!!document.querySelector('.dlg-body .tok-table')`)) === true);
+  await shot("30-plugins-modules");
+  await tab("installed");
+  await sleep(500);
+  check("and Installed no longer carries it", (await $(`!!document.querySelector('.dlg-body .tok-table')`)) === false);
 
   await tab("mine");
   await sleep(900);
