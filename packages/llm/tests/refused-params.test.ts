@@ -1,8 +1,9 @@
 /**
  * OpenAI's newer models refuse `max_tokens` (they take `max_completion_tokens`)
  * and any temperature but the default, while DeepSeek and most compatible
- * endpoints still want `max_tokens`. A refusal of that kind is asked again
- * without the parameter, and remembered.
+ * endpoints still want `max_tokens`. gpt-5.5 also refuses a reasoning effort
+ * beside function tools. A refusal of that kind is asked again without the
+ * parameter, and remembered.
  */
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -14,7 +15,7 @@ let base = "";
 let bodies: Record<string, unknown>[] = [];
 /** Answers like a gpt-5 model when true, like DeepSeek when false. */
 let strict = true;
-const refuse = (message: string, param: string, code: string) => JSON.stringify({ error: { message, type: "invalid_request_error", param, code } });
+const refuse = (message: string, param: string, code: string | null) => JSON.stringify({ error: { message, type: "invalid_request_error", param, code } });
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     let raw = "";
@@ -24,6 +25,7 @@ beforeAll(async () => {
       bodies.push(body);
       if (strict && "max_tokens" in body) return res.writeHead(400, { "content-type": "application/json" }).end(refuse("Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", "max_tokens", "unsupported_parameter"));
       if (strict && "temperature" in body && body.temperature !== 1) return res.writeHead(400, { "content-type": "application/json" }).end(refuse(`Unsupported value: 'temperature' does not support ${body.temperature} with this model. Only the default (1) value is supported.`, "temperature", "unsupported_value"));
+      if (strict && "reasoning_effort" in body && Array.isArray(body.tools)) return res.writeHead(400, { "content-type": "application/json" }).end(refuse("Function tools with reasoning_effort are not supported for gpt-5.5 in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.", "reasoning_effort", null));
       if (!strict && "max_completion_tokens" in body) return res.writeHead(400, { "content-type": "application/json" }).end(refuse("Unknown parameter: 'max_completion_tokens'", "max_completion_tokens", "invalid"));
       res.writeHead(200, { "content-type": "text/event-stream" }).end('data: {"choices":[{"delta":{"content":"pong"}}]}\n\ndata: [DONE]\n\n');
     });
@@ -34,7 +36,8 @@ beforeAll(async () => {
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
 const model = () => new OpenAiCompatible({ baseURL: base, apiKey: "k", model: "m", retryDelayMs: 1 });
-const ask = (m: OpenAiCompatible, extra: { temperature?: number } = {}) => collect(m.chat({ system: "s", messages: [userMessage("ping")], maxTokens: 50, ...extra }));
+const tools = [{ name: "list_items", description: "List items", inputSchema: { type: "object", properties: {} } }];
+const ask = (m: OpenAiCompatible, extra: { temperature?: number; effort?: "low" | "high"; tools?: typeof tools } = {}) => collect(m.chat({ system: "s", messages: [userMessage("ping")], maxTokens: 50, ...extra }));
 
 describe("parameters a model refuses", () => {
   it("asks again with max_completion_tokens and keeps using it", async () => {
@@ -58,11 +61,27 @@ describe("parameters a model refuses", () => {
     expect(bodies).toHaveLength(1);
   });
 
+  it("leaves the reasoning effort out of a step with tools once the model refuses both together, and keeps it elsewhere", async () => {
+    strict = true;
+    bodies = [];
+    const m = model();
+    expect((await ask(m, { effort: "high", tools })).text).toBe("pong");
+    expect(bodies.at(-1)).not.toHaveProperty("reasoning_effort");
+    expect(bodies.at(-1)).toHaveProperty("tools");
+    bodies = [];
+    await ask(m, { effort: "high", tools });
+    expect(bodies).toHaveLength(1);
+    // Without tools the effort still goes.
+    bodies = [];
+    await ask(m, { effort: "high" });
+    expect(bodies).toEqual([expect.objectContaining({ reasoning_effort: "high" })]);
+  });
+
   it("sends max_tokens to endpoints that take it", async () => {
     strict = false;
     bodies = [];
-    expect((await ask(model(), { temperature: 0.2 })).text).toBe("pong");
-    expect(bodies).toEqual([expect.objectContaining({ max_tokens: 50, temperature: 0.2 })]);
+    expect((await ask(model(), { temperature: 0.2, effort: "high", tools })).text).toBe("pong");
+    expect(bodies).toEqual([expect.objectContaining({ max_tokens: 50, temperature: 0.2, reasoning_effort: "high" })]);
   });
 
   it("sends max_completion_tokens to OpenAI from the first request", () => {

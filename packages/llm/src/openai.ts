@@ -107,10 +107,13 @@ export class OpenAiCompatible implements ChatModel {
    * OpenAI's newer models take only `max_completion_tokens` and only the default
    * temperature; most other compatible endpoints still want `max_tokens`. OpenAI
    * gets the new name from the start, and any endpoint that refuses a parameter
-   * this way is asked again without it, remembered for later requests.
+   * this way is asked again without it, remembered for later requests. gpt-5.5
+   * on chat/completions also refuses a reasoning effort beside function tools:
+   * a step with tools then goes at the model's own effort.
    */
   private tokenField: "max_tokens" | "max_completion_tokens";
   private omitTemperature = false;
+  private omitEffortWithTools = false;
 
   constructor(private readonly config: OpenAiConfig) {
     this.tokenField = /^https?:\/\/api\.openai\.com(\/|$)/i.test(config.baseURL) ? "max_completion_tokens" : "max_tokens";
@@ -124,6 +127,10 @@ export class OpenAiCompatible implements ChatModel {
     }
     if (!this.omitTemperature && /Unsupported (value|parameter): 'temperature'/.test(refusal)) {
       this.omitTemperature = true;
+      return true;
+    }
+    if (!this.omitEffortWithTools && /Function tools with reasoning_effort are not supported/i.test(refusal)) {
+      this.omitEffortWithTools = true;
       return true;
     }
     return false;
@@ -172,7 +179,7 @@ export class OpenAiCompatible implements ChatModel {
       if (this.config.outputModalities?.includes("audio")) out.audio = { voice: "alloy", format: "pcm16" };
       if (request.temperature !== undefined && !this.omitTemperature) out.temperature = request.temperature;
       if (request.maxTokens !== undefined) out[this.tokenField] = request.maxTokens;
-      if (request.effort) out.reasoning_effort = request.effort;
+      if (request.effort && !(this.omitEffortWithTools && request.tools?.length)) out.reasoning_effort = request.effort;
       if (request.tools?.length) {
         out.tools = request.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
         const choice = request.toolChoice;
@@ -193,7 +200,7 @@ export class OpenAiCompatible implements ChatModel {
       });
       if (res.ok) break;
       const text = await res.text().catch(() => "");
-      if (res.status === 400 && adjusted < 2 && this.adjustTo(text)) continue;
+      if (res.status === 400 && adjusted < 3 && this.adjustTo(text)) continue;
       const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
       throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
     }
