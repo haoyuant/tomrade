@@ -18,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomradex/alerts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/testkit": "workspace:*",

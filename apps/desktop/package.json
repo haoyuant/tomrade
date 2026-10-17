@@ -124,8 +124,7 @@
     "@tomradex/inbox-tomrade": "workspace:*",
     "@tomradex/inbox-github": "workspace:*",
     "@tomradex/inbox-triage": "workspace:*",
-    "@tomradex/alerts": "workspace:*",
-    "@tomradex/pomodoro": "workspace:*"
+    "@tomradex/alerts": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

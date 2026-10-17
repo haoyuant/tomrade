@@ -310,6 +310,28 @@ describe("the official catalog", () => {
     server.close();
   }, 60_000);
 
+  it("puts each starter on once, tries again while the catalog lacks it, and leaves one the person uninstalled gone", async () => {
+    const { catalog, server, url } = await catalogServer();
+    const startersFile = path.join(fs.mkdtempSync(path.join(tmp, "starters-")), "official-starters.json");
+    const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url }, starters: ["tomrade/memo"], startersFile } });
+
+    await community.installStarters();
+    expect(store.has("tomrade/memo")).toBe(false);
+    expect(fs.existsSync(startersFile)).toBe(false);
+
+    catalog.plugins.push({ id: "tomrade/memo", title: "Memo", description: "Quick notes", license: "Apache-2.0", repository: "https://github.com/haoyuant/tomrade-plugins", versions: [await officialPackage("1.0.0")] });
+    community.official.expire();
+    await community.installStarters();
+    expect(store.info("tomrade/memo")).toMatchObject({ tier: "official", source: "store" });
+    expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.0.0");
+    expect(JSON.parse(fs.readFileSync(startersFile, "utf8"))).toEqual(["tomrade/memo"]);
+
+    await ctx.plugins.uninstall("tomrade/memo");
+    await community.installStarters();
+    expect(store.has("tomrade/memo")).toBe(false);
+    server.close();
+  }, 60_000);
+
   it("shows and installs only versions Tomrade signed for that exact build, under its own publisher, that this Tomrade can run", async () => {
     const { catalog, server, url } = await catalogServer();
     const good = await officialPackage("1.0.0");
