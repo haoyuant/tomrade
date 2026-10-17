@@ -12,8 +12,8 @@ export const TerminalSettings = z.object({
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command" }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
   /** WorkBuddy's CLI takes Claude Code's flags and posts Claude-shaped hooks. */
   workbuddyCommand: z.string().default('codebuddy {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "WorkBuddy command" }),
-  /** Gemini CLI reads a session-only settings file as its lowest layer, so the person's own settings still win. */
-  geminiCommand: z.string().default('GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command" }),
+  /** Gemini CLI runs from a session home: the person's own ~/.gemini, with Tomrade's server added to its settings. */
+  geminiCommand: z.string().default('GEMINI_CLI_HOME="{geminiHome}" gemini {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command" }).describe("{geminiHome} is a Gemini home for this session alone: your own ~/.gemini (sign-in, extensions, history) with Tomrade's server added to a copy of its settings. Your own files are not changed."),
   opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" opencode {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command" }),
   /** No interactive terminal of its own: one headless run, shown and reported through {dshReporter}, resumed by session id. */
   dshCommand: z.string().default('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"').meta({ title: "DeepSeek Harness command" }).describe("DeepSeek Harness has no interactive terminal: the ticket runs as one headless run, shown through {dshReporter} and resumed with --session-id. {bin} is the dsh Tomrade found, the desktop app's own included; {dshPatch} adds Tomrade's server for this run."),
@@ -32,7 +32,8 @@ export function terminalTemplate(settings: TerminalSettings, engine: string): st
     case "codex": return settings.codexCommand;
     case "pi": return settings.piCommand;
     case "workbuddy": return settings.workbuddyCommand;
-    case "gemini": return settings.geminiCommand;
+    // A template saved before Gemini 0.64 ignored a system defaults file root does not own.
+    case "gemini": return settings.geminiCommand.replace(/GEMINI_CLI_SYSTEM_DEFAULTS_PATH=("?)\{geminiSettings\}\1/, 'GEMINI_CLI_HOME="{geminiHome}"');
     case "opencode": return settings.opencodeCommand;
     case "hermes": return settings.hermesCommand;
     case "dsh": return settings.dshCommand;
