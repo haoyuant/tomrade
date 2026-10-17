@@ -468,7 +468,7 @@ export class Llm extends Service implements LlmService {
       const id = chosen.slice(LENT_WORKER.length);
       const lent = this.lent.find((m) => m.id === id);
       if (lent && (await lent.ready().catch(() => false))) return { kind: "lent", lent };
-            const name = lent?.title ?? id;
+      const name = lent?.title ?? id;
       return { kind: "none", chosen: true, reason: this.words()("workerUnavailable", { name }) };
     }
     const profile = this.profileFor("worker");
