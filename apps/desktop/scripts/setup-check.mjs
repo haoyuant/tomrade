@@ -54,7 +54,7 @@ const run = async () => {
   // The app's own requests to DeepSeek go to the stand-in; a key exported in the shell is what detection finds.
   const realFetch = globalThis.fetch;
   globalThis.fetch = (url, init) => realFetch(String(url).replace("https://api.deepseek.com", fake), init);
-  for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY", "OPENROUTER_API_KEY"]) delete process.env[name];
+  for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"]) delete process.env[name];
   process.env.DEEPSEEK_API_KEY = "sk-good-from-shell-1a2b";
 
   const { ctx } = await boot({

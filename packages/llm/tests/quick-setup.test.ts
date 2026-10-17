@@ -9,7 +9,7 @@ import path from "node:path";
 import { Context } from "cordis";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { Settings } from "@tomradex/settings";
-import { guessProviders, Llm, pickModel, usableModels, type ModelsSettings } from "@tomradex/llm";
+import { guessProviders, Llm, pickModel, PROVIDERS, usableModels, type ModelsSettings } from "@tomradex/llm";
 
 let server: http.Server;
 let base = "";
@@ -47,7 +47,12 @@ it("tells keys apart by their shape where it can", () => {
   expect(guessProviders(" sk-or-v1-abc ")).toEqual(["openrouter"]);
   expect(guessProviders("sk-proj-abc")).toEqual(["openai"]);
   expect(guessProviders("sk-0123456789abcdef0123456789abcdef")).toEqual(["deepseek"]);
+  expect(guessProviders("AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q")).toEqual(["gemini"]);
   expect(guessProviders("whatever")).toEqual([]);
+  // Gemini's compatible endpoint lists `models/<id>`: the newest flash, not an image or TTS model.
+  const gemini = PROVIDERS.find((p) => p.id === "gemini")!;
+  expect(gemini).toMatchObject({ provider: "openai-compatible", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY" });
+  expect(pickModel(gemini, ["models/gemini-2.5-flash", "models/gemini-2.5-flash-image", "models/gemini-3.6-flash", "models/gemini-3.1-pro-preview", "models/gemini-2.5-flash-preview-tts"])).toBe("models/gemini-3.6-flash");
   expect(pickModel({ model: "deepseek-chat", prefer: [/flash/] }, ["deepseek-reasoner", "deepseek-v4-flash", "deepseek-v3-flash"])).toBe("deepseek-v4-flash");
   expect(pickModel({ model: "deepseek-chat", prefer: [/flash/] }, ["deepseek-chat", "deepseek-v4-flash"])).toBe("deepseek-chat");
   expect(pickModel({ model: "deepseek-chat", prefer: [] }, null)).toBe("deepseek-chat");
