@@ -25,7 +25,9 @@
     "@tomradex/tools": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "@tomradex/im": "workspace:*",
-    "@tomradex/agent": "workspace:*"
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/extensions": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.0",
