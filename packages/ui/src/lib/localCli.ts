@@ -46,6 +46,7 @@ export function cliDiagnostics(engine: EngineView, cli: LocalCliStatus, appVersi
     ...(cli.error ? [`Error: ${cli.error}`] : []),
     ...(cli.manual ? [`Chosen path: ${cli.manual.path} — ${cli.manual.error}`] : []),
     ...(cli.wsl ? [`Found in WSL: ${cli.wsl}`] : []),
+    ...(cli.shellTimedOut ? [`Login shell: ${cli.shellTimedOut} did not answer in time`] : []),
     ...(!engine.ok && engine.reason ? [`Reason: ${engine.reason}`] : []),
     ...(engine.configDir ? [`Config folder: ${engine.configDir}`] : []),
     "",
