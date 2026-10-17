@@ -127,6 +127,8 @@ const run = async () => {
   check("another connects it again", await wait(() => ctx.boards.get(project.id, board.id).repoId === repo.id));
 
   dialog.showOpenDialog = showOpenDialog;
+  // Every agent, whichever are installed on the machine running this check.
+  ctx.codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor", "gemini"] });
   // Connect directly from this repository row; there is no selected ticket here.
   await wait(() => $(`!!document.querySelector('[data-repo="${repo.id}"] .repo-agent-connect')`));
   check("repository shows agent connection and target instance", await $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.textContent.includes('development build')`));

@@ -1,11 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { parse as parseToml } from "smol-toml";
 import { CURSOR_HOOK_SCRIPT, cursorHookScript, withCursorHooks } from "@tomradex/engine-cursor";
 import { opencodePlugin, withMcpEntry } from "@tomradex/engine-opencode";
 import { outsideExtension } from "@tomradex/engine-pi";
-import { HOOK_EVENTS } from "./sessions.js";
+import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
+
+/** The agents a repository can be connected for, in the order they are shown. */
+export const CONNECT_AGENTS = ["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor", "gemini"] as const;
+export type ConnectAgent = (typeof CONNECT_AGENTS)[number];
+
+/**
+ * Why Connect left an agent out: its file has comments or trailing commas a
+ * rewrite would lose, cannot be read at all, or (Codex) holds hooks Tomrade
+ * cannot add to without rewriting the whole file.
+ */
+export type SkipReason = "comments" | "invalid" | "codex-hooks";
+export interface SkippedAgent {
+  agent: ConnectAgent;
+  file: string;
+  reason: SkipReason;
+}
 
 export interface ConnectInput {
   projectName: string;
@@ -41,8 +57,26 @@ export function hookCommand(eventUrl: string, agent?: HookAgent): string {
   return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
 }
 
-/** Keep comments and unrelated tables; inline-array hooks need TOML reserialization to append safely. */
-function withCodexHooks(existing: string, eventUrl: string): string {
+const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+/** Whether every event runs `command` among its hooks, in Claude Code's (and Codex's) hook format. */
+export function hasHooks(config: Record<string, unknown>, events: readonly string[], command: string): boolean {
+  return events.every((event) => {
+    const entries = object(config.hooks)[event];
+    return Array.isArray(entries) && entries.some((entry) => {
+      const hooks = object(entry).hooks;
+      return Array.isArray(hooks) && hooks.some((hook) => object(hook).command === command);
+    });
+  });
+}
+
+/**
+ * Tomrade's hooks between their markers, everything else as it was — or null
+ * when that cannot be done without rewriting the file: inline hook arrays take
+ * no array-of-table entries, and Tomrade hooks outside the markers (an older
+ * Tomrade serialised the whole file) cannot be replaced in place.
+ */
+function withCodexHooks(existing: string, eventUrl: string): string | null {
   const start = "# BEGIN TOMRADE HOOKS";
   const end = "# END TOMRADE HOOKS";
   const command = hookCommand(eventUrl, "codex");
@@ -50,24 +84,13 @@ function withCodexHooks(existing: string, eventUrl: string): string {
     `[[hooks.${event}]]`, `[[hooks.${event}.hooks]]`, 'type = "command"', `command = ${JSON.stringify(command)}`, "timeout = 3", ""
   ]), end].join("\n");
   const clean = existing.replace(/# BEGIN TOMRADE HOOKS[\s\S]*?# END TOMRADE HOOKS\n?/, "").trimEnd();
-  const candidate = `${clean}\n\n${block}\n`;
   try {
-    if (clean.includes("X-Tomrade-Agent: codex")) throw new Error("update serialized hooks");
+    if (clean.includes("X-Tomrade-Agent: codex")) return hasHooks(parseToml(clean), CODEX_HOOK_EVENTS, command) ? existing : null;
+    const candidate = `${clean}\n\n${block}\n`;
     parseToml(candidate);
     return candidate;
   } catch {
-    // Array literals cannot be extended with array-of-table syntax.
-    const config = parseToml(clean);
-    const hooks = (config.hooks ?? {}) as Record<string, unknown>;
-    for (const event of CODEX_HOOK_EVENTS) {
-      const entries = Array.isArray(hooks[event]) ? hooks[event] as { hooks?: { type?: string; command?: string; timeout?: number }[] }[] : [];
-      hooks[event] = entries.flatMap((entry) => {
-        if (!Array.isArray(entry.hooks)) return [entry];
-        const kept = entry.hooks.filter((hook) => !hook.command?.includes("X-Tomrade-Agent: codex"));
-        return kept.length ? [{ ...entry, hooks: kept }] : [];
-      }).concat([{ hooks: [{ type: "command", command, timeout: 3 }] }]);
-    }
-    return stringifyToml({ ...config, hooks });
+    return null;
   }
 }
 
@@ -160,158 +183,137 @@ function withCodexMcp(existing: string, url: string): string {
   return existing ? `${existing.replace(/\s*$/, "")}\n\n${block}\n` : `${block}\n`;
 }
 
-/** Read a JSON file as an object, or start from nothing; a file that is not JSON is left alone and reported. */
-function readJson(file: string): Record<string, unknown> | null {
-  if (!fs.existsSync(file)) return {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
+class Unwritable extends Error {
+  constructor(readonly file: string, readonly reason: SkipReason) {
+    super(`Cannot update ${file}: ${reason}`);
   }
 }
 
+function isJsonObject(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
+
+const sameJson = (a: string, b: string) => JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b));
+
 /**
- * Lay the agent connection files down in a worktree: Claude and Codex each
- * gain a project-scoped `tomrade` MCP server; CLAUDE.md and AGENTS.md gain or
- * replace their marked Tomrade section; Codex gains the `tomrade-sync` skill;
- * `.claude/settings.json` and WorkBuddy's `.codebuddy/settings.json` gain one
- * hook per lifecycle event that posts to Tomrade; WorkBuddy reads `.mcp.json`
- * and AGENTS.md as they are; Pi gains a project extension that does both, and
- * OpenCode a `tomrade` server in opencode.json and a reporting plugin;
- * Cursor's `.cursor/hooks.json` runs a script that posts the same way.
- * Everything else in each file is kept as it was.
- * Returns the files that changed.
+ * A JSON config's next text, or null when it already says what it should. One
+ * with comments or trailing commas is read but never rewritten, which would
+ * drop them, and one that is no JSON object is left as it is.
  */
-export function writeConnectFiles(root: string, input: ConnectInput): string[] {
-  const changed: string[] = [];
-
-  const mcpFile = path.join(root, ".mcp.json");
-  const mcp = readJson(mcpFile);
-  if (!mcp) throw new Error("Cannot update .mcp.json: expected a JSON object");
-  const servers = (mcp.mcpServers as Record<string, unknown> | undefined) ?? {};
-  const next = { ...mcp, mcpServers: { ...servers, tomrade: { type: "http", url: input.mcpUrl } } };
-  const nextText = JSON.stringify(next, null, 2) + "\n";
-  if (!fs.existsSync(mcpFile) || fs.readFileSync(mcpFile, "utf8") !== nextText) {
-    fs.writeFileSync(mcpFile, nextText);
-    changed.push(".mcp.json");
+function nextJson(root: string, name: string, change: (json: string) => string): string | null {
+  const file = path.join(root, name);
+  const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  if (!text.trim()) return change("");
+  if (isJsonObject(text)) {
+    const next = change(text);
+    return sameJson(next, text) ? null : next;
   }
+  const loose = stripJsonComments(text);
+  if (!isJsonObject(loose)) throw new Unwritable(name, "invalid");
+  if (sameJson(change(loose), loose)) return null;
+  throw new Unwritable(name, "comments");
+}
 
-  const codexFile = path.join(root, ".codex", "config.toml");
-  const codexExisting = fs.existsSync(codexFile) ? fs.readFileSync(codexFile, "utf8") : "";
-  const codexText = withCodexHooks(withCodexMcp(codexExisting, input.mcpUrl), input.eventUrl);
-  if (codexText !== codexExisting) {
-    fs.mkdirSync(path.dirname(codexFile), { recursive: true });
-    fs.writeFileSync(codexFile, codexText);
-    changed.push(".codex/config.toml");
+const withServer = (server: Record<string, unknown>) => (json: string) => {
+  const config = object(json ? JSON.parse(json) : {});
+  return JSON.stringify({ ...config, mcpServers: { ...object(config.mcpServers), tomrade: server } }, null, 2) + "\n";
+};
+
+/** One lifecycle hook per event after the person's own, replacing any Tomrade hook from before. */
+const withSessionHooks = (command: string) => (json: string) => {
+  const settings = object(json ? JSON.parse(json) : {});
+  const hooks = { ...((settings.hooks as Record<string, unknown[]> | undefined) ?? {}) };
+  for (const event of HOOK_EVENTS) {
+    const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];
+    const kept = entries.flatMap((entry) => {
+      if (!entry || typeof entry !== "object" || !Array.isArray((entry as { hooks?: unknown }).hooks)) return [entry];
+      const row = entry as { hooks: { command?: string }[] };
+      const unrelated = row.hooks.filter((hook) => !hook.command?.includes("/sessions/event"));
+      return unrelated.length ? [{ ...row, hooks: unrelated }] : [];
+    });
+    kept.push({ hooks: [{ type: "command", command }] });
+    hooks[event] = kept;
   }
+  return JSON.stringify({ ...settings, hooks }, null, 2) + "\n";
+};
 
-  for (const [name, server] of [
-    [".cursor/mcp.json", { url: input.mcpUrl }],
-    [".gemini/settings.json", { httpUrl: input.mcpUrl }]
-  ] as const) {
+/**
+ * Lay the chosen agents' connection files down in a worktree: Claude and Codex
+ * each gain a project-scoped `tomrade` MCP server; CLAUDE.md and AGENTS.md
+ * gain or replace their marked Tomrade section; Codex gains the
+ * `tomrade-sync` skill; `.claude/settings.json` and WorkBuddy's
+ * `.codebuddy/settings.json` gain one hook per lifecycle event that posts to
+ * Tomrade; WorkBuddy reads `.mcp.json` and AGENTS.md as they are; Pi gains a
+ * project extension that does both, and OpenCode a `tomrade` server in
+ * opencode.json and a reporting plugin; Cursor's `.cursor/hooks.json` runs a
+ * script that posts the same way. Everything else in each file is kept as it
+ * was. An agent whose file cannot be changed without losing what is in it is
+ * skipped whole and reported, never failing the others.
+ */
+export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS): { files: string[]; skipped: SkippedAgent[] } {
+  interface Write { name: string; text: string | null; mode?: number }
+  const read = (name: string) => {
     const file = path.join(root, name);
-    const config = readJson(file);
-    if (!config) throw new Error(`Cannot update ${name}: expected a JSON object`);
-    const text = JSON.stringify({ ...config, mcpServers: { ...(config.mcpServers as Record<string, unknown> ?? {}), tomrade: server } }, null, 2) + "\n";
-    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== text) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, text);
-      changed.push(name);
-    }
-  }
-
-  for (const name of ["CLAUDE.md", "AGENTS.md"]) {
-    const file = path.join(root, name);
-    const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+  };
+  const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
+  const json = (name: string, change: (json: string) => string): Write => ({ name, text: nextJson(root, name, change) });
+  const section = (name: "CLAUDE.md" | "AGENTS.md"): Write => {
+    const existing = read(name) ?? "";
     const body = withTomradeSection(existing, input.projectName, tomradeSection(input, { fetchRules: name === "AGENTS.md" }));
-    if (body !== existing) {
-      fs.writeFileSync(file, body);
-      changed.push(name);
+    return { name, text: body === existing ? null : body };
+  };
+  const skipped: SkippedAgent[] = [];
+  const codex = (): Write => {
+    const name = ".codex/config.toml";
+    const existing = read(name) ?? "";
+    const withMcp = withCodexMcp(existing, input.mcpUrl);
+    try {
+      parseToml(existing);
+      parseToml(withMcp);
+    } catch {
+      throw new Unwritable(name, "invalid");
+    }
+    const text = withCodexHooks(withMcp, input.eventUrl);
+    // Its MCP server still goes in; only the hooks wait for the person.
+    if (text === null) skipped.push({ agent: "codex", file: name, reason: "codex-hooks" });
+    const next = text ?? withMcp;
+    return { name, text: next === existing ? null : next };
+  };
+  const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl }));
+  const plans: Record<ConnectAgent, () => Write[]> = {
+    "claude-code": () => [mcp(), json(".claude/settings.json", withSessionHooks(hookCommand(input.eventUrl))), section("CLAUDE.md")],
+    codex: () => [codex(), section("AGENTS.md"), exact(".agents/skills/tomrade-sync/SKILL.md", codexSyncSkill(input))],
+    // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
+    workbuddy: () => [mcp(), json(".codebuddy/settings.json", withSessionHooks(hookCommand(input.eventUrl, "workbuddy"))), section("AGENTS.md")],
+    pi: () => [exact(PI_EXTENSION, outsideExtension(input.mcpUrl, input.eventUrl)), section("AGENTS.md")],
+    opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), section("AGENTS.md")],
+    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(hookCommand(input.eventUrl, "cursor")), 0o755), section("AGENTS.md")],
+    gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
+  };
+
+  // Every file an agent needs is worked out before anything is written, so one it cannot have leaves that agent out whole.
+  const writes = new Map<string, Write>();
+  for (const agent of CONNECT_AGENTS.filter((id) => agents.includes(id))) {
+    try {
+      for (const write of plans[agent]()) writes.set(write.name, write);
+    } catch (error) {
+      if (!(error instanceof Unwritable)) throw error;
+      skipped.push({ agent, file: error.file, reason: error.reason });
     }
   }
-
-  const skillFile = path.join(root, ".agents", "skills", "tomrade-sync", "SKILL.md");
-  const skill = codexSyncSkill(input);
-  if (!fs.existsSync(skillFile) || fs.readFileSync(skillFile, "utf8") !== skill) {
-    fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-    fs.writeFileSync(skillFile, skill);
-    changed.push(".agents/skills/tomrade-sync/SKILL.md");
+  const files: string[] = [];
+  for (const { name, text, mode } of writes.values()) {
+    if (text === null) continue;
+    const file = path.join(root, name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text, mode ? { mode } : undefined);
+    files.push(name);
   }
-
-  const piFile = path.join(root, PI_EXTENSION);
-  const piText = outsideExtension(input.mcpUrl, input.eventUrl);
-  if (!fs.existsSync(piFile) || fs.readFileSync(piFile, "utf8") !== piText) {
-    fs.mkdirSync(path.dirname(piFile), { recursive: true });
-    fs.writeFileSync(piFile, piText);
-    changed.push(PI_EXTENSION);
-  }
-
-  const opencodeFile = path.join(root, "opencode.json");
-  const opencodeExisting = fs.existsSync(opencodeFile) ? fs.readFileSync(opencodeFile, "utf8") : "";
-  let opencodeText: string;
-  try {
-    opencodeText = withMcpEntry(opencodeExisting, input.mcpUrl);
-  } catch {
-    throw new Error("Cannot update opencode.json: expected a JSON object");
-  }
-  if (opencodeText !== opencodeExisting) {
-    fs.writeFileSync(opencodeFile, opencodeText);
-    changed.push("opencode.json");
-  }
-  const opencodePluginFile = path.join(root, OPENCODE_PLUGIN);
-  const opencodePluginText = opencodePlugin(input.eventUrl);
-  if (!fs.existsSync(opencodePluginFile) || fs.readFileSync(opencodePluginFile, "utf8") !== opencodePluginText) {
-    fs.mkdirSync(path.dirname(opencodePluginFile), { recursive: true });
-    fs.writeFileSync(opencodePluginFile, opencodePluginText);
-    changed.push(OPENCODE_PLUGIN);
-  }
-
-  // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
-  for (const [name, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"]] as const) {
-    const settingsFile = path.join(root, name);
-    const settings = readJson(settingsFile);
-    if (!settings) throw new Error(`Cannot update ${name}: expected a JSON object`);
-    const hooks = { ...((settings.hooks as Record<string, unknown[]> | undefined) ?? {}) };
-    const command = hookCommand(input.eventUrl, agent);
-    let touched = false;
-    for (const event of HOOK_EVENTS) {
-      const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];
-      const kept = entries.flatMap((entry) => {
-        if (!entry || typeof entry !== "object" || !Array.isArray((entry as { hooks?: unknown }).hooks)) return [entry];
-        const row = entry as { hooks: { command?: string }[] };
-        const unrelated = row.hooks.filter((hook) => !hook.command?.includes("/sessions/event"));
-        return unrelated.length ? [{ ...row, hooks: unrelated }] : [];
-      });
-      kept.push({ hooks: [{ type: "command", command }] });
-      hooks[event] = kept;
-      touched ||= JSON.stringify(entries) !== JSON.stringify(kept);
-    }
-    if (touched) {
-      fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
-      fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, hooks }, null, 2) + "\n");
-      changed.push(name);
-    }
-  }
-  const cursorHooksFile = path.join(root, ".cursor", "hooks.json");
-  const cursorHooksExisting = fs.existsSync(cursorHooksFile) ? fs.readFileSync(cursorHooksFile, "utf8") : "";
-  let cursorHooksText: string;
-  try {
-    cursorHooksText = withCursorHooks(cursorHooksExisting);
-  } catch {
-    throw new Error("Cannot update .cursor/hooks.json: expected a JSON object");
-  }
-  if (cursorHooksText !== cursorHooksExisting) {
-    fs.mkdirSync(path.dirname(cursorHooksFile), { recursive: true });
-    fs.writeFileSync(cursorHooksFile, cursorHooksText);
-    changed.push(".cursor/hooks.json");
-  }
-  const cursorScriptFile = path.join(root, CURSOR_HOOK_SCRIPT);
-  const cursorScriptText = cursorHookScript(hookCommand(input.eventUrl, "cursor"));
-  if (!fs.existsSync(cursorScriptFile) || fs.readFileSync(cursorScriptFile, "utf8") !== cursorScriptText) {
-    fs.mkdirSync(path.dirname(cursorScriptFile), { recursive: true });
-    fs.writeFileSync(cursorScriptFile, cursorScriptText, { mode: 0o755 });
-    changed.push(CURSOR_HOOK_SCRIPT);
-  }
-  return changed;
+  return { files, skipped };
 }
