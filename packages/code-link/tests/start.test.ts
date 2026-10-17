@@ -164,7 +164,10 @@ it("repoints a helper an earlier version left under the Hub, on the next scan", 
   const local = codeRepo();
   const remote = "https://github.com/example/private-app";
   git(["remote", "set-url", "origin", remote], local.checkout);
-  const world = await machine({ ...local, remote });
+  // The scan's fetch and remote probe answer here, as for a private repository, rather than from github.com.
+  const binary = path.join(root, `git-offline-${n++}`);
+  fs.writeFileSync(binary, `#!/bin/sh\ncase "$1" in fetch|ls-remote|pull|push) echo 'Repository not found' >&2; exit 128;; esac\nexec git "$@"\n`, { mode: 0o755 });
+  const world = await machine({ ...local, remote }, { gitBinary: binary });
   const { ctx, codeLink, project, hubDir } = world;
   const connection = vi.spyOn(ctx.github, "status").mockResolvedValue({ connected: true, label: "@right-account" });
   ctx.settings.set({ ...ctx.settings.get(), github: { token: "fake-project-token" } });
