@@ -6,6 +6,7 @@ import { localCli } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import { createAgyEngine } from "./agy.js";
+import { agyLentModel } from "./agy-lend.js";
 import { GEMINI_SIGN_IN, geminiCanSignIn } from "./auth.js";
 import { geminiLentModel } from "./lend.js";
 
@@ -57,10 +58,20 @@ export default {
     ctx.agent.engine(engine);
     // Gemini CLI answers one prompt headless, so its sign-in can do worker calls too.
     ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(geminiLentModel(ctx, { cli: gemini.cli, found: async () => (await engine.available()).ok }))));
-    ctx.agent.engine(createAgyEngine(ctx));
+    const agy = createAgyEngine(ctx);
+    ctx.agent.engine(agy);
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(agyLentModel(ctx, {
+      cli: localCli("agy"),
+      found: async () => (await agy.available()).ok,
+      options: () => {
+        const model = (ctx.get("agent")?.settingsOf().engines.agy as { model?: unknown } | undefined)?.model;
+        return typeof model === "string" && model.trim() ? { model: model.trim() } : {};
+      }
+    }))));
   }
 };
 
 export { forgetSession, geminiDir, geminiLentModel, ownModel } from "./lend.js";
 export { agyMcpFile, createAgyEngine } from "./agy.js";
+export { agyDir, agyLentModel, agyWorkerDir, forgetAgyConversation } from "./agy-lend.js";
 export { GEMINI_SIGN_IN, geminiCanSignIn } from "./auth.js";

@@ -35,3 +35,26 @@ describe.skipIf(!process.env.TOMRADE_LIVE_GEMINI)("live Gemini CLI", () => {
     }
   }, 300_000);
 });
+
+/** Opt-in: spawns the real, signed-in `agy`. TOMRADE_LIVE_AGY=1 pnpm test */
+describe.skipIf(!process.env.TOMRADE_LIVE_AGY)("live Antigravity CLI", () => {
+  it("answers worker calls as the signed-in agy when the worker role names it", async () => {
+    const settingsPath = path.join(os.tmpdir(), `tomrade-live-agy-lent-${Date.now()}.json`);
+    const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], Llm, engineTerminal] });
+    await settle();
+    ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [], roles: { worker: "lent:agy" } } });
+    try {
+      expect(await ctx.llm.worker()).toMatchObject({ ok: true, via: "lent", title: "Antigravity CLI" });
+      const schema = z.object({ duplicates: z.array(z.string()), reason: z.string() });
+      const t0 = Date.now();
+      const out = await ctx.llm.completeJson(schema, {
+        system: "You judge duplicate tickets. Reply with one JSON object: {\"duplicates\": [keys of tickets that mean the same work], \"reason\": one sentence}.",
+        user: "New: \"Remind me to drink water every hour\".\nExisting: AL-1 \"Hourly water reminder\", AL-2 \"Dark mode for settings\"."
+      });
+      console.log(`agy worker call: ${Date.now() - t0} ms`, out);
+      expect(out.duplicates).toEqual(["AL-1"]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  }, 300_000);
+});
