@@ -233,13 +233,14 @@ export const AgentConfig = z.preprocess(
     mediaDir: z.string().optional(),
     /** Folder of user playbooks: one SKILL.md per subdirectory. */
     playbooksDir: z.string().optional(),
-    /** Hard wall-clock ceiling per run, for a thread that talks to the backlog. */
-    maxWallMs: z.number().int().min(10_000).default(180_000),
-    /** The ceiling for a run that implements a ticket in a repository — hours, not minutes. */
+    /** The ceiling for a run on a ticket — hours, not minutes. A conversation without one reads `AgentSettings.maxRunMinutes`. */
     codeMaxWallMs: z.number().int().min(60_000).default(4 * 60 * 60 * 1000)
   })
 );
 export type AgentConfig = z.infer<typeof AgentConfig>;
+
+/** Room for a local agent to plan or research, while a run that hangs is still noticed within the quarter hour. */
+const RUN_MINUTES = 15;
 
 export interface AgentSettings {
   defaultEngine: string;
@@ -247,6 +248,8 @@ export interface AgentSettings {
   confirmWritesOver: number;
   /** A run stopped by a usage limit is continued once the limit lifts. */
   resumeAfterLimit: boolean;
+  /** Wall-clock ceiling of one run in a conversation without a ticket; it pauses while a question waits. */
+  maxRunMinutes: number;
   engines: Record<string, unknown>;
   /** Per-playbook-id: which source wins when several carry the same id. Absent = most specific wins. */
   playbookChoices: Record<string, PlaybookSource>;
@@ -255,15 +258,17 @@ export interface AgentSettings {
 export const AGENT_SECTION: SettingsSection<AgentSettings> = {
   id: "agent",
   title: "Assistant",
-  description: "Which engine conducts a new thread, and when a plan pauses for confirmation before writing.",
+  description: "Which engine conducts a new thread, when a plan pauses for confirmation before writing, and how long a conversation's run may go.",
   schema: z.object({
     defaultEngine: z.string().default("tomrade"),
     confirmWritesOver: z.number().int().min(0).default(0),
     resumeAfterLimit: z.boolean().default(true),
+    maxRunMinutes: z.number().int().min(1).max(240).default(RUN_MINUTES)
+      .describe("Minutes one run of a conversation without a ticket may go before it is stopped. A run on a ticket may go up to 4 hours."),
     engines: z.record(z.string(), z.unknown()).default({}),
     playbookChoices: z.record(z.string(), z.enum(["plugin", "user", "project"])).default({})
   }),
-  defaults: { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, engines: {}, playbookChoices: {} },
+  defaults: { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, maxRunMinutes: RUN_MINUTES, engines: {}, playbookChoices: {} },
   order: 11
 };
 
@@ -802,6 +807,13 @@ export class Agent extends Service {
 
   settingsOf(): AgentSettings {
     return (this.ctx.settings.get().agent as AgentSettings | undefined) ?? AGENT_SECTION.defaults;
+  }
+
+  /** Read when a run starts, so a changed setting reaches the next run. */
+  private wallLimit(thread: ThreadSummary): number {
+    if (thread.itemId) return this.config.codeMaxWallMs;
+    const minutes = this.settingsOf().maxRunMinutes;
+    return (Number.isInteger(minutes) && minutes > 0 ? minutes : RUN_MINUTES) * 60_000;
   }
 
   /** The old global "conversation" model role becomes the loop engine's own profile override, so a multi-profile pick survives. */
@@ -1344,7 +1356,7 @@ export class Agent extends Service {
   private makeRunCtx(run: RunView, thread: ThreadSummary, engine: Engine): RunCtx {
     const abort = new AbortController();
     // The wall clock bounds the agent, not the person: it stops while a permission question waits.
-    const wall = { left: thread.itemId ? this.config.codeMaxWallMs : this.config.maxWallMs, since: Date.now(), timer: undefined as NodeJS.Timeout | undefined };
+    const wall = { left: this.wallLimit(thread), since: Date.now(), timer: undefined as NodeJS.Timeout | undefined };
     const clock = { timedOut: false, limitMs: wall.left };
     const partial = { text: "" };
     const steers: RunCtx["steers"] = [];
@@ -1729,7 +1741,7 @@ export class Agent extends Service {
     }
     if (result.stop === "cancelled") {
       const w = this.words();
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w.timeLimit(rc.clock.limitMs) : w.stopped }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w.timeLimit(rc.clock.limitMs, !rc.thread.itemId) : w.stopped }, rc.run.id);
     }
     if (result.stop === "budget") {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().budget }, rc.run.id);

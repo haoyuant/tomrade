@@ -722,7 +722,8 @@ an engine is offered when a ticket is started — the in-app loop never
 implements a ticket. A thread started from a ticket carries `itemId` and
 `branch`; its turns arrive with `purpose: "code"` and a `ticket`, run in a
 worktree on that branch (`Repos.workdirFor` with the branch), and get the code
-wall clock (`AgentConfig.codeMaxWallMs`, hours) instead of the backlog one. The
+wall clock (`AgentConfig.codeMaxWallMs`, hours) instead of a conversation's
+(`agent.maxRunMinutes`, Settings → Assistant, 15 minutes by default). The
 platform emits `agent/run-started` and `agent/run-ended` for whoever follows
 runs; `ctx.agent.activeRuns()` is what a quit would interrupt.
 

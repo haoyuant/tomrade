@@ -149,8 +149,8 @@ describe("the loop engine on the platform", () => {
     expect(blocks).toContainEqual({ type: "note", text: "Stopped." });
   });
 
-  it("says a run ended at its time limit, not that someone stopped it", async () => {
-    const base = await fresh({ plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([])), [Agent, { maxWallMs: 10_000 }]] });
+  it("says a run ended at its time limit, not that someone stopped it, and where to raise it", async () => {
+    const base = await fresh({ plugins: [Tools, [...tmpSettings()], fakeChat(new FakeChatModel([])), Agent] });
     await settle();
     const { ctx, project } = base;
     const agent = ctx.agent;
@@ -162,17 +162,33 @@ describe("the loop engine on the platform", () => {
       turn: (_input, io) => new Promise((resolve) => io.signal.addEventListener("abort", () => resolve({ stop: "end" })))
     });
     const thread = agent.newThread(project.id, "slow");
+    const notes = (runId: string) => agent.store.messages(project.id, thread.id).filter((m) => m.runId === runId && m.block.type === "note").map((m) => (m.block as { text: string }).text);
+    const hint = "To give a conversation more time, raise “Time limit per run” in Settings → Assistant.";
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let runId = "";
     try {
       runId = agent.send(project.id, thread.id, { kind: "text", text: "go" }).runId;
-      await vi.advanceTimersByTimeAsync(10_500);
+      // a conversation without a ticket gets a quarter hour, not three minutes
+      await vi.advanceTimersByTimeAsync(14 * 60_000);
+      expect(agent.store.run(project.id, runId)?.status).toBe("running");
+      await vi.advanceTimersByTimeAsync(60_500);
     } finally {
       vi.useRealTimers();
     }
     expect((await settled(ctx, project.id, runId)).status).toBe("cancelled");
-    const notes = agent.store.messages(project.id, thread.id).filter((m) => m.runId === runId && m.block.type === "note").map((m) => (m.block as { text: string }).text);
-    expect(notes).toEqual(["Stopped: the run reached its time limit (10 s)."]);
+    expect(notes(runId)).toEqual([`Stopped: the run reached its time limit (15 min). ${hint}`]);
+
+    // the next run takes the limit Settings now hold
+    ctx.settings.set({ ...ctx.settings.get(), agent: { ...(ctx.settings.get().agent as object), maxRunMinutes: 1 } });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      runId = agent.send(project.id, thread.id, { kind: "text", text: "again" }).runId;
+      await vi.advanceTimersByTimeAsync(60_500);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect((await settled(ctx, project.id, runId)).status).toBe("cancelled");
+    expect(notes(runId)).toEqual([`Stopped: the run reached its time limit (1 min). ${hint}`]);
   });
 
   it("answers chit-chat with no tools and no writes", async () => {
