@@ -11,7 +11,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, cleanRemote, gitRunner, type Git, type GitCredential } from "./git.js";
+import { GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential } from "./git.js";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";
@@ -126,6 +126,10 @@ export class Storage extends Service {
   /** After our own write the watcher hears an echo; ignore events until then. */
   private quietUntil = new Map<string, number>();
   private publishing = new Set<string>();
+  /** Each project's folder and git work, one at a time; see `inTurn`. */
+  private turns = new Map<string, Promise<void>>();
+  /** Why the folder's last commit or push failed, until one succeeds: the folder is ahead of git whatever the digests say. */
+  private gitFailed = new Map<string, string>();
   private lastState = new Map<string, SyncState>();
   private lastStatus = new Map<string, StorageStatus>();
   /** Base snapshots for projects whose cache is in memory (tests). */
@@ -191,7 +195,13 @@ export class Storage extends Service {
     this.home.on("storage/registered", (providerId) => this.requeue((e) => e.state === "needs-provider" && e.provider?.id === providerId));
 
     if (this.config.reconcileMs > 0) {
-      this.reconcileTimer = setInterval(() => void this.reconcileAll("reconcile"), this.config.reconcileMs);
+      // A pass slower than the interval is not joined by another: their turns would pile up, and a write's publish would wait behind them all.
+      let sweeping = false;
+      this.reconcileTimer = setInterval(() => {
+        if (sweeping) return;
+        sweeping = true;
+        void this.reconcileAll("reconcile").finally(() => (sweeping = false));
+      }, this.config.reconcileMs);
       this.reconcileTimer.unref?.();
     }
 
@@ -309,6 +319,26 @@ export class Storage extends Service {
   private mcpUrl(projectId: string): string | null {
     const base = this.mcpBase;
     return base ? `${base}/${projectId}` : null;
+  }
+
+  /**
+   * Run `work` once the project's earlier work is done. Two publishes that met
+   * — the periodic catch-up and a write's own — both staged everything, and
+   * the one that committed second found nothing left and failed. Whatever runs
+   * here calls the `…InTurn` methods, never `publish` or `refresh`, which would
+   * wait for the turn it holds.
+   */
+  private inTurn<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+    const turn = (this.turns.get(projectId) ?? Promise.resolve()).then(work);
+    const done = turn.then(
+      () => undefined,
+      () => undefined
+    );
+    this.turns.set(projectId, done);
+    void done.then(() => {
+      if (this.turns.get(projectId) === done) this.turns.delete(projectId);
+    });
+    return turn;
   }
 
   private quiet(projectId: string, ms = 1_500): void {
@@ -733,7 +763,16 @@ export class Storage extends Service {
    */
   async publish(projectId: string, reason = "write"): Promise<StorageStatus> {
     if (!this.entry(projectId)?.dir) return this.remember(projectId, LOCAL);
-    const wrote = await this.writeOut(projectId, reason);
+    return this.published(projectId, await this.inTurn(projectId, () => this.writeOut(projectId, reason)));
+  }
+
+  private async publishInTurn(projectId: string, reason: string): Promise<StorageStatus> {
+    if (!this.entry(projectId)?.dir) return this.remember(projectId, LOCAL);
+    return this.published(projectId, await this.writeOut(projectId, reason));
+  }
+
+  /** Where the project stands after a publish; the window hears of one that wrote. */
+  private async published(projectId: string, wrote: boolean): Promise<StorageStatus> {
     const status = await this.statusFor(projectId);
     if (wrote) {
       this.home.emit("storage/synced", projectId, status);
@@ -756,7 +795,7 @@ export class Storage extends Service {
       const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
       if (problem) return false;
       if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) {
-        await this.refresh(projectId);
+        await this.refreshInTurn(projectId);
         // A pull during the refresh may have brought in what this build cannot read.
         if (hasArtifact(dir) && this.readFolder(dir, this.verifies(projectId)).problem) return false;
       }
@@ -783,8 +822,16 @@ export class Storage extends Service {
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
       // The folder is where the project is shared unless a remote is; then only a push counts.
       let delivered = true;
-      if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
-      else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
+      try {
+        if (entry.git === "dedicated") delivered = await (opts.leaving ? this.pushOnLeaving(entry, summary) : this.pushDedicated(projectId, entry, summary));
+        else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
+      } catch (error) {
+        // A hook or a signing key said no: the status says why, and the next reconcile tries again.
+        this.gitFailed.set(projectId, message(error));
+        this.notify(projectId);
+        throw error;
+      }
+      this.gitFailed.delete(projectId);
       if (delivered) this.markSynced(projectId, upTo);
     } finally {
       this.publishing.delete(projectId);
@@ -992,9 +1039,15 @@ export class Storage extends Service {
    * and nothing is overwritten.
    */
   async refresh(projectId: string): Promise<StorageStatus> {
+    if (!this.entry(projectId)?.dir) return this.remember(projectId, LOCAL);
+    // Asking the remote where it stands takes no turn: a write waiting behind this one need not wait for that too.
+    await this.inTurn(projectId, () => this.refreshInTurn(projectId));
+    return this.statusFor(projectId);
+  }
+
+  private async refreshInTurn(projectId: string): Promise<void> {
     const entry = this.entry(projectId);
-    if (!entry?.dir) return this.remember(projectId, LOCAL);
-    if (!fs.existsSync(entry.dir)) return this.statusFor(projectId);
+    if (!entry?.dir || !fs.existsSync(entry.dir)) return;
     if (entry.git === "dedicated") {
       const remote = await this.remoteOf(entry);
       if (remote) {
@@ -1004,13 +1057,12 @@ export class Storage extends Service {
           if (counts && counts.behind > 0 && counts.ahead === 0) await g.fastForward(remote.branch);
           else if (counts && counts.behind > 0) {
             await this.mergeRemote(projectId, entry, g, remote.branch);
-            return this.statusFor(projectId);
+            return;
           }
         }
       }
     }
     this.absorbFolder(projectId);
-    return this.statusFor(projectId);
   }
 
   // ── merging ──────────────────────────────────────────────────────────────────
@@ -1026,7 +1078,7 @@ export class Storage extends Service {
       // The remote has commits but no project — a README from "initialize this
       // repository", say. Join the histories, keep their files, carry ours over.
       await g.beginMerge(branch);
-      await this.publish(projectId, "merge");
+      await this.publishInTurn(projectId, "merge");
       return;
     }
     if (projectIdOf(theirs) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(theirs));
@@ -1048,7 +1100,7 @@ export class Storage extends Service {
       fs.writeFileSync(file, body, "utf8");
     }
     await g.beginMerge(branch);
-    await this.publish(projectId, "merge");
+    await this.publishInTurn(projectId, "merge");
   }
 
   /**
@@ -1227,6 +1279,8 @@ export class Storage extends Service {
 
     const { state: onDisk, problem } = this.readFolder(entry.dir, this.verifies(projectId));
     if (problem) return this.remember(projectId, { ...problem, location, lastSyncAt: entry.lastSyncAt });
+    const failed = this.gitFailed.get(projectId);
+    if (failed) return this.remember(projectId, { state: "error", location, detail: failed, lastSyncAt: entry.lastSyncAt });
     let localDirty = false;
     try {
       localDirty = digestState(this.exportFor(projectId, entry)) !== entry.lastPublishedDigest;
@@ -1591,6 +1645,7 @@ export class Storage extends Service {
     this.maxTimers.delete(projectId);
     this.lastState.delete(projectId);
     this.publishedMem.delete(projectId);
+    this.gitFailed.delete(projectId);
   }
 
   /** Bring one project's folder and cache in step, whichever moved. */
@@ -1607,7 +1662,7 @@ export class Storage extends Service {
     } else {
       await this.refresh(projectId);
       const status = await this.statusFor(projectId);
-      if (status.state === "ahead") await this.publish(projectId, "catch-up");
+      if (status.state === "ahead" || this.gitFailed.has(projectId)) await this.publish(projectId, "catch-up");
       // A machine that never counted starts from a moment nothing is waiting.
       else if (status.state === "synced" && this.entry(projectId)?.syncedDeviceSeq === null) this.markSynced(projectId, this.ownTop(projectId));
     }
@@ -1619,12 +1674,27 @@ export class Storage extends Service {
       if (this.closing) return;
       if (!(this.ctx.db as Db).has(entry.id)) continue;
       try {
+        if (reason === "boot") await this.clearStaleLock(entry.id);
         await this.reconcile(entry.id);
       } catch (error) {
         this.home.logger.warn(`storage: ${entry.id} not reconciled (${reason}) — ${message(error)}`);
       }
     }
     if (!this.closing) await this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${message(e)}`));
+  }
+
+  /**
+   * At launch, before any git of ours runs there: an `index.lock` a killed git
+   * left would fail every commit. Only in a repository that is Tomrade's alone;
+   * a code checkout's git is its owner's to sort out.
+   */
+  private clearStaleLock(projectId: string): Promise<void> {
+    const entry = this.entry(projectId);
+    if (!entry?.dir || entry.git !== "dedicated") return Promise.resolve();
+    const dir = entry.dir;
+    return this.inTurn(projectId, async () => {
+      if (await clearStaleIndexLock(dir)) this.home.logger.warn(`storage: ${projectId}: removed a stale git index.lock`);
+    });
   }
 
   // ── the Hub ──────────────────────────────────────────────────────────────────
@@ -1846,6 +1916,7 @@ export class Storage extends Service {
   /**
    * Write out every project at once; what the quit path calls. Nothing asks a
    * remote for its status or news, so a quit with nothing to push stays local.
+   * A publish already under way finishes first: the two never meet in git.
    */
   async flushAll(reason = "quit"): Promise<void> {
     const ids = this.hub.catalog
@@ -1853,7 +1924,7 @@ export class Storage extends Service {
       .filter((entry) => entry.dir && (this.ctx.db as Db).has(entry.id))
       .map((entry) => entry.id);
     await Promise.all(
-      ids.map((id) => this.writeOut(id, reason, { leaving: true }).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${message(error)}`)))
+      ids.map((id) => this.inTurn(id, () => this.writeOut(id, reason, { leaving: true })).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${message(error)}`)))
     );
   }
 }

@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { fresh, settle } from "@tomradex/testkit";
-import { ARTIFACT_DIR, Storage, digestState, readArtifact, writeArtifact } from "@tomradex/storage";
+import { ARTIFACT_DIR, GitError, GitFolder, Storage, clearStaleIndexLock, digestState, gitRunner, readArtifact, writeArtifact, type Git } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-git-"));
@@ -158,6 +158,49 @@ describe("a dedicated repository", () => {
     expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ status: "done" });
   });
 
+  it("publishes that meet take turns: one commit lands, and none fails for want of something to commit", async () => {
+    const a = await machine("turns");
+    const remote = bareRemote();
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const before = Number(git(["rev-list", "--count", "main"], remote));
+    a.items.create({ title: "Met", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    // The periodic catch-up, a write's own publish and a quit, all at once.
+    const outcomes = await Promise.allSettled([a.storage.publish(a.project.id, "write"), a.storage.reconcile(a.project.id), a.storage.publish(a.project.id, "catch-up"), a.storage.flushAll("quit")]);
+    expect(outcomes.filter((o) => o.status === "rejected")).toEqual([]);
+    expect(Number(git(["rev-list", "--count", "main"], remote))).toBe(before + 1);
+    expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Met" });
+    expect(git(["status", "--porcelain"], a.dir)).toBe("");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+  });
+
+  it("says why git refused a commit, and the next reconcile commits what waited", async () => {
+    const a = await machine("refused");
+    const remote = bareRemote();
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const head = git(["rev-parse", "main"], remote);
+    // A hook standing in for a signing key that is locked.
+    const hooks = path.join(root, `hooks-${n++}`);
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(path.join(hooks, "pre-commit"), "#!/bin/sh\necho 'signing key locked' >&2\nexit 1\n", { mode: 0o755 });
+    git(["config", "core.hooksPath", hooks], a.dir);
+
+    a.items.create({ title: "Waits for git", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await expect(a.storage.publish(a.project.id)).rejects.toThrow(/signing key locked/);
+    const status = await a.storage.statusFor(a.project.id);
+    expect(status.state).toBe("error");
+    expect(status.detail).toMatch(/^git commit .* failed \(exit 1\): signing key locked$/);
+    expect(git(["rev-parse", "main"], remote)).toBe(head);
+    // Nothing new to write, yet the reconcile does not take the folder's digest for a commit: it tries again.
+    await expect(a.storage.reconcile(a.project.id)).rejects.toThrow(/signing key locked/);
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("error");
+
+    git(["config", "--unset", "core.hooksPath"], a.dir);
+    await a.storage.reconcile(a.project.id);
+    expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Waits for git" });
+    expect(git(["status", "--porcelain"], a.dir)).toBe("");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+  });
+
   it("never records a repository inside the folder, and drops one an earlier commit recorded", async () => {
     const a = await machine("embedded");
     const remote = bareRemote();
@@ -300,5 +343,66 @@ describe("a repository GitHub initialised", () => {
     expect(tree).toContain(".tomrade/project.json");
     expect(git(["rev-list", "--count", "main"], remote)).toBe("3");
     expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+  });
+});
+
+describe("git itself", () => {
+  function repo(): string {
+    const dir = path.join(root, `repo-${n++}`);
+    fs.mkdirSync(dir, { recursive: true });
+    git(["init", "-q", "-b", "main"], dir);
+    git(["config", "user.email", "t@localhost"], dir);
+    git(["config", "user.name", "T"], dir);
+    return dir;
+  }
+
+  it("says why git failed even when it said so on stdout, and how it ended", async () => {
+    expect(new GitError(["commit", "-q", "-m", "x"], "", { stdout: "nothing to commit, working tree clean\n", code: 1 }).message).toBe("git commit -q -m x failed (exit 1): nothing to commit, working tree clean");
+    expect(new GitError(["push"], "fatal: denied\n", { stdout: "noise", code: 128 }).message).toBe("git push failed (exit 128): fatal: denied");
+    expect(new GitError(["push"], "", { signal: "SIGKILL" }).message).toBe("git push failed (killed by SIGKILL)");
+    const failure = await gitRunner("git")(["commit", "-q", "-m", "empty"], { cwd: repo() }).catch((e: GitError) => e);
+    expect(failure).toBeInstanceOf(GitError);
+    expect(failure).toMatchObject({ code: 1 });
+    expect((failure as GitError).message).toMatch(/failed \(exit 1\): \S/);
+  });
+
+  it("counts a commit another git made first as nothing to commit, not a failure", async () => {
+    const dir = repo();
+    fs.writeFileSync(path.join(dir, "a.txt"), "a\n");
+    const real = gitRunner("git");
+    // Between our look at the index and our commit, someone else commits it.
+    const racing: Git = async (args, opts) => {
+      if (args[0] === "commit") git(["commit", "-q", "-m", "theirs"], dir);
+      return real(args, opts);
+    };
+    expect(await new GitFolder(racing, dir).commit("ours")).toBe(false);
+    expect(git(["log", "--format=%s"], dir)).toBe("theirs");
+  });
+
+  it("takes away an index.lock only when no git could still hold it", async () => {
+    const dir = repo();
+    const lock = path.join(dir, ".git", "index.lock");
+    const none = async () => false;
+    fs.writeFileSync(lock, "");
+    // Fresh: a git may be at work there this moment.
+    expect(await clearStaleIndexLock(dir, { running: none })).toBe(false);
+    const old = (Date.now() - 10 * 60_000) / 1000;
+    fs.utimesSync(lock, old, old);
+    // Old, but some git runs on this machine: it may be that one's.
+    expect(await clearStaleIndexLock(dir, { running: async () => true })).toBe(false);
+    // A git that started while we looked took a lock of its own.
+    const restarted = async () => {
+      fs.rmSync(lock);
+      fs.writeFileSync(lock, "");
+      return false;
+    };
+    expect(await clearStaleIndexLock(dir, { running: restarted })).toBe(false);
+    expect(fs.existsSync(lock)).toBe(true);
+
+    fs.utimesSync(lock, old, old);
+    expect(await clearStaleIndexLock(dir, { running: none })).toBe(true);
+    expect(fs.existsSync(lock)).toBe(false);
+    fs.writeFileSync(path.join(dir, "a.txt"), "a\n");
+    expect(await new GitFolder(gitRunner("git"), dir).commit("after")).toBe(true);
   });
 });

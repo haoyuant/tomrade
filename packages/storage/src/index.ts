@@ -32,7 +32,7 @@ export {
 } from "./state.js";
 export { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubProject, type HubBackend } from "./hub.js";
 export { appendLog, compactLog, logFile, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
-export { GIT_ENV, GitError, GitFolder, GitMissingError, cleanRemote, cloneBranch, cloneInto, credentialArgs, gitRunner, hasConflictMarkers, probeUrl, shortHash, type Git, type GitCredential, type RemoteReach } from "./git.js";
+export { GIT_ENV, GitError, GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, cloneBranch, cloneInto, credentialArgs, gitRunner, hasConflictMarkers, probeUrl, shortHash, type Git, type GitCredential, type RemoteReach } from "./git.js";
 export { RestoreProblem, fetchProject, locationOf, type RestoreEntry, type RestoreState, type RestoreStep, type RestoreSummary } from "./restore.js";
 export { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeInput, type MergeResult, type MergeState, type Renumbered, type Row, type TableRule } from "./merge.js";
 export {

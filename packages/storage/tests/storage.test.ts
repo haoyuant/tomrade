@@ -415,7 +415,8 @@ describe("ctx.storage", () => {
     writeArtifact(dir, moved);
     items.create({ title: "Ours", projectId: project.id, boardId: board.id, by: "human" });
     let pulled = {};
-    vi.spyOn(storage, "refresh").mockImplementationOnce(async () => {
+    // The refresh a publish makes inside its own turn.
+    vi.spyOn(storage as unknown as { refreshInTurn: Storage["refresh"] }, "refreshInTurn").mockImplementationOnce(async () => {
       newer(fs.readFileSync(manifestFile, "utf8"));
       pulled = filesOf();
       return storage.statusFor(project.id);

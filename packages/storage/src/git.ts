@@ -21,16 +21,27 @@ export class GitMissingError extends Error {
 }
 
 export class GitError extends Error {
+  readonly stdout: string;
+  readonly code: number | string | null;
+  readonly signal: string | null;
+
   constructor(
     public readonly args: string[],
-    public readonly stderr: string
+    public readonly stderr: string,
+    exit: { stdout?: string; code?: number | string | null; signal?: string | null } = {}
   ) {
     // A token reaches us inside a remote URL — in git's own output AND in the
     // arguments we passed it. Both must be scrubbed before this reaches a log,
     // a toast or a status line.
     const scrub = (text: string) => text.replace(/\/\/[^@\s/]*@/g, "//");
-    super(`git ${scrub(args.join(" "))} failed: ${scrub(stderr).trim().split("\n").slice(-3).join(" ").slice(0, 400)}`);
+    // Some refusals come on stdout ("nothing to commit"); a reason left empty helps nobody.
+    const said = scrub(stderr.trim() ? stderr : (exit.stdout ?? "")).trim().split("\n").slice(-3).join(" ").slice(0, 400);
+    const how = exit.signal ? `killed by ${exit.signal}` : exit.code !== undefined && exit.code !== null ? `exit ${exit.code}` : null;
+    super(`git ${scrub(args.join(" "))} failed${how ? ` (${how})` : ""}${said ? `: ${said}` : ""}`);
     this.name = "GitError";
+    this.stdout = exit.stdout ?? "";
+    this.code = exit.code ?? null;
+    this.signal = exit.signal ?? null;
   }
 }
 
@@ -76,7 +87,7 @@ export function gitRunner(binary: string, defaultCwd?: string, credentials?: () 
         const { stdout, stderr } = await exec(binary, argv, { cwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
         return { stdout: stdout.toString(), stderr: stderr.toString(), code: 0 };
       } catch (error) {
-        const e = error as { code?: number | string; stderr?: string | Buffer; stdout?: string | Buffer };
+        const e = error as { code?: number | string | null; signal?: string | null; stderr?: string | Buffer; stdout?: string | Buffer };
         if (e.code === "ENOENT") throw new GitMissingError(binary);
         const stderrText = String(e.stderr ?? "");
         // Nothing ran yet when index.lock collides, so a retry is never a
@@ -87,7 +98,7 @@ export function gitRunner(binary: string, defaultCwd?: string, credentials?: () 
         }
         // `ok` means a non-zero exit is an answer, not a failure — `diff --quiet`, say.
         if (opts.ok) return { stdout: String(e.stdout ?? ""), stderr: stderrText, code: typeof e.code === "number" ? e.code : 1 };
-        throw new GitError(args, stderrText);
+        throw new GitError(args, stderrText, { stdout: String(e.stdout ?? ""), code: e.code ?? null, signal: e.signal ?? null });
       }
     }
   };
@@ -191,11 +202,20 @@ export class GitFolder {
   async commit(message: string, subtree?: string): Promise<boolean> {
     await this.git(subtree ? ["add", "-A", "--", subtree] : ["add", "-A"], { cwd: this.dir });
     if (!subtree) await this.dropEmbeddedRepositories();
-    const staged = await this.git(["diff", "--cached", "--quiet"], { cwd: this.dir, ok: true });
-    if (staged.code === 0) return false;
+    if (!(await this.staged())) return false;
     await this.ensureIdentity();
-    await this.git(["commit", "-q", "-m", message], { cwd: this.dir });
+    try {
+      await this.git(["commit", "-q", "-m", message], { cwd: this.dir });
+    } catch (error) {
+      // Another git committed what we staged in between: nothing was left to record, which is no failure.
+      if (!(await this.staged())) return false;
+      throw error;
+    }
     return true;
+  }
+
+  private async staged(): Promise<boolean> {
+    return (await this.git(["diff", "--cached", "--quiet"], { cwd: this.dir, ok: true })).code !== 0;
   }
 
   /**
@@ -354,3 +374,33 @@ export async function cloneInto(git: Git, url: string, branch: string, dir: stri
 }
 
 export const hasConflictMarkers = (text: string): boolean => /^(<{7}|={7}|>{7})( |$)/m.test(text);
+
+/** Whether any git runs on this machine now. Where that cannot be told (no pgrep, Windows) one is assumed to. */
+export const gitRunning = (): Promise<boolean> =>
+  process.platform === "win32" ? Promise.resolve(true) : new Promise((resolve) => execFile("pgrep", ["-x", "git"], (error) => resolve((error as { code?: unknown } | null)?.code !== 1)));
+
+const statOf = (file: string): fs.Stats | null => {
+  try {
+    return fs.statSync(file);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A git killed mid-command (a forced quit, a power cut) leaves `index.lock`
+ * behind, and every commit there fails until it goes. It is taken away only
+ * when nothing can still own it: it is older than any command holds it, and no
+ * git runs on this machine at all. Returns whether it was removed.
+ */
+export async function clearStaleIndexLock(dir: string, opts: { olderThanMs?: number; running?: () => Promise<boolean> } = {}): Promise<boolean> {
+  const lock = path.join(dir, ".git", "index.lock");
+  const seen = statOf(lock);
+  if (!seen || Date.now() - seen.mtimeMs < (opts.olderThanMs ?? 60_000)) return false;
+  if (await (opts.running ?? gitRunning)()) return false;
+  // A git that started meanwhile made a lock of its own; that one is not stale.
+  const now = statOf(lock);
+  if (!now || now.ino !== seen.ino || now.mtimeMs !== seen.mtimeMs) return false;
+  fs.rmSync(lock, { force: true });
+  return true;
+}
