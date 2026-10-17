@@ -53,7 +53,13 @@ export interface LaunchInput {
   dir: string;
   /** What herdr labels the workspace: the ticket's key. */
   label?: string;
+  /** The command that resumes the agent's session later, written beside the script for herdr to run after a restart of its own. */
+  resume?: string;
 }
+
+/** The script a `resume` command is written to, next to `run.command`; it reads the session id from `resume-id`. */
+export const RESUME_SCRIPT = "resume.command";
+export const RESUME_ID_FILE = "resume-id";
 
 /** What a terminal of "herdr" is run through: a workspace with the script going in its pane. */
 export interface HerdrTerminal {
@@ -128,11 +134,10 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   // it runs by a moment and dies with the window, so "is the pid alive" answers
   // "is the session alive" whether or not a hook got to say so.
   const pidFile = path.join(input.dir, "pid");
-  fs.writeFileSync(
-    script,
-    ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, `echo $$ > ${shellQuote(pidFile)}`, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, input.command, ""].join("\n"),
-    { mode: 0o755 }
-  );
+  const wrap = (command: string) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, `echo $$ > ${shellQuote(pidFile)}`, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, command, ""].join("\n");
+  fs.writeFileSync(script, wrap(input.command), { mode: 0o755 });
+  // The same wrapper around the resume: the pid file and the token come back with the session.
+  if (input.resume) fs.writeFileSync(path.join(input.dir, RESUME_SCRIPT), wrap(input.resume), { mode: 0o755 });
   if (terminal === "none") return { script, launched: false };
   if (terminal === "herdr") {
     // The script, not the command: the pid file and the exports come along, and the shell stays after the agent for the person to read.
@@ -176,7 +181,7 @@ export async function setupTerminal(command: string, dir: string, terminal: stri
   return { launched };
 }
 
-const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+export const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
 const run = (cmd: string, args: string[], cwd?: string, env?: Record<string, string>) =>
   new Promise<string>((resolve, reject) => {

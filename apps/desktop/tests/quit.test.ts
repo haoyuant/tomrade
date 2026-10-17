@@ -24,7 +24,7 @@ async function load() {
 }
 
 type Unsynced = { projectId: string; name: string; count: number }[];
-const context = (opts: { runs?: number; flush?: () => Promise<void>; throws?: boolean; unsynced?: Unsynced[] } = {}) => {
+const context = (opts: { runs?: number; flush?: () => Promise<void>; throws?: boolean; unsynced?: Unsynced[]; herdr?: number } = {}) => {
   const flushAll = vi.fn(opts.flush ?? (async () => {}));
   // Each reading takes the next list; the last one stands.
   const readings = [...(opts.unsynced ?? [])];
@@ -36,7 +36,9 @@ const context = (opts: { runs?: number; flush?: () => Promise<void>; throws?: bo
       return Array.from({ length: opts.runs ?? 0 }, () => ({ thread: { itemId: null } }));
     }
   };
-  const ctx = { get: (name: string) => (name === "agent" ? agent : name === "storage" ? { flushAll, pendingAll, publish } : undefined) };
+  // Sessions in herdr panes are herdr's processes: counted as kept, never as interrupted.
+  const codeLink = { sessionsOf: () => [...Array.from({ length: opts.herdr ?? 0 }, () => ({ herdrPane: "w1:p1", state: "waiting" })), { herdrPane: "w2:p1", state: "ended" }, { herdrPane: null, state: "running" }] };
+  const ctx = { get: (name: string) => (name === "agent" ? agent : name === "storage" ? { flushAll, pendingAll, publish } : name === "codeLink" ? codeLink : name === "db" ? { openIds: () => ["p"] } : undefined) };
   return { ctx: ctx as never, flushAll, pendingAll, publish };
 };
 
@@ -55,6 +57,16 @@ describe("preparing to quit", () => {
     expect(quit.quitApproved()).toBe(true);
     expect(await quit.prepareToQuit(ctx)).toBe(true);
     expect(showMessageBoxSync).toHaveBeenCalledOnce();
+  });
+
+  it("says which sessions herdr keeps going, and warns only about the runs that die with the app", async () => {
+    const quit = await load();
+    const { ctx } = context({ runs: 1, herdr: 2 });
+    expect(await quit.prepareToQuit(ctx)).toBe(true);
+    expect(showMessageBoxSync).toHaveBeenCalledWith(expect.objectContaining({ message: "1 agent run is in progress", detail: "Quitting interrupts them. 2 sessions in herdr keep going." }));
+    const alone = await load();
+    await alone.prepareToQuit(context({ runs: 1 }).ctx);
+    expect(showMessageBoxSync).toHaveBeenLastCalledWith(expect.objectContaining({ detail: "Quitting interrupts them." }));
   });
 
   it("keeps the app open when the person cancels, without flushing", async () => {

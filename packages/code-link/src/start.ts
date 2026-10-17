@@ -18,7 +18,7 @@ import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLi
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode, SessionView } from "./store.js";
-import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
+import { RESUME_ID_FILE, TerminalSettings, fillTemplate, launchTerminal, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
 
@@ -342,9 +342,14 @@ export class Starter {
     }
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), withClaimFirst(agent, engineId, item.key, terminalPrompt));
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
-    const command = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd) ? ctx.github.wrap(baseCommand) : baseCommand;
-    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key }, terminalSettings.terminal, ctx.get("herdr") ?? null);
+    const bin = await binOf(agent, engineId);
+    const options = agent.optionsOf(thread, engineId);
+    const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, options, bin);
+    const wrapped = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd);
+    const command = wrapped ? ctx.github.wrap(baseCommand) : baseCommand;
+    const baseResume = this.resumeCommand(terminalSettings, engineId, files, where.cwd, options, bin);
+    const resume = baseResume && wrapped ? ctx.github.wrap(baseResume) : baseResume;
+    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
     if (launch.needsHerdr) warnings.push(terminalWords("herdrUnreachable", { install: HERDR_INSTALL }));
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
@@ -379,6 +384,19 @@ export class Starter {
     const exists = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
     const switched = await git(exists ? ["switch", branch] : ["switch", "-c", branch, from], { cwd: worktree, ok: true });
     return switched.code === 0 ? null : `could not move ${worktree} onto ${branch}: ${(switched.stderr ?? "").trim() || "git switch failed"}`;
+  }
+
+  /**
+   * The command herdr runs to bring the session back after a restart of its own — the same as
+   * the terminal's, resuming the id the hooks reported (read from a file when it runs, since it
+   * is not known yet), with a prompt that says what happened. Only for a terminal of herdr; null
+   * for an engine whose command has no place for a resume.
+   */
+  private resumeCommand(settings: TerminalSettings, engineId: string, files: SessionFiles, cwd: string, options: unknown, bin: string): string | null {
+    if (settings.terminal !== "herdr" || !terminalTemplate(settings, engineId).includes("{resume}")) return null;
+    const prompt = path.join(files.dir, "resume-prompt.md");
+    fs.writeFileSync(prompt, "Tomrade: herdr restarted and brought this session back. Carry on where you left off; Tomrade's tools and hooks are connected again.\n");
+    return this.command(settings, engineId, { externalId: `"$(cat ${shellQuote(path.join(files.dir, RESUME_ID_FILE))})"` }, { ...files, prompt }, cwd, options, bin);
   }
 
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */
@@ -455,8 +473,11 @@ export class Starter {
     }
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), generalPrompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
-    const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key }, terminalSettings.terminal, ctx.get("herdr") ?? null);
+    const bin = await binOf(agent, engineId);
+    const options = agent.optionsOf(thread, engineId);
+    const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, options, bin);
+    const resume = this.resumeCommand(terminalSettings, engineId, files, prepared.cwd, options, bin);
+    const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
     return { ...base, command, launched: launch.launched, pane: launch.paneId ?? null, ...(launch.needsHerdr ? { warnings: [CODE_WORDS(locale)("herdrUnreachable", { install: HERDR_INSTALL })] } : {}) };

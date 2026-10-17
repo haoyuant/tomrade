@@ -35,6 +35,14 @@ it("tells an approval at once, and once", () => {
   expect(told.map((n) => n.title)).toEqual(["TOM-1 · Claude Code needs your approval"]);
 });
 
+it("carries where the person was already told, so the toast can stay away while the count and the IM reminder stay", () => {
+  const { teller, told } = setup();
+  teller.update([]);
+  teller.update([entry("session:s", "waiting", { itemKey: "TOM-2", toldIn: "herdr" })]);
+  vi.advanceTimersByTime(15_000);
+  expect(told.map((n) => n.entry.toldIn)).toEqual(["herdr"]);
+});
+
 it("tells a session that waits only once it has waited, and not if it ran again first", () => {
   const { teller, told } = setup();
   teller.update([]);

@@ -154,6 +154,9 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   const row = async () => (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")!;
   expect((await row()).value).toContain("in herdr");
   await until(() => fake.of("events.subscribe").length === 2);
+  // herdr's sidebar shows the ticket and where it stands.
+  await until(() => fake.of("workspace.report_metadata").length >= 1);
+  expect(fake.of("workspace.report_metadata").at(-1)).toEqual({ workspace_id: "w1", source: "tomrade", tokens: { ticket: item.key, status: "Doing", session: "running" } });
 
   // herdr's reading of the pane moves the session: blocked is "needs you", done a stop with what the screen says.
   fake.setStatus("w1:p1", "claude", "working");
@@ -162,6 +165,10 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "waiting");
   expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", activity: "needs your approval" });
   expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
+  // …and the person at the terminal is told there, once.
+  await until(() => fake.of("notification.show").length === 1);
+  expect(fake.of("notification.show")).toEqual([{ title: `${item.key} needs you`, body: "needs your approval", sound: "request" }]);
+  await until(() => fake.of("workspace.report_metadata").at(-1)?.tokens?.session === "waiting for you");
   fake.setStatus("w1:p1", "claude", "working");
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "running");
   fake.panes.get("w1:p1")!.text = "⏺ Scaffold in place.\n╭────╮\n│ > │\n╰────╯\n? for shortcuts";
@@ -178,6 +185,17 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   const token = mcpConfig.mcpServers.tomrade.headers["X-Tomrade-Run"];
   await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "Stop", session_id: "cli-h", last_assistant_message: "Hooks say: done with tests." }) });
   expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", summary: "Hooks say: done with tests." });
+  // The hook named the agent's own session: herdr is told how to bring it back, connected, after a restart of its own.
+  await until(() => fake.of("pane.report_agent_session").length === 1);
+  const resumeScript = path.join(dir, "resume.command");
+  expect(fake.of("pane.report_agent_session")).toEqual([{ pane_id: "w1:p1", source: "tomrade", agent: "fake-code", agent_session_id: "cli-h", resume_argv: ["bash", resumeScript] }]);
+  expect(fs.readFileSync(path.join(dir, "resume-id"), "utf8")).toBe("cli-h");
+  const resume = fs.readFileSync(resumeScript, "utf8");
+  expect(resume).toContain(`--resume "$(cat '${path.join(dir, "resume-id")}')"`);
+  expect(resume).toContain(`--mcp-config "${path.join(dir, "mcp.json")}"`);
+  expect(resume).toContain(`"$(cat "${path.join(dir, "resume-prompt.md")}")"`);
+  expect(resume).toContain("export TOMRADE_MCP_TOKEN=");
+  expect(fs.readFileSync(path.join(dir, "resume-prompt.md"), "utf8")).toContain("herdr restarted");
   fake.setStatus("w1:p1", "claude", "working");
   await new Promise((resolve) => setTimeout(resolve, 60));
   expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", summary: "Hooks say: done with tests." });
@@ -194,6 +212,10 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   // The pane closing is the end of the session, whatever a hook said last; then Continue opens a new pane.
   fake.exit("w1:p1");
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "ended");
+  // …and the workspace's sidebar is cleared; the session id was reported once.
+  await until(() => fake.of("workspace.report_metadata").at(-1)?.tokens?.ticket === null);
+  expect(fake.of("workspace.report_metadata").at(-1)).toEqual({ workspace_id: "w1", source: "tomrade", tokens: { ticket: null, status: null, session: null } });
+  expect(fake.of("pane.report_agent_session").length).toBe(1);
   const fresh2 = await codeLink.start(project.id, item.id, { mode: "terminal" });
   expect(fresh2).toMatchObject({ ok: true, launched: true, pane: "w2:p1" });
   expect(fake.of("workspace.create").length).toBe(2);

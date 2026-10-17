@@ -152,6 +152,12 @@ export class FakeHerdr {
       case "workspace.focus":
       case "tab.focus":
         return { result: { type: "ok" } };
+      case "workspace.report_metadata":
+        return typeof params.workspace_id === "string" && [...this.panes.values()].some((pane) => pane.workspace_id === params.workspace_id) ? { result: { type: "ok" } } : { error: { code: "workspace_not_found", message: `workspace ${String(params.workspace_id)} not found` } };
+      case "pane.report_agent_session":
+        return paneOf(params.pane_id) ? { result: { type: "ok" } } : notFound(params.pane_id);
+      case "notification.show":
+        return { result: { type: "notification_show", shown: true, reason: "shown" } };
       case "pane.get": {
         const pane = paneOf(params.pane_id);
         return pane ? { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } } : notFound(params.pane_id);

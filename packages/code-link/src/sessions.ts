@@ -73,6 +73,8 @@ export interface SessionsOptions {
   onMoment?(session: SessionView, moment: SessionMoment): void;
   /** The process is over; code evidence may have changed while it was still counted as active. */
   onEnd?(session: SessionView): void;
+  /** The session just turned to the person for something — an approval, an answer — and says what. */
+  onWaiting?(session: SessionView, activity: string): void;
   /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
   onLimit?(session: SessionView, until: number | null): string;
 }
@@ -381,7 +383,9 @@ export class Sessions {
       patch.state = "error";
       delete patch.summary;
     }
+    const turned = patch.state === "waiting" && !!patch.activity && !(session.state === "waiting" && session.activity === patch.activity);
     this.touch(projectId, sessionId, patch);
+    if (turned) this.options.onWaiting?.(this.store.session(projectId, sessionId) ?? session, patch.activity!);
     if (moment) this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, moment);
     if (patch.state === "ended") {
       this.release(sessionId);

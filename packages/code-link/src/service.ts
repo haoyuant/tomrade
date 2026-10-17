@@ -38,7 +38,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { TerminalSettings, commandOk, exec, launchTerminal, setupTerminal } from "./terminal.js";
+import { RESUME_ID_FILE, RESUME_SCRIPT, TerminalSettings, commandOk, exec, launchTerminal, setupTerminal } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
@@ -254,6 +254,9 @@ export function compareUrl(remote: string, defaultBranch: string, branch: string
 /** The agent of a session known only by its MCP connection. */
 export const MCP_AGENT = "mcp";
 
+/** The name herdr knows an engine's CLI by. */
+const herdrAgentOf = (engine: string): string => ({ "claude-code": "claude", workbuddy: "codebuddy", gemini: "gemini", cursor: "cursor-agent", dsh: "dsh" } as Record<string, string>)[engine] ?? engine;
+
 /** The last line of a pane that says something — not the input box, a rule, or a shortcut hint — for a summary. */
 export function lastSaid(screen: string | null): string {
   if (!screen) return "";
@@ -370,6 +373,13 @@ export class CodeLink extends Service {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
+      // In a herdr pane the person may be at the terminal: herdr tells them there too (the desktop keeps the count, not the toast).
+      onWaiting: (session, activity) => {
+        if (!session.herdrPane) return;
+        const key = session.itemIds[0] ? this.ctx.items.get(session.projectId, session.itemIds[0])?.key : undefined;
+        const who = key ?? this.ctx.get("agent")?.codeEngines().find((e) => e.id === session.agent)?.title ?? session.agent;
+        void this.ctx.get("herdr")?.notify(this.words()("herdrNeedsYou", { what: who }), activity, "request");
+      },
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
         const agent = this.ctx.get("agent");
@@ -576,6 +586,8 @@ export class CodeLink extends Service {
       ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${message(err)}`)));
       this.watchPanes(ctx);
       ctx.on("codeLink/changed", () => this.watchPanes(ctx));
+      // a ticket moved (by a person, a scan, a merge) shows on its workspace too
+      ctx.on("write/committed", (intent) => { if (intent.entity === "item") this.watchPanes(ctx); });
     });
 
     const timer = this.config.scanMs > 0 ? setInterval(() => void this.scanOpen(), this.config.scanMs) : null;
@@ -2139,12 +2151,48 @@ export class CodeLink extends Service {
     this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });
   }
 
-  /** Every live session with a pane is followed in herdr; one that ended is let go. */
+  /** What herdr was last told about each session with a pane, so it is told only what changed. */
+  private readonly herdrTold = new Map<string, { tokens?: string; resume?: string }>();
+
+  /**
+   * Every live session with a pane is followed in herdr, and herdr is kept told about it: the
+   * ticket and where it stands on the workspace, and — once the hooks have said the agent's own
+   * session id — how to bring the session back, connected, after a restart of herdr's own. A
+   * session that ended is let go, and its workspace cleared.
+   */
   private watchPanes(ctx: Context): void {
     const wanted = new Set<string>();
+    const seen = new Set<string>();
+    const w = this.words();
     for (const projectId of this.ctx.db.openIds()) {
-      for (const s of this.store.sessions(projectId, { live: true })) if (s.herdrPane && s.state !== "lost") wanted.add(s.herdrPane);
+      for (const s of this.store.sessions(projectId)) {
+        if (!s.herdrPane) continue;
+        const live = s.state !== "ended" && s.state !== "lost";
+        const told = this.herdrTold.get(s.id) ?? {};
+        const workspaceId = s.herdrPane.split(":")[0]!;
+        if (live) {
+          wanted.add(s.herdrPane);
+          seen.add(s.id);
+          const item = s.itemIds[0] ? this.ctx.items.get(projectId, s.itemIds[0]) : undefined;
+          const tokens = { ticket: item?.key ?? null, status: item ? named(w, STATUSES, item.status) : null, session: named(w, SESSION_STATES, s.state) };
+          const wanting = JSON.stringify(tokens);
+          if (told.tokens !== wanting) {
+            this.herdrTold.set(s.id, { ...told, tokens: wanting });
+            void ctx.herdr.reportMetadata(workspaceId, tokens).then((ok) => { if (!ok) this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), tokens: undefined }); });
+          }
+          const script = path.join(this.sessionDir(s.id), RESUME_SCRIPT);
+          if (s.externalId && told.resume !== s.externalId && fs.existsSync(script)) {
+            this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), resume: s.externalId });
+            fs.writeFileSync(path.join(this.sessionDir(s.id), RESUME_ID_FILE), s.externalId);
+            void ctx.herdr.reportSession(s.herdrPane, herdrAgentOf(s.agent), s.externalId, ["bash", script]).then((ok) => { if (!ok) this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), resume: undefined }); });
+          }
+        } else if (told.tokens) {
+          this.herdrTold.delete(s.id);
+          void ctx.herdr.reportMetadata(workspaceId, { ticket: null, status: null, session: null });
+        }
+      }
     }
+    for (const id of this.herdrTold.keys()) if (!seen.has(id)) this.herdrTold.delete(id);
     for (const paneId of ctx.herdr.watching()) if (!wanted.has(paneId)) ctx.herdr.watch(paneId)();
     for (const paneId of wanted) ctx.herdr.watch(paneId);
   }

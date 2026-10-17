@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
+import type {} from "@tomradex/code-link";
+import type {} from "@tomradex/db";
 import type {} from "@tomradex/storage";
 import { DESKTOP_WORDS } from "./words.js";
 
@@ -35,13 +37,16 @@ async function ask(ctx: Context): Promise<boolean> {
   if (active.length) {
     const code = active.filter((a) => a.thread.itemId).length;
     const w = DESKTOP_WORDS(ctx.get("settings")?.locale?.());
+    // A ticket session in a herdr pane is herdr's process, not this one's: it goes on, and herdr can bring it back.
+    const inHerdr = sessionsInHerdr(ctx);
+    const kept = inHerdr ? w(inHerdr === 1 ? "keptInHerdrOne" : "keptInHerdrMany", { n: inHerdr }) : "";
     const choice = dialog.showMessageBoxSync({
       type: "warning",
       buttons: [w("quit"), w("cancel")],
       defaultId: 1,
       cancelId: 1,
       message: w(active.length === 1 ? "runsInProgressOne" : "runsInProgressMany", { n: active.length }),
-      detail: code ? w(code === 1 ? "runsImplementOne" : "runsImplementMany", { n: code }) : w("runsInterrupted")
+      detail: (code ? w(code === 1 ? "runsImplementOne" : "runsImplementMany", { n: code }) : w("runsInterrupted")) + kept
     });
     if (choice === 1) return false;
   }
@@ -51,6 +56,15 @@ async function ask(ctx: Context): Promise<boolean> {
   if (!storage) return true;
   await within(storage.flushAll("quit").catch(() => undefined), FLUSH_MS);
   return settleUnsynced(ctx);
+}
+
+/** Live ticket sessions running in herdr panes, across open projects. */
+function sessionsInHerdr(ctx: Context): number {
+  const codeLink = ctx.get("codeLink");
+  if (!codeLink) return 0;
+  let n = 0;
+  for (const projectId of ctx.get("db")?.openIds() ?? []) n += codeLink.sessionsOf(projectId).filter((s) => s.herdrPane && s.state !== "ended" && s.state !== "lost").length;
+  return n;
 }
 
 const FLUSH_MS = 5_000;

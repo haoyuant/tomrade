@@ -160,6 +160,36 @@ export class Herdr extends Service {
     }
   }
 
+  /**
+   * How herdr brings the pane's agent back after a restart of its own: the agent's session id,
+   * and the command that resumes it — connected to Tomrade again, which herdr's own integrations
+   * would not do. The first word must be a command on PATH.
+   */
+  async reportSession(paneId: string, agent: string, sessionId: string, resumeArgv: string[]): Promise<boolean> {
+    return this.ok("pane.report_agent_session", { pane_id: paneId, source: "tomrade", agent, agent_session_id: sessionId, resume_argv: resumeArgv });
+  }
+
+  /** What herdr's sidebar shows on a workspace, as `name: value` tokens; null clears one. */
+  async reportMetadata(workspaceId: string, tokens: Record<string, string | null>): Promise<boolean> {
+    return this.ok("workspace.report_metadata", { workspace_id: workspaceId, source: "tomrade", tokens });
+  }
+
+  /** A toast in herdr's own window, for the person at the terminal. */
+  async notify(title: string, body = "", sound: "none" | "done" | "request" = "request"): Promise<boolean> {
+    return this.ok("notification.show", { title: title.slice(0, 80), body: body.slice(0, 240), sound });
+  }
+
+  /** A request whose only answer that matters is whether herdr took it. */
+  private async ok(method: string, params: Record<string, unknown>): Promise<boolean> {
+    try {
+      await this.call(method, params);
+      return true;
+    } catch (err) {
+      if (!(err instanceof HerdrError)) throw err;
+      return false;
+    }
+  }
+
   /** The last lines on a pane's screen, styling stripped; null when the pane is gone. */
   async readTail(paneId: string, lines = 20): Promise<string | null> {
     try {
