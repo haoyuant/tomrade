@@ -140,8 +140,9 @@ export default definePlugin({
         ];
       }
     });
-    await ctx.tools.register(defineTool({ name: 'pomodoro_status', title: 'Pomodoro status', description: 'Current phase, time remaining and time rules.', input: z.object({}), execute: () => state() }));
-    await ctx.tools.register(defineTool({ name: 'pomodoro_control', title: 'Control Pomodoro', description: 'Start/pause, skip or reset the Pomodoro timer.', input: z.object({ action: z.enum(['toggle', 'skip', 'reset']) }), execute: async (args) => { await action(args.action); return state(); } }));
+    await ctx.tools.kit('pomodoro', 'the Pomodoro focus timer: its state, start/pause, skip, reset');
+    await ctx.tools.register(defineTool({ name: 'pomodoro_status', title: 'Pomodoro status', kit: 'pomodoro', description: 'Current phase, time remaining and time rules.', input: z.object({}), execute: () => state() }));
+    await ctx.tools.register(defineTool({ name: 'pomodoro_control', title: 'Control Pomodoro', kit: 'pomodoro', description: 'Start/pause, skip or reset the Pomodoro timer.', input: z.object({ action: z.enum(['toggle', 'skip', 'reset']) }), execute: async (args) => { await action(args.action); return state(); } }));
     ctx.on('settings.changed', () => void schedule());
     ctx.when('surfaces', () => { void schedule(); return () => { desktop = null; }; });
     ctx.interval(() => { timer.tick(); void schedule(); }, 1000);

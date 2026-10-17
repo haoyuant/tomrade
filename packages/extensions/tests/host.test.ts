@@ -78,6 +78,20 @@ describe("the extension host", () => {
     await expect(ctx.tools.register({ name: "demo_count", title: "Count", description: "x", input: z.object({}), execute: () => 1 })).resolves.toBeTypeOf("function");
   });
 
+  it("puts a tool in a kit the plugin owns and says what the kit is for", async () => {
+    let seen: PluginContext | null = null;
+    const w = await world(definePlugin({ inject: ["tools"], apply: (ctx) => void (seen = ctx) }));
+    const ctx = seen as unknown as PluginContext;
+    await expect(ctx.tools.kit("routines", "x")).rejects.toThrow(/tool kit "routines"/);
+    await expect(ctx.tools.register({ name: "demo_a", title: "x", description: "x", kit: "routines", input: z.object({}), execute: () => 1 })).rejects.toThrow(/tool kit "routines"/);
+    const dropKit = await ctx.tools.kit("demo", "a demo timer");
+    await ctx.tools.register({ name: "demo_timer", title: "Timer", description: "x", kit: "demo", input: z.object({}), execute: () => 1 });
+    expect(w.ctx.tools.kits()).toMatchObject({ demo: "a demo timer" });
+    expect(w.ctx.tools.describe().find((t) => t.name === "demo_timer")).toMatchObject({ kit: "demo" });
+    await dropKit();
+    expect(w.ctx.tools.kits()).not.toHaveProperty("demo");
+  });
+
   it("runs a palette command as the person who chose it, and a badge as the plugin", async () => {
     let authors: string[] = [];
     const { ctx, items, project, board } = await world(

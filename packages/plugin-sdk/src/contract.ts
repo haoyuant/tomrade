@@ -165,6 +165,8 @@ export interface ToolSpec<S extends z.ZodObject = z.ZodObject> {
   title: string;
   description: string;
   input: S;
+  /** A kit few conversations need: the tool is left out of each request until the model loads the kit. Named like the tool. */
+  kit?: string;
   execute(args: z.output<S>, invocation: ToolInvocation): unknown | Promise<unknown>;
 }
 
@@ -178,6 +180,8 @@ export interface ToolCallInfo {
 
 export interface ToolsApi {
   register<S extends z.ZodObject>(tool: ToolSpec<S>): Promise<Disposer>;
+  /** What a kit is for, in a few words the model reads before it loads the kit ("a focus timer"). */
+  kit(id: string, purpose: string): Promise<Disposer>;
   list(): Promise<{ name: string; title: string; description: string; inputSchema: Record<string, unknown> }[]>;
   call(name: string, args: unknown, opts?: { projectId?: string }): Promise<unknown>;
   /** A policy over every tool call: throw to refuse it. */
