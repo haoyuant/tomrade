@@ -2,31 +2,14 @@ import { createContext, Fragment, useCallback, useContext, useLayoutEffect, useM
 import type { AppSettings, LanguagePreference } from "@tomradex/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQueryClient } from "@tanstack/react-query";
-import { en, zh, type PartialMessages } from "./i18n-messages";
-import { de, es, fr, ja, zhHant } from "./i18n-messages/locales";
+import { interpolate, message, type Locale, type MessageKey } from "./dicts";
 import { INTL_TAG, setDomainLocale } from "./domain";
 
 export { INTL_TAG };
 import { shortcut } from "./keys";
 import { announceKeymap, formatChord, isCommandId, primeKeymap, resolveKeymap, type Keymap } from "./keybindings";
 
-export type Locale = "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr";
-
-type Messages = typeof en;
-
-/** One level of nesting only — `t("namespace.key")`. Keeps lookup and the key type simple. */
-export type MessageKey = {
-  [N in keyof Messages]: `${N & string}.${keyof Messages[N] & string}`;
-}[keyof Messages];
-
-/** English and Simplified Chinese are complete; the rest may miss a string, which then shows in English. */
-const DICTS: Record<Locale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr };
-
-function lookupIn(dict: PartialMessages, path: string): string | undefined {
-  const [ns, key] = path.split(".");
-  const value = (dict as Record<string, Record<string, unknown>>)[ns]?.[key];
-  return typeof value === "string" ? value : undefined;
-}
+export type { Locale, MessageKey };
 
 /**
  * A message names a command's keys as [[cmd:<id>]], filled from the person's
@@ -43,12 +26,7 @@ const DEFAULT_KEYMAP = resolveKeymap(undefined);
 
 /** A key missing from the active locale falls back to English before falling back to the raw key. Shortcuts are written for this platform. */
 function lookup(locale: Locale, path: string, map: Keymap = DEFAULT_KEYMAP): string {
-  return withKeys(shortcut(lookupIn(DICTS[locale], path) ?? lookupIn(DICTS.en, path) ?? path), map);
-}
-
-function interpolate(template: string, vars?: Record<string, string | number>): string {
-  if (!vars) return template;
-  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name: string) => String(vars[name] ?? ""));
+  return withKeys(shortcut(message(locale, path)), map);
 }
 
 let activeLocale: Locale = "en";

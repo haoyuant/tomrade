@@ -171,7 +171,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
 }
 
 function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Repo; projectId: string; boards: Board[]; checkout: CheckoutView | null; remoteState: RepoStateView | null }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   // The backend refuses while a workstream stands on it; the confirm says the same before asking.
@@ -266,7 +266,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
           <span className="meta-txt repo-remove-why">
             {using.length === 0
               ? t("repositories.removeSure", { name: repo.name })
-              : t(using.length === 1 ? "repositories.removeInUseOne" : "repositories.removeInUseMany", { name: repo.name, n: using.length, names: using.map((b) => b.name).join(locale === "zh" ? "、" : ", ") })}
+              : t(using.length === 1 ? "repositories.removeInUseOne" : "repositories.removeInUseMany", { name: repo.name, n: using.length, names: using.map((b) => b.name).join(t("repositories.listSeparator")) })}
           </span>
           <button type="button" className="btn btn-ghost" onClick={() => setConfirming(false)}>
             {t("common.cancel")}
