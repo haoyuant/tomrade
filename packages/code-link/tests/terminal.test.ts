@@ -9,6 +9,7 @@ describe("terminal command options", () => {
     expect(optionFlags("workbuddy", { model: "hy3", effort: "max" })).toBe("--model hy3 --effort max");
     expect(optionFlags("hermes", { model: "openrouter:x" })).toBe("-m openrouter:x");
     expect(optionFlags("dsh", { model: "deepseek-v4-pro" })).toBe("");
+    expect(TerminalSettings.parse({}).dshCommand).toBe('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"');
     expect(optionFlags("claude-code", { effort: "high" })).toBe("--effort high");
     expect(optionFlags("claude-code", { model: "  " })).toBe("");
     expect(optionFlags("other", { model: "x" })).toBe("");

@@ -331,7 +331,7 @@ export class Starter {
 
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), terminalPrompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId));
+    const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
     const command = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd) ? ctx.github.wrap(baseCommand) : baseCommand;
     const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
@@ -353,13 +353,15 @@ export class Starter {
   }
 
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */
-  private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown): string {
+  private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown, bin: string): string {
     const template = terminalTemplate(settings, engineId);
     const id = session.externalId;
-    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
+    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "dsh" ? `--session-id ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
     return fillTemplate(withOptions(template, optionFlags(engineId, options)), {
       cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension,
-      geminiSettings: files.geminiSettings, opencodeConfig: files.opencodeConfig, resume
+      geminiSettings: files.geminiSettings, opencodeConfig: files.opencodeConfig, dshPatch: files.dshPatch, dshReporter: files.dshReporter, resume,
+      // The CLI Tomrade located (an app's own copy included), and a runtime for scripts that needs no Node installed.
+      bin, node: process.execPath
     });
   }
 
@@ -418,7 +420,7 @@ export class Starter {
     if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), `${prepared.prompt}\n\n${languageLine(locale)}`);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId));
+    const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
     const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
     this.host.notify(projectId);
@@ -468,6 +470,12 @@ export class Starter {
 }
 
 export type { RepoStateView };
+
+/** The CLI an engine located — an app's own copy included — for a template's {bin}; its id when it found none. */
+async function binOf(agent: Agent, engineId: string): Promise<string> {
+  const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
+  return (await engine?.available().catch(() => null))?.cli?.path ?? engineId;
+}
 
 /** An engine that reaches Tomrade in a terminal only through its own connection, while that is not made. */
 async function linkFirst(engine: Engine, locale: string | undefined): Promise<string | null> {

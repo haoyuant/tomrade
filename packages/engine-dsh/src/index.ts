@@ -51,6 +51,8 @@ export const dsh: AcpAgent<DshOptions> = {
   // The shipped `acp` profile initializes itself under $DSH_HOME on first use.
   args: () => ["--profile", "acp"],
   efforts: ["off", "low", "high", "max"],
+  // A ticket can also run in a terminal: one headless run, which code link shows and reports.
+  terminal: true,
   // A saved key lives in $DSH_HOME/.credentials.yaml, outside any one profile.
   signIn: "sign in or add a DeepSeek API key under Settings → Models in the DeepSeek Harness app (or `dsh web`), or set DEEPSEEK_API_KEY"
 };

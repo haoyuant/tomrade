@@ -72,6 +72,9 @@ export interface SessionFiles {
   /** Gemini CLI's and OpenCode's own shapes of the same MCP server. */
   geminiSettings: string;
   opencodeConfig: string;
+  /** DeepSeek Harness: a `--patch` overlay adding the server, and the script that shows its `--json` run and reports it. */
+  dshPatch: string;
+  dshReporter: string;
   prompt: string;
   mcpUrl: string;
   eventUrl: string;
@@ -217,15 +220,19 @@ export class Sessions {
     const piFile = path.join(dir, "pi-extension.ts");
     const geminiSettings = path.join(dir, "gemini-settings.json");
     const opencodeConfig = path.join(dir, "opencode.json");
+    const dshPatch = path.join(dir, "dsh-patch.yml");
+    const dshReporter = path.join(dir, "dsh-report.mjs");
     const promptFile = path.join(dir, "prompt.md");
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(settings, JSON.stringify(hooksSettings(eventUrl), null, 2));
     fs.writeFileSync(piFile, piExtension(mcpUrl, token, eventUrl));
     fs.writeFileSync(geminiSettings, JSON.stringify({ mcpServers: { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(opencodeConfig, JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { tomrade: { type: "remote", url: mcpUrl, enabled: true, headers: { "X-Tomrade-Run": token } } } }, null, 2));
+    fs.writeFileSync(dshPatch, dshMcpPatch(mcpUrl, token));
+    fs.writeFileSync(dshReporter, dshReport(eventUrl));
     fs.writeFileSync(promptFile, prompt);
     fs.rmSync(path.join(dir, "pid"), { force: true });
-    return { dir, mcpConfig, settings, piExtension: piFile, geminiSettings, opencodeConfig, prompt: promptFile, mcpUrl, eventUrl, token };
+    return { dir, mcpConfig, settings, piExtension: piFile, geminiSettings, opencodeConfig, dshPatch, dshReporter, prompt: promptFile, mcpUrl, eventUrl, token };
   }
 
   token(sessionId: string): string | null {
@@ -520,5 +527,72 @@ export default function (pi) {
     if (event.reason === "quit") await post({ hook_event_name: "SessionEnd", reason: "exit" });
   });
 }
+`;
+}
+
+/**
+ * DeepSeek Harness takes extra configuration as a `--patch` overlay: this one
+ * adds Tomrade's server, with the session's token, for that run alone.
+ */
+export function dshMcpPatch(mcpUrl: string, token: string): string {
+  return [
+    "- insert:",
+    "    - id: tomrade-mcp",
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    "      config:",
+    "        serverName: tomrade",
+    "        transport: streamable-http",
+    `        url: ${JSON.stringify(mcpUrl)}`,
+    "        headers:",
+    `          X-Tomrade-Run: ${JSON.stringify(token)}`,
+    // Compound tools call a worker model and can outlast the 60s default.
+    "        toolCallTimeoutMs: 600000",
+    ""
+  ].join("\n");
+}
+
+/**
+ * DeepSeek Harness has no interactive terminal of its own: a ticket runs as
+ * `dsh --profile headless --json`, piped through this script, which prints the
+ * run for the person and posts the events Claude's hooks would — the session
+ * id first, so Continue can resume it with `--session-id`.
+ */
+export function dshReport(eventUrl: string): string {
+  return `import readline from "node:readline";
+const eventUrl = ${JSON.stringify(eventUrl)};
+const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob" };
+let sessionId;
+const sent = [];
+const post = (payload) => { sent.push(fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ session_id: sessionId, ...payload }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
+const brief = (input) => { const text = typeof input === "string" ? input : JSON.stringify(input ?? {}); return text.length > 120 ? text.slice(0, 117) + "..." : text; };
+const lines = readline.createInterface({ input: process.stdin });
+lines.on("line", (line) => {
+  let event;
+  try { event = JSON.parse(line); } catch { console.log(line); return; }
+  if (event.type === "session") {
+    sessionId = event.sessionId;
+    console.log("DeepSeek Harness session " + sessionId);
+    post({ hook_event_name: "SessionStart" });
+    post({ hook_event_name: "UserPromptSubmit" });
+  } else if (event.type === "tool_call") {
+    console.log("> " + event.tool + " " + brief(event.input?.command ?? event.input));
+    post({ hook_event_name: "PreToolUse", tool_name: names[event.tool] ?? event.tool, tool_input: event.input ?? {} });
+  } else if (event.type === "tool_result") {
+    const failed = event.status !== "completed";
+    post({ hook_event_name: failed ? "PostToolUseFailure" : "PostToolUse", tool_name: names[event.tool] ?? event.tool,
+      ...(failed ? { tool_error: brief(event.result) } : { tool_output: String(event.result ?? "").slice(0, 2000) }) });
+  } else if (event.type === "text") console.log(event.text);
+  else if (event.type === "final") post({ hook_event_name: "Stop", last_assistant_message: event.text });
+  else if (event.type === "error") {
+    console.error(event.message);
+    post({ hook_event_name: "StopFailure", error_message: event.message });
+  }
+});
+lines.on("close", async () => {
+  await Promise.all(sent);
+  post({ hook_event_name: "SessionEnd", reason: "exit" });
+  await Promise.all(sent);
+});
 `;
 }

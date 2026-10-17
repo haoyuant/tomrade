@@ -15,6 +15,8 @@ export const TerminalSettings = z.object({
   /** Gemini CLI reads a session-only settings file as its lowest layer, so the person's own settings still win. */
   geminiCommand: z.string().default('GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command" }),
   opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" opencode {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command" }),
+  /** No interactive terminal of its own: one headless run, shown and reported through {dshReporter}, resumed by session id. */
+  dshCommand: z.string().default('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"').meta({ title: "DeepSeek Harness command" }).describe("DeepSeek Harness has no interactive terminal: the ticket runs as one headless run, shown through {dshReporter} and resumed with --session-id. {bin} is the dsh Tomrade found, the desktop app's own included; {dshPatch} adds Tomrade's server for this run."),
   hermesCommand: z.string().default('hermes chat {options} {resume} --query-file "{prompt}"').meta({ title: "Hermes command" }).describe("Hermes takes no MCP flag: it reads its tomrade server from its own config.yaml, the header naming the $TOMRADE_MCP_TOKEN this terminal exports. Connect it under Hermes in Settings first."),
   otherCommand: z.string().default("").meta({ title: "Other agent command" }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
@@ -29,6 +31,7 @@ export function terminalTemplate(settings: TerminalSettings, engine: string): st
     case "gemini": return settings.geminiCommand;
     case "opencode": return settings.opencodeCommand;
     case "hermes": return settings.hermesCommand;
+    case "dsh": return settings.dshCommand;
     case "other": return settings.otherCommand;
     default: return settings.claudeCommand;
   }
