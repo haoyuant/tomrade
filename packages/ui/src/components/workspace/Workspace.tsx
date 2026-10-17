@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
 import { CodeInboxDialog } from "~/components/dialogs/CodeInboxDialog";
 import { FeedbackDialog } from "~/components/dialogs/FeedbackDialog";
+import { AnnouncementsDialog } from "~/components/dialogs/AnnouncementNotice";
 import { InboxDialog } from "~/components/dialogs/InboxDialog";
 import { SyncIssuesDialog } from "~/components/dialogs/SyncIssuesDialog";
 import { SyncIssuesChip } from "~/components/chrome/SyncIssuesChip";
@@ -100,11 +101,13 @@ export function Workspace() {
   const [codeInbox, setCodeInbox] = useState(false);
   const [inbox, setInbox] = useState(false);
   const [feedback, setFeedback] = useState(false);
+  const [announcements, setAnnouncements] = useState(false);
   /** A renderer surface a plugin names: a status item's, a sidebar module's, a command's result. */
   const openSurface = useCallback((surface: string) => {
     if (surface === "code-inbox") setCodeInbox(true);
     else if (surface === "inbox") setInbox(true);
     else if (surface === "feedback") setFeedback(true);
+    else if (surface === "announcements") setAnnouncements(true);
     else if (surface.startsWith("settings:")) setSettings(surface.slice("settings:".length));
   }, []);
   const runCommand = useRunCommand(ws.project.id);
@@ -426,6 +429,7 @@ export function Workspace() {
           runCommand.mutate({ id: "doctor.troubleshoot", scope: { projectId: ws.project.id } }, { onSuccess: (r) => r.showThread && showThread(r.showThread), onError: (e) => toast(errorSpec(e)) });
         }}
       />
+      <AnnouncementsDialog open={announcements} onOpenChange={setAnnouncements} />
       <HistoryDialog projectId={ws.project.id} open={history} onOpenChange={setHistory} />
       <NewIssueDialog open={newIssue} onOpenChange={setNewIssue} />
       <SettingsDialog

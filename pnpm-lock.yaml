@@ -38,6 +38,9 @@ importers:
       '@tomradex/alerts':
         specifier: workspace:*
         version: link:../../packages/alerts
+      '@tomradex/announcements':
+        specifier: workspace:*
+        version: link:../../packages/announcements
       '@tomradex/archify':
         specifier: workspace:*
         version: link:../../packages/archify
@@ -370,6 +373,31 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/announcements:
+    dependencies:
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -2368,6 +2396,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/announcements':
+        specifier: workspace:*
+        version: link:../announcements
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain

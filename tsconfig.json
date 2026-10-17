@@ -198,6 +198,9 @@
       "path": "./packages/inbox-tomrade"
     },
     {
+      "path": "./packages/announcements"
+    },
+    {
       "path": "./packages/inbox-github"
     },
     {
