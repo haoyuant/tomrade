@@ -62,7 +62,7 @@ const run = async () => {
     vars: { userData: work, locale: "en-US" },
     // This machine may have a local agent signed in, which would make the screen unnecessary.
     // Tomrade hands its backlog turns to the built-in pi here too, so the turn below runs the bundled agent.
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "engine-tomrade", config: { backlog: "pi-builtin" } }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "engine-tomrade", config: { backlog: "pi-builtin" } }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-cursor", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;

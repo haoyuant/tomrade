@@ -19,6 +19,7 @@ import { normalizeRemote, sameRepository } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
+import { cursorHookReader } from "@tomradex/engine-cursor";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch, subjectPr } from "./keys.js";
 import { githubPull, readPull, type ForgePull } from "./forge.js";
@@ -258,6 +259,7 @@ const SETTINGS_SECTION = {
         opencodeCommand: { title: "OpenCode 命令", description: "{opencodeConfig} 是只在本次会话生效的配置，会和你自己的 OpenCode 配置合并。" },
         workbuddyCommand: { title: "WorkBuddy 命令" },
         agyCommand: { title: "Antigravity CLI 命令", description: "agy 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Antigravity CLI 下连接），开始时先认领工作项。" },
+        cursorCommand: { title: "Cursor 命令", description: "cursor-agent 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Cursor 下连接），开始时先认领工作项。" },
         dshCommand: { title: "DeepSeek Harness 命令", description: "DeepSeek Harness 没有终端交互界面：工作项作为一次 headless 运行，通过 {dshReporter} 显示过程并回报，用 --session-id 续接。{bin} 是 Tomrade 找到的 dsh（包括桌面版自带的），{dshPatch} 只为这次运行加上 Tomrade 的服务。" },
         hermesCommand: { title: "Hermes 命令", description: "Hermes 没有 MCP 参数，从它自己的 config.yaml 读 tomrade 服务，请求头引用这个终端导出的 $TOMRADE_MCP_TOKEN。先在设置里的 Hermes 下连接到 Tomrade。" },
         otherCommand: { title: "其他智能体命令", description: "其他带 MCP 客户端的命令行智能体，比如 Gemini CLI、OpenCode、aider……留空表示没有设置。会自动填入 {mcpUrl}、{token}（也在 $TOMRADE_MCP_TOKEN 里）、{prompt} 和 {resume}（会话 id 本身）。" }
@@ -312,6 +314,8 @@ export class CodeLink extends Service {
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Folders hooks events came from that were already looked at for a checkout: one look per folder, not per event. */
   private readonly placeLooked = new Set<string>();
+  /** Cursor's hooks, read into Claude Code's shape; it remembers each conversation's last reply for its stop. */
+  private readonly readCursorHook = cursorHookReader();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
   private readonly worktrees = new Map<string, string>();
   /**
@@ -1982,10 +1986,13 @@ export class CodeLink extends Service {
   // ── helpers ────────────────────────────────────────────────────────────────
 
   /** A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's checkout. */
-  private externalEvent(payload: unknown): void {
-    const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string };
+  private externalEvent(raw: unknown): void {
+    // Cursor's hooks post in its own names; the rest of this reads Claude Code's.
+    const payload = (raw as { tomrade_agent?: unknown } | null)?.tomrade_agent === "cursor" ? this.readCursorHook(raw) : raw;
+    if (!payload) return;
+    const p = payload as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string };
     if (!p.cwd || !p.session_id) return;
-    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" ? p.tomrade_agent : "claude-code";
+    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" || p.tomrade_agent === "cursor" ? p.tomrade_agent : "claude-code";
     // Where the transcript lives tells which of the person's Claude Code accounts ran it.
     if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);

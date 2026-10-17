@@ -689,7 +689,7 @@ also the copy inside the WorkBuddy app, run by that app's Electron binary) are
 thin descriptions on top of it. An
 engine that runs only inside Tomrade sets `terminal: false`, and Start offers
 it no terminal session; the reverse, `terminalOnly: true`, is a CLI Tomrade only
-ever starts in a terminal (Gemini CLI, from `@tomradex/engine-terminal`):
+ever starts in a terminal (Antigravity CLI from `@tomradex/engine-terminal`, Cursor from `@tomradex/engine-cursor`):
 Start offers it no in-app run, the panel never conducts with it, and Code
 link's command template hands it a session-only MCP config. An engine that runs
 on the model profiles set up in Tomrade (the loop, the built-in agent) sets

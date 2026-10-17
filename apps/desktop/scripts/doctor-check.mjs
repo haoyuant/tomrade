@@ -57,7 +57,7 @@ fs.writeFileSync(agentLog, `POST https://copilot.tencent.com/v2/chat for ${os.ho
 
 const run = async () => {
   await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
-  const local = ["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-workbuddy"];
+  const local = ["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-cursor", "engine-workbuddy"];
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work },
