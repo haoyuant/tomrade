@@ -1,0 +1,185 @@
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+
+/** A pane the fake herdr holds: a shell, perhaps with an agent herdr "detected" in it. */
+export interface FakePane {
+  pane_id: string;
+  workspace_id: string;
+  tab_id: string;
+  cwd: string;
+  label: string | null;
+  agent: string | null;
+  agent_status: string;
+  /** What `pane.read` returns. */
+  text: string;
+}
+
+export interface FakeHerdrCall {
+  method: string;
+  params: Record<string, unknown>;
+}
+
+type Reply = { result: unknown } | { error: { code: string; message: string } };
+
+/**
+ * A server that speaks herdr's socket protocol as herdr 0.9.5 does: one JSON
+ * request per line, one reply per line, and subscriptions that keep their
+ * connection and receive events — enough of workspaces, panes and agents for
+ * a ticket to be started, followed and continued in it.
+ */
+export class FakeHerdr {
+  readonly socket: string;
+  readonly calls: FakeHerdrCall[] = [];
+  readonly panes = new Map<string, FakePane>();
+  private server: net.Server | null = null;
+  private readonly streams = new Set<{ connection: net.Socket; subscriptions: { type: string; pane_id?: string }[] }>();
+  private workspaces = 0;
+  /** Answers tried before the built-in ones; undefined leaves the call to them. */
+  answer: (method: string, params: Record<string, unknown>) => Reply | undefined = () => undefined;
+
+  /** A folder of its own, short: a Unix socket's path may not run past about a hundred characters. */
+  constructor(dir = fs.mkdtempSync(path.join(os.tmpdir(), "h-"))) {
+    fs.mkdirSync(dir, { recursive: true });
+    this.socket = path.join(dir, "s.sock");
+    this.start();
+  }
+
+  /** Listen (again) on the socket, as a herdr server that came (back) up. */
+  start(): void {
+    if (this.server) return;
+    fs.rmSync(this.socket, { force: true });
+    this.server = net.createServer((connection) => this.serve(connection));
+    this.server.listen(this.socket);
+  }
+
+  /** Stop answering and drop every subscription, as a herdr server that went away. */
+  stop(): void {
+    for (const stream of this.streams) stream.connection.destroy();
+    this.streams.clear();
+    this.server?.close();
+    this.server = null;
+  }
+
+  close(): void {
+    this.stop();
+  }
+
+  /** The calls made with this method, oldest first. */
+  of(method: string): Record<string, unknown>[] {
+    return this.calls.filter((call) => call.method === method).map((call) => call.params);
+  }
+
+  /** herdr saw an agent in the pane, in this state; the pane's subscribers hear it. */
+  setStatus(paneId: string, agent: string | null, status: string): void {
+    const pane = this.panes.get(paneId);
+    if (!pane) throw new Error(`no pane ${paneId}`);
+    pane.agent = agent;
+    pane.agent_status = status;
+    this.push({ event: "pane.agent_status_changed", data: { pane_id: paneId, workspace_id: pane.workspace_id, agent, agent_status: status } });
+  }
+
+  /** The pane's process ended and the pane closed with it. */
+  exit(paneId: string): void {
+    const pane = this.panes.get(paneId);
+    if (!pane) throw new Error(`no pane ${paneId}`);
+    this.panes.delete(paneId);
+    this.push({ event: "pane_exited", data: { type: "pane_exited", pane_id: paneId, workspace_id: pane.workspace_id } });
+    this.push({ event: "pane_closed", data: { type: "pane_closed", pane_id: paneId, workspace_id: pane.workspace_id } });
+  }
+
+  /** An event, to every subscription it matches: by its type, and by pane where the subscription names one. */
+  push(event: { event: string; data: Record<string, unknown> }): void {
+    const type = event.event.includes(".") ? event.event : event.event.replace("_", ".");
+    for (const stream of this.streams) {
+      if (stream.subscriptions.some((s) => s.type === type && (!s.pane_id || s.pane_id === event.data.pane_id))) stream.connection.write(`${JSON.stringify(event)}\n`);
+    }
+  }
+
+  /** The panes of herdr's own making (workspace.create) are `w<n>:p1`. */
+  createPane(cwd: string, label: string | null = null): FakePane {
+    const n = ++this.workspaces;
+    const pane: FakePane = { pane_id: `w${n}:p1`, workspace_id: `w${n}`, tab_id: `w${n}:t1`, cwd, label, agent: null, agent_status: "unknown", text: "" };
+    this.panes.set(pane.pane_id, pane);
+    return pane;
+  }
+
+  private serve(connection: net.Socket): void {
+    let buffer = "";
+    connection.setEncoding("utf8");
+    connection.on("error", () => undefined);
+    connection.on("data", (chunk: string) => {
+      buffer += chunk;
+      let end: number;
+      while ((end = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        const request = JSON.parse(line) as { id: string; method: string; params: Record<string, unknown> };
+        const params = request.params ?? {};
+        this.calls.push({ method: request.method, params });
+        if (request.method === "events.subscribe") {
+          const subscriptions = (params.subscriptions as { type: string; pane_id?: string }[]) ?? [];
+          const missing = subscriptions.find((s) => s.pane_id && !this.panes.has(s.pane_id));
+          if (missing) {
+            connection.end(`${JSON.stringify({ id: request.id, error: { code: "pane_not_found", message: `pane ${missing.pane_id} not found` } })}\n`);
+            return;
+          }
+          const stream = { connection, subscriptions };
+          this.streams.add(stream);
+          connection.once("close", () => this.streams.delete(stream));
+          connection.write(`${JSON.stringify({ id: request.id, result: { type: "subscription_started" } })}\n`);
+          continue;
+        }
+        const reply = this.answer(request.method, params) ?? this.reply(request.method, params);
+        connection.write(`${JSON.stringify({ id: request.id, ...reply })}\n`);
+      }
+    });
+  }
+
+  private reply(method: string, params: Record<string, unknown>): Reply {
+    const paneOf = (id: unknown) => (typeof id === "string" ? this.panes.get(id) : undefined);
+    const notFound = (id: unknown): Reply => ({ error: { code: "pane_not_found", message: `pane ${String(id)} not found` } });
+    const noAgent = (id: unknown): Reply => ({ error: { code: "agent_not_found", message: `agent target ${String(id)} not found` } });
+    switch (method) {
+      case "ping":
+        return { result: { type: "pong", version: "0.9.5", protocol: 22 } };
+      case "workspace.create": {
+        const pane = this.createPane(typeof params.cwd === "string" ? params.cwd : "/", typeof params.label === "string" ? params.label : null);
+        const workspace = { workspace_id: pane.workspace_id, number: this.workspaces, label: pane.label ?? String(this.workspaces), focused: params.focus === true, pane_count: 1, tab_count: 1, active_tab_id: pane.tab_id, agent_status: "unknown" };
+        return { result: { type: "workspace_created", workspace, tab: { tab_id: pane.tab_id, workspace_id: pane.workspace_id }, root_pane: { ...pane, focused: false, revision: 0 } } };
+      }
+      case "workspace.focus":
+      case "tab.focus":
+        return { result: { type: "ok" } };
+      case "pane.get": {
+        const pane = paneOf(params.pane_id);
+        return pane ? { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } } : notFound(params.pane_id);
+      }
+      case "pane.focus":
+      case "pane.send_input":
+      case "pane.send_text":
+        return paneOf(params.pane_id) ? { result: { type: "ok" } } : notFound(params.pane_id);
+      case "pane.read": {
+        const pane = paneOf(params.pane_id);
+        return pane ? { result: { type: "pane_read", read: { pane_id: pane.pane_id, workspace_id: pane.workspace_id, tab_id: pane.tab_id, source: params.source ?? "recent", format: "text", text: pane.text, revision: 0, truncated: false } } } : notFound(params.pane_id);
+      }
+      case "agent.get": {
+        const pane = paneOf(params.target);
+        return pane?.agent ? { result: { type: "agent_info", agent: { ...pane, focused: false, revision: 0 } } } : noAgent(params.target);
+      }
+      case "agent.prompt": {
+        const pane = paneOf(params.target);
+        if (!pane?.agent) return noAgent(params.target);
+        if (pane.agent_status === "blocked") return { error: { code: "agent_blocked", message: `agent ${pane.pane_id} is blocked` } };
+        return { result: { type: "agent_prompt", agent: { ...pane } } };
+      }
+      case "agent.read": {
+        const pane = paneOf(params.target);
+        return pane?.agent ? { result: { type: "agent_read", read: { text: pane.text } } } : noAgent(params.target);
+      }
+      default:
+        return { error: { code: "invalid_request", message: `invalid request: unknown variant \`${method}\`` } };
+    }
+  }
+}

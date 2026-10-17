@@ -73,10 +73,8 @@ describe("herdr socket client", () => {
 describe("herdr service", () => {
   async function service(socket: string): Promise<Herdr> {
     const ctx = new Context();
-    await ctx.plugin(Herdr);
-    const herdr = ctx.herdr;
-    herdr.socketPath = () => socket;
-    return herdr;
+    await ctx.plugin(Herdr, { socket });
+    return ctx.herdr;
   }
 
   it("focuses a pane through its workspace, and says so when the pane or the server is gone", async () => {

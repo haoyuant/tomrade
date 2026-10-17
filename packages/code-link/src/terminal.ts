@@ -6,7 +6,7 @@ import { z } from "zod";
 
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
-  terminal: z.string().default("Terminal").meta({ title: "Terminal app" }).describe('Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows. "none" only prepares the command for copying.'),
+  terminal: z.string().default("Terminal").meta({ title: "Terminal app" }).describe('Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows. "herdr" runs the ticket in a herdr workspace, whose pane the ticket then follows (brew install herdr). "none" only prepares the command for copying.'),
   claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command" }),
   codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command" }),
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command" }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
@@ -51,6 +51,22 @@ export interface LaunchInput {
   env?: Record<string, string>;
   /** Where the script is written: the session's folder. */
   dir: string;
+  /** What herdr labels the workspace: the ticket's key. */
+  label?: string;
+}
+
+/** What a terminal of "herdr" is run through: a workspace with the script going in its pane. */
+export interface HerdrTerminal {
+  launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string } | null>;
+}
+
+export interface LaunchResult {
+  script: string;
+  launched: boolean;
+  /** The herdr pane the script runs in, when the terminal is herdr. */
+  paneId?: string;
+  /** The terminal is herdr, and herdr did not answer: the script is written, for the person to run. */
+  needsHerdr?: boolean;
 }
 
 /** Fill a command template. Unknown placeholders are left as they are, so a typo is visible in the terminal. */
@@ -104,7 +120,7 @@ export function withOptions(template: string, flags: string): string {
  * elsewhere the common emulators take `-e`. A terminal of "none" writes the
  * script and stops, for a person to run it themselves.
  */
-export async function launchTerminal(input: LaunchInput, terminal: string): Promise<{ script: string; launched: boolean }> {
+export async function launchTerminal(input: LaunchInput, terminal: string, herdr: HerdrTerminal | null = null): Promise<LaunchResult> {
   fs.mkdirSync(input.dir, { recursive: true });
   const script = path.join(input.dir, "run.command");
   const exports = Object.entries(input.env ?? {}).map(([k, v]) => `export ${k}=${shellQuote(v)}`);
@@ -118,6 +134,11 @@ export async function launchTerminal(input: LaunchInput, terminal: string): Prom
     { mode: 0o755 }
   );
   if (terminal === "none") return { script, launched: false };
+  if (terminal === "herdr") {
+    // The script, not the command: the pid file and the exports come along, and the shell stays after the agent for the person to read.
+    const pane = herdr ? await herdr.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}` }) : null;
+    return pane ? { script, launched: true, paneId: pane.paneId } : { script, launched: false, needsHerdr: true };
+  }
   try {
     if (process.platform === "darwin") await run("open", ["-a", terminal, script]);
     else if (process.platform === "win32") await run("cmd", ["/c", "start", "", "bash", script]);
@@ -139,7 +160,7 @@ export async function launchTerminal(input: LaunchInput, terminal: string): Prom
  * questions: a new shell afterwards picks up a PATH the install just changed.
  * Windows gets PowerShell, which the official installers there are written for.
  */
-export async function setupTerminal(command: string, dir: string, terminal: string): Promise<{ launched: boolean }> {
+export async function setupTerminal(command: string, dir: string, terminal: string, herdr: HerdrTerminal | null = null): Promise<{ launched: boolean }> {
   if (process.platform === "win32") {
     // Detached, PowerShell gets a console window of its own; no cmd in between to read the command's `|`.
     return new Promise((resolve) => {
@@ -151,7 +172,7 @@ export async function setupTerminal(command: string, dir: string, terminal: stri
       });
     });
   }
-  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir }, terminal);
+  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir, label: "setup" }, terminal, herdr);
   return { launched };
 }
 

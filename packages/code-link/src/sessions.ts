@@ -15,6 +15,8 @@ import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./s
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
 export const IDLE_AFTER_MS = 10 * 60 * 1000;
 export const END_AFTER_MS = 60 * 60 * 1000;
+/** How long after a hook spoke herdr's reading of the screen is left unsaid. */
+export const HERDR_YIELD_MS = 30 * 1000;
 
 /** The coding session a tool call belongs to, when it came in over a session's MCP token. */
 export const sessionContext = new AsyncLocalStorage<{ projectId: string; sessionId: string }>();
@@ -39,6 +41,8 @@ interface HookPayload {
   reason?: string;
   /** The herdr pane the hook ran in, from the header or the script. */
   herdr_pane?: string;
+  /** Not a hook at all: herdr's reading of the pane, shaped like one. */
+  herdr?: boolean;
 }
 
 /**
@@ -178,6 +182,8 @@ export const credentialStopText = (detail: string): string =>
  */
 export class Sessions {
   private readonly live = new Map<string, { token: string; unbind: () => void }>();
+  /** When each session's own hooks last spoke, which herdr's reading of the screen defers to. */
+  private readonly heardAt = new Map<string, number>();
 
   constructor(
     private readonly ctx: Context,
@@ -303,6 +309,10 @@ export class Sessions {
     const p = (payload ?? {}) as HookPayload;
     const session = this.store.session(projectId, sessionId);
     if (!session) return {};
+    // herdr reads the screen; a hook that spoke a moment ago knows better. The pane closing is the end whatever was said.
+    if (p.herdr) {
+      if (p.hook_event_name !== "SessionEnd" && Date.now() - (this.heardAt.get(sessionId) ?? 0) < HERDR_YIELD_MS) return {};
+    } else this.heardAt.set(sessionId, Date.now());
     const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
     if (typeof p.herdr_pane === "string" && p.herdr_pane.trim()) patch.herdrPane = p.herdr_pane.trim();

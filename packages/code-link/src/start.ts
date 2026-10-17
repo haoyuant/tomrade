@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import type { Context } from "cordis";
 import type { Agent, Engine, EngineAvailability } from "@tomradex/agent";
 import { rulesSection } from "@tomradex/agent";
@@ -10,12 +11,13 @@ import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type { Author, Board, Item, Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/storage";
+import { HERDR_INSTALL } from "@tomradex/herdr";
 import { listDecisions } from "./decisions.js";
 import { branchFor, titleSlug } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
-import type { CodeLinkStore, RepoStateView, SessionMode } from "./store.js";
+import type { CodeLinkStore, RepoStateView, SessionMode, SessionView } from "./store.js";
 import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
@@ -74,6 +76,8 @@ export type StartResult =
       command: string | null;
       /** Terminal mode: whether a terminal window was actually opened. */
       launched: boolean;
+      /** Terminal mode: the herdr pane it runs in, when it does. */
+      pane?: string | null;
       /** Headless mode: the run that was started. */
       runId?: string;
       /** The engine it actually ran with — the one picked for it when the caller named none, so a
@@ -329,14 +333,39 @@ export class Starter {
       return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, engine: engineId, ...(warnings.length ? { warnings } : {}) };
     }
 
+    const terminalWords = CODE_WORDS(ctx.settings.locale?.());
+    // A session still sitting in its herdr pane takes the next prompt there: no new terminal, no new token.
+    if (live?.herdrPane && (await this.continueInPane(live, engineId, withClaimFirst(agent, engineId, item.key, terminalPrompt)))) {
+      store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, activity: null });
+      this.host.notify(projectId);
+      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, pane: live.herdrPane, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+    }
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), withClaimFirst(agent, engineId, item.key, terminalPrompt));
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
     const command = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd) ? ctx.github.wrap(baseCommand) : baseCommand;
-    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
-    store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
+    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key }, terminalSettings.terminal, ctx.get("herdr") ?? null);
+    if (launch.needsHerdr) warnings.push(terminalWords("herdrUnreachable", { install: HERDR_INSTALL }));
+    store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
-    return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+    return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  /**
+   * The next prompt into the pane a session already runs in, with herdr: the prompt file is
+   * written as always and the agent told to read it, over the session's own token — bound again
+   * if Tomrade restarted in between. False when the pane, the agent, or herdr is not there.
+   */
+  private async continueInPane(session: SessionView, engineId: string, prompt: string): Promise<boolean> {
+    const herdr = this.host.ctx.get("herdr");
+    const pane = session.herdrPane;
+    if (!herdr || !pane || !(await herdr.paneAlive(pane))) return false;
+    const dir = this.host.sessionDir(session.id);
+    if (!this.host.sessions.token(session.id) && !this.host.sessions.rebind(session, `ai:${engineId}` as Author, dir)) return false;
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "prompt.md");
+    fs.writeFileSync(file, prompt);
+    return herdr.prompt(pane, `Tomrade: continue this ticket — read ${file} and follow it.`);
   }
 
   /** A carried conversation's worktree onto the new delivery's branch, from the default branch; the reason it cannot, or null. */
@@ -418,13 +447,19 @@ export class Starter {
     const chosen = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
     const inside = insideOnly(agent, engineId) ?? (chosen ? await linkFirst(chosen, locale) : null);
     if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
-    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), withClaimFirst(agent, engineId, item.key, `${prepared.prompt}\n\n${languageLine(locale)}`));
+    const generalPrompt = withClaimFirst(agent, engineId, item.key, `${prepared.prompt}\n\n${languageLine(locale)}`);
+    if (live?.herdrPane && (await this.continueInPane(live, engineId, generalPrompt))) {
+      store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, activity: null });
+      this.host.notify(projectId);
+      return { ...base, command: null, launched: true, pane: live.herdrPane };
+    }
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), generalPrompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
-    const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
-    store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
+    const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key }, terminalSettings.terminal, ctx.get("herdr") ?? null);
+    store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
-    return { ...base, command, launched: launch.launched };
+    return { ...base, command, launched: launch.launched, pane: launch.paneId ?? null, ...(launch.needsHerdr ? { warnings: [CODE_WORDS(locale)("herdrUnreachable", { install: HERDR_INSTALL })] } : {}) };
   }
 
   /** The first code engine that can take a ticket right now; one that can only chat (Tomrade with no model) is passed over. */

@@ -2,7 +2,27 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TerminalSettings, fillTemplate, optionFlags, terminalTemplate, withOptions, writeGeminiHome } from "@tomradex/code-link";
+import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+
+describe("a terminal of herdr", () => {
+  it("runs the script in a herdr workspace labelled for the ticket, and without herdr leaves the script for the person", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-terminal-"));
+    const launches: { cwd: string; label?: string; command: string }[] = [];
+    const herdr: HerdrTerminal = { launch: async (input) => { launches.push(input); return { paneId: "w2:p1" }; } };
+    const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9" }, "herdr", herdr);
+    expect(launched).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w2:p1" });
+    expect(launches).toEqual([{ cwd: "/work/tom-9", label: "TOM-9", command: `bash '${path.join(dir, "run.command")}'` }]);
+    expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).toContain("export TOMRADE_MCP_TOKEN='t'\nclaude");
+
+    const gone: HerdrTerminal = { launch: async () => null };
+    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir, label: "TOM-9" }, "herdr", gone)).toEqual({ script: path.join(dir, "run.command"), launched: false, needsHerdr: true });
+    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", null)).toMatchObject({ launched: false, needsHerdr: true });
+    // any other terminal is untouched by herdr being there
+    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "none", herdr)).toEqual({ script: path.join(dir, "run.command"), launched: false });
+    expect(launches.length).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
 
 describe("terminal command options", () => {
   it("turns the model and effort picked at Start into each CLI's own flags", () => {

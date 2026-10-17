@@ -20,7 +20,8 @@ import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
-import { fresh, settle } from "@tomradex/testkit";
+import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { Herdr } from "@tomradex/herdr";
 import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
 
@@ -120,6 +121,91 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
   bag.ctx.codeLink.pulls = async () => null;
   return { ...bag, codeLink: bag.ctx.codeLink, agent: bag.ctx.agent, repo: row, checkout: repo?.checkout ?? null, hubDir, turns, ticket };
 }
+
+async function until(check: () => boolean, timeout = 3000): Promise<void> {
+  const started = Date.now();
+  while (!check()) {
+    if (Date.now() - started > timeout) throw new Error("condition did not become true");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+it("runs a ticket in a herdr workspace, follows the pane's status as the session's, and continues it in the same pane", async () => {
+  const world = await machine(codeRepo());
+  const { codeLink, ctx, project, repo, checkout, ticket } = world;
+  await ctx.repos.setCheckout(repo!.remote, checkout!);
+  const { Mcp } = await import("@tomradex/mcp");
+  await ctx.plugin(Mcp, { port: 0 });
+  const fake = new FakeHerdr();
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await settle();
+  ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "herdr" } });
+  const item = ticket("Herdr work");
+
+  const result = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  // A workspace for the ticket, in its worktree, with the session's script typed into its pane.
+  expect(result).toMatchObject({ mode: "terminal", launched: true, pane: "w1:p1" });
+  expect(fake.of("workspace.create")).toEqual([{ cwd: result.cwd, label: item.key, focus: false }]);
+  const dir = codeLink.sessionDir(result.sessionId);
+  expect(fake.of("pane.send_input")).toEqual([{ pane_id: "w1:p1", text: `bash '${path.join(dir, "run.command")}'`, keys: ["enter"] }]);
+  expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ herdrPane: "w1:p1", state: "running" });
+  const row = async () => (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")!;
+  expect((await row()).value).toContain("in herdr");
+  await until(() => fake.of("events.subscribe").length === 2);
+
+  // herdr's reading of the pane moves the session: blocked is "needs you", done a stop with what the screen says.
+  fake.setStatus("w1:p1", "claude", "working");
+  await until(() => codeLink.store.session(project.id, result.sessionId)!.lastEventAt !== null && codeLink.store.session(project.id, result.sessionId)!.state === "running");
+  fake.setStatus("w1:p1", "claude", "blocked");
+  await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "waiting");
+  expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", activity: "needs your approval" });
+  expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
+  fake.setStatus("w1:p1", "claude", "working");
+  await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "running");
+  fake.panes.get("w1:p1")!.text = "⏺ Scaffold in place.\n╭────╮\n│ > │\n╰────╯\n? for shortcuts";
+  fake.setStatus("w1:p1", "claude", "done");
+  await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "waiting");
+  expect(codeLink.store.session(project.id, result.sessionId)!.summary).toBe("⏺ Scaffold in place.");
+  // idle says nothing: the person may have looked, or not.
+  fake.setStatus("w1:p1", "claude", "idle");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(codeLink.store.session(project.id, result.sessionId)!.state).toBe("waiting");
+
+  // The session's own hook spoke: herdr's reading of the screen defers to it for a while.
+  const mcpConfig = JSON.parse(fs.readFileSync(path.join(dir, "mcp.json"), "utf8")) as { mcpServers: { tomrade: { headers: Record<string, string> } } };
+  const token = mcpConfig.mcpServers.tomrade.headers["X-Tomrade-Run"];
+  await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "Stop", session_id: "cli-h", last_assistant_message: "Hooks say: done with tests." }) });
+  expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", summary: "Hooks say: done with tests." });
+  fake.setStatus("w1:p1", "claude", "working");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", summary: "Hooks say: done with tests." });
+
+  // Continue goes into the same pane as a prompt — no new workspace, the same token — and the prompt file is what it reads.
+  const again = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  expect(again).toMatchObject({ ok: true, continued: true, launched: true, pane: "w1:p1", command: null, sessionId: result.sessionId });
+  expect(fake.of("workspace.create").length).toBe(1);
+  expect(fake.of("agent.prompt")).toEqual([{ target: "w1:p1", text: `Tomrade: continue this ticket — read ${path.join(dir, "prompt.md")} and follow it.` }]);
+  expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(item.key);
+  expect(JSON.parse(fs.readFileSync(path.join(dir, "mcp.json"), "utf8")).mcpServers.tomrade.headers["X-Tomrade-Run"]).toBe(token);
+  expect(codeLink.store.session(project.id, result.sessionId)!.state).toBe("running");
+
+  // The pane closing is the end of the session, whatever a hook said last; then Continue opens a new pane.
+  fake.exit("w1:p1");
+  await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "ended");
+  const fresh2 = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  expect(fresh2).toMatchObject({ ok: true, launched: true, pane: "w2:p1" });
+  expect(fake.of("workspace.create").length).toBe(2);
+
+  // herdr gone: the script is written and the person told to run it, and why.
+  fake.stop();
+  const alone = ticket("Alone");
+  const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
+  expect(without).toMatchObject({ ok: true, launched: false, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
+  expect(without.ok && without.command).toMatch(/^claude /);
+  fake.close();
+});
 
 async function untilRunsSettle(agent: Agent, timeout = 8000) {
   const t0 = Date.now();
