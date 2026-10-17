@@ -14,6 +14,7 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/herdr";
+import { HERDR_INSTALL, type HerdrPaneEvent } from "@tomradex/herdr";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/repos";
 import { normalizeRemote, sameRepository } from "@tomradex/repos";
@@ -253,6 +254,13 @@ export function compareUrl(remote: string, defaultBranch: string, branch: string
 /** The agent of a session known only by its MCP connection. */
 export const MCP_AGENT = "mcp";
 
+/** The last line of a pane that says something — not the input box, a rule, or a shortcut hint — for a summary. */
+export function lastSaid(screen: string | null): string {
+  if (!screen) return "";
+  const lines = screen.split("\n").map((line) => line.replace(/[\u2500-\u257f]/g, " ").trim()).filter((line) => line && !/^[>❯$%#│|?]+$/.test(line) && !/^\? for shortcuts|^esc to interrupt|^\d+ tokens?\b|^ctrl\+/i.test(line));
+  return (lines.at(-1) ?? "").replace(/^[>❯]\s*/, "").slice(0, 200);
+}
+
 const SETTINGS_SECTION = {
   id: "codeLink",
   title: "Code link",
@@ -265,7 +273,7 @@ const SETTINGS_SECTION = {
       title: "代码关联",
       description: "用哪个终端打开工作项，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
-        terminal: { title: "终端应用", description: "Terminal、iTerm、Warp、Ghostty……凡是 `open -a` 能打开的都行。填 none 则只准备好命令，供你复制。" },
+        terminal: { title: "终端应用", description: "Terminal、iTerm、Warp、Ghostty……凡是 `open -a` 能打开的都行。填 herdr 则在 herdr 的工作区里运行，工作项随后跟着那个 pane（brew install herdr）。填 none 则只准备好命令，供你复制。" },
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
@@ -563,6 +571,12 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
+    // herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post.
+    this.home.inject(["herdr"], (ctx) => {
+      ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${message(err)}`)));
+      this.watchPanes(ctx);
+      ctx.on("codeLink/changed", () => this.watchPanes(ctx));
+    });
 
     const timer = this.config.scanMs > 0 ? setInterval(() => void this.scanOpen(), this.config.scanMs) : null;
     timer?.unref?.();
@@ -742,7 +756,7 @@ export class CodeLink extends Service {
     const command = step === "install" ? setup?.install[0] : setup?.signIn;
     if (!command) throw new Error(`${engineId} has no ${step} command`);
     const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
-    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), engineId), settings.terminal);
+    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), engineId), settings.terminal, this.ctx.get("herdr") ?? null);
     return { launched, command };
   }
 
@@ -1935,7 +1949,7 @@ export class CodeLink extends Service {
       if (!result.ok) return { toast: result.message, startDialog: mode };
       const warning = result.warnings?.join("\n");
       const started = w(result.continued ? "continuing" : "started", { on: result.branch ? w("startedOn", { branch: result.branch }) : "" });
-      if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
+      if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${result.pane ? w("herdrHasIt", { pane: result.pane }) : w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
       // a run here is followed in its conversation, which opens with it
       if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId };
       return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
@@ -1984,8 +1998,8 @@ export class CodeLink extends Service {
         const cwd = this.worktreeOf(projectId, itemId);
         if (!cwd) return { toast: this.words()("noWorktree") };
         const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
-        const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(this.sessionDir("shell"), path.basename(cwd)) }, settings.terminal);
-        return { toast: launch.launched ? this.words()("opened", { cwd }) : `cd ${cwd}` };
+        const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(this.sessionDir("shell"), path.basename(cwd)), label: path.basename(cwd) }, settings.terminal, this.ctx.get("herdr") ?? null);
+        return { toast: launch.launched ? this.words()("opened", { cwd }) : `${launch.needsHerdr ? `${this.words()("herdrUnreachable", { install: HERDR_INSTALL })}\n` : ""}cd ${cwd}` };
       }
     });
     const settle = (accept: boolean) => (scope: { projectId?: string; itemId?: string | null }) => {
@@ -2123,6 +2137,38 @@ export class CodeLink extends Service {
     const text = moment.kind === "said" ? `${who}: ${moment.text}` : moment.kind === "failed" ? `${who} stopped: ${moment.text}` : `${who} session ended${moment.text ? ` (${moment.text})` : ""}.`;
     const message = agent.store.appendMessage(session.projectId, session.threadId, "system", { type: "note", text }, null);
     this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });
+  }
+
+  /** Every live session with a pane is followed in herdr; one that ended is let go. */
+  private watchPanes(ctx: Context): void {
+    const wanted = new Set<string>();
+    for (const projectId of this.ctx.db.openIds()) {
+      for (const s of this.store.sessions(projectId, { live: true })) if (s.herdrPane && s.state !== "lost") wanted.add(s.herdrPane);
+    }
+    for (const paneId of ctx.herdr.watching()) if (!wanted.has(paneId)) ctx.herdr.watch(paneId)();
+    for (const paneId of wanted) ctx.herdr.watch(paneId);
+  }
+
+  /**
+   * What herdr reads on a session's pane, said the way the session's hooks would say it: working
+   * is a tool starting, blocked a permission asked, done a stop with the screen's last line for
+   * what was said, the pane going the session's end. Idle and unknown say nothing; a hook that
+   * spoke a moment ago is believed over the screen (see Sessions.event).
+   */
+  private async herdrEvent(ctx: Context, event: HerdrPaneEvent): Promise<void> {
+    for (const projectId of this.ctx.db.openIds()) {
+      const session = this.store.sessions(projectId, { live: true }).find((s) => s.herdrPane === event.paneId && s.state !== "lost");
+      if (!session) continue;
+      if (event.kind === "exited") {
+        this.sessions.event(projectId, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true });
+        return;
+      }
+      const name = event.status === "working" ? "PreToolUse" : event.status === "blocked" ? "PermissionRequest" : event.status === "done" ? "Stop" : null;
+      if (!name) return;
+      const said = name === "Stop" ? lastSaid(await ctx.herdr.readTail(event.paneId)) : "";
+      this.sessions.event(projectId, session.id, { hook_event_name: name, herdr: true, ...(said ? { last_assistant_message: said } : {}) });
+      return;
+    }
   }
 
   /** Per-session files (mcp.json, hooks settings, the prompt, the launch script) live in the Hub where the user can see them. */

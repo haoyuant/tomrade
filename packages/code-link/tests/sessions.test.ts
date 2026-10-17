@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { hooksSettings } from "@tomradex/code-link";
+import { hooksSettings, lastSaid } from "@tomradex/code-link";
+
+describe("the last line a pane said", () => {
+  it("skips the input box, rules and shortcut hints, and keeps the last line of substance", () => {
+    expect(lastSaid("❯ Reading files…\n⏺ Scaffold in place. Next: CI.\n╭──────────╮\n│ > │\n╰──────────╯\n? for shortcuts\n")).toBe("⏺ Scaffold in place. Next: CI.");
+    expect(lastSaid("> \n")).toBe("");
+    expect(lastSaid(null)).toBe("");
+    expect(lastSaid("x".repeat(300))).toHaveLength(200);
+  });
+});
 
 describe("session hooks", () => {
   it("leaves the event response on stdout for Claude Code", () => {

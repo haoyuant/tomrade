@@ -1,6 +1,6 @@
 import type {} from "cordis";
 
-export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, primaryOf, type CodeSummaryView, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
+export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, lastSaid, primaryOf, type CodeSummaryView, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
 export { CONNECT_AGENTS, codexSyncSkill, hookCommand, hookCommands, tomradeSection, writeConnectFiles, type ConnectAgent, type ConnectInput, type SkippedAgent, type SkipReason } from "./connect.js";
 export { SYNC_PROMPT, syncInstructions, syncPrompt, syncSteps, type SyncScope } from "./sync.js";
 export { covered, decisionsDir, listDecisions, recordDecision, type Decision as DecisionNote, type DecisionInput, type DecisionStatus } from "./decisions.js";
@@ -33,8 +33,8 @@ export { decide, type Decision, type Evidence, type PrState, type RulePolicy } f
 export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectPr, titleSlug, usableSlug } from "./keys.js";
 export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult } from "./start.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
-export { Sessions, HERDR_PANE_HEADER, HOOK_EVENTS, describeTool, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
-export { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions } from "./terminal.js";
+export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, HOOK_EVENTS, describeTool, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
+export { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions, type HerdrTerminal, type LaunchResult } from "./terminal.js";
 export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 export { PLAYBOOKS } from "./playbooks.js";
 export { CodeLink as default } from "./service.js";

@@ -60,3 +60,53 @@ export function herdrCall<T = Record<string, unknown>>(socket: string, method: s
     connection.once("close", () => finish(() => reject(new HerdrError("closed", `herdr closed the connection before answering ${method}`))));
   });
 }
+
+/** One line of herdr's event stream: the event's name and its data, as herdr sends them. */
+export interface HerdrEvent {
+  event: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * A subscription: the connection stays open and herdr writes one event per
+ * line. `onEnd` hears why it stopped — the server going away, an
+ * `events_lost` overflow, or a refusal — so the caller can subscribe again.
+ */
+export function herdrStream(socket: string, subscriptions: Record<string, unknown>[], onEvent: (event: HerdrEvent) => void, onEnd: (error: HerdrError | null) => void, onStart?: () => void): { close(): void } {
+  let buffer = "";
+  let started = false;
+  let ended = false;
+  const connection = net.createConnection(socket);
+  const end = (error: HerdrError | null) => {
+    if (ended) return;
+    ended = true;
+    connection.destroy();
+    onEnd(error);
+  };
+  connection.setEncoding("utf8");
+  connection.once("connect", () => connection.write(`${JSON.stringify({ id: "1", method: "events.subscribe", params: { subscriptions } })}\n`));
+  connection.on("data", (chunk: string) => {
+    buffer += chunk;
+    let at: number;
+    while ((at = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, at);
+      buffer = buffer.slice(at + 1);
+      let parsed: { result?: { type?: string }; error?: { code?: string; message?: string }; event?: string; data?: Record<string, unknown> };
+      try {
+        parsed = JSON.parse(line) as typeof parsed;
+      } catch {
+        continue;
+      }
+      if (parsed.error) return end(new HerdrError(parsed.error.code ?? "error", parsed.error.message ?? "herdr ended the subscription"));
+      if (!started) {
+        started = true;
+        onStart?.();
+        continue;
+      }
+      if (typeof parsed.event === "string") onEvent({ event: parsed.event, data: parsed.data ?? {} });
+    }
+  });
+  connection.once("error", (err: NodeJS.ErrnoException) => end(new HerdrError("unreachable", `herdr is not reachable at ${socket}: ${err.message}`)));
+  connection.once("close", () => end(null));
+  return { close: () => end(null) };
+}

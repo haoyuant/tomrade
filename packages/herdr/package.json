@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.herdr — herdr (the terminal workspace manager for coding agents) on this machine: its socket, whether it runs, and the panes it holds. Optional; nothing changes without it.",
+  "description": "ctx.herdr \u2014 herdr (the terminal workspace manager for coding agents) on this machine: its socket, whether it runs, and the panes it holds. Optional; nothing changes without it.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -23,6 +23,7 @@
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
+    "@tomradex/testkit": "workspace:*",
     "@types/node": "^26.2.0",
     "typescript": "^6.0.0"
   }

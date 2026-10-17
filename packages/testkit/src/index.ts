@@ -70,3 +70,5 @@ export async function fresh(opts: FreshOptions = {}) {
     board
   };
 }
+
+export { FakeHerdr, type FakeHerdrCall, type FakePane } from "./herdr.js";
