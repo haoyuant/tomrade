@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
@@ -34,13 +35,18 @@ export interface ToolHost {
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts?: { replace?: boolean }): void;
   /** The hooks session a tokenless claim most likely comes from: live on that repository, holding no ticket and no client's connection. */
   externalSession(projectId: string, repoId: string): SessionView | null;
-  /** The session an outside client's connection claimed for. */
+  /** The session an outside client's connection last claimed for: the one its calls without a key mean. */
   connected(projectId: string, connection: string): SessionView | null;
-  bindConnection(projectId: string, connection: string, sessionId: string): void;
+  /** Every live session an outside client's connection claimed for, one per ticket it works in parallel. */
+  connectedSessions(projectId: string, connection: string): SessionView[];
+  /** The connection's calls without a key mean this session from now on; it keeps its other sessions except `leaving`. */
+  bindConnection(projectId: string, connection: string, sessionId: string, leaving?: string): void;
+  /** Whether any client's connection holds the session. */
+  bound(sessionId: string): boolean;
   /** A new session followed only through a client's connection, for a client with no hooks. */
-  connectionSession(projectId: string, repoId: string | null): SessionView;
-  /** The same outside agent, as a new session for its next ticket; the one it leaves stays on the ticket whose merge it handed over. */
-  successor(projectId: string, from: SessionView, repoId: string | null): SessionView;
+  connectionSession(projectId: string, repoId: string | null, worktree?: string | null): SessionView;
+  /** The same outside agent, as a new session for its next ticket, or for one it works alongside the one it holds. */
+  successor(projectId: string, from: SessionView, repoId: string | null, worktree?: string | null): SessionView;
   notify(projectId: string): void;
   summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
@@ -81,8 +87,24 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       }
     }
     if (s?.itemIds.length && !s.itemIds.includes(item.id)) {
-      const held = ctx.items.get(projectId, s.itemIds[0]);
-      throw new Error(`${tool}: this session owns ${held?.key ?? "another ticket"}, not ${item.key} — use a separate session`);
+      const holder = s;
+      // An outside client working tickets in parallel names by key which of its sessions a call is about:
+      // one its connection claimed, else one of the same agent (its identity, on that repository) that holds the ticket.
+      const sibling =
+        s === connected && inv.connection
+          ? (host.connectedSessions(projectId, inv.connection).find((x) => x.itemIds.includes(item!.id)) ??
+            host.store
+              .sessions(projectId, { itemId: item.id, live: true })
+              .find((x) => x.threadId === null && x.mode === "terminal" && x.state !== "lost" && x.agent === holder.agent && x.repoId === holder.repoId && x.externalId === holder.externalId && (x.externalId !== null || !host.bound(x.id))) ??
+            null)
+          : null;
+      if (!sibling) {
+        const held = ctx.items.get(projectId, s.itemIds[0]);
+        // Never quietly the ticket claimed last: the call would land on another ticket's session.
+        if (s === connected) throw new Error(`${tool}: this connection has not claimed ${item.key} (its session owns ${held?.key ?? "another ticket"}) — call claim_ticket with key ${item.key} and parallel: true first`);
+        throw new Error(`${tool}: this session owns ${held?.key ?? "another ticket"}, not ${item.key} — use a separate session`);
+      }
+      s = sibling;
     }
 
     const board = ctx.boards.get(projectId, item.boardId);
@@ -287,8 +309,13 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       kit: "code",
       title: "Claim a ticket to work on",
       description:
-        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. A session owns one ticket at a time: another can be claimed only once that one is done (and never in a session Tomrade started).",
-      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. A session owns one ticket at a time: another can be claimed once that one is done, or alongside it with parallel: true, each on its own branch or worktree (never in a session Tomrade started).",
+      input: z.object({
+        key: z.string().min(1).describe("Ticket key, e.g. TOM-42"),
+        parallel: z.boolean().optional().describe("Work on this ticket alongside the one you hold, instead of finishing that one first; then pass key to link_code, note_progress and report_merge_blocked"),
+        worktree: z.string().optional().describe("The worktree or folder this ticket is worked in"),
+        projectId: z.string().optional()
+      }),
       execute: async (args, inv) => {
         const projectId = requireProjectId("claim_ticket", args.projectId, inv);
         const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
@@ -304,26 +331,41 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
         const bound = sessionContext.getStore();
         const tokened = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
+        if (tokened && args.parallel) throw new Error(`claim_ticket: a session Tomrade started works one ticket in its own worktree, so it cannot claim ${item.key} in parallel — offer_start ${item.key} to start it in a session of its own`);
+        const worktree = !tokened && args.worktree?.trim() ? path.resolve(args.worktree.trim()) : null;
         // Without a token the claim belongs to the client's connection: the session it claimed before, else a hooks session nobody holds.
+        // One it already works this ticket in, alongside others, is that one again.
         const connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
-        let session = tokened ?? connected ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        const again = !tokened && inv.connection ? (host.connectedSessions(projectId, inv.connection).find((s) => s.itemIds.includes(item.id)) ?? null) : null;
+        let session = tokened ?? again ?? connected ?? (repoId ? host.externalSession(projectId, repoId) : null);
         const others = (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
         // An outside terminal moves on once its ticket is finished, or once it handed that ticket's merge to the person
         // (report_merge_blocked); until then its wrap-up is still owed. A session Tomrade started is one ticket's thread and worktree.
         const handedOff = session?.blocked === "merge";
         const owed = others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled" && !(held.status === "verifying" && handedOff)));
-        if (others.length && (tokened || owed)) {
+        let leaving: string | undefined;
+        let alongside = false;
+        if (session && owed && !tokened && args.parallel) {
+          // Side by side: the ticket gets a session of its own with the same identity; the one held stays exactly as it is.
+          session = host.successor(projectId, session, repoId, worktree);
+          alongside = true;
+        } else if (others.length && (tokened || owed)) {
           const held = owed ?? others[0];
           if (tokened || !held) throw new Error(`claim_ticket: this session already owns ${held?.key ?? "another ticket"} — start a separate session for ${item.key}`);
-          if (held.status === "verifying") throw new Error(`claim_ticket: this session still owns ${held.key}, which is verifying — merge its pull request once the checks pass, or if the merge is refused call report_merge_blocked, then claim ${item.key}`);
-          throw new Error(`claim_ticket: this session still owns ${held.key}, which is ${held.status} — finish it (open its pull request and link_code, then merge or report_merge_blocked), then claim ${item.key}`);
+          const meanwhile = ` — or, to work on it alongside ${held.key} on its own branch or worktree, claim ${item.key} with parallel: true`;
+          if (held.status === "verifying") throw new Error(`claim_ticket: this session still owns ${held.key}, which is verifying — merge its pull request once the checks pass, or if the merge is refused call report_merge_blocked, then claim ${item.key}${meanwhile}`);
+          throw new Error(`claim_ticket: this session still owns ${held.key}, which is ${held.status} — finish it (open its pull request and link_code, then merge or report_merge_blocked), then claim ${item.key}${meanwhile}`);
         }
         // The session waiting on the person's merge keeps its ticket and says so; the next ticket gets a session of its own.
-        if (session && others.some((held) => held?.status === "verifying") && handedOff) session = host.successor(projectId, session, repoId);
+        if (session && !alongside && others.some((held) => held?.status === "verifying") && handedOff) {
+          leaving = session.id;
+          session = host.successor(projectId, session, repoId, worktree);
+        }
         const switched = (session?.itemIds ?? []).some((id) => id !== item.id);
         // A client with no hooks is still followed, through its connection.
-        if (!session && inv.connection) session = host.connectionSession(projectId, repoId);
-        if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id);
+        if (!session && inv.connection) session = host.connectionSession(projectId, repoId, worktree);
+        if (session && !tokened && worktree && session.worktree !== worktree) session = host.store.patchSession(projectId, session.id, { worktree });
+        if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id, leaving);
         const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.
@@ -351,6 +393,11 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             "neighboring tickets are context, not extra implementation work; leave their code for separate sessions",
             "before pushing, review the full diff and remove anything this ticket does not require",
             `work on branch ${branch}; never commit to ${repo?.defaultBranch ?? "the default branch"}`,
+            ...(alongside
+              ? [
+                  `you hold other tickets in parallel: create ${branch} from the latest ${repo?.defaultBranch ?? "default branch"}, not from another ticket's branch, and pass key ${item.key} to link_code, note_progress and report_merge_blocked for this ticket`
+                ]
+              : []),
             ...(switched
               ? [
                   `this session's previous ticket is finished: create ${branch} from the latest ${repo?.defaultBranch ?? "default branch"} (fetch first), not from the previous ticket's branch, and make sure the full-diff review finds none of its commits`

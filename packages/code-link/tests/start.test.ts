@@ -1013,6 +1013,8 @@ describe("starting a ticket", () => {
     // A session Tomrade started stays with its one ticket, finished or not.
     const other = ticket("Something else");
     await expect(inSession("claim_ticket", { key: other.key })).rejects.toThrow(`this session already owns ${item.key}`);
+    await expect(inSession("claim_ticket", { key: other.key, parallel: true })).rejects.toThrow(`cannot claim ${other.key} in parallel — offer_start ${other.key}`);
+    expect(codeLink.sessionsOf(project.id, other.id)).toEqual([]);
     await untilRunsSettle(agent);
   });
 
