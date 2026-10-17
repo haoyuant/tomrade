@@ -26,6 +26,18 @@ export const ImSettings = z.object({
     output: z.enum(["final", "progress", "verbose"]).default("progress"),
     /** In a direct chat, turns started on the desktop show here too. A group only ever shows turns started from IM, or shared from the desktop. */
     desktopTurns: z.boolean().default(true),
+    /** What reaches this conversation besides its own turns; `presence` unset follows `announcePresence`. */
+    notify: z.object({
+      /** Status changes of the tickets this conversation saw or started. */
+      tickets: z.boolean().default(true),
+      /** Pull requests, merges and git's status proposals for those tickets. */
+      code: z.boolean().default(true),
+      presence: z.boolean().optional(),
+      /** Scheduled templates as they run. */
+      routines: z.boolean().default(false),
+      /** Questions, approvals and failures that wait on the person while they are away. */
+      attention: z.boolean().default(true)
+    }).prefault({}),
     /** In a group, keep its recent messages on this computer and show them to the Agent when it is woken. Off unless set. */
     groupContext: z.object({
       enabled: z.boolean().default(false),

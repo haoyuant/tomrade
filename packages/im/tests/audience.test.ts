@@ -126,6 +126,50 @@ describe("who sees what in IM", () => {
     expect(w.ctx.im.remind({ projectId: w.project.id, threadId: thread, kind: "waiting", title: "x", body: "" })).toBe(false);
   });
 
+  it("doesn't bring reminders to a conversation that turned them off", async () => {
+    const w = await boot({}, { notify: { attention: false } });
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    const desk = w.ctx.agent.newThread(w.project.id, "test", null, { title: "Deploy" });
+    w.ctx.agent.send(w.project.id, desk.id, { kind: "text", text: "ask" });
+    await expect.poll(() => w.ctx.agent.thread(w.project.id, desk.id).pending?.kind).toBe("permission");
+    expect(w.ctx.im.remind({ projectId: w.project.id, threadId: desk.id, kind: "permission", title: "Test needs your approval", body: "" })).toBe(false);
+  });
+
+  it("says when a routine runs, only where the conversation asked for routines", async () => {
+    const w = await boot({}, { notify: { routines: true } });
+    await w.receive(dm("d1", "hello"));
+    await w.receive(group("g1", "hello"));
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("re:hello");
+    w.ctx.emit("schedules/ran", w.project.id, { id: "r1", ok: true, itemIds: [], threadId: "t1", error: null }, "Weekly review");
+    w.ctx.emit("schedules/ran", w.project.id, { id: "r2", ok: false, itemIds: [], threadId: null, error: "No engine" }, "Standup");
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("Routine “Standup” failed: No engine");
+    const ran = w.delivered.find(d => d.content.text.startsWith("Routine “Weekly review” ran"))!;
+    expect(ran.content.text).toContain(`tomrade://thread/${encodeURIComponent(w.project.id)}/t1`);
+    expect(w.to("room").some(t => t.startsWith("Routine"))).toBe(false);
+  });
+
+  it("says when it comes online in a conversation that asked to, and not in one that turned the older setting off", async () => {
+    const reconnect = (w: Awaited<ReturnType<typeof boot>>, extra: Record<string, unknown>, presence: boolean) => {
+      const routes = (im: ImSettings) => im.routes.map(r => r.id === "dm" ? { ...r, notify: { ...r.notify, presence } } : r);
+      const im = w.ctx.settings.get().im as ImSettings;
+      w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...im, ...extra, routes: routes(im), connections: [{ ...im.connections[0], enabled: false }] } });
+      w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...im, ...extra, routes: routes(im) } });
+    };
+    const w = await boot();
+    await w.receive(dm("d1", "hello"));
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    reconnect(w, {}, true);
+    await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("Tomrade is online on your computer.");
+
+    const off = await boot();
+    await off.receive(dm("d1", "hello"));
+    await expect.poll(() => off.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
+    reconnect(off, { announcePresence: true }, false);
+    await new Promise(r => setTimeout(r, 300));
+    expect(off.to("dm-owner").some(t => t.includes("online"))).toBe(false);
+  });
+
   it("says when it comes online and goes offline, only when asked to", async () => {
     const w = await boot();
     await w.receive(dm("d1", "hello"));

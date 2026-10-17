@@ -209,7 +209,10 @@ function People({ connection, im, pairing, defaultProject, onError }: {
   );
 }
 
-function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names: Map<string, string>; onChange: (next: ImRoute) => void; onRemove: () => void }) {
+const NOTIFY = [["tickets", "imSettings.notifyTickets"], ["code", "imSettings.notifyCode"], ["presence", "imSettings.notifyPresence"],
+  ["routines", "imSettings.notifyRoutines"], ["attention", "imSettings.notifyAttention"]] as const;
+
+function RouteRow({ route, names, presence, onChange, onRemove }: { route: ImRoute; names: Map<string, string>; presence: boolean; onChange: (next: ImRoute) => void; onRemove: () => void }) {
   const { t } = useI18n();
   const engines = useEngines();
   const engine = (engines.data ?? []).find((e) => e.id === route.engine);
@@ -219,6 +222,8 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
   const [cleared, setCleared] = useState<number | null>(null);
   const windowed = { enabled: false, messages: 20, retentionHours: 24, ...route.groupContext };
   const setWindow = (patch: Partial<typeof windowed>) => set({ groupContext: { ...windowed, ...patch } });
+  // Unset `presence` follows the older setting for every direct chat.
+  const notify = { ...(route.notify ?? { tickets: true, code: true, routines: false, attention: true }), presence: route.notify?.presence ?? presence };
   return (
     <div className="panel stack-2" data-im-route={route.id}>
       <div className="row" style={{ gap: 8 }}>
@@ -284,6 +289,17 @@ function RouteRow({ route, names, onChange, onRemove }: { route: ImRoute; names:
             {t(label)}
           </label>
         ))}
+      </div>
+      <div className="stack-2" data-im-notify={route.id}>
+        <div className="eyebrow">{t("imSettings.notify")}</div>
+        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+          {NOTIFY.map(([key, label]) => (
+            <label key={key} className="row" style={{ gap: 6 }}>
+              <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} onClick={() => set({ notify: { ...notify, [key]: !notify[key] } })} />
+              {t(label)}
+            </label>
+          ))}
+        </div>
       </div>
       {route.allowGroups && (
         <div className="stack-2" data-im-group-context={route.id}>
@@ -376,7 +392,7 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
         <div className="stack-2">
           <div className="eyebrow">{t("imSettings.routes")}</div>
           {routes.length ? routes.map((route) => (
-            <RouteRow key={route.id} route={route} names={names}
+            <RouteRow key={route.id} route={route} names={names} presence={im.announcePresence}
               onChange={(next) => onRoutes(im.routes.map((r) => (r.id === route.id ? next : r)))}
               onRemove={() => onRoutes(im.routes.filter((r) => r.id !== route.id))} />
           )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
@@ -515,11 +531,6 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
           )}
           {error && <p className="meta-txt dense" role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
         </div>
-        <label className="row meta-txt" style={{ gap: 6 }}>
-          <button type="button" className="switch" role="switch" aria-checked={im.announcePresence} aria-label={t("imSettings.announcePresence")}
-            onClick={() => persist({ ...im, announcePresence: !im.announcePresence })} data-testid="im-presence" />
-          {t("imSettings.announcePresence")}
-        </label>
         <Ignored im={im} defaultProject={defaultProject} onError={setError} />
         <Deliveries onError={setError} />
       </div>

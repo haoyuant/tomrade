@@ -113,6 +113,16 @@ describe("code links in IM", () => {
     expect(w.delivered.length).toBe(count);
   });
 
+  it("keeps code news and git's proposals out of a conversation that turned them off", async () => {
+    const w = await watching();
+    const im = w.ctx.settings.get().im as ImSettings;
+    w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...im, routes: im.routes.map(r => ({ ...r, notify: { ...r.notify, code: false } })) } });
+    const count = w.delivered.length;
+    w.code.set(w.project.id, { ...MERGED, proposals: [{ id: "p1", kind: "propose", toStatus: "done", reason: "merged into main" }] });
+    await new Promise(r => setTimeout(r, 200));
+    expect(w.delivered.slice(count)).toEqual([]);
+  });
+
   it("says when a merge waits on the person", async () => {
     const w = await watching(OPEN);
     w.code.set(w.project.id, { ...OPEN, session: { state: "error", blocked: "merge" } });

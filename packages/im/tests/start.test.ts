@@ -95,27 +95,38 @@ async function boot() {
   const find = (match: RegExp) => delivered.filter(d => match.test(d.content.text)).at(-1);
   const said = async (match: RegExp) => { await expect.poll(() => find(match), { timeout: 5000 }).toBeDefined(); return find(match)!; };
   const bound = (conversation = "chat") => world.ctx.im.store.bindings().find(b => JSON.parse(b.address_json).conversationId === conversation)?.thread_id;
-  return { ...world, delivered, turns, code, item, receive, said, bound, probe };
+  /** Follow here, from the message that says the start went through. */
+  const follow = async () => {
+    const started = await said(/^Started .* with Test\./);
+    await receive(act(`follow-${delivered.length}`, started.content.actions!.find(a => a.label === "Follow here")!.token));
+    await said(/^Following .* here; its progress and questions come here\./);
+  };
+  return { ...world, delivered, turns, code, item, receive, said, bound, probe, follow };
 }
 
 const select = (els: ImElement[] | undefined, placeholder: string) => els?.find((e): e is Extract<ImElement, { type: "select" }> => e.type === "select" && e.placeholder === placeholder);
 
 describe("starting a ticket from IM", () => {
-  it("starts an offered ticket from its card with this computer's last choices, then follows its session here", async () => {
+  it("starts an offered ticket from its card with this computer's last choices, and follows its session here only when asked", async () => {
     const w = await boot();
     await w.receive(say("a", "offer"));
     await expect.poll(() => w.delivered.find(d => d.content.actions?.some(a => a.label === "Start")), { timeout: 5000 }).toBeDefined();
     const card = w.delivered.find(d => d.content.actions?.some(a => a.label === "Start"))!;
     expect(card.content.actions!.map(a => a.label)).toEqual(["Start", "Adjust settings"]);
     await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    const home = w.bound();
     await w.receive(act("go", card.content.actions![0].token));
-    await w.said(/^Started .* with Test; its progress and questions come here\./);
+    await w.said(/^Started .* with Test\./);
     expect(w.code.starts).toEqual([{ mode: "run", engine: "test", options: { model: "deep" }, permissionMode: "auto",
       source: { connection: "bot", tenant: "team", conversation: "chat", actor: "owner" } }]);
     expect((await w.said(/^Started/)).content.text).toContain("⚠ Pushing is off for this repository");
     // The card clicked says so in place, and a second click on it is let go.
     expect((await w.said(new RegExp(`^Started ${w.item.key} Fix the login page$`))).replaceMessageId).toBeDefined();
     await w.receive(act("twice", card.content.actions![0].token));
+    // The conversation stays where it was until it asks to follow.
+    expect(w.bound()).toBe(home);
+    expect(w.delivered.some(d => /^Which page first\?$/.test(d.content.text))).toBe(false);
+    await w.follow();
     // The coding run's question comes here, and is answered here.
     const question = await w.said(/^Which page first\?$/);
     const input = question.content.elements!.find(e => e.type === "input") as { token: string };
@@ -177,7 +188,6 @@ describe("starting a ticket from IM", () => {
     await w.said(/^Started .* with Test/);
     await w.said(new RegExp(`^Started ${w.item.key} Fix the login page$`));
     await w.receive(act("late", start));
-    await w.said(/^Which page first\?$/);
     await expect.poll(() => w.ctx.im.store.all<{ state: string }>("SELECT state FROM plugin_im_inbox WHERE state = 'queued'").length).toBe(0);
     expect(w.code.starts).toHaveLength(1);
     expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
@@ -222,6 +232,20 @@ describe("starting a ticket from IM", () => {
     release();
   });
 
+  it("tells the conversation that started a ticket when its status moves, unless it turned that off", async () => {
+    const w = await boot();
+    await w.receive(say("go", `/start ${w.item.key} model=fast`));
+    await w.said(/^Started .* with Test\./);
+    w.ctx.items.update(w.project.id, w.item.id, { status: "doing" }, "human");
+    const moved = await w.said(new RegExp(`^${w.item.key}: Todo → Doing$`));
+    expect(moved.address.conversationId).toBe("chat");
+    const im = w.ctx.settings.get().im as ImSettings;
+    w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...im, routes: im.routes.map(r => ({ ...r, notify: { ...r.notify, tickets: false } })) } });
+    w.ctx.items.update(w.project.id, w.item.id, { status: "verifying" }, "human");
+    await new Promise(r => setTimeout(r, 200));
+    expect(w.delivered.some(d => d.content.text.includes("→ Verifying"))).toBe(false);
+  });
+
   it("goes back to the conversation it left once the ticket is done and its session archived, and the next message goes there", async () => {
     const w = await boot();
     await w.receive(say("hi", "hello"));
@@ -229,7 +253,7 @@ describe("starting a ticket from IM", () => {
     const home = w.bound()!;
     w.ctx.agent.store.touchThread(w.project.id, home, { title: "Planning" });
     await w.receive(say("go", `/start ${w.item.key} model=fast`));
-    await w.said(/^Started/);
+    await w.follow();
     const question = await w.said(/^Which page first\?$/);
     const ticketThread = w.bound()!;
     expect(ticketThread).not.toBe(home);
@@ -252,6 +276,7 @@ describe("starting a ticket from IM", () => {
     await w.said(/^re:hello$/);
     const home = w.bound()!;
     await w.receive(say("go", `/start ${w.item.key} model=fast`));
+    await w.follow();
     const question = await w.said(/^Which page first\?$/);
     const ticketThread = w.bound()!;
     await w.receive(act("ans", (question.content.elements!.find(e => e.type === "input") as { token: string }).token, "login"));

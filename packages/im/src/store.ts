@@ -68,6 +68,8 @@ CREATE TABLE plugin_im_watch (
 CREATE INDEX idx_plugin_im_watch_project ON plugin_im_watch(project_id);
 ` }, { version: 8, up: `
 ALTER TABLE plugin_im_bindings ADD COLUMN home_thread TEXT;
+` }, { version: 9, up: `
+ALTER TABLE plugin_im_watch ADD COLUMN status TEXT;
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
@@ -111,7 +113,7 @@ export interface WindowRow {
   author_json: string; text: string; created_at: number;
 }
 /** A ticket a conversation was shown, and its code as last told there; news of the code goes to that conversation. */
-export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number }
+export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number; status: string | null }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
   actor_id: string; run_id: string | null; value_json: string | null; expires_at: number;

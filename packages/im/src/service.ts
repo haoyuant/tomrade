@@ -12,7 +12,7 @@ import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapa
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
-import { FILE_HANDLE, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
+import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Watch, type WindowRow } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -101,6 +101,8 @@ interface ReviewHost {
   get(projectId: string, id: string): (Delivered & { id: string; version: number }) | null;
   reviewDelivery(projectId: string, id: string, input: { submissionId: string; decision: "accepted" | "changes-requested"; comment: string }, baseVersion: number): unknown;
 }
+/** The part of a scheduled template's run IM tells about. */
+interface RoutineRun { id: string; ok: boolean; itemIds: string[]; threadId: string | null; error: string | null }
 interface Pairing { connectionId: string; code: string; projectId: string; expiresAt: number; failures: number; claim?: ImPairingView["claim"] }
 
 declare module "cordis" {
@@ -110,6 +112,8 @@ declare module "cordis" {
     "im/unregistered"(id: string): void;
     /** Emitted by code link, when it is loaded. */
     "codeLink/changed"(projectId: string): void;
+    /** Emitted by schedules, when it is loaded. */
+    "schedules/ran"(projectId: string, run: RoutineRun, name: string): void;
   }
 }
 declare module "@tomradex/ipc" {
@@ -194,6 +198,7 @@ export class Im extends Service {
     this.home.on("settings/changed", () => this.reload());
     this.home.on("agent/event", (threadId, event) => this.onAgentEvent(threadId, event));
     this.home.on("codeLink/changed", projectId => this.onCode(projectId));
+    this.home.on("schedules/ran", (projectId, run, name) => this.onRoutine(projectId, run, name));
     // After the write that appended it has committed.
     this.home.on("oplog/appended", (projectId, entry) => { if (entry.entity === "item") queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId)); });
     this.home.inject(["ipc"], ctx => {
@@ -233,7 +238,7 @@ export class Im extends Service {
       this.stopped = true;
       clearInterval(timer);
       for (const pending of this.progressTimers.values()) clearTimeout(pending);
-      if (this.settings.announcePresence) await Promise.all([...this.connections.values()].map(c => this.presence(c, false)));
+      if (this.announces()) await Promise.all([...this.connections.values()].map(c => this.presence(c, false)));
       await Promise.all([...this.connections.values()].map(c => this.close(c)));
       this.connections.clear();
     };
@@ -251,7 +256,7 @@ export class Im extends Service {
       this.changed();
       return async () => {
         // At shutdown the adapter's plugin goes first: say goodbye while its connections still stand.
-        if (this.settings.announcePresence) await Promise.all([...this.connections.values()].filter(c => c.adapterId === adapter.id).map(c => this.presence(c, false)));
+        if (this.announces()) await Promise.all([...this.connections.values()].filter(c => c.adapterId === adapter.id).map(c => this.presence(c, false)));
         this.adapters.delete(adapter.id);
         this.caps.delete(adapter.id);
         await Promise.all([...this.connections.values()].filter(c => c.adapterId === adapter.id).map(async c => {
@@ -385,7 +390,8 @@ export class Im extends Service {
     }
     if (!projectId) throw new Error("Choose a project for this conversation");
     im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, projectId, boardId: null, allowedActors: actors,
-      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true });
+      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true,
+      notify: { tickets: true, code: true, routines: false, attention: true } });
   }
 
   private snapshot(): ImSettings { return structuredClone(ImSettings.parse(this.home.settings.get().im)); }
@@ -578,7 +584,7 @@ export class Im extends Service {
       c.detail = undefined;
       c.attempts = 0;
       this.changed();
-      if (this.settings.announcePresence && !this.announced.has(c.id)) { this.announced.add(c.id); void this.presence(c, true); }
+      if (this.announces() && !this.announced.has(c.id)) { this.announced.add(c.id); void this.presence(c, true); }
       if (this.caps.get(c.adapterId)?.nativeCommands && session.commands) this.bestEffort(session.commands(this.commands()));
     } catch {
       if (!active()) return;
@@ -1003,14 +1009,18 @@ export class Im extends Service {
     const runId = detail.runs.at(-1)?.id ?? null;
     const bound = this.store.bindings().filter(b => b.thread_id === n.threadId && this.authorizedBinding(b));
     if (bound.some(b => !this.isGroup(b) && this.visible(b, runId))) return false;
-    // Whoever started the IM conversation, or everyone who paired with the desktop for a thread only the desktop knows.
-    const people = bound.length ? bound.map(b => [b.connection_id, b.actor_id] as const)
+    // Whoever started the IM conversation or watches its ticket, or everyone who paired with the desktop for a thread only the desktop knows.
+    const itemId = this.home.agent.store.thread(n.projectId, n.threadId)?.itemId;
+    const watching = itemId ? this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE project_id = ? AND item_id = ?", n.projectId, itemId)
+      .map(w => this.store.binding(w.binding_id)).filter((b): b is Binding => !!b && this.authorizedBinding(b)) : [];
+    const known = [...bound, ...watching];
+    const people = known.length ? known.map(b => [b.connection_id, b.actor_id] as const)
       : this.settings.identities.map(i => [i.connectionId, i.actorId] as const);
     const pending = n.kind === "stuck" ? null : detail.pending;
     let reached = false;
     for (const [connectionId, actorId] of new Map(people.map(p => [p.join("\u0000"), p])).values()) {
       const dm = this.directChat(connectionId, actorId);
-      if (!dm) continue;
+      if (!dm || !this.notifies(dm, "attention")) continue;
       const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}\n[${this.say("Open in Tomrade", "在 Tomrade 打开")}](${links.thread(n.projectId, n.threadId)})`;
       const content: ImContent = pending ? this.remoteQuestion(dm, n.projectId, n.threadId, pending, actorId, head) : { text: head };
       this.enqueue(dm, `remind:${dm.id}:${n.threadId}:${pending?.question.id ?? `${n.kind}:${runId}`}`, content, { anchor: null });
@@ -1069,7 +1079,7 @@ export class Im extends Service {
   private async presence(c: Connection, online: boolean) {
     const caps = this.caps.get(c.adapterId);
     if (!caps || !c.session || c.state !== "connected") return;
-    const chats = new Map(this.store.bindings().filter(b => b.connection_id === c.id && !this.isGroup(b) && this.authorizedBinding(b))
+    const chats = new Map(this.store.bindings().filter(b => b.connection_id === c.id && !this.isGroup(b) && this.authorizedBinding(b) && this.notifies(b, "presence"))
       .map(b => [b.address_json, JSON.parse(b.address_json) as ImAddress]));
     const text = online
       ? this.say("Tomrade is online on your computer.", "电脑上的 Tomrade 已上线。")
@@ -1090,12 +1100,11 @@ export class Im extends Service {
 
   /**
    * Points the IM conversation at another thread. Only what that thread says from now on is sent; its history stays on the desktop.
-   * `home` is the conversation to go back to once a ticket's thread is archived; `carry` is a message that moves along, as a start's card.
+   * `home` is the conversation to go back to once a ticket's thread is archived.
    */
-  private rebind(b: Binding, threadId: string, cursor: number, actorId: string, also: (rebound: Binding) => void, opts: { home?: string; carry?: string } = {}) {
+  private rebind(b: Binding, threadId: string, cursor: number, actorId: string, also: (rebound: Binding) => void, opts: { home?: string } = {}) {
     this.store.db.transaction(() => {
-      this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed') AND id != ?", b.id, opts.carry ?? "");
-      if (opts.carry) this.store.run("UPDATE plugin_im_outbox SET thread_id = ? WHERE id = ? AND binding_id = ?", threadId, opts.carry, b.id);
+      this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
       this.store.run("UPDATE plugin_im_actions SET consumed = max(consumed, 1), retired = 1 WHERE binding_id = ?", b.id);
       this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = ?, actor_id = ?, anchor = NULL, home_thread = ? WHERE id = ?", threadId, cursor, actorId, opts.home ?? null, b.id);
       // What says so goes out on the new thread; one queued on the old would be dropped as stale.
@@ -1314,6 +1323,7 @@ export class Im extends Service {
       this.accept(row);
       return;
     }
+    if (kind === "follow") { this.follow(b, row, actorId, value, reply); return; }
     if (kind === "start" || kind === "start-adjust" || kind === "start!" || kind.startsWith("start-set:")) {
       const given = JSON.parse(value) as Partial<StartDraft> & { itemId: string };
       const item = this.code() ? this.startable(b.project_id, given.itemId) : null;
@@ -1550,8 +1560,8 @@ export class Im extends Service {
   /**
    * Starts the ticket headless on this computer. A gate it stops at is said
    * here — a ticket waiting on others can be started anyway; the rest are
-   * fixed on the desktop. Once it runs, this conversation follows the
-   * ticket's thread: its progress and questions come here, replies steer it.
+   * fixed on the desktop. Once it runs, this conversation stays where it is
+   * and watches the ticket; Follow here moves it onto the ticket's thread.
    */
   private async startNow(b: Binding, row: Inbox, actorId: string, draft: StartDraft, reply: { anchor: string | null }) {
     const code = this.code();
@@ -1565,7 +1575,6 @@ export class Im extends Service {
     const general = item.workType === "general";
     // The card clicked says at once that the start is under way, and takes no more clicks.
     this.store.run("UPDATE plugin_im_actions SET consumed = 2, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
-    const card = this.editableCard(b, draft.card);
     const settle = (on: Binding, en: string, zh: string) => this.settleStart(on, draft.card, en, zh);
     settle(b, ...this.startingText(b, item));
     let result: StartOutcome;
@@ -1588,26 +1597,42 @@ export class Im extends Service {
       }
       this.accept(row); return;
     }
-    const detail = this.home.agent.thread(b.project_id, result.threadId);
-    // From the start's own turn on; the ticket's earlier history stays on the desktop.
-    const first = result.runId ? detail.messages.find(m => m.runId === result.runId) : undefined;
-    const cursor = first ? first.seq - 1 : detail.messages.at(-1)?.seq ?? 0;
     const title = (await this.headless()).find(e => e.id === result.engine)?.title ?? result.engine;
+    // The conversation stays where it is; it hears about the ticket, and follows its session only when asked.
+    settle(b, result.continued ? `Continued ${item.key} ${item.title}` : `Started ${item.key} ${item.title}`, result.continued ? `已继续 ${item.key} ${item.title}` : `已开工 ${item.key} ${item.title}`);
+    this.watchItem(b, item.id);
+    this.accept(row);
+    const follow = this.offerValue(b, "follow", actorId, JSON.stringify({ threadId: result.threadId, runId: result.runId ?? null }));
+    this.enqueue(b, `started:${row.id}`, { text: [
+      result.continued ? this.say(`Continuing ${item.key} with ${title}.`, `已用 ${title} 继续 ${item.key}。`) : this.say(`Started ${item.key} with ${title}.`, `已用 ${title} 开工 ${item.key}。`),
+      ...(result.waitingOn ? [this.say(`It waits on your answer first: ${result.waitingOn}`, `它先等你回答：${result.waitingOn}`)] : []),
+      ...(result.warnings ?? []).map(w => `⚠ ${w}`),
+      this.say("Follow it here to see its progress and answer its questions in this conversation.", "在这里跟进，就能在本会话看到它的进度并回答问题。")
+    ].join("\n"), actions: [{ label: this.say("Follow here", "在这里跟进"), token: follow, style: "primary" }] }, reply);
+  }
+
+  /** This conversation follows a ticket's session from now on, and goes back once that session is archived. */
+  private follow(b: Binding, row: Inbox, actorId: string, value: string, reply: { anchor: string | null }) {
+    const { threadId, runId } = JSON.parse(value) as { threadId: string; runId: string | null };
+    const target = this.home.agent.store.thread(b.project_id, threadId);
+    if (!target || target.archived) this.refuse("That session has ended; /sessions lists the others", "该会话已结束；/sessions 可查看其他会话");
+    if (target.id === b.thread_id) { this.enqueue(b, `follow:${row.id}`, { text: this.say("Already here", "已经是当前会话") }, reply); this.accept(row); return; }
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) || this.home.agent.thread(b.project_id, b.thread_id).pending) {
+      this.refuse("Stop the current turn or answer its question first", "请先停止当前执行或回答问题");
+    }
+    const cursor = this.home.agent.thread(b.project_id, threadId).messages.at(-1)?.seq ?? 0;
     // Back to where this began once the ticket's thread is archived; from one ticket's thread, where that one began.
     const home = this.home.agent.store.thread(b.project_id, b.thread_id)?.itemId ? b.home_thread ?? undefined : b.thread_id;
-    this.rebind(b, result.threadId, cursor, actorId, rebound => {
-      settle(rebound, result.continued ? `Continued ${item.key} ${item.title}` : `Started ${item.key} ${item.title}`, result.continued ? `已继续 ${item.key} ${item.title}` : `已开工 ${item.key} ${item.title}`);
-      if (result.runId) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", rebound.id, result.runId);
-      this.watchItem(rebound, item.id);
+    const key = target.itemId ? this.items()?.get(b.project_id, target.itemId)?.key : undefined;
+    this.rebind(b, threadId, cursor, actorId, rebound => {
+      if (runId) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", rebound.id, runId);
       this.accept(row);
-      this.enqueue(rebound, `started:${row.id}`, { text: [
-        result.continued ? this.say(`Continuing ${item.key} with ${title}; its progress and questions come here.`, `已用 ${title} 继续 ${item.key}，进度和问题会发到这里。`)
-          : this.say(`Started ${item.key} with ${title}; its progress and questions come here.`, `已用 ${title} 开工 ${item.key}，进度和问题会发到这里。`),
-        ...(result.waitingOn ? [this.say(`It waits on your answer first: ${result.waitingOn}`, `它先等你回答：${result.waitingOn}`)] : []),
-        ...(result.warnings ?? []).map(w => `⚠ ${w}`),
+      this.enqueue(rebound, `follow:${row.id}`, { text: [
+        key ? this.say(`Following ${key} here; its progress and questions come here.`, `已在这里跟进 ${key}，进度和问题会发到这里。`)
+          : this.say("Following that session here.", "已在这里跟进该会话。"),
         this.say("/sessions takes you back to an earlier conversation.", "/sessions 可回到之前的会话。")
       ].join("\n") }, reply);
-    }, { ...(home ? { home } : {}), ...(card ? { carry: card } : {}) });
+    }, home ? { home } : {});
   }
 
   private ago(at: number): string {
@@ -1725,8 +1750,9 @@ export class Im extends Service {
     const code = this.code();
     let seen: CodeSeen = { pr: null, merged: false, blocked: false, proposals: [] };
     try { if (code) seen = codeSeen(code.summary(b.project_id, itemId)); } catch { return; }
-    this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at`, b.id, b.project_id, itemId, JSON.stringify(seen), Date.now());
+    const status = this.items()?.get(b.project_id, itemId)?.status ?? null;
+    this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at, status) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at, status = coalesce(status, excluded.status)`, b.id, b.project_id, itemId, JSON.stringify(seen), Date.now(), status);
   }
 
   /**
@@ -1740,6 +1766,7 @@ export class Im extends Service {
     if (this.stopped || !this.store || !host || !this.home.db.has(projectId)) return;
     let item: ReturnType<ReviewHost["get"]>;
     try { item = host.get(projectId, itemId); } catch { return; }
+    if (item) this.onStatus(projectId, item);
     if (!item?.evidence) return;
     const open = awaitingReview(item);
     const thread = runId ? this.home.agent.store.run(projectId, runId)?.threadId : undefined;
@@ -1762,6 +1789,44 @@ export class Im extends Service {
         ] }, { anchor: null });
       });
     }
+  }
+
+  /** A watched ticket moved: each conversation watching it hears where to, unless it turned that off. */
+  private onStatus(projectId: string, item: { id: string; key: string; title: string; status: string; version: number }) {
+    for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE project_id = ? AND item_id = ?", projectId, item.id)) {
+      if (w.status === item.status) continue;
+      this.store.run("UPDATE plugin_im_watch SET status = ? WHERE binding_id = ? AND item_id = ?", item.status, w.binding_id, item.id);
+      const b = this.store.binding(w.binding_id);
+      if (!w.status || !b || !this.authorizedBinding(b) || !this.notifies(b, "tickets")) continue;
+      const say = (en: string, zh: string) => this.say(en, zh);
+      this.enqueue(b, `item-status:${b.id}:${item.id}:${item.version}`, { text: `${item.key}: ${statusText(say, w.status)} → ${statusText(say, item.status)}`,
+        elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
+    }
+  }
+
+  /** A scheduled template ran: each conversation of its project that asked to hear about routines does. */
+  private onRoutine(projectId: string, run: RoutineRun, name: string) {
+    if (this.stopped || !this.store || !this.home.db.has(projectId)) return;
+    const keys = run.itemIds.map(id => this.items()?.get(projectId, id)?.key).filter((k): k is string => !!k);
+    for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "routines"))) {
+      const text = !run.ok ? this.say(`Routine “${name}” failed: ${run.error ?? "unknown error"}`, `例行事务“${name}”失败：${run.error ?? "未知错误"}`)
+        : keys.length ? this.say(`Routine “${name}” ran and made ${keys.join(", ")}`, `例行事务“${name}”已运行，新建了 ${keys.join("、")}`)
+        : this.say(`Routine “${name}” ran`, `例行事务“${name}”已运行`);
+      const open = run.threadId ? [{ type: "links" as const, links: [{ label: this.say("Open in Tomrade", "在 Tomrade 打开"), url: links.thread(projectId, run.threadId) }] }] : [];
+      this.enqueue(b, `routine:${b.id}:${run.id}`, { text, ...(open.length ? { elements: open } : {}) }, { anchor: null });
+    }
+  }
+
+  /** Whether this conversation hears about `kind`, as its route says. */
+  private notifies(b: Binding, kind: "tickets" | "code" | "presence" | "routines" | "attention"): boolean {
+    const notify = this.settings.routes.find(r => r.id === b.route_id)?.notify;
+    if (!notify) return kind !== "presence" && kind !== "routines";
+    return kind === "presence" ? notify.presence ?? this.settings.announcePresence : notify[kind];
+  }
+
+  /** Whether any conversation hears when Tomrade comes online or goes offline. */
+  private announces(): boolean {
+    return this.settings.routes.some(r => r.notify?.presence ?? this.settings.announcePresence);
   }
 
   /** A delivery's buttons stop working; its card, and any open request for changes, say how it ended. */
@@ -1817,8 +1882,9 @@ export class Im extends Service {
       this.store.db.transaction(() => {
         this.store.run("UPDATE plugin_im_watch SET seen_json = ? WHERE binding_id = ? AND item_id = ?", JSON.stringify(now), w.binding_id, w.item_id);
         const news = codeNews(say, was, now, summary);
-        if (news.length) this.enqueue(b, `code:${b.id}:${item.id}:${hash(now).slice(0, 16)}`, { text: news.join("\n"), elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
-        for (const p of summary.proposals.filter(p => p.kind === "propose" && !was.proposals.includes(p.id))) {
+        const tell = this.notifies(b, "code");
+        if (news.length && tell) this.enqueue(b, `code:${b.id}:${item.id}:${hash(now).slice(0, 16)}`, { text: news.join("\n"), elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
+        for (const p of tell ? summary.proposals.filter(p => p.kind === "propose" && !was.proposals.includes(p.id)) : []) {
           const choice = (verdict: "accept" | "reject") => this.offerValue(b, "proposal", b.actor_id, `${verdict}:${projectId}:${p.id}`);
           this.enqueue(b, `proposal:${b.id}:${p.id}`, { text: proposalText(say, item.key, p), actions: [
             { label: this.say("Accept", "接受"), token: choice("accept"), style: "primary" },

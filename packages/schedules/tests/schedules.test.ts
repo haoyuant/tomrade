@@ -69,6 +69,21 @@ it("runs on each of its schedules when they come due, and counts on from then", 
   }
 });
 
+it("says when a template ran on its schedule, and not when it was run by hand", async () => {
+  const t = await boot();
+  try {
+    const ran: [string, string, string][] = [];
+    t.ctx.on("schedules/ran", (projectId, run, name) => { ran.push([projectId, run.trigger, name]); });
+    const tpl = t.s.createTemplate(t.project.id, todo);
+    t.s.createSchedule(t.project.id, { templateId: tpl.id, cadence: { kind: "daily", at: "08:00" } }, at(2026, 10, 12, 7));
+    await t.s.runTemplate(t.project.id, tpl.id, { now: at(2026, 10, 12, 7, 30) });
+    await t.s.tick(at(2026, 10, 12, 8));
+    expect(ran).toEqual([[t.project.id, "schedule", "Daily to-do"]]);
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});
+
 it("waters the plants every three days from the day it was set up", async () => {
   const t = await boot();
   try {
