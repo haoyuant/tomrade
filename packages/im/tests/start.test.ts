@@ -56,6 +56,8 @@ async function boot() {
   const turns: { text: string; options: Record<string, unknown>; mode?: string }[] = [];
   let world!: Awaited<ReturnType<typeof fresh>>;
   let ticket = "";
+  /** While set, asking which engines can run waits for it, as probing real CLIs does. */
+  const probe: { hold: Promise<void> | null } = { hold: null };
   const turn: Engine["turn"] = async (input, io) => {
     const text = input.input.kind === "text" ? input.input.text : "";
     turns.push({ text, options: { ...(input.options as Record<string, unknown>) }, ...(input.permissionMode ? { mode: input.permissionMode } : {}) });
@@ -64,6 +66,7 @@ async function boot() {
       const item = world.ctx.items.getByKey(world.project.id, ticket)!;
       world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
     }
+    if (text === "wait" && probe.hold) await probe.hold;
     if (text.startsWith("Brief")) {
       await io.tools.execute("ask_user", { question: "Which page first?", freeText: true });
       return { stop: "end" };
@@ -77,7 +80,7 @@ async function boot() {
   } };
   world = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json"), locale: "en" }], [Agent, { mediaDir: path.join(dir, "media") }], FakeCode, [Im, { pollMs: 10, retryMs: 10, progressMs: 100, sweepMs: 50 }]] });
   cleanups.push(async () => { for (const r of world.ctx.agent.activeRuns()) world.ctx.agent.cancel(r.run.id); await expect.poll(() => world.ctx.agent.activeRuns().length).toBe(0); await world.ctx.fiber.dispose(); rmSync(dir, { recursive: true, force: true }); });
-  world.ctx.agent.engine({ id: "test", title: "Test", author: "ai:test", available: async () => ({ ok: true }), turn,
+  world.ctx.agent.engine({ id: "test", title: "Test", author: "ai:test", available: async () => { if (probe.hold) await probe.hold; return { ok: true }; }, turn,
     picks: () => [{ key: "model", title: "Model", choices: [{ value: "fast" }, { value: "deep", label: "Deep" }] }],
     permissionModes: { default: "ask", choices: [{ value: "ask", label: "Ask first" }, { value: "auto", label: "Auto" }] } });
   world.ctx.plugin(sdk(definePlugin({ inject: ["im"], async apply(ctx) { await ctx.im.register(adapter); } }), { id: "test/im", namespace: "test", origin: "extension" }));
@@ -92,7 +95,7 @@ async function boot() {
   const find = (match: RegExp) => delivered.filter(d => match.test(d.content.text)).at(-1);
   const said = async (match: RegExp) => { await expect.poll(() => find(match), { timeout: 5000 }).toBeDefined(); return find(match)!; };
   const bound = (conversation = "chat") => world.ctx.im.store.bindings().find(b => JSON.parse(b.address_json).conversationId === conversation)?.thread_id;
-  return { ...world, delivered, turns, code, item, receive, said, bound };
+  return { ...world, delivered, turns, code, item, receive, said, bound, probe };
 }
 
 const select = (els: ImElement[] | undefined, placeholder: string) => els?.find((e): e is Extract<ImElement, { type: "select" }> => e.type === "select" && e.placeholder === placeholder);
@@ -178,6 +181,45 @@ describe("starting a ticket from IM", () => {
     await expect.poll(() => w.ctx.im.store.all<{ state: string }>("SELECT state FROM plugin_im_inbox WHERE state = 'queued'").length).toBe(0);
     expect(w.code.starts).toHaveLength(1);
     expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
+  });
+
+  it("shows the start under way as soon as Start is pressed, before anything slow runs, and keeps repeat presses to one start", async () => {
+    const w = await boot();
+    await w.receive(say("a", "offer"));
+    await expect.poll(() => w.delivered.find(d => d.content.actions?.some(a => a.label === "Start")), { timeout: 5000 }).toBeDefined();
+    const card = w.delivered.find(d => d.content.actions?.some(a => a.label === "Start"))!;
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    let release!: () => void;
+    w.probe.hold = new Promise(resolve => { release = resolve; });
+    const start = card.content.actions![0].token;
+    await w.receive(act("go", start));
+    await w.receive(act("again", start));
+    const starting = await w.said(new RegExp(`^Starting ${w.item.key}…$`));
+    expect(starting.replaceMessageId).toBeDefined();
+    expect(starting.content.actions ?? []).toEqual([]);
+    expect(w.code.starts).toHaveLength(0);
+    expect(w.ctx.im.store.all("SELECT 1 FROM plugin_im_inbox WHERE json_extract(event_json, '$.token') = ?", start)).toHaveLength(1);
+    w.probe.hold = null;
+    release();
+    await w.said(/^Started .* with Test/);
+    expect(w.code.starts).toHaveLength(1);
+    expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
+  });
+
+  it("says on the card that nothing started when a press shown as under way is refused", async () => {
+    const w = await boot();
+    await w.receive(say("s", `/start ${w.item.key}`));
+    const card = await w.said(new RegExp(`^Start ${w.item.key} Fix the login page`));
+    let release!: () => void;
+    w.probe.hold = new Promise(resolve => { release = resolve; });
+    await w.receive(say("w", "wait"));
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(1);
+    await w.receive(act("go", card.content.actions![0].token));
+    await w.said(/Cannot process message: Stop the current turn/);
+    expect((await w.said(new RegExp(`^${w.item.key} wasn't started$`))).replaceMessageId).toBeDefined();
+    expect(w.code.starts).toHaveLength(0);
+    w.probe.hold = null;
+    release();
   });
 
   it("goes back to the conversation it left once the ticket is done and its session archived, and the next message goes there", async () => {

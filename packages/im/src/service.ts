@@ -647,7 +647,16 @@ export class Im extends Service {
         event.kind === "message" ? (event.activation === "dm" ? 0 : 1) : null);
       b = this.store.binding(bindingId)!;
     }
+    const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, true) : null;
+    if (press) {
+      // Start pressed again before the first press is handled: that one start is all it asks for.
+      const first = this.store.get<{ id: string }>("SELECT id FROM plugin_im_inbox WHERE binding_id = ? AND json_extract(event_json, '$.token') = ? AND json_extract(event_json, '$.actor.id') = ? LIMIT 1",
+        b.id, (event as { token: string }).token, event.actor.id);
+      if (first) return { receiptId: first.id };
+    }
     this.store.run("INSERT INTO plugin_im_inbox (id, message_key, binding_id, event_json, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)", id, messageKey, b.id, JSON.stringify(event), fingerprint, Date.now());
+    // The card says so before anything slower runs, so the press shows at once and its buttons go.
+    if (press) this.settleStart(b, press.card, ...this.startingText(b, press.item));
     return { receiptId: id };
   }
 
@@ -929,6 +938,9 @@ export class Im extends Service {
         this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorText(e), row.id);
         const event = JSON.parse(row.event_json) as ImInbound;
         const anchor = anchorOf(event);
+        // A Start press shown as under way, then refused, says on its card that nothing started.
+        const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, false) : null;
+        if (press) this.settleStart(b, press.card, `${press.item.key} wasn't started`, `${press.item.key} 未开工`);
         // In a group, a refusal is for the sender only where the platform can say so privately.
         if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.say(`Cannot process message: ${errorText(e)}`, `无法处理消息：${errorText(e)}`) },
           { anchor, visibleTo: anchor ? event.actor.id : null });
@@ -1509,6 +1521,32 @@ export class Im extends Service {
     ] };
   }
 
+  /** The start card a Start press belongs to, when pressing it starts the work rather than showing the settings first. `fresh` asks for a press not yet handled. */
+  private startPress(b: Binding, actionToken: string, actorId: string, fresh: boolean): { card: string; item: { id: string; key: string } } | null {
+    const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
+    if (!a?.value_json || a.binding_id !== b.id || a.actor_id !== actorId || a.thread_id !== b.thread_id) return null;
+    if (fresh && (a.consumed || a.expires_at < Date.now())) return null;
+    if (a.question_id !== "cmd:start!" && (a.question_id !== "cmd:start" || this.isGroup(b))) return null;
+    let given: Partial<StartDraft>;
+    try { given = JSON.parse(JSON.parse(a.value_json) as string) as Partial<StartDraft>; } catch { return null; }
+    const item = given.itemId && given.card ? this.items()?.get(b.project_id, given.itemId) : null;
+    return item ? { card: given.card!, item } : null;
+  }
+
+  private startingText(b: Binding, item: { id: string; key: string }): [string, string] {
+    return this.continuing(b, item.id) ? [`Continuing ${item.key}…`, `正在继续 ${item.key}…`] : [`Starting ${item.key}…`, `正在开工 ${item.key}…`];
+  }
+
+  /** The card, where this platform can change a message it sent. */
+  private editableCard(b: Binding, card: string): string | null {
+    return (this.capsOf(b)?.cardUpdate || this.capsOf(b)?.edit) && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ? AND binding_id = ?", card, b.id) ? card : null;
+  }
+
+  /** The start card says how the start stands, with no buttons left. */
+  private settleStart(b: Binding, card: string, en: string, zh: string) {
+    if (this.editableCard(b, card)) this.replace(b, card, { text: this.say(en, zh) });
+  }
+
   /**
    * Starts the ticket headless on this computer. A gate it stops at is said
    * here — a ticket waiting on others can be started anyway; the rest are
@@ -1527,10 +1565,9 @@ export class Im extends Service {
     const general = item.workType === "general";
     // The card clicked says at once that the start is under way, and takes no more clicks.
     this.store.run("UPDATE plugin_im_actions SET consumed = 2, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
-    const card = (this.capsOf(b)?.cardUpdate || this.capsOf(b)?.edit) && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ? AND binding_id = ?", draft.card, b.id) ? draft.card : null;
-    const continuing = this.continuing(b, item.id);
-    const settle = (on: Binding, en: string, zh: string) => { if (card) this.replace(on, card, { text: this.say(en, zh) }); };
-    settle(b, continuing ? `Continuing ${item.key}…` : `Starting ${item.key}…`, continuing ? `正在继续 ${item.key}…` : `正在开工 ${item.key}…`);
+    const card = this.editableCard(b, draft.card);
+    const settle = (on: Binding, en: string, zh: string) => this.settleStart(on, draft.card, en, zh);
+    settle(b, ...this.startingText(b, item));
     let result: StartOutcome;
     try {
       result = await code.start(b.project_id, item.id, { mode: "run",
