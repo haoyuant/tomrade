@@ -59,6 +59,10 @@ export function codeFields(say: Say, code: CodeSummary | null): { fields: { labe
   return { fields, links: urls };
 }
 
+export function statusText(say: Say, status: string): string {
+  return say(...(STATUS[status] ?? [status, status]));
+}
+
 /** A ticket as a card: key and title, its state and code, and links to its pull request and to the ticket on the desktop. */
 export function ticket(scope: RenderScope, key: string, title: string, op?: string): ImElement[] {
   const { say } = scope;

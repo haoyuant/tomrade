@@ -61,6 +61,8 @@ declare module "cordis" {
   interface Events {
     /** A project's templates, schedules or runs changed. */
     "schedules/changed"(projectId: string): void;
+    /** A template ran on its schedule, or caught up a missed time. */
+    "schedules/ran"(projectId: string, run: TemplateRun, name: string): void;
   }
 }
 
@@ -414,6 +416,7 @@ export class Schedules extends Service {
       .run(run.id, run.templateId, run.scheduleId, run.at, run.trigger, run.ok ? 1 : 0, JSON.stringify(run.itemIds), run.threadId, run.error);
     if (run.scheduleId) this.db(projectId).prepare("UPDATE plugin_schedules_automations SET last_run_at = ? WHERE id = ?").run(now, run.scheduleId);
     this.changed(projectId);
+    if (run.trigger !== "manual") this.home.emit("schedules/ran", projectId, run, template.name);
     return run;
   }
 
