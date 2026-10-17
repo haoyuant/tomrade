@@ -1348,7 +1348,7 @@ describe("starting a ticket", () => {
     ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
     await ctx.plugin({ name: "fake-acp", inject: ["agent"], apply: (c: Context) => {
       c.agent.engine({ ...fakeCodeEngine([]), id: "workbuddy", title: "WorkBuddy", author: "ai:workbuddy" });
-      c.agent.engine({ ...fakeCodeEngine([]), id: "dsh", title: "dsh", author: "ai:dsh", terminal: false });
+      c.agent.engine({ ...fakeCodeEngine([]), id: "inside", title: "Inside", author: "ai:inside", terminal: false });
     } });
     const { Mcp } = await import("@tomradex/mcp");
     await ctx.plugin(Mcp, { port: 0 });
@@ -1357,11 +1357,60 @@ describe("starting a ticket", () => {
     const result = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "workbuddy", options: { model: "hy3" } });
     expect(result.ok ? result.command : result).toMatch(/^codebuddy --model hy3 --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
 
-    const other = ticket("dsh terminal work");
-    expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "dsh" }))
-      .toEqual({ ok: false, gate: "engine", engine: "dsh", message: "dsh runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
-    const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "dsh general work", workType: "general", status: "todo", by: "human" });
-    expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "dsh" })).toMatchObject({ ok: false, gate: "engine" });
+    const other = ticket("Inside terminal work");
+    expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "inside" }))
+      .toEqual({ ok: false, gate: "engine", engine: "inside", message: "Inside runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
+    const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "Inside general work", workType: "general", status: "todo", by: "human" });
+    expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "inside" })).toMatchObject({ ok: false, gate: "engine" });
+  });
+
+  it("runs DeepSeek Harness in a terminal as one headless run, with a session-only server, shown and reported, then resumed", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    // Found inside the desktop app, not on PATH.
+    const bin = "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh";
+    await ctx.plugin({ name: "fake-dsh", inject: ["agent"], apply: (c: Context) => {
+      c.agent.engine({ ...fakeCodeEngine([]), id: "dsh", title: "DeepSeek Harness", author: "ai:dsh", terminal: true,
+        available: async () => ({ ok: true, cli: { name: "dsh", state: "ready", path: bin, attempts: [], searched: [], platform: "darwin", arch: "arm64", pathEnv: "" } }) });
+    } });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    const item = ticket("DeepSeek Harness terminal work");
+    const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "dsh" });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const dir = codeLink.sessionDir(started.sessionId);
+    expect(started.command).toBe(`"${bin}" --profile headless --patch "${path.join(dir, "dsh-patch.yml")}" --json - < "${path.join(dir, "prompt.md")}" | ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(dir, "dsh-report.mjs")}"`);
+    const patch = fs.readFileSync(path.join(dir, "dsh-patch.yml"), "utf8");
+    expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'");
+    expect(patch).toContain(`url: "${ctx.mcp.urlFor(project.id)}"`);
+    expect(patch).toContain(`X-Tomrade-Run: "${codeLink.sessions.token(started.sessionId)}"`);
+
+    // The run's --json events, as DeepSeek Harness 0.2.0-rc.2 writes them, through the generated script.
+    const events = [
+      { type: "session", sessionId: "session-abc", cwd: checkout },
+      { type: "status", phase: "turn_start", turn: 1 },
+      { type: "tool_call", callId: "c1", tool: "bash", input: { command: "echo hi" } },
+      { type: "tool_result", callId: "c1", status: "completed", result: "hi\n" },
+      { type: "text", text: "Done." },
+      { type: "final", text: "Done." }
+    ].map((e) => JSON.stringify(e)).join("\n") + "\n";
+    const { execFile } = await import("node:child_process");
+    const shown = await new Promise<string>((resolve, reject) => {
+      const child = execFile(process.execPath, [path.join(dir, "dsh-report.mjs")], (err, stdout) => (err ? reject(err) : resolve(stdout)));
+      child.stdin!.end(events);
+    });
+    expect(shown).toContain("DeepSeek Harness session session-abc");
+    expect(shown).toContain("> bash echo hi");
+    expect(shown).toContain("Done.");
+    const [session] = codeLink.sessionsOf(project.id, item.id);
+    expect(session).toMatchObject({ agent: "dsh", externalId: "session-abc", state: "ended" });
+
+    // Continue resumes that session.
+    const again = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "dsh" });
+    expect(again.ok ? again.command : again).toContain("--json --session-id session-abc -");
   });
 
   it("starts Hermes in a terminal once its own sessions reach Tomrade, and asks for that first", async () => {
