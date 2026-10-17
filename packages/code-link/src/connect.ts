@@ -19,9 +19,12 @@ const CODEX_START = "# BEGIN TOMRADE MCP";
 const CODEX_END = "# END TOMRADE MCP";
 export const CODEX_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "SessionEnd"] as const;
 
-export function hookCommand(eventUrl: string, agent?: "codex"): string {
+/** Agents whose committed hooks name themselves; Claude Code's carry no header. */
+export type HookAgent = "codex" | "workbuddy";
+
+export function hookCommand(eventUrl: string, agent?: HookAgent): string {
   const url = eventUrl.replace(/'/g, "'\\''");
-  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${agent ? " -H 'X-Tomrade-Agent: codex'" : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
+  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
 }
 
 /** Keep comments and unrelated tables; inline-array hooks need TOML reserialization to append safely. */
@@ -65,8 +68,8 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
   return [
     SECTION_START,
     "",
-    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code, \`.codex/config.toml\` for Codex).`,
-    "Claude Code and Codex report session lifecycle through repository hooks. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.",
+    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex).`,
+    "Claude Code, Codex and WorkBuddy report session lifecycle through repository hooks. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.",
     "Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Neither reports its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
@@ -144,9 +147,10 @@ function readJson(file: string): Record<string, unknown> | null {
  * Lay the agent connection files down in a worktree: Claude and Codex each
  * gain a project-scoped `tomrade` MCP server; CLAUDE.md and AGENTS.md gain or
  * replace their `## Tomrade` section; Codex gains the `tomrade-sync` skill;
- * `.claude/settings.json` gains one hook per lifecycle event that posts to
- * Tomrade. Everything else in each file is kept as it was. Returns the files
- * that changed.
+ * `.claude/settings.json` and WorkBuddy's `.codebuddy/settings.json` gain one
+ * hook per lifecycle event that posts to Tomrade; WorkBuddy reads `.mcp.json`
+ * and AGENTS.md as they are. Everything else in each file is kept as it was.
+ * Returns the files that changed.
  */
 export function writeConnectFiles(root: string, input: ConnectInput): string[] {
   const changed: string[] = [];
@@ -204,12 +208,13 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
     changed.push(".agents/skills/tomrade-sync/SKILL.md");
   }
 
-  const settingsFile = path.join(root, ".claude", "settings.json");
-  const settings = readJson(settingsFile);
-  if (!settings) throw new Error("Cannot update .claude/settings.json: expected a JSON object");
-  {
+  // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
+  for (const [name, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"]] as const) {
+    const settingsFile = path.join(root, name);
+    const settings = readJson(settingsFile);
+    if (!settings) throw new Error(`Cannot update ${name}: expected a JSON object`);
     const hooks = { ...((settings.hooks as Record<string, unknown[]> | undefined) ?? {}) };
-    const command = hookCommand(input.eventUrl);
+    const command = hookCommand(input.eventUrl, agent);
     let touched = false;
     for (const event of HOOK_EVENTS) {
       const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];
@@ -226,7 +231,7 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
     if (touched) {
       fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
       fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, hooks }, null, 2) + "\n");
-      changed.push(".claude/settings.json");
+      changed.push(name);
     }
   }
   return changed;
