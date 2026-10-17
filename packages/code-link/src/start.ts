@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import type { Context } from "cordis";
-import type { Agent, Engine } from "@tomradex/agent";
+import type { Agent, Engine, EngineAvailability } from "@tomradex/agent";
 import { rulesSection } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
@@ -427,7 +427,7 @@ export class Starter {
     return { ...base, command, launched: launch.launched };
   }
 
-  /** A local coding agent that is installed and ready; the in-app model never qualifies. */
+  /** The first code engine that can take a ticket right now; one that can only chat (Tomrade with no model) is passed over. */
   async pickEngine(agent: Agent, asked?: string, terminal = false): Promise<{ ok: true; engine: Engine } | { ok: false; reason: string }> {
     const wanted = asked && agent.answering(asked);
     const inside = terminal && wanted ? insideOnly(agent, wanted) : null;
@@ -438,9 +438,13 @@ export class Starter {
     if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code, Codex or Pi, then try again" };
     const reasons: string[] = [];
     for (const engine of candidates) {
-      const state = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
+      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
       if (!state.ok) {
         reasons.push(`${engine.title}: ${state.reason ?? "not available"}`);
+        continue;
+      }
+      if (state.capabilities && !state.capabilities.includes("code")) {
+        reasons.push(`${engine.title}: can only chat for now — connect a model in Settings → Assistant to run tickets`);
         continue;
       }
       const unlinked = terminal ? await linkFirst(engine, this.host.ctx.settings.locale?.()) : null;
