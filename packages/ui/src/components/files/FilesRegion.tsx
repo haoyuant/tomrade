@@ -38,7 +38,7 @@ import {
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles, reveal } from "~/lib/shell";
-import { errorSpec, useToast } from "~/lib/toast";
+import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { takeEditRequest, useFileMode, useNoteTags, useNotesEnabled, type FileMode } from "~/lib/notes";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
 import { Backlinks } from "./Backlinks";
@@ -604,7 +604,7 @@ function PinnedVersion({ projectId, ref }: { projectId: string; ref: FileReferen
       <div className="files-main">
         <div className="dangerbar" data-testid="pinned-missing">
           <Icon className="b-mark" name="i-warn" size={15} />
-          <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>{version.error ? version.error.message : t("files.missingVersion")}</p>
+          <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>{version.error ? readableError(version.error) : t("files.missingVersion")}</p>
         </div>
       </div>
     );

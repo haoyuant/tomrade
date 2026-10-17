@@ -5,6 +5,7 @@ import { Icon } from "~/components/icons";
 import { useWorkspace } from "~/components/workspace/context";
 import { useI18n } from "~/lib/i18n";
 import { notesSearch, useNoteSearch, useNoteTags, useNotesSearchState } from "~/lib/notes";
+import { readableError } from "~/lib/toast";
 
 function Marked({ text, marks }: { text: string; marks: [number, number][] }) {
   const parts: ReactNode[] = [];
@@ -104,7 +105,7 @@ export function NotesSearch() {
           )}
         </div>
       ) : results.isError ? (
-        <p className="meta-txt dense notes-search-note">{results.error.message}</p>
+        <p className="meta-txt dense notes-search-note">{readableError(results.error)}</p>
       ) : data ? (
         <>
           <p className="meta-txt dense notes-search-note" data-testid="notes-search-count">

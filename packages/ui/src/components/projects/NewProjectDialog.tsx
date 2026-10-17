@@ -6,7 +6,7 @@ import { Eyebrow } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { useCreateProject, useHubInfo } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /** Prefix preview mirrors keyPrefixFor() in the domain: first three letters, uppercased. */
 const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ISS";
@@ -69,7 +69,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
           setDirEdit(null);
           void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
         },
-        onError: (err) => toast({ body: err instanceof Error ? err.message : String(err) })
+        onError: (err) => toast(errorSpec(err))
       }
     );
   };

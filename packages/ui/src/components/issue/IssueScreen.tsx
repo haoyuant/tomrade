@@ -30,6 +30,7 @@ import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/do
 import { useI18n } from "~/lib/i18n";
 import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 import { keyLabel } from "~/lib/keybindings";
+import { readableError } from "~/lib/toast";
 import { useSettingsHost } from "~/lib/settingsHost";
 
 /** backlog → todo → doing → verifying → done. The header offers the next step. */
@@ -84,9 +85,21 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
           </Link>
         </header>
         <main className="sheet">
-          <div className="issue-wrap">
-            <p className="meta-txt">{items.isLoading ? t("issueScreen.loading") : t("issueScreen.notInProject")}</p>
-          </div>
+          {items.isError ? (
+            <div className="route-error" role="alert" data-testid="issue-read-failed">
+              <p className="meta-txt">{t("issueScreen.readFailed")}</p>
+              <code className="route-error-detail">{readableError(items.error)}</code>
+              <div className="row">
+                <button type="button" className="btn btn-primary" disabled={items.isFetching} onClick={() => void items.refetch()}>
+                  {t("common.tryAgain")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="issue-wrap">
+              <p className="meta-txt">{items.isLoading ? t("issueScreen.loading") : t("issueScreen.notInProject")}</p>
+            </div>
+          )}
         </main>
         <StatusBar projectId={projectId} />
       </div>

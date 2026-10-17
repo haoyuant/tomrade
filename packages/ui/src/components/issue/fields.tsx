@@ -6,7 +6,7 @@ import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket, usd } from "
 import { useI18n } from "~/lib/i18n";
 import { useDoneGuard } from "~/lib/doneGuard";
 import { usePatchItem } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { useToastUndo } from "~/lib/undo";
 
@@ -43,9 +43,7 @@ export function useIssueWriter(projectId: string): { write: IssueWrite; pending:
         },
         // a refused edit that says nothing reads as an edit that silently did not happen
         (err: Error) => {
-          toast({
-            body: /conflict/i.test(err.message) ? tx("fields.conflictToast", { key: <span className="num">{item.key}</span> }) : err.message
-          });
+          toast(/conflict/i.test(err.message) ? { body: tx("fields.conflictToast", { key: <span className="num">{item.key}</span> }) } : errorSpec(err));
           return false;
         }
       );

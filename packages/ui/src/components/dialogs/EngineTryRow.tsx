@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { agentKeys } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
+import { readableError } from "~/lib/toast";
 import { useCurrentProject } from "./plugins/parts";
 
 /**
@@ -25,7 +26,7 @@ export function EngineTryRow({ engine, command }: { engine: EngineView; command?
     try {
       setLast(await invoke("agent.tryEngine", projectId ?? null, engine.id));
     } catch (error) {
-      setLast({ ok: false, ms: 0, at: Date.now(), error: error instanceof Error ? error.message : String(error) });
+      setLast({ ok: false, ms: 0, at: Date.now(), error: readableError(error) });
     } finally {
       setRunning(false);
       void qc.invalidateQueries({ queryKey: agentKeys.engines });

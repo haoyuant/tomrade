@@ -109,9 +109,7 @@ export function DeleteIssueDialog({
           toast({ body: <>{tx("deleteIssueDialog.deletedToast", { key: <span className="num">{item.key}</span>, cmdz: <span className="num">{keyLabel("undo")}</span> })}</> });
         },
         onError: (err) =>
-          toast({
-            body: /conflict/i.test(err.message) ? tx("deleteIssueDialog.conflictToast", { key: <span className="num">{item.key}</span> }) : err.message
-          })
+          toast(/conflict/i.test(err.message) ? { body: tx("deleteIssueDialog.conflictToast", { key: <span className="num">{item.key}</span> }) } : errorSpec(err))
       }
     );
   };

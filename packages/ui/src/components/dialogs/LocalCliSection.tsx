@@ -6,7 +6,7 @@ import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { cliDiagnostics, engineStatus, useRecheckEngines } from "~/lib/localCli";
 import { openExternal, pickProgram } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 
 /**
  * Inside a local agent's engine row: which CLI it runs and where that came
@@ -39,7 +39,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
         onSaveCommand(check.path);
       }
     } catch (error) {
-      setResult({ ok: false, path: file, error: error instanceof Error ? error.message : String(error) });
+      setResult({ ok: false, path: file, error: readableError(error) });
     } finally {
       setChecking(false);
     }

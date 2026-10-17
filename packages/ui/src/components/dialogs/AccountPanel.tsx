@@ -264,7 +264,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
       <p className="meta-txt">{t.intro}</p>
     </> : step.kind === "form" && <p className="meta-txt">{t.why}</p>}
     {account.isPending ? <p>{t.loading}</p> : account.error ? <>
-      <p role="alert">{account.error.message}</p><button className="btn btn-secondary" onClick={() => void account.refetch()}>{t.retry}</button>
+      <p role="alert">{explain(account.error)}</p><button className="btn btn-secondary" onClick={() => void account.refetch()}>{t.retry}</button>
     </> : account.data?.user && deleting ? <form className="account-step stack-3" noValidate aria-labelledby="account-delete-title" onSubmit={e => {
       e.preventDefault();
       if (!deleting.password) return;

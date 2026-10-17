@@ -6,6 +6,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useMcpServers, useParseMcpConfig, useReconnectMcpServer, useTestMcpServer } from "~/lib/mcpClient";
 import { useSaveSettings, useSettings } from "~/lib/queries";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
+import { readableError } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,23}$/;
@@ -336,7 +337,7 @@ export function McpServersPane() {
   const persist = (next: McpServerConfig[], done?: () => void) => {
     if (!settings.data) return;
     setError(null);
-    save.mutate({ ...settings.data, mcpServers: { servers: next } }, { onSuccess: () => done?.(), onError: (e) => setError(e.message) });
+    save.mutate({ ...settings.data, mcpServers: { servers: next } }, { onSuccess: () => done?.(), onError: (e) => setError(readableError(e)) });
   };
   const replace = (id: string, config: McpServerConfig) => persist(configs.map((c) => (c.id === id ? config : c)), () => setEditing(null));
 

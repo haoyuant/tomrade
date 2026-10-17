@@ -20,7 +20,7 @@ import { useAttention, type AttentionEntry } from "~/lib/attention";
 import { offerStart, permissionLabel as permissionName } from "~/lib/codeLink";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
-import { useErrorToast, useToast } from "~/lib/toast";
+import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { ChecklistBlock, FindingBlock } from "./DoctorCards";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
@@ -967,7 +967,7 @@ export function AgentPanel({
       setSentRun(runId);
       if (!queued) { if (text) remember(projectId, text); setDraft(""); setAttachments([]); }
       return true;
-    } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); return false; }
+    } catch (error) { setAttachmentError(readableError(error)); return false; }
     finally { sending.current = false; setUploading(false); }
   };
 
@@ -1073,7 +1073,7 @@ export function AgentPanel({
       following.current = true;
       setDraft(""); setAskReopen(false);
       pickThread(result.threadId);
-    } catch (error) { setAttachmentError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setAttachmentError(readableError(error)); }
     finally { setReopening(false); }
   };
 

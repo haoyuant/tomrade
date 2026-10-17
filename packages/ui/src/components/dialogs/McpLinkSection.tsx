@@ -2,6 +2,7 @@ import type { EngineView, McpLinkView } from "@tomradex/agent";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
+import { readableError } from "~/lib/toast";
 
 /**
  * Inside a local agent's engine row: whether sessions the person starts in a
@@ -19,7 +20,8 @@ export function McpLinkSection({ engine }: { engine: EngineView }) {
     onSuccess: (view: McpLinkView) => qc.setQueryData(key, view)
   });
   const view = change.data ?? status.data;
-  const failure = change.error?.message ?? status.error?.message;
+  const failed = change.error ?? status.error;
+  const failure = failed ? readableError(failed) : undefined;
   const rows = view?.profiles ?? (view ? [view] : []);
 
   return (

@@ -5,6 +5,7 @@ import type {} from "@tomradex/files";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { invalidateFiles } from "~/lib/files";
+import { readableError } from "~/lib/toast";
 import { Dialog, DialogHead, DialogBody } from "~/components/ui/dialog";
 
 export function AgentMedia({ projectId, threadId, media, caption }: { projectId: string; threadId: string; media: MediaRef; caption?: string }) {
@@ -44,7 +45,7 @@ export function AgentMedia({ projectId, threadId, media, caption }: { projectId:
   // A separate sandbox origin permits viewer controls without access to Tomrade or network.
   const isolatedHtml = html === undefined ? undefined : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none';">${html}`;
   return <figure style={{ margin: "8px 0", minWidth: 0 }}>
-    {content.isError && <p role="alert">{content.error.message}</p>}
+    {content.isError && <p role="alert">{readableError(content.error)}</p>}
     {url && (media.mime.startsWith("image/") ? <img src={url} alt={caption ?? media.name} style={{ maxWidth: "100%", borderRadius: 8 }} />
       : isolatedHtml !== undefined ? <iframe title={caption ?? media.name} srcDoc={isolatedHtml} sandbox="allow-scripts allow-downloads" style={{ width: "100%", height: 360, border: "1px solid var(--border)", borderRadius: 8 }} />
       : media.mime.startsWith("audio/") ? <audio controls src={url} style={{ width: "100%" }} />
@@ -58,7 +59,7 @@ export function AgentMedia({ projectId, threadId, media, caption }: { projectId:
         {t(save.isSuccess ? "agentPanel.mediaSaved" : "agentPanel.saveMedia")}
       </button>
     </figcaption>
-    {save.isError && <p role="alert">{save.error.message}</p>}
+    {save.isError && <p role="alert">{readableError(save.error)}</p>}
     <Dialog open={expanded} onOpenChange={setExpanded} label={caption ?? media.name} className="sheet-settings">
       <DialogHead title={caption ?? media.name} />
       <DialogBody>

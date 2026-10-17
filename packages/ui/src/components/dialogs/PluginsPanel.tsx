@@ -7,7 +7,7 @@ import { usePanelOpen } from "~/lib/panel";
 import { useAddFolder, useInstallFile, useUpdates } from "~/lib/plugins";
 import { usePlugins, useSetPluginEnabled } from "~/lib/queries";
 import { pickDirectory, pickFiles } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { BrowseTab } from "./plugins/BrowseTab";
 import { ExtensionRow } from "./plugins/ExtensionRow";
@@ -291,7 +291,7 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
 
   const toggle = (id: string, enabled: boolean) => {
     setRefused(null);
-    setEnabled.mutate({ id, enabled }, { onError: (e) => setRefused({ id, message: e.message }) });
+    setEnabled.mutate({ id, enabled }, { onError: (e) => setRefused({ id, message: readableError(e) }) });
   };
 
   const fromFile = async () => {

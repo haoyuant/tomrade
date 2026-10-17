@@ -5,6 +5,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { useFilesTree } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { pickFiles } from "~/lib/shell";
+import { readableError } from "~/lib/toast";
 
 /**
  * Choose project files. What comes back are entries; the caller pins their
@@ -60,7 +61,7 @@ export function FilePickerDialog({ projectId, open, onOpenChange, title, busy, o
               </span>
             </button>
           ))}
-          {!files.length && !tree.isLoading && <p className="meta-txt dense">{tree.error ? tree.error.message : t("files.pickEmpty")}</p>}
+          {!files.length && !tree.isLoading && <p className="meta-txt dense">{tree.error ? readableError(tree.error) : t("files.pickEmpty")}</p>}
         </div>
         {landing && onImport && (
           <div className="row file-picker-landing" data-landing={landing}>

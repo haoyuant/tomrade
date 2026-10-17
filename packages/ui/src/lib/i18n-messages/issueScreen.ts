@@ -3,6 +3,7 @@ export const issueScreen = {
     backProjects: "Projects",
     loading: "Loading…",
     notInProject: "That issue is not in this project.",
+    readFailed: "This project's issues could not be read — that does not mean this one is gone.",
     moveToButton: "Move to {{status}}",
     fieldKind: "Kind",
     kindTicket: "Ticket"
@@ -11,6 +12,7 @@ export const issueScreen = {
     backProjects: "项目",
     loading: "加载中…",
     notInProject: "该工作项不在此项目中。",
+    readFailed: "没能读取这个项目的工作项——这不代表这一项已经不在了。",
     moveToButton: "移动到{{status}}",
     fieldKind: "类型",
     kindTicket: "工作项"

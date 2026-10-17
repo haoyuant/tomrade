@@ -5,6 +5,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { readableError } from "~/lib/toast";
 
 const KINDS: ReportKind[] = ["bug", "feedback", "idea"];
 
@@ -62,7 +63,7 @@ export function FeedbackDialog({ open, onOpenChange, onTroubleshoot }: { open: b
             )}
             <textarea className="input report-note" rows={6} autoFocus value={text} placeholder={t(`feedback.placeholder_${kind}` as MessageKey)} aria-label={t("feedback.title")} onChange={(e) => setText(e.target.value)} />
             {app && <p className="meta-txt">{t("feedback.goesWith", { app: `Tomrade ${app.version} · ${app.os} · ${app.locale}` })}</p>}
-            {send.error && <p className="ai-error">{send.error.message}</p>}
+            {send.error && <p className="ai-error">{readableError(send.error)}</p>}
           </>
         )}
       </DialogBody>

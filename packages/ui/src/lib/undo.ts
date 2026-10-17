@@ -2,7 +2,7 @@ import { STALE_UNDO } from "@tomradex/domain";
 import { messageOf } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { useUndo } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /**
  * A toast's Undo: takes back the one write the toast announced — named by the
@@ -18,6 +18,6 @@ export function useToastUndo(projectId: string) {
   return (target: { id: string; stamp?: number }) =>
     undo.mutate(target.stamp === undefined ? target.id : { id: target.id, stamp: target.stamp }, {
       onSuccess: (step) => toast({ body: step ? step.summary : t("toast.nothingToUndo") }),
-      onError: (err) => toast({ body: messageOf(err).includes(STALE_UNDO) ? t("toast.changedSince") : messageOf(err) })
+      onError: (err) => toast(messageOf(err).includes(STALE_UNDO) ? { body: t("toast.changedSince") } : errorSpec(err))
     });
 }

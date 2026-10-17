@@ -5,7 +5,7 @@ import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { forgetRaisedHints } from "~/lib/onboarding";
 import { keys } from "~/lib/queries";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /** Onboarding from the top, as often as wanted; putting the sample back as it began is asked, since it deletes what was done there. */
 export function RestartOnboardingDialog({ open, onOpenChange, hasSample, onRestarted }: { open: boolean; onOpenChange: (open: boolean) => void; hasSample: boolean; onRestarted: () => void }) {
@@ -21,7 +21,7 @@ export function RestartOnboardingDialog({ open, onOpenChange, hasSample, onResta
       onOpenChange(false);
       onRestarted();
     },
-    onError: (err) => toast({ body: err instanceof Error ? err.message : String(err) })
+    onError: (err) => toast(errorSpec(err))
   });
 
   return (

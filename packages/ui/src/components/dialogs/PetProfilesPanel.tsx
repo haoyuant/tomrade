@@ -7,6 +7,7 @@ import { PetCanvas } from "~/components/workspace/PetCanvas";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useActivatePetProfile, useClearPetImage, useCreatePetProfile, useDeletePetProfile, usePetPreview, usePetProfiles, useSetPetImage, useUpdatePetProfile } from "~/lib/pet";
 import { measurePetImage, PET_IMAGE_TYPES } from "~/lib/petPlayer";
+import { readableError } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 
 const moodKey = (mood: PetMood) => `petProfiles.mood_${mood}` as MessageKey;
@@ -33,7 +34,7 @@ function MoodSlot({ profile, mood, maxBytes, onError }: { profile: PetProfileVie
       });
       await setImage.mutateAsync({ id: profile.id, mood, upload: { base64: await readAttachment(file), box } });
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
+      onError(readableError(error));
     } finally {
       setReading(false);
     }
@@ -54,7 +55,7 @@ function MoodSlot({ profile, mood, maxBytes, onError }: { profile: PetProfileVie
               {reading ? t("petProfiles.reading") : custom ? t("petProfiles.replace") : t("petProfiles.choose")}
             </button>
             {custom && (
-              <button type="button" className="btn btn-ghost btn-xs" disabled={clearImage.isPending} onClick={() => clearImage.mutate({ id: profile.id, mood }, { onError: (e) => onError(e.message) })}>
+              <button type="button" className="btn btn-ghost btn-xs" disabled={clearImage.isPending} onClick={() => clearImage.mutate({ id: profile.id, mood }, { onError: (e) => onError(readableError(e)) })}>
                 {t("petProfiles.useBuiltIn")}
               </button>
             )}
@@ -87,7 +88,7 @@ function ProfileEditor({ profile, moods, maxBytes }: { profile: PetProfileView; 
   useEffect(() => setError(null), [profile.id]);
 
   const rename = () => {
-    if (name.trim() && name.trim() !== profile.name) update.mutate({ id: profile.id, patch: { name } }, { onError: (e) => setError(e.message) });
+    if (name.trim() && name.trim() !== profile.name) update.mutate({ id: profile.id, patch: { name } }, { onError: (e) => setError(readableError(e)) });
     else setName(profile.name);
   };
 
@@ -112,7 +113,7 @@ function ProfileEditor({ profile, moods, maxBytes }: { profile: PetProfileView; 
             />
           </div>
           <label className="row pet-pixel" style={{ gap: 8 }}>
-            <input type="checkbox" checked={profile.pixelated} onChange={(event) => update.mutate({ id: profile.id, patch: { pixelated: event.target.checked } }, { onError: (e) => setError(e.message) })} />
+            <input type="checkbox" checked={profile.pixelated} onChange={(event) => update.mutate({ id: profile.id, patch: { pixelated: event.target.checked } }, { onError: (e) => setError(readableError(e)) })} />
             <span>
               {t("petProfiles.pixelArt")}
               <span className="meta-txt dense" style={{ display: "block" }}>{t("petProfiles.pixelArtHint")}</span>
@@ -134,7 +135,7 @@ function ProfileEditor({ profile, moods, maxBytes }: { profile: PetProfileView; 
       {!profile.builtIn && (
         <div className="row">
           {confirming ? (
-            <button type="button" className="btn btn-danger" autoFocus onBlur={() => setConfirming(false)} onClick={() => remove.mutate(profile.id, { onError: (e) => setError(e.message) })}>
+            <button type="button" className="btn btn-danger" autoFocus onBlur={() => setConfirming(false)} onClick={() => remove.mutate(profile.id, { onError: (e) => setError(readableError(e)) })}>
               {t("petProfiles.confirmDelete", { name: profile.name })}
             </button>
           ) : (
