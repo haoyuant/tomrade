@@ -155,6 +155,15 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     expect(await new CliLocator(NAME, first.host, undefined, () => [{ file, runtime }]).locate()).toMatchObject({ path: onPath, source: "path" });
   });
 
+  it("runs an app's own launcher script as it is", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-locate-"));
+    const launcher = cli(path.join(root, "App.app/Contents/Resources/runtime/cli/bin"), 'echo "0.40.2"');
+    const { host } = setup();
+    const locator = new CliLocator(NAME, host, undefined, () => [{ file: path.join(root, "Gone.app/runtime/cli/bin", NAME) }, { file: launcher }]);
+    expect(await locator.locate()).toMatchObject({ state: "ready", path: launcher, source: "known", version: "0.40.2" });
+    expect((await locator.launch()).argv(["--profile", "acp"])).toEqual({ command: launcher, args: ["--profile", "acp"] });
+  });
+
   it("checks a picked file before it is saved", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-locate-"));
     const good = cli(path.join(root, "ok"), 'echo "2.0.14 (Claude Code)"');

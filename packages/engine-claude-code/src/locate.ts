@@ -198,14 +198,15 @@ function findNode(shimDir: string, dirs: string[], env: NodeJS.ProcessEnv): stri
 /** A CLI shipped inside a desktop app as a Node script, which that app's own Electron binary runs as Node. */
 export interface BundledCli {
   file: string;
-  runtime: string;
+  /** The app's binary that runs `file` as Node; absent when `file` is the app's own launcher script, run as it is. */
+  runtime?: string;
 }
 
 /** Where a desktop app may keep its copy of the CLI — every place looked, installed there or not. */
 export type BundledApps = (host: CliHost) => BundledCli[] | Promise<BundledCli[]>;
 
 /** How to start a bundled CLI: the app's binary with `ELECTRON_RUN_AS_NODE`, so the machine needs no Node of its own. */
-export function bundledLaunch(cli: BundledCli, host: Pick<CliHost, "platform" | "env">): CliLaunch {
+export function bundledLaunch(cli: Required<BundledCli>, host: Pick<CliHost, "platform" | "env">): CliLaunch {
   const plain = launchFor(cli.file, host);
   return { file: cli.file, argv: (args) => ({ command: cli.runtime, args: [cli.file, ...args] }), env: (base) => ({ ...plain.env(base), ELECTRON_RUN_AS_NODE: "1" }) };
 }
@@ -421,7 +422,7 @@ export class CliLocator {
   private async launchOf(file: string, dirs: string[] = []): Promise<CliLaunch> {
     const same = (a: string, b: string) => (this.host.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
     const copy = (await this.bundledApps()).find((cli) => same(cli.file, file));
-    return copy ? bundledLaunch(copy, this.host) : launchFor(file, this.host, dirs);
+    return copy?.runtime ? bundledLaunch({ file: copy.file, runtime: copy.runtime }, this.host) : launchFor(file, this.host, dirs);
   }
 
   /** A command setting that names something other than the default is the person's choice. */
@@ -560,7 +561,7 @@ export class CliLocator {
     // Every app folder looked in goes on the list, so a person can see where their install was not.
     const bundled = await this.bundledApps(true);
     searched.push(...bundled.map((cli) => p.dirname(cli.file)).filter((dir, i, all) => all.findIndex((d) => norm(d) === norm(dir)) === i));
-    hit = await tryAll(bundled.filter((cli) => isFile(cli.runtime, platform)).map((cli) => ({ file: cli.file, source: "known" as const })));
+    hit = await tryAll(bundled.filter((cli) => isFile(cli.runtime ?? cli.file, platform)).map((cli) => ({ file: cli.file, source: "known" as const })));
     if (hit) return ready(hit);
 
     const broken = attempts.find((a) => a.source !== "manual") ?? attempts[0];

@@ -1,8 +1,9 @@
+import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
 import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent } from "@tomradex/engine-acp";
-import { localCli } from "@tomradex/engine-claude-code";
+import { localCli, type BundledCli, type CliHost } from "@tomradex/engine-claude-code";
 
 export const DshOptions = z.object({
   command: z.string().default("dsh"),
@@ -13,20 +14,45 @@ export const DshOptions = z.object({
 });
 export type DshOptions = z.infer<typeof DshOptions>;
 
+const APP = "DeepSeek Harness";
+
+/**
+ * The `dsh` launcher inside the DeepSeek Harness desktop app, which runs the
+ * ordinary CLI with the app's own runtime. Its "Manage dsh Command…" menu only
+ * links it onto PATH, so an app nobody registered it from is found here.
+ */
+export async function dshDesktopApps(host: Pick<CliHost, "platform" | "env" | "home" | "installs">): Promise<BundledCli[]> {
+  if (host.platform === "darwin") {
+    const p = path.posix;
+    return ["/Applications", p.join(host.home, "Applications")].map((root) => ({ file: p.join(root, `${APP}.app`, "Contents/Resources/runtime/cli/bin/dsh") }));
+  }
+  if (host.platform === "win32") {
+    const w = path.win32;
+    const env = (key: string) => Object.entries(host.env).find(([name]) => name.toUpperCase() === key)?.[1];
+    const local = env("LOCALAPPDATA") ?? w.join(host.home, "AppData", "Local");
+    const roots = [w.join(local, "Programs"), env("PROGRAMFILES"), env("PROGRAMFILES(X86)")].filter((dir): dir is string => !!dir);
+    const registered = await host.installs(/deepseek harness/i).catch(() => []);
+    const dirs = [...registered, ...roots.map((root) => w.join(root, APP))].filter((dir, i, all) => all.findIndex((d) => d.toLowerCase() === dir.toLowerCase()) === i);
+    return dirs.map((dir) => ({ file: w.join(dir, "resources", "runtime", "cli", "bin", "dsh.cmd") }));
+  }
+  return [];
+}
+
 export const dsh: AcpAgent<DshOptions> = {
   id: "dsh",
-  title: "dsh",
-  cli: localCli("dsh"),
-  install: "install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and add a DeepSeek API key",
-  // Its web app's Models page stores the DeepSeek key.
-  setup: { install: ["npm install -g @deepseek-ai/dsh"], signIn: "dsh web", signInRuns: true, docs: "https://github.com/deepseek-ai/deepseek-harness" },
+  title: APP,
+  cli: localCli("dsh", { bundled: dshDesktopApps }),
+  install: "install the DeepSeek Harness desktop app (deepseek.com/en/harness), or its CLI with npm install -g @deepseek-ai/dsh, and sign in or add a DeepSeek API key",
+  // The desktop app is the official install and needs no command; a key or account goes under Settings → Models there, as in `dsh web`.
+  setup: { install: ["npm install -g @deepseek-ai/dsh"], signIn: "dsh web", signInRuns: true, docs: "https://www.deepseek.com/en/harness/" },
   options: DshOptions,
   // dsh's ACP server has no modes and its own sandbox rules decide what needs asking; it asks for none of a workspace's reads and writes.
   permissionModes: { default: "full-access", mainDefault: "local", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.local] },
   // The shipped `acp` profile initializes itself under $DSH_HOME on first use.
   args: () => ["--profile", "acp"],
   efforts: ["off", "low", "high", "max"],
-  signIn: "add a DeepSeek API key in `dsh web` → Models, or set DEEPSEEK_API_KEY"
+  // A saved key lives in $DSH_HOME/.credentials.yaml, outside any one profile.
+  signIn: "sign in or add a DeepSeek API key under Settings → Models in the DeepSeek Harness app (or `dsh web`), or set DEEPSEEK_API_KEY"
 };
 
 export function createDshEngine(ctx: Context) {
