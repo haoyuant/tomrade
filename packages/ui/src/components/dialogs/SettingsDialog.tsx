@@ -31,7 +31,7 @@ import { cssColorToHex, useTheme } from "~/lib/theme";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { openExternal, reveal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
-import { readableError } from "~/lib/toast";
+import { readableError, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { useSettingsSheet } from "~/lib/settingsHost";
@@ -310,6 +310,7 @@ export function SettingsDialog({
   const background = useBackgroundStatus();
   const providers = useStorageProviders();
   const { preference, customThemes, automation, setAutomation, createCustomTheme, deleteCustomTheme } = useTheme();
+  const toast = useToast();
   const [active, setActive] = useState("appearance");
   // Set only by a pane that sends the person to find a plugin; any other way in opens the list unfiltered.
   const [pluginsQuery, setPluginsQuery] = useState<string>();
@@ -391,7 +392,12 @@ export function SettingsDialog({
                 save.mutate({ ...settings.data, customThemes: customThemes.map(theme => theme.id === selectedCustom.id ? { ...theme, name: themeDraft.name.trim(), icon: themeDraft.icon } : theme) },
                   { onSuccess: () => setEditingTheme(null) });
               }}>{t("common.save")}</button>
-              <button type="button" className="icon-btn danger" aria-label={t("settingsDialog.deleteTheme")} title={t("settingsDialog.deleteTheme")} onClick={() => { deleteCustomTheme(selectedCustom.id); setEditingTheme(null); }}><Icon name="i-trash" size={14} /></button>
+              <button type="button" className="icon-btn danger" aria-label={t("settingsDialog.deleteTheme")} title={t("settingsDialog.deleteTheme")} onClick={() => {
+                // The edited colours are the loss; Undo brings the theme back whole.
+                const undo = deleteCustomTheme(selectedCustom.id);
+                setEditingTheme(null);
+                toast({ body: t("settingsDialog.themeDeletedToast", { name: selectedCustom.name }), onUndo: undo });
+              }}><Icon name="i-trash" size={14} /></button>
             </div>
           } /><div className="theme-selection-actions">
             {selectedCustom && <button type="button" className="icon-btn" aria-label={t("settingsDialog.editTheme")} title={t("settingsDialog.editTheme")} onClick={() => openThemeEditor(selectedCustom)}><Icon name="i-pen" size={14} /></button>}

@@ -1008,6 +1008,31 @@ const run = async () => {
   check("the card says the theme follows the Hub", (await $(`document.querySelector('.dlg-body .scope-tag')?.textContent`)) === "Follows the Hub");
   await checkCentred("settings");
   await shot("17-settings");
+  // ── a custom theme's bin can be undone from the toast ──
+  const wait = async (cond, tries = 60) => {
+    for (let i = 0; i < tries; i++) {
+      if (await cond()) return true;
+      await sleep(150);
+    }
+    return false;
+  };
+  const customThemes = () => ctx.settings.get().customThemes?.length ?? 0;
+  // the toast stack lies outside the sheet, where a pointer would dismiss it: its buttons are clicked, not pressed
+  const clickToast = (selector) => $(`(() => { const b = ${selector}; if (!b) return false; b.click(); return true; })()`);
+  await press(`document.querySelector('.theme-selection-actions button[aria-label="Create custom theme"]')`);
+  check("creating a custom theme opens its editor", await wait(() => $(`!!document.querySelector('.theme-custom-controls')`)) && customThemes() === 1);
+  await press(`document.querySelector('.theme-custom-controls .icon-btn.danger')`);
+  check("its bin deletes it and the toast offers Undo", await wait(() => $(`[...document.querySelectorAll('.toast')].some((n) => (n.textContent ?? '').includes('Deleted the theme') && (n.textContent ?? '').includes('Undo'))`)) && customThemes() === 0);
+  await clickToast(`[...document.querySelectorAll('.toast button')].find((b) => (b.textContent ?? '').includes('Undo'))`);
+  check("Undo brings the theme back, selected again", await wait(() => customThemes() === 1) && (await $(`document.querySelector('.dlg-body .theme-switch .theme-seg[aria-pressed="true"]')?.getAttribute('aria-label')`)) === "Custom 1" && String(ctx.settings.get().theme).startsWith("custom:"));
+  // leave Appearance as it was: the theme gone, its toast dismissed, the pinned built-in theme back
+  await press(`document.querySelector('.theme-selection-actions button[aria-label="Edit theme"]')`);
+  await wait(() => $(`!!document.querySelector('.theme-custom-controls')`));
+  await press(`document.querySelector('.theme-custom-controls .icon-btn.danger')`);
+  await wait(() => customThemes() === 0);
+  await clickToast(`document.querySelector('.toast .btn-icon[aria-label]')`);
+  await press(`document.querySelectorAll('.dlg-body .theme-seg')[${SEGMENT.light}]`);
+  await sleep(600);
   const sheetBox = `(() => { const r = document.querySelector('.palette.modal').getBoundingClientRect(); return r.width + 'x' + r.height; })()`;
   const boxOnAppearance = await $(sheetBox);
   await press(settingsNav("Agent access"));

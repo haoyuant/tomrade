@@ -171,8 +171,11 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
 }
 
 function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Repo; projectId: string; boards: Board[]; checkout: CheckoutView | null; remoteState: RepoStateView | null }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const toast = useToast();
+  const [confirming, setConfirming] = useState(false);
+  // The backend refuses while a workstream stands on it; the confirm says the same before asking.
+  const using = boards.filter((b) => b.repoId === repo.id);
   const update = useUpdateRepo(projectId);
   const updateBoard = useUpdateBoard(projectId);
   const repoNames = useRepos(projectId).data ?? [];
@@ -251,12 +254,35 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
           className="btn btn-icon repo-remove"
           title={t("repositories.removeTitle", { name: repo.name })}
           aria-label={t("repositories.removeTitle", { name: repo.name })}
+          aria-pressed={confirming}
           disabled={busy}
-          onClick={() => remove.mutate(repo.id, { onSuccess: () => toast({ body: t("repositories.removedToast", { name: repo.name }) }), onError: fail })}
+          onClick={() => setConfirming((v) => !v)}
         >
           <Icon name="i-close" size={13} />
         </button>
       </div>
+      {confirming && (
+        <div className="row repo-remove-confirm" role="group" aria-label={t("repositories.removeTitle", { name: repo.name })} data-testid="repo-remove-confirm">
+          <span className="meta-txt repo-remove-why">
+            {using.length === 0
+              ? t("repositories.removeSure", { name: repo.name })
+              : t(using.length === 1 ? "repositories.removeInUseOne" : "repositories.removeInUseMany", { name: repo.name, n: using.length, names: using.map((b) => b.name).join(locale === "zh" ? "、" : ", ") })}
+          </span>
+          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(false)}>
+            {t("common.cancel")}
+          </button>
+          {using.length === 0 && (
+            <button
+              type="button"
+              className="btn btn-danger repo-remove-confirm-btn"
+              disabled={busy}
+              onClick={() => remove.mutate(repo.id, { onSuccess: () => toast({ body: t("repositories.removedToast", { name: repo.name }) }), onError: (error) => { setConfirming(false); fail(error); } })}
+            >
+              {t("common.remove")}
+            </button>
+          )}
+        </div>
+      )}
       {/* which workstreams' tickets are coded here: one click each way, a workstream on another repository moves over */}
       <div className="repo-workstreams" data-testid="repo-workstreams">
         <span className="meta-txt">{t("repositories.workstreamsLabel")}</span>

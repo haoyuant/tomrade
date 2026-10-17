@@ -1644,6 +1644,9 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .repo-row .repo-branch { width: 120px; flex: 0 1 120px; min-width: 60px; }
 .repo-row .repo-name { min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-row .repo-use-credential { align-self: flex-start; white-space: normal; text-align: left; height: auto; }
+.repo-remove-confirm { flex-wrap: wrap; margin-top: var(--space-2); }
+.repo-remove-confirm .repo-remove-why { flex: 1 1 240px; min-width: 0; }
+.repo-remove-confirm .btn { padding: 3px 10px; }
 /* the field registry: one row per field; an interactive row's editor opens directly beneath that row */
 .fld-list { display: flex; flex-direction: column; gap: 5px; }
 .fld-item { display: flex; flex-direction: column; gap: 5px; }

@@ -22,9 +22,10 @@ interface ThemeContext {
   setPreference: (p: Exclude<ThemePreference, "system">) => void;
   setAutomation: (next: ThemeAutomation) => void;
   createCustomTheme: (onCreated?: (theme: CustomTheme) => void) => void;
-  deleteCustomTheme: (id: string) => void;
+  /** Deletes the theme and returns the way back: the theme at its place, with the preference and automation that named it. */
+  deleteCustomTheme: (id: string) => () => void;
 }
-const Ctx = createContext<ThemeContext>({ preference: "dawn", theme: "dawn", customThemes: [], automation: AUTOMATION_DEFAULT, setPreference: () => {}, setAutomation: () => {}, createCustomTheme: () => {}, deleteCustomTheme: () => {} });
+const Ctx = createContext<ThemeContext>({ preference: "dawn", theme: "dawn", customThemes: [], automation: AUTOMATION_DEFAULT, setPreference: () => {}, setAutomation: () => {}, createCustomTheme: () => {}, deleteCustomTheme: () => () => {} });
 const mq = () => window.matchMedia("(prefers-color-scheme: dark)");
 
 export function cssColorToHex(value: string): string {
@@ -105,7 +106,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const fallback = automation.defaultTheme === id ? "dawn" : automation.defaultTheme;
     const schedule = automation.schedule.filter(rule => rule.theme !== id);
     mutate({ customThemes: customThemes.filter(theme => theme.id !== id), theme: preference === id ? fallback : preference, themeAutomation: { ...automation, defaultTheme: fallback, schedule } });
-  }, [automation, customThemes, mutate, preference]);
+    const index = customThemes.findIndex(theme => theme.id === id), deleted = customThemes[index];
+    return () => {
+      if (!deleted) return;
+      // Themes made since the delete stay; only the deleted one returns to its place.
+      const rest = ((qc.getQueryData<AppSettings>(keys.settings)?.customThemes ?? []) as CustomTheme[]).filter(theme => theme.id !== id);
+      mutate({ customThemes: [...rest.slice(0, index), deleted, ...rest.slice(index)], theme: preference, themeAutomation: automation });
+    };
+  }, [automation, customThemes, mutate, preference, qc]);
   const value = useMemo(() => ({ preference: active, theme, customThemes, automation, setPreference, setAutomation, createCustomTheme, deleteCustomTheme }), [active, theme, customThemes, automation, setPreference, setAutomation, createCustomTheme, deleteCustomTheme]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
