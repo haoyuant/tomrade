@@ -951,7 +951,10 @@ export class Files extends Service {
    * is also reachable without it, and what is left out is reachable too.
    */
   async agentIndex(projectId: string, opts: { budget?: number; focus?: string[]; native?: boolean } = {}): Promise<AgentIndex | null> {
-    if (!this.dirFor(projectId)) return null;
+    const dir = this.dirFor(projectId);
+    if (!dir) return null;
+    // No folder and no remote means no files: opening the store would only create it, git and all, before a turn.
+    if (!fs.existsSync(dir) && !this.remoteOf(projectId)) return null;
     const [entries, policy] = await Promise.all([this.tree(projectId), this.agentPolicy(projectId)]);
     if (!entries.length) return null;
     const store = await this.store(projectId);
