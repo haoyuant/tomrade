@@ -13,6 +13,7 @@ import {
   parseRegInstalls,
   parseRegPath,
   shimTarget,
+  ShellTimeout,
   type CliHost
 } from "../src/locate.js";
 
@@ -123,6 +124,12 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     expect(missing.state).toBe("missing");
     expect(missing.attempts).toEqual([]);
     expect(missing.searched).toContain(path.join(empty.home, ".local/bin"));
+  });
+
+  it("says so when the login shell did not answer and nothing was found", async () => {
+    const { host } = setup();
+    const status = await new CliLocator(NAME, { ...host, freshPath: () => Promise.reject(new ShellTimeout("/bin/zsh")) }).locate();
+    expect(status).toMatchObject({ state: "missing", shellTimedOut: "/bin/zsh" });
   });
 
   it("says why a CLI that hangs is passed over", async () => {

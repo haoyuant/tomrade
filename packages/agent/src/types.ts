@@ -394,6 +394,8 @@ export interface LocalCliStatus {
   wsl?: string;
   /** Not found, but this agent's desktop app is installed — which does not include the CLI. */
   desktopApp?: string;
+  /** Not found, and this login shell did not answer in time: the folders its startup files add to PATH went unsearched. */
+  shellTimedOut?: string;
   attempts: CliAttempt[];
   /** Directories searched, in order. */
   searched: string[];

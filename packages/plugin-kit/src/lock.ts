@@ -35,7 +35,13 @@ export const LOCK_FILE = "plugins.lock.json";
 
 export function readLock(file: string): Lock {
   if (!fs.existsSync(file)) return { v: 1, plugins: [] };
-  return LockSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+  try {
+    return LockSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch (error) {
+    // Read at boot: the person seeing this has to know which file it is, and what in it is wrong.
+    const why = error instanceof z.ZodError ? z.prettifyError(error) : error instanceof Error ? error.message : String(error);
+    throw new Error(`${file}: ${why}`, { cause: error });
+  }
 }
 
 /** Atomic: a crash mid-write leaves the old lock, never half of a new one. */

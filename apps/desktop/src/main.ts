@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, PREFS_FILE, wentAway } from "./background.js";
-import { boot } from "./boot.js";
+import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { deliverDeepLink, registerScheme } from "./deep-link.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
@@ -12,6 +12,7 @@ import { loginItem } from "./login-item.js";
 import { provideMainWindow } from "./main-window.js";
 import { leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
+import { showSplash, startFailed } from "./startup.js";
 import { followSystemProxy } from "./system-proxy.js";
 import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
@@ -46,6 +47,8 @@ if (primary) {
 // Everything under the app's own roots resolves as usual; anything else is an extension.
 registerExtensionResolution([path.resolve(here, "../../.."), app.getAppPath()]);
 
+let splash: BrowserWindow | null = null;
+
 app.whenReady().then(async () => {
   if (!primary) return;
   const machine = machineRoots();
@@ -78,8 +81,10 @@ app.whenReady().then(async () => {
     })
   );
 
+  // Until the main window opens; a start at login has nobody waiting for one.
+  if (mode === "window" && !argv.includes("--dump-config")) splash = showSplash(iconPath);
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
-  await adoptShellEnv();
+  const shellProblem = await adoptShellEnv();
   // After it, so a proxy the shell sets stands.
   await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
 
@@ -88,18 +93,35 @@ app.whenReady().then(async () => {
   const { userData, hubDir } = accounts.dirs(accounts.active);
   const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? path.join(machine.tomradeDir, "plugins");
   const pluginsDevRoot = path.join(machine.tomradeDir, "plugins-dev");
-  const { ctx, dump } = await boot({
-    configFile: path.join(here, "../tomrade.yml"),
-    patchFiles: [path.join(machine.userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
-    // What a first run is written in, before the person has picked a language.
-    vars: {
-      userData, hubDir, pluginsRoot, pluginsDevRoot, logDir: path.join(machine.userData, "logs"), appVersion: app.getVersion(), locale: app.getLocale(),
-      instanceKind: app.isPackaged ? "packaged" : "dev",
-      // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
-      mcpPort: process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091")
-    },
-    extensions: { root: pluginsRoot, trustedKeys: trustedKeys() }
-  });
+  const logDir = path.join(machine.userData, "logs");
+  // Without the person's own files: none read, and no switch written back to them.
+  const start = (safe: boolean) =>
+    boot({
+      configFile: path.join(here, "../tomrade.yml"),
+      patchFiles: safe ? [] : [path.join(machine.userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
+      // What a first run is written in, before the person has picked a language.
+      vars: {
+        userData, hubDir, pluginsRoot, pluginsDevRoot, logDir, appVersion: app.getVersion(), locale: app.getLocale(),
+        instanceKind: app.isPackaged ? "packaged" : "dev",
+        // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
+        mcpPort: process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091")
+      },
+      extensions: safe ? undefined : { root: pluginsRoot, trustedKeys: trustedKeys() }
+    });
+  let booted: Booted;
+  try {
+    booted = await start(false);
+  } catch (error) {
+    // Nothing has started yet, so this process can try once more without the files the person controls.
+    if (!(error instanceof ConfigUnreadable) || argv.includes("--dump-config")) throw error;
+    splash?.hide();
+    if (!(await startFailed(error, { logDir, retry: true }))) return app.quit();
+    splash?.show();
+    booted = await start(true);
+    booted.ctx.logger("boot").warn("started without tomrade.patch.yml and installed plugins, as asked after a failed start");
+  }
+  const { ctx, dump } = booted;
+  if (shellProblem) ctx.logger("shell-env").warn(shellProblem);
 
   if (argv.includes("--dump-config")) {
     process.stdout.write(dump());
@@ -145,6 +167,9 @@ app.whenReady().then(async () => {
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
   if (mode === "window") openMain();
+  // After the main window is up, so there is never a moment with none.
+  splash?.destroy();
+  splash = null;
   registerScheme();
   app.on("second-instance", (_event, args) => {
     if (leaving()) return;
@@ -160,4 +185,10 @@ app.whenReady().then(async () => {
     // Tomrade window satisfies application activation.
     if (![...mainWindows].some((win) => !win.isDestroyed())) openMain();
   });
+}).catch(async (error: unknown) => {
+  console.error(error);
+  if (argv.includes("--dump-config")) return app.exit(1);
+  splash?.hide();
+  await startFailed(error, { logDir: path.join(app.getPath("userData"), "logs"), retry: false });
+  app.quit();
 });

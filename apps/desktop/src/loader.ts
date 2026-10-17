@@ -47,9 +47,19 @@ function contractsOf(raw: unknown, file: string): ContractSpec[] {
   });
 }
 
+/** YAML's own errors name a line but not the file, which is what the person has to open. */
+function parseFile(file: string): unknown {
+  const text = fs.readFileSync(file, "utf8");
+  try {
+    return parse(text);
+  } catch (error) {
+    throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+}
+
 /** The whole composition: the rows to load, the capabilities they may not leave unfilled, and the registries they plug into. */
 export function readConfig(file: string): { rows: PluginPatch[]; modules: ModuleSpec[]; contracts: ContractSpec[] } {
-  const raw: unknown = parse(fs.readFileSync(file, "utf8"));
+  const raw = parseFile(file);
   const rows = rowsOf(raw, file);
   // Rows are keyed by id, so a second row with the same id would silently replace the first.
   const seen = new Set<string>();
@@ -61,7 +71,7 @@ export function readConfig(file: string): { rows: PluginPatch[]; modules: Module
 }
 
 export function readRows(file: string): PluginPatch[] {
-  return rowsOf(parse(fs.readFileSync(file, "utf8")), file);
+  return rowsOf(parseFile(file), file);
 }
 
 /** A patch row replaces the fields it names on the row with the same id; an unknown id adds a row. */

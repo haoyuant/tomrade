@@ -36,12 +36,21 @@ describe("reading a login shell", () => {
 
   it("sees what the profile exports, values with newlines included", async () => {
     fs.writeFileSync(path.join(home, ".profile"), `export PATH="/fixture/bin:$PATH"\nexport TOMRADE_TWO_LINES="a\nb"\necho noise from the profile\n`);
-    const env = await readShellEnv("/bin/sh", { ...launchd, HOME: home, ENV: path.join(home, ".profile") });
+    const { env } = await readShellEnv("/bin/sh", { ...launchd, HOME: home, ENV: path.join(home, ".profile") });
     expect(env?.PATH?.split(":")[0]).toBe("/fixture/bin");
     expect(env?.TOMRADE_TWO_LINES).toBe("a\nb");
   });
 
   it("gives up on a shell that cannot run", async () => {
-    expect(await readShellEnv(path.join(home, "no-such-shell"), launchd)).toBeNull();
+    expect(await readShellEnv(path.join(home, "no-such-shell"), launchd)).toMatchObject({ env: null, problem: "could not run (ENOENT)" });
+  });
+
+  // An interactive zsh ignores SIGTERM, so a gentler timeout never ended it.
+  it.skipIf(!fs.existsSync("/bin/zsh"))("gives up on time on an rc file that waits for input", async () => {
+    fs.writeFileSync(path.join(home, ".zshrc"), "read answer\n");
+    const started = Date.now();
+    const read = await readShellEnv("/bin/zsh", { ...launchd, HOME: home, ZDOTDIR: home }, 300);
+    expect(read).toEqual({ env: null, problem: "did not answer within 0.3 s" });
+    expect(Date.now() - started).toBeLessThan(3000);
   });
 });

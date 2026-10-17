@@ -241,10 +241,19 @@ function runOnce(launch: CliLaunch, args: string[], timeoutMs: number): Promise<
 
 const MARK = "__TOMRADE_PATH__";
 
+/** The login shell did not answer in time, so the folders its startup files add to PATH are unknown. */
+export class ShellTimeout extends Error {
+  constructor(readonly shell: string) {
+    super(`${shell} did not answer in time`);
+  }
+}
+
 function readLoginPath(env: NodeJS.ProcessEnv): Promise<string[]> {
   const shell = env.SHELL || os.userInfo().shell || "/bin/sh";
-  return new Promise((resolve) => {
-    execFile(shell, ["-ilc", `printf '%s' "${MARK}$PATH${MARK}"`], { env, timeout: 10_000 }, (error, stdout) => {
+  return new Promise((resolve, reject) => {
+    // An interactive zsh or bash ignores SIGTERM: an rc file waiting for input would outlast the timeout forever.
+    execFile(shell, ["-ilc", `printf '%s' "${MARK}$PATH${MARK}"`], { env, timeout: 10_000, killSignal: "SIGKILL" }, (error, stdout) => {
+      if (error?.killed) return reject(new ShellTimeout(shell));
       const body = error ? undefined : String(stdout).split(MARK)[1];
       resolve(splitPath(body, process.platform));
     });
@@ -547,7 +556,12 @@ export class CliLocator {
     let hit = await tryAll(this.inDirs(processPath, "path"));
     if (hit) return ready(hit);
 
-    const fresh = (await this.host.freshPath().catch(() => [])).filter((dir) => !searched.some((d) => norm(d) === norm(dir)));
+    let shellTimedOut: string | undefined;
+    const freshPath = await this.host.freshPath().catch((error: unknown) => {
+      if (error instanceof ShellTimeout) shellTimedOut = error.shell;
+      return [];
+    });
+    const fresh = freshPath.filter((dir) => !searched.some((d) => norm(d) === norm(dir)));
     searched.push(...fresh);
     // Folders a new terminal would have also go on the CLI's PATH: it may start node, git or its own helpers from them.
     extra = fresh;
@@ -569,7 +583,7 @@ export class CliLocator {
     const broken = attempts.find((a) => a.source !== "manual") ?? attempts[0];
     if (broken) return { status: status({ state: "broken", path: broken.path, source: broken.source, error: broken.detail, manual: manualError }), dirs: extra };
     const wsl = platform === "win32" ? await this.host.wsl(this.name).catch(() => null) : null;
-    return { status: status({ state: "missing", manual: manualError, ...(wsl ? { wsl } : {}) }), dirs: extra };
+    return { status: status({ state: "missing", manual: manualError, ...(wsl ? { wsl } : {}), ...(shellTimedOut ? { shellTimedOut } : {}) }), dirs: extra };
   }
 }
 
