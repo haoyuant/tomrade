@@ -62,5 +62,6 @@ export function codexLentModel(ctx: Context, ready: () => Promise<boolean>): Len
       yield* events;
     }
   };
-  return { id: "codex", title: "Codex", ready, model };
+  // After Claude Code and WorkBuddy: a Codex call takes 20–40 s.
+  return { id: "codex", title: "Codex", rank: 30, ready, model };
 }

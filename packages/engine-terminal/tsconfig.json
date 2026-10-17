@@ -11,6 +11,7 @@
   "references": [
     { "path": "../agent" },
     { "path": "../engine-claude-code" },
+    { "path": "../llm" },
     { "path": "../mcp" }
   ]
 }

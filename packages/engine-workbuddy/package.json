@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/engine-acp": "workspace:*",
     "@tomradex/engine-claude-code": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"

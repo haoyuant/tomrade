@@ -1,7 +1,9 @@
 import type { Context } from "cordis";
 import type { Engine, EngineSetup } from "@tomradex/agent";
 import { localAvailability, localCli } from "@tomradex/engine-claude-code";
+import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
+import { geminiLentModel } from "./lend.js";
 
 /** A CLI agent Tomrade knows how to start in a terminal; Code link holds its command template. */
 export interface TerminalAgent {
@@ -58,6 +60,15 @@ export default {
   name: "engine-terminal",
   inject: ["agent", "mcp"],
   apply(ctx: Context) {
-    for (const agent of TERMINAL_AGENTS) ctx.agent.engine(createTerminalEngine(ctx, agent));
+    for (const agent of TERMINAL_AGENTS) {
+      const engine = createTerminalEngine(ctx, agent);
+      ctx.agent.engine(engine);
+      // Gemini CLI answers one prompt headless, so its Google sign-in can do worker calls too; OpenCode is not lent yet.
+      if (agent.id === "gemini") {
+        ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(geminiLentModel(ctx, { cli: localCli(agent.bin), found: async () => (await engine.available()).ok }))));
+      }
+    }
   }
 };
+
+export { forgetSession, geminiDir, geminiLentModel, ownModel } from "./lend.js";

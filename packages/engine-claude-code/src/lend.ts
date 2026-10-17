@@ -163,7 +163,8 @@ export function claudeLentModel(ctx: Context, ready: () => Promise<boolean>, opt
     }
   };
   return {
-    id: "claude-code", title: "Claude Code", ready, model,
+    // Automatic asks the fastest first: Claude Code 10, WorkBuddy 20, Codex 30, Gemini CLI 40.
+    id: "claude-code", title: "Claude Code", rank: 10, ready, model,
     close: () => {
       kept?.close();
       kept = null;

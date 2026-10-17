@@ -94,7 +94,7 @@ The new view stays in the sidebar.`
 1. In the setup card at the top of the assistant panel — or Settings → **Assistant** — pick a provider: DeepSeek, Kimi, Anthropic, OpenAI, OpenRouter, or Ollama on this computer, which needs no key.
 2. Paste the API key and click **Connect**. Tomrade checks it and picks a model.
 
-Signed in to Claude Code or Codex? Then this is already done: the assistant runs on it and plans with its model.`
+Signed in to Claude Code, WorkBuddy or Codex? Then this is already done: the assistant runs on it and plans with its model.`
     },
     {
       key: "b2",
@@ -122,7 +122,7 @@ After the undo the example backlog is as it was.`
 
 The assistant asks a few questions, then plans it as a set of tickets with dependencies in a new workstream. Not what you wanted? Revert it like any other run.
 
-The plan is written by your model — or, with no model connected, by the Claude Code or Codex you are signed in to.`
+The plan is written by your model — or, with no model connected, by the local agent you are signed in to: Claude Code, WorkBuddy, Codex or Gemini CLI.`
     },
     {
       key: "c1",
@@ -219,7 +219,7 @@ const zh: SampleWords = {
 1. 在助手面板顶部的设置卡片里（或设置 → **助手**）选一个服务商：DeepSeek、Kimi、Anthropic、OpenAI、OpenRouter，或者本机的 Ollama（不需要 key）。
 2. 粘贴 API key，点 **连接**。Tomrade 会检查它并选好模型。
 
-已经登录了 Claude Code 或 Codex？那这一步已经完成了：助手会用它来对话，也用它的模型来规划。`
+已经登录了 Claude Code、WorkBuddy 或 Codex？那这一步已经完成了：助手会用它来对话，也用它的模型来规划。`
     },
     {
       key: "b2",
@@ -247,7 +247,7 @@ const zh: SampleWords = {
 
 助手会先问几个问题，再把它规划成一组带依赖关系的工作项，放进一个新的工作流。不满意的话，像其他运行一样撤销就行。
 
-规划由你接上的模型来写；没接模型时，由你登录的 Claude Code 或 Codex 来写。`
+规划由你接上的模型来写；没接模型时，由你登录的本地智能体来写：Claude Code、WorkBuddy、Codex 或 Gemini CLI。`
     },
     {
       key: "c1",

@@ -337,10 +337,16 @@ Keep optional fields in a schema forgiving (`.catch(undefined)`), so a cosmetic
 slip does not cost the whole document.
 
 While no profile is configured, a plugin can **lend** a model for the worker
-role: `ctx.llm.lend({ id, title, ready, model })` returns its withdrawal (wrap
-it in `ctx.effect`). The Claude Code and Codex engines lend their signed-in CLI
-this way — one prompt, no tools, no session — so planning works with a
-subscription and no API key. The person can also pick a lent model for the
+role: `ctx.llm.lend({ id, title, rank, ready, model })` returns its withdrawal
+(wrap it in `ctx.effect`). The Claude Code, WorkBuddy (CodeBuddy), Codex and
+Gemini CLI engines lend their signed-in CLI this way — one prompt, no tools, no
+session — so planning works with a subscription and no API key. Automatic asks
+the lowest `rank` that is ready (Claude Code 10, WorkBuddy 20, Codex 30, Gemini
+CLI 40: the fastest first); an unranked one comes last. A CLI with no sign-in
+status command can build its lent model with `cliLentModel` from
+`@tomradex/engine-claude-code`: it learns the sign-in from one tiny prompt and
+from each call, and `llm.lenders` shows it as still checking (`ready: null`)
+meanwhile. The person can also pick a lent model for the
 worker over a profile (`roles.worker: "lent:<id>"`); a picked one that is not
 ready makes the call fail with the reason, never a silent switch. At most
 `LENT_CONCURRENCY` lent calls run at once. `ctx.llm.worker()` says who answers worker calls

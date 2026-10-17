@@ -83,6 +83,8 @@ export interface LlmStatus {
 export interface LentModel {
   id: string;
   title: string;
+  /** Its place in Automatic and in the picker: the lowest ready one answers. Absent, after every ranked one. */
+  rank?: number;
   /** Whether it can answer now; asked before each call, so keep it cached. */
   ready(): Promise<boolean>;
   model: ChatModel;
@@ -113,8 +115,12 @@ export const LENT_WORKER = "lent:";
 export interface LenderView {
   id: string;
   title: string;
-  ready: boolean;
+  /** null: still checking whether it is signed in (its first check can take a model call). */
+  ready: boolean | null;
 }
+
+/** How long Settings waits for a lent model to say whether it is ready before it shows it as checking. */
+export const LENDER_WAIT_MS = 1500;
 
 /** Lent calls start local processes; past this many at once, the rest wait their turn. */
 export const LENT_CONCURRENCY = 2;
@@ -494,11 +500,20 @@ export class Llm extends Service implements LlmService {
   }
 
   async lenders(): Promise<LenderView[]> {
-    return Promise.all(this.lent.map(async (m) => ({ id: m.id, title: m.title, ready: await m.ready().catch(() => false) })));
+    return Promise.all(this.lent.map(async (m) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // the check goes on and keeps its answer for the next look
+      const waited = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), LENDER_WAIT_MS)));
+      const ready = await Promise.race([m.ready().catch(() => false), waited]);
+      clearTimeout(timer);
+      return { id: m.id, title: m.title, ready };
+    }));
   }
 
   lend(model: LentModel): () => void {
-    this.lent.push(model);
+    // Plugins start in any order; the rank, not who lent first, decides who answers.
+    const rank = (m: LentModel) => m.rank ?? Number.MAX_SAFE_INTEGER;
+    this.lent = [...this.lent, model].sort((a, b) => rank(a) - rank(b));
     return () => {
       this.lent = this.lent.filter((m) => m !== model);
     };

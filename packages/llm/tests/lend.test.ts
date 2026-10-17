@@ -8,7 +8,7 @@ import { Context } from "cordis";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { Settings } from "@tomradex/settings";
-import { LENT_CONCURRENCY, Llm, transcriptOf, userMessage, type ChatModel, type ChatRequest } from "@tomradex/llm";
+import { LENDER_WAIT_MS, LENT_CONCURRENCY, Llm, transcriptOf, userMessage, type ChatModel, type ChatRequest } from "@tomradex/llm";
 
 function lent(answer: string, requests: ChatRequest[]): ChatModel {
   return {
@@ -47,6 +47,45 @@ it("answers worker calls with a ready lent model while no profile is configured"
   aReady = true;
   ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ id: "p", title: "", provider: "openai-compatible", apiKey: "k", model: "m" }], roles: { worker: "" } } });
   expect(await ctx.llm.worker()).toEqual({ ok: true, via: "profile", title: "m" });
+});
+
+it("asks the lowest-ranked ready lent model in Automatic, whatever order the plugins lent in", async () => {
+  const ctx = new Context();
+  await ctx.plugin(Settings, { path: path.join(os.tmpdir(), `tomrade-lend-rank-${Date.now()}.json`) });
+  await ctx.plugin(Llm);
+  const schema = z.object({ n: z.number() });
+  const ready = new Set(["unranked", "gemini", "codex", "workbuddy"]);
+  const lend = (id: string, rank: number | undefined, n: number) =>
+    ctx.llm.lend({ id, title: id, ...(rank === undefined ? {} : { rank }), ready: async () => ready.has(id), model: lent(`{"n":${n}}`, []) });
+  lend("unranked", undefined, 0);
+  lend("gemini", 40, 4);
+  lend("codex", 30, 3);
+  lend("claude-code", 10, 1);
+  lend("workbuddy", 20, 2);
+
+  expect((await ctx.llm.lenders()).map((l) => l.id)).toEqual(["claude-code", "workbuddy", "codex", "gemini", "unranked"]);
+  expect(await ctx.llm.worker()).toEqual({ ok: true, via: "lent", title: "workbuddy" });
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u" })).toEqual({ n: 2 });
+  ready.add("claude-code");
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u" })).toEqual({ n: 1 });
+  ready.clear();
+  ready.add("unranked");
+  expect(await ctx.llm.completeJson(schema, { system: "s", user: "u" })).toEqual({ n: 0 });
+});
+
+it("shows a lent model whose sign-in check is slow as still checking, and its answer on the next look", async () => {
+  const ctx = new Context();
+  await ctx.plugin(Settings, { path: path.join(os.tmpdir(), `tomrade-lend-checking-${Date.now()}.json`) });
+  await ctx.plugin(Llm);
+  let checked: Promise<boolean> | null = null;
+  const slowCheck = () => (checked ??= new Promise((resolve) => setTimeout(() => resolve(true), LENDER_WAIT_MS + 300)));
+  ctx.llm.lend({ id: "slow", title: "Slow", ready: slowCheck, model: lent("{}", []) });
+  ctx.llm.lend({ id: "quick", title: "Quick", ready: async () => false, model: lent("{}", []) });
+  const t0 = Date.now();
+  expect((await ctx.llm.lenders()).map((l) => l.ready)).toEqual([null, false]);
+  expect(Date.now() - t0).toBeLessThan(LENDER_WAIT_MS + 250);
+  await checked;
+  expect((await ctx.llm.lenders()).map((l) => l.ready)).toEqual([true, false]);
 });
 
 it("answers with the lent model the person chose, even with a profile, and never swaps it silently", async () => {

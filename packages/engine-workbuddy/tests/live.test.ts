@@ -6,6 +6,8 @@ import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
+import { Llm } from "@tomradex/llm";
+import { z } from "zod";
 import engineWorkBuddy from "@tomradex/engine-workbuddy";
 
 /** Opt-in: spawns the real `codebuddy` CLI (or WorkBuddy's own copy) with the user's account; the model defaults to one CodeBuddy lists at no credit cost. TOMRADE_LIVE_WORKBUDDY=1 pnpm test */
@@ -38,6 +40,29 @@ describe.skipIf(!process.env.TOMRADE_LIVE_WORKBUDDY)("live WorkBuddy", () => {
       expect(blocks.some((b) => b.type === "trace" && b.tool === "list_items" && b.ok)).toBe(true);
       expect(run.changes).toBe(0);
       expect(ctx.agent.store.external(project.id, thread.id).workbuddy).toBeTruthy();
+    } finally { await ctx.fiber.dispose(); }
+  }, 300_000);
+
+  it("answers worker calls as the signed-in CodeBuddy when no key is set", async () => {
+    const settingsPath = path.join(os.tmpdir(), `tomrade-live-workbuddy-lent-${Date.now()}.json`);
+    const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], Llm, engineWorkBuddy] });
+    await settle();
+    const command = process.env.TOMRADE_LIVE_WORKBUDDY_COMMAND;
+    ctx.settings.set({ ...ctx.settings.get(), agent: { ...(ctx.settings.get().agent as object), engines: { workbuddy: { model: process.env.TOMRADE_LIVE_WORKBUDDY_MODEL ?? "deepseek-v4.1-flash", ...(command ? { command } : {}) } } } });
+    try {
+      let t0 = Date.now();
+      expect(await ctx.llm.worker()).toEqual({ ok: true, via: "lent", title: "WorkBuddy" });
+      console.log(`sign-in check: ${Date.now() - t0} ms`);
+      const schema = z.object({ duplicates: z.array(z.string()), reason: z.string() });
+      for (const n of [1, 2]) {
+        t0 = Date.now();
+        const out = await ctx.llm.completeJson(schema, {
+          system: "You judge duplicate tickets. Reply with one JSON object: {\"duplicates\": [keys of tickets that mean the same work], \"reason\": one sentence}.",
+          user: "New: \"Remind me to drink water every hour\".\nExisting: AL-1 \"Hourly water reminder\", AL-2 \"Dark mode for settings\"."
+        });
+        console.log(`worker call ${n}: ${Date.now() - t0} ms`, out);
+        expect(out.duplicates).toEqual(["AL-1"]);
+      }
     } finally { await ctx.fiber.dispose(); }
   }, 300_000);
 

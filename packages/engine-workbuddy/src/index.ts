@@ -6,6 +6,8 @@ import { z } from "zod";
 import type {} from "@tomradex/agent";
 import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent, type RequestUsage } from "@tomradex/engine-acp";
 import { localCli, type BundledCli, type CliHost } from "@tomradex/engine-claude-code";
+import type {} from "@tomradex/llm";
+import { codebuddyLentModel } from "./lend.js";
 
 export const WorkBuddyOptions = z.object({
   command: z.string().default("codebuddy"),
@@ -156,5 +158,16 @@ export function createWorkBuddyEngine(ctx: Context) {
 export default {
   name: "engine-workbuddy",
   inject: ["agent", "mcp", "tools"],
-  apply(ctx: Context) { ctx.agent.engine(createWorkBuddyEngine(ctx)); }
+  apply(ctx: Context) {
+    const engine = createWorkBuddyEngine(ctx);
+    ctx.agent.engine(engine);
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(codebuddyLentModel(ctx, {
+      cli: workbuddy.cli,
+      found: async () => (await engine.available()).ok,
+      options: () => WorkBuddyOptions.parse(ctx.get("agent")?.settingsOf().engines.workbuddy ?? {}),
+      signIn: workbuddy.signIn!
+    }))));
+  }
 };
+
+export { codebuddyLentModel, ownModel } from "./lend.js";

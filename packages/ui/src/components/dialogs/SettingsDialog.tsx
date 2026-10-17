@@ -668,7 +668,9 @@ function AssistantPane({
   const models = (settings.models as ModelsSettings | undefined) ?? EMPTY_MODELS;
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
-  const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000 }).data ?? [];
+  // An agent's first sign-in check can take a model call; look again until each has answered.
+  const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000,
+    refetchInterval: (query) => (query.state.data?.some((l) => l.ready === null) ? 1500 : false) }).data ?? [];
   const worker = useQuery({ queryKey: ["llm", "worker", models.roles.worker], queryFn: () => invoke("llm.worker"), staleTime: 15_000 }).data;
   // removing a profile deletes its key too: asked once, in the row
   const [removing, setRemoving] = useState<string | null>(null);
@@ -774,7 +776,7 @@ function AssistantPane({
               ))}
               {lenders.map((l) => (
                 <option key={l.id} value={`${LENT_WORKER}${l.id}`}>
-                  {t(l.ready ? "settingsDialog.workerLent" : "settingsDialog.workerLentNotReady", { name: l.title })}
+                  {t(l.ready === null ? "settingsDialog.workerLentChecking" : l.ready ? "settingsDialog.workerLent" : "settingsDialog.workerLentNotReady", { name: l.title })}
                 </option>
               ))}
             </select>
