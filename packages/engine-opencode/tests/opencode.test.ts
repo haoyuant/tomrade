@@ -21,7 +21,7 @@ it("starts `opencode acp`, keeps read-only turns in its plan agent, and can also
   expect(opencode.args({} as never, { command: "opencode" })).toEqual(["acp"]);
   expect([opencode.mode!("full-access"), opencode.mode!("ask"), opencode.mode!("read-only")]).toEqual(["build", "build", "plan"]);
   expect(opencode).toMatchObject({ id: "opencode", title: "OpenCode", usage: "turn", cacheApart: true, terminal: true });
-  expect(opencode.permissionModes).toMatchObject({ default: "full-access", mainDefault: "read-only" });
+  expect(opencode.permissionModes).toMatchObject({ default: "full-access" });
   expect(opencode.permissionModes.choices.map((c) => c.value)).toEqual(["full-access", "local", "read-only"]);
 });
 

@@ -37,7 +37,7 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   /** The English tail of "not found — …". */
   install: string;
   options: z.ZodType<O>;
-  permissionModes: { default: string; mainDefault?: string; choices: { value: string; label: string }[] };
+  permissionModes: { default: string; choices: { value: string; label: string }[] };
   /** What starts its ACP server on stdio. */
   args(input: TurnInput, options: O): string[];
   env?(input: TurnInput, options: O): Record<string, string>;

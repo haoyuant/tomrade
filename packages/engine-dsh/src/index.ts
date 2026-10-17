@@ -47,7 +47,7 @@ export const dsh: AcpAgent<DshOptions> = {
   setup: { install: ["npm install -g @deepseek-ai/dsh"], signIn: "dsh web", signInRuns: true, docs: "https://www.deepseek.com/en/harness/" },
   options: DshOptions,
   // dsh's ACP server has no modes and its own sandbox rules decide what needs asking; it asks for none of a workspace's reads and writes.
-  permissionModes: { default: "full-access", mainDefault: "local", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.local] },
+  permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.local] },
   // The shipped `acp` profile initializes itself under $DSH_HOME on first use.
   args: () => ["--profile", "acp"],
   efforts: ["off", "low", "high", "max"],

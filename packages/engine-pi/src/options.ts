@@ -12,8 +12,6 @@ export type PiOptions = z.infer<typeof PiOptions>;
 
 export const PERMISSION_MODES = {
   default: "full-access",
-  // Pi has no permissions of its own; in the main chat Tomrade asks before anything changes.
-  mainDefault: "ask",
   choices: [
     { value: "full-access", label: "Full access" },
     { value: "ask", label: "Ask permissions" },

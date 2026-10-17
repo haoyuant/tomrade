@@ -28,7 +28,7 @@ export const gemini: AcpAgent<GeminiOptions> = {
   // Its first run asks how to sign in: a Google account or an API key.
   setup: { install: ["npm install -g @google/gemini-cli"], signIn: "gemini", signInRuns: true, docs: "https://github.com/google-gemini/gemini-cli" },
   options: GeminiOptions,
-  permissionModes: { default: "full-access", mainDefault: "ask", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
+  permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
   // "default" asks before edits, commands and MCP tools, whatever mode the person set for it, and Tomrade answers for the turn.
   // Never switched later: a switch is announced as "[MODE_UPDATE] …" in the reply.
   args: () => ["--acp", "--approval-mode", "default"],

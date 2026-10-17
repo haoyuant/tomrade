@@ -1228,7 +1228,7 @@ export class Im extends Service {
       const modes = engine?.permissionModes;
       if (!modes) this.refuse("This assistant has no permission modes", "当前助手没有权限模式可选");
       if (!arg) {
-        const current = thread.permissionMode ?? modes.mainDefault ?? modes.default;
+        const current = thread.permissionMode ?? modes.default;
         this.choices(b, `mode:${row.id}`, actor, "mode",
           [this.say(`Permission mode: ${modes.choices.find(c => c.value === current)?.label ?? current}`, `权限模式：${modes.choices.find(c => c.value === current)?.label ?? current}`),
             ...modes.choices.map(c => `- ${c.label} (${c.value})`), this.say("Reply /mode <mode> to change it.", "回复 /mode <模式> 切换。")].join("\n"),

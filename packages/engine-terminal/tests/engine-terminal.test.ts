@@ -12,7 +12,7 @@ it("registers Gemini CLI as an in-app agent that also takes a ticket in a termin
   try {
     const views = await ctx.agent.engineViews();
     const view = views.find((v) => v.id === "gemini");
-    expect(view).toMatchObject({ capabilities: ["backlog", "code", "general"], permissionModes: { default: "full-access", mainDefault: "ask" } });
+    expect(view).toMatchObject({ capabilities: ["backlog", "code", "general"], permissionModes: { default: "full-access" } });
     expect(view?.terminalOnly).toBeUndefined();
     expect(view?.terminal).toBeUndefined();
     expect(view?.permissionModes?.choices.map((c) => c.value)).toEqual(["full-access", "ask", "read-only"]);

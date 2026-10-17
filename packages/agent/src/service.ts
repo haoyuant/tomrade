@@ -1548,7 +1548,7 @@ export class Agent extends Service {
       const where = await this.workdir(rc.projectId, rc.threadId, { create: true });
       if (where.problem) throw new Error(where.problem);
       const modes = rc.engine.permissionModes;
-      const selectedMode = modes ? rc.thread.permissionMode ?? (rc.thread.itemId ? modes.default : modes.mainDefault ?? modes.default) : undefined;
+      const selectedMode = modes ? rc.thread.permissionMode ?? modes.default : undefined;
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
       const project = (this.ctx.get("projects") as { get(id: string): { name: string; keyPrefix: string } | null } | undefined)?.get(rc.projectId);
       const rules = this.rules(rc.projectId);

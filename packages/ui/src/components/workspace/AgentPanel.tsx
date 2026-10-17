@@ -29,7 +29,7 @@ const MIN_W = 352;
 const MAX_W = 924;
 /** Until someone drags it: the former ceiling; the CSS max-width still yields to the board on narrow windows. */
 const DEFAULT_W = 616;
-const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}` };
+const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}`, permission: (engineId: string) => `tomrade.agent.permission.${engineId}` };
 const HISTORY_CAP = 100;
 
 /** What the person sent in this project, oldest first: ↑ in the composer walks back through it. */
@@ -811,8 +811,15 @@ export function AgentPanel({
   const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
   const engine = findEngine(engines.data, currentEngineId);
   const permissionModes = detail.data ? engine?.permissionModes : undefined;
-  const selectedPermissionMode = detail.data?.thread.permissionMode ?? (detail.data?.thread.itemId ? permissionModes?.default : permissionModes?.mainDefault ?? permissionModes?.default);
+  // A conversation nobody set a mode on starts in the one last picked here for this engine.
+  const storedPermission = engine ? localStorage.getItem(STORE.permission(engine.id)) : null;
+  const rememberedPermission = detail.data && !detail.data.thread.itemId && !detail.data.thread.permissionMode && permissionModes?.choices.some((c) => c.value === storedPermission) ? storedPermission! : undefined;
+  const selectedPermissionMode = detail.data?.thread.permissionMode ?? rememberedPermission ?? permissionModes?.default;
   const activePermissionMode = runningRun ? detail.data?.activePermissionMode : undefined;
+  // Written onto the thread, so the run uses the mode the chip shows.
+  useEffect(() => {
+    if (threadId && rememberedPermission && !setPermissionMode.isPending) setPermissionMode.mutate({ threadId, mode: rememberedPermission });
+  }, [threadId, rememberedPermission]);
   const permissionLabel = (value?: string) => {
     const choice = permissionModes?.choices.find((c) => c.value === value);
     return choice ? permissionName(t, choice) : value;
@@ -1627,7 +1634,11 @@ export function AgentPanel({
               {permissionModes.choices.map((choice) => (
                 <MenuRadioItem key={choice.value} checked={choice.value === selectedPermissionMode} name={choice.label}
                   sub={runningRun ? t("agentPanel.modeNextTurn") : undefined}
-                  onSelect={() => { if (threadId) setPermissionMode.mutate({ threadId, mode: choice.value }); }} />
+                  onSelect={() => {
+                    if (!threadId) return;
+                    setPermissionMode.mutate({ threadId, mode: choice.value });
+                    if (engine) localStorage.setItem(STORE.permission(engine.id), choice.value);
+                  }} />
               ))}
             </Menu>
           )}
