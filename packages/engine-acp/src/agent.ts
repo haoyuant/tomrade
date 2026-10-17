@@ -62,6 +62,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   steer?: "method" | "slash";
   /** Whether its CLI can also be handed a ticket in a terminal (code link has a template for it). */
   terminal?: boolean;
+  /** In a terminal it has no per-session MCP flag: its user-level `tomrade` server, named with the session's token, serves. */
+  terminalViaLink?: boolean;
   setup?: EngineSetup;
   /** Effort levels to offer before a session has advertised its own. */
   efforts?: string[];

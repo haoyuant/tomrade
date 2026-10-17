@@ -1346,7 +1346,7 @@ describe("starting a ticket", () => {
     ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
     await ctx.plugin({ name: "fake-acp", inject: ["agent"], apply: (c: Context) => {
       c.agent.engine({ ...fakeCodeEngine([]), id: "workbuddy", title: "WorkBuddy", author: "ai:workbuddy" });
-      c.agent.engine({ ...fakeCodeEngine([]), id: "hermes", title: "Hermes", author: "ai:hermes", terminal: false });
+      c.agent.engine({ ...fakeCodeEngine([]), id: "dsh", title: "dsh", author: "ai:dsh", terminal: false });
     } });
     const { Mcp } = await import("@tomradex/mcp");
     await ctx.plugin(Mcp, { port: 0 });
@@ -1355,11 +1355,35 @@ describe("starting a ticket", () => {
     const result = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "workbuddy", options: { model: "hy3" } });
     expect(result.ok ? result.command : result).toMatch(/^codebuddy --model hy3 --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
 
-    const other = ticket("Hermes terminal work");
-    expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "hermes" }))
-      .toEqual({ ok: false, gate: "engine", engine: "hermes", message: "Hermes runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
+    const other = ticket("dsh terminal work");
+    expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "dsh" }))
+      .toEqual({ ok: false, gate: "engine", engine: "dsh", message: "dsh runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link" });
+    const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "dsh general work", workType: "general", status: "todo", by: "human" });
+    expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "dsh" })).toMatchObject({ ok: false, gate: "engine" });
+  });
+
+  it("starts Hermes in a terminal once its own sessions reach Tomrade, and asks for that first", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    let state: "connected" | "missing" = "missing";
+    const view = () => ({ state, url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } });
+    await ctx.plugin({ name: "fake-hermes", inject: ["agent"], apply: (c: Context) => {
+      c.agent.engine({ ...fakeCodeEngine([]), id: "hermes", title: "Hermes", author: "ai:hermes", terminal: true, terminalViaLink: true,
+        mcpLink: { status: async () => view(), connect: async () => view(), disconnect: async () => view() } });
+    } });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    const item = ticket("Hermes terminal work");
+    expect(await codeLink.start(project.id, item.id, { mode: "terminal", engine: "hermes" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringContaining("Connect it under Hermes in Settings") });
     const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "Hermes general work", workType: "general", status: "todo", by: "human" });
-    expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "hermes" })).toMatchObject({ ok: false, gate: "engine" });
+    expect(await codeLink.start(project.id, general.id, { mode: "terminal", engine: "hermes" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringContaining("Connect it under Hermes in Settings") });
+
+    state = "connected";
+    const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "hermes", options: { model: "openrouter:some/model" } });
+    expect(started.ok ? started.command : started).toMatch(/^hermes chat -m openrouter:some\/model --query-file ".*prompt\.md"$/);
   });
 
   it("keeps where a headless start was asked for on its brief", async () => {

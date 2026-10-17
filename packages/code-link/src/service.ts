@@ -257,6 +257,7 @@ const SETTINGS_SECTION = {
         geminiCommand: { title: "Gemini CLI 命令", description: "{geminiSettings} 是只在本次会话生效的设置文件，作为最低一层读取，你自己的 Gemini 设置仍然优先。" },
         opencodeCommand: { title: "OpenCode 命令", description: "{opencodeConfig} 是只在本次会话生效的配置，会和你自己的 OpenCode 配置合并。" },
         workbuddyCommand: { title: "WorkBuddy 命令" },
+        hermesCommand: { title: "Hermes 命令", description: "Hermes 没有 MCP 参数，从它自己的 config.yaml 读 tomrade 服务，请求头引用这个终端导出的 $TOMRADE_MCP_TOKEN。先在设置里的 Hermes 下连接到 Tomrade。" },
         otherCommand: { title: "其他智能体命令", description: "其他带 MCP 客户端的命令行智能体，比如 Gemini CLI、OpenCode、aider……留空表示没有设置。会自动填入 {mcpUrl}、{token}（也在 $TOMRADE_MCP_TOKEN 里）、{prompt} 和 {resume}（会话 id 本身）。" }
       }
     }
@@ -1889,7 +1890,7 @@ export class CodeLink extends Service {
   private externalEvent(payload: unknown): void {
     const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string };
     if (!p.cwd || !p.session_id) return;
-    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" ? p.tomrade_agent : "claude-code";
+    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" ? p.tomrade_agent : "claude-code";
     // Where the transcript lives tells which of the person's Claude Code accounts ran it.
     if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);

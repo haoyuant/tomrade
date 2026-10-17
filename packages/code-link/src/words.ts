@@ -13,6 +13,7 @@ const STATUS = {
 const en = {
   untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml and .pi/extensions/tomrade.ts (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",
   connected: "Connected",
+  linkFirst: (title: string) => `${title} reaches Tomrade in a terminal through its own settings. Connect it under ${title} in Settings, then start again.`,
   connectLocal: (branch: string, base: string) => `Connection saved on ${branch}. This repository has no remote; merge it into ${base} locally, then start a new agent session.`,
   connectPushOff: (branch: string) => `Connection saved on ${branch}. Pushing is off; push this branch yourself and open a pull request.`,
   connectPushFailed: (branch: string) => `Connection saved on ${branch}, but pushing failed. Check credentials and network, then retry or push this branch yourself.`,
@@ -123,6 +124,7 @@ export type CodeWords = typeof en;
 const zh: CodeWords = {
   untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml 和 .pi/extensions/tomrade.ts（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
   connected: "已连接",
+  linkFirst: (title: string) => `${title} 在终端里要通过它自己的设置连到 Tomrade。请先在设置里的 ${title} 下连接，再重新开始。`,
   connectLocal: (branch: string, base: string) => `连接配置已保存到 ${branch}。此仓库没有远端，请在本机将它合并到 ${base}，再新开智能体会话。`,
   connectPushOff: (branch: string) => `连接配置已保存到 ${branch}。自动推送已关闭，请手动推送此分支并发起拉取请求。`,
   connectPushFailed: (branch: string) => `连接配置已保存到 ${branch}，但推送失败。请检查凭据和网络后重试，或手动推送此分支。`,

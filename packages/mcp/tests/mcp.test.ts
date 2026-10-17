@@ -146,6 +146,21 @@ describe("the MCP surface", () => {
     await bound.close();
   });
 
+  it("reads a token header an outside agent could not fill in as no token", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    ctx.tools.register(defineTool({ name: "echo_tool", title: "Echo", description: "test", input: z.object({ v: z.string() }), execute: async ({ v }) => ({ echoed: v }) }));
+    ctx.mcp.bindRun("tok-x", { author: "ai:hermes", execute: async () => ({ routed: true }) });
+    for (const header of ["${TOMRADE_MCP_TOKEN}", "none", ""]) {
+      const client = new Client({ name: "outside", version: "0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers: { "X-Tomrade-Run": header } } }));
+      const result = await client.callTool({ name: "echo_tool", arguments: { v: header || "empty" } });
+      expect(JSON.stringify(result.content), header).toContain("echoed");
+      await client.close();
+    }
+    await ctx.fiber.dispose();
+  });
+
   it("passes a client's cancellation to the tool, bound or not", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();

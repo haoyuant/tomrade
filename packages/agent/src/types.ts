@@ -522,6 +522,8 @@ export interface Engine {
   terminal?: boolean;
   /** True: a CLI Tomrade starts only in a terminal the person sees — handed the ticket, heard over MCP, never driven turn by turn. */
   terminalOnly?: boolean;
+  /** True: in a terminal it reaches Tomrade only through its own user-level connection (`mcpLink`), so that comes first. */
+  terminalViaLink?: boolean;
   /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
   usesModels?: boolean;
   /** True: it takes messages sent while a turn runs (io.takeSteers); otherwise the panel queues them. */

@@ -6,6 +6,9 @@ import { z } from "zod";
 import type {} from "@tomradex/agent";
 import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent } from "@tomradex/engine-acp";
 import { localCli } from "@tomradex/engine-claude-code";
+import type {} from "@tomradex/llm";
+import { hermesLentModel } from "./lend.js";
+import { hermesMcpLink } from "./link.js";
 
 export const HermesOptions = z.object({
   command: z.string().default("hermes"),
@@ -46,6 +49,9 @@ export const hermes: AcpAgent<HermesOptions> = {
   reopen: "load",
   // a `/steer` prompt sent alongside lands after its next tool result (acp_adapter/commands.py)
   steer: "slash",
+  // `hermes chat` takes the ticket in a terminal, its tomrade server from config.yaml with this session's token.
+  terminal: true,
+  terminalViaLink: true,
   usage: "turn",
   signIn: "run `hermes setup` to choose a provider and add its key",
   diagnostics: {
@@ -60,11 +66,22 @@ export const hermes: AcpAgent<HermesOptions> = {
 };
 
 export function createHermesEngine(ctx: Context) {
-  return createAcpEngine(ctx, hermes);
+  return { ...createAcpEngine(ctx, hermes), mcpLink: hermesMcpLink(ctx, hermes.cli) };
 }
 
 export default {
   name: "engine-hermes",
   inject: ["agent", "mcp", "tools"],
-  apply(ctx: Context) { ctx.agent.engine(createHermesEngine(ctx)); }
+  apply(ctx: Context) {
+    const engine = createHermesEngine(ctx);
+    ctx.agent.engine(engine);
+    ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(hermesLentModel(ctx, {
+      cli: hermes.cli,
+      found: async () => (await engine.available()).ok,
+      options: () => HermesOptions.parse(ctx.get("agent")?.settingsOf().engines.hermes ?? {})
+    }))));
+  }
 };
+
+export { hermesLentModel } from "./lend.js";
+export { hermesConfigFile, hermesHome, hermesMcpLink, hermesPlugin, hermesPluginDir, TOKEN_HEADER } from "./link.js";

@@ -24,6 +24,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
     permissionModes: agent.permissionModes,
     terminal: agent.terminal ?? false,
+    ...(agent.terminalViaLink ? { terminalViaLink: true } : {}),
     ...(agent.steer ? { steers: true } : {}),
     ...(agent.setup ? { setup: agent.setup } : {}),
     picks: () => [

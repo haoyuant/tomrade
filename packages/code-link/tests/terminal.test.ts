@@ -7,7 +7,8 @@ describe("terminal command options", () => {
     expect(optionFlags("codex", { model: "gpt-5", effort: "medium" })).toBe("-m gpt-5 -c model_reasoning_effort=medium");
     expect(optionFlags("pi", { model: "anthropic/claude-sonnet-4-5", effort: "high" })).toBe("--model anthropic/claude-sonnet-4-5 --thinking high");
     expect(optionFlags("workbuddy", { model: "hy3", effort: "max" })).toBe("--model hy3 --effort max");
-    expect(optionFlags("hermes", { model: "openrouter:x" })).toBe("");
+    expect(optionFlags("hermes", { model: "openrouter:x" })).toBe("-m openrouter:x");
+    expect(optionFlags("dsh", { model: "deepseek-v4-pro" })).toBe("");
     expect(optionFlags("claude-code", { effort: "high" })).toBe("--effort high");
     expect(optionFlags("claude-code", { model: "  " })).toBe("");
     expect(optionFlags("other", { model: "x" })).toBe("");
