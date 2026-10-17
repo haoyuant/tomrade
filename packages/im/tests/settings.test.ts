@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,9 +30,10 @@ const group = (id: string, activation: "mention" | "reply" | "ambient", actorId 
 
 const turn: Engine["turn"] = async (input, io) => { io.emit({ type: "text", text: `reply:${input.input.kind === "text" ? input.input.text : ""}` }); return { stop: "end" }; };
 
-async function boot(opts: { deliver?: (d: ImDelivery) => Promise<{ messageId: string }>; edit?: boolean } = {}) {
+async function boot(opts: { deliver?: (d: ImDelivery) => Promise<{ messageId: string }>; edit?: boolean; seed?: Record<string, unknown> } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "tomrade-im-settings-"));
   const file = path.join(dir, "settings.json");
+  if (opts.seed) writeFileSync(file, JSON.stringify(opts.seed));
   const delivered: ImDelivery[] = [];
   const ios = new Map<string, AdapterIO>();
   const opened: Record<string, string>[] = [];
@@ -61,6 +62,28 @@ async function boot(opts: { deliver?: (d: ImDelivery) => Promise<{ messageId: st
 }
 
 describe("IM settings without JSON", () => {
+  it("turns settings from before the shared choices into them, keeping only what a conversation changed", () => {
+    const base = { connectionId: "bot", tenantId: "team", projectId: "p", allowedActors: ["owner"] };
+    const old = { connections: [{ id: "bot", adapterId: "test_im" }], announcePresence: true, routes: [
+      { ...base, id: "a", conversationId: "a", notify: { tickets: true, code: true, routines: false, attention: true } },
+      { ...base, id: "b", conversationId: "b", notify: { tickets: false, code: true, routines: true, attention: true, presence: false } }
+    ] };
+    const im = ImSettings.parse(old);
+    expect(im.notify).toEqual({ tickets: true, code: true, presence: true, routines: false, attention: true });
+    expect(im.routes[0].notify).toBeUndefined();
+    expect(im.routes[1].notify).toEqual({ tickets: false, routines: true, presence: false });
+    expect(im).not.toHaveProperty("announcePresence");
+    // Already in the new shape, a conversation's choice that matches the old default stays its own.
+    expect(ImSettings.parse({ ...im, notify: { ...im.notify, tickets: false }, routes: [{ ...im.routes[0], notify: { tickets: true } }] }).routes[0].notify).toEqual({ tickets: true });
+  });
+
+  it("writes older IM settings back in the new shape when it starts", async () => {
+    const w = await boot({ seed: { im: { connections: [{ id: "bot", adapterId: "test_im" }], announcePresence: true, routes: [] } } });
+    const stored = JSON.parse(readFileSync(w.file, "utf8")).im;
+    expect(stored).not.toHaveProperty("announcePresence");
+    expect(stored.notify.presence).toBe(true);
+  });
+
   it("waits for credentials, seals them, and shows who the bot signed in as", async () => {
     const w = await boot();
     w.setIm({ connections: [{ id: "bot", adapterId: "test_im" }] });

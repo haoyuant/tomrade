@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ImAdapterView, ImConnectionView, ImIgnoredView, ImPairingView, ImRoute, ImSettings } from "@tomradex/im";
-import { Icon } from "~/components/icons";
+import type { ImAdapterView, ImConnectionView, ImIgnoredView, ImNotifyKind, ImPairingView, ImRoute, ImSettings } from "@tomradex/im";
+import { Icon, type IconId } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke, messageOf } from "~/lib/api";
 import { useEngines } from "~/lib/agent";
@@ -14,7 +14,8 @@ import { useProjects, useSaveSettings, useSettings } from "~/lib/queries";
 import { cn } from "~/lib/utils";
 
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
-const EMPTY: ImSettings = { connections: [], identities: [], routes: [], announcePresence: false };
+const SHARED: ImSettings["notify"] = { tickets: true, code: true, presence: false, routines: false, attention: true };
+const EMPTY: ImSettings = { connections: [], identities: [], routes: [], notify: SHARED };
 
 const STATE_KEY: Record<ImConnectionView["state"], MessageKey> = {
   connecting: "imSettings.stateConnecting",
@@ -209,10 +210,36 @@ function People({ connection, im, pairing, defaultProject, onError }: {
   );
 }
 
-const NOTIFY = [["tickets", "imSettings.notifyTickets"], ["code", "imSettings.notifyCode"], ["presence", "imSettings.notifyPresence"],
-  ["routines", "imSettings.notifyRoutines"], ["attention", "imSettings.notifyAttention"]] as const;
+const NOTIFY: readonly (readonly [ImNotifyKind, MessageKey, MessageKey, IconId])[] = [
+  ["tickets", "imSettings.notifyTickets", "imSettings.notifyTicketsHelp", "i-board"],
+  ["code", "imSettings.notifyCode", "imSettings.notifyCodeHelp", "i-branch"],
+  ["presence", "imSettings.notifyPresence", "imSettings.notifyPresenceHelp", "i-monitor"],
+  ["routines", "imSettings.notifyRoutines", "imSettings.notifyRoutinesHelp", "i-calendar"],
+  ["attention", "imSettings.notifyAttention", "imSettings.notifyAttentionHelp", "i-alarm"]
+];
 
-function RouteRow({ route, names, presence, onChange, onRemove }: { route: ImRoute; names: Map<string, string>; presence: boolean; onChange: (next: ImRoute) => void; onRemove: () => void }) {
+/** What every conversation hears, one switch per kind; a route may answer for itself. */
+function SharedNotify({ notify, busy, onChange }: { notify: ImSettings["notify"]; busy: boolean; onChange: (next: ImSettings["notify"]) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="stack-2" data-testid="im-notify">
+      <SectionHead title={t("imSettings.notifyShared")}>{t("imSettings.notifySharedHelp")}</SectionHead>
+      {NOTIFY.map(([key, label, help, icon]) => (
+        <div key={key} className={cn("cfg-row", !notify[key] && "off")} data-im-notify-kind={key}>
+          <Icon name={icon} size={15} style={{ color: notify[key] ? "var(--accent)" : "var(--meta)" }} />
+          <div className="cfg-name">
+            {t(label)}
+            <div className="meta-txt dense">{t(help)}</div>
+          </div>
+          <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} disabled={busy}
+            onClick={() => onChange({ ...notify, [key]: !notify[key] })} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute; names: Map<string, string>; shared: ImSettings["notify"]; onChange: (next: ImRoute) => void; onRemove: () => void }) {
   const { t } = useI18n();
   const engines = useEngines();
   const engine = (engines.data ?? []).find((e) => e.id === route.engine);
@@ -222,8 +249,8 @@ function RouteRow({ route, names, presence, onChange, onRemove }: { route: ImRou
   const [cleared, setCleared] = useState<number | null>(null);
   const windowed = { enabled: false, messages: 20, retentionHours: 24, ...route.groupContext };
   const setWindow = (patch: Partial<typeof windowed>) => set({ groupContext: { ...windowed, ...patch } });
-  // Unset `presence` follows the older setting for every direct chat.
-  const notify = { ...(route.notify ?? { tickets: true, code: true, routines: false, attention: true }), presence: route.notify?.presence ?? presence };
+  const custom = Object.keys(route.notify ?? {}).length > 0;
+  const notify = { ...shared, ...route.notify };
   return (
     <div className="panel stack-2" data-im-route={route.id}>
       <div className="row" style={{ gap: 8 }}>
@@ -291,15 +318,24 @@ function RouteRow({ route, names, presence, onChange, onRemove }: { route: ImRou
         ))}
       </div>
       <div className="stack-2" data-im-notify={route.id}>
-        <div className="eyebrow">{t("imSettings.notify")}</div>
-        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-          {NOTIFY.map(([key, label]) => (
-            <label key={key} className="row" style={{ gap: 6 }}>
-              <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} onClick={() => set({ notify: { ...notify, [key]: !notify[key] } })} />
-              {t(label)}
-            </label>
-          ))}
-        </div>
+        <label className="row" style={{ gap: 6 }}>
+          <button type="button" className="switch" role="switch" aria-checked={!custom} aria-label={t("imSettings.notifyFollow")}
+            onClick={() => set({ notify: custom ? undefined : { ...notify } })} />
+          {t("imSettings.notifyFollow")}
+        </label>
+        {custom && (
+          <>
+            <div className="eyebrow">{t("imSettings.notify")}</div>
+            <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+              {NOTIFY.map(([key, label]) => (
+                <label key={key} className="row" style={{ gap: 6 }}>
+                  <button type="button" className="switch" role="switch" aria-checked={notify[key]} aria-label={t(label)} onClick={() => set({ notify: { ...notify, [key]: !notify[key] } })} />
+                  {t(label)}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
       </div>
       {route.allowGroups && (
         <div className="stack-2" data-im-group-context={route.id}>
@@ -392,7 +428,7 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
         <div className="stack-2">
           <div className="eyebrow">{t("imSettings.routes")}</div>
           {routes.length ? routes.map((route) => (
-            <RouteRow key={route.id} route={route} names={names} presence={im.announcePresence}
+            <RouteRow key={route.id} route={route} names={names} shared={im.notify ?? SHARED}
               onChange={(next) => onRoutes(im.routes.map((r) => (r.id === route.id ? next : r)))}
               onRemove={() => onRoutes(im.routes.filter((r) => r.id !== route.id))} />
           )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
@@ -531,6 +567,7 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
           )}
           {error && <p className="meta-txt dense" role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
         </div>
+        <SharedNotify notify={im.notify ?? SHARED} busy={save.isPending} onChange={(notify) => persist({ ...im, notify })} />
         <Ignored im={im} defaultProject={defaultProject} onError={setError} />
         <Deliveries onError={setError} />
       </div>

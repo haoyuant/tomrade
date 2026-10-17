@@ -1,14 +1,46 @@
 import { z } from "zod";
 
 const id = z.string().min(1).max(256);
-export const ImSettings = z.object({
+
+/** What reaches a conversation besides its own turns. */
+export const NOTIFY_KINDS = ["tickets", "code", "presence", "routines", "attention"] as const;
+export type ImNotifyKind = typeof NOTIFY_KINDS[number];
+/** A route's own choices, before the shared ones applied; older settings stored every kind. */
+const LEGACY_NOTIFY: Partial<Record<string, boolean>> = { tickets: true, code: true, routines: false, attention: true };
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Settings from before the shared choices: `announcePresence` becomes the shared presence, and a route keeps only what it changed. */
+function upgrade(value: unknown): unknown {
+  if (!isRecord(value) || !("announcePresence" in value)) return value;
+  const { announcePresence, ...rest } = value;
+  const routes = Array.isArray(rest.routes) ? rest.routes.map(r => {
+    if (!isRecord(r) || !isRecord(r.notify)) return r;
+    const notify = Object.fromEntries(Object.entries(r.notify).filter(([k, v]) => LEGACY_NOTIFY[k] !== v));
+    const { notify: _old, ...route } = r;
+    return Object.keys(notify).length ? { ...route, notify } : route;
+  }) : rest.routes;
+  return { ...rest, notify: { ...(isRecord(rest.notify) ? rest.notify : {}), presence: announcePresence === true }, routes };
+}
+
+export const ImSettings = z.preprocess(upgrade, z.object({
   connections: z.array(z.object({ id, adapterId: id, enabled: z.boolean().default(true), label: z.string().max(80).optional(),
     /** The adapter's `setup.fields`; the whole map is sealed by the OS keychain in settings.json. */
     credentials: z.record(z.string(), z.string().max(8192)).default({}) })).default([]),
   /** IM identities paired from the desktop, offered as the people a newly allowed group admits. */
   identities: z.array(z.object({ connectionId: id, tenantId: id, actorId: id, name: z.string().max(256).optional(), pairedAt: z.number() })).default([]),
-  /** Says in each paired direct chat when Tomrade comes online and goes offline on this computer. */
-  announcePresence: z.boolean().default(false),
+  /** What reaches every conversation besides its own turns, unless its route says otherwise. */
+  notify: z.object({
+    /** Status changes of the tickets a conversation saw or started. */
+    tickets: z.boolean().default(true),
+    /** Pull requests, merges and git's status proposals for those tickets. */
+    code: z.boolean().default(true),
+    /** In each paired direct chat, when Tomrade comes online and goes offline on this computer. */
+    presence: z.boolean().default(false),
+    /** Scheduled templates as they run. */
+    routines: z.boolean().default(false),
+    /** Questions, approvals and failures that wait on the person while they are away. */
+    attention: z.boolean().default(true)
+  }).prefault({}),
   routes: z.array(z.object({
     id, connectionId: id, tenantId: id, conversationId: id,
     projectId: id, boardId: id.nullable().default(null), engine: id.optional(),
@@ -26,18 +58,8 @@ export const ImSettings = z.object({
     output: z.enum(["final", "progress", "verbose"]).default("progress"),
     /** In a direct chat, turns started on the desktop show here too. A group only ever shows turns started from IM, or shared from the desktop. */
     desktopTurns: z.boolean().default(true),
-    /** What reaches this conversation besides its own turns; `presence` unset follows `announcePresence`. */
-    notify: z.object({
-      /** Status changes of the tickets this conversation saw or started. */
-      tickets: z.boolean().default(true),
-      /** Pull requests, merges and git's status proposals for those tickets. */
-      code: z.boolean().default(true),
-      presence: z.boolean().optional(),
-      /** Scheduled templates as they run. */
-      routines: z.boolean().default(false),
-      /** Questions, approvals and failures that wait on the person while they are away. */
-      attention: z.boolean().default(true)
-    }).prefault({}),
+    /** This conversation's own answers to the shared `notify`; a kind left out follows it. */
+    notify: z.partialRecord(z.enum(NOTIFY_KINDS), z.boolean()).optional(),
     /** In a group, keep its recent messages on this computer and show them to the Agent when it is woken. Off unless set. */
     groupContext: z.object({
       enabled: z.boolean().default(false),
@@ -55,7 +77,7 @@ export const ImSettings = z.object({
   for (const [i, route] of value.routes.entries()) {
     if (!value.connections.some(c => c.id === route.connectionId)) ctx.addIssue({ code: "custom", message: "Unknown connection", path: ["routes", i, "connectionId"] });
   }
-});
+}));
 export type ImSettings = z.infer<typeof ImSettings>;
 export type ImRoute = ImSettings["routes"][number];
 export type ImConnection = ImSettings["connections"][number];
