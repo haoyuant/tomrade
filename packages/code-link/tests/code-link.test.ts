@@ -817,4 +817,54 @@ describe("code link", () => {
     expect(summary.skipped).toEqual([{ repoId: other.id, reason: "no checkout on this machine" }]);
     expect(codeLink.repoState(project.id, other.id)!.readiness).toBe("unknown");
   });
+
+  describe("a pull request in a repository this machine has no checkout of", () => {
+    async function elsewhere(title: string) {
+      const world = await machine(codeRepo());
+      const { codeLink, ctx, project, ticket } = world;
+      const other = ctx.repos.create({ projectId: project.id, remote: "https://github.com/acme/elsewhere" });
+      const item = ticket(title, "verifying");
+      const branch = `tom-${item.keyNum}/work`;
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: other.id, branch }, { prNumber: 4, prUrl: "https://github.com/acme/elsewhere/pull/4", prState: "open", source: "mcp" });
+      const asked: string[] = [];
+      const answer = (pull: ForgePull | null) => {
+        codeLink.pulls = async (repoName, number, cwd) => {
+          asked.push(`${repoName}#${number}${cwd === null ? "" : ` in ${cwd}`}`);
+          return pull;
+        };
+      };
+      return { ...world, other, item, branch, asked, answer };
+    }
+
+    it("is settled by GitHub alone, and the session that handed its merge over is released", async () => {
+      const { codeLink, ctx, items, project, other, item, branch, asked, answer } = await elsewhere("Merged elsewhere");
+      const session = codeLink.store.createSession(project.id, { repoId: other.id, branch, itemIds: [item.id], mode: "terminal", agent: "mcp", threadId: null, device: ctx.hub.deviceId });
+      codeLink.sessions.blockMerge(project.id, session.id, "in this repository the person merges");
+      expect((await ctx.contributions.badgesFor(project.id))[item.id]).toContainEqual({ id: "stuck", label: "stuck", tone: "strong", title: expect.stringContaining("elsewhere has no checkout on this machine") });
+
+      answer({ merged: true, state: "closed", mergeSha: "abc123", base: "main" });
+      await codeLink.scan(project.id);
+      expect(asked).toEqual(["acme/elsewhere#4"]);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: "abc123", prState: "merged" });
+      expect(items.get(project.id, item.id)!.status).toBe("done");
+      expect(codeLink.store.session(project.id, session.id)?.state).toBe("ended");
+      expect((await ctx.contributions.badgesFor(project.id))[item.id]?.some((b) => b.id === "stuck")).toBeFalsy();
+      await codeLink.scan(project.id);
+      expect(asked).toHaveLength(1);
+    });
+
+    it("does not count a merge into another branch, and records one closed unmerged", async () => {
+      const { codeLink, items, project, item, answer } = await elsewhere("Stacked elsewhere");
+      answer({ merged: true, state: "closed", mergeSha: "abc123", base: "stack" });
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: null, prState: "open" });
+      expect(items.get(project.id, item.id)!.status).toBe("verifying");
+
+      answer({ merged: false, state: "closed", mergeSha: null, base: "main" });
+      await codeLink.scan(project.id);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: null, prState: "closed" });
+      expect(items.get(project.id, item.id)!.status).not.toBe("done");
+    });
+  });
 });

@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { Agent } from "@tomradex/agent";
 import { CodeLink, writeConnectFiles } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
@@ -467,6 +467,26 @@ describe("a developer's own Claude Code session", () => {
     await codeLink.scan(project.id);
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: "tom-777/dark-mode-toggle", source: "manual", ahead: 1 });
     expect(ctx.items.get(project.id, item.id)!.status).toBe("doing");
+  });
+});
+
+describe("a checkout learnt from a session's hooks", () => {
+  it("places a repository with no checkout here at the main working tree of the worktree a session runs in", async () => {
+    const { ctx, project, checkout, remote } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const elsewhere = codeRepo();
+    ctx.repos.create({ projectId: project.id, remote: elsewhere.remote });
+    const worktree = path.join(root, `worktree-${n++}`);
+    git(["worktree", "add", "-q", "-b", "tom-1/work", worktree], elsewhere.checkout);
+    const unrelated = codeRepo();
+
+    await post({ hook_event_name: "SessionStart", session_id: "cli-wt", cwd: unrelated.checkout });
+    await post({ hook_event_name: "SessionStart", session_id: "cli-wt", cwd: worktree });
+    await vi.waitFor(() => expect(ctx.repos.checkout(elsewhere.remote).checkout).not.toBeNull());
+    expect(fs.realpathSync(ctx.repos.checkout(elsewhere.remote).checkout!)).toBe(fs.realpathSync(elsewhere.checkout));
+    // A repository placed already keeps its checkout; a folder no project repository names places nothing.
+    expect(ctx.repos.checkout(remote).checkout).toBe(checkout);
+    expect(ctx.repos.checkouts()).toHaveLength(2);
   });
 });
 
