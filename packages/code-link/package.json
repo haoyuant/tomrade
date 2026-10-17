@@ -23,6 +23,7 @@
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
+    "@tomradex/engine-opencode": "workspace:*",
     "@tomradex/engine-pi": "workspace:*",
     "@tomradex/github": "workspace:*",
     "@tomradex/hub": "workspace:*",

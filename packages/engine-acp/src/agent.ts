@@ -60,6 +60,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
    * context size is known.
    */
   usage?: "turn" | "session" | ((update: Record<string, any>) => RequestUsage | null);
+  /** The prompt's `inputTokens` leaves out what `cachedReadTokens` and `cachedWriteTokens` count (OpenCode). */
+  cacheApart?: boolean;
   /**
    * How it takes a message sent while a turn runs, which ACP itself has no word for: its own
    * `session/steer` method ("method", CodeBuddy), or a `/steer` prompt sent alongside ("slash",

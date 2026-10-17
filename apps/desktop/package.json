@@ -72,6 +72,7 @@
     "@tomradex/engine-pi": "workspace:*",
     "@tomradex/engine-acp": "workspace:*",
     "@tomradex/engine-hermes": "workspace:*",
+    "@tomradex/engine-opencode": "workspace:*",
     "@tomradex/engine-dsh": "workspace:*",
     "@tomradex/engine-workbuddy": "workspace:*",
     "@tomradex/engine-loop": "workspace:*",

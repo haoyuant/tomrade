@@ -261,8 +261,7 @@ plugins:
   - id: engine-pi
     name: "@tomradex/engine-pi"
     implements: [engine]
-  # Gemini CLI and OpenCode, started only in a terminal the person sees, with
-  # Tomrade's MCP server set up for that one session.
+  # Gemini CLI over ACP (`gemini --acp`); a ticket can also start it in a terminal.
   - id: engine-terminal
     name: "@tomradex/engine-terminal"
     implements: [engine]
@@ -272,6 +271,10 @@ plugins:
     implements: [engine]
   - id: engine-dsh
     name: "@tomradex/engine-dsh"
+    implements: [engine]
+  # OpenCode over ACP (`opencode acp`); a ticket can also start it in a terminal.
+  - id: engine-opencode
+    name: "@tomradex/engine-opencode"
     implements: [engine]
   # WorkBuddy's CLI (CodeBuddy Code): `codebuddy` on PATH, else the copy inside the WorkBuddy app.
   - id: engine-workbuddy

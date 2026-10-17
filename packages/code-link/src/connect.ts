@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { opencodePlugin, withMcpEntry } from "@tomradex/engine-opencode";
 import { outsideExtension } from "@tomradex/engine-pi";
 import { HOOK_EVENTS } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
@@ -25,6 +26,8 @@ export type HookAgent = "codex" | "workbuddy";
 
 /** Pi has no command hooks: a project extension registers the server and reports instead. */
 export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
+/** OpenCode loads a project plugin from here by itself. */
+export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
 
 export function hookCommand(eventUrl: string, agent?: HookAgent): string {
   const url = eventUrl.replace(/'/g, "'\\''");
@@ -72,8 +75,8 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
   return [
     SECTION_START,
     "",
-    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi).`,
-    "Claude Code, Codex and WorkBuddy report session lifecycle through repository hooks, and Pi through that extension. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
+    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi, \`opencode.json\` for OpenCode).`,
+    "Claude Code, Codex and WorkBuddy report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
     "Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Neither reports its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
@@ -153,7 +156,8 @@ function readJson(file: string): Record<string, unknown> | null {
  * replace their `## Tomrade` section; Codex gains the `tomrade-sync` skill;
  * `.claude/settings.json` and WorkBuddy's `.codebuddy/settings.json` gain one
  * hook per lifecycle event that posts to Tomrade; WorkBuddy reads `.mcp.json`
- * and AGENTS.md as they are; Pi gains a project extension that does both.
+ * and AGENTS.md as they are; Pi gains a project extension that does both, and
+ * OpenCode a `tomrade` server in opencode.json and a reporting plugin.
  * Everything else in each file is kept as it was.
  * Returns the files that changed.
  */
@@ -219,6 +223,26 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
     fs.mkdirSync(path.dirname(piFile), { recursive: true });
     fs.writeFileSync(piFile, piText);
     changed.push(PI_EXTENSION);
+  }
+
+  const opencodeFile = path.join(root, "opencode.json");
+  const opencodeExisting = fs.existsSync(opencodeFile) ? fs.readFileSync(opencodeFile, "utf8") : "";
+  let opencodeText: string;
+  try {
+    opencodeText = withMcpEntry(opencodeExisting, input.mcpUrl);
+  } catch {
+    throw new Error("Cannot update opencode.json: expected a JSON object");
+  }
+  if (opencodeText !== opencodeExisting) {
+    fs.writeFileSync(opencodeFile, opencodeText);
+    changed.push("opencode.json");
+  }
+  const opencodePluginFile = path.join(root, OPENCODE_PLUGIN);
+  const opencodePluginText = opencodePlugin(input.eventUrl);
+  if (!fs.existsSync(opencodePluginFile) || fs.readFileSync(opencodePluginFile, "utf8") !== opencodePluginText) {
+    fs.mkdirSync(path.dirname(opencodePluginFile), { recursive: true });
+    fs.writeFileSync(opencodePluginFile, opencodePluginText);
+    changed.push(OPENCODE_PLUGIN);
   }
 
   // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.

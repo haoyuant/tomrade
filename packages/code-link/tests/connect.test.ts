@@ -86,7 +86,7 @@ describe("connecting a repository", () => {
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md"]);
+    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
     const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
@@ -206,6 +206,22 @@ describe("connecting a repository", () => {
     expect(writeConnectFiles(dir, { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1", eventUrl: "http://127.0.0.1:19091/sessions/event" })).toContain(".pi/extensions/tomrade.ts");
   });
 
+  it("gives OpenCode a tomrade server in opencode.json and a reporting plugin, keeping the project's own config", () => {
+    const dir = path.join(root, `opencode-${n++}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "opencode.json"), JSON.stringify({ $schema: "https://opencode.ai/config.json", model: "deepseek/deepseek-flash" }));
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    expect(writeConnectFiles(dir, input)).toEqual(expect.arrayContaining(["opencode.json", ".opencode/plugins/tomrade.js"]));
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "opencode.json"), "utf8"))).toEqual({ $schema: "https://opencode.ai/config.json", model: "deepseek/deepseek-flash",
+      mcp: { tomrade: { type: "remote", url: input.mcpUrl, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}" } } } });
+    const plugin = fs.readFileSync(path.join(dir, ".opencode/plugins/tomrade.js"), "utf8");
+    expect(plugin).toContain(`const eventUrl = "${input.eventUrl}";`);
+    expect(plugin).toContain('"x-tomrade-agent": "opencode"');
+    expect(writeConnectFiles(dir, input)).toEqual([]);
+    fs.writeFileSync(path.join(dir, "opencode.json"), "{ not json");
+    expect(() => writeConnectFiles(dir, input)).toThrow("Cannot update opencode.json: expected a JSON object");
+  });
+
   it("asks a repository connected before WorkBuddy's hooks existed to connect again", async () => {
     const { codeLink, ctx, project, repo, checkout } = await machine();
     writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });
@@ -217,6 +233,7 @@ describe("connecting a repository", () => {
     expect(view.agents.find((agent) => agent.id === "workbuddy")).toMatchObject({ title: "WorkBuddy", tools: true, tracking: "none", instructions: true });
     expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ tools: true, tracking: "hooks" });
     expect(view.agents.find((agent) => agent.id === "pi")).toMatchObject({ title: "Pi", tools: true, tracking: "hooks", instructions: true });
+    expect(view.agents.find((agent) => agent.id === "opencode")).toMatchObject({ title: "OpenCode", tools: true, tracking: "hooks", instructions: true });
   });
 
   it("keeps the branch and explains push-off, push failure and local merge", async () => {
@@ -248,7 +265,7 @@ describe("connecting a repository", () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
     const result = await codeLink.connect(project.id, repo.id);
     expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
-    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md"]);
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
     git(["fetch", "-q", "origin"], checkout);
@@ -272,6 +289,7 @@ describe("untracked terminal sessions", () => {
     expect(claimed.tracking.message).toContain(".codex/config.toml");
     expect(claimed.tracking.message).toContain(".codebuddy/settings.json");
     expect(claimed.tracking.message).toContain(".pi/extensions/tomrade.ts");
+    expect(claimed.tracking.message).toContain(".opencode/plugins/tomrade.js");
     expect(claimed.tracking.message).toContain(language === "zh" ? "未被 Tomrade 跟踪" : "not tracked by Tomrade");
     expect(claimed.conventions).not.toContain("call note_progress with one line at milestones");
     expect(items.get(project.id, item.id)?.status).toBe("doing");
@@ -755,6 +773,22 @@ describe("a developer's own Pi session", () => {
     expect(codeLink.sessionsOf(project.id)[0].state).toBe("waiting");
     await post("SessionEnd");
     expect(codeLink.sessionsOf(project.id)[0].state).toBe("ended");
+  });
+});
+
+describe("a developer's own OpenCode session", () => {
+  it("is followed through the plugin's reports and claims a ticket as OpenCode", async () => {
+    const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
+    // What .opencode/plugins/tomrade.js posts, as OpenCode 1.19 runs it.
+    const post = (event: string) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "opencode" },
+      body: JSON.stringify({ session_id: "ses_oc1", cwd: checkout, hook_event_name: event }) });
+    await post("SessionStart");
+    const [session] = codeLink.sessionsOf(project.id);
+    expect(session).toMatchObject({ agent: "opencode", repoId: repo.id, externalId: "ses_oc1", state: "running" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "OpenCode work", by: "human" });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id })).toMatchObject({ tracking: { tracked: true, sessionId: session.id } });
+    await post("Stop");
+    expect(codeLink.sessionsOf(project.id)[0].state).toBe("waiting");
   });
 });
 

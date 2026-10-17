@@ -4,7 +4,7 @@
   "license": "BUSL-1.1",
   "version": "0.0.0",
   "type": "module",
-  "description": "Gemini CLI as an in-app agent over ACP that can also take a ticket in a terminal, and OpenCode as a terminal-only coding agent",
+  "description": "Gemini CLI as an in-app agent over ACP that can also take a ticket in a terminal",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

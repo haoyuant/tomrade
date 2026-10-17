@@ -60,6 +60,9 @@
       "path": "../../packages/engine-hermes"
     },
     {
+      "path": "../../packages/engine-opencode"
+    },
+    {
       "path": "../../packages/engine-dsh"
     },
     {

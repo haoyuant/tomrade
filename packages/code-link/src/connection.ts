@@ -3,12 +3,13 @@ import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { Git } from "@tomradex/storage";
 import type { McpProjectApproval } from "@tomradex/agent";
+import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
-import { CODEX_HOOK_EVENTS, hookCommand, PI_EXTENSION } from "./connect.js";
+import { CODEX_HOOK_EVENTS, hookCommand, OPENCODE_PLUGIN, PI_EXTENSION } from "./connect.js";
 import { HOOK_EVENTS } from "./sessions.js";
 
 export interface AgentConnectionView {
-  id: "claude-code" | "codex" | "workbuddy" | "pi" | "cursor" | "gemini";
+  id: "claude-code" | "codex" | "workbuddy" | "pi" | "opencode" | "cursor" | "gemini";
   title: string;
   tools: boolean;
   tracking: "hooks" | "none";
@@ -30,9 +31,9 @@ export interface ConnectionView {
   claudeApprovals?: McpProjectApproval[];
 }
 
-const FILES = [".mcp.json", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", PI_EXTENSION, ".cursor/mcp.json", ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"];
+const FILES = [".mcp.json", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"];
 /** Agents whose committed hooks a connected repository carries. */
-const HOOKED = new Set<AgentConnectionView["id"]>(["claude-code", "codex", "workbuddy", "pi"]);
+const HOOKED = new Set<AgentConnectionView["id"]>(["claude-code", "codex", "workbuddy", "pi", "opencode"]);
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 function json(text: string | undefined): Record<string, unknown> {
   try { return object(JSON.parse(text ?? "")); } catch { return {}; }
@@ -48,6 +49,10 @@ function hasHooks(config: Record<string, unknown>, events: readonly string[], co
   });
 }
 
+function opencodeUrl(text: string | undefined): string | null {
+  try { return configuredMcpUrl(text || "{}"); } catch { return null; }
+}
+
 function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string) {
   const mcp = json(files[".mcp.json"]);
   const settings = json(files[".claude/settings.json"]);
@@ -59,6 +64,7 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
     { id: "codex", title: "Codex", tools: object(object(codex.mcp_servers).tomrade).url === mcpUrl, tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommand(eventUrl, "codex")) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: true },
     { id: "workbuddy", title: "WorkBuddy", tools: configuredUrl === mcpUrl, tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommand(eventUrl, "workbuddy")) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
     { id: "pi", title: "Pi", tools: outsideExtensionUrl(files[PI_EXTENSION] ?? "") === mcpUrl, tracking: files[PI_EXTENSION]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
+    { id: "opencode", title: "OpenCode", tools: opencodeUrl(files["opencode.json"]) === mcpUrl, tracking: files[OPENCODE_PLUGIN]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
     { id: "cursor", title: "Cursor", tools: serverUrl(json(files[".cursor/mcp.json"])) === mcpUrl, tracking: "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
     { id: "gemini", title: "Gemini CLI", tools: serverUrl(json(files[".gemini/settings.json"]), "httpUrl") === mcpUrl, tracking: "none", instructions: false, reviewHooks: false }
   ];

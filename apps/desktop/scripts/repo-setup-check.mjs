@@ -132,7 +132,7 @@ const run = async () => {
   check("repository shows agent connection and target instance", await $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.textContent.includes('development build')`));
   await press(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connect')`);
   check("connect reports how to finish a local repository", await wait(() => $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-result')?.textContent.includes('merge it into main locally')`), 100));
-  check("connection lists each agent and Codex hook review", await $(`document.querySelectorAll('[data-repo="${repo.id}"] .repo-agent-capability').length === 6 && document.querySelector('[data-repo="${repo.id}"] [data-agent="codex"]').textContent.includes('/hooks')`));
+  check("connection lists each agent and Codex hook review", await $(`document.querySelectorAll('[data-repo="${repo.id}"] .repo-agent-capability').length === 7 && document.querySelector('[data-repo="${repo.id}"] [data-agent="codex"]').textContent.includes('/hooks')`));
   check("connection waits for merge", await wait(() => $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.dataset.state === 'pending'`)));
   execSync("git merge --ff-only tomrade/connect", { cwd: repoDir, stdio: "ignore" });
   check("merged configuration becomes connected", await wait(() => $(`document.querySelector('[data-repo="${repo.id}"] .repo-agent-connection')?.dataset.state === 'connected'`), 100));

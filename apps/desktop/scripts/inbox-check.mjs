@@ -32,7 +32,7 @@ const check = (name, cond, detail) => {
 };
 
 const run = async () => {
-  const local = ["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin", "engine-terminal", "engine-hermes", "engine-dsh", "engine-workbuddy"];
+  const local = ["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-workbuddy"];
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work },
