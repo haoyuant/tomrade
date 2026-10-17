@@ -71,7 +71,7 @@ describe("the Claude Code engine", () => {
       expect(code.envTest).toBe("passed");
       const codeArgs = code.args.join("\n");
       expect(codeArgs).not.toContain("--strict-mcp-config");
-      expect(codeArgs).toContain("--permission-mode\nauto");
+      expect(codeArgs).toContain("--permission-mode\nbypassPermissions");
       expect(codeArgs).not.toContain("--max-turns");
     } finally {
       await ctx.fiber.dispose();

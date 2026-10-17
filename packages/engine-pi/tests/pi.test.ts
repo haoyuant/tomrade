@@ -22,7 +22,7 @@ it("narrows tools for read-only turns only, the main chat included", () => {
   expect(toolSelection({ permissionMode: "read-only" })).toBe("read,grep,find,ls,tool_search,mcp__tomrade__*");
   expect(toolSelection({ permissionMode: "full-access" })).toBeNull();
   expect(toolSelection({ permissionMode: "ask" })).toBeNull();
-  expect(PERMISSION_MODES).toMatchObject({ default: "full-access", mainDefault: "ask" });
+  expect(PERMISSION_MODES).toMatchObject({ default: "full-access" });
 });
 
 it("registers Tomrade's MCP server and gates only what may change something", async () => {

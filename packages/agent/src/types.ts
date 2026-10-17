@@ -513,11 +513,8 @@ export interface Engine {
   options?: z.ZodType<unknown>;
   /** Quick-pick knobs the panel offers; each writes options[key]. Called per view, so lists can be live. */
   picks?(): EnginePick[];
-  /**
-   * `default` is what a ticket's session starts in; `mainDefault` what the project's main conversation starts in
-   * (it is not a ticket's worktree, so an engine may ask there before changing anything). Absent, both use `default`.
-   */
-  permissionModes?: { default: string; mainDefault?: string; choices: { value: string; label: string }[] };
+  /** `default` is what a session starts in until the person picks another mode. */
+  permissionModes?: { default: string; choices: { value: string; label: string }[] };
   /** False: it runs only inside Tomrade, with no CLI session a person can be handed in a terminal. */
   terminal?: boolean;
   /** True: a CLI Tomrade starts only in a terminal the person sees — handed the ticket, heard over MCP, never driven turn by turn. */

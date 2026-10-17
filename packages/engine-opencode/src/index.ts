@@ -29,7 +29,7 @@ export const opencode: AcpAgent<OpencodeOptions> = {
   },
   options: OpencodeOptions,
   // Its "plan" agent cannot edit or run commands, so read-only is one it keeps; "build" asks only where its own rules say so.
-  permissionModes: { default: "full-access", mainDefault: "read-only", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.local, PERMISSION_CHOICES["read-only"]] },
+  permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.local, PERMISSION_CHOICES["read-only"]] },
   args: () => ["acp"],
   mode: (policy) => (policy === "read-only" ? "plan" : "build"),
   // The prompt's answer counts that turn alone, its cached prompt tokens apart from inputTokens.

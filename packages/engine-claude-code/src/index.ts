@@ -16,7 +16,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     steers: true,
     commands: claudeCommands,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
-    permissionModes: { default: "auto", mainDefault: "default", choices: [
+    permissionModes: { default: "bypassPermissions", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },
       { value: "acceptEdits", label: "Accept edits" }, { value: "default", label: "Ask permissions" },
       { value: "plan", label: "Plan" }, { value: "local", label: "Local rules" }
