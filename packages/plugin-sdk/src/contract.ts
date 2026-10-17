@@ -278,6 +278,8 @@ export interface SurfaceSpec {
   initialState?: unknown;
   /** Messages the document sends; a person is driving, so writes made here are theirs. */
   onMessage?(message: unknown): Maybe<void>;
+  /** Once, when the window is gone — the person closed it, `close()` did, or the plugin unloaded. The handle's other calls then reject. */
+  onClose?(): Maybe<void>;
 }
 
 export interface SurfaceHandle {

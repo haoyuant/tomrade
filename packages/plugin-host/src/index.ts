@@ -69,10 +69,15 @@ function recordingSurfaces() {
         workArea: () => area,
         setPosition: () => {},
         setState: (state: unknown) => void (entry.state = state),
-        close: () => void (entry.closed = true)
+        close: () => shut(entry)
       };
     };
   }
+  const shut = (entry: (typeof opened)[number]) => {
+    if (entry.closed) return;
+    entry.closed = true;
+    entry.spec.onClose?.();
+  };
   const view = () => opened.map((o) => ({ id: o.spec.id, title: o.spec.title, width: o.spec.width, height: o.spec.height, state: o.state, closed: o.closed }));
   const message = async (id: string, msg: unknown) => {
     const entry = [...opened].reverse().find((o) => o.spec.id === id && !o.closed);
@@ -80,7 +85,12 @@ function recordingSurfaces() {
     await entry.spec.onMessage?.(msg);
     await settle();
   };
-  return { Surfaces, view, message };
+  /** As the person closing it. */
+  const close = async (id: string) => {
+    for (const entry of opened) if (entry.spec.id === id) shut(entry);
+    await settle();
+  };
+  return { Surfaces, view, message, close };
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -169,7 +179,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
         sections: (itemId: string) => w.ctx.contributions.sectionsFor(w.project.id, itemId),
         graph: (id: string) => w.ctx.contributions.graphEdges(id, scope),
         sidebarModules: () => w.ctx.contributions.sidebarModules(w.project.id),
-        ...(surfaces ? { surfaces: { opened: surfaces.view, message: surfaces.message } } : {}),
+        ...(surfaces ? { surfaces: { opened: surfaces.view, message: surfaces.message, close: surfaces.close } } : {}),
         ...(alerts ? { alerts: { played: () => [...alerts.played], notices: () => [...alerts.notices] } } : {}),
         ...(im ? { im: {
           configure: (settings: unknown) => w.ctx.settings.set({ ...w.ctx.settings.get(), im: ImSettings.parse(settings) }),

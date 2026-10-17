@@ -60,7 +60,7 @@ await ctx.tools.register(defineTool({
 `ctx.agent.playbook({ id: `${ns}.how`, title, when: "one line", body: "markdown steps", tools: [...] })`.
 
 ## surfaces
-`ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, transparent?, clickThrough?, anchor?: "sidebar-foot", onMessage })` → handle with `setState`, `close`. Documents are files in the package (put them in `static/`).
+`ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, transparent?, clickThrough?, anchor?: "sidebar-foot", onMessage, onClose })` → handle with `setState`, `close`. `onClose` runs once when the window is gone (the person, `close()`, unloading); after it the handle's calls reject, so open a new window rather than reuse it. Documents are files in the package (put them in `static/`).
 
 ## events and lifetime
 `ctx.on("write", e => …)` (`{projectId, entity, op, id, by, via}`) · `ctx.on("project.opened", id => …)` · `ctx.on("settings.changed", …)`
@@ -79,4 +79,4 @@ export default async function (t) {
   await t.command(`${ns}.cmd`, a.id);
 }
 ```
-A plugin that names `surfaces` gets windows that never open: `t.surfaces.opened()` lists them (`{ id, title, state, closed }`, `state` the last `setState`), and `await t.surfaces.message(id, msg)` sends `msg` as if the document had. A plugin that waits on a service the sandbox lacks fails `loads`, naming it.
+A plugin that names `surfaces` gets windows that never open: `t.surfaces.opened()` lists them (`{ id, title, state, closed }`, `state` the last `setState`), `await t.surfaces.message(id, msg)` sends `msg` as if the document had, and `await t.surfaces.close(id)` closes it as the person would. A plugin that waits on a service the sandbox lacks fails `loads`, naming it.

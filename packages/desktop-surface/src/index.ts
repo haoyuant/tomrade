@@ -35,6 +35,8 @@ export interface DesktopSurfaceSpec {
   initialState?: unknown;
   /** Messages from the isolated surface document, owned and interpreted by the feature. */
   onMessage?(message: unknown): void;
+  /** Once, when the window is gone: closed by the person, by `close()`, or by the host unloading. */
+  onClose?(): void;
 }
 
 export interface DesktopSurface {
