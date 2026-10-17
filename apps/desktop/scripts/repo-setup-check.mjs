@@ -141,6 +141,24 @@ const run = async () => {
   check("connected repository no longer asks to connect", !(await $(`!!document.querySelector('[data-repo="${repo.id}"] .repo-agent-connect')`)));
   await shot("repo-setup-03-agents-connected");
 
+  // ── removing a repository asks first, and explains while a workstream stands on it ──
+  const confirmBox = `document.querySelector('[data-repo="${repo.id}"] [data-testid="repo-remove-confirm"]')`;
+  const confirmText = () => $(`${confirmBox}?.textContent ?? ''`);
+  await press(`document.querySelector('[data-repo="${repo.id}"] .repo-remove')`);
+  check("the X on a repository a workstream stands on explains, naming the workstream", await wait(async () => (await confirmText()).includes(`workstream ${board.name}`)), await confirmText());
+  check("and offers no Remove", (await $(`!!document.querySelector('[data-repo="${repo.id}"] .repo-remove-confirm-btn')`)) === false);
+  check("so the repository stays", ctx.repos.list(project.id).length === 1);
+  await shot("repo-setup-04-remove-in-use");
+  await press(`[...${confirmBox}.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')`);
+  check("Cancel closes it", await wait(async () => !(await $(`!!${confirmBox}`))));
+  await press(chip);
+  await wait(() => ctx.boards.get(project.id, board.id).repoId === null);
+  await press(`document.querySelector('[data-repo="${repo.id}"] .repo-remove')`);
+  check("with no workstream on it, the X asks first", await wait(async () => (await confirmText()).includes(`Remove ${repo.name} from this project?`)), await confirmText());
+  check("and nothing is removed until confirmed", ctx.repos.list(project.id).length === 1);
+  await press(`document.querySelector('[data-repo="${repo.id}"] .repo-remove-confirm-btn')`);
+  check("confirming removes it", await wait(() => ctx.repos.list(project.id).length === 0));
+
   check("harness reached the end", true);
 };
 
